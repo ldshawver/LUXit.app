@@ -31,6 +31,13 @@ def get_tiktok_service(company=None):
     return TikTokService()
 
 
+def _ensure_tiktok_configured(service):
+    if not service or not service.is_configured():
+        logger.warning("TikTok integration disabled: missing credentials.")
+        return False
+    return True
+
+
 @tiktok_bp.route('/connect')
 @login_required
 def connect():
@@ -42,12 +49,14 @@ def connect():
     
     try:
         service = get_tiktok_service(company)
-        
-        if not service.client_key:
-            flash('TikTok API credentials not configured. Please add your TikTok Client Key in Settings → API Keys & Secrets.', 'error')
+        if not _ensure_tiktok_configured(service):
+            flash('TikTok API credentials not configured. Please add your TikTok credentials in Settings → API Keys & Secrets.', 'error')
             return redirect(url_for('main.company_settings', company_id=company.id))
-        
+
         auth_url, state = service.build_auth_url()
+        if not auth_url:
+            flash('TikTok integration not configured. Please add credentials in Settings → API Keys & Secrets.', 'error')
+            return redirect(url_for('main.company_settings', company_id=company.id))
         
         session['tiktok_oauth_state'] = state
         session['tiktok_oauth_company_id'] = company.id
@@ -94,6 +103,9 @@ def callback():
     
     try:
         service = get_tiktok_service(company)
+        if not _ensure_tiktok_configured(service):
+            flash('TikTok integration not configured. Please add credentials in Settings → API Keys & Secrets.', 'error')
+            return redirect(url_for('main.company_settings', company_id=company.id))
         result = service.exchange_code_for_token(code)
         
         if not result.get('success'):
@@ -167,6 +179,8 @@ def disconnect():
         if oauth_record:
             try:
                 service = get_tiktok_service(company)
+                if not _ensure_tiktok_configured(service):
+                    return jsonify({'success': False, 'error': 'TikTok integration not configured'}), 503
                 service.revoke_token(oauth_record.get_access_token(), oauth_record.open_id)
             except Exception as e:
                 logger.warning(f"Failed to revoke TikTok token: {e}")
@@ -203,6 +217,8 @@ def refresh():
             return jsonify({'success': False, 'error': 'No refresh token available'})
         
         service = get_tiktok_service(company)
+        if not _ensure_tiktok_configured(service):
+            return jsonify({'success': False, 'error': 'TikTok integration not configured'}), 503
         result = service.refresh_access_token(oauth_record.get_refresh_token())
         
         if not result.get('success'):
@@ -290,6 +306,8 @@ def list_videos():
             return jsonify({'success': False, 'error': 'TikTok token expired. Please refresh or reconnect.'})
         
         service = get_tiktok_service(company)
+        if not _ensure_tiktok_configured(service):
+            return jsonify({'success': False, 'error': 'TikTok integration not configured'}), 503
         result = service.list_videos(oauth_record.get_access_token(), oauth_record.open_id, cursor=cursor)
         
         return jsonify(result)
@@ -331,6 +349,8 @@ def publish_video():
             return jsonify({'success': False, 'error': 'TikTok token expired. Please refresh or reconnect.'})
         
         service = get_tiktok_service(company)
+        if not _ensure_tiktok_configured(service):
+            return jsonify({'success': False, 'error': 'TikTok integration not configured'}), 503
         result = service.publish_video(
             access_token=oauth_record.get_access_token(),
             title=title,
@@ -363,6 +383,8 @@ def check_publish_status(publish_id):
             return jsonify({'success': False, 'error': 'TikTok not connected'})
         
         service = get_tiktok_service(company)
+        if not _ensure_tiktok_configured(service):
+            return jsonify({'success': False, 'error': 'TikTok integration not configured'}), 503
         result = service.check_publish_status(oauth_record.get_access_token(), publish_id)
         
         return jsonify(result)
@@ -392,6 +414,8 @@ def get_user_info():
             return jsonify({'success': False, 'error': 'TikTok token expired'})
         
         service = get_tiktok_service(company)
+        if not _ensure_tiktok_configured(service):
+            return jsonify({'success': False, 'error': 'TikTok integration not configured'}), 503
         result = service.get_user_info(oauth_record.get_access_token(), oauth_record.open_id)
         
         if result.get('success'):

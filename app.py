@@ -297,6 +297,31 @@ except Exception as e:
 # Request lifecycle helpers
 # ============================================================
 
+def _log_startup_feature_summary():
+    logger = logging.getLogger(__name__)
+    feature_flags = {
+        "openai": bool(os.getenv("OPENAI_API_KEY")),
+        "replit_auth": bool(os.getenv("REPL_ID")),
+        "tiktok": bool(os.getenv("TIKTOK_CLIENT_KEY") and os.getenv("TIKTOK_CLIENT_SECRET")),
+        "microsoft_graph": bool(os.getenv("MS_CLIENT_ID") and os.getenv("MS_CLIENT_SECRET") and os.getenv("MS_TENANT_ID")),
+        "twilio": bool(
+            os.getenv("TWILIO_ACCOUNT_SID")
+            and os.getenv("TWILIO_AUTH_TOKEN")
+            and os.getenv("TWILIO_PHONE_NUMBER")
+        ),
+        "stripe": bool(os.getenv("STRIPE_SECRET_KEY")),
+        "woocommerce": bool(
+            os.getenv("WC_STORE_URL")
+            and os.getenv("WC_CONSUMER_KEY")
+            and os.getenv("WC_CONSUMER_SECRET")
+        ),
+        "ga4": bool(os.getenv("GA4_PROPERTY_ID")),
+    }
+    logger.info("Startup feature summary: %s", feature_flags)
+
+
+_log_startup_feature_summary()
+
 @app.route("/")
 def index():
     return redirect(url_for("auth.login"))

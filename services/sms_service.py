@@ -185,8 +185,8 @@ class SMSService:
     def ai_generate_sms(prompt, tone='professional', max_length=160):
         """Generate SMS content using AI"""
         try:
-            from ai_agent import LUXAgent
-            lux_agent = LUXAgent()
+            from ai_agent import get_lux_agent
+            lux_agent = get_lux_agent()
             
             full_prompt = f"""Create a short SMS marketing message (max {max_length} chars) with a {tone} tone.
             Topic: {prompt}
