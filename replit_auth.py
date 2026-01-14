@@ -364,9 +364,14 @@ def require_replit_login(f):
                 try:
                     issuer_url = os.environ.get('ISSUER_URL', "https://replit.com/oidc")
                     refresh_token_url = issuer_url + "/token"
+                    repl_id = os.getenv('REPL_ID')
+                    if not repl_id:
+                        logger.warning("REPL_ID missing; skipping Replit token refresh.")
+                        session["next_url"] = get_next_navigation_url(request)
+                        return redirect(url_for('replit_auth.login'))
                     token = g.flask_dance_replit.refresh_token(
                         token_url=refresh_token_url,
-                        client_id=os.environ['REPL_ID']
+                        client_id=repl_id
                     )
                     g.flask_dance_replit.token_updater(token)
                 except InvalidGrantError:
