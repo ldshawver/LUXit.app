@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 from flask import Blueprint, render_template, request, flash, redirect, url_for, jsonify, make_response, send_file, current_app, g
 from flask_login import login_required, current_user
 from sqlalchemy import or_, case, text
-from app import db, csrf
+from extensions import db, csrf
 from models import (Contact, Campaign, EmailTemplate, CampaignRecipient, EmailTracking, 
                     BrandKit, EmailComponent, Poll, PollResponse, ABTest, Automation, 
                     AutomationStep, SMSCampaign, SMSRecipient, SMSTemplate, SocialPost, Segment, 
@@ -22,7 +22,7 @@ from utils import validate_email, safe_count
 from tracking import decode_tracking_data, record_email_event
 import logging
 import json
-from ai_agent import lux_agent
+from ai_agent import get_lux_agent
 from seo_service import seo_service
 from error_logger import log_application_error, ApplicationDiagnostics, ErrorLog
 from log_reader import LogReader
@@ -1443,8 +1443,7 @@ def auto_generate_campaign():
         if not campaign_name:
             return jsonify({'success': False, 'error': 'Campaign name is required'}), 400
         
-        from ai_agent import LUXAgent
-        lux_agent = LUXAgent()
+        lux_agent = get_lux_agent()
         
         subjects = lux_agent.generate_subject_lines(campaign_name, "general audience")
         
@@ -2320,7 +2319,7 @@ def campaign_analytics_api(campaign_id):
 def lux_generate_campaign():
     """LUX AI agent - Generate automated campaign"""
     try:
-        from ai_agent import lux_agent
+        lux_agent = get_lux_agent()
         
         data = request.get_json() or {}
         campaign_brief = {
@@ -2364,7 +2363,7 @@ def lux_generate_campaign():
 def lux_optimize_campaign(campaign_id):
     """LUX AI agent - Optimize campaign performance"""
     try:
-        from ai_agent import lux_agent
+        lux_agent = get_lux_agent()
         
         optimization = lux_agent.optimize_campaign_performance(campaign_id)
         
@@ -2391,7 +2390,7 @@ def lux_optimize_campaign(campaign_id):
 def lux_audience_analysis():
     """LUX AI agent - Analyze audience segments"""
     try:
-        from ai_agent import lux_agent
+        lux_agent = get_lux_agent()
         
         contacts = Contact.query.filter_by(is_active=True).all()
         analysis = lux_agent.analyze_audience_segments(contacts)
@@ -2419,7 +2418,7 @@ def lux_audience_analysis():
 def lux_subject_variants():
     """LUX AI agent - Generate subject line variants"""
     try:
-        from ai_agent import lux_agent
+        lux_agent = get_lux_agent()
         
         data = request.get_json() or {}
         objective = data.get('objective', 'Engage audience')
@@ -2450,7 +2449,7 @@ def lux_subject_variants():
 def lux_recommendations():
     """LUX AI agent - Get campaign recommendations"""
     try:
-        from ai_agent import lux_agent
+        lux_agent = get_lux_agent()
         from tracking import get_campaign_analytics
         
         # Gather data to pass to LUX agent (avoiding circular imports)
@@ -2566,11 +2565,11 @@ def test_email():
 def lux_generate_image():
     """LUX AI agent - Generate campaign images with DALL-E"""
     # Exempt from CSRF for JSON API
-    from app import csrf
+    from extensions import csrf
     csrf.exempt(lux_generate_image)
     
     try:
-        from ai_agent import lux_agent
+        lux_agent = get_lux_agent()
         
         data = request.get_json() or {}
         description = data.get('description', 'Professional marketing campaign')
@@ -2602,7 +2601,7 @@ def lux_generate_image():
 def lux_product_campaign():
     """LUX AI agent - Create WooCommerce product campaign"""
     # Exempt from CSRF for JSON API
-    from app import csrf
+    from extensions import csrf
     csrf.exempt(lux_product_campaign)
     
     try:
@@ -2616,7 +2615,7 @@ def lux_product_campaign():
                 if mod in sys.modules:
                     del sys.modules[mod]
         
-        from ai_agent import lux_agent
+        lux_agent = get_lux_agent()
         
         data = request.get_json() or {}
         
@@ -2705,7 +2704,7 @@ def lux_product_campaign():
 def lux_test_woocommerce():
     """Test WooCommerce API connection"""
     try:
-        from ai_agent import lux_agent
+        lux_agent = get_lux_agent()
         
         data = request.get_json() or {}
         
@@ -2801,6 +2800,7 @@ def generate_ai_content():
             return jsonify({'success': False, 'message': 'Prompt is required'})
             
         # Generate content using LUX AI agent
+        lux_agent = get_lux_agent()
         content_options = lux_agent.generate_email_content(prompt, content_type)
         
         return jsonify({'success': True, 'content': content_options})
@@ -2818,6 +2818,7 @@ def generate_subject_lines():
         campaign_type = data.get('campaign_type', '')
         audience = data.get('audience', '')
         
+        lux_agent = get_lux_agent()
         subject_lines = lux_agent.generate_subject_lines(campaign_type, audience)
         
         return jsonify({'success': True, 'subject_lines': subject_lines})
@@ -4834,8 +4835,7 @@ def ai_generate_newsletter():
         if not title:
             return jsonify({'success': False, 'message': 'Title required'}), 400
         
-        from ai_agent import LUXAgent
-        lux_agent = LUXAgent()
+        lux_agent = get_lux_agent()
         
         system_prompt = """Generate a professional newsletter HTML content. Include:
 - A header section with the title
@@ -6463,6 +6463,41 @@ def health_check():
         payload["db_error"] = db_error[:200]
     return jsonify(payload), 200 if db_ok else 500
 
+
+def _feature_config_summary():
+    return {
+        "openai": bool(os.getenv("OPENAI_API_KEY")),
+        "replit_auth": bool(os.getenv("REPL_ID")),
+        "tiktok": bool(os.getenv("TIKTOK_CLIENT_KEY") and os.getenv("TIKTOK_CLIENT_SECRET")),
+        "microsoft_graph": bool(
+            os.getenv("MS_CLIENT_ID")
+            and os.getenv("MS_CLIENT_SECRET")
+            and os.getenv("MS_TENANT_ID")
+        ),
+        "twilio": bool(
+            os.getenv("TWILIO_ACCOUNT_SID")
+            and os.getenv("TWILIO_AUTH_TOKEN")
+            and os.getenv("TWILIO_PHONE_NUMBER")
+        ),
+        "stripe": bool(os.getenv("STRIPE_SECRET_KEY")),
+        "woocommerce": bool(
+            os.getenv("WC_STORE_URL")
+            and os.getenv("WC_CONSUMER_KEY")
+            and os.getenv("WC_CONSUMER_SECRET")
+        ),
+        "ga4": bool(os.getenv("GA4_PROPERTY_ID")),
+    }
+
+
+@main_bp.route('/health/config')
+def health_config():
+    """Configuration summary for optional features (no secrets)."""
+    return jsonify({
+        "status": "ok",
+        "features": _feature_config_summary(),
+        "timestamp": datetime.utcnow().isoformat(),
+    })
+
 @main_bp.route('/health/deep')
 def health_check_deep():
     """Deep health check (admin only)"""
@@ -6694,8 +6729,7 @@ def ai_generate_landing_page():
         if not prompt:
             return jsonify({'success': False, 'message': 'Please provide a description'}), 400
         
-        from ai_agent import LUXAgent
-        lux_agent = LUXAgent()
+        lux_agent = get_lux_agent()
         
         system_prompt = f"""You are a landing page HTML generator. Create a responsive, Bootstrap 5 landing page based on the user's description.
         
@@ -6923,7 +6957,7 @@ def chatbot_send_with_auto_fix():
         api_key = os.environ.get('OPENAI_API_KEY') or os.getenv('OPENAI_API_KEY')
         if not api_key:
             error_msg = 'OpenAI API key not configured in environment'
-            logger.error(error_msg)
+            logger.warning("OpenAI features disabled: missing OPENAI_API_KEY.")
             log_application_error(
                 error_type='ConfigurationError',
                 error_message=error_msg,
@@ -7167,6 +7201,7 @@ def generate_content():
         # Get API key
         api_key = os.getenv('OPENAI_API_KEY') or os.getenv('OPENAI_API_BOUTIQUELUX')
         if not api_key:
+            logger.warning("OpenAI content generation disabled: missing API key.")
             return jsonify({'error': 'OpenAI API key not configured'}), 500
         
         openai.api_key = api_key
@@ -8865,6 +8900,7 @@ def generate_blog_content():
         if not topic:
             return jsonify({'success': False, 'error': 'Topic is required'}), 400
         
+        lux_agent = get_lux_agent()
         result = lux_agent.generate_blog_post(topic, keywords, tone)
         
         if result:
@@ -9474,6 +9510,7 @@ def api_agent_chat():
         
         api_key = os.environ.get("OPENAI_API_KEY")
         if not api_key:
+            logger.warning("Agent chat disabled: missing OPENAI_API_KEY.")
             return jsonify({'success': True, 'response': "I'm sorry, but I can't process your request right now. Please ensure the OpenAI API key is configured."})
         
         client = OpenAI(api_key=api_key)
@@ -9611,6 +9648,7 @@ def get_agent_suggestions(agent_type):
         
         api_key = os.environ.get("OPENAI_API_KEY")
         if not api_key:
+            logger.warning("Agent suggestions disabled: missing OPENAI_API_KEY.")
             return jsonify({'success': True, 'suggestions': []})
         
         client = OpenAI(api_key=api_key)

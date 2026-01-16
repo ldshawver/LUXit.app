@@ -6,10 +6,7 @@ import importlib.util
 from uuid import uuid4
 
 from flask import Flask, redirect, url_for, request, g, has_request_context
-from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager
-from flask_wtf.csrf import CSRFProtect
-from sqlalchemy.orm import DeclarativeBase
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 
@@ -66,14 +63,7 @@ root_logger.addFilter(RedactionFilter())
 
 
 # ============================================================
-# Database base
-# ============================================================
-
-class Base(DeclarativeBase):
-    pass
-
-
-db = SQLAlchemy(model_class=Base)
+from extensions import db, csrf
 
 
 # ============================================================
@@ -158,7 +148,7 @@ app.config["WTF_CSRF_FIELD_NAME"] = "csrf_token"
 app.config["WTF_CSRF_TIME_LIMIT"] = None
 app.config["WTF_CSRF_SSL_STRICT"] = False
 
-csrf = CSRFProtect(app)
+csrf.init_app(app)
 
 # Session cookies (iframe + OAuth safe)
 app.config["SESSION_COOKIE_SAMESITE"] = "None"
@@ -296,6 +286,31 @@ except Exception as e:
 # ============================================================
 # Request lifecycle helpers
 # ============================================================
+
+def _log_startup_feature_summary():
+    logger = logging.getLogger(__name__)
+    feature_flags = {
+        "openai": bool(os.getenv("OPENAI_API_KEY")),
+        "replit_auth": bool(os.getenv("REPL_ID")),
+        "tiktok": bool(os.getenv("TIKTOK_CLIENT_KEY") and os.getenv("TIKTOK_CLIENT_SECRET")),
+        "microsoft_graph": bool(os.getenv("MS_CLIENT_ID") and os.getenv("MS_CLIENT_SECRET") and os.getenv("MS_TENANT_ID")),
+        "twilio": bool(
+            os.getenv("TWILIO_ACCOUNT_SID")
+            and os.getenv("TWILIO_AUTH_TOKEN")
+            and os.getenv("TWILIO_PHONE_NUMBER")
+        ),
+        "stripe": bool(os.getenv("STRIPE_SECRET_KEY")),
+        "woocommerce": bool(
+            os.getenv("WC_STORE_URL")
+            and os.getenv("WC_CONSUMER_KEY")
+            and os.getenv("WC_CONSUMER_SECRET")
+        ),
+        "ga4": bool(os.getenv("GA4_PROPERTY_ID")),
+    }
+    logger.info("Startup feature summary: %s", feature_flags)
+
+
+_log_startup_feature_summary()
 
 @app.route("/")
 def index():
