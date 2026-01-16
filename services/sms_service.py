@@ -52,7 +52,7 @@ class SMSService:
     @staticmethod
     def create_campaign(name, message, scheduled_at=None):
         """Create a new SMS campaign"""
-        from app import db
+        from extensions import db
         from models import SMSCampaign
         
         status = 'scheduled' if scheduled_at else 'draft'
@@ -70,7 +70,7 @@ class SMSService:
     @staticmethod
     def add_recipients(campaign_id, contact_ids):
         """Add recipients to a campaign"""
-        from app import db
+        from extensions import db
         from models import SMSRecipient, Contact
         
         for contact_id in contact_ids:
@@ -88,7 +88,7 @@ class SMSService:
     @staticmethod
     def create_template(name, message, category='promotional', tone='professional'):
         """Create a reusable SMS template"""
-        from app import db
+        from extensions import db
         from models import SMSTemplate
         
         template = SMSTemplate(
@@ -140,7 +140,7 @@ class SMSService:
     @classmethod
     def send_campaign(cls, campaign_id):
         """Send SMS campaign to all recipients"""
-        from app import db
+        from extensions import db
         from models import SMSCampaign, SMSRecipient
         
         campaign = SMSCampaign.query.get(campaign_id)

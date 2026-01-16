@@ -6,10 +6,7 @@ import importlib.util
 from uuid import uuid4
 
 from flask import Flask, redirect, url_for, request, g, has_request_context
-from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager
-from flask_wtf.csrf import CSRFProtect
-from sqlalchemy.orm import DeclarativeBase
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 
@@ -66,14 +63,7 @@ root_logger.addFilter(RedactionFilter())
 
 
 # ============================================================
-# Database base
-# ============================================================
-
-class Base(DeclarativeBase):
-    pass
-
-
-db = SQLAlchemy(model_class=Base)
+from extensions import db, csrf
 
 
 # ============================================================
@@ -158,7 +148,7 @@ app.config["WTF_CSRF_FIELD_NAME"] = "csrf_token"
 app.config["WTF_CSRF_TIME_LIMIT"] = None
 app.config["WTF_CSRF_SSL_STRICT"] = False
 
-csrf = CSRFProtect(app)
+csrf.init_app(app)
 
 # Session cookies (iframe + OAuth safe)
 app.config["SESSION_COOKIE_SAMESITE"] = "None"

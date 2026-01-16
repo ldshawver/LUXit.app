@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 from flask import Blueprint, render_template, request, flash, redirect, url_for, jsonify, make_response, send_file, current_app, g
 from flask_login import login_required, current_user
 from sqlalchemy import or_, case, text
-from app import db, csrf
+from extensions import db, csrf
 from models import (Contact, Campaign, EmailTemplate, CampaignRecipient, EmailTracking, 
                     BrandKit, EmailComponent, Poll, PollResponse, ABTest, Automation, 
                     AutomationStep, SMSCampaign, SMSRecipient, SMSTemplate, SocialPost, Segment, 
@@ -2565,7 +2565,7 @@ def test_email():
 def lux_generate_image():
     """LUX AI agent - Generate campaign images with DALL-E"""
     # Exempt from CSRF for JSON API
-    from app import csrf
+    from extensions import csrf
     csrf.exempt(lux_generate_image)
     
     try:
@@ -2601,7 +2601,7 @@ def lux_generate_image():
 def lux_product_campaign():
     """LUX AI agent - Create WooCommerce product campaign"""
     # Exempt from CSRF for JSON API
-    from app import csrf
+    from extensions import csrf
     csrf.exempt(lux_product_campaign)
     
     try:

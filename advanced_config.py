@@ -4,7 +4,7 @@ Handles company-specific integration configurations
 """
 from flask import Blueprint, render_template, request, jsonify, flash, redirect, url_for
 from flask_login import login_required, current_user
-from app import db, csrf
+from extensions import db, csrf
 from models import CompanyIntegrationConfig, IntegrationAuditLog
 from services.secret_vault import vault
 from services.integration_registry import registry

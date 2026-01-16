@@ -10,7 +10,7 @@ from datetime import datetime
 from flask import Blueprint, redirect, request, url_for, flash, jsonify, session
 from flask_login import login_required, current_user
 
-from app import db
+from extensions import db
 from models import TikTokOAuth, Company
 from services.tiktok_service import TikTokService
 
