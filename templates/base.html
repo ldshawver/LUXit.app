@@ -6,545 +6,105 @@
     <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>{% block title %}LUX Marketing{% endblock %}</title>
 
-    <!-- Favicon -->
     <link rel="icon" type="image/png" href="{{ url_for('static', filename='favicon.png') }}">
-
-    <!-- Bootstrap CSS -->
     <link href="https://cdn.replit.com/agent/bootstrap-agent-dark-theme.min.css" rel="stylesheet">
-
-    <!-- Feather Icons -->
     <script src="https://unpkg.com/feather-icons"></script>
-
-    <!-- Chart.js for Analytics -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-
-    <!-- Custom CSS -->
     <link rel="stylesheet" href="{{ url_for('static', filename='css/custom.css') }}">
-
-    <style>
-      body {
-        background: #000000 !important;
-        color: #ffffff;
-      }
-
-      .lux-header {
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        padding: 0;
-        background: rgba(0, 0, 0, 0.6);
-        backdrop-filter: blur(8px);
-        -webkit-backdrop-filter: blur(8px);
-        position: relative;
-        z-index: 10;
-      }
-
-      .lux-header-inner {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        width: 100%;
-        max-width: 66.666%;
-        margin: 0 auto;
-        padding: 1rem;
-        background: transparent;
-        position: relative;
-      }
-
-      .nav-arrows {
-        display: flex;
-        gap: 0.5rem;
-        align-items: center;
-      }
-
-      .nav-arrow {
-        background: transparent;
-        border: none;
-        color: #00ffb4;
-        width: 40px;
-        height: 40px;
-        border-radius: 8px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        cursor: pointer;
-      }
-
-      .lux-logo {
-        height: 40px;
-        width: auto;
-        cursor: pointer;
-      }
-
-      .header-center {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        gap: 0.25rem;
-      }
-
-      .header-right {
-        display: flex;
-        align-items: center;
-        gap: 1rem;
-      }
-
-      .settings-btn {
-        padding: 0;
-        border: none;
-      }
-
-      .settings-icon {
-        color: #00ffb4;
-        width: 28px;
-        height: 28px;
-        cursor: pointer;
-        transition: all 0.3s ease;
-      }
-
-      .settings-icon:hover {
-        color: #e4055c;
-        transform: rotate(90deg);
-      }
-    </style>
 </head>
 <body>
-    <div class="lux-header">
-      <div class="lux-header-inner">
-        <div class="nav-arrows">
-          <button class="nav-arrow" onclick="goBack()">
-            <i data-feather="arrow-left"></i>
-          </button>
-          <a href="{{ url_for('main.dashboard') }}">
-            <img src="{{ url_for('static', filename='lux_logo.png') }}" alt="LUX Marketing" class="lux-logo" style="height: 40px; margin: 0 0.5rem;">
-          </a>
-          <button class="nav-arrow" onclick="goForward()">
-            <i data-feather="arrow-right"></i>
-          </button>
-        </div>
+    <div class="app-shell">
+        <header class="app-header">
+            <div class="app-header-inner">
+                <div class="brand">
+                    <a href="{{ url_for('main.dashboard') }}" aria-label="LUX Marketing dashboard">
+                        <img src="{{ url_for('static', filename='lux_logo.png') }}" alt="LUX Marketing">
+                    </a>
+                    <span>LUX Marketing</span>
+                </div>
 
-        <div class="header-center">
-        <h1 style="font-size: 1.1rem; font-weight: 500; margin: 0;">
-          {% block page_header %}
-            {% if current_user.is_authenticated %}
-              {% set header_company = current_user.get_default_company() %}
-              {% set user_name = (current_user.first_name or current_user.username) %}
-              <span style="color: #00ffb4;">{{ user_name[0]|upper }}{{ user_name[1:] }}</span>
-              <span style="color: #bc00ed;"> Marketing Wizard of </span>
-              <span style="color: #00ffb4;">{{ header_company.name if header_company else 'Your Company' }}</span>
-            {% endif %}
-          {% endblock %}
-        </h1>
-      </div>
+                <div class="header-title">
+                    <h1>
+                        {% block page_header %}
+                        {% if current_user.is_authenticated %}
+                            {% set header_company = current_user.get_default_company() %}
+                            {% set user_name = (current_user.first_name or current_user.username) %}
+                            Welcome back, {{ user_name[0]|upper }}{{ user_name[1:] }}
+                        {% else %}
+                            Welcome to LUX Marketing
+                        {% endif %}
+                        {% endblock %}
+                    </h1>
+                    <p>
+                        {% if current_user.is_authenticated %}
+                            {% if header_company %}{{ header_company.name }} workspace{% else %}Your workspace{% endif %}
+                        {% else %}
+                            AI-powered growth command center
+                        {% endif %}
+                    </p>
+                </div>
 
-      {% if current_user.is_authenticated %}
-      <div class="header-right">
-        <div class="dropdown">
-          <button class="btn btn-link settings-btn" type="button" id="settingsDropdown" data-bs-toggle="dropdown" aria-expanded="false">
-            <i data-feather="settings" class="settings-icon"></i>
-          </button>
-          <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="settingsDropdown">
-            <li><a class="dropdown-item" href="{{ url_for('user.profile') }}"><i data-feather="user"></i> Profile</a></li>
-            <li><a class="dropdown-item" href="{{ url_for('user.change_password') }}"><i data-feather="lock"></i> Change Password</a></li>
-            <li><hr class="dropdown-divider"></li>
-            <li><h6 class="dropdown-header">AI & Tools</h6></li>
-            <li><a class="dropdown-item" href="{{ url_for('main.ai_dashboard') }}"><i data-feather="cpu"></i> LUX AI Dashboard</a></li>
-            <li><a class="dropdown-item" href="{{ url_for('main.agents_hub') }}"><i data-feather="users"></i> AI Agents Hub</a></li>
-            <li><a class="dropdown-item" href="{{ url_for('main.analytics_hub') }}"><i data-feather="bar-chart-2"></i> Analytics Hub</a></li>
-            <li><hr class="dropdown-divider"></li>
-            <li><h6 class="dropdown-header">Companies</h6></li>
-            {% for company in current_user.companies %}
-            <li><a class="dropdown-item" href="#" onclick="selectCompany({{ company.id }})">
-              <i data-feather="briefcase"></i> {{ company.name }}
-              {% if current_user.get_default_company() and company.id == current_user.get_default_company().id %}
-              <span class="badge bg-success">Current</span>
-              {% endif %}
-            </a></li>
-            {% endfor %}
-            <li><hr class="dropdown-divider"></li>
-            <li><a class="dropdown-item" href="{{ url_for('main.companies_list') }}"><i data-feather="edit"></i> Manage Companies</a></li>
-            <li><a class="dropdown-item" href="{{ url_for('main.add_company') }}"><i data-feather="plus"></i> Add Company</a></li>
-            <li><hr class="dropdown-divider"></li>
-            <li><a class="dropdown-item text-danger" href="{{ url_for('auth.logout') }}"><i data-feather="log-out"></i> Sign Out</a></li>
-          </ul>
-        </div>
-
-        {% set current_company = current_user.get_default_company() %}
-        {% if current_company and current_company.logo_path %}
-        <img src="{{ url_for('static', filename=current_company.logo_path) }}" alt="{{ current_company.name }}" class="company-logo" style="height: 40px; width: auto; border-radius: 8px;">
-        {% elif current_company %}
-        <img src="{{ url_for('static', filename='lux_logo.png') }}" alt="{{ current_company.name }}" class="company-logo" style="height: 40px; width: auto; border-radius: 8px;">
-        {% endif %}
-      </div>
-      {% endif %}
-      </div>
-    </div>
-
-    <main class="container mt-4" style="background: transparent; min-height: calc(100vh - 160px); max-width: 66.666%; margin-left: auto; margin-right: auto;">
-        {% with messages = get_flashed_messages(with_categories=true) %}
-            {% if messages %}
-                {% for category, message in messages %}
-                    <div class="alert alert-{{ 'danger' if category == 'error' else category }} alert-dismissible fade show" role="alert">
-                        {{ message }}
-                        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                {% if current_user.is_authenticated %}
+                <div class="header-actions">
+                    <span class="glass-pill">{{ current_user.email }}</span>
+                    <div class="dropdown">
+                        <button class="btn btn-link p-0" type="button" id="settingsDropdown" data-bs-toggle="dropdown" aria-expanded="false">
+                            <span class="btn-lux btn-lux-primary">Settings</span>
+                        </button>
+                        <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="settingsDropdown">
+                            <li><a class="dropdown-item" href="{{ url_for('user.profile') }}"><i data-feather="user"></i> Profile</a></li>
+                            <li><a class="dropdown-item" href="{{ url_for('user.change_password') }}"><i data-feather="lock"></i> Change Password</a></li>
+                            <li><hr class="dropdown-divider"></li>
+                            <li><h6 class="dropdown-header">AI & Tools</h6></li>
+                            <li><a class="dropdown-item" href="{{ url_for('main.ai_dashboard') }}"><i data-feather="cpu"></i> LUX AI Dashboard</a></li>
+                            <li><a class="dropdown-item" href="{{ url_for('main.agents_hub') }}"><i data-feather="users"></i> AI Agents Hub</a></li>
+                            <li><a class="dropdown-item" href="{{ url_for('main.analytics_hub') }}"><i data-feather="bar-chart-2"></i> Analytics Hub</a></li>
+                            <li><hr class="dropdown-divider"></li>
+                            <li><h6 class="dropdown-header">Companies</h6></li>
+                            {% for company in current_user.companies %}
+                            <li><a class="dropdown-item" href="#" onclick="selectCompany({{ company.id }})">
+                                <i data-feather="briefcase"></i> {{ company.name }}
+                                {% if current_user.get_default_company() and company.id == current_user.get_default_company().id %}
+                                <span class="badge bg-success">Current</span>
+                                {% endif %}
+                            </a></li>
+                            {% endfor %}
+                            <li><hr class="dropdown-divider"></li>
+                            <li><a class="dropdown-item" href="{{ url_for('main.companies_list') }}"><i data-feather="edit"></i> Manage Companies</a></li>
+                            <li><a class="dropdown-item" href="{{ url_for('main.add_company') }}"><i data-feather="plus"></i> Add Company</a></li>
+                            <li><hr class="dropdown-divider"></li>
+                            <li><a class="dropdown-item text-danger" href="{{ url_for('auth.logout') }}"><i data-feather="log-out"></i> Sign Out</a></li>
+                        </ul>
                     </div>
-                {% endfor %}
-            {% endif %}
-        {% endwith %}
+                    {% set current_company = current_user.get_default_company() %}
+                    {% if current_company and current_company.logo_path %}
+                    <img src="{{ url_for('static', filename=current_company.logo_path) }}" alt="{{ current_company.name }}" class="rounded-3" style="height: 44px; width: auto;">
+                    {% elif current_company %}
+                    <img src="{{ url_for('static', filename='lux_logo.png') }}" alt="{{ current_company.name }}" class="rounded-3" style="height: 44px; width: auto;">
+                    {% endif %}
+                </div>
+                {% endif %}
+            </div>
+        </header>
 
-        {% block content %}{% endblock %}
-    </main>
+        <main class="container py-4">
+            {% with messages = get_flashed_messages(with_categories=true) %}
+                {% if messages %}
+                    {% for category, message in messages %}
+                        <div class="alert alert-{{ 'danger' if category == 'error' else category }} alert-dismissible fade show" role="alert">
+                            {{ message }}
+                            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                        </div>
+                    {% endfor %}
+                {% endif %}
+            {% endwith %}
 
-    <!-- Bootstrap JS -->
+            {% block content %}{% endblock %}
+        </main>
+    </div>
+
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-
-    <!-- Custom JS -->
-    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
-
-    <script>
-        // Initialize Feather icons
-        feather.replace();
-
-        // Navigation functions
-        function goBack() {
-          window.history.back();
-        }
-
-        function goForward() {
-          window.history.forward();
-        }
-
-        // Company switching
-        function selectCompany(companyId) {
-          fetch(`/companies/switch/${companyId}`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json'
-            }
-          })
-          .then(response => response.json())
-          .then(data => {
-            if (data.success) {
-              location.reload();
-            } else {
-              alert('Failed to switch company');
-            }
-          })
-          .catch(error => {
-            console.error('Error:', error);
-            alert('An error occurred while switching companies');
-          });
-        }
-    </script>
-
-    {% block scripts %}{% endblock %}
-
-    <!-- AI Chatbot Floating Widget -->
-    <style>
-      .chatbot-float-button {
-        position: fixed;
-        bottom: 30px;
-        right: calc(16.666% + 30px);
-        width: 70px;
-        height: 70px;
-        border-radius: 50%;
-        background: transparent;
-        border: none;
-        cursor: pointer;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        box-shadow: 0 4px 20px rgba(188, 0, 237, 0.6);
-        z-index: 9998;
-        transition: all 0.3s ease;
-        animation: pulse 2s infinite;
-      }
-
-      @keyframes pulse {
-        0%, 100% {
-          box-shadow: 0 4px 20px rgba(188, 0, 237, 0.6);
-        }
-        50% {
-          box-shadow: 0 6px 30px rgba(188, 0, 237, 0.9);
-        }
-      }
-
-      .chatbot-float-button:hover {
-        transform: scale(1.1);
-        box-shadow: 0 8px 40px rgba(188, 0, 237, 1);
-      }
-
-      .chatbot-float-button img {
-        width: 100%;
-        height: 100%;
-        object-fit: cover;
-      }
-
-      .chatbot-container {
-        position: fixed;
-        bottom: 120px;
-        right: calc(16.666% + 30px);
-        width: 400px;
-        height: 600px;
-        display: none;
-        flex-direction: column;
-        background: #000000;
-        border: 2px solid #bc00ed;
-        border-radius: 12px;
-        box-shadow: 0 8px 40px rgba(0, 0, 0, 0.8);
-        z-index: 9999;
-        overflow: hidden;
-      }
-
-      .chatbot-container.active {
-        display: flex;
-        animation: slideUp 0.3s ease;
-      }
-
-      @keyframes slideUp {
-        from {
-          opacity: 0;
-          transform: translateY(20px);
-        }
-        to {
-          opacity: 1;
-          transform: translateY(0);
-        }
-      }
-
-      .chatbot-header {
-        padding: 1.5rem 1rem;
-        background: transparent;
-        border-bottom: 2px solid #00ffb4;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        text-align: center;
-        position: relative;
-      }
-
-      .chatbot-close {
-        position: absolute;
-        top: 10px;
-        right: 10px;
-        background: none;
-        border: none;
-        color: #c0c0c0;
-        font-size: 1.5rem;
-        cursor: pointer;
-        padding: 5px;
-        line-height: 1;
-      }
-
-      .chatbot-close:hover {
-        color: #00ffb4;
-      }
-
-      .chatbot-header-gif {
-        width: 120px;
-        height: auto;
-        margin-bottom: 1rem;
-      }
-
-      .chatbot-header-text {
-        text-align: center;
-      }
-
-      .chatbot-header h1 {
-        color: #00ffb4;
-        font-size: 1.5rem;
-        margin: 0;
-        font-weight: 600;
-      }
-
-      .chatbot-header h2 {
-        color: #bc00ed;
-        font-size: 0.9rem;
-        margin: 0.3rem 0 0;
-        font-weight: 400;
-      }
-
-      .chat-messages {
-        flex: 1;
-        overflow-y: auto;
-        padding: 1rem;
-        background: #000000;
-      }
-
-      .message {
-        margin-bottom: 1rem;
-        display: flex;
-        gap: 0.75rem;
-      }
-
-      .message.user {
-        flex-direction: row-reverse;
-      }
-
-      .message-content {
-        max-width: 75%;
-        padding: 0.75rem 1rem;
-        border-radius: 12px;
-        line-height: 1.5;
-      }
-
-      .message.user .message-content {
-        background: linear-gradient(135deg, #00ffb4, #004845);
-        color: #000;
-      }
-
-      .message.bot .message-content {
-        background: linear-gradient(135deg, #480749, #bc00ed);
-        color: #fff;
-        border: 1px solid #bc00ed;
-      }
-
-      .chat-input-container {
-        padding: 1rem;
-        background: #000000;
-        border-top: 2px solid #bc00ed;
-      }
-
-      .chat-input-wrapper {
-        display: flex;
-        gap: 0.5rem;
-      }
-
-      .chat-input {
-        flex: 1;
-        padding: 0.75rem 1rem;
-        background: #0a0a0a;
-        border: 1px solid #bc00ed;
-        border-radius: 20px;
-        color: #fff;
-        outline: none;
-      }
-
-      .chat-input:focus {
-        border-color: #00ffb4;
-        box-shadow: 0 0 10px rgba(0, 255, 180, 0.3);
-      }
-
-      .chat-send-btn {
-        padding: 0.75rem 1.5rem;
-        background: linear-gradient(135deg, #bc00ed, #0044ff);
-        border: none;
-        border-radius: 20px;
-        color: #fff;
-        cursor: pointer;
-        transition: all 0.3s ease;
-      }
-
-      .chat-send-btn:hover {
-        transform: scale(1.05);
-      }
-    </style>
-
-    <!-- Floating Chat Button -->
-    <div class="chatbot-float-button" onclick="toggleChatbot()">
-      <img src="{{ url_for('static', filename='lux-ai-assistant.gif') }}" alt="LUX AI">
-    </div>
-
-    <!-- Floating Chat Window -->
-    <div class="chatbot-container" id="chatbotContainer">
-      <div class="chatbot-header">
-        <button class="chatbot-close" onclick="toggleChatbot()">&times;</button>
-        <img src="{{ url_for('static', filename='lux-ai-assistant.gif') }}" alt="LUX AI" class="chatbot-header-gif">
-        <div class="chatbot-header-text">
-          <h2>Your <span style="color: #00ffb4;">AI</span> assistant</h2>
-        </div>
-      </div>
-
-      <div class="chat-messages" id="chatMessages">
-        <div class="message bot">
-          <div class="message-content">
-            👋 Hello! I'm your LUX AI Assistant. I can help you with marketing campaigns, content creation, analytics, and more. What can I help you with today?
-          </div>
-        </div>
-      </div>
-
-      <div class="chat-input-container">
-        <div class="chat-input-wrapper">
-          <input 
-            type="text" 
-            class="chat-input" 
-            id="chatInput" 
-            placeholder="Type your message..."
-            onkeypress="if(event.key==='Enter') sendChatMessage()"
-          >
-          <button class="chat-send-btn" onclick="sendChatMessage()">
-            <i data-feather="send"></i>
-          </button>
-        </div>
-      </div>
-    </div>
-
-    <script>
-      function toggleChatbot() {
-        const container = document.getElementById('chatbotContainer');
-        container.classList.toggle('active');
-        if (container.classList.contains('active')) {
-          document.getElementById('chatInput').focus();
-        }
-        feather.replace();
-      }
-
-      function addChatMessage(content, isUser) {
-        const messagesDiv = document.getElementById('chatMessages');
-        const messageDiv = document.createElement('div');
-        messageDiv.className = `message ${isUser ? 'user' : 'bot'}`;
-
-        const contentDiv = document.createElement('div');
-        contentDiv.className = 'message-content';
-        contentDiv.textContent = content;
-
-        messageDiv.appendChild(contentDiv);
-        messagesDiv.appendChild(messageDiv);
-        messagesDiv.scrollTop = messagesDiv.scrollHeight;
-      }
-
-      async function sendChatMessage() {
-        const input = document.getElementById('chatInput');
-        const message = input.value.trim();
-
-        if (!message) return;
-
-        addChatMessage(message, true);
-        input.value = '';
-
-        try {
-          const response = await fetch('/chatbot/send', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ message: message })
-          });
-
-          const data = await response.json();
-
-          if (response.ok) {
-            addChatMessage(data.response, false);
-          } else {
-            addChatMessage('Sorry, I encountered an error. Please try again.', false);
-          }
-        } catch (error) {
-          addChatMessage('Sorry, I could not connect to the server. Please try again.', false);
-        }
-      }
-    </script>
-
-    <!-- TikTok Pixel -->
-    {% if tiktok_pixel_id %}
-    <script>
-      !function (w, d, t) {
-        w.TiktokAnalyticsObject=t;var ttq=w[t]=w[t]||[];ttq.methods=["page","track","identify","instances","debug","on","off","once","ready","alias","group","enableCookie","disableCookie"],ttq.setAndDefer=function(t,e){t[e]=function(){t.push([e].concat(Array.prototype.slice.call(arguments,0)))}};for(var i=0;i<ttq.methods.length;i++)ttq.setAndDefer(ttq,ttq.methods[i]);ttq.instance=function(t){for(var e=ttq._i[t]||[],n=0;n<ttq.methods.length;n++)ttq.setAndDefer(e,ttq.methods[n]);return e},ttq.load=function(e,n){var i="https://analytics.tiktok.com/i18n/pixel/events.js";ttq._i=ttq._i||{},ttq._i[e]=[],ttq._i[e]._u=i,ttq._t=ttq._t||{},ttq._t[e]=+new Date,ttq._o=ttq._o||{},ttq._o[e]=n||{};var o=document.createElement("script");o.type="text/javascript",o.async=!0,o.src=i+"?sdkid="+e+"&lib="+t;var a=document.getElementsByTagName("script")[0];a.parentNode.insertBefore(o,a)};
-        ttq.load('{{ tiktok_pixel_id }}');
-        ttq.page();
-        console.log('TikTok Pixel initialized: {{ tiktok_pixel_id }}');
-      }(window, document, 'ttq');
-    </script>
-    {% endif %}
+    <script src="{{ url_for('static', filename='js/ui.js') }}"></script>
+    <script>feather.replace();</script>
 </body>
 </html>
