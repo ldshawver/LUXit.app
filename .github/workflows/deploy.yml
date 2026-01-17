@@ -8,6 +8,7 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    environment: production   # 🔴 THIS WAS MISSING
 
     steps:
       - name: Checkout code
@@ -19,24 +20,10 @@ jobs:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
-          port: 22
           script: |
-            set -e
-
-            echo "Deploying LUX Marketing to /opt/lux-marketing"
-
             cd /opt/lux-marketing
-
             git fetch --all
             git reset --hard origin/main
-
-            if [ -d "venv" ]; then
-              source venv/bin/activate
-              if [ -f "requirements.txt" ]; then
-                pip install -r requirements.txt
-              fi
-            fi
-
+            source venv/bin/activate
+            pip install -r requirements.txt
             systemctl restart lux.service
-
-            echo "Deployment complete"
