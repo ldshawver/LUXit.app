@@ -3,7 +3,7 @@ name: Deploy to VPS
 on:
   push:
     branches:
-      - main    # deploy when main is updated
+      - main
 
 jobs:
   deploy:
@@ -19,15 +19,24 @@ jobs:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
+          port: 22
           script: |
-            cd /var/www/lux
+            set -e
+
+            echo "Deploying LUX Marketing to /opt/lux-marketing"
+
+            cd /opt/lux-marketing
+
             git fetch --all
             git reset --hard origin/main
-            # if you have a venv and requirements.txt:
+
             if [ -d "venv" ]; then
               source venv/bin/activate
               if [ -f "requirements.txt" ]; then
                 pip install -r requirements.txt
               fi
             fi
-            systemctl restart lux
+
+            systemctl restart lux.service
+
+            echo "Deployment complete"
