@@ -3,11 +3,12 @@ name: Deploy to VPS
 on:
   push:
     branches:
-      - main    # deploy when main is updated
+      - main
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    environment: production   # 🔴 THIS WAS MISSING
 
     steps:
       - name: Checkout code
@@ -20,14 +21,9 @@ jobs:
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
           script: |
-            cd /var/www/lux
+            cd /opt/lux-marketing
             git fetch --all
             git reset --hard origin/main
-            # if you have a venv and requirements.txt:
-            if [ -d "venv" ]; then
-              source venv/bin/activate
-              if [ -f "requirements.txt" ]; then
-                pip install -r requirements.txt
-              fi
-            fi
-            systemctl restart lux
+            source venv/bin/activate
+            pip install -r requirements.txt
+            systemctl restart lux.service
