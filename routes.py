@@ -2496,6 +2496,7 @@ def lux_agent_dashboard():
     
     return render_template('lux_agent.html', recent_campaigns=recent_campaigns)
 
+<<<<<<< HEAD
 @main_bp.route('/test-email', methods=['GET', 'POST'])
 @login_required
 def test_email():
@@ -2560,16 +2561,23 @@ def test_email():
     
     return render_template('test_email.html')
 
+=======
+>>>>>>> 579344a (Stabilize LUX Marketing app, clean deployment, fix env + scheduler, add gitignore and requirements)
 @main_bp.route('/lux/generate-image', methods=['POST'])
 @login_required
 def lux_generate_image():
     """LUX AI agent - Generate campaign images with DALL-E"""
+<<<<<<< HEAD
     # Exempt from CSRF for JSON API
     from extensions import csrf
     csrf.exempt(lux_generate_image)
     
     try:
         lux_agent = get_lux_agent()
+=======
+    try:
+        from ai_agent import lux_agent
+>>>>>>> 579344a (Stabilize LUX Marketing app, clean deployment, fix env + scheduler, add gitignore and requirements)
         
         data = request.get_json() or {}
         description = data.get('description', 'Professional marketing campaign')
@@ -2600,6 +2608,7 @@ def lux_generate_image():
 @login_required
 def lux_product_campaign():
     """LUX AI agent - Create WooCommerce product campaign"""
+<<<<<<< HEAD
     # Exempt from CSRF for JSON API
     from extensions import csrf
     csrf.exempt(lux_product_campaign)
@@ -2616,6 +2625,10 @@ def lux_product_campaign():
                     del sys.modules[mod]
         
         lux_agent = get_lux_agent()
+=======
+    try:
+        from ai_agent import lux_agent
+>>>>>>> 579344a (Stabilize LUX Marketing app, clean deployment, fix env + scheduler, add gitignore and requirements)
         
         data = request.get_json() or {}
         
@@ -2647,28 +2660,52 @@ def lux_product_campaign():
         
         if result:
             # Create email template with product content
+<<<<<<< HEAD
             template = EmailTemplate()
             template.name = f"LUX Product Campaign - {result['campaign_name']}"
             template.subject = result['subject']
             template.html_content = result['html_content']
+=======
+            template = EmailTemplate(
+                name=f"LUX Product Campaign - {result['campaign_name']}",
+                subject=result['subject'],
+                html_content=result['html_content']
+            )
+>>>>>>> 579344a (Stabilize LUX Marketing app, clean deployment, fix env + scheduler, add gitignore and requirements)
             db.session.add(template)
             db.session.flush()
             
             # Create campaign
+<<<<<<< HEAD
             campaign = Campaign()
             campaign.name = result['campaign_name']
             campaign.subject = result['subject']
             campaign.template_id = template.id
             campaign.status = 'draft'
+=======
+            campaign = Campaign(
+                name=result['campaign_name'],
+                subject=result['subject'],
+                template_id=template.id,
+                status='draft'
+            )
+>>>>>>> 579344a (Stabilize LUX Marketing app, clean deployment, fix env + scheduler, add gitignore and requirements)
             db.session.add(campaign)
             db.session.flush()
             
             # Add recipients
             contacts = Contact.query.filter_by(is_active=True).all()
             for contact in contacts:
+<<<<<<< HEAD
                 recipient = CampaignRecipient()
                 recipient.campaign_id = campaign.id
                 recipient.contact_id = contact.id
+=======
+                recipient = CampaignRecipient(
+                    campaign_id=campaign.id,
+                    contact_id=contact.id
+                )
+>>>>>>> 579344a (Stabilize LUX Marketing app, clean deployment, fix env + scheduler, add gitignore and requirements)
                 db.session.add(recipient)
             
             db.session.commit()
@@ -2704,7 +2741,11 @@ def lux_product_campaign():
 def lux_test_woocommerce():
     """Test WooCommerce API connection"""
     try:
+<<<<<<< HEAD
         lux_agent = get_lux_agent()
+=======
+        from ai_agent import lux_agent
+>>>>>>> 579344a (Stabilize LUX Marketing app, clean deployment, fix env + scheduler, add gitignore and requirements)
         
         data = request.get_json() or {}
         
@@ -2729,6 +2770,7 @@ def lux_test_woocommerce():
             }), 400
             
     except Exception as e:
+<<<<<<< HEAD
         error_msg = str(e)
         logger.error(f"WooCommerce test error: {e}")
         
@@ -10150,3 +10192,10 @@ print("  - GET/POST /api/approval-queue (Queue management)")
 print("  - POST /api/approval-queue/<id>/approve|reject|edit|cancel")
 print("  - GET/PATCH /api/feature-toggles")
 print("  - POST /api/feature-toggles/emergency-stop|resume-all")
+=======
+        logger.error(f"WooCommerce test error: {e}")
+        return jsonify({
+            'success': False,
+            'message': f'Connection failed: {str(e)}'
+        }), 500
+>>>>>>> 579344a (Stabilize LUX Marketing app, clean deployment, fix env + scheduler, add gitignore and requirements)

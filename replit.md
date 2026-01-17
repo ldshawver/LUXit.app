@@ -36,6 +36,7 @@ Key technical implementations and features include:
 - **Configuration Status Service**: Enhanced service to check and differentiate between missing API credentials and disconnected OAuth sessions for various integrations.
 
 ## External Dependencies
+<<<<<<< HEAD
 - **OpenAI API**: For AI-powered campaign generation, AI chatbot capabilities, error diagnosis, and auto-repair plan generation.
 - **Zapier**: For contact capture and automation via webhooks.
 - **Replit Auth (OpenID Connect)**: For secure OAuth authentication (Google, GitHub, Apple, email).
@@ -57,3 +58,37 @@ Key technical implementations and features include:
 - **Pexels API**: For alternative stock image search.
 - **TinyURL/Bitly API**: For URL shortening.
 - **PostgreSQL**: Primary database for application data, error logs, and contact information.
+=======
+
+### Microsoft Graph API Integration
+- **Service**: Microsoft 365 email delivery service
+- **Authentication**: OAuth 2.0 with tenant-specific configuration
+- **Required Credentials**: Client ID, Client Secret, and Tenant ID
+- **Permissions**: Mail.Send application permission for sending emails
+
+### OpenAI Integration (LUX AI Agent)
+- **Service**: OpenAI GPT-4o for automated email marketing intelligence
+- **Authentication**: API key-based authentication
+- **Features**: Campaign generation, content optimization, audience analysis
+- **Agent Name**: LUX - Automated Email Marketing Assistant
+- **DALL-E Integration**: Automatic image generation for email campaigns
+- **WooCommerce Integration**: Product-focused campaigns with live product data
+
+### Python Libraries
+- **Flask**: Web framework with SQLAlchemy, Login, and other extensions
+- **MSAL**: Microsoft Authentication Library for Graph API access
+- **APScheduler**: Background task scheduling for automated campaigns
+- **Jinja2**: Template engine for email content personalization
+- **Werkzeug**: WSGI utilities and security functions
+- **OpenAI**: AI-powered content generation and optimization
+
+### Frontend Dependencies
+- **Bootstrap 5**: UI framework with dark theme support
+- **Feather Icons**: Lightweight icon set for consistent UI
+- **Custom CSS/JS**: Enhanced user experience and form validations
+
+### Database Configuration
+- **SQLAlchemy**: ORM supporting multiple database backends
+- **Default**: SQLite for development (easily configurable for PostgreSQL, MySQL)
+- **Features**: Connection pooling, health checks, and migration support
+>>>>>>> 579344a (Stabilize LUX Marketing app, clean deployment, fix env + scheduler, add gitignore and requirements)

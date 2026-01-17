@@ -19,7 +19,11 @@
     <div class="col-md-2">
         <div class="card h-100">
             <div class="card-body text-center">
+<<<<<<< HEAD
                 <i data-feather="zap" class="text-primary mb-3" style="width: 3rem; height: 3rem;"></i>
+=======
+                <i data-feather="wand" class="text-primary mb-3" style="width: 3rem; height: 3rem;"></i>
+>>>>>>> 579344a (Stabilize LUX Marketing app, clean deployment, fix env + scheduler, add gitignore and requirements)
                 <h5>Generate Campaign</h5>
                 <p class="card-text text-muted">Let LUX create a complete email campaign for you</p>
                 <button class="btn btn-primary" onclick="showGenerateCampaign()">
@@ -84,7 +88,11 @@
     <div class="col-md-2">
         <div class="card h-100">
             <div class="card-body text-center">
+<<<<<<< HEAD
                 <i data-feather="info" class="text-dark mb-3" style="width: 3rem; height: 3rem;"></i>
+=======
+                <i data-feather="bulb" class="text-dark mb-3" style="width: 3rem; height: 3rem;"></i>
+>>>>>>> 579344a (Stabilize LUX Marketing app, clean deployment, fix env + scheduler, add gitignore and requirements)
                 <h5>Smart Recommendations</h5>
                 <p class="card-text text-muted">Get strategic campaign suggestions from LUX</p>
                 <button class="btn btn-dark" onclick="getRecommendations()">
@@ -894,6 +902,193 @@ function generateImage() {
     .catch(error => {
         showLoading(false);
         alert('Error generating image: ' + error.message);
+    });
+}
+
+function downloadGeneratedImage() {
+    if (window.currentGeneratedImage) {
+        const link = document.createElement('a');
+        link.href = window.currentGeneratedImage.image_url;
+        link.download = 'lux-generated-image.png';
+        link.click();
+    }
+}
+
+function copyImageUrl() {
+    if (window.currentGeneratedImage) {
+        navigator.clipboard.writeText(window.currentGeneratedImage.image_url).then(() => {
+            alert('Image URL copied to clipboard!');
+        });
+    }
+}
+
+function showProductCampaign() {
+    const modal = new bootstrap.Modal(document.getElementById('productCampaignModal'));
+    modal.show();
+}
+
+function showImageGenerator() {
+    const modal = new bootstrap.Modal(document.getElementById('imageGeneratorModal'));
+    modal.show();
+}
+
+function testWooCommerceConnection() {
+    const form = document.getElementById('productCampaignForm');
+    const formData = new FormData(form);
+    
+    const data = {
+        woocommerce_url: formData.get('woocommerce_url'),
+        consumer_key: formData.get('consumer_key'),
+        consumer_secret: formData.get('consumer_secret')
+    };
+    
+    const statusEl = document.getElementById('connectionStatus');
+    statusEl.innerHTML = '<span class="text-info">Testing...</span>';
+    
+    fetch('/lux/test-woocommerce', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(data)
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            statusEl.innerHTML = `<span class="text-success"><i data-feather="check-circle"></i> ${data.message}</span>`;
+            feather.replace();
+        } else {
+            statusEl.innerHTML = `<span class="text-danger"><i data-feather="x-circle"></i> ${data.message}</span>`;
+            feather.replace();
+        }
+    })
+    .catch(error => {
+        statusEl.innerHTML = `<span class="text-danger"><i data-feather="alert-triangle"></i> Connection failed</span>`;
+        feather.replace();
+    });
+}
+
+function createProductCampaign() {
+    const form = document.getElementById('productCampaignForm');
+    const formData = new FormData(form);
+    
+    const data = {
+        woocommerce_url: formData.get('woocommerce_url'),
+        consumer_key: formData.get('consumer_key'),
+        consumer_secret: formData.get('consumer_secret'),
+        objective: formData.get('objective'),
+        product_filter: formData.get('product_filter'),
+        product_limit: parseInt(formData.get('product_limit')),
+        include_images: formData.get('include_images') === 'on'
+    };
+    
+    showLoading(true);
+    
+    fetch('/lux/product-campaign', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(data)
+    })
+    .then(response => response.json())
+    .then(data => {
+        showLoading(false);
+        const modal = bootstrap.Modal.getInstance(document.getElementById('productCampaignModal'));
+        modal.hide();
+        
+        if (data.success) {
+            let imageHtml = '';
+            if (data.campaign.campaign_image) {
+                imageHtml = `
+                    <div class="col-md-4">
+                        <h6>Generated Campaign Image:</h6>
+                        <img src="${data.campaign.campaign_image.image_url}" class="img-fluid rounded" style="max-height: 200px;">
+                    </div>
+                `;
+            }
+            
+            showResult('Product Campaign Created!', `
+                <div class="alert alert-success">
+                    <h6><i data-feather="check-circle"></i> ${data.message}</h6>
+                </div>
+                <div class="row">
+                    <div class="col-md-8">
+                        <h6>Campaign Details:</h6>
+                        <ul class="list-unstyled">
+                            <li><strong>Name:</strong> ${data.campaign.name}</li>
+                            <li><strong>Subject:</strong> ${data.campaign.subject}</li>
+                            <li><strong>Products Featured:</strong> ${data.campaign.product_count}</li>
+                            <li><strong>Recipients:</strong> ${data.campaign.recipients_count}</li>
+                        </ul>
+                        <h6>Featured Products:</h6>
+                        <ul>
+                            ${data.campaign.featured_products.map(product => `<li>${product}</li>`).join('')}
+                        </ul>
+                    </div>
+                    ${imageHtml}
+                </div>
+                <div class="mt-3">
+                    <a href="/campaigns" class="btn btn-primary">View Campaign</a>
+                </div>
+            `);
+        } else {
+            showResult('Campaign Creation Failed', `
+                <div class="alert alert-danger">
+                    <i data-feather="x-circle"></i> ${data.message}
+                </div>
+            `);
+        }
+    })
+    .catch(error => {
+        showLoading(false);
+        showResult('Error', `
+            <div class="alert alert-danger">
+                <i data-feather="alert-triangle"></i> Network error: ${error.message}
+            </div>
+        `);
+    });
+}
+
+function generateImage() {
+    const form = document.getElementById('imageGeneratorForm');
+    const formData = new FormData(form);
+    
+    const data = {
+        description: formData.get('description'),
+        style: formData.get('style')
+    };
+    
+    showLoading(true);
+    
+    fetch('/lux/generate-image', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(data)
+    })
+    .then(response => response.json())
+    .then(data => {
+        showLoading(false);
+        
+        if (data.success) {
+            const previewEl = document.getElementById('generatedImagePreview');
+            const imageEl = document.getElementById('previewImage');
+            
+            imageEl.src = data.image.image_url;
+            imageEl.dataset.imageUrl = data.image.image_url;
+            previewEl.style.display = 'block';
+            
+            // Store image data for download/copy functions
+            window.currentGeneratedImage = data.image;
+        } else {
+            alert('Failed to generate image: ' + data.message);
+        }
+    })
+    .catch(error => {
+        showLoading(false);
+        alert('Error: ' + error.message);
     });
 }
 
