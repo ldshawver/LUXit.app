@@ -13,12 +13,6 @@ from dotenv import load_dotenv
 # Load environment FIRST
 load_dotenv("/etc/lux-marketing/lux.env")
 
-<<<<<<< HEAD
-=======
-# Configure logging
-logging.basicConfig(level=logging.INFO)
->>>>>>> 579344a (Stabilize LUX Marketing app, clean deployment, fix env + scheduler, add gitignore and requirements)
-
 # ============================================================
 # Logging configuration
 # ============================================================
@@ -80,7 +74,6 @@ from extensions import db, csrf
 # ============================================================
 
 app = Flask(__name__)
-<<<<<<< HEAD
 
 # ------------------------------------------------------------
 # Session / secret key handling (deterministic & review-safe)
@@ -130,40 +123,20 @@ if db_url.startswith("mysql") and importlib.util.find_spec("MySQLdb") is None:
         )
 
 app.config["SQLALCHEMY_DATABASE_URI"] = db_url
-=======
-app.secret_key = os.environ.get("SESSION_SECRET")
-
-if not app.secret_key:
-    raise RuntimeError("SESSION_SECRET is not set")
-
-app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
-
-# Database config
-database_url = os.environ.get("DATABASE_URL")
-if not database_url:
-    raise RuntimeError("DATABASE_URL is not set")
-
-app.config["SQLALCHEMY_DATABASE_URI"] = database_url
->>>>>>> 579344a (Stabilize LUX Marketing app, clean deployment, fix env + scheduler, add gitignore and requirements)
 app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
     "pool_recycle": 300,
     "pool_pre_ping": True,
 }
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
-<<<<<<< HEAD
 # File uploads
 app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024  # 16MB
 app.config["UPLOAD_FOLDER"] = "static/company_logos"
-
-=======
->>>>>>> 579344a (Stabilize LUX Marketing app, clean deployment, fix env + scheduler, add gitignore and requirements)
 # Microsoft Graph API config
 app.config["MS_CLIENT_ID"] = os.environ.get("MS_CLIENT_ID", "")
 app.config["MS_CLIENT_SECRET"] = os.environ.get("MS_CLIENT_SECRET", "")
 app.config["MS_TENANT_ID"] = os.environ.get("MS_TENANT_ID", "")
 
-<<<<<<< HEAD
 db.init_app(app)
 
 
@@ -188,29 +161,15 @@ app.config["SESSION_COOKIE_SECURE"] = True
 # ============================================================
 # Flask-Login setup
 # ============================================================
-
-=======
-# Init extensions
-db.init_app(app)
-
-# Flask-Login
->>>>>>> 579344a (Stabilize LUX Marketing app, clean deployment, fix env + scheduler, add gitignore and requirements)
 login_manager = LoginManager()
 login_manager.init_app(app)
 login_manager.login_view = "auth.login"
 login_manager.login_message = "Please log in to access this page."
-<<<<<<< HEAD
-
-=======
->>>>>>> 579344a (Stabilize LUX Marketing app, clean deployment, fix env + scheduler, add gitignore and requirements)
 
 @login_manager.user_loader
 def load_user(user_id):
     from models import User
     return User.query.get(int(user_id))
-
-<<<<<<< HEAD
-
 # ============================================================
 # Context processors / template helpers
 # ============================================================
@@ -268,10 +227,6 @@ def campaign_status_color(status):
 # ============================================================
 # Blueprints
 # ============================================================
-
-=======
-# Blueprints
->>>>>>> 579344a (Stabilize LUX Marketing app, clean deployment, fix env + scheduler, add gitignore and requirements)
 from routes import main_bp
 from auth import auth_bp
 from user_management import user_bp
@@ -279,7 +234,6 @@ from advanced_config import advanced_config_bp
 
 app.register_blueprint(main_bp)
 app.register_blueprint(auth_bp, url_prefix="/auth")
-<<<<<<< HEAD
 app.register_blueprint(user_bp, url_prefix="/user")
 app.register_blueprint(advanced_config_bp)
 
@@ -415,21 +369,9 @@ with app.app_context():
         )
     except Exception as e:
         logging.error(f"Error initializing AI Agent Scheduler: {e}")
-=======
-
-# Template filters
-@app.template_filter("campaign_status_color")
-def campaign_status_color_filter(status):
-    return {
-        "draft": "secondary",
-        "scheduled": "warning",
-        "sending": "info",
-        "sent": "success",
-        "failed": "danger",
-        "paused": "dark",
-    }.get(status, "secondary")
-
-# Scheduler (safe init)
-from scheduler import init_scheduler
-init_scheduler(app)
->>>>>>> 579344a (Stabilize LUX Marketing app, clean deployment, fix env + scheduler, add gitignore and requirements)
+    try:
+        from scheduler import init_scheduler
+        init_scheduler(app)
+        logging.info("Email scheduler initialized")
+    except Exception as e:
+        logging.error(f"Error initializing email scheduler: {e}")
