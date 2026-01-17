@@ -7,14 +7,8 @@ import json
 import logging
 from datetime import datetime, timedelta
 from openai import OpenAI
-<<<<<<< HEAD
 # Import only what we need at module level to avoid circular imports
 # Model imports will be done within functions where needed
-=======
-from models import Campaign, Contact, EmailTemplate, CampaignRecipient, db
-from email_service import EmailService
-from tracking import get_campaign_analytics
->>>>>>> 579344a (Stabilize LUX Marketing app, clean deployment, fix env + scheduler, add gitignore and requirements)
 import base64
 import requests
 from urllib.parse import urljoin
@@ -488,7 +482,6 @@ class LUXAgent:
             logger.error(f"LUX error getting recommendations: {e}")
             return None
     
-<<<<<<< HEAD
     def generate_email_content(self, prompt, content_type="email_content"):
         """Generate email content using OpenAI"""
         try:
@@ -584,12 +577,6 @@ class LUXAgent:
             client = self._require_client("campaign image generation")
             if not client:
                 return None
-                
-=======
-    def generate_campaign_image(self, campaign_description, style="professional marketing"):
-        """Generate marketing images using DALL-E"""
-        try:
->>>>>>> 579344a (Stabilize LUX Marketing app, clean deployment, fix env + scheduler, add gitignore and requirements)
             prompt = f"""
             Create a professional marketing image for: {campaign_description}
             
@@ -602,18 +589,11 @@ class LUXAgent:
             - Brand-friendly colors and composition
             """
             
-<<<<<<< HEAD
             # Use explicit parameters to avoid any conflicts
             # Note: DALL-E 3 doesn't support 'n' parameter (only generates 1 image)
             response = client.images.generate(
                 model="dall-e-3",
                 prompt=prompt,
-=======
-            response = self.client.images.generate(
-                model="dall-e-3",
-                prompt=prompt,
-                n=1,
->>>>>>> 579344a (Stabilize LUX Marketing app, clean deployment, fix env + scheduler, add gitignore and requirements)
                 size="1024x1024",
                 quality="standard"
             )
@@ -633,7 +613,6 @@ class LUXAgent:
     
     def fetch_woocommerce_products(self, woocommerce_url, consumer_key, consumer_secret, 
                                   product_limit=10, category_filter=None):
-<<<<<<< HEAD
         """Fetch products from WooCommerce API using pure requests - no WooCommerce library"""
         try:
             # Explicitly prevent any WooCommerce library imports
@@ -643,10 +622,6 @@ class LUXAgent:
                 logger.warning(f"Detected WooCommerce modules: {woo_modules}. Using requests only.")
             
             # Always use requests library directly to avoid WooCommerce library conflicts
-=======
-        """Fetch products from WooCommerce API"""
-        try:
->>>>>>> 579344a (Stabilize LUX Marketing app, clean deployment, fix env + scheduler, add gitignore and requirements)
             # Construct API endpoint
             api_url = urljoin(woocommerce_url, '/wp-json/wc/v3/products')
             
@@ -661,10 +636,7 @@ class LUXAgent:
             if category_filter:
                 params['category'] = category_filter
             
-<<<<<<< HEAD
             # Use requests directly to avoid any WooCommerce client library issues
-=======
->>>>>>> 579344a (Stabilize LUX Marketing app, clean deployment, fix env + scheduler, add gitignore and requirements)
             response = requests.get(api_url, auth=auth, params=params, timeout=10)
             
             if response.status_code == 200:
@@ -703,14 +675,10 @@ class LUXAgent:
                                product_filter=None, include_images=True):
         """Create a product-focused email campaign with WooCommerce integration"""
         try:
-<<<<<<< HEAD
             # Ensure no WooCommerce library conflicts by isolating the API call
             logger.info("Starting WooCommerce product campaign creation...")
             
             # Fetch products using isolated approach
-=======
-            # Fetch products from WooCommerce
->>>>>>> 579344a (Stabilize LUX Marketing app, clean deployment, fix env + scheduler, add gitignore and requirements)
             products = self.fetch_woocommerce_products(
                 woocommerce_config['url'],
                 woocommerce_config['consumer_key'],
@@ -757,14 +725,10 @@ class LUXAgent:
             Make it conversion-focused with clear pricing and purchase buttons.
             """
             
-<<<<<<< HEAD
             client = self._require_client("product campaign generation")
             if not client:
                 return None
             response = client.chat.completions.create(
-=======
-            response = self.client.chat.completions.create(
->>>>>>> 579344a (Stabilize LUX Marketing app, clean deployment, fix env + scheduler, add gitignore and requirements)
                 model=self.model,
                 messages=[
                     {"role": "system", "content": self.agent_personality},
