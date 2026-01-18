@@ -5,48 +5,27 @@ import re
 import importlib.util
 from uuid import uuid4
 
+from dotenv import load_dotenv
+
+# ============================================================
+# Load environment FIRST
+# ============================================================
+
+load_dotenv("/etc/lux-marketing/lux.env")
+
 from flask import Flask, redirect, url_for, request, g, has_request_context
 from flask_login import LoginManager
 from werkzeug.middleware.proxy_fix import ProxyFix
-from dotenv import load_dotenv
-
-# Load environment FIRST
-load_dotenv("/etc/lux-marketing/lux.env")
 
 # ============================================================
-# Logging configuration
+# Logging configuration (SAFE – no LogRecordFactory)
 # ============================================================
 
 class RequestIdFilter(logging.Filter):
     """Inject request IDs into log records when available."""
     def filter(self, record: logging.LogRecord) -> bool:
-        if has_request_context():
-            record.request_id = getattr(g, "request_id", "-")
-        else:
-            record.request_id = "-"
+        record.request_id = getattr(g, "request_id", "-") if has_request_context() else "-"
         return True
-
-
-log_format = (
-    "%(asctime)s %(levelname)s [%(name)s] "
-    "[request_id=%(request_id)s] %(message)s"
-)
-logging.basicConfig(level=logging.DEBUG, format=log_format)
-
-root_logger = logging.getLogger()
-root_logger.addFilter(RequestIdFilter())
-
-_old_factory = logging.getLogRecordFactory()
-
-
-def _record_factory(*args, **kwargs):
-    record = _old_factory(*args, **kwargs)
-    if not hasattr(record, "request_id"):
-        record.request_id = "-"
-    return record
-
-
-logging.setLogRecordFactory(_record_factory)
 
 
 class RedactionFilter(logging.Filter):
@@ -56,53 +35,67 @@ class RedactionFilter(logging.Filter):
 
     def filter(self, record: logging.LogRecord) -> bool:
         if isinstance(record.msg, str):
-            redacted = self._nine_digit.sub("***REDACTED***", record.msg)
-            redacted = self._keys.sub("[redacted]", redacted)
-            record.msg = redacted
+            record.msg = self._keys.sub(
+                "[redacted]",
+                self._nine_digit.sub("***REDACTED***", record.msg),
+            )
         return True
 
 
+LOG_FORMAT = (
+    "%(asctime)s %(levelname)s [%(name)s] "
+    "[request_id=%(request_id)s] %(message)s"
+)
+
+logging.basicConfig(level=logging.INFO, format=LOG_FORMAT)
+
+root_logger = logging.getLogger()
+root_logger.addFilter(RequestIdFilter())
 root_logger.addFilter(RedactionFilter())
 
+logger = logging.getLogger(__name__)
 
 # ============================================================
-from extensions import db, csrf
-
-
-# ============================================================
-# Create Flask app
+# Flask app creation
 # ============================================================
 
 app = Flask(__name__)
 
 # ------------------------------------------------------------
-# Session / secret key handling (deterministic & review-safe)
+# Secret key (REQUIRED)
 # ------------------------------------------------------------
 
-session_secret = (
+app.config["SECRET_KEY"] = (
     os.environ.get("SESSION_SECRET")
     or os.environ.get("SECRET_KEY")
 )
 
-if not session_secret:
-    logger = logging.getLogger(__name__)
-    if os.environ.get("CODEX_ENV") == "dev":
-        session_secret = uuid4().hex
-        logger.warning(
-            "SESSION_SECRET not set; using a temporary dev secret."
-        )
-    else:
-        session_secret = uuid4().hex
-        app.config["STARTUP_ERROR"] = (
-            "SESSION_SECRET is missing. Set it in your environment to start the app."
-        )
-        logger.warning(app.config["STARTUP_ERROR"])
+if not app.config["SECRET_KEY"]:
+    raise RuntimeError("SESSION_SECRET or SECRET_KEY must be set")
 
-app.secret_key = session_secret
+# ------------------------------------------------------------
+# Reverse proxy trust (CRITICAL for HTTPS + cookies)
+# ------------------------------------------------------------
 
-# Trust reverse proxy headers (required on VPS / load balancers)
-app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
+app.wsgi_app = ProxyFix(
+    app.wsgi_app,
+    x_for=1,
+    x_proto=1,
+    x_host=1,
+    x_port=1,
+)
 
+app.config.update(
+    PREFERRED_URL_SCHEME="https",
+    SESSION_COOKIE_SECURE=True,
+    SESSION_COOKIE_SAMESITE="None",
+)
+
+# ============================================================
+# Extensions
+# ============================================================
+
+from extensions import db, csrf
 
 # ============================================================
 # Database configuration
@@ -111,56 +104,42 @@ app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
 db_url = os.environ.get("DATABASE_URL", "sqlite:///email_marketing.db")
 
 if db_url.startswith("mysql") and importlib.util.find_spec("MySQLdb") is None:
-    if "pymysql" not in db_url and importlib.util.find_spec("pymysql") is not None:
+    if importlib.util.find_spec("pymysql"):
         db_url = db_url.replace("mysql://", "mysql+pymysql://", 1)
-        logging.getLogger(__name__).warning(
-            "MySQLdb missing; falling back to PyMySQL driver."
-        )
+        logger.warning("MySQLdb missing; falling back to PyMySQL")
     elif os.environ.get("CODEX_ENV") == "dev":
         db_url = "sqlite:///email_marketing.db"
-        logging.getLogger(__name__).warning(
-            "MySQLdb missing in dev; falling back to sqlite."
-        )
+        logger.warning("MySQLdb missing in dev; using sqlite")
 
-app.config["SQLALCHEMY_DATABASE_URI"] = db_url
-app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
-    "pool_recycle": 300,
-    "pool_pre_ping": True,
-}
-app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
-
-# File uploads
-app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024  # 16MB
-app.config["UPLOAD_FOLDER"] = "static/company_logos"
-# Microsoft Graph API config
-app.config["MS_CLIENT_ID"] = os.environ.get("MS_CLIENT_ID", "")
-app.config["MS_CLIENT_SECRET"] = os.environ.get("MS_CLIENT_SECRET", "")
-app.config["MS_TENANT_ID"] = os.environ.get("MS_TENANT_ID", "")
+app.config.update(
+    SQLALCHEMY_DATABASE_URI=db_url,
+    SQLALCHEMY_ENGINE_OPTIONS={
+        "pool_recycle": 300,
+        "pool_pre_ping": True,
+    },
+    SQLALCHEMY_TRACK_MODIFICATIONS=False,
+)
 
 db.init_app(app)
 
-
 # ============================================================
-# CSRF configuration
+# CSRF
 # ============================================================
 
-app.config["WTF_CSRF_ENABLED"] = True
-app.config["WTF_CSRF_CHECK_DEFAULT"] = True
-app.config["WTF_CSRF_METHODS"] = ["POST", "PUT", "PATCH", "DELETE"]
-app.config["WTF_CSRF_FIELD_NAME"] = "csrf_token"
-app.config["WTF_CSRF_TIME_LIMIT"] = None
-app.config["WTF_CSRF_SSL_STRICT"] = False
+app.config.update(
+    WTF_CSRF_ENABLED=True,
+    WTF_CSRF_CHECK_DEFAULT=True,
+    WTF_CSRF_METHODS=["POST", "PUT", "PATCH", "DELETE"],
+    WTF_CSRF_TIME_LIMIT=None,
+    WTF_CSRF_SSL_STRICT=False,
+)
 
 csrf.init_app(app)
 
-# Session cookies (iframe + OAuth safe)
-app.config["SESSION_COOKIE_SAMESITE"] = "None"
-app.config["SESSION_COOKIE_SECURE"] = True
-
-
 # ============================================================
-# Flask-Login setup
+# Flask-Login
 # ============================================================
+
 login_manager = LoginManager()
 login_manager.init_app(app)
 login_manager.login_view = "auth.login"
@@ -170,63 +149,11 @@ login_manager.login_message = "Please log in to access this page."
 def load_user(user_id):
     from models import User
     return User.query.get(int(user_id))
-# ============================================================
-# Context processors / template helpers
-# ============================================================
-
-@app.context_processor
-def inject_tracking_pixels():
-    from flask_login import current_user
-    facebook_app_id = None
-    tiktok_pixel_id = None
-
-    try:
-        if current_user and current_user.is_authenticated:
-            company = current_user.get_default_company()
-            if company:
-                from models import CompanySecret
-
-                fb_secret = CompanySecret.query.filter_by(
-                    company_id=company.id,
-                    key="facebook_app_id",
-                ).first()
-                if fb_secret:
-                    facebook_app_id = fb_secret.value
-
-                tt_secret = CompanySecret.query.filter_by(
-                    company_id=company.id,
-                    key="tiktok_pixel_id",
-                ).first()
-                if tt_secret:
-                    tiktok_pixel_id = tt_secret.value
-    except Exception:
-        pass
-
-    return {
-        "facebook_app_id": facebook_app_id,
-        "tiktok_pixel_id": tiktok_pixel_id,
-    }
-
-
-@app.template_filter("campaign_status_color")
-def campaign_status_color(status):
-    colors = {
-        "draft": "secondary",
-        "scheduled": "info",
-        "sending": "warning",
-        "sent": "success",
-        "partial": "warning",
-        "failed": "danger",
-        "paused": "secondary",
-        "completed": "success",
-        "active": "primary",
-    }
-    return colors.get(status, "secondary")
-
 
 # ============================================================
 # Blueprints
 # ============================================================
+
 from routes import main_bp
 from auth import auth_bp
 from user_management import user_bp
@@ -237,83 +164,55 @@ app.register_blueprint(auth_bp, url_prefix="/auth")
 app.register_blueprint(user_bp, url_prefix="/user")
 app.register_blueprint(advanced_config_bp)
 
+# Optional integrations
 
-# Optional / external integrations
+def _safe_register(msg, fn):
+    try:
+        fn()
+        logger.info(msg)
+    except Exception as e:
+        logger.warning("%s: %s", msg, e)
 
-try:
-    from replit_auth import make_replit_blueprint, is_replit_auth_enabled
-    if is_replit_auth_enabled():
-        bp = make_replit_blueprint()
-        if bp:
-            app.register_blueprint(bp, url_prefix="/replit-auth")
-            logging.info("Replit Auth blueprint registered")
-except Exception as e:
-    logging.warning(f"Replit Auth not available: {e}")
+_safe_register(
+    "Replit Auth available",
+    lambda: (
+        __import__("replit_auth").make_replit_blueprint()
+        and app.register_blueprint(
+            __import__("replit_auth").make_replit_blueprint(),
+            url_prefix="/replit-auth",
+        )
+    ),
+)
 
-try:
-    from tiktok_auth import tiktok_bp, tiktok_api_bp
-    app.register_blueprint(tiktok_bp)
-    app.register_blueprint(tiktok_api_bp)
-    logging.info("TikTok OAuth blueprint registered")
-except Exception as e:
-    logging.warning(f"TikTok OAuth not available: {e}")
+_safe_register(
+    "TikTok OAuth available",
+    lambda: (
+        app.register_blueprint(__import__("tiktok_auth").tiktok_bp),
+        app.register_blueprint(__import__("tiktok_auth").tiktok_api_bp),
+    ),
+)
 
-try:
-    from facebook_auth import facebook_auth_bp
-    app.register_blueprint(facebook_auth_bp)
-    logging.info("Facebook OAuth blueprint registered")
-except Exception as e:
-    logging.warning(f"Facebook OAuth not available: {e}")
+_safe_register(
+    "Facebook OAuth available",
+    lambda: app.register_blueprint(__import__("facebook_auth").facebook_auth_bp),
+)
 
-try:
-    from instagram_auth import instagram_auth_bp
-    app.register_blueprint(instagram_auth_bp)
-    logging.info("Instagram OAuth blueprint registered")
-except Exception as e:
-    logging.warning(f"Instagram OAuth not available: {e}")
+_safe_register(
+    "Instagram OAuth available",
+    lambda: app.register_blueprint(__import__("instagram_auth").instagram_auth_bp),
+)
 
-try:
-    from fb_webhook import fb_webhook
-    app.register_blueprint(fb_webhook)
-    csrf.exempt(fb_webhook)
-    logging.info("Facebook webhook blueprint registered")
-except Exception as e:
-    logging.warning(f"Facebook webhook not available: {e}")
-
+_safe_register(
+    "Facebook webhook available",
+    lambda: (
+        app.register_blueprint(__import__("fb_webhook").fb_webhook),
+        csrf.exempt(__import__("fb_webhook").fb_webhook),
+    ),
+)
 
 # ============================================================
-# Request lifecycle helpers
+# Request lifecycle
 # ============================================================
-
-def _log_startup_feature_summary():
-    logger = logging.getLogger(__name__)
-    feature_flags = {
-        "openai": bool(os.getenv("OPENAI_API_KEY")),
-        "replit_auth": bool(os.getenv("REPL_ID")),
-        "tiktok": bool(os.getenv("TIKTOK_CLIENT_KEY") and os.getenv("TIKTOK_CLIENT_SECRET")),
-        "microsoft_graph": bool(os.getenv("MS_CLIENT_ID") and os.getenv("MS_CLIENT_SECRET") and os.getenv("MS_TENANT_ID")),
-        "twilio": bool(
-            os.getenv("TWILIO_ACCOUNT_SID")
-            and os.getenv("TWILIO_AUTH_TOKEN")
-            and os.getenv("TWILIO_PHONE_NUMBER")
-        ),
-        "stripe": bool(os.getenv("STRIPE_SECRET_KEY")),
-        "woocommerce": bool(
-            os.getenv("WC_STORE_URL")
-            and os.getenv("WC_CONSUMER_KEY")
-            and os.getenv("WC_CONSUMER_SECRET")
-        ),
-        "ga4": bool(os.getenv("GA4_PROPERTY_ID")),
-    }
-    logger.info("Startup feature summary: %s", feature_flags)
-
-
-_log_startup_feature_summary()
-
-@app.route("/")
-def index():
-    return redirect(url_for("auth.login"))
-
 
 @app.before_request
 def assign_request_id():
@@ -322,15 +221,33 @@ def assign_request_id():
 
 @app.after_request
 def attach_request_id(response):
-    request_id = getattr(g, "request_id", None)
-    if request_id:
-        response.headers["X-Request-ID"] = request_id
-        if response.mimetype == "application/json" and response.status_code >= 400:
-            payload = response.get_json(silent=True) or {}
-            payload.setdefault("request_id", request_id)
-            response.set_data(json.dumps(payload))
+    if hasattr(g, "request_id"):
+        response.headers["X-Request-ID"] = g.request_id
     return response
 
+
+@app.route("/")
+def index():
+    return redirect(url_for("auth.login"))
+
+# ============================================================
+# Startup diagnostics
+# ============================================================
+
+def _log_startup_feature_summary():
+    features = {
+        "openai": bool(os.getenv("OPENAI_API_KEY")),
+        "replit_auth": bool(os.getenv("REPL_ID")),
+        "tiktok": bool(os.getenv("TIKTOK_CLIENT_KEY")),
+        "microsoft_graph": bool(os.getenv("MS_CLIENT_ID")),
+        "twilio": bool(os.getenv("TWILIO_ACCOUNT_SID")),
+        "stripe": bool(os.getenv("STRIPE_SECRET_KEY")),
+        "woocommerce": bool(os.getenv("WC_STORE_URL")),
+        "ga4": bool(os.getenv("GA4_PROPERTY_ID")),
+    }
+    logger.info("Startup feature summary: %s", features)
+
+_log_startup_feature_summary()
 
 # ============================================================
 # App initialization
@@ -345,33 +262,28 @@ with app.app_context():
     try:
         from services.automation_service import AutomationService
         AutomationService.seed_trigger_library()
-        logging.info("Automation trigger library seeded")
+        logger.info("Automation triggers seeded")
     except Exception as e:
-        logging.error(f"Error seeding trigger library: {e}")
+        logger.error("Automation seed error: %s", e)
 
     try:
         from error_logger import setup_error_logging_handler
         setup_error_logging_handler()
-        logging.info("Error logging initialized")
+        logger.info("Error logging initialized")
     except Exception as e:
-        logging.error(f"Error initializing error logging: {e}")
+        logger.error("Error logger init failed: %s", e)
 
     try:
-        from agent_scheduler import (
-            initialize_agent_scheduler,
-            get_agent_scheduler,
-        )
+        from agent_scheduler import initialize_agent_scheduler, get_agent_scheduler
         initialize_agent_scheduler()
         app.agent_scheduler = get_agent_scheduler()
-        logging.info(
-            f"AI Agent Scheduler initialized with "
-            f"{len(app.agent_scheduler.agents)} agents"
-        )
+        logger.info("AI Agent Scheduler initialized")
     except Exception as e:
-        logging.error(f"Error initializing AI Agent Scheduler: {e}")
+        logger.error("Agent scheduler error: %s", e)
+
     try:
         from scheduler import init_scheduler
         init_scheduler(app)
-        logging.info("Email scheduler initialized")
+        logger.info("Email scheduler initialized")
     except Exception as e:
-        logging.error(f"Error initializing email scheduler: {e}")
+        logger.error("Email scheduler error: %s", e)
