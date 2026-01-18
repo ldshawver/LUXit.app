@@ -25,7 +25,7 @@ def create_app(config_name=None):
     app.config.from_object(config[config_name])
     
     # Set up proxy fix for correct URL generation behind reverse proxy
-    app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_port=1)
 
     # Initialize extensions
     db.init_app(app)
