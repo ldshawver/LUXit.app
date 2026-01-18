@@ -1,3 +1,4 @@
+import os
 from flask import (
     Blueprint,
     render_template,
@@ -5,18 +6,11 @@ from flask import (
     flash,
     redirect,
     url_for,
-    current_app,
+    session,
 )
-from flask_login import (
-    login_user,
-    logout_user,
-    login_required,
-    current_user,
-)
+from flask_login import login_user, logout_user, login_required, current_user
+from werkzeug.security import check_password_hash
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy import or_
-from itsdangerous import URLSafeTimedSerializer
-import os
 
 from extensions import db
 from models import User
@@ -28,97 +22,49 @@ from models import User
 auth_bp = Blueprint("auth", __name__)
 
 # ============================================================
-# Helpers
-# ============================================================
-
-def get_serializer():
-    secret_key = os.environ.get("SESSION_SECRET") or os.environ.get("SECRET_KEY")
-    return URLSafeTimedSerializer(secret_key)
-
-# ============================================================
 # Login
 # ============================================================
 
 @auth_bp.route("/login", methods=["GET", "POST"])
 def login():
+    # If already logged in, go straight to dashboard
     if current_user.is_authenticated:
         return redirect(url_for("main.dashboard"))
 
-    replit_auth_enabled = False
-    try:
-        from replit_auth import is_replit_auth_enabled
-        replit_auth_enabled = is_replit_auth_enabled()
-    except Exception:
-        pass
-
     if request.method == "POST":
-        username = request.form.get("username", "").strip()
-        password = request.form.get("password", "")
-        remember = request.form.get("remember") in ("on", "true", "1", "yes")
+        email = (request.form.get("email") or "").strip().lower()
+        password = request.form.get("password") or ""
 
-        if not username or not password:
-            flash("Username and password are required", "error")
-            return render_template(
-                "auth/login.html",
-                replit_auth_enabled=replit_auth_enabled,
-            )
-
-        email_lookup = username.lower() if "@" in username else None
+        if not email or not password:
+            flash("Email and password are required.", "error")
+            return render_template("auth/login.html")
 
         try:
-            user = (
-                User.query.filter(
-                    or_(
-                        User.username == username,
-                        User.email == email_lookup,
-                    )
-                )
-                .order_by(User.email == email_lookup)
-                .first()
-            )
+            user = User.query.filter(User.email == email).first()
         except SQLAlchemyError:
-            current_app.logger.exception("Login lookup failed")
-            flash("Unable to sign in right now.", "error")
-            return render_template(
-                "auth/login.html",
-                replit_auth_enabled=replit_auth_enabled,
-            )
+            flash("Login unavailable. Please try again later.", "error")
+            return render_template("auth/login.html")
 
-        if not user:
-            flash("Invalid credentials", "error")
-            return render_template(
-                "auth/login.html",
-                replit_auth_enabled=replit_auth_enabled,
-            )
+        if not user or not user.password_hash:
+            flash("Invalid email or password.", "error")
+            return render_template("auth/login.html")
 
-        if not user.password_hash:
-            flash(
-                "This account does not have a password set. "
-                "Please use the original login method or reset your password.",
-                "error",
-            )
-            return render_template(
-                "auth/login.html",
-                replit_auth_enabled=replit_auth_enabled,
-            )
+        if not check_password_hash(user.password_hash, password):
+            flash("Invalid email or password.", "error")
+            return render_template("auth/login.html")
 
-        if not user.check_password(password):
-            flash("Invalid credentials", "error")
-            return render_template(
-                "auth/login.html",
-                replit_auth_enabled=replit_auth_enabled,
-            )
+        # ✅ LOGIN USER
+        login_user(user)
 
-        # ✅ AUTH SUCCESS
-        login_user(user, remember=remember)
+        # 🔥 CRITICAL FIX:
+        # Flask-Login stores a poisoned redirect in session["next"]
+        # We MUST destroy it or it will redirect to the IP
+        session.pop("next", None)
 
-        # 🔒 HARD LOCK — NO next, NO IP, NO HOST
+        # 🔒 HARD CANONICAL REDIRECT (NO IP, NO HOST LEAK)
         return redirect(url_for("main.dashboard"))
 
-    return render_template(
-        "auth/login.html",
-        replit_auth_enabled=replit_auth_enabled,
-    )
+    return render_template("auth/login.html")
 
 # ============================================================
 # Logout
@@ -128,4 +74,5 @@ def login():
 @login_required
 def logout():
     logout_user()
+    session.clear()
     return redirect(url_for("auth.login"))
