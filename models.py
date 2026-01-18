@@ -1,5 +1,5 @@
 from datetime import datetime
-from app import db
+from extensions import db
 from flask_login import UserMixin
 from sqlalchemy import JSON, Text
 
@@ -1911,7 +1911,7 @@ Models for advanced LUX Marketing features
 These extend the main models.py with new features
 """
 from datetime import datetime
-from app import db
+from extensions import db
 from sqlalchemy import JSON, Text
 
 # ============= WORDPRESS / WOOCOMMERCE INTEGRATION =============

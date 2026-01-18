@@ -20,16 +20,9 @@ class LUXAgent:
     
     def __init__(self):
         self._client = None
-        api_key = os.environ.get("OPENAI_API_KEY")
-        if not api_key:
-            logger.error("OPENAI_API_KEY environment variable is required")
-        else:
-            try:
-                # Initialize OpenAI client with minimal parameters to avoid conflicts
-                self._client = OpenAI(api_key=api_key)
-                logger.info("LUX AI Agent initialized successfully")
-            except Exception as e:
-                logger.error(f"Failed to initialize LUX AI Agent: {e}")
+        self._api_key = os.getenv("OPENAI_API_KEY")
+        if not self._api_key:
+            logger.warning("OPENAI_API_KEY missing; AI features will be disabled until configured.")
         self.model = "gpt-4o"  # Using GPT-4o for reliable performance
         self.agent_name = "LUX"
         self.agent_personality = """
@@ -39,11 +32,32 @@ class LUXAgent:
         and conversions while maintaining brand consistency.
         """
 
+    def _get_client(self):
+        if self._client:
+            return self._client
+        if not self._api_key:
+            self._api_key = os.getenv("OPENAI_API_KEY")
+        if not self._api_key:
+            logger.warning("OPENAI_API_KEY missing; skipping OpenAI client initialization.")
+            return None
+        try:
+            self._client = OpenAI(api_key=self._api_key)
+            logger.info("LUX AI Agent client initialized successfully")
+        except Exception as e:
+            logger.error(f"Failed to initialize LUX AI Agent client: {e}")
+            self._client = None
+        return self._client
+
     @property
     def client(self):
-        if not self._client:
-            raise ValueError("OPENAI_API_KEY environment variable is required")
-        return self._client
+        return self._get_client()
+
+    def _require_client(self, feature_name: str):
+        client = self.client
+        if not client:
+            logger.warning("OpenAI client unavailable; %s disabled.", feature_name)
+            return None
+        return client
     
     def generate_campaign_content(self, campaign_objective, target_audience, brand_info=None):
         """Generate email campaign content based on objectives and audience"""
@@ -72,7 +86,10 @@ class LUXAgent:
             Make the content engaging, professional, and conversion-focused.
             """
             
-            response = self.client.chat.completions.create(
+            client = self._require_client("campaign content generation")
+            if not client:
+                return None
+            response = client.chat.completions.create(
                 model=self.model,
                 messages=[
                     {"role": "system", "content": self.agent_personality},
@@ -133,7 +150,10 @@ class LUXAgent:
             }}
             """
             
-            response = self.client.chat.completions.create(
+            client = self._require_client("audience analysis")
+            if not client:
+                return None
+            response = client.chat.completions.create(
                 model=self.model,
                 messages=[
                     {"role": "system", "content": self.agent_personality},
@@ -203,7 +223,10 @@ class LUXAgent:
             }
             """
             
-            response = self.client.chat.completions.create(
+            client = self._require_client("campaign optimization")
+            if not client:
+                return None
+            response = client.chat.completions.create(
                 model=self.model,
                 messages=[
                     {"role": "system", "content": self.agent_personality},
@@ -332,7 +355,10 @@ class LUXAgent:
             }}
             """
             
-            response = self.client.chat.completions.create(
+            client = self._require_client("blog post generation")
+            if not client:
+                return None
+            response = client.chat.completions.create(
                 model=self.model,
                 messages=[
                     {"role": "system", "content": self.agent_personality},
@@ -378,7 +404,10 @@ class LUXAgent:
             Keep all subject lines under 50 characters for mobile optimization.
             """
             
-            response = self.client.chat.completions.create(
+            client = self._require_client("subject line variants")
+            if not client:
+                return None
+            response = client.chat.completions.create(
                 model=self.model,
                 messages=[
                     {"role": "system", "content": self.agent_personality},
@@ -432,7 +461,10 @@ class LUXAgent:
             }}
             """
             
-            response = self.client.chat.completions.create(
+            client = self._require_client("campaign recommendations")
+            if not client:
+                return None
+            response = client.chat.completions.create(
                 model=self.model,
                 messages=[
                     {"role": "system", "content": self.agent_personality},
@@ -462,7 +494,10 @@ class LUXAgent:
             - Optimized for email marketing
             """
             
-            response = self.client.chat.completions.create(
+            client = self._require_client("email content generation")
+            if not client:
+                return ["Error generating content. Please try again."]
+            response = client.chat.completions.create(
                 model=self.model,
                 messages=[
                     {"role": "system", "content": system_prompt},
@@ -506,7 +541,10 @@ class LUXAgent:
             
             audience_context = f" for {audience}" if audience else ""
             
-            response = self.client.chat.completions.create(
+            client = self._require_client("subject line generation")
+            if not client:
+                return ["Error generating subject lines. Please try again."]
+            response = client.chat.completions.create(
                 model=self.model,
                 messages=[
                     {"role": "system", "content": system_prompt},
@@ -536,8 +574,8 @@ class LUXAgent:
     def generate_campaign_image(self, campaign_description, style="professional marketing"):
         """Generate marketing images using DALL-E"""
         try:
-            if not self.client:
-                logger.error("OpenAI client not initialized for image generation")
+            client = self._require_client("campaign image generation")
+            if not client:
                 return None
                 
             prompt = f"""
@@ -554,7 +592,7 @@ class LUXAgent:
             
             # Use explicit parameters to avoid any conflicts
             # Note: DALL-E 3 doesn't support 'n' parameter (only generates 1 image)
-            response = self.client.images.generate(
+            response = client.images.generate(
                 model="dall-e-3",
                 prompt=prompt,
                 size="1024x1024",
@@ -688,7 +726,10 @@ class LUXAgent:
             Make it conversion-focused with clear pricing and purchase buttons.
             """
             
-            response = self.client.chat.completions.create(
+            client = self._require_client("product campaign generation")
+            if not client:
+                return None
+            response = client.chat.completions.create(
                 model=self.model,
                 messages=[
                     {"role": "system", "content": self.agent_personality},
@@ -716,5 +757,12 @@ class LUXAgent:
             logger.error(f"LUX error creating product campaign: {e}")
             return None
 
-# Global LUX agent instance
-lux_agent = LUXAgent()
+_lux_agent = None
+
+
+def get_lux_agent():
+    """Lazy-load the global LUX agent instance."""
+    global _lux_agent
+    if _lux_agent is None:
+        _lux_agent = LUXAgent()
+    return _lux_agent

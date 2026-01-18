@@ -7,7 +7,7 @@ import logging
 import json
 import os
 from datetime import datetime, timedelta
-from app import db
+from extensions import db
 from sqlalchemy import func
 
 logger = logging.getLogger(__name__)

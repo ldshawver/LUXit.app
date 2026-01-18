@@ -29,6 +29,9 @@ class TikTokService:
     def __init__(self, client_key=None, client_secret=None):
         self.client_key = client_key or os.getenv('TIKTOK_CLIENT_KEY')
         self.client_secret = client_secret or os.getenv('TIKTOK_CLIENT_SECRET')
+
+        if not self.client_key or not self.client_secret:
+            logger.warning("TikTok credentials missing; TikTok integration will be disabled.")
     
     @classmethod
     def from_company(cls, company):
@@ -36,6 +39,9 @@ class TikTokService:
         client_key = company.get_secret('TIKTOK_CLIENT_KEY') or company.get_secret('TIKTOK_API_KEY')
         client_secret = company.get_secret('TIKTOK_CLIENT_SECRET')
         return cls(client_key=client_key, client_secret=client_secret)
+
+    def is_configured(self) -> bool:
+        return bool(self.client_key and self.client_secret)
     
     def generate_state(self):
         """Generate a secure state token for CSRF protection"""
@@ -44,7 +50,8 @@ class TikTokService:
     def build_auth_url(self, state=None, redirect_uri=None):
         """Build TikTok OAuth authorization URL"""
         if not self.client_key:
-            raise ValueError("TikTok client_key is required")
+            logger.warning("TikTok client_key missing; cannot build auth URL.")
+            return None, None
         
         state = state or self.generate_state()
         redirect_uri = redirect_uri or self.REDIRECT_URI
@@ -62,7 +69,8 @@ class TikTokService:
     def exchange_code_for_token(self, code, redirect_uri=None):
         """Exchange authorization code for access token"""
         if not self.client_key or not self.client_secret:
-            raise ValueError("TikTok client_key and client_secret are required")
+            logger.warning("TikTok credentials missing; cannot exchange code for token.")
+            return {'success': False, 'error': 'TikTok integration not configured'}
         
         redirect_uri = redirect_uri or self.REDIRECT_URI
         
@@ -105,7 +113,8 @@ class TikTokService:
     def refresh_access_token(self, refresh_token):
         """Refresh an expired access token"""
         if not self.client_key or not self.client_secret:
-            raise ValueError("TikTok client_key and client_secret are required")
+            logger.warning("TikTok credentials missing; cannot refresh access token.")
+            return {'success': False, 'error': 'TikTok integration not configured'}
         
         data = {
             'client_key': self.client_key,
@@ -145,7 +154,8 @@ class TikTokService:
     def revoke_token(self, access_token, open_id):
         """Revoke an access token"""
         if not self.client_key or not self.client_secret:
-            raise ValueError("TikTok client_key and client_secret are required")
+            logger.warning("TikTok credentials missing; cannot revoke token.")
+            return {'success': False, 'error': 'TikTok integration not configured'}
         
         data = {
             'client_key': self.client_key,
