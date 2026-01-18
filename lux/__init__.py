@@ -1,7 +1,7 @@
 """Flask application factory."""
 import os
 import logging
-from flask import Flask
+from flask import Flask, redirect, request, url_for
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 from lux.config import config
@@ -35,7 +35,12 @@ def create_app(config_name=None):
 
     # Configure Flask-Login
     login_manager.login_view = 'auth.login'
-    login_manager.login_message = 'Please log in to access this page.'
+    login_manager.login_message = None
+
+    @app.before_request
+    def block_next_param():
+        if "next" in request.args:
+            return redirect(url_for("auth.login", _external=False))
 
     @login_manager.user_loader
     def load_user(user_id):
