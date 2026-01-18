@@ -4,7 +4,7 @@ from datetime import datetime
 from jinja2 import Template
 import msal
 import requests
-from app import db
+from extensions import db
 from models import Campaign, CampaignRecipient, EmailTracking
 
 class EmailService:
