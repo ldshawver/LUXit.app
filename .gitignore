@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 *.pyc
 __pycache__/
 instance/
@@ -28,3 +29,31 @@ services/dev_*.py
 templates/dev_*.html
 static/uploads/
 LUX-Marketing-3.6/
+=======
+# OS
+.DS_Store
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Virtual environments
+venv/
+.env
+*.env
+
+# App runtime data
+data/
+
+# Local app copies
+app/
+
+# Logs
+*.log
+
+# IDE
+.vscode/
+.idea/
+>>>>>>> 579344a (Stabilize LUX Marketing app, clean deployment, fix env + scheduler, add gitignore and requirements)
+CODEX.md

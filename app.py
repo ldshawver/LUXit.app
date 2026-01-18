@@ -8,7 +8,10 @@ from uuid import uuid4
 from flask import Flask, redirect, url_for, request, g, has_request_context
 from flask_login import LoginManager
 from werkzeug.middleware.proxy_fix import ProxyFix
+from dotenv import load_dotenv
 
+# Load environment FIRST
+load_dotenv("/etc/lux-marketing/lux.env")
 
 # ============================================================
 # Logging configuration
@@ -124,11 +127,11 @@ app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
     "pool_recycle": 300,
     "pool_pre_ping": True,
 }
+app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
 # File uploads
 app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024  # 16MB
 app.config["UPLOAD_FOLDER"] = "static/company_logos"
-
 # Microsoft Graph API config
 app.config["MS_CLIENT_ID"] = os.environ.get("MS_CLIENT_ID", "")
 app.config["MS_CLIENT_SECRET"] = os.environ.get("MS_CLIENT_SECRET", "")
@@ -158,19 +161,15 @@ app.config["SESSION_COOKIE_SECURE"] = True
 # ============================================================
 # Flask-Login setup
 # ============================================================
-
 login_manager = LoginManager()
 login_manager.init_app(app)
 login_manager.login_view = "auth.login"
 login_manager.login_message = "Please log in to access this page."
 
-
 @login_manager.user_loader
 def load_user(user_id):
     from models import User
     return User.query.get(int(user_id))
-
-
 # ============================================================
 # Context processors / template helpers
 # ============================================================
@@ -228,7 +227,6 @@ def campaign_status_color(status):
 # ============================================================
 # Blueprints
 # ============================================================
-
 from routes import main_bp
 from auth import auth_bp
 from user_management import user_bp
@@ -371,3 +369,9 @@ with app.app_context():
         )
     except Exception as e:
         logging.error(f"Error initializing AI Agent Scheduler: {e}")
+    try:
+        from scheduler import init_scheduler
+        init_scheduler(app)
+        logging.info("Email scheduler initialized")
+    except Exception as e:
+        logging.error(f"Error initializing email scheduler: {e}")

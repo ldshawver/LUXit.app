@@ -2495,7 +2495,6 @@ def lux_agent_dashboard():
     recent_campaigns = Campaign.query.filter(Campaign.sent_at.isnot(None)).order_by(Campaign.sent_at.desc()).limit(6).all()
     
     return render_template('lux_agent.html', recent_campaigns=recent_campaigns)
-
 @main_bp.route('/test-email', methods=['GET', 'POST'])
 @login_required
 def test_email():
@@ -2559,7 +2558,6 @@ def test_email():
             flash(f'❌ Error testing email: {str(e)}', 'error')
     
     return render_template('test_email.html')
-
 @main_bp.route('/lux/generate-image', methods=['POST'])
 @login_required
 def lux_generate_image():
@@ -2647,28 +2645,31 @@ def lux_product_campaign():
         
         if result:
             # Create email template with product content
-            template = EmailTemplate()
-            template.name = f"LUX Product Campaign - {result['campaign_name']}"
-            template.subject = result['subject']
-            template.html_content = result['html_content']
+            template = EmailTemplate(
+                name=f"LUX Product Campaign - {result['campaign_name']}",
+                subject=result['subject'],
+                html_content=result['html_content']
+            )
             db.session.add(template)
             db.session.flush()
             
             # Create campaign
-            campaign = Campaign()
-            campaign.name = result['campaign_name']
-            campaign.subject = result['subject']
-            campaign.template_id = template.id
-            campaign.status = 'draft'
+            campaign = Campaign(
+                name=result['campaign_name'],
+                subject=result['subject'],
+                template_id=template.id,
+                status='draft'
+            )
             db.session.add(campaign)
             db.session.flush()
             
             # Add recipients
             contacts = Contact.query.filter_by(is_active=True).all()
             for contact in contacts:
-                recipient = CampaignRecipient()
-                recipient.campaign_id = campaign.id
-                recipient.contact_id = contact.id
+                recipient = CampaignRecipient(
+                    campaign_id=campaign.id,
+                    contact_id=contact.id
+                )
                 db.session.add(recipient)
             
             db.session.commit()
@@ -2731,7 +2732,7 @@ def lux_test_woocommerce():
     except Exception as e:
         error_msg = str(e)
         logger.error(f"WooCommerce test error: {e}")
-        
+
         # Handle specific error types
         if "proxies" in error_msg or "Client.__init__()" in error_msg or "woocommerce" in error_msg.lower():
             error_msg = "WooCommerce library conflict detected. The system will use pure requests implementation instead. Please try again."
