@@ -1,9 +1,9 @@
-name: Deploy to VPS
+name: Deploy LUXit.app to VPS (main only)
 
 on:
   push:
     branches:
-      - main
+      - main   # 🚨 ONLY main deploys
 
 jobs:
   deploy:
@@ -13,8 +13,10 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          ref: main
 
-      - name: Deploy to VPS via SSH
+      - name: Deploy to VPS
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.VPS_HOST }}
