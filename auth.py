@@ -8,7 +8,6 @@ from dotenv import load_dotenv
 from flask import Flask, redirect, url_for, request, g, has_request_context
 from flask_login import LoginManager
 from werkzeug.middleware.proxy_fix import ProxyFix
-from urllib.parse import urlparse
 
 # ============================================================
 # Load environment ONCE
@@ -110,27 +109,12 @@ csrf.init_app(app)
 login_manager = LoginManager()
 login_manager.init_app(app)
 login_manager.login_view = "auth.login"
+login_manager.login_message = None
 
 @login_manager.user_loader
 def load_user(user_id):
     from models import User
     return User.query.get(int(user_id))
-
-# ============================================================
-# SAFE redirect helper (THIS FIXES THE IP BUG)
-# ============================================================
-
-def safe_redirect(target, fallback="main.dashboard"):
-    if not target:
-        return redirect(url_for(fallback))
-
-    parsed = urlparse(target)
-
-    # Reject absolute URLs, IPs, schemes
-    if parsed.scheme or parsed.netloc:
-        return redirect(url_for(fallback))
-
-    return redirect(target)
 
 # ============================================================
 # Blueprints
@@ -153,6 +137,11 @@ app.register_blueprint(advanced_config_bp)
 @app.before_request
 def assign_request_id():
     g.request_id = request.headers.get("X-Request-ID", str(uuid4()))
+
+@app.before_request
+def block_next_param():
+    if "next" in request.args:
+        return redirect(url_for("auth.login", _external=False))
 
 @app.after_request
 def attach_request_id(resp):

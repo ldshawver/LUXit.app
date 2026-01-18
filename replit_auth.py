@@ -347,7 +347,7 @@ def get_next_navigation_url(req):
     )
     if is_navigation_url:
         return req.url
-    return req.referrer or req.url
+    return req.url
 
 
 def require_replit_login(f):
