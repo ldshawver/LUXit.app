@@ -224,10 +224,15 @@ def admin_fix_approve(proposal_id):
     proposal["approved_at"] = datetime.utcnow().isoformat()
     REPAIR_PROPOSALS[proposal_id] = proposal
     return jsonify(proposal)
+from sqlalchemy.exc import SQLAlchemyError
 
 @main_bp.route('/')
 @login_required
 def dashboard():
+    try:
+        db.session.rollback()
+    except SQLAlchemyError:
+        pass
     """Dashboard with overview statistics"""
     total_contacts = safe_count(
         Contact.query.filter_by(is_active=True),
