@@ -1,7 +1,7 @@
 from flask import Blueprint, render_template, request, flash, redirect, url_for, jsonify
 from flask_login import login_required, current_user
 from werkzeug.security import generate_password_hash, check_password_hash
-from app import db
+from extensions import db
 from models import User
 from utils import validate_email
 

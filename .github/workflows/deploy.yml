@@ -1,33 +1,31 @@
-name: Deploy to VPS
+name: Deploy LUXit.app to VPS (main only)
 
 on:
   push:
     branches:
-      - main    # deploy when main is updated
+      - main   # 🚨 ONLY main deploys
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    environment: production   # 🔴 THIS WAS MISSING
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          ref: main
 
-      - name: Deploy to VPS via SSH
+      - name: Deploy to VPS
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
           script: |
-            cd /var/www/lux
+            cd /opt/lux-marketing
             git fetch --all
             git reset --hard origin/main
-            # if you have a venv and requirements.txt:
-            if [ -d "venv" ]; then
-              source venv/bin/activate
-              if [ -f "requirements.txt" ]; then
-                pip install -r requirements.txt
-              fi
-            fi
-            systemctl restart lux
+            source venv/bin/activate
+            pip install -r requirements.txt
+            systemctl restart lux.service

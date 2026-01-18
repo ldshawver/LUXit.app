@@ -36,24 +36,36 @@ Key technical implementations and features include:
 - **Configuration Status Service**: Enhanced service to check and differentiate between missing API credentials and disconnected OAuth sessions for various integrations.
 
 ## External Dependencies
-- **OpenAI API**: For AI-powered campaign generation, AI chatbot capabilities, error diagnosis, and auto-repair plan generation.
-- **Zapier**: For contact capture and automation via webhooks.
-- **Replit Auth (OpenID Connect)**: For secure OAuth authentication (Google, GitHub, Apple, email).
-- **Instagram Graph API**: For Instagram OAuth 2.0 integration, content publishing, and insights.
-- **TikTok API**: For TikTok OAuth 2.0 integration, user info, video listing, upload, and publishing.
-- **Facebook API**: For Facebook Page integration.
-- **Reddit API**: For Reddit integration.
-- **YouTube Data API**: For YouTube integration.
-- **LinkedIn API**: For LinkedIn integration.
-- **Snapchat API**: For Snapchat integration.
-- **X (formerly Twitter) API**: For Twitter integration.
-- **DataForSEO API**: For keyword research data.
-- **SEMrush API**: For premium keyword and competitor data.
-- **Moz API**: For domain authority and keyword difficulty.
-- **Eventbrite API**: For local events, ticketing, and categories.
-- **Ticketmaster Discovery API**: For concerts, sports, theater, and attractions.
-- **Twilio API**: For SMS service integration.
-- **Unsplash API**: For stock image search and integration.
-- **Pexels API**: For alternative stock image search.
-- **TinyURL/Bitly API**: For URL shortening.
-- **PostgreSQL**: Primary database for application data, error logs, and contact information.
+### Core Integrations
+- **OpenAI API**: AI-powered campaign generation, content optimization, and diagnostics.
+- **Microsoft Graph API**: Microsoft 365 email delivery service (OAuth 2.0).
+- **Zapier**: Contact capture and automation via webhooks.
+- **Replit Auth (OpenID Connect)**: OAuth authentication (Google, GitHub, Apple, email).
+- **Instagram Graph API**: OAuth integration, content publishing, insights.
+- **TikTok API**: OAuth integration, user info, video listing, upload, publishing.
+- **Facebook API**: Facebook Page integration.
+- **Reddit API**: Reddit integration.
+- **YouTube Data API**: YouTube integration.
+- **LinkedIn API**: LinkedIn integration.
+- **Snapchat API**: Snapchat integration.
+- **X (formerly Twitter) API**: Twitter integration.
+- **DataForSEO API**: Keyword research data.
+- **SEMrush API**: Premium keyword and competitor data.
+- **Moz API**: Domain authority and keyword difficulty.
+- **Eventbrite API**: Local events, ticketing, categories.
+- **Ticketmaster Discovery API**: Concerts, sports, theater, attractions.
+- **Twilio API**: SMS service integration.
+- **Unsplash API**: Stock image search.
+- **Pexels API**: Alternative stock image search.
+- **TinyURL/Bitly API**: URL shortening.
+
+### Framework & Data Layer
+- **Flask**: Web framework with SQLAlchemy, Login, and other extensions.
+- **APScheduler**: Background task scheduling for automated campaigns.
+- **SQLAlchemy**: ORM supporting multiple database backends.
+- **Database**: SQLite for development; PostgreSQL/MySQL in production.
+
+### Frontend Dependencies
+- **Bootstrap 5**: Dark theme UI framework.
+- **Feather Icons**: Lightweight icon set.
+- **Custom CSS/JS**: Glassmorphism UI and interaction helpers.

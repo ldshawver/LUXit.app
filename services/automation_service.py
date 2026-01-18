@@ -4,7 +4,7 @@ Handles automation testing, trigger library, and A/B testing
 """
 
 from datetime import datetime
-from app import db
+from extensions import db
 from models import (Automation, AutomationTest, AutomationTriggerLibrary, 
                     AutomationABTest, Contact)
 import logging
