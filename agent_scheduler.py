@@ -7,6 +7,7 @@ from datetime import datetime, timedelta
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
+from flask import current_app
 
 logger = logging.getLogger(__name__)
 
@@ -15,13 +16,28 @@ agent_execution_history = []
 agent_health_status = {}
 
 
+def run_agent(agent, app, task_data, task_runner):
+    """Run agent tasks inside the Flask app context."""
+    with app.app_context():
+        logger.info(
+            "Running scheduled agent task within Flask app context for %s",
+            agent.agent_name,
+        )
+        return task_runner(agent, task_data)
+
+
 class AgentScheduler:
     """Scheduler for automated agent tasks"""
     
-    def __init__(self):
+    def __init__(self, app=None):
         self.scheduler = BackgroundScheduler()
         self.agents = {}
+        self.app = app
         logger.info("Agent Scheduler initialized")
+
+    def set_app(self, app):
+        """Attach Flask app for context-aware job execution."""
+        self.app = app
     
     def register_agent(self, agent_type: str, agent_instance):
         """Register an agent instance for scheduling"""
@@ -37,7 +53,7 @@ class AgentScheduler:
         
         # Quarterly strategy generation - First day of each quarter
         self.scheduler.add_job(
-            func=lambda: self._run_agent_task(agent, {
+            func=lambda: self._run_agent_task_with_context(agent, {
                 'task_type': 'quarterly_strategy',
                 'quarter': f'Q{((datetime.now().month-1)//3)+1} {datetime.now().year}',
                 'business_goals': ['Growth', 'Engagement', 'Revenue'],
@@ -50,7 +66,7 @@ class AgentScheduler:
         
         # Monthly market research - First Monday of each month
         self.scheduler.add_job(
-            func=lambda: self._run_agent_task(agent, {
+            func=lambda: self._run_agent_task_with_context(agent, {
                 'task_type': 'market_research',
                 'industry': 'General',
                 'focus_areas': ['trends', 'opportunities']
@@ -71,7 +87,7 @@ class AgentScheduler:
         
         # Weekly blog post generation - Every Monday
         self.scheduler.add_job(
-            func=lambda: self._run_agent_task(agent, {
+            func=lambda: self._run_agent_task_with_context(agent, {
                 'task_type': 'blog_post',
                 'topic': 'Industry insights and tips',
                 'word_count': 1500,
@@ -84,7 +100,7 @@ class AgentScheduler:
         
         # Monthly content calendar - Last Friday of each month
         self.scheduler.add_job(
-            func=lambda: self._run_agent_task(agent, {
+            func=lambda: self._run_agent_task_with_context(agent, {
                 'task_type': 'content_calendar',
                 'month': (datetime.now() + timedelta(days=30)).strftime('%B %Y'),
                 'frequency': 'weekly'
@@ -105,7 +121,7 @@ class AgentScheduler:
         
         # Weekly performance summary - Every Friday
         self.scheduler.add_job(
-            func=lambda: self._run_agent_task(agent, {
+            func=lambda: self._run_agent_task_with_context(agent, {
                 'task_type': 'performance_summary',
                 'period_days': 7
             }),
@@ -116,7 +132,7 @@ class AgentScheduler:
         
         # Monthly performance report - First day of month
         self.scheduler.add_job(
-            func=lambda: self._run_agent_task(agent, {
+            func=lambda: self._run_agent_task_with_context(agent, {
                 'task_type': 'performance_summary',
                 'period_days': 30
             }),
@@ -127,7 +143,7 @@ class AgentScheduler:
         
         # Daily optimization recommendations - Every day
         self.scheduler.add_job(
-            func=lambda: self._run_agent_task(agent, {
+            func=lambda: self._run_agent_task_with_context(agent, {
                 'task_type': 'optimization_recommendations',
                 'focus_area': 'overall'
             }),
@@ -150,7 +166,7 @@ class AgentScheduler:
         
         # Weekly creative assets - Every Wednesday
         self.scheduler.add_job(
-            func=lambda: self._run_agent_task(agent, {
+            func=lambda: self._run_agent_task_with_context(agent, {
                 'task_type': 'social_media_graphic',
                 'message': 'Weekly inspiration',
                 'platform': 'instagram',
@@ -169,7 +185,10 @@ class AgentScheduler:
         if 'advertising' in self.agents:
             agent = self.agents['advertising']
             self.scheduler.add_job(
-                func=lambda: self._run_agent_task(agent, {'task_type': 'campaign_strategy'}),
+                func=lambda: self._run_agent_task_with_context(
+                    agent,
+                    {'task_type': 'campaign_strategy'}
+                ),
                 trigger=CronTrigger(day_of_week='wed', hour=11),
                 id='advertising_weekly_strategy',
                 name='Advertising - Weekly Strategy Review'
@@ -180,7 +199,10 @@ class AgentScheduler:
         if 'social_media' in self.agents:
             agent = self.agents['social_media']
             self.scheduler.add_job(
-                func=lambda: self._run_agent_task(agent, {'task_type': 'daily_posts'}),
+                func=lambda: self._run_agent_task_with_context(
+                    agent,
+                    {'task_type': 'daily_posts'}
+                ),
                 trigger=CronTrigger(hour=9),
                 id='social_daily_posts',
                 name='Social Media - Daily Posts'
@@ -191,14 +213,20 @@ class AgentScheduler:
         if 'email_crm' in self.agents:
             agent = self.agents['email_crm']
             self.scheduler.add_job(
-                func=lambda: self._run_agent_task(agent, {'task_type': 'weekly_campaign'}),
+                func=lambda: self._run_agent_task_with_context(
+                    agent,
+                    {'task_type': 'weekly_campaign'}
+                ),
                 trigger=CronTrigger(day_of_week='tue', hour=10),
                 id='email_weekly_campaign',
                 name='Email CRM - Weekly Campaign'
             )
             # Daily subscriber sync
             self.scheduler.add_job(
-                func=lambda: self._run_agent_task(agent, {'task_type': 'subscriber_sync'}),
+                func=lambda: self._run_agent_task_with_context(
+                    agent,
+                    {'task_type': 'subscriber_sync'}
+                ),
                 trigger=CronTrigger(hour=7),
                 id='email_daily_subscriber_sync',
                 name='Email CRM - Daily Subscriber Sync'
@@ -209,7 +237,10 @@ class AgentScheduler:
         if 'sales_enablement' in self.agents:
             agent = self.agents['sales_enablement']
             self.scheduler.add_job(
-                func=lambda: self._run_agent_task(agent, {'task_type': 'lead_scoring'}),
+                func=lambda: self._run_agent_task_with_context(
+                    agent,
+                    {'task_type': 'lead_scoring'}
+                ),
                 trigger=CronTrigger(day_of_week='thu', hour=10),
                 id='sales_weekly_leads',
                 name='Sales Enablement - Weekly Lead Scoring'
@@ -220,7 +251,10 @@ class AgentScheduler:
         if 'retention' in self.agents:
             agent = self.agents['retention']
             self.scheduler.add_job(
-                func=lambda: self._run_agent_task(agent, {'task_type': 'churn_analysis'}),
+                func=lambda: self._run_agent_task_with_context(
+                    agent,
+                    {'task_type': 'churn_analysis'}
+                ),
                 trigger=CronTrigger(day=1, hour=14),
                 id='retention_monthly_churn',
                 name='Retention - Monthly Churn Analysis'
@@ -231,7 +265,10 @@ class AgentScheduler:
         if 'operations' in self.agents:
             agent = self.agents['operations']
             self.scheduler.add_job(
-                func=lambda: self._run_agent_task(agent, {'task_type': 'system_health'}),
+                func=lambda: self._run_agent_task_with_context(
+                    agent,
+                    {'task_type': 'system_health'}
+                ),
                 trigger=CronTrigger(hour=6),
                 id='operations_daily_health',
                 name='Operations - Daily Health Check'
@@ -247,7 +284,10 @@ class AgentScheduler:
         
         # Hourly health check
         self.scheduler.add_job(
-            func=lambda: self._run_agent_task(agent, {'task_type': 'health_check'}),
+            func=lambda: self._run_agent_task_with_context(
+                agent,
+                {'task_type': 'health_check'}
+            ),
             trigger=IntervalTrigger(hours=1),
             id='app_hourly_health_check',
             name='APP Agent - Hourly Health Check'
@@ -255,7 +295,7 @@ class AgentScheduler:
         
         # Daily usage analysis
         self.scheduler.add_job(
-            func=lambda: self._run_agent_task(agent, {
+            func=lambda: self._run_agent_task_with_context(agent, {
                 'task_type': 'usage_analysis',
                 'period_days': 1
             }),
@@ -266,7 +306,7 @@ class AgentScheduler:
         
         # Weekly improvement suggestions
         self.scheduler.add_job(
-            func=lambda: self._run_agent_task(agent, {
+            func=lambda: self._run_agent_task_with_context(agent, {
                 'task_type': 'suggest_improvements',
                 'context': 'weekly_review'
             }),
@@ -304,6 +344,16 @@ class AgentScheduler:
             
         except Exception as e:
             logger.error(f"Error running scheduled agent task: {e}")
+
+    def _run_agent_task_with_context(self, agent, task_data: dict):
+        """Execute an agent task within the Flask app context."""
+        if not self.app:
+            logger.error(
+                "Flask app context not set; skipping scheduled task for %s",
+                agent.agent_name,
+            )
+            return None
+        return run_agent(agent, self.app, task_data, self._run_agent_task)
     
     def start(self):
         """Start the scheduler"""
@@ -345,6 +395,7 @@ def get_agent_scheduler():
 def initialize_agent_scheduler():
     """Initialize and start the agent scheduler with all agents"""
     try:
+        app = current_app._get_current_object()
         from agents.brand_strategy_agent import BrandStrategyAgent
         from agents.content_seo_agent import ContentSEOAgent
         from agents.analytics_agent import AnalyticsAgent
@@ -358,6 +409,7 @@ def initialize_agent_scheduler():
         from agents.app_agent import AppAgent
         
         scheduler = get_agent_scheduler()
+        scheduler.set_app(app)
         
         # Register all 11 agents (including APP Agent)
         scheduler.register_agent('brand_strategy', BrandStrategyAgent())
