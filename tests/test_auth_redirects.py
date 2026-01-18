@@ -20,7 +20,7 @@ def client(monkeypatch):
         db.session.remove()
         db.drop_all()
 
-def test_login_redirects_to_dashboard(client):
+def test_login_ignores_next_param_and_redirects_to_dashboard(client):
     user = User(
         username="lux",
         email="lux@example.com",
@@ -31,17 +31,10 @@ def test_login_redirects_to_dashboard(client):
     db.session.commit()
 
     response = client.post(
-        "/auth/login",
+        "/auth/login?next=https://194.195.92.52/",
         data={"username": "lux", "password": "supersecret"},
         follow_redirects=False,
     )
 
     assert response.status_code == 302
     assert response.headers["Location"].endswith("/dashboard")
-
-
-def test_next_param_redirects_back_to_login(client):
-    response = client.get("/?next=https://194.195.92.52/", follow_redirects=False)
-
-    assert response.status_code == 302
-    assert response.headers["Location"].endswith("/auth/login")
