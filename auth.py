@@ -1,10 +1,11 @@
-from flask import Blueprint, render_template, request, flash, redirect, url_for, jsonify
+from flask import Blueprint, render_template, request, flash, redirect, url_for, jsonify, current_app
 from flask_login import login_user, logout_user, login_required, current_user
 from werkzeug.security import check_password_hash, generate_password_hash
 from extensions import db
 from models import User
 from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
 from sqlalchemy import or_
+from sqlalchemy.exc import SQLAlchemyError
 import os
 
 auth_bp = Blueprint('auth', __name__)
@@ -43,9 +44,14 @@ def login():
 
         preferred_match = User.email == email_lookup if normalized_email else User.username == username
 
-        user = User.query.filter(
-            or_(User.username == username, User.email == email_lookup)
-        ).order_by(preferred_match.desc()).first()
+        try:
+            user = User.query.filter(
+                or_(User.username == username, User.email == email_lookup)
+            ).order_by(preferred_match.desc()).first()
+        except SQLAlchemyError:
+            current_app.logger.exception("Login lookup failed")
+            flash('Unable to sign in right now. Please try again later.', 'error')
+            return render_template('login.html', replit_auth_enabled=replit_auth_enabled)
 
         if user and user.password_hash and check_password_hash(user.password_hash, password):
             login_user(user, remember=remember)

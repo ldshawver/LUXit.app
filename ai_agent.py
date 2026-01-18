@@ -26,12 +26,11 @@ class LUXAgent:
     """LUX - Automated Email Marketing AI Agent"""
 
     def __init__(self):
-        self._client: Optional[OpenAI] = None
-        self._api_key: Optional[str] = os.getenv("OPENAI_API_KEY")
-
-        # Use env override if you want to change models without code changes
-        self.model: str = os.getenv("OPENAI_MODEL", "gpt-4o")
-
+        self._client = None
+        self._api_key = os.getenv("OPENAI_API_KEY")
+        if not self._api_key:
+            logger.warning("OPENAI_API_KEY missing; AI features will be disabled until configured.")
+        self.model = "gpt-4o"  # Using GPT-4o for reliable performance
         self.agent_name = "LUX"
         self.agent_personality = """
 You are LUX, an expert email marketing automation agent. You are professional, data-driven,
@@ -64,57 +63,63 @@ and conversions while maintaining brand consistency.
             logger.error(f"Failed to initialize OpenAI client: {e}")
             self._client = None
 
+    def _get_client(self):
+        if self._client:
+            return self._client
+        if not self._api_key:
+            self._api_key = os.getenv("OPENAI_API_KEY")
+        if not self._api_key:
+            logger.warning("OPENAI_API_KEY missing; skipping OpenAI client initialization.")
+            return None
+        try:
+            self._client = OpenAI(api_key=self._api_key)
+            logger.info("LUX AI Agent client initialized successfully")
+        except Exception as e:
+            logger.error(f"Failed to initialize LUX AI Agent client: {e}")
+            self._client = None
         return self._client
 
     @property
-    def client(self) -> Optional[OpenAI]:
+    def client(self):
         return self._get_client()
 
-    def _require_client(self, feature_name: str) -> Optional[OpenAI]:
+    def _require_client(self, feature_name: str):
         client = self.client
         if not client:
             logger.warning("OpenAI client unavailable; %s disabled.", feature_name)
             return None
         return client
-
-    # ----------------------------
-    # Core AI generation helpers
-    # ----------------------------
-
-    def generate_campaign_content(
-        self,
-        campaign_objective: str,
-        target_audience: str,
-        brand_info: Optional[str] = None,
-    ) -> Optional[Dict[str, Any]]:
-        """Generate email campaign content based on objectives and audience."""
+    
+    def generate_campaign_content(self, campaign_objective, target_audience, brand_info=None):
+        """Generate email campaign content based on objectives and audience"""
         try:
             prompt = f"""
-As LUX, an email marketing expert, create a high-converting email campaign.
-
-Campaign Objective: {campaign_objective}
-Target Audience: {target_audience}
-Brand Information: {brand_info or 'Professional business'}
-
-Generate a complete email campaign with:
-1. Compelling subject line (under 50 characters)
-2. Professional HTML email content
-3. Clear call-to-action
-4. Personalization elements
-
-Respond in JSON format with:
-{{
-  "subject": "email subject line",
-  "html_content": "complete HTML email content",
-  "campaign_name": "descriptive campaign name",
-  "recommendations": "optimization tips"
-}}
-""".strip()
-
+            As LUX, an email marketing expert, create a high-converting email campaign.
+            
+            Campaign Objective: {campaign_objective}
+            Target Audience: {target_audience}
+            Brand Information: {brand_info or 'Professional business'}
+            
+            Generate a complete email campaign with:
+            1. Compelling subject line (under 50 characters)
+            2. Professional HTML email content
+            3. Clear call-to-action
+            4. Personalization elements
+            
+            Respond in JSON format with:
+            {
+                "subject": "email subject line",
+                "html_content": "complete HTML email content",
+                "campaign_name": "descriptive campaign name",
+                "recommendations": "optimization tips"
+            }
+            
+            Make the content engaging, professional, and conversion-focused.
+            """
+            
             client = self._require_client("campaign content generation")
             if not client:
                 return None
-
             response = client.chat.completions.create(
                 model=self.model,
                 messages=[
@@ -154,35 +159,34 @@ Respond in JSON format with:
                 )
 
             prompt = f"""
-As LUX, analyze this contact data and create optimal audience segments for email marketing.
-
-Contact Sample: {json.dumps(contact_data[:20])}
-Total Contacts: {len(contacts)}
-
-Create 3-5 audience segments based on:
-- Company types/industries
-- Contact behavior patterns
-- Optimal messaging strategies
-
-Respond in JSON format with:
-{{
-  "segments": [
-    {{
-      "name": "segment name",
-      "description": "who this segment includes",
-      "size_estimate": "percentage of audience",
-      "messaging_strategy": "how to communicate with this segment",
-      "recommended_tags": ["tag1", "tag2"]
-    }}
-  ],
-  "insights": "key findings about the audience"
-}}
-""".strip()
-
+            As LUX, analyze this contact data and create optimal audience segments for email marketing.
+            
+            Contact Data: {json.dumps(contact_data[:20])}  # Sample of contacts
+            Total Contacts: {len(contacts)}
+            
+            Create 3-5 audience segments based on:
+            - Company types/industries
+            - Contact behavior patterns
+            - Optimal messaging strategies
+            
+            Respond in JSON format with:
+            {{
+                "segments": [
+                    {{
+                        "name": "segment name",
+                        "description": "who this segment includes",
+                        "size_estimate": "percentage of audience",
+                        "messaging_strategy": "how to communicate with this segment",
+                        "recommended_tags": ["tag1", "tag2"]
+                    }}
+                ],
+                "insights": "key findings about the audience"
+            }}
+            """
+            
             client = self._require_client("audience analysis")
             if not client:
                 return None
-
             response = client.chat.completions.create(
                 model=self.model,
                 messages=[
@@ -227,36 +231,35 @@ Respond in JSON format with:
             }
 
             prompt = f"""
-As LUX, analyze this email campaign performance and provide optimization recommendations.
-
-Campaign Data: {json.dumps(campaign_data)}
-
-Industry Benchmarks:
-- Average Open Rate: 21.33%
-- Average Click Rate: 2.62%
-- Average Bounce Rate: 0.58%
-
-Provide actionable recommendations to improve performance.
-
-Respond in JSON format with:
-{{
-  "performance_assessment": "overall performance evaluation",
-  "strengths": ["what's working well"],
-  "improvements": [
-    {{
-      "area": "specific area to improve",
-      "recommendation": "specific action to take",
-      "expected_impact": "predicted improvement"
-    }}
-  ],
-  "next_campaign_suggestions": "ideas for follow-up campaigns"
-}}
-""".strip()
-
+            As LUX, analyze this email campaign performance and provide optimization recommendations.
+            
+            Campaign Data: {json.dumps(campaign_data)}
+            
+            Industry Benchmarks:
+            - Average Open Rate: 21.33%
+            - Average Click Rate: 2.62%
+            - Average Bounce Rate: 0.58%
+            
+            Provide actionable recommendations to improve performance.
+            
+            Respond in JSON format with:
+            {
+                "performance_assessment": "overall performance evaluation",
+                "strengths": ["what's working well"],
+                "improvements": [
+                    {
+                        "area": "specific area to improve",
+                        "recommendation": "specific action to take",
+                        "expected_impact": "predicted improvement"
+                    }
+                ],
+                "next_campaign_suggestions": "ideas for follow-up campaigns"
+            }
+            """
+            
             client = self._require_client("campaign optimization")
             if not client:
                 return None
-
             response = client.chat.completions.create(
                 model=self.model,
                 messages=[
@@ -366,30 +369,29 @@ Respond in JSON format with:
         try:
             keywords_str = ", ".join(keywords) if keywords else ""
             prompt = f"""
-Write a comprehensive, SEO-optimized blog post about: {topic}
-
-Keywords to include: {keywords_str}
-Tone: {tone}
-Length: 800-1200 words
-
-Include:
-1. Compelling title
-2. Introduction with hook
-3. Well-structured body with H2/H3 headings
-4. Conclusion with CTA
-5. Natural keyword integration
-
-Return JSON with:
-{{
-  "title": "blog post title",
-  "content": "full blog content with HTML formatting"
-}}
-""".strip()
-
+            Write a comprehensive, SEO-optimized blog post about: {topic}
+            
+            Keywords to include: {keywords_str}
+            Tone: {tone}
+            Length: 800-1200 words
+            
+            Include:
+            1. Compelling title
+            2. Introduction with hook
+            3. Well-structured body with H2/H3 headings
+            4. Conclusion with CTA
+            5. Natural keyword integration
+            
+            Return JSON with:
+            {{
+                "title": "blog post title",
+                "content": "full blog content with HTML formatting"
+            }}
+            """
+            
             client = self._require_client("blog post generation")
             if not client:
                 return None
-
             response = client.chat.completions.create(
                 model=self.model,
                 messages=[
@@ -411,37 +413,36 @@ Return JSON with:
         """Generate multiple subject line variants for A/B testing."""
         try:
             prompt = f"""
-As LUX, generate 5 high-converting email subject line variants for A/B testing.
-
-Campaign Objective: {campaign_objective}
-Original Subject: {original_subject or 'Not provided'}
-
-Create subject lines that use different psychological triggers:
-- Urgency
-- Curiosity
-- Benefit-focused
-- Personalization
-- Social proof
-
-Respond in JSON format with:
-{{
-  "variants": [
-    {{
-      "subject": "subject line text",
-      "strategy": "psychological trigger used",
-      "predicted_performance": "high/medium/low"
-    }}
-  ],
-  "testing_recommendations": "how to test these effectively"
-}}
-
-Keep all subject lines under 50 characters for mobile optimization.
-""".strip()
-
+            As LUX, generate 5 high-converting email subject line variants for A/B testing.
+            
+            Campaign Objective: {campaign_objective}
+            Original Subject: {original_subject or 'Not provided'}
+            
+            Create subject lines that use different psychological triggers:
+            - Urgency
+            - Curiosity
+            - Benefit-focused
+            - Personalization
+            - Social proof
+            
+            Respond in JSON format with:
+            {
+                "variants": [
+                    {
+                        "subject": "subject line text",
+                        "strategy": "psychological trigger used",
+                        "predicted_performance": "high/medium/low"
+                    }
+                ],
+                "testing_recommendations": "how to test these effectively"
+            }
+            
+            Keep all subject lines under 50 characters for mobile optimization.
+            """
+            
             client = self._require_client("subject line variants")
             if not client:
                 return None
-
             response = client.chat.completions.create(
                 model=self.model,
                 messages=[
@@ -469,38 +470,37 @@ Keep all subject lines under 50 characters for mobile optimization.
             campaign_data = campaign_data or []
 
             prompt = f"""
-As LUX, analyze the current email marketing situation and recommend new campaign strategies.
-
-Current Data:
-- Total Active Contacts: {total_contacts}
-- Recent Campaigns: {json.dumps(campaign_data)}
-- Current Date: {datetime.now().strftime('%Y-%m-%d')}
-
-Provide strategic recommendations for upcoming campaigns considering:
-- Seasonal opportunities
-- Performance trends
-- Audience engagement patterns
-- Industry best practices
-
-Respond in JSON format with:
-{{
-  "recommended_campaigns": [
-    {{
-      "campaign_type": "type of campaign",
-      "objective": "primary goal",
-      "timing": "when to send",
-      "expected_results": "predicted performance",
-      "priority": "high/medium/low"
-    }}
-  ],
-  "strategic_insights": "key observations and next steps"
-}}
-""".strip()
-
+            As LUX, analyze the current email marketing situation and recommend new campaign strategies.
+            
+            Current Data:
+            - Total Active Contacts: {total_contacts}
+            - Recent Campaigns: {json.dumps(campaign_data)}
+            - Current Date: {datetime.now().strftime('%Y-%m-%d')}
+            
+            Provide strategic recommendations for upcoming campaigns considering:
+            - Seasonal opportunities
+            - Performance trends
+            - Audience engagement patterns
+            - Industry best practices
+            
+            Respond in JSON format with:
+            {{
+                "recommended_campaigns": [
+                    {{
+                        "campaign_type": "type of campaign",
+                        "objective": "primary goal", 
+                        "timing": "when to send",
+                        "expected_results": "predicted performance",
+                        "priority": "high/medium/low"
+                    }}
+                ],
+                "strategic_insights": "key observations and next steps"
+            }}
+            """
+            
             client = self._require_client("campaign recommendations")
             if not client:
                 return None
-
             response = client.chat.completions.create(
                 model=self.model,
                 messages=[
@@ -527,18 +527,17 @@ Respond in JSON format with:
         """Generate email content using OpenAI."""
         try:
             system_prompt = f"""
-You are LUX, an expert email marketing content generator. Generate compelling {content_type}
-based on the user's requirements. Always provide 3-5 different options that are:
-- Engaging and professional
-- Action-oriented when appropriate
-- Brand-consistent
-- Optimized for email marketing
-""".strip()
-
+            You are LUX, an expert email marketing content generator. Generate compelling {content_type} 
+            based on the user's requirements. Always provide 3-5 different options that are:
+            - Engaging and professional
+            - Action-oriented when appropriate
+            - Brand-consistent
+            - Optimized for email marketing
+            """
+            
             client = self._require_client("email content generation")
             if not client:
-                return ["AI is disabled (missing OPENAI_API_KEY)."]
-
+                return ["Error generating content. Please try again."]
             response = client.chat.completions.create(
                 model=self.model,
                 messages=[
@@ -590,11 +589,10 @@ that maximize open rates. Focus on:
 """.strip()
 
             audience_context = f" for {audience}" if audience else ""
-
+            
             client = self._require_client("subject line generation")
             if not client:
-                return ["AI is disabled (missing OPENAI_API_KEY)."]
-
+                return ["Error generating subject lines. Please try again."]
             response = client.chat.completions.create(
                 model=self.model,
                 messages=[
@@ -639,18 +637,19 @@ that maximize open rates. Focus on:
                 return None
 
             prompt = f"""
-Create a professional marketing image for: {campaign_description}
-
-Style: {style}
-Requirements:
-- High-quality, professional marketing design
-- Suitable for email marketing campaigns
-- Clear, engaging visual that supports the campaign message
-- Modern, clean aesthetic
-- Brand-friendly colors and composition
-""".strip()
-
-            # DALL·E 3: do NOT pass n=
+            Create a professional marketing image for: {campaign_description}
+            
+            Style: {style}
+            Requirements:
+            - High-quality, professional marketing design
+            - Suitable for email marketing campaigns
+            - Clear, engaging visual that supports the campaign message
+            - Modern, clean aesthetic
+            - Brand-friendly colors and composition
+            """
+            
+            # Use explicit parameters to avoid any conflicts
+            # Note: DALL-E 3 doesn't support 'n' parameter (only generates 1 image)
             response = client.images.generate(
                 model="dall-e-3",
                 prompt=prompt,
@@ -753,35 +752,36 @@ Requirements:
                 campaign_image = self.generate_campaign_image(image_description, "e-commerce product showcase")
 
             prompt = f"""
-As LUX, create a high-converting product email campaign.
-
-Campaign Objective: {campaign_objective}
-Products to Feature (sample): {json.dumps(products[:3])}
-Total Products Available: {len(products)}
-Campaign Image: {'Available' if campaign_image else 'Not generated'}
-
-Create an HTML email that:
-1. Features the products prominently with images and prices
-2. Includes compelling product descriptions
-3. Has clear call-to-action buttons for each product
-4. Uses professional e-commerce email styling
-5. Includes the campaign image if available
-6. Has a compelling subject line focused on the products
-
-Respond in JSON format with:
-{{
-  "subject": "product-focused subject line",
-  "html_content": "complete HTML email with product showcase",
-  "campaign_name": "descriptive campaign name",
-  "featured_products": ["list of product names featured"],
-  "recommendations": "optimization tips for product campaigns"
-}}
-""".strip()
-
+            As LUX, create a high-converting product email campaign.
+            
+            Campaign Objective: {campaign_objective}
+            Products to Feature: {json.dumps(products[:3])}  # Top 3 products for context
+            Total Products Available: {len(products)}
+            Campaign Image: {'Available' if campaign_image else 'Not generated'}
+            
+            Create an HTML email that:
+            1. Features the products prominently with images and prices
+            2. Includes compelling product descriptions
+            3. Has clear call-to-action buttons for each product
+            4. Uses professional e-commerce email styling
+            5. Includes the campaign image if available
+            6. Has a compelling subject line focused on the products
+            
+            Respond in JSON format with:
+            {
+                "subject": "product-focused subject line",
+                "html_content": "complete HTML email with product showcase",
+                "campaign_name": "descriptive campaign name",
+                "featured_products": ["list of product names featured"],
+                "recommendations": "optimization tips for product campaigns"
+            }
+            
+            Make it conversion-focused with clear pricing and purchase buttons.
+            """
+            
             client = self._require_client("product campaign generation")
             if not client:
                 return None
-
             response = client.chat.completions.create(
                 model=self.model,
                 messages=[
@@ -812,11 +812,10 @@ Respond in JSON format with:
             logger.error("LUX error creating product campaign: %s", e)
             return None
 
+_lux_agent = None
 
-_lux_agent: Optional[LUXAgent] = None
 
-
-def get_lux_agent() -> LUXAgent:
+def get_lux_agent():
     """Lazy-load the global LUX agent instance."""
     global _lux_agent
     if _lux_agent is None:
