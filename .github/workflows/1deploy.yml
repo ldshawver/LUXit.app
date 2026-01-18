@@ -3,7 +3,7 @@ name: Deploy LUXit.app to VPS (main only)
 on:
   push:
     branches:
-      - main   # 🚨 ONLY main deploys
+      - main   # ONLY main deploys
 
 jobs:
   deploy:
@@ -12,8 +12,6 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-        with:
-          ref: main
 
       - name: Deploy to VPS
         uses: appleboy/ssh-action@v1.0.3
@@ -22,8 +20,23 @@ jobs:
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
           script: |
-            cd /var/www/lux
+            set -e
+
+            echo "📦 Switching to app directory"
+            cd /opt/lux-marketing
+
+            echo "🔄 Fetching latest code"
             git fetch origin
             git checkout main
             git reset --hard origin/main
-            systemctl restart lux
+
+            echo "🐍 Activating virtualenv"
+            source venv/bin/activate
+
+            echo "🧪 Python syntax check"
+            python3 -m py_compile app.py
+
+            echo "🔁 Restarting service"
+            sudo systemctl restart lux.service
+
+            echo "✅ Deployment complete"
