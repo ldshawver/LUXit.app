@@ -29,7 +29,7 @@ auth_bp = Blueprint("auth", __name__)
 def login():
     # If already logged in, go straight to dashboard
     if current_user.is_authenticated:
-        return redirect(url_for("main.dashboard"))
+        return redirect(url_for("main.dashboard", _external=False))
 
     if request.method == "POST":
         email = (request.form.get("email") or "").strip().lower()
@@ -62,7 +62,7 @@ def login():
         session.pop("next", None)
 
         # 🔒 HARD CANONICAL REDIRECT (NO IP, NO HOST LEAK)
-        return redirect(url_for("main.dashboard"))
+        return redirect(url_for("main.dashboard", _external=False))
 
     return render_template("auth/login.html")
 
