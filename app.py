@@ -1,31 +1,20 @@
 import os
-import logging
-import re
-import json
-from uuid import uuid4
-import importlib.util
+from urllib.parse import urlparse
 
-from dotenv import load_dotenv
-from flask import Flask, redirect, url_for, request, g
-from flask_login import LoginManager
-from werkzeug.middleware.proxy_fix import ProxyFix
-
-# ============================================================
-# Environment
-# ============================================================
-
-load_dotenv("/etc/lux-marketing/lux.env")
-
-CANONICAL_HOST = "luxit.app"
-
-# ============================================================
-# Logging (SAFE – no custom record factory)
-# ============================================================
-
-LOG_FORMAT = (
-    "%(asctime)s %(levelname)s [%(name)s] "
-    "[request_id=%(request_id)s] %(message)s"
+from flask import (
+    Blueprint,
+    render_template,
+    request,
+    flash,
+    redirect,
+    url_for,
+    session,
+    current_app,
 )
+from flask_login import login_user, logout_user, login_required, current_user
+from werkzeug.security import check_password_hash
+from sqlalchemy import or_
+from sqlalchemy.exc import SQLAlchemyError
 
 logging.basicConfig(level=logging.INFO, format=LOG_FORMAT)
 logger = logging.getLogger(__name__)
@@ -96,30 +85,31 @@ app.config.update(
 # 🔒 CANONICAL HOST ENFORCEMENT (THE FIX)
 # ============================================================
 
-@app.before_request
-def enforce_canonical_host():
-    # Allow internal health checks / CLI if needed
-    if not request.host:
-        return None
+@auth_bp.route("/login", methods=["GET", "POST"])
+def login():
+    # If already logged in, go straight to dashboard
+    if current_user.is_authenticated:
+        return redirect(url_for("main.dashboard", _external=False))
 
-    if request.host != CANONICAL_HOST:
-        target = f"https://{CANONICAL_HOST}{request.full_path}"
-        return redirect(target, code=301)
+    if request.method == "POST":
+        username_or_email = (request.form.get("username") or request.form.get("email") or "").strip()
+        password = request.form.get("password") or ""
 
+        if not username_or_email or not password:
+            flash("Username or email and password are required.", "error")
+            return render_template("auth/login.html")
 
-@app.before_request
-def assign_request_id():
-    g.request_id = request.headers.get("X-Request-ID", str(uuid4()))
-
-
-@app.after_request
-def attach_request_id(response):
-    response.headers["X-Request-ID"] = g.request_id
-    return response
-
-# ============================================================
-# Extensions
-# ============================================================
+        try:
+            normalized_email = username_or_email.lower()
+            user = User.query.filter(
+                or_(
+                    User.username == username_or_email,
+                    User.email == normalized_email,
+                )
+            ).first()
+        except SQLAlchemyError:
+            flash("Login unavailable. Please try again later.", "error")
+            return render_template("auth/login.html")
 
 from extensions import db, csrf
 
@@ -133,12 +123,8 @@ if db_url.startswith("mysql") and importlib.util.find_spec("MySQLdb") is None:
     if importlib.util.find_spec("pymysql"):
         db_url = db_url.replace("mysql://", "mysql+pymysql://", 1)
 
-app.config["SQLALCHEMY_DATABASE_URI"] = db_url
-app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
-    "pool_pre_ping": True,
-    "pool_recycle": 300,
-}
-app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+        # 🔒 HARD CANONICAL REDIRECT (NO IP, NO HOST LEAK)
+        return redirect(url_for("main.dashboard", _external=False))
 
 db.init_app(app)
 csrf.init_app(app)
@@ -191,12 +177,28 @@ for module, bp_name in [
 @app.route("/")
 def index():
     return redirect(url_for("auth.login"))
+def _is_safe_next(value: str) -> bool:
+    if not value:
+        return False
+    if value.startswith("/"):
+        return True
+    try:
+        parsed = urlparse(value)
+        return not (parsed.scheme or parsed.netloc)
+    except Exception:
+        return False
 
-# ============================================================
-# Startup
-# ============================================================
 
-with app.app_context():
-    import models
-    db.create_all()
-    logger.info("Application startup complete")
+@auth_bp.before_app_request
+def enforce_canonical_host_and_block_unsafe_next():
+    allowed_hosts = {"luxit.app", "www.luxit.app"}
+    if current_app.testing:
+        allowed_hosts.update({"localhost", "127.0.0.1"})
+
+    host = (request.headers.get("X-Forwarded-Host") or request.host or "").split(":")[0].lower()
+    if host and host not in allowed_hosts:
+        return redirect(f"https://luxit.app{request.full_path.rstrip('?')}", code=301)
+
+    nxt = request.args.get("next", "")
+    if nxt and not _is_safe_next(nxt):
+        return redirect(url_for("auth.login", _external=False))
