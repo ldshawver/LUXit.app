@@ -181,8 +181,8 @@ def attach_request_id(resp):
 def index():
     from flask_login import current_user
     if current_user.is_authenticated:
-        return redirect(url_for("main.dashboard"))
-    return redirect(url_for("auth.login"))
+        return redirect(url_for("main.dashboard", _external=False))
+    return redirect(url_for("auth.login", _external=False))
 
 # ============================================================
 # Startup
