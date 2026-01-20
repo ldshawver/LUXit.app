@@ -1,4 +1,6 @@
+import logging
 import os
+from uuid import uuid4
 from urllib.parse import urlparse
 
 from flask import (
@@ -10,6 +12,7 @@ from flask import (
     url_for,
     session,
     current_app,
+    g,
 )
 from flask_login import login_user, logout_user, login_required, current_user
 from werkzeug.security import check_password_hash
@@ -42,6 +45,31 @@ root_logger.addFilter(RequestIdFilter())
 root_logger.addFilter(RedactionFilter())
 
 # ============================================================
+# Logging (safe request_id fallback)
+# ============================================================
+
+class SafeFormatter(logging.Formatter):
+    def format(self, record):
+        if not hasattr(record, "request_id"):
+            record.request_id = "-"
+        return super().format(record)
+
+
+LOG_FORMAT = (
+    "%(asctime)s %(levelname)s [%(name)s] "
+    "[request_id=%(request_id)s] %(message)s"
+)
+
+handler = logging.StreamHandler()
+handler.setFormatter(SafeFormatter(LOG_FORMAT))
+
+root_logger = logging.getLogger()
+root_logger.setLevel(logging.INFO)
+root_logger.handlers.clear()
+root_logger.addHandler(handler)
+
+# ============================================================
+# Blueprint
 # Flask App (SINGLE INSTANCE – GLOBAL CONTROL)
 # ============================================================
 
@@ -177,6 +205,11 @@ for module, bp_name in [
 @app.route("/")
 def index():
     return redirect(url_for("auth.login"))
+
+
+@auth_bp.before_app_request
+def _canonical_host_and_request_id():
+    g.request_id = request.headers.get("X-Request-ID") or str(uuid4())
 def _is_safe_next(value: str) -> bool:
     if not value:
         return False
