@@ -5,10 +5,11 @@ import importlib.util
 from uuid import uuid4
 
 from dotenv import load_dotenv
+from urllib.parse import urlparse
+
 from flask import Flask, redirect, url_for, request, g, has_request_context
 from flask_login import LoginManager
 from werkzeug.middleware.proxy_fix import ProxyFix
-from urllib.parse import urlparse
 
 # ============================================================
 # Load environment ONCE
@@ -110,27 +111,12 @@ csrf.init_app(app)
 login_manager = LoginManager()
 login_manager.init_app(app)
 login_manager.login_view = "auth.login"
+login_manager.login_message = None
 
 @login_manager.user_loader
 def load_user(user_id):
     from models import User
     return User.query.get(int(user_id))
-
-# ============================================================
-# SAFE redirect helper (THIS FIXES THE IP BUG)
-# ============================================================
-
-def safe_redirect(target, fallback="main.dashboard"):
-    if not target:
-        return redirect(url_for(fallback))
-
-    parsed = urlparse(target)
-
-    # Reject absolute URLs, IPs, schemes
-    if parsed.scheme or parsed.netloc:
-        return redirect(url_for(fallback))
-
-    return redirect(target)
 
 # ============================================================
 # Blueprints
@@ -151,8 +137,36 @@ app.register_blueprint(advanced_config_bp)
 # ============================================================
 
 @app.before_request
+def enforce_canonical_host_and_block_unsafe_next():
+    allowed_hosts = {"luxit.app", "www.luxit.app"}
+    if app.testing:
+        allowed_hosts.update({"localhost", "127.0.0.1"})
+
+    host = (request.headers.get("X-Forwarded-Host") or request.host or "").split(":")[0].lower()
+
+    if host and host not in allowed_hosts:
+        return redirect(f"https://luxit.app{request.full_path.rstrip('?')}", code=301)
+
+    nxt = request.args.get("next", "")
+    if nxt and not _is_safe_next(nxt):
+        return redirect(url_for("auth.login"))
+
+
+@app.before_request
 def assign_request_id():
     g.request_id = request.headers.get("X-Request-ID", str(uuid4()))
+
+
+def _is_safe_next(value: str) -> bool:
+    if not value:
+        return False
+    if value.startswith("/"):
+        return True
+    try:
+        parsed = urlparse(value)
+        return not (parsed.scheme or parsed.netloc)
+    except Exception:
+        return False
 
 @app.after_request
 def attach_request_id(resp):
