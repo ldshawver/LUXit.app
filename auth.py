@@ -149,7 +149,7 @@ def enforce_canonical_host_and_block_unsafe_next():
 
     nxt = request.args.get("next", "")
     if nxt and not _is_safe_next(nxt):
-        return redirect(url_for("auth.login"))
+        return redirect(url_for("auth.login", _external=False))
 
 
 @app.before_request

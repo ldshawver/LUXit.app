@@ -20,7 +20,7 @@ def client(monkeypatch):
         db.session.remove()
         db.drop_all()
 
-def test_login_redirects_to_dashboard(client):
+def test_login_ignores_next_param_and_redirects_to_dashboard(client):
     user = User(
         username="lux",
         email="lux@example.com",
@@ -32,6 +32,7 @@ def test_login_redirects_to_dashboard(client):
 
     response = client.post(
         "/auth/login",
+        "/auth/login?next=https://194.195.92.52/",
         data={"username": "lux", "password": "supersecret"},
         follow_redirects=False,
     )
