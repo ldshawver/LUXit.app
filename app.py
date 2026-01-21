@@ -1,45 +1,99 @@
-import os
 import logging
-import json
+import os
+from uuid import uuid4
+from urllib.parse import urlparse
+
+from dotenv import load_dotenv
+from flask import Flask, g, redirect, render_template, request, url_for
+from flask_login import LoginManager, current_user
+from werkzeug.middleware.proxy_fix import ProxyFix
+
+from extensions import db, csrf
+
+load_dotenv("/etc/lux-marketing/lux.env")
+
+
+class SafeFormatter(logging.Formatter):
+    def format(self, record):
+        if not hasattr(record, "request_id"):
+            record.request_id = "-"
+        return super().format(record)
+
+
+LOG_FORMAT = (
+    "%(asctime)s %(levelname)s [%(name)s] "
+    "[request_id=%(request_id)s] %(message)s"
+)
 import re
 import importlib.util
 from uuid import uuid4
 
 from dotenv import load_dotenv
-
-# ============================================================
-# Load environment FIRST
-# ============================================================
-
-load_dotenv("/etc/lux-marketing/lux.env")
-
-from flask import Flask, redirect, url_for, request, g, has_request_context
+from flask import Flask, redirect, url_for, request, g
 from flask_login import LoginManager
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 # ============================================================
-# Logging configuration (SAFE – no LogRecordFactory)
+# Load environment
 # ============================================================
 
+load_dotenv("/etc/lux-marketing/lux.env")
+
+# ============================================================
+# Flask app
+from uuid import uuid4
+from urllib.parse import urlparse
+
+from flask import (
+    Blueprint,
+    render_template,
+    request,
+    flash,
+    redirect,
+    url_for,
+    session,
+    current_app,
+    g,
+)
+from flask_login import login_user, logout_user, login_required, current_user
+from werkzeug.security import check_password_hash
+from sqlalchemy import or_
+from sqlalchemy.exc import SQLAlchemyError
+
+logging.basicConfig(level=logging.INFO, format=LOG_FORMAT)
+logger = logging.getLogger(__name__)
+root_logger = logging.getLogger()
+
+
 class RequestIdFilter(logging.Filter):
-    """Inject request IDs into log records when available."""
-    def filter(self, record: logging.LogRecord) -> bool:
-        record.request_id = getattr(g, "request_id", "-") if has_request_context() else "-"
+    def filter(self, record):
+        record.request_id = getattr(g, "request_id", "-")
         return True
 
 
 class RedactionFilter(logging.Filter):
-    """Redact sensitive tax identifiers from logs."""
     _nine_digit = re.compile(r"\b\d{9}\b")
     _keys = re.compile(r"\b(tin|ssn|ein)\b", re.IGNORECASE)
 
-    def filter(self, record: logging.LogRecord) -> bool:
+    def filter(self, record):
         if isinstance(record.msg, str):
-            record.msg = self._keys.sub(
-                "[redacted]",
-                self._nine_digit.sub("***REDACTED***", record.msg),
-            )
+            record.msg = self._nine_digit.sub("***REDACTED***", record.msg)
+            record.msg = self._keys.sub("[redacted]", record.msg)
         return True
+
+
+root_logger.addFilter(RequestIdFilter())
+root_logger.addFilter(RedactionFilter())
+
+# ============================================================
+# Logging (safe request_id fallback)
+# ============================================================
+
+class SafeFormatter(logging.Formatter):
+    def format(self, record):
+        if not hasattr(record, "request_id"):
+            record.request_id = "-"
+        return super().format(record)
 
 
 LOG_FORMAT = (
@@ -47,34 +101,75 @@ LOG_FORMAT = (
     "[request_id=%(request_id)s] %(message)s"
 )
 
-logging.basicConfig(level=logging.INFO, format=LOG_FORMAT)
+handler = logging.StreamHandler()
+handler.setFormatter(SafeFormatter(LOG_FORMAT))
 
 root_logger = logging.getLogger()
-root_logger.addFilter(RequestIdFilter())
-root_logger.addFilter(RedactionFilter())
-
-logger = logging.getLogger(__name__)
+root_logger.setLevel(logging.INFO)
+root_logger.handlers.clear()
+root_logger.addHandler(handler)
 
 # ============================================================
-# Flask app creation
+# Logging (safe request_id fallback)
+# ============================================================
+
+class SafeFormatter(logging.Formatter):
+    def format(self, record):
+        if not hasattr(record, "request_id"):
+            record.request_id = "-"
+        return super().format(record)
+
+
+LOG_FORMAT = (
+    "%(asctime)s %(levelname)s [%(name)s] "
+    "[request_id=%(request_id)s] %(message)s"
+)
+
+handler = logging.StreamHandler()
+handler.setFormatter(SafeFormatter(LOG_FORMAT))
+
+root_logger = logging.getLogger()
+root_logger.setLevel(logging.INFO)
+root_logger.handlers.clear()
+root_logger.addHandler(handler)
+
+# ============================================================
+# Blueprint
+# Flask App (SINGLE INSTANCE – GLOBAL CONTROL)
 # ============================================================
 
 app = Flask(__name__)
 
+# 🔒 HARD CANONICAL DOMAIN LOCK
+app.config.update(
+    SERVER_NAME="luxit.app",
+    APPLICATION_ROOT="/",
+    PREFERRED_URL_SCHEME="https",
+    SESSION_COOKIE_SECURE=True,
+    SESSION_COOKIE_SAMESITE="None",
+)
+
+# REQUIRED secret
+app.config["SECRET_KEY"] = (
+    os.getenv("SESSION_SECRET") or os.getenv("SECRET_KEY")
+)
+if not app.config["SECRET_KEY"]:
+    raise RuntimeError("SESSION_SECRET must be set")
+
+# TRUST NGINX — REQUIRED
 # ------------------------------------------------------------
-# Secret key (REQUIRED)
+# Secrets (REQUIRED)
 # ------------------------------------------------------------
 
 app.config["SECRET_KEY"] = (
-    os.environ.get("SESSION_SECRET")
-    or os.environ.get("SECRET_KEY")
+    os.getenv("SESSION_SECRET") or os.getenv("SECRET_KEY")
 )
 
 if not app.config["SECRET_KEY"]:
     raise RuntimeError("SESSION_SECRET or SECRET_KEY must be set")
 
 # ------------------------------------------------------------
-# Reverse proxy trust (CRITICAL for HTTPS + cookies)
+# Trust Nginx reverse proxy
 # ------------------------------------------------------------
 
 app.wsgi_app = ProxyFix(
@@ -85,59 +180,218 @@ app.wsgi_app = ProxyFix(
     x_port=1,
 )
 
-app.config.update(
-    PREFERRED_URL_SCHEME="https",
-    SESSION_COOKIE_SECURE=True,
-    SESSION_COOKIE_SAMESITE="None",
-)
-
 # ============================================================
 # Extensions
 # ============================================================
 
 from extensions import db, csrf
 
+db.init_app(app)
+csrf.init_app(app)
+
 # ============================================================
-# Database configuration
+# Login manager
 # ============================================================
 
-db_url = os.environ.get("DATABASE_URL", "sqlite:///email_marketing.db")
+login_manager = LoginManager()
+login_manager.init_app(app)
+login_manager.login_view = "auth.login"
+
+@login_manager.user_loader
+def load_user(user_id):
+    from models import User
+    return User.query.get(int(user_id))
+
+# ============================================================
+# Blueprints
+# ============================================================
+
+from routes import main_bp
+from auth import auth_bp
+
+app.register_blueprint(main_bp)
+app.register_blueprint(auth_bp, url_prefix="/auth")
+
+# ============================================================
+# Request safety net (BLOCK IP HOSTS)
+# ============================================================
+
+@app.before_request
+def enforce_canonical_host():
+    if request.host != "luxit.app":
+        return redirect(
+            "https://luxit.app" + request.full_path,
+            code=301,
+        )
+    g.request_id = request.headers.get("X-Request-ID", str(uuid4()))
+
+# ============================================================
+# Root
+# ============================================================
+
+
+# ------------------------------------------------------------
+# URL + Cookie Security (CRITICAL)
+# ------------------------------------------------------------
+
+app.config.update(
+    SERVER_NAME=CANONICAL_HOST,
+    PREFERRED_URL_SCHEME="https",
+    SESSION_COOKIE_SECURE=True,
+    SESSION_COOKIE_SAMESITE="None",
+)
+
+# ============================================================
+# 🔒 CANONICAL HOST ENFORCEMENT (THE FIX)
+# ============================================================
+
+@auth_bp.route("/login", methods=["GET", "POST"])
+def login():
+    # If already logged in, go straight to dashboard
+    if current_user.is_authenticated:
+        return redirect(url_for("main.dashboard", _external=False))
+
+    if request.method == "POST":
+        username_or_email = (request.form.get("username") or request.form.get("email") or "").strip()
+        password = request.form.get("password") or ""
+
+        if not username_or_email or not password:
+            flash("Username or email and password are required.", "error")
+            return render_template("auth/login.html")
+
+handler = logging.StreamHandler()
+handler.setFormatter(SafeFormatter(LOG_FORMAT))
+
+root_logger = logging.getLogger()
+root_logger.setLevel(logging.INFO)
+root_logger.handlers.clear()
+root_logger.addHandler(handler)
+
+
+def _is_safe_next(value: str) -> bool:
+    if not value:
+        return False
+    if value.startswith("/"):
+        return True
+    try:
+        parsed = urlparse(value)
+        return not (parsed.scheme or parsed.netloc)
+    except Exception:
+        return False
+
+
+def create_app():
+    app = Flask(__name__, template_folder="templates", static_folder="static")
+
+    app.config["SECRET_KEY"] = os.environ.get("SESSION_SECRET", "dev-secret")
+    db_uri = os.environ.get("SQLALCHEMY_DATABASE_URI") or os.environ.get("DATABASE_URL")
+    if db_uri:
+        app.config["SQLALCHEMY_DATABASE_URI"] = db_uri
+    app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+
+    app.wsgi_app = ProxyFix(
+        app.wsgi_app,
+        x_for=1,
+        x_proto=1,
+        x_host=1,
+        x_port=1,
+    )
+
+    db.init_app(app)
+    csrf.init_app(app)
+
+    login_manager = LoginManager()
+    login_manager.init_app(app)
+    login_manager.login_view = "auth.login"
+    login_manager.login_message = None
+
+    @login_manager.user_loader
+    def load_user(user_id):
+        from models import User
+        return User.query.get(int(user_id))
+
+    from auth import auth_bp
+    from routes import main_bp
+
+    app.register_blueprint(auth_bp)
+    app.register_blueprint(main_bp)
+
+    @app.before_request
+    def bootstrap_request():
+        g.request_id = request.headers.get("X-Request-ID") or str(uuid4())
+
+        allowed_hosts = {"luxit.app", "www.luxit.app"}
+        if app.testing:
+            allowed_hosts.update({"localhost", "127.0.0.1"})
+
+        host = (request.headers.get("X-Forwarded-Host") or request.host or "").split(":")[0].lower()
+        if host and host not in allowed_hosts:
+            return redirect(f"https://luxit.app{request.full_path.rstrip('?')}", code=301)
+
+        nxt = request.args.get("next", "")
+        if nxt and not _is_safe_next(nxt):
+            return redirect(url_for("auth.login"))
+
+    @app.after_request
+    def attach_request_id(response):
+        if not hasattr(g, "request_id"):
+            g.request_id = "-"
+        response.headers["X-Request-ID"] = g.request_id
+        return response
+
+    @app.route("/")
+    def index():
+        if current_user.is_authenticated:
+            return redirect(url_for("main.dashboard"))
+        return redirect(url_for("auth.login"))
+
+    @app.errorhandler(404)
+    def not_found(_error):
+        return render_template("errors/404.html"), 404
+
+    @app.errorhandler(500)
+    def server_error(_error):
+        return render_template("errors/500.html"), 500
+
+    if app.config.get("SQLALCHEMY_DATABASE_URI"):
+        try:
+            with app.app_context():
+                db.create_all()
+        except Exception:
+            root_logger.exception("Database initialization failed")
+
+    return app
+            normalized_email = username_or_email.lower()
+            user = User.query.filter(
+                or_(
+                    User.username == username_or_email,
+                    User.email == normalized_email,
+                )
+            ).first()
+        except SQLAlchemyError:
+            flash("Login unavailable. Please try again later.", "error")
+            return render_template("auth/login.html")
+
+from extensions import db, csrf
+
+# ============================================================
+# Database
+# ============================================================
+
+db_url = os.getenv("DATABASE_URL", "sqlite:///email_marketing.db")
 
 if db_url.startswith("mysql") and importlib.util.find_spec("MySQLdb") is None:
     if importlib.util.find_spec("pymysql"):
         db_url = db_url.replace("mysql://", "mysql+pymysql://", 1)
-        logger.warning("MySQLdb missing; falling back to PyMySQL")
-    elif os.environ.get("CODEX_ENV") == "dev":
-        db_url = "sqlite:///email_marketing.db"
-        logger.warning("MySQLdb missing in dev; using sqlite")
 
-app.config.update(
-    SQLALCHEMY_DATABASE_URI=db_url,
-    SQLALCHEMY_ENGINE_OPTIONS={
-        "pool_recycle": 300,
-        "pool_pre_ping": True,
-    },
-    SQLALCHEMY_TRACK_MODIFICATIONS=False,
-)
+        # 🔒 HARD CANONICAL REDIRECT (NO IP, NO HOST LEAK)
+        return redirect(url_for("main.dashboard", _external=False))
 
 db.init_app(app)
-
-# ============================================================
-# CSRF
-# ============================================================
-
-app.config.update(
-    WTF_CSRF_ENABLED=True,
-    WTF_CSRF_CHECK_DEFAULT=True,
-    WTF_CSRF_METHODS=["POST", "PUT", "PATCH", "DELETE"],
-    WTF_CSRF_TIME_LIMIT=None,
-    WTF_CSRF_SSL_STRICT=False,
-)
-
 csrf.init_app(app)
 
 # ============================================================
-# Flask-Login
+# Authentication
 # ============================================================
 
 login_manager = LoginManager()
@@ -151,7 +405,7 @@ def load_user(user_id):
     return User.query.get(int(user_id))
 
 # ============================================================
-# Blueprints
+# Routes / Blueprints
 # ============================================================
 
 from routes import main_bp
@@ -164,126 +418,62 @@ app.register_blueprint(auth_bp, url_prefix="/auth")
 app.register_blueprint(user_bp, url_prefix="/user")
 app.register_blueprint(advanced_config_bp)
 
-# Optional integrations
-
-def _safe_register(msg, fn):
+# Optional OAuth integrations (safe)
+for module, bp_name in [
+    ("tiktok_auth", "tiktok_bp"),
+    ("facebook_auth", "facebook_auth_bp"),
+    ("instagram_auth", "instagram_auth_bp"),
+]:
     try:
-        fn()
-        logger.info(msg)
-    except Exception as e:
-        logger.warning("%s: %s", msg, e)
-
-_safe_register(
-    "Replit Auth available",
-    lambda: (
-        __import__("replit_auth").make_replit_blueprint()
-        and app.register_blueprint(
-            __import__("replit_auth").make_replit_blueprint(),
-            url_prefix="/replit-auth",
-        )
-    ),
-)
-
-_safe_register(
-    "TikTok OAuth available",
-    lambda: (
-        app.register_blueprint(__import__("tiktok_auth").tiktok_bp),
-        app.register_blueprint(__import__("tiktok_auth").tiktok_api_bp),
-    ),
-)
-
-_safe_register(
-    "Facebook OAuth available",
-    lambda: app.register_blueprint(__import__("facebook_auth").facebook_auth_bp),
-)
-
-_safe_register(
-    "Instagram OAuth available",
-    lambda: app.register_blueprint(__import__("instagram_auth").instagram_auth_bp),
-)
-
-_safe_register(
-    "Facebook webhook available",
-    lambda: (
-        app.register_blueprint(__import__("fb_webhook").fb_webhook),
-        csrf.exempt(__import__("fb_webhook").fb_webhook),
-    ),
-)
+        mod = __import__(module)
+        app.register_blueprint(getattr(mod, bp_name))
+        logger.info("%s enabled", module)
+    except Exception:
+        pass
 
 # ============================================================
-# Request lifecycle
+# Root Route
 # ============================================================
-
-@app.before_request
-def assign_request_id():
-    g.request_id = request.headers.get("X-Request-ID") or str(uuid4())
-
-
-@app.after_request
-def attach_request_id(response):
-    if hasattr(g, "request_id"):
-        response.headers["X-Request-ID"] = g.request_id
-    return response
-
 
 @app.route("/")
 def index():
     return redirect(url_for("auth.login"))
 
 # ============================================================
-# Startup diagnostics
-# ============================================================
-
-def _log_startup_feature_summary():
-    features = {
-        "openai": bool(os.getenv("OPENAI_API_KEY")),
-        "replit_auth": bool(os.getenv("REPL_ID")),
-        "tiktok": bool(os.getenv("TIKTOK_CLIENT_KEY")),
-        "microsoft_graph": bool(os.getenv("MS_CLIENT_ID")),
-        "twilio": bool(os.getenv("TWILIO_ACCOUNT_SID")),
-        "stripe": bool(os.getenv("STRIPE_SECRET_KEY")),
-        "woocommerce": bool(os.getenv("WC_STORE_URL")),
-        "ga4": bool(os.getenv("GA4_PROPERTY_ID")),
-    }
-    logger.info("Startup feature summary: %s", features)
-
-_log_startup_feature_summary()
-
-# ============================================================
-# App initialization
+# Startup
 # ============================================================
 
 with app.app_context():
     import models
-    from error_logger import ErrorLog
-
     db.create_all()
 
-    try:
-        from services.automation_service import AutomationService
-        AutomationService.seed_trigger_library()
-        logger.info("Automation triggers seeded")
-    except Exception as e:
-        logger.error("Automation seed error: %s", e)
+@auth_bp.before_app_request
+def _canonical_host_and_request_id():
+    g.request_id = request.headers.get("X-Request-ID") or str(uuid4())
 
-    try:
-        from error_logger import setup_error_logging_handler
-        setup_error_logging_handler()
-        logger.info("Error logging initialized")
-    except Exception as e:
-        logger.error("Error logger init failed: %s", e)
 
+def _is_safe_next(value: str) -> bool:
+    if not value:
+        return False
+    if value.startswith("/"):
+        return True
     try:
-        from agent_scheduler import initialize_agent_scheduler, get_agent_scheduler
-        initialize_agent_scheduler()
-        app.agent_scheduler = get_agent_scheduler()
-        logger.info("AI Agent Scheduler initialized")
-    except Exception as e:
-        logger.error("Agent scheduler error: %s", e)
+        parsed = urlparse(value)
+        return not (parsed.scheme or parsed.netloc)
+    except Exception:
+        return False
 
-    try:
-        from scheduler import init_scheduler
-        init_scheduler(app)
-        logger.info("Email scheduler initialized")
-    except Exception as e:
-        logger.error("Email scheduler error: %s", e)
+
+@auth_bp.before_app_request
+def enforce_canonical_host_and_block_unsafe_next():
+    allowed_hosts = {"luxit.app", "www.luxit.app"}
+    if current_app.testing:
+        allowed_hosts.update({"localhost", "127.0.0.1"})
+
+    host = (request.headers.get("X-Forwarded-Host") or request.host or "").split(":")[0].lower()
+    if host and host not in allowed_hosts:
+        return redirect(f"https://luxit.app{request.full_path.rstrip('?')}", code=301)
+
+    nxt = request.args.get("next", "")
+    if nxt and not _is_safe_next(nxt):
+        return redirect(url_for("auth.login", _external=False))

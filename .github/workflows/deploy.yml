@@ -3,18 +3,15 @@ name: Deploy LUXit.app to VPS (main only)
 on:
   push:
     branches:
-      - main   # 🚨 ONLY main deploys
+      - main
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    environment: production   # 🔴 THIS WAS MISSING
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-        with:
-          ref: main
 
       - name: Deploy to VPS
         uses: appleboy/ssh-action@v1.0.3
@@ -22,10 +19,31 @@ jobs:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
+          port: 22
           script: |
-            cd /opt/lux-marketing
-            git fetch --all
-            git reset --hard origin/main
+            set -euxo pipefail
+
+            echo "📦 Connected"
+            whoami
+            hostname
+
+            echo "📁 App directory"
+            cd /opt/luxit
+
+            echo "📄 Files"
+            ls -la
+
+            echo "🐍 Activate venv"
             source venv/bin/activate
-            pip install -r requirements.txt
+
+            echo "🧪 Python compile"
+            python3 -m py_compile app.py
+
+            echo "🔁 Restart service"
             systemctl restart lux.service
+
+            echo "🩺 Health check"
+            sleep 3
+            curl -sSf http://127.0.0.1:8000/ >/dev/null
+
+            echo "✅ Deploy SUCCESS"

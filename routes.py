@@ -57,7 +57,7 @@ def get_app_version() -> str:
         return "unknown"
 
 ROUTE_MANIFEST = [
-    {"name": "dashboard", "path": "/", "requires_auth": True, "aliases": ["/dashboard"]},
+    {"name": "dashboard", "path": "/dashboard", "requires_auth": True, "aliases": ["/"]},
     {"name": "login", "path": "/auth/login", "requires_auth": False, "aliases": ["/login"]},
     {"name": "logout", "path": "/auth/logout", "requires_auth": True, "aliases": ["/logout"]},
     {"name": "user_profile", "path": "/user/profile", "requires_auth": True, "aliases": ["/profile/<id>"]},
@@ -226,7 +226,7 @@ def admin_fix_approve(proposal_id):
     return jsonify(proposal)
 from sqlalchemy.exc import SQLAlchemyError
 
-@main_bp.route('/')
+@main_bp.route('/dashboard')
 @login_required
 def dashboard():
     try:
