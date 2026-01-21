@@ -1,9 +1,9 @@
-import os
-import logging
-import re
-import importlib.util
-from uuid import uuid4
+from flask import Blueprint, flash, redirect, render_template, request, url_for
+from flask_login import current_user, login_user, logout_user
+from sqlalchemy import or_
+from werkzeug.security import check_password_hash
 
+from models import User
 from dotenv import load_dotenv
 from urllib.parse import urlparse
 
@@ -11,12 +11,17 @@ from flask import Flask, redirect, url_for, request, g, has_request_context
 from flask_login import LoginManager
 from werkzeug.middleware.proxy_fix import ProxyFix
 
-# ============================================================
-# Load environment ONCE
-# ============================================================
+auth_bp = Blueprint("auth", __name__, url_prefix="/auth")
 
-load_dotenv("/etc/lux-marketing/lux.env")
 
+@auth_bp.route("/login", methods=["GET", "POST"])
+def login():
+    if current_user.is_authenticated:
+        return redirect(url_for("main.dashboard"))
+
+    if request.method == "POST":
+        username_or_email = (request.form.get("username") or request.form.get("email") or "").strip()
+        password = request.form.get("password") or ""
 # ============================================================
 # Logging (NO record factory, NO recursion)
 # ============================================================
@@ -122,20 +127,26 @@ def load_user(user_id):
 # Blueprints
 # ============================================================
 
-from routes import main_bp
-from auth import auth_bp
-from user_management import user_bp
-from advanced_config import advanced_config_bp
+        if not username_or_email or not password:
+            flash("Username or email and password are required.", "error")
+            return render_template("auth/login.html")
 
-app.register_blueprint(main_bp)
-app.register_blueprint(auth_bp, url_prefix="/auth")
-app.register_blueprint(user_bp, url_prefix="/user")
-app.register_blueprint(advanced_config_bp)
+        normalized_email = username_or_email.lower()
+        user = User.query.filter(
+            or_(
+                User.username == username_or_email,
+                User.email == normalized_email,
+            )
+        ).first()
 
-# ============================================================
-# Request lifecycle
-# ============================================================
+        if not user or not user.password_hash or not check_password_hash(user.password_hash, password):
+            flash("Invalid username/email or password.", "error")
+            return render_template("auth/login.html")
 
+        login_user(user)
+        return redirect(url_for("main.dashboard"))
+
+    return render_template("auth/login.html")
 @app.before_request
 def enforce_canonical_host_and_block_unsafe_next():
     allowed_hosts = {"luxit.app", "www.luxit.app"}
@@ -173,10 +184,11 @@ def attach_request_id(resp):
     resp.headers["X-Request-ID"] = g.request_id
     return resp
 
-# ============================================================
-# Index route (NO login loop, NO IP)
-# ============================================================
 
+@auth_bp.route("/logout")
+def logout():
+    logout_user()
+    return redirect(url_for("auth.login"))
 @app.route("/")
 def index():
     from flask_login import current_user
