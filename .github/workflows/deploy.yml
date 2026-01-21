@@ -1,58 +1,73 @@
-- name: Deploy to VPS
-  uses: appleboy/ssh-action@v1.0.3
-  with:
-    host: ${{ secrets.VPS_HOST }}
-    username: ${{ secrets.VPS_USER }}
-    key: ${{ secrets.VPS_SSH_KEY }}
-    port: 22
-    timeout: 30s
-    command_timeout: 10m
-    script: |
-      set -euxo pipefail
+name: Deploy LUXit.app to VPS (main only)
 
-      echo "📦 Connected"
-      whoami
-      hostname
-      pwd || true
+on:
+  push:
+    branches:
+      - main   # ONLY main deploys
 
-      echo "📁 Checking app directory"
-      if [ ! -d "/var/www/lux-marketing" ]; then
-        echo "❌ /var/www/lux-marketing not found"
-        ls -la /var/www || true
-        exit 1
-      fi
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
 
-      cd /var/www/lux-marketing
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-      echo "🔎 Files:"
-      ls -la
+      - name: Deploy to VPS
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: |
+            set -euxo pipefail
 
-      echo "🐍 Activating virtualenv"
-      if [ ! -f "venv/bin/activate" ]; then
-        echo "❌ venv missing at venv/bin/activate"
-        exit 1
-      fi
-      source venv/bin/activate
+            echo "📦 Reporting remote user/host"
+            whoami || true
+            hostname || true
 
-      echo "🧪 Python compile check"
-      python3 -m py_compile app.py
+            echo "📁 Check app directory and venv"
+            if [ ! -d "/opt/luxit" ]; then
+              echo "❌ /opt/luxit not found"
+              ls -la /
+              exit 1
+            fi
+            cd /opt/luxit
 
-      echo "🔁 Restarting systemd service"
-      sudo -n systemctl restart lux-marketing || {
-        echo "❌ Restart failed"
-        sudo systemctl status lux-marketing --no-pager -l || true
-        sudo journalctl -u lux-marketing -n 200 --no-pager || true
-        exit 1
-      }
+            echo "🔎 Show files"
+            ls -la
 
-      echo "🌡️ Health check"
-      if timeout 15 curl -sSf http://127.0.0.1:5000/ >/dev/null; then
-        echo "✅ App responding locally"
-      else
-        echo "❌ App not responding"
-        sudo systemctl status lux-marketing --no-pager -l || true
-        sudo journalctl -u lux-marketing -n 200 --no-pager || true
-        exit 1
-      fi
+            echo "🐍 Check and activate virtualenv"
+            if [ ! -f "venv/bin/activate" ]; then
+              echo "❌ venv not found at venv/bin/activate"
+              exit 1
+            fi
+            # shellcheck disable=SC1091
+            source venv/bin/activate
 
-      echo "✅ Deployment complete"
+            echo "🧪 Python compile check"
+            python3 -m py_compile app.py
+
+            echo "🔁 Restarting service"
+            # If VPS_USER is not root, the sudo must be passwordless for systemctl commands
+            if sudo -n true 2>/dev/null; then
+              sudo systemctl restart lux.service
+            else
+              echo "⚠️ sudo requires a password for this user. Either use root or enable passwordless sudo for systemctl."
+              exit 1
+            fi
+
+            echo "Waiting a moment for service..."
+            sleep 5
+
+            echo "Checking service health"
+            if timeout 15 curl -sSf http://127.0.0.1:5000/ >/dev/null 2>&1; then
+              echo "✅ Backend responding locally"
+            else
+              echo "❌ Backend not responding locally - dumping service status + journal"
+              sudo systemctl status lux --no-pager -l || true
+              sudo journalctl -u lux -n 200 --no-pager || true
+              exit 1
+            fi
+
+            echo "✅ Deployment complete"
