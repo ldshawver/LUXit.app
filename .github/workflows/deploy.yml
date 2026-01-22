@@ -1,4 +1,4 @@
-name: Deploy LUXit.app to VPS
+name: Deploy LUXit.app to VPS (main only)
 
 on:
   push:
@@ -10,40 +10,41 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
+      - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Deploy via SSH
+      - name: Deploy to VPS
         uses: appleboy/ssh-action@v1.0.3
         with:
-          host: ${{ secrets.VPS_HOST }}        # IP ONLY
-          username: ${{ secrets.VPS_USER }}    # root or deploy user
-          key: ${{ secrets.VPS_SSH_KEY }}      # PRIVATE KEY
-          port: 22
-          timeout: 30s
-          command_timeout: 10m
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
           script: |
             set -euxo pipefail
 
-            echo "📁 Move to app directory"
+            echo "📦 Switching to app directory"
             cd /opt/luxit
 
-            echo "📥 Update code"
-            git fetch --all
+            echo "🔄 Fetching latest code"
+            git fetch origin
+            git checkout main
             git reset --hard origin/main
 
-            echo "🐍 Activate venv"
+            echo "🐍 Activating virtualenv"
             source venv/bin/activate
 
-            echo "🧪 Compile check"
-            python -m py_compile app.py auth.py
+            echo "🧪 Compile check (entrypoints)"
+            python -m py_compile wsgi.py
+            python -m py_compile auth.py
 
-            echo "🔁 Restart service"
+            echo "🔁 Restarting service"
             systemctl restart lux.service
 
-            echo "🩺 Health check"
-            sleep 10
-            systemctl is-active --quiet lux.service
+            echo "⏳ Waiting briefly for boot"
+            sleep 2
 
+            echo "🩺 Health check (local upstream)"
+            # Use Host header to avoid canonical-host redirects interfering with validation
+            timeout 15 curl -sSf http://127.0.0.1:5000/healthz -H "Host: luxit.app" >/dev/null
 
-            echo "✅ DEPLOY SUCCESS"
+            echo "✅ Deployment complete"
