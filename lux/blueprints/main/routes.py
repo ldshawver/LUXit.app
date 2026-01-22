@@ -64,10 +64,7 @@ def _update_rollup(company_id: int, day_value: date, event_name: str, session_se
 @main_bp.route("/e", methods=["POST"])
 def collect_event():
     payload = request.get_json(silent=True) or {}
-    try:
-        company_id = int(payload.get("company_id"))
-    except (TypeError, ValueError):
-        company_id = None
+    company_id = payload.get("company_id")
     if not company_id:
         return jsonify({"error": "company_id required"}), 400
 
@@ -145,9 +142,6 @@ def collect_event():
 @login_required
 def analytics_report():
     company_id = request.args.get("company_id", type=int)
-    if not company_id and getattr(current_user, "get_default_company", None):
-        company = current_user.get_default_company()
-        company_id = company.id if company else None
     if not company_id:
         flash("company_id required", "error")
         return redirect(url_for("main.dashboard"))
@@ -190,9 +184,6 @@ def analytics_report():
 @login_required
 def analytics_report_print():
     company_id = request.args.get("company_id", type=int)
-    if not company_id and getattr(current_user, "get_default_company", None):
-        company = current_user.get_default_company()
-        company_id = company.id if company else None
     if not company_id:
         return redirect(url_for("main.dashboard"))
 
@@ -213,9 +204,6 @@ def analytics_report_print():
 @login_required
 def analytics_report_export(fmt):
     company_id = request.args.get("company_id", type=int)
-    if not company_id and getattr(current_user, "get_default_company", None):
-        company = current_user.get_default_company()
-        company_id = company.id if company else None
     if not company_id:
         return redirect(url_for("main.dashboard"))
 
@@ -305,9 +293,6 @@ def analytics_report_export(fmt):
 @login_required
 def analytics_summary_api():
     company_id = request.args.get("company_id", type=int)
-    if not company_id and getattr(current_user, "get_default_company", None):
-        company = current_user.get_default_company()
-        company_id = company.id if company else None
     if not company_id:
         return jsonify({"error": "company_id required"}), 400
     range_preset = request.args.get("range", "last_month")
@@ -321,9 +306,6 @@ def analytics_summary_api():
 @login_required
 def integrations_status():
     company_id = request.args.get("company_id", type=int)
-    if not company_id and getattr(current_user, "get_default_company", None):
-        company = current_user.get_default_company()
-        company_id = company.id if company else None
     is_admin = getattr(current_user, "is_admin_user", False) or getattr(current_user, "is_admin", False)
     if not company_id or not is_admin:
         return jsonify({"error": "admin access required"}), 403
@@ -345,9 +327,6 @@ def integrations_status():
 @login_required
 def generate_executive_report():
     company_id = request.args.get("company_id", type=int)
-    if not company_id and getattr(current_user, "get_default_company", None):
-        company = current_user.get_default_company()
-        company_id = company.id if company else None
     is_admin = getattr(current_user, "is_admin_user", False) or getattr(current_user, "is_admin", False)
     if not company_id or not is_admin:
         return jsonify({"error": "admin access required"}), 403
