@@ -3,7 +3,7 @@ name: Deploy LUXit.app to VPS (main only)
 on:
   push:
     branches:
-      - main   # ONLY main deploys
+      - main
 
 jobs:
   deploy:
@@ -19,27 +19,31 @@ jobs:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
+          port: 22
           script: |
             set -euxo pipefail
 
-            echo "📦 Switching to app directory"
+            echo "📦 Connected"
+            whoami
+            hostname
+
+            echo "📁 App directory"
             cd /opt/luxit
 
-            echo "🔄 Fetching latest code"
-            git fetch origin
-            git checkout main
-            git reset --hard origin/main
+            echo "📄 Files"
+            ls -la
 
-            echo "🐍 Activating virtualenv"
+            echo "🐍 Activate venv"
             source venv/bin/activate
 
-            echo "🧪 Python syntax check (real entrypoint)"
-            python3 -m py_compile wsgi.py
+            echo "🧪 Python compile"
+            python3 -m py_compile app.py
 
-            echo "🔁 Restarting service"
+            echo "🔁 Restart service"
             systemctl restart lux.service
 
-            echo "🩺 Local health check"
-            timeout 15 curl -sSf http://127.0.0.1:5000/ >/dev/null
+            echo "🩺 Health check"
+            sleep 3
+            curl -sSf http://127.0.0.1:8000/ >/dev/null
 
-            echo "✅ Deployment complete"
+            echo "✅ Deploy SUCCESS"
