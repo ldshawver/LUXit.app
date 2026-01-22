@@ -2,7 +2,7 @@
 
 A comprehensive email marketing automation platform built with Flask, featuring multi-channel marketing capabilities including email, SMS, social media, events management, and AI-powered content generation.
 
-**Current Version:** 3.7.1
+**Current Version:** 3.7.2
 
 ## 🚀 Features
 
@@ -38,6 +38,29 @@ A comprehensive email marketing automation platform built with Flask, featuring 
 - **Newsletter Archive**: Public archive of past newsletters
 - **Email Tracking**: Open and click tracking with detailed analytics
 - **Revenue Attribution**: Track sales and revenue from campaigns
+
+### First-Party Analytics & Agentic Insights
+- **First-party analytics**: `/e` endpoint with consent/GPC enforcement and append-only events
+- **Analytics exports**: CSV/Excel/PDF + printable reports
+- **Agentic department**: Executive strategy reports, action proposals, and approval workflow scaffolding
+
+#### Sample `/e` Payload
+```json
+{
+  "company_id": 1,
+  "event_name": "page_view",
+  "consent": true,
+  "session_id": "sess_123",
+  "page_url": "https://luxit.app/dashboard",
+  "referrer": "https://luxit.app",
+  "utm_source": "newsletter",
+  "utm_medium": "email",
+  "utm_campaign": "launch",
+  "device_type": "mobile",
+  "viewport_width": 390,
+  "orientation": "portrait"
+}
+```
 
 ## 📋 Requirements
 
