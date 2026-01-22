@@ -20,6 +20,26 @@ jobs:
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
           script: |
+            set -e
+
+            echo "📦 Switching to app directory"
+            cd /opt/lux-marketing
+
+            echo "🔄 Fetching latest code"
+            git fetch origin
+            git checkout main
+            git reset --hard origin/main
+
+            echo "🐍 Activating virtualenv"
+            source venv/bin/activate
+
+            echo "🧪 Python syntax check"
+            python3 -m py_compile app.py
+
+            echo "🔁 Restarting service"
+            sudo systemctl restart lux.service
+
+            echo "✅ Deployment complete"
             set -euxo pipefail
 
             echo "📦 Connect OK - reporting remote user/host"
