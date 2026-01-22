@@ -261,6 +261,29 @@ def admin_diagnostics():
 
     return render_template("admin_diagnostics.html", diagnostics=diagnostics)
 
+
+@main_bp.route('/__whoami')
+@login_required
+def whoami():
+    if not current_user.is_admin_user:
+        return jsonify({"error": "Admin access required"}), 403
+
+    return jsonify(
+        {
+            "app": "luxit",
+            "version": get_app_version(),
+            "environment": os.getenv("CODEX_ENV", "unknown"),
+            "git_sha": os.getenv("GIT_SHA", "unknown"),
+            "request_id": getattr(g, "request_id", None),
+            "user": {
+                "id": current_user.id,
+                "username": current_user.username,
+                "email": current_user.email,
+                "is_admin": current_user.is_admin_user,
+            },
+        }
+    ), 200
+
 @main_bp.route('/dashboard')
 @login_required
 def dashboard():
