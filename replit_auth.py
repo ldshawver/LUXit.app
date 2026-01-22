@@ -301,9 +301,6 @@ def logged_in(blueprint, token):
         
         flash(f'Welcome, {user.full_name}!', 'success')
         
-        next_url = session.pop("next_url", None)
-        if next_url:
-            return redirect(next_url)
         return redirect(url_for('main.dashboard'))
         
     except jwt.ExpiredSignatureError:
@@ -339,23 +336,11 @@ def handle_error(blueprint, error, error_description=None, error_uri=None):
     return redirect(url_for('auth.login'))
 
 
-def get_next_navigation_url(req):
-    """Get the URL to redirect to after login"""
-    is_navigation_url = (
-        req.headers.get('Sec-Fetch-Mode') == 'navigate' and
-        req.headers.get('Sec-Fetch-Dest') == 'document'
-    )
-    if is_navigation_url:
-        return req.url
-    return req.referrer or req.url
-
-
 def require_replit_login(f):
     """Decorator to require Replit Auth login"""
     @wraps(f)
     def decorated_function(*args, **kwargs):
         if not current_user.is_authenticated:
-            session["next_url"] = get_next_navigation_url(request)
             return redirect(url_for('replit_auth.login'))
 
         if hasattr(g, 'flask_dance_replit') and g.flask_dance_replit.token:
@@ -367,7 +352,6 @@ def require_replit_login(f):
                     repl_id = os.getenv('REPL_ID')
                     if not repl_id:
                         logger.warning("REPL_ID missing; skipping Replit token refresh.")
-                        session["next_url"] = get_next_navigation_url(request)
                         return redirect(url_for('replit_auth.login'))
                     token = g.flask_dance_replit.refresh_token(
                         token_url=refresh_token_url,
@@ -375,11 +359,9 @@ def require_replit_login(f):
                     )
                     g.flask_dance_replit.token_updater(token)
                 except InvalidGrantError:
-                    session["next_url"] = get_next_navigation_url(request)
                     return redirect(url_for('replit_auth.login'))
                 except Exception as e:
                     logger.error(f"Token refresh failed: {e}")
-                    session["next_url"] = get_next_navigation_url(request)
                     return redirect(url_for('replit_auth.login'))
 
         return f(*args, **kwargs)
