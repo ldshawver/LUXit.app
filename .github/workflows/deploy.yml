@@ -3,7 +3,7 @@ name: Deploy LUXit.app to VPS (main only)
 on:
   push:
     branches:
-      - main   # ONLY main deploys
+      - main
 
 jobs:
   deploy:
@@ -20,10 +20,10 @@ jobs:
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
           script: |
-            set -e
+            set -euxo pipefail
 
             echo "📦 Switching to app directory"
-            cd /opt/lux-marketing
+            cd /opt/luxit
 
             echo "🔄 Fetching latest code"
             git fetch origin
@@ -33,56 +33,13 @@ jobs:
             echo "🐍 Activating virtualenv"
             source venv/bin/activate
 
-            echo "🧪 Python syntax check"
-            python3 -m py_compile app.py
+            echo "🧪 Python syntax check (real entrypoint)"
+            python3 -m py_compile wsgi.py
 
             echo "🔁 Restarting service"
-            sudo systemctl restart lux.service
+            systemctl restart lux.service
+
+            echo "🩺 Local health check"
+            timeout 15 curl -sSf http://127.0.0.1:5000/ >/dev/null
 
             echo "✅ Deployment complete"
-            set -euxo pipefail
-
-            echo "📦 Connect OK - reporting remote user/host"
-            whoami
-            hostname
-            pwd || true
-
-            echo "📁 Check app directory and venv"
-            if [ ! -d "/opt/lux-marketing" ]; then
-              echo "❌ /opt/lux-marketing not found"
-              ls -la /
-              exit 1
-            fi
-            cd /opt/lux-marketing
-
-            echo "🔎 Show files"
-            ls -la
-
-            echo "🐍 Check virtualenv"
-            if [ ! -f "venv/bin/activate" ]; then
-              echo "❌ venv not found at venv/bin/activate"
-              exit 1
-            fi
-            source venv/bin/activate
-
-            echo "🧪 Python compile check"
-            python3 -m py_compile app.py
-
-            echo "🔁 Restarting service (no passwordless sudo will fail here)"
-            # Prefer running as root user or ensure VPS_USER has passwordless sudo for systemctl
-            sudo -n systemctl restart lux.service || {
-              echo "❌ systemctl restart failed - showing journal and service status"
-              sudo systemctl status lux --no-pager -l || true
-              sudo journalctl -u lux -n 200 --no-pager || true
-              exit 1
-            }
-
-            echo "✅ Deployment complete - quick health check"
-            if timeout 15 curl -sSf http://127.0.0.1:5000/ >/dev/null 2>&1; then
-              echo "✅ Backend responding locally"
-            else
-              echo "❌ Backend not responding locally - dumping service status + journal"
-              sudo systemctl status lux --no-pager -l || true
-              sudo journalctl -u lux -n 200 --no-pager || true
-              exit 1
-            fi
