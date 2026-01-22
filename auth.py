@@ -29,7 +29,7 @@ def _is_safe_next(value: str) -> bool:
 @auth_bp.route("/login", methods=["GET", "POST"])
 def login():
     if current_user.is_authenticated:
-        return redirect(url_for("main.dashboard"))
+        return redirect(url_for("main.dashboard", _external=False))
 
     if request.method == "POST":
         identifier = (request.form.get("username") or request.form.get("email") or "").strip()
@@ -39,12 +39,11 @@ def login():
             flash("Username/email and password are required.", "error")
             return render_template("auth/login.html")
 
-        normalized_identifier = identifier.lower()
         try:
             user = User.query.filter(
                 or_(
                     User.username == identifier,
-                    User.email == normalized_identifier,
+                    User.email == identifier.lower(),
                 )
             ).first()
         except SQLAlchemyError:
@@ -66,7 +65,7 @@ def login():
         if nxt and _is_safe_next(nxt):
             return redirect(nxt)
 
-        return redirect(url_for("main.dashboard"))
+        return redirect(url_for("main.dashboard", _external=False))
 
     return render_template("auth/login.html")
 
@@ -75,4 +74,4 @@ def login():
 @login_required
 def logout():
     logout_user()
-    return redirect(url_for("auth.login"))
+    return redirect(url_for("auth.login", _external=False))
