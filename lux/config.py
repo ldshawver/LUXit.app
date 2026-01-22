@@ -69,9 +69,6 @@ class ProductionConfig(Config):
 
     DEBUG = False
     TESTING = False
-    SERVER_NAME = "luxit.app"
-    PREFERRED_URL_SCHEME = "https"
-    SESSION_COOKIE_SECURE = True
 
 
 class TestingConfig(Config):
