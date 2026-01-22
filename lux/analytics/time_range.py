@@ -37,6 +37,22 @@ def _resolve_primary(preset: str, today: date) -> tuple[date, date]:
     if preset == "last_week":
         end_day = today
         start_day = today - timedelta(days=6)
+    elif preset == "this_week":
+        weekday = today.weekday()
+        start_day = today - timedelta(days=weekday)
+        end_day = start_day + timedelta(days=6)
+    elif preset == "last_month":
+        end_day = today
+        start_day = today - timedelta(days=29)
+    elif preset == "this_month":
+        start_day = date(today.year, today.month, 1)
+        end_day = date(today.year, today.month, calendar.monthrange(today.year, today.month)[1])
+    elif preset == "last_quarter":
+        end_day = today
+        start_day = today - timedelta(days=89)
+    elif preset == "this_quarter":
+        quarter = (today.month - 1) // 3 + 1
+        start_day, end_day = _quarter_bounds(today.year, quarter)
     elif preset == "last_month":
         end_day = today
         start_day = today - timedelta(days=29)
@@ -92,6 +108,14 @@ def _resolve_compare(
         return _quarter_bounds(today.year, quarter)
     if preset == "this_year":
         return date(today.year, 1, 1), today
+    if preset == "previous_year_period":
+        try:
+            year_delta = primary_start.replace(year=primary_start.year - 1)
+            end_delta = primary_end.replace(year=primary_end.year - 1)
+        except ValueError:
+            year_delta = date(primary_start.year - 1, primary_start.month, primary_start.day - 1)
+            end_delta = date(primary_end.year - 1, primary_end.month, primary_end.day - 1)
+        return year_delta, end_delta
     if preset == "this_q1":
         return _quarter_bounds(today.year, 1)
     if preset == "this_q2":

@@ -8,6 +8,7 @@
 - `/api/system/integrations-status` (manual code inspection)
 - `/api/agents/executive/generate` (manual code inspection)
 - `/e` (manual code inspection)
+- `scripts/create_admin.py` (manual code inspection)
 
 ## Notes
 - Automated execution requires Flask dependencies in runtime. This environment lacks Flask, so runtime checks could not be executed.

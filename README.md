@@ -68,6 +68,11 @@ A comprehensive email marketing automation platform built with Flask, featuring 
 - PostgreSQL (or SQLite for development)
 - Redis (optional, for caching)
 
+## 🌐 Domain Architecture
+- Marketing site: `https://luxit.app`
+- Web app: `https://app.luxit.app`
+- API: `https://api.luxit.app`
+
 ### External Services (Optional)
 - **Microsoft Graph API**: For email sending (requires Azure app registration)
 - **Twilio**: For SMS marketing (requires account SID, auth token, phone number)

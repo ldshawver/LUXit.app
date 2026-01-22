@@ -16,6 +16,7 @@ class Config:
     SESSION_COOKIE_SAMESITE = "None"
     PREFERRED_URL_SCHEME = "https"
     SERVER_NAME = "luxit.app"
+    WTF_CSRF_TIME_LIMIT = 3600
 
     # Microsoft Graph API
     MS_CLIENT_ID = os.environ.get("MS_CLIENT_ID", "")

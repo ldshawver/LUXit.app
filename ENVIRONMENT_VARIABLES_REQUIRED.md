@@ -4,6 +4,8 @@
 | --- | --- | --- | --- | --- |
 | `SESSION_SECRET` | Required | App sessions, hashing salt | `/etc/lux-marketing/lux.env` | `replace-with-long-secret` |
 | `DATABASE_URL` | Required | Postgres connection | `/etc/lux-marketing/lux.env` | `postgresql://user:pass@localhost/lux_marketing` |
+| `CANONICAL_HOST` | Optional | Canonical host redirect | `/etc/lux-marketing/lux.env` | `app.luxit.app` |
+| `ALLOW_ADMIN_CREATE` | Optional | Enable admin CLI script | `/etc/lux-marketing/lux.env` | `true` |
 | `WOOCOMMERCE_URL` | Optional | WooCommerce sync | `/etc/lux-marketing/lux.env` | `https://shop.example.com` |
 | `WOOCOMMERCE_KEY` | Optional | WooCommerce sync | `/etc/lux-marketing/lux.env` | `ck_...` |
 | `WOOCOMMERCE_SECRET` | Optional | WooCommerce sync | `/etc/lux-marketing/lux.env` | `cs_...` |

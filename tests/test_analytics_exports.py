@@ -16,6 +16,7 @@ def client():
     app.config["TESTING"] = True
     app.config["SECRET_KEY"] = "test-secret"
     app.config["WTF_CSRF_ENABLED"] = False
+    app.config["SERVER_NAME"] = "localhost"
 
     with app.app_context():
         db.create_all()
@@ -74,3 +75,11 @@ def test_tenant_isolation_summary(client):
 
         summary = AnalyticsQueryService.summary(1, datetime(2024, 1, 1, tzinfo=timezone.utc), datetime.now(timezone.utc))
         assert summary["total_events"] == 1
+
+
+def test_event_ingest_respects_consent(client):
+    response = client.post(
+        "/e",
+        json={"company_id": 1, "event_name": "page_view", "consent": False},
+    )
+    assert response.status_code == 204

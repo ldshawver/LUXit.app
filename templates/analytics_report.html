@@ -23,6 +23,11 @@
       <label for="range">Primary Range</label>
       <select name="range" id="range" class="form-select">
         <option value="last_week" {% if range_preset == 'last_week' %}selected{% endif %}>Last Week</option>
+        <option value="this_week" {% if range_preset == 'this_week' %}selected{% endif %}>This Week</option>
+        <option value="last_month" {% if range_preset == 'last_month' %}selected{% endif %}>Last Month</option>
+        <option value="this_month" {% if range_preset == 'this_month' %}selected{% endif %}>This Month</option>
+        <option value="last_quarter" {% if range_preset == 'last_quarter' %}selected{% endif %}>Last Quarter</option>
+        <option value="this_quarter" {% if range_preset == 'this_quarter' %}selected{% endif %}>This Quarter</option>
         <option value="last_month" {% if range_preset == 'last_month' %}selected{% endif %}>Last Month</option>
         <option value="last_quarter" {% if range_preset == 'last_quarter' %}selected{% endif %}>Last Quarter</option>
         <option value="this_year" {% if range_preset == 'this_year' %}selected{% endif %}>This Year</option>
@@ -44,12 +49,26 @@
         <option value="this_month" {% if compare_preset == 'this_month' %}selected{% endif %}>This Month</option>
         <option value="this_quarter" {% if compare_preset == 'this_quarter' %}selected{% endif %}>This Quarter</option>
         <option value="this_year" {% if compare_preset == 'this_year' %}selected{% endif %}>This Year</option>
+        <option value="previous_year_period" {% if compare_preset == 'previous_year_period' %}selected{% endif %}>Same Period Last Year</option>
         <option value="custom" {% if compare_preset == 'custom' %}selected{% endif %}>Custom</option>
       </select>
     </div>
 
     <div class="filter-group">
       <label for="start">Custom Start</label>
+      <input type="date" id="start" name="start" class="form-control" value="{{ request.args.get('start', '') }}">
+    </div>
+    <div class="filter-group">
+      <label for="end">Custom End</label>
+      <input type="date" id="end" name="end" class="form-control" value="{{ request.args.get('end', '') }}">
+    </div>
+    <div class="filter-group">
+      <label for="compare_start">Compare Start</label>
+      <input type="date" id="compare_start" name="compare_start" class="form-control" value="{{ request.args.get('compare_start', '') }}">
+    </div>
+    <div class="filter-group">
+      <label for="compare_end">Compare End</label>
+      <input type="date" id="compare_end" name="compare_end" class="form-control" value="{{ request.args.get('compare_end', '') }}">
       <input type="date" id="start" name="start" class="form-control">
     </div>
     <div class="filter-group">
