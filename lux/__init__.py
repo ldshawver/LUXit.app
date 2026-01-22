@@ -20,6 +20,23 @@ def create_app(config_name: str | None = None) -> Flask:
 
     if config_name is None:
         config_name = os.environ.get("FLASK_ENV", "production")
+from flask import redirect, url_for, current_app, jsonify
+import os
+
+# --- Health aliases (keep existing /health canonical) ---
+
+@app.route("/healthz")
+def healthz_alias():
+    # Redirect to existing health endpoint
+    return redirect(url_for("health.health"), code=302)
+
+
+@app.route("/__version")
+def version():
+    return jsonify({
+        "version": current_app.config.get("APP_VERSION", "unknown"),
+        "git_sha": os.getenv("GITHUB_SHA", "unknown"),
+    }), 200
 
     # ------------------------------------------------------------------
     # App bootstrap
