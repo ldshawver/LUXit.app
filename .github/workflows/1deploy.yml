@@ -1,178 +1,68 @@
-- name: Deploy to VPS
-  uses: appleboy/ssh-action@v1.0.3
-  with:
-    host: ${{ secrets.VPS_HOST }}
-    username: ${{ secrets.VPS_USER }}
-    key: ${{ secrets.VPS_SSH_KEY }}
-    script: |
-      # Hardened deploy script with rollback and diagnostics
-      set -euxo pipefail
+name: Deploy LUXit.app to VPS (main only)
 
-      # Configuration - edit to match your VPS/app
-      APP_DIR="/opt/luxit"                      # must match actual repo dir on VPS
-      VENV_PATH="venv"
-      SERVICE_NAME="lux-marketing.service"      # adjust if different
-      HEALTH_URL="http://127.0.0.1:5000/"
-      HEALTH_RETRIES=6
-      HEALTH_INTERVAL=5
-      DRY_RUN="${DRY_RUN:-false}"
+on:
+  push:
+    branches:
+      - main   # ONLY main deploys
 
-      echo "📦 Deploy started: user=$(whoami) host=$(hostname) pwd=$(pwd || true)"
-      echo "🔒 DRY_RUN=$DRY_RUN"
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
 
-      LOCKFILE="/tmp/deploy_${SERVICE_NAME}.lock"
-      if [ -e "$LOCKFILE" ]; then
-        echo "❌ Deploy lock present ($LOCKFILE). Aborting."
-        exit 1
-      fi
-      trap 'rm -f "$LOCKFILE"' EXIT
-      touch "$LOCKFILE"
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-      for cmd in git python3 systemctl; do
-        if ! command -v "$cmd" >/dev/null 2>&1; then
-          echo "❌ Required command not found: $cmd"
-          exit 1
-        fi
-      done
+      - name: Deploy to VPS
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: |
+            set -euxo pipefail
 
-      if ! command -v curl >/dev/null 2>&1; then
-        echo "⚠️ curl not found; health checks will be skipped"
-        HAVE_CURL=false
-      else
-        HAVE_CURL=true
-      fi
+            echo "📦 Connect OK - reporting remote user/host"
+            whoami
+            hostname
+            pwd || true
 
-      if [ ! -d "$APP_DIR" ]; then
-        echo "❌ App directory not found: $APP_DIR"
-        ls -la "$(dirname "$APP_DIR")" || true
-        exit 1
-      fi
-      cd "$APP_DIR"
+            echo "📁 Check app directory and venv"
+            if [ ! -d "/opt/lux-marketing" ]; then
+              echo "❌ /opt/lux-marketing not found"
+              ls -la /
+              exit 1
+            fi
+            cd /opt/lux-marketing
 
-      # Avoid dubious ownership error for this directory (idempotent)
-      git config --global --add safe.directory "$APP_DIR" || true
+            echo "🔎 Show files"
+            ls -la
 
-      PREV_COMMIT="$(git rev-parse --short HEAD 2>/dev/null || true)"
-      echo "🔁 Previous commit: ${PREV_COMMIT:-<none>}"
+            echo "🐍 Check virtualenv"
+            if [ ! -f "venv/bin/activate" ]; then
+              echo "❌ venv not found at venv/bin/activate"
+              exit 1
+            fi
+            source venv/bin/activate
 
-      if [ "$DRY_RUN" = "true" ]; then
-        echo "DRY-RUN: would fetch and reset to origin/main"
-      else
-        # fetch the branch (quiet by default)
-        git fetch origin main --quiet || true
+            echo "🧪 Python compile check"
+            python3 -m py_compile app.py
 
-        # If remote tracking branch exists, reset to it. Otherwise use FETCH_HEAD safely.
-        if git show-ref --verify --quiet "refs/remotes/origin/main"; then
-          git checkout main --quiet || git checkout -B main --quiet
-          git reset --hard origin/main --quiet
-        else
-          # fallback: use FETCH_HEAD commit hash explicitly to avoid ambiguous name errors
-          HASH=$(git rev-parse --verify FETCH_HEAD 2>/dev/null || true)
-          if [ -n "$HASH" ]; then
-            git checkout -B main "$HASH" --quiet
-            git reset --hard "$HASH" --quiet
-          else
-            # try a full fetch and then checkout origin/main
-            git fetch origin --quiet
-            git checkout -B main origin/main --quiet || true
-            git reset --hard origin/main --quiet || true
-          fi
-        fi
-      fi
+            echo "🔁 Restarting service (no passwordless sudo will fail here)"
+            # Prefer running as root user or ensure VPS_USER has passwordless sudo for systemctl
+            sudo -n systemctl restart lux.service || {
+              echo "❌ systemctl restart failed - showing journal and service status"
+              sudo systemctl status lux --no-pager -l || true
+              sudo journalctl -u lux -n 200 --no-pager || true
+              exit 1
+            }
 
-      # Ensure future remote operations use SSH (so the server can use its SSH key)
-      git remote set-url origin git@github.com:ldshawver/LUXit.app.git || true
-
-      NEW_COMMIT="$(git rev-parse --short HEAD 2>/dev/null || true)"
-      echo "✅ New commit: ${NEW_COMMIT:-<none>}"
-
-      git --no-pager log -1 --oneline || true
-      ls -la
-
-      if [ ! -f "${VENV_PATH}/bin/activate" ]; then
-        echo "❌ virtualenv not found at ${VENV_PATH}/bin/activate"
-        exit 1
-      fi
-      # shellcheck disable=SC1091
-      source "${VENV_PATH}/bin/activate"
-
-      NEED_PIP_INSTALL=false
-      if [ -n "$PREV_COMMIT" ] && [ -n "$NEW_COMMIT" ] && [ "$PREV_COMMIT" != "$NEW_COMMIT" ]; then
-        if git diff --name-only "$PREV_COMMIT" "$NEW_COMMIT" | grep -q -E '^requirements(\.txt)?$'; then
-          NEED_PIP_INSTALL=true
-        fi
-      fi
-      if [ -z "$PREV_COMMIT" ]; then
-        NEED_PIP_INSTALL=true
-      fi
-
-      if [ "$NEED_PIP_INSTALL" = "true" ]; then
-        echo "📥 Installing/upgrading dependencies (pip)"
-        if [ "$DRY_RUN" != "true" ] && [ -f "requirements.txt" ]; then
-          pip install --upgrade pip setuptools wheel || true
-          pip install -r requirements.txt
-        fi
-      else
-        echo "ℹ️ requirements.txt unchanged; skipping pip install"
-      fi
-
-      echo "🧪 Running Python compile checks"
-      if [ "$DRY_RUN" != "true" ]; then
-        python3 -m py_compile app.py || { echo "❌ Python syntax check failed"; exit 1; }
-      fi
-
-      check_health() {
-        if [ "$HAVE_CURL" = "false" ]; then
-          echo "⚠️ curl not available; skipping health check"
-          return 0
-        fi
-        local i=0
-        while [ $i -lt "$HEALTH_RETRIES" ]; do
-          if timeout $HEALTH_INTERVAL curl -sSf "$HEALTH_URL" >/dev/null 2>&1; then
-            echo "✅ Health check OK (attempt $((i+1)))"
-            return 0
-          fi
-          echo "⏳ Health check attempt $((i+1)) failed; waiting $HEALTH_INTERVALs"
-          i=$((i+1))
-          sleep "$HEALTH_INTERVAL"
-        done
-        echo "❌ Health check failed"
-        return 1
-      }
-
-      echo "🔁 Restarting service: $SERVICE_NAME"
-      if [ "$DRY_RUN" = "true" ]; then
-        echo "DRY-RUN: would run sudo -n systemctl restart $SERVICE_NAME"
-      else
-        sudo -n systemctl restart "$SERVICE_NAME" || {
-          echo "❌ systemctl restart failed. Dumping status and journal"
-          sudo systemctl status "$SERVICE_NAME" --no-pager -l || true
-          sudo journalctl -u "${SERVICE_NAME%.*}" -n 200 --no-pager || true
-          exit 1
-        }
-      fi
-
-      echo "🔎 Running post-deploy health check"
-      if check_health; then
-        echo "✅ Deployment healthy"
-        exit 0
-      fi
-
-      echo "⚠️ Deployment unhealthy. Attempting rollback to previous commit: $PREV_COMMIT"
-      if [ -z "$PREV_COMMIT" ]; then
-        echo "❌ No previous commit available to rollback to. Dumping diagnostics and aborting."
-        sudo systemctl status "$SERVICE_NAME" --no-pager -l || true
-        sudo journalctl -u "${SERVICE_NAME%.*}" -n 200 --no-pager || true
-        exit 1
-      fi
-
-      if [ "$DRY_RUN" = "true" ]; then
-        echo "DRY-RUN: would rollback to $PREV_COMMIT and restart"
-        exit 1
-      fi
-
-      git reset --hard "$PREV_COMMIT" --quiet || {
-        echo "❌ git reset to previous commit failed"
-        sudo systemctl status "$SERVICE_NAME" --no-pager -l || true
-        sudo journalctl -u "${SERVICE_NAME%](#)
-
+            echo "✅ Deployment complete - quick health check"
+            if timeout 15 curl -sSf http://127.0.0.1:5000/ >/dev/null 2>&1; then
+              echo "✅ Backend responding locally"
+            else
+              echo "❌ Backend not responding locally - dumping service status + journal"
+              sudo systemctl status lux --no-pager -l || true
+              sudo journalctl -u lux -n 200 --no-pager || true
+              exit 1
+            fi
