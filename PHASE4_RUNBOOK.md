@@ -1,13 +1,12 @@
 # Phase 4 Runbook (v3.8.4) — Rollups + Dashboards + Exports
 
 > Purpose: Validate rollup generation, dashboard filtering, exports, and print view on the VPS.
-> If your VPS requires elevated permissions, prepend the commands with `sudo`.
 
 ## 1) Pre-flight (Service + Env)
 ```bash
 cd /opt/luxit
 source /opt/luxit/venv/bin/activate
-python -m py_compile wsgi.py
+python -m py_compile app.py auth.py wsgi.py
 systemctl status lux.service --no-pager -l
 ```
 
