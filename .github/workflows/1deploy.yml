@@ -3,7 +3,7 @@ name: Deploy LUXit.app to VPS (main only)
 on:
   push:
     branches:
-      - main
+      - main   # ONLY main deploys
 
 jobs:
   deploy:
