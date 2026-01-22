@@ -50,12 +50,31 @@ LOG_FORMAT = (
     "%(asctime)s %(levelname)s [%(name)s] "
     "[request_id=%(request_id)s] %(message)s"
 )
+"""Application entry point."""
+import os
+
+from flask import redirect, request
+
+from lux import create_app as _create_app
 
 
-class RequestIdFilter(logging.Filter):
-    def filter(self, record):
-        record.request_id = getattr(g, "request_id", "-")
-        return True
+def create_app():
+    """Create the Flask app using the lux factory."""
+    config_name = os.environ.get("FLASK_ENV")
+    app = _create_app(config_name)
+
+    @app.before_request
+    def enforce_canonical_host():
+        allowed_hosts = {"luxit.app", "www.luxit.app"}
+        if app.testing:
+            allowed_hosts.update({"localhost", "127.0.0.1"})
+
+        host = (request.headers.get("X-Forwarded-Host") or request.host or "").split(":")[0].lower()
+        if host and host not in allowed_hosts:
+            return redirect(f"https://luxit.app{request.full_path.rstrip('?')}", code=301)
+
+    return app
+
 
 
 class RedactionFilter(logging.Filter):
@@ -261,3 +280,6 @@ def _is_safe_next(value: str) -> bool:
 with app.app_context():
     import models
     db.create_all()
+if __name__ == "__main__":
+    app = create_app()
+    app.run()
