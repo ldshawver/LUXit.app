@@ -1,6 +1,3 @@
-"""Application entry point."""
-import os
-
 from flask import redirect, request
 
 from lux import create_app as _create_app

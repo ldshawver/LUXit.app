@@ -31,7 +31,7 @@ def login():
         
         if not username or not password:
             flash('Username and password are required', 'error')
-            return render_template('login.html')
+            return render_template('auth/login.html')
         
         normalized_login = username.lower()
         user = User.query.filter(
@@ -47,7 +47,7 @@ def login():
         else:
             flash('Invalid username or password', 'error')
     
-    return render_template('login.html')
+    return render_template('auth/login.html')
 
 
 @auth_bp.route('/logout')

@@ -1,0 +1,109 @@
+{% extends "base.html" %}
+
+{% block title %}Analytics Report - LUX Marketing{% endblock %}
+
+{% block content %}
+<div class="analytics-report">
+  <header class="report-header">
+    <div>
+      <h2>Analytics Report</h2>
+      <p class="text-muted">Tenant-scoped, first-party analytics.</p>
+    </div>
+    <div class="report-actions">
+      <a class="btn btn-outline-light" href="{{ url_for('main.analytics_report_print', range=range_preset, compare=compare_preset, company_id=company_id) }}">Print</a>
+      <a class="btn btn-outline-light" href="{{ url_for('main.analytics_report_export', fmt='csv', range=range_preset, compare=compare_preset, company_id=company_id) }}">Export CSV</a>
+      <a class="btn btn-outline-light" href="{{ url_for('main.analytics_report_export', fmt='excel', range=range_preset, compare=compare_preset, company_id=company_id) }}">Export Excel</a>
+      <a class="btn btn-outline-light" href="{{ url_for('main.analytics_report_export', fmt='pdf', range=range_preset, compare=compare_preset, company_id=company_id) }}">Export PDF</a>
+    </div>
+  </header>
+
+  <form class="report-filters" method="get">
+    <input type="hidden" name="company_id" value="{{ company_id }}" />
+    <div class="filter-group">
+      <label for="range">Primary Range</label>
+      <select name="range" id="range" class="form-select">
+        <option value="last_week" {% if range_preset == 'last_week' %}selected{% endif %}>Last Week</option>
+        <option value="last_month" {% if range_preset == 'last_month' %}selected{% endif %}>Last Month</option>
+        <option value="last_quarter" {% if range_preset == 'last_quarter' %}selected{% endif %}>Last Quarter</option>
+        <option value="this_year" {% if range_preset == 'this_year' %}selected{% endif %}>This Year</option>
+        <option value="last_year" {% if range_preset == 'last_year' %}selected{% endif %}>Last Year</option>
+        <option value="year" {% if range_preset == 'year' %}selected{% endif %}>Rolling Year</option>
+        <option value="last_q1" {% if range_preset == 'last_q1' %}selected{% endif %}>Last Q1</option>
+        <option value="last_q2" {% if range_preset == 'last_q2' %}selected{% endif %}>Last Q2</option>
+        <option value="last_q3" {% if range_preset == 'last_q3' %}selected{% endif %}>Last Q3</option>
+        <option value="last_q4" {% if range_preset == 'last_q4' %}selected{% endif %}>Last Q4</option>
+        <option value="custom" {% if range_preset == 'custom' %}selected{% endif %}>Custom</option>
+      </select>
+    </div>
+
+    <div class="filter-group">
+      <label for="compare">Compare</label>
+      <select name="compare" id="compare" class="form-select">
+        <option value="previous_period" {% if compare_preset == 'previous_period' %}selected{% endif %}>Previous Period</option>
+        <option value="this_week" {% if compare_preset == 'this_week' %}selected{% endif %}>This Week</option>
+        <option value="this_month" {% if compare_preset == 'this_month' %}selected{% endif %}>This Month</option>
+        <option value="this_quarter" {% if compare_preset == 'this_quarter' %}selected{% endif %}>This Quarter</option>
+        <option value="this_year" {% if compare_preset == 'this_year' %}selected{% endif %}>This Year</option>
+        <option value="custom" {% if compare_preset == 'custom' %}selected{% endif %}>Custom</option>
+      </select>
+    </div>
+
+    <div class="filter-group">
+      <label for="start">Custom Start</label>
+      <input type="date" id="start" name="start" class="form-control">
+    </div>
+    <div class="filter-group">
+      <label for="end">Custom End</label>
+      <input type="date" id="end" name="end" class="form-control">
+    </div>
+    <div class="filter-group">
+      <label for="compare_start">Compare Start</label>
+      <input type="date" id="compare_start" name="compare_start" class="form-control">
+    </div>
+    <div class="filter-group">
+      <label for="compare_end">Compare End</label>
+      <input type="date" id="compare_end" name="compare_end" class="form-control">
+    </div>
+
+    <button type="submit" class="btn btn-lux btn-lux-primary">Apply</button>
+  </form>
+
+  <section class="report-kpis">
+    <div class="kpi-card">
+      <h3>Total Events</h3>
+      <p>{{ summary.total_events }}</p>
+    </div>
+    <div class="kpi-card">
+      <h3>Total Sessions</h3>
+      <p>{{ summary.total_sessions }}</p>
+    </div>
+    <div class="kpi-card">
+      <h3>Consent Suppressed</h3>
+      <p>{{ summary.consent_suppressed }}</p>
+    </div>
+  </section>
+
+  <section class="report-grid">
+    <div class="card glass-card p-3">
+      <h4>Top Pages</h4>
+      <ul class="list-unstyled">
+        {% for row in summary.top_pages %}
+          <li>{{ row.page }} <span class="text-muted">({{ row.hits }})</span></li>
+        {% else %}
+          <li class="text-muted">No data yet.</li>
+        {% endfor %}
+      </ul>
+    </div>
+    <div class="card glass-card p-3">
+      <h4>Top Referrers</h4>
+      <ul class="list-unstyled">
+        {% for row in summary.top_referrers %}
+          <li>{{ row.referrer }} <span class="text-muted">({{ row.hits }})</span></li>
+        {% else %}
+          <li class="text-muted">No data yet.</li>
+        {% endfor %}
+      </ul>
+    </div>
+  </section>
+</div>
+{% endblock %}

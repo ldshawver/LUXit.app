@@ -12,6 +12,10 @@ class Config:
         "pool_pre_ping": True,
     }
     SQLALCHEMY_TRACK_MODIFICATIONS = False
+    SESSION_COOKIE_SECURE = True
+    SESSION_COOKIE_SAMESITE = "None"
+    PREFERRED_URL_SCHEME = "https"
+    SERVER_NAME = "luxit.app"
 
     # Microsoft Graph API
     MS_CLIENT_ID = os.environ.get("MS_CLIENT_ID", "")
