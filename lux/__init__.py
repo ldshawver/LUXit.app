@@ -1,3 +1,4 @@
+"""LUX package."""
 """Flask application factory."""
 import os
 import logging

@@ -2,98 +2,79 @@
 import os
 from uuid import uuid4
 
-from flask import (
-    Flask,
-    request,
-    redirect,
-    g,
-    current_app,
-)
+from dotenv import load_dotenv
+from flask import Flask, g, redirect, request, url_for
+from flask_login import LoginManager
 from werkzeug.middleware.proxy_fix import ProxyFix
 
-from extensions import db
-from auth import auth_bp
+from extensions import db, csrf
 
-# ============================================================
-# Constants
-# ============================================================
+CANONICAL_HOST = os.environ.get("CANONICAL_HOST", "app.luxit.app")
+ALLOWED_HOSTS = {"luxit.app", "www.luxit.app", "app.luxit.app", "api.luxit.app"}
 
-CANONICAL_HOST = "luxit.app"
-ALLOWED_HOSTS = {"luxit.app", "www.luxit.app"}
+load_dotenv("/etc/lux-marketing/lux.env")
 
-# ============================================================
-# App Factory
-# ============================================================
 
 def create_app():
-    app = Flask(
-        __name__,
-        template_folder="templates",
-        static_folder="static",
-    )
+    app = Flask(__name__, template_folder="templates", static_folder="static")
 
-    # --------------------------------------------------------
-    # Core config
-    # --------------------------------------------------------
+    secret_key = os.getenv("SESSION_SECRET") or os.getenv("SECRET_KEY")
+    if not secret_key:
+        raise RuntimeError("SESSION_SECRET or SECRET_KEY must be set")
 
     app.config.update(
-        SECRET_KEY=os.environ.get("SESSION_SECRET", os.urandom(32)),
+        SECRET_KEY=secret_key,
+        SERVER_NAME=CANONICAL_HOST,
         PREFERRED_URL_SCHEME="https",
         SESSION_COOKIE_SECURE=True,
-        SESSION_COOKIE_HTTPONLY=True,
         SESSION_COOKIE_SAMESITE="None",
+        WTF_CSRF_TIME_LIMIT=3600,
     )
 
-    # --------------------------------------------------------
-    # Reverse proxy awareness (NGINX)
-    # --------------------------------------------------------
-
-    app.wsgi_app = ProxyFix(
-        app.wsgi_app,
-        x_for=1,
-        x_proto=1,
-        x_host=1,
-        x_port=1,
+    app.config["SQLALCHEMY_DATABASE_URI"] = os.getenv(
+        "DATABASE_URL",
+        "sqlite:///email_marketing.db",
     )
+    app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
-    # --------------------------------------------------------
-    # Database
-    # --------------------------------------------------------
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_port=1)
 
     db.init_app(app)
+    csrf.init_app(app)
 
-    # --------------------------------------------------------
-    # Request bootstrap
-    # --------------------------------------------------------
+    login_manager = LoginManager()
+    login_manager.init_app(app)
+    login_manager.login_view = "auth.login"
+    login_manager.login_message = None
+
+    @login_manager.user_loader
+    def load_user(user_id):
+        from models import User
+        return User.query.get(int(user_id))
 
     @app.before_request
-    def _request_bootstrap():
-        g.request_id = request.headers.get(
-            "X-Request-ID",
-            str(uuid4()),
-        )
+    def canonical_and_request_id():
+        g.request_id = request.headers.get("X-Request-ID", str(uuid4()))
+        if app.testing:
+            return None
+        host = (request.headers.get("X-Forwarded-Host") or request.host or "").split(":")[0].lower()
+        if host and host not in ALLOWED_HOSTS:
+            return redirect(f"https://{CANONICAL_HOST}{request.full_path.rstrip('?')}", 301)
+        return None
 
-        host = (
-            request.headers.get("X-Forwarded-Host")
-            or request.host
-            or ""
-        ).split(":")[0].lower()
+    from routes import main_bp
+    from auth import auth_bp
 
-        if not app.testing and host and host not in ALLOWED_HOSTS:
-            return redirect(
-                f"https://{CANONICAL_HOST}{request.full_path.rstrip('?')}",
-                code=301,
-            )
+    app.register_blueprint(main_bp)
+    app.register_blueprint(auth_bp, url_prefix="/auth")
 
-    @app.after_request
-    def _attach_request_id(resp):
-        resp.headers["X-Request-ID"] = g.get("request_id", "-")
-        return resp
-
-    # --------------------------------------------------------
-    # Blueprints (REGISTER LAST)
-    # --------------------------------------------------------
-
-    app.register_blueprint(auth_bp)
+    @app.route("/")
+    def index():
+        return redirect(url_for("auth.login"))
 
     return app
+
+
+if __name__ == "__main__":
+    application = create_app()
+    application.run()

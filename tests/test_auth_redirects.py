@@ -1,7 +1,7 @@
 import pytest
 from werkzeug.security import generate_password_hash
 
-from lux import create_app
+from app import create_app
 from lux.extensions import db
 from lux.models.user import User
 
@@ -11,8 +11,11 @@ def client(monkeypatch):
 
     monkeypatch.setattr(scheduler, "init_scheduler", lambda app: None)
 
-    app = create_app("testing")
+    app = create_app()
+    app.config["TESTING"] = True
     app.config["SECRET_KEY"] = "test-secret"
+    app.config["WTF_CSRF_ENABLED"] = False
+    app.config["SERVER_NAME"] = "localhost"
 
     with app.app_context():
         db.create_all()
@@ -55,6 +58,10 @@ def test_login_with_email_redirects_to_dashboard(client):
         data={"username": "admin@luxit.app", "password": "supersecret"},
         follow_redirects=False,
     )
+
+    assert response.status_code == 302
+    assert response.headers["Location"].endswith("/dashboard")
+
 
 def test_next_param_redirects_back_to_login(client):
     response = client.get("/?next=https://194.195.92.52/", follow_redirects=False)

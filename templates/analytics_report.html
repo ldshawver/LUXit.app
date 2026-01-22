@@ -28,8 +28,6 @@
         <option value="this_month" {% if range_preset == 'this_month' %}selected{% endif %}>This Month</option>
         <option value="last_quarter" {% if range_preset == 'last_quarter' %}selected{% endif %}>Last Quarter</option>
         <option value="this_quarter" {% if range_preset == 'this_quarter' %}selected{% endif %}>This Quarter</option>
-        <option value="last_month" {% if range_preset == 'last_month' %}selected{% endif %}>Last Month</option>
-        <option value="last_quarter" {% if range_preset == 'last_quarter' %}selected{% endif %}>Last Quarter</option>
         <option value="this_year" {% if range_preset == 'this_year' %}selected{% endif %}>This Year</option>
         <option value="last_year" {% if range_preset == 'last_year' %}selected{% endif %}>Last Year</option>
         <option value="year" {% if range_preset == 'year' %}selected{% endif %}>Rolling Year</option>
@@ -69,19 +67,6 @@
     <div class="filter-group">
       <label for="compare_end">Compare End</label>
       <input type="date" id="compare_end" name="compare_end" class="form-control" value="{{ request.args.get('compare_end', '') }}">
-      <input type="date" id="start" name="start" class="form-control">
-    </div>
-    <div class="filter-group">
-      <label for="end">Custom End</label>
-      <input type="date" id="end" name="end" class="form-control">
-    </div>
-    <div class="filter-group">
-      <label for="compare_start">Compare Start</label>
-      <input type="date" id="compare_start" name="compare_start" class="form-control">
-    </div>
-    <div class="filter-group">
-      <label for="compare_end">Compare End</label>
-      <input type="date" id="compare_end" name="compare_end" class="form-control">
     </div>
 
     <button type="submit" class="btn btn-lux btn-lux-primary">Apply</button>

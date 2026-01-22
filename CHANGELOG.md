@@ -1,5 +1,52 @@
 # CHANGELOG - LUX Marketing Platform
 
+## [3.8.5] - 2026-01-21
+
+### ✨ Highlights
+- Phase 5 release marker for owned channel analytics validation.
+- Added Phase 5 VPS runbook for email/SMS analytics checks.
+
+---
+
+## [3.8.4] - 2026-01-21
+
+### ✨ Highlights
+- Phase 4 release marker for rollups, dashboards, and export validation.
+- Added Phase 4 VPS runbook for time-range filtering and exports.
+
+---
+
+## [3.8.3] - 2026-01-21
+
+### ✨ Highlights
+- Phase 3 release marker for attribution v1 validation.
+- Added Phase 3 VPS runbook for attribution checks.
+
+---
+
+## [3.8.2] - 2026-01-21
+
+### ✨ Highlights
+- Phase 2 release marker for commerce + lead event ingestion.
+- Added Phase 2 VPS runbook for commerce/lead validation steps.
+
+---
+
+## [3.8.1] - 2026-01-21
+
+### ✨ Highlights
+- Phase 1 release marker for first-party analytics foundation (event ingestion, reporting, exports, print).
+- Added Phase 1 VPS validation runbook for analytics ingestion and exports.
+
+---
+
+## [3.8.0] - 2026-01-21
+
+### ✨ Highlights
+- Phase 0 stabilization release marker for factory/auth/CSRF and deployment alignment.
+
+---
+
 ## [3.7.1] - 2026-01-07
 
 ### ✨ Highlights

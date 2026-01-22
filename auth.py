@@ -1,49 +1,71 @@
-from flask import (
-    Blueprint,
-    render_template,
-    request,
-    redirect,
-    url_for,
-    flash,
-)
-from flask_login import (
-    login_user,
-    logout_user,
-    login_required,
-)
+import logging
+from urllib.parse import urlparse
 
-# ============================================================
-# Blueprint
-# ============================================================
+from flask import Blueprint, flash, redirect, render_template, request, url_for
+from flask_login import current_user, login_required, login_user, logout_user
+from sqlalchemy import or_
+from sqlalchemy.exc import SQLAlchemyError
+from werkzeug.security import check_password_hash
 
-auth_bp = Blueprint(
-    "auth",
-    __name__,
-    url_prefix="/auth",
-)
+from models import User
 
-# ============================================================
-# Routes
-# ============================================================
+logger = logging.getLogger(__name__)
+
+auth_bp = Blueprint("auth", __name__, url_prefix="/auth")
+
+
+def _is_safe_next(value: str) -> bool:
+    if not value:
+        return False
+    if value.startswith("/"):
+        return True
+    try:
+        parsed = urlparse(value)
+        return not (parsed.scheme or parsed.netloc)
+    except Exception:
+        return False
+
 
 @auth_bp.route("/login", methods=["GET", "POST"])
 def login():
-    if request.method == "POST":
-        username = request.form.get("username", "").strip()
-        password = request.form.get("password", "")
+    if current_user.is_authenticated:
+        return redirect(url_for("main.dashboard", _external=False))
 
-        if not username or not password:
-            flash("Username and password are required.", "error")
+    if request.method == "POST":
+        identifier = (request.form.get("username") or request.form.get("email") or "").strip()
+        password = request.form.get("password") or ""
+
+        if not identifier or not password:
+            flash("Username/email and password are required.", "error")
             return render_template("auth/login.html")
 
-        # TODO: replace with real user lookup
-        # user = User.query.filter_by(username=username).first()
-        # if not user or not user.check_password(password):
-        #     flash("Invalid credentials", "error")
-        #     return render_template("auth/login.html")
+        try:
+            user = User.query.filter(
+                or_(
+                    User.username == identifier,
+                    User.email == identifier.lower(),
+                )
+            ).first()
+        except SQLAlchemyError:
+            logger.exception("Login query failed")
+            flash("Login temporarily unavailable.", "error")
+            return render_template("auth/login.html")
 
-        # login_user(user)
-        return redirect(url_for("main.dashboard"))
+        if not user or not user.password_hash:
+            flash("Invalid credentials.", "error")
+            return render_template("auth/login.html")
+
+        if not check_password_hash(user.password_hash, password):
+            flash("Invalid credentials.", "error")
+            return render_template("auth/login.html")
+
+        login_user(user)
+
+        nxt = request.args.get("next")
+        if nxt and _is_safe_next(nxt):
+            return redirect(nxt)
+
+        return redirect(url_for("main.dashboard", _external=False))
 
     return render_template("auth/login.html")
 
@@ -52,4 +74,4 @@ def login():
 @login_required
 def logout():
     logout_user()
-    return redirect(url_for("auth.login"))
+    return redirect(url_for("auth.login", _external=False))
