@@ -12,7 +12,11 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-
+- name: Debug secrets
+  run: |
+    echo "HOST=${{ secrets.VPS_HOST }}"
+    echo "USER=${{ secrets.VPS_USER }}"
+    
       - name: Deploy to VPS
         uses: appleboy/ssh-action@v1.0.3
         with:
@@ -20,23 +24,49 @@ jobs:
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
           script: |
-            set -e
+            set -euxo pipefail
 
-            echo "📦 Switching to app directory"
+            echo "📦 Connect OK - reporting remote user/host"
+            whoami
+            hostname
+            pwd || true
+
+            echo "📁 Check app directory and venv"
+            if [ ! -d "/opt/lux-marketing" ]; then
+              echo "❌ /opt/lux-marketing not found"
+              ls -la /
+              exit 1
+            fi
             cd /opt/lux-marketing
 
-            echo "🔄 Fetching latest code"
-            git fetch origin
-            git checkout main
-            git reset --hard origin/main
+            echo "🔎 Show files"
+            ls -la
 
-            echo "🐍 Activating virtualenv"
+            echo "🐍 Check virtualenv"
+            if [ ! -f "venv/bin/activate" ]; then
+              echo "❌ venv not found at venv/bin/activate"
+              exit 1
+            fi
             source venv/bin/activate
 
-            echo "🧪 Python syntax check"
+            echo "🧪 Python compile check"
             python3 -m py_compile app.py
 
-            echo "🔁 Restarting service"
-            sudo systemctl restart lux.service
+            echo "🔁 Restarting service (no passwordless sudo will fail here)"
+            # Prefer running as root user or ensure VPS_USER has passwordless sudo for systemctl
+            sudo -n systemctl restart lux.service || {
+              echo "❌ systemctl restart failed - showing journal and service status"
+              sudo systemctl status lux --no-pager -l || true
+              sudo journalctl -u lux -n 200 --no-pager || true
+              exit 1
+            }
 
-            echo "✅ Deployment complete"
+            echo "✅ Deployment complete - quick health check"
+            if timeout 15 curl -sSf http://127.0.0.1:5000/ >/dev/null 2>&1; then
+              echo "✅ Backend responding locally"
+            else
+              echo "❌ Backend not responding locally - dumping service status + journal"
+              sudo systemctl status lux --no-pager -l || true
+              sudo journalctl -u lux -n 200 --no-pager || true
+              exit 1
+            fi
