@@ -3,71 +3,103 @@
 {% block title %}LUX AI Agent - Automated Email Marketing{% endblock %}
 
 {% block content %}
-<section class="hero">
-    <div class="glow-orb"></div>
-    <div class="hero-content">
-        <h1>LUX AI Agent</h1>
-        <p>Plan, create, and optimize campaigns with an always-on AI strategist.</p>
-        <div class="d-flex flex-wrap gap-2">
-            <span class="badge-lux badge-cyan">AI Powered</span>
-            <span class="badge-lux badge-magenta">GPT-4o</span>
-        </div>
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h1><i data-feather="zap" class="text-warning"></i> LUX AI Agent</h1>
+        <p class="text-muted">Intelligent email marketing automation powered by ChatGPT</p>
     </div>
-</section>
-
-<div class="section-title">
-    <h2>Quick Actions</h2>
-    <span>Launch AI workflows instantly.</span>
+    <div>
+        <span class="badge bg-success">AI Powered</span>
+        <span class="badge bg-info">GPT-4o</span>
+    </div>
 </div>
 
-<div class="tile-grid mb-5">
-    <div class="tile-card">
-        <div class="tile-icon"><i data-feather="zap"></i></div>
-        <h3>Generate Campaign</h3>
-        <p>Let LUX create a complete email campaign for you.</p>
-        <button class="btn btn-lux btn-lux-primary mt-3" onclick="showGenerateCampaign()">
-            <i data-feather="plus"></i> Create Campaign
-        </button>
+<!-- Quick Actions -->
+<div class="row mb-4">
+    <div class="col-md-2">
+        <div class="card h-100">
+            <div class="card-body text-center">
+<<<<<<< HEAD
+                <i data-feather="zap" class="text-primary mb-3" style="width: 3rem; height: 3rem;"></i>
+=======
+                <i data-feather="wand" class="text-primary mb-3" style="width: 3rem; height: 3rem;"></i>
+>>>>>>> 579344a (Stabilize LUX Marketing app, clean deployment, fix env + scheduler, add gitignore and requirements)
+                <h5>Generate Campaign</h5>
+                <p class="card-text text-muted">Let LUX create a complete email campaign for you</p>
+                <button class="btn btn-primary" onclick="showGenerateCampaign()">
+                    <i data-feather="plus"></i> Create Campaign
+                </button>
+            </div>
+        </div>
     </div>
-    <div class="tile-card">
-        <div class="tile-icon"><i data-feather="shopping-cart"></i></div>
-        <h3>Product Campaign</h3>
-        <p>Create campaigns with WooCommerce products.</p>
-        <button class="btn btn-lux btn-lux-secondary mt-3" onclick="showProductCampaign()">
-            <i data-feather="package"></i> Product Campaign
-        </button>
+    
+    <div class="col-md-2">
+        <div class="card h-100">
+            <div class="card-body text-center">
+                <i data-feather="shopping-cart" class="text-success mb-3" style="width: 3rem; height: 3rem;"></i>
+                <h5>Product Campaign</h5>
+                <p class="card-text text-muted">Create campaigns with WooCommerce products</p>
+                <button class="btn btn-success" onclick="showProductCampaign()">
+                    <i data-feather="package"></i> Product Campaign
+                </button>
+            </div>
+        </div>
     </div>
-    <div class="tile-card">
-        <div class="tile-icon"><i data-feather="image"></i></div>
-        <h3>Generate Images</h3>
-        <p>Create campaign visuals with DALL·E.</p>
-        <button class="btn btn-lux btn-lux-amber mt-3" onclick="showImageGenerator()">
-            <i data-feather="camera"></i> Generate Image
-        </button>
+    
+    <div class="col-md-2">
+        <div class="card h-100">
+            <div class="card-body text-center">
+                <i data-feather="image" class="text-warning mb-3" style="width: 3rem; height: 3rem;"></i>
+                <h5>Generate Images</h5>
+                <p class="card-text text-muted">Create campaign visuals with DALL-E</p>
+                <button class="btn btn-warning" onclick="showImageGenerator()">
+                    <i data-feather="camera"></i> Generate Image
+                </button>
+            </div>
+        </div>
     </div>
-    <div class="tile-card">
-        <div class="tile-icon"><i data-feather="users"></i></div>
-        <h3>Audience Analysis</h3>
-        <p>Get AI insights about your contact segments.</p>
-        <button class="btn btn-lux btn-lux-primary mt-3" onclick="analyzeAudience()">
-            <i data-feather="search"></i> Analyze
-        </button>
+    
+    <div class="col-md-2">
+        <div class="card h-100">
+            <div class="card-body text-center">
+                <i data-feather="users" class="text-info mb-3" style="width: 3rem; height: 3rem;"></i>
+                <h5>Audience Analysis</h5>
+                <p class="card-text text-muted">Get AI insights about your contact segments</p>
+                <button class="btn btn-info" onclick="analyzeAudience()">
+                    <i data-feather="search"></i> Analyze
+                </button>
+            </div>
+        </div>
     </div>
-    <div class="tile-card">
-        <div class="tile-icon"><i data-feather="trending-up"></i></div>
-        <h3>Campaign Optimization</h3>
-        <p>Get AI recommendations to improve performance.</p>
-        <button class="btn btn-lux btn-lux-secondary mt-3" onclick="showOptimization()">
-            <i data-feather="target"></i> Optimize
-        </button>
+    
+    <div class="col-md-2">
+        <div class="card h-100">
+            <div class="card-body text-center">
+                <i data-feather="trending-up" class="text-secondary mb-3" style="width: 3rem; height: 3rem;"></i>
+                <h5>Campaign Optimization</h5>
+                <p class="card-text text-muted">Get AI recommendations to improve performance</p>
+                <button class="btn btn-secondary" onclick="showOptimization()">
+                    <i data-feather="target"></i> Optimize
+                </button>
+            </div>
+        </div>
     </div>
-    <div class="tile-card">
-        <div class="tile-icon"><i data-feather="star"></i></div>
-        <h3>Smart Recommendations</h3>
-        <p>Get strategic campaign suggestions from LUX.</p>
-        <button class="btn btn-lux btn-lux-amber mt-3" onclick="getRecommendations()">
-            <i data-feather="star"></i> Get Ideas
-        </button>
+    
+    <div class="col-md-2">
+        <div class="card h-100">
+            <div class="card-body text-center">
+<<<<<<< HEAD
+                <i data-feather="info" class="text-dark mb-3" style="width: 3rem; height: 3rem;"></i>
+=======
+                <i data-feather="bulb" class="text-dark mb-3" style="width: 3rem; height: 3rem;"></i>
+>>>>>>> 579344a (Stabilize LUX Marketing app, clean deployment, fix env + scheduler, add gitignore and requirements)
+                <h5>Smart Recommendations</h5>
+                <p class="card-text text-muted">Get strategic campaign suggestions from LUX</p>
+                <button class="btn btn-dark" onclick="getRecommendations()">
+                    <i data-feather="star"></i> Get Ideas
+                </button>
+            </div>
+        </div>
     </div>
 </div>
 

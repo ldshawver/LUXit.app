@@ -56,4 +56,3 @@ app/
 .vscode/
 .idea/
 >>>>>>> 579344a (Stabilize LUX Marketing app, clean deployment, fix env + scheduler, add gitignore and requirements)
-CODEX.md

@@ -21,7 +21,7 @@ def get_serializer():
 def login():
     """User login."""
     if current_user.is_authenticated:
-        return redirect(url_for('main.dashboard', _external=False))
+        return redirect(url_for('main.dashboard'))
     
     if request.method == 'POST':
         username = request.form.get('username', '').strip()
@@ -36,7 +36,8 @@ def login():
         
         if user and check_password_hash(user.password_hash, password):
             login_user(user, remember=remember)
-            return redirect(url_for('main.dashboard', _external=False))
+            next_page = request.args.get('next')
+            return redirect(next_page) if next_page else redirect(url_for('main.dashboard'))
         else:
             flash('Invalid username or password', 'error')
     
@@ -106,6 +107,6 @@ def register():
         
         login_user(user)
         flash('Admin account created successfully! Welcome to LUX Marketing.', 'success')
-        return redirect(url_for('main.dashboard', _external=False))
+        return redirect(url_for('main.dashboard'))
     
     return render_template('register.html', is_admin_registration=True)

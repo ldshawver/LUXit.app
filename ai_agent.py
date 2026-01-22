@@ -1,30 +1,29 @@
 """
 LUX AI Agent - Automated Email Marketing Assistant
-Powered by OpenAI for intelligent email campaign management
+Powered by OpenAI GPT-4o for intelligent email campaign management
 """
-
 import os
 import json
 import logging
-from datetime import datetime
-from typing import Any, Dict, List, Optional
-
+from datetime import datetime, timedelta
+from openai import OpenAI
+<<<<<<< HEAD
+# Import only what we need at module level to avoid circular imports
+# Model imports will be done within functions where needed
+=======
+from models import Campaign, Contact, EmailTemplate, CampaignRecipient, db
+from email_service import EmailService
+from tracking import get_campaign_analytics
+>>>>>>> 579344a (Stabilize LUX Marketing app, clean deployment, fix env + scheduler, add gitignore and requirements)
+import base64
 import requests
 from urllib.parse import urljoin
 
-from openai import OpenAI
-
-# Keep these imports light/consistent.
-# NOTE: Anything that touches DB requires Flask app context when executed.
-from models import Campaign, Contact, EmailTemplate, CampaignRecipient, db
-from email_service import EmailService
-
 logger = logging.getLogger(__name__)
-
 
 class LUXAgent:
     """LUX - Automated Email Marketing AI Agent"""
-
+    
     def __init__(self):
         self._client = None
         self._api_key = os.getenv("OPENAI_API_KEY")
@@ -33,35 +32,11 @@ class LUXAgent:
         self.model = "gpt-4o"  # Using GPT-4o for reliable performance
         self.agent_name = "LUX"
         self.agent_personality = """
-You are LUX, an expert email marketing automation agent. You are professional, data-driven,
-and focused on creating high-converting email campaigns. You understand marketing psychology,
-audience segmentation, and email best practices. You always aim to maximize engagement rates
-and conversions while maintaining brand consistency.
-""".strip()
-
-        if not self._api_key:
-            logger.warning("OPENAI_API_KEY missing; AI features will be disabled until configured.")
-        else:
-            # Lazy-init client; we can also init immediately, but lazy is safer.
-            logger.info("LUX Agent initialized (OpenAI key present).")
-
-    def _get_client(self) -> Optional[OpenAI]:
-        if self._client:
-            return self._client
-
-        if not self._api_key:
-            self._api_key = os.getenv("OPENAI_API_KEY")
-
-        if not self._api_key:
-            logger.warning("OPENAI_API_KEY missing; skipping OpenAI client initialization.")
-            return None
-
-        try:
-            self._client = OpenAI(api_key=self._api_key)
-            logger.info("LUX AI Agent OpenAI client initialized successfully")
-        except Exception as e:
-            logger.error(f"Failed to initialize OpenAI client: {e}")
-            self._client = None
+        You are LUX, an expert email marketing automation agent. You are professional, data-driven, 
+        and focused on creating high-converting email campaigns. You understand marketing psychology, 
+        audience segmentation, and email best practices. You always aim to maximize engagement rates 
+        and conversions while maintaining brand consistency.
+        """
 
     def _get_client(self):
         if self._client:
@@ -124,40 +99,37 @@ and conversions while maintaining brand consistency.
                 model=self.model,
                 messages=[
                     {"role": "system", "content": self.agent_personality},
-                    {"role": "user", "content": prompt},
+                    {"role": "user", "content": prompt}
                 ],
                 response_format={"type": "json_object"},
-                temperature=0.7,
+                temperature=0.7
             )
-
+            
             content = response.choices[0].message.content
             if not content:
                 logger.error("LUX received empty response from OpenAI")
                 return None
-
             result = json.loads(content)
-            logger.info("LUX generated campaign content: %s", result.get("campaign_name"))
+            logger.info(f"LUX generated campaign content: {result['campaign_name']}")
             return result
-
+            
         except Exception as e:
-            logger.error("LUX error generating campaign content: %s", e)
+            logger.error(f"LUX error generating campaign content: {e}")
             return None
-
-    def analyze_audience_segments(self, contacts: List[Contact]) -> Optional[Dict[str, Any]]:
-        """Analyze contact data to create audience segments."""
+    
+    def analyze_audience_segments(self, contacts):
+        """Analyze contact data to create audience segments"""
         try:
-            # Prepare contact data for analysis (limit to avoid excessive token usage)
-            contact_data: List[Dict[str, Any]] = []
-            for contact in contacts[:50]:
-                contact_data.append(
-                    {
-                        "email": getattr(contact, "email", ""),
-                        "company": getattr(contact, "company", None) or "Unknown",
-                        "tags": getattr(contact, "tags", None) or "",
-                        "created_at": contact.created_at.strftime("%Y-%m-%d") if getattr(contact, "created_at", None) else "",
-                    }
-                )
-
+            # Prepare contact data for analysis
+            contact_data = []
+            for contact in contacts[:50]:  # Limit for API efficiency
+                contact_data.append({
+                    'email': contact.email,
+                    'company': contact.company or 'Unknown',
+                    'tags': contact.tags or '',
+                    'created_at': contact.created_at.strftime('%Y-%m-%d') if contact.created_at else ''
+                })
+            
             prompt = f"""
             As LUX, analyze this contact data and create optimal audience segments for email marketing.
             
@@ -191,45 +163,45 @@ and conversions while maintaining brand consistency.
                 model=self.model,
                 messages=[
                     {"role": "system", "content": self.agent_personality},
-                    {"role": "user", "content": prompt},
+                    {"role": "user", "content": prompt}
                 ],
                 response_format={"type": "json_object"},
-                temperature=0.3,
+                temperature=0.3
             )
-
+            
             content = response.choices[0].message.content
             if not content:
                 logger.error("LUX received empty response from OpenAI for audience analysis")
                 return None
-
             result = json.loads(content)
-            logger.info("LUX created %d segments", len(result.get("segments", [])))
+            logger.info(f"LUX analyzed audience and created {len(result['segments'])} segments")
             return result
-
+            
         except Exception as e:
-            logger.error("LUX error analyzing audience: %s", e)
+            logger.error(f"LUX error analyzing audience: {e}")
             return None
-
-    def optimize_campaign_performance(self, campaign_id: int) -> Optional[Dict[str, Any]]:
-        """Analyze campaign performance and provide optimization recommendations."""
+    
+    def optimize_campaign_performance(self, campaign_id):
+        """Analyze campaign performance and provide optimization recommendations"""
         try:
-            # Import here to reduce circular-import risk
+            # Import here to avoid circular imports
             from tracking import get_campaign_analytics
-
+            
+            # Get campaign analytics
             analytics = get_campaign_analytics(campaign_id)
             if not analytics:
                 return None
-
+            
             campaign_data = {
-                "name": analytics["campaign"].name,
-                "subject": analytics["campaign"].subject,
-                "total_recipients": analytics["total_recipients"],
-                "delivery_rate": analytics["delivery_rate"],
-                "open_rate": analytics["open_rate"],
-                "click_rate": analytics["click_rate"],
-                "bounce_rate": analytics["bounce_rate"],
+                'name': analytics['campaign'].name,
+                'subject': analytics['campaign'].subject,
+                'total_recipients': analytics['total_recipients'],
+                'delivery_rate': analytics['delivery_rate'],
+                'open_rate': analytics['open_rate'],
+                'click_rate': analytics['click_rate'],
+                'bounce_rate': analytics['bounce_rate']
             }
-
+            
             prompt = f"""
             As LUX, analyze this email campaign performance and provide optimization recommendations.
             
@@ -264,110 +236,110 @@ and conversions while maintaining brand consistency.
                 model=self.model,
                 messages=[
                     {"role": "system", "content": self.agent_personality},
-                    {"role": "user", "content": prompt},
+                    {"role": "user", "content": prompt}
                 ],
                 response_format={"type": "json_object"},
-                temperature=0.3,
+                temperature=0.3
             )
-
-            content = response.choices[0].message.content
-            if not content:
-                logger.error("LUX received empty response from OpenAI for optimization")
-                return None
-
-            result = json.loads(content)
-            logger.info("LUX analyzed campaign %s performance", campaign_id)
+            
+            result = json.loads(response.choices[0].message.content)
+            logger.info(f"LUX analyzed campaign {campaign_id} performance")
             return result
-
+            
         except Exception as e:
-            logger.error("LUX error optimizing campaign: %s", e)
+            logger.error(f"LUX error optimizing campaign: {e}")
             return None
-
-    # ----------------------------
-    # Campaign creation / automation
-    # ----------------------------
-
-    def create_automated_campaign(self, campaign_brief: Dict[str, Any], template_id: Optional[int] = None) -> Optional[Dict[str, Any]]:
-        """Automatically create and (optionally) schedule a complete email campaign."""
+    
+    def create_automated_campaign(self, campaign_brief, template_id=None):
+        """Automatically create and schedule a complete email campaign"""
         try:
+            # Import here to avoid circular imports
+            from models import Campaign, EmailTemplate, Contact, CampaignRecipient, db
+            from email_service import EmailService
+            
+            # Generate campaign content
             content = self.generate_campaign_content(
-                campaign_brief.get("objective", "Engage audience"),
-                campaign_brief.get("target_audience", "All contacts"),
-                campaign_brief.get("brand_info", "Professional business"),
+                campaign_brief.get('objective', 'Engage audience'),
+                campaign_brief.get('target_audience', 'All contacts'),
+                campaign_brief.get('brand_info', 'Professional business')
             )
+            
             if not content:
                 return None
-
-            # Create a template if one isn't provided
+            
+            # Create email template if not provided
             if not template_id:
                 template = EmailTemplate(
-                    name=f"LUX Generated - {content.get('campaign_name', 'Campaign')}",
-                    subject=content.get("subject", ""),
-                    html_content=content.get("html_content", ""),
+                    name=f"LUX Generated - {content['campaign_name']}",
+                    subject=content['subject'],
+                    html_content=content['html_content']
                 )
                 db.session.add(template)
                 db.session.flush()
                 template_id = template.id
-
+            
+            # Create campaign
             campaign = Campaign(
-                name=content.get("campaign_name", "LUX Campaign"),
-                subject=content.get("subject", ""),
+                name=content['campaign_name'],
+                subject=content['subject'],
                 template_id=template_id,
-                status="draft",
+                status='draft'
             )
-
-            if campaign_brief.get("schedule_time"):
-                campaign.scheduled_at = campaign_brief["schedule_time"]
-                campaign.status = "scheduled"
-
+            
+            # Schedule if requested
+            if campaign_brief.get('schedule_time'):
+                campaign.scheduled_at = campaign_brief['schedule_time']
+                campaign.status = 'scheduled'
+            
             db.session.add(campaign)
             db.session.flush()
-
-            # Target active contacts
+            
+            # Add recipients based on targeting
             contacts_query = Contact.query.filter_by(is_active=True)
-
-            # Tag filtering (OR across tags)
-            target_tags = campaign_brief.get("target_tags") or []
-            if target_tags:
-                from sqlalchemy import or_
-
-                tag_conditions = [Contact.tags.contains(tag) for tag in target_tags]
-                contacts_query = contacts_query.filter(or_(*tag_conditions))
-
+            
+            # Apply audience filtering if specified
+            if campaign_brief.get('target_tags'):
+                tags = campaign_brief['target_tags']
+                tag_conditions = []
+                for tag in tags:
+                    tag_conditions.append(Contact.tags.contains(tag))
+                if tag_conditions:
+                    from sqlalchemy import or_
+                    contacts_query = contacts_query.filter(or_(*tag_conditions))
+            
             contacts = contacts_query.all()
-
+            
+            # Add recipients
             for contact in contacts:
-                db.session.add(CampaignRecipient(campaign_id=campaign.id, contact_id=contact.id))
-
+                recipient = CampaignRecipient(
+                    campaign_id=campaign.id,
+                    contact_id=contact.id
+                )
+                db.session.add(recipient)
+            
             db.session.commit()
-
+            
             result = {
-                "campaign_id": campaign.id,
-                "campaign_name": campaign.name,
-                "recipients_count": len(contacts),
-                "recommendations": content.get("recommendations", ""),
-                "status": campaign.status,
+                'campaign_id': campaign.id,
+                'campaign_name': campaign.name,
+                'recipients_count': len(contacts),
+                'recommendations': content.get('recommendations', ''),
+                'status': campaign.status
             }
-
-            logger.info("LUX created automated campaign: %s (%d recipients)", campaign.name, len(contacts))
+            
+            logger.info(f"LUX created automated campaign: {campaign.name} with {len(contacts)} recipients")
             return result
-
+            
         except Exception as e:
-            logger.error("LUX error creating automated campaign: %s", e)
-            try:
-                db.session.rollback()
-            except Exception:
-                pass
+            logger.error(f"LUX error creating automated campaign: {e}")
+            db.session.rollback()
             return None
-
-    # ----------------------------
-    # Content helpers
-    # ----------------------------
-
-    def generate_blog_post(self, topic: str, keywords: Optional[List[str]] = None, tone: str = "professional") -> Optional[Dict[str, Any]]:
-        """Generate SEO-optimized blog post."""
+    
+    def generate_blog_post(self, topic, keywords=None, tone='professional'):
+        """Generate SEO-optimized blog post"""
         try:
-            keywords_str = ", ".join(keywords) if keywords else ""
+            keywords_str = ', '.join(keywords) if keywords else ''
+            
             prompt = f"""
             Write a comprehensive, SEO-optimized blog post about: {topic}
             
@@ -396,21 +368,19 @@ and conversions while maintaining brand consistency.
                 model=self.model,
                 messages=[
                     {"role": "system", "content": self.agent_personality},
-                    {"role": "user", "content": prompt},
+                    {"role": "user", "content": prompt}
                 ],
                 response_format={"type": "json_object"},
-                temperature=0.7,
+                temperature=0.7
             )
-
-            content = response.choices[0].message.content
-            return json.loads(content) if content else None
-
+            
+            return json.loads(response.choices[0].message.content)
         except Exception as e:
-            logger.error("Blog generation error: %s", e)
+            logger.error(f"Blog generation error: {e}")
             return None
-
-    def generate_subject_line_variants(self, campaign_objective: str, original_subject: Optional[str] = None) -> Optional[Dict[str, Any]]:
-        """Generate multiple subject line variants for A/B testing."""
+    
+    def generate_subject_line_variants(self, campaign_objective, original_subject=None):
+        """Generate multiple subject line variants for A/B testing"""
         try:
             prompt = f"""
             As LUX, generate 5 high-converting email subject line variants for A/B testing.
@@ -447,28 +417,27 @@ and conversions while maintaining brand consistency.
                 model=self.model,
                 messages=[
                     {"role": "system", "content": self.agent_personality},
-                    {"role": "user", "content": prompt},
+                    {"role": "user", "content": prompt}
                 ],
                 response_format={"type": "json_object"},
-                temperature=0.8,
+                temperature=0.8
             )
-
-            content = response.choices[0].message.content
-            if not content:
-                return None
-            result = json.loads(content)
-            logger.info("LUX generated %d subject line variants", len(result.get("variants", [])))
+            
+            result = json.loads(response.choices[0].message.content)
+            logger.info(f"LUX generated {len(result['variants'])} subject line variants")
             return result
-
+            
         except Exception as e:
-            logger.error("LUX error generating subject lines: %s", e)
+            logger.error(f"LUX error generating subject lines: {e}")
             return None
-
-    def get_campaign_recommendations(self, campaign_data: Optional[List[Dict[str, Any]]] = None, total_contacts: int = 0) -> Optional[Dict[str, Any]]:
-        """Get AI-powered recommendations for new campaigns based on provided data."""
+    
+    def get_campaign_recommendations(self, campaign_data=None, total_contacts=0):
+        """Get AI-powered recommendations for new campaigns based on provided data"""
         try:
-            campaign_data = campaign_data or []
-
+            # Accept data as parameters to avoid circular imports
+            if campaign_data is None:
+                campaign_data = []
+            
             prompt = f"""
             As LUX, analyze the current email marketing situation and recommend new campaign strategies.
             
@@ -505,26 +474,23 @@ and conversions while maintaining brand consistency.
                 model=self.model,
                 messages=[
                     {"role": "system", "content": self.agent_personality},
-                    {"role": "user", "content": prompt},
+                    {"role": "user", "content": prompt}
                 ],
                 response_format={"type": "json_object"},
-                temperature=0.4,
+                temperature=0.4
             )
-
-            content = response.choices[0].message.content
-            if not content:
-                return None
-
-            result = json.loads(content)
-            logger.info("LUX generated %d campaign recommendations", len(result.get("recommended_campaigns", [])))
+            
+            result = json.loads(response.choices[0].message.content)
+            logger.info(f"LUX generated {len(result['recommended_campaigns'])} campaign recommendations")
             return result
-
+            
         except Exception as e:
-            logger.error("LUX error getting recommendations: %s", e)
+            logger.error(f"LUX error getting recommendations: {e}")
             return None
-
-    def generate_email_content(self, prompt: str, content_type: str = "email_content") -> List[str]:
-        """Generate email content using OpenAI."""
+    
+<<<<<<< HEAD
+    def generate_email_content(self, prompt, content_type="email_content"):
+        """Generate email content using OpenAI"""
         try:
             system_prompt = f"""
             You are LUX, an expert email marketing content generator. Generate compelling {content_type} 
@@ -542,52 +508,44 @@ and conversions while maintaining brand consistency.
                 model=self.model,
                 messages=[
                     {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": f"Generate {content_type} for: {prompt}"},
+                    {"role": "user", "content": f"Generate {content_type} for: {prompt}"}
                 ],
                 max_tokens=1000,
-                temperature=0.8,
+                temperature=0.8
             )
-
-            content = (response.choices[0].message.content or "").strip()
-            if not content:
-                return ["No content returned. Please try again."]
-
-            # Try to extract list-like content
-            lines = [line.strip() for line in content.split("\n") if line.strip()]
-            # If it looks like a list, return cleaned items
-            if any(line.startswith(("1.", "2.", "3.", "Option")) for line in lines):
-                cleaned = []
-                for line in lines:
-                    # strip leading numbering/bullets
-                    if ". " in line[:4]:
-                        line = line.split(". ", 1)[1]
-                    cleaned.append(line.strip())
-                return cleaned[:5]
-
-            # Otherwise return a few simple variations
-            variations = [content]
-            variations.append(content.replace(".", "!") if "." in content else content + "!")
-            variations.append(content + " Act now!" if "Act now" not in content else content)
-            variations.append(content.replace("your", "our") if "your" in content else content + " Don't miss out!")
-            return variations[:5]
-
+            
+            content = response.choices[0].message.content.strip()
+            
+            # Split into multiple options
+            if "1." in content or "Option 1" in content:
+                options = [opt.strip() for opt in content.split('\n') if opt.strip() and any(c.isalnum() for c in opt)]
+                return options[:5]
+            else:
+                # If not formatted as list, create variations
+                return [
+                    content,
+                    content.replace(".", "!"),
+                    content + " Act now!",
+                    content.replace("your", "our") if "your" in content else content + " Don't miss out!"
+                ]
+                
         except Exception as e:
-            logger.error("Error generating email content: %s", e)
+            logger.error(f"Error generating email content: {e}")
             return ["Error generating content. Please try again."]
-
-    def generate_subject_lines(self, campaign_type: str, audience: str = "") -> List[str]:
-        """Generate email subject line suggestions."""
+    
+    def generate_subject_lines(self, campaign_type, audience=""):
+        """Generate email subject line suggestions"""
         try:
             system_prompt = """
-You are LUX, an expert email marketing strategist. Generate compelling email subject lines
-that maximize open rates. Focus on:
-- Creating urgency and curiosity
-- Keeping under 50 characters when possible
-- Using action words
-- Avoiding spam trigger words
-- Personalizing when appropriate
-""".strip()
-
+            You are LUX, an expert email marketing strategist. Generate compelling email subject lines 
+            that maximize open rates. Focus on:
+            - Creating urgency and curiosity
+            - Keeping under 50 characters when possible
+            - Using action words
+            - Avoiding spam trigger words
+            - Personalizing when appropriate
+            """
+            
             audience_context = f" for {audience}" if audience else ""
             
             client = self._require_client("subject line generation")
@@ -597,45 +555,41 @@ that maximize open rates. Focus on:
                 model=self.model,
                 messages=[
                     {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": f"Generate 8 compelling subject lines for a {campaign_type} campaign{audience_context}"},
+                    {"role": "user", "content": f"Generate 8 compelling subject lines for a {campaign_type} campaign{audience_context}"}
                 ],
                 max_tokens=500,
-                temperature=0.9,
+                temperature=0.9
             )
-
-            content = (response.choices[0].message.content or "").strip()
-            if not content:
-                return ["No subject lines returned. Please try again."]
-
-            lines = [line.strip() for line in content.split("\n") if line.strip()]
-            cleaned_lines: List[str] = []
+            
+            content = response.choices[0].message.content.strip()
+            
+            # Extract subject lines
+            lines = [line.strip() for line in content.split('\n') if line.strip() and len(line.strip()) > 5]
+            # Clean up formatting (remove numbers, bullets, etc.)
+            cleaned_lines = []
             for line in lines:
-                cleaned = line
-                if ". " in cleaned[:5]:
-                    cleaned = cleaned.split(". ", 1)[1]
-                if cleaned.startswith("- "):
-                    cleaned = cleaned[2:]
-                cleaned = cleaned.strip(' "\'')
+                cleaned = line.split('. ', 1)[-1].split('- ', 1)[-1].strip(' "\'')
                 if len(cleaned) > 5:
                     cleaned_lines.append(cleaned)
-
-            return cleaned_lines[:8] if cleaned_lines else [content][:1]
-
+                    
+            return cleaned_lines[:8]
+            
         except Exception as e:
-            logger.error("Error generating subject lines: %s", e)
+            logger.error(f"Error generating subject lines: {e}")
             return ["Error generating subject lines. Please try again."]
-
-    # ----------------------------
-    # Images (DALL·E 3)
-    # ----------------------------
-
-    def generate_campaign_image(self, campaign_description: str, style: str = "professional marketing") -> Optional[Dict[str, Any]]:
-        """Generate marketing images using DALL·E."""
+    
+    def generate_campaign_image(self, campaign_description, style="professional marketing"):
+        """Generate marketing images using DALL-E"""
         try:
             client = self._require_client("campaign image generation")
             if not client:
                 return None
-
+                
+=======
+    def generate_campaign_image(self, campaign_description, style="professional marketing"):
+        """Generate marketing images using DALL-E"""
+        try:
+>>>>>>> 579344a (Stabilize LUX Marketing app, clean deployment, fix env + scheduler, add gitignore and requirements)
             prompt = f"""
             Create a professional marketing image for: {campaign_description}
             
@@ -648,109 +602,133 @@ that maximize open rates. Focus on:
             - Brand-friendly colors and composition
             """
             
+<<<<<<< HEAD
             # Use explicit parameters to avoid any conflicts
             # Note: DALL-E 3 doesn't support 'n' parameter (only generates 1 image)
             response = client.images.generate(
                 model="dall-e-3",
                 prompt=prompt,
+=======
+            response = self.client.images.generate(
+                model="dall-e-3",
+                prompt=prompt,
+                n=1,
+>>>>>>> 579344a (Stabilize LUX Marketing app, clean deployment, fix env + scheduler, add gitignore and requirements)
                 size="1024x1024",
-                quality="standard",
+                quality="standard"
             )
-
+            
             image_url = response.data[0].url
-            logger.info("LUX generated campaign image: %s...", campaign_description[:50])
-
+            logger.info(f"LUX generated campaign image: {campaign_description[:50]}...")
+            
             return {
-                "image_url": image_url,
-                "prompt_used": prompt,
-                "campaign_description": campaign_description,
+                'image_url': image_url,
+                'prompt_used': prompt,
+                'campaign_description': campaign_description
             }
-
+            
         except Exception as e:
-            logger.error("LUX error generating image: %s", e)
+            logger.error(f"LUX error generating image: {e}")
             return None
-
-    # ----------------------------
-    # WooCommerce (requests only)
-    # ----------------------------
-
-    def fetch_woocommerce_products(
-        self,
-        woocommerce_url: str,
-        consumer_key: str,
-        consumer_secret: str,
-        product_limit: int = 10,
-        category_filter: Optional[str] = None,
-    ) -> Optional[List[Dict[str, Any]]]:
-        """Fetch products from WooCommerce API using requests (no WooCommerce library)."""
+    
+    def fetch_woocommerce_products(self, woocommerce_url, consumer_key, consumer_secret, 
+                                  product_limit=10, category_filter=None):
+<<<<<<< HEAD
+        """Fetch products from WooCommerce API using pure requests - no WooCommerce library"""
         try:
-            api_url = urljoin(woocommerce_url, "/wp-json/wc/v3/products")
-
+            # Explicitly prevent any WooCommerce library imports
+            import sys
+            woo_modules = [mod for mod in sys.modules.keys() if 'woocommerce' in mod.lower()]
+            if woo_modules:
+                logger.warning(f"Detected WooCommerce modules: {woo_modules}. Using requests only.")
+            
+            # Always use requests library directly to avoid WooCommerce library conflicts
+=======
+        """Fetch products from WooCommerce API"""
+        try:
+>>>>>>> 579344a (Stabilize LUX Marketing app, clean deployment, fix env + scheduler, add gitignore and requirements)
+            # Construct API endpoint
+            api_url = urljoin(woocommerce_url, '/wp-json/wc/v3/products')
+            
+            # Set up authentication and parameters
             auth = (consumer_key, consumer_secret)
-            params: Dict[str, Any] = {
-                "per_page": product_limit,
-                "status": "publish",
-                "stock_status": "instock",
+            params = {
+                'per_page': product_limit,
+                'status': 'publish',
+                'stock_status': 'instock'
             }
+            
             if category_filter:
-                params["category"] = category_filter
-
+                params['category'] = category_filter
+            
+<<<<<<< HEAD
+            # Use requests directly to avoid any WooCommerce client library issues
+=======
+>>>>>>> 579344a (Stabilize LUX Marketing app, clean deployment, fix env + scheduler, add gitignore and requirements)
             response = requests.get(api_url, auth=auth, params=params, timeout=10)
-            if response.status_code != 200:
-                logger.error("WooCommerce API error: %s - %s", response.status_code, response.text)
-                return None
-
-            products = response.json()
-            processed: List[Dict[str, Any]] = []
-            for product in products:
-                processed.append(
-                    {
-                        "id": product.get("id"),
-                        "name": product.get("name", ""),
-                        "price": product.get("price", "0"),
-                        "regular_price": product.get("regular_price", "0"),
-                        "sale_price": product.get("sale_price", ""),
-                        "description": product.get("short_description", ""),
-                        "image_url": product.get("images", [{}])[0].get("src", "") if product.get("images") else "",
-                        "permalink": product.get("permalink", ""),
-                        "categories": [cat.get("name", "") for cat in product.get("categories", [])],
-                        "tags": [tag.get("name", "") for tag in product.get("tags", [])],
-                        "in_stock": product.get("stock_status") == "instock",
-                        "featured": product.get("featured", False),
+            
+            if response.status_code == 200:
+                products = response.json()
+                
+                # Process products for email use
+                processed_products = []
+                for product in products:
+                    processed_product = {
+                        'id': product.get('id'),
+                        'name': product.get('name', ''),
+                        'price': product.get('price', '0'),
+                        'regular_price': product.get('regular_price', '0'),
+                        'sale_price': product.get('sale_price', ''),
+                        'description': product.get('short_description', ''),
+                        'image_url': product.get('images', [{}])[0].get('src', '') if product.get('images') else '',
+                        'permalink': product.get('permalink', ''),
+                        'categories': [cat.get('name', '') for cat in product.get('categories', [])],
+                        'tags': [tag.get('name', '') for tag in product.get('tags', [])],
+                        'in_stock': product.get('stock_status') == 'instock',
+                        'featured': product.get('featured', False)
                     }
-                )
-
-            logger.info("LUX fetched %d WooCommerce products", len(processed))
-            return processed
-
+                    processed_products.append(processed_product)
+                
+                logger.info(f"LUX fetched {len(processed_products)} WooCommerce products")
+                return processed_products
+            else:
+                logger.error(f"WooCommerce API error: {response.status_code} - {response.text}")
+                return None
+                
         except Exception as e:
-            logger.error("LUX error fetching WooCommerce products: %s", e)
+            logger.error(f"LUX error fetching WooCommerce products: {e}")
             return None
-
-    def create_product_campaign(
-        self,
-        woocommerce_config: Dict[str, Any],
-        campaign_objective: str,
-        product_filter: Optional[str] = None,
-        include_images: bool = True,
-    ) -> Optional[Dict[str, Any]]:
-        """Create a product-focused email campaign with WooCommerce integration."""
+    
+    def create_product_campaign(self, woocommerce_config, campaign_objective, 
+                               product_filter=None, include_images=True):
+        """Create a product-focused email campaign with WooCommerce integration"""
         try:
+<<<<<<< HEAD
+            # Ensure no WooCommerce library conflicts by isolating the API call
+            logger.info("Starting WooCommerce product campaign creation...")
+            
+            # Fetch products using isolated approach
+=======
+            # Fetch products from WooCommerce
+>>>>>>> 579344a (Stabilize LUX Marketing app, clean deployment, fix env + scheduler, add gitignore and requirements)
             products = self.fetch_woocommerce_products(
-                woocommerce_config["url"],
-                woocommerce_config["consumer_key"],
-                woocommerce_config["consumer_secret"],
-                product_limit=int(woocommerce_config.get("product_limit", 6)),
-                category_filter=product_filter,
+                woocommerce_config['url'],
+                woocommerce_config['consumer_key'],
+                woocommerce_config['consumer_secret'],
+                product_limit=woocommerce_config.get('product_limit', 6),
+                category_filter=product_filter
             )
+            
             if not products:
                 return None
-
+            
+            # Generate campaign image if requested
             campaign_image = None
             if include_images:
                 image_description = f"Product showcase for {campaign_objective} featuring {len(products)} products"
                 campaign_image = self.generate_campaign_image(image_description, "e-commerce product showcase")
-
+            
+            # Create product-focused campaign content
             prompt = f"""
             As LUX, create a high-converting product email campaign.
             
@@ -779,37 +757,39 @@ that maximize open rates. Focus on:
             Make it conversion-focused with clear pricing and purchase buttons.
             """
             
+<<<<<<< HEAD
             client = self._require_client("product campaign generation")
             if not client:
                 return None
             response = client.chat.completions.create(
+=======
+            response = self.client.chat.completions.create(
+>>>>>>> 579344a (Stabilize LUX Marketing app, clean deployment, fix env + scheduler, add gitignore and requirements)
                 model=self.model,
                 messages=[
                     {"role": "system", "content": self.agent_personality},
-                    {"role": "user", "content": prompt},
+                    {"role": "user", "content": prompt}
                 ],
                 response_format={"type": "json_object"},
-                temperature=0.7,
+                temperature=0.7
             )
-
-            content = response.choices[0].message.content
-            if not content:
-                return None
-
-            campaign_content = json.loads(content)
+            
+            campaign_content = json.loads(response.choices[0].message.content)
+            
+            # Add product and image data to response
             result = {
                 **campaign_content,
-                "products": products,
-                "campaign_image": campaign_image,
-                "product_count": len(products),
-                "woocommerce_integration": True,
+                'products': products,
+                'campaign_image': campaign_image,
+                'product_count': len(products),
+                'woocommerce_integration': True
             }
-
-            logger.info("LUX created product campaign with %d products", len(products))
+            
+            logger.info(f"LUX created product campaign with {len(products)} products")
             return result
-
+            
         except Exception as e:
-            logger.error("LUX error creating product campaign: %s", e)
+            logger.error(f"LUX error creating product campaign: {e}")
             return None
 
 _lux_agent = None
