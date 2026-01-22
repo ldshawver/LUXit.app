@@ -1,5 +1,20 @@
 # CHANGELOG - LUX Marketing Platform
 
+## [3.8.1] - 2026-01-21
+
+### ✨ Highlights
+- Phase 1 release marker for first-party analytics foundation (event ingestion, reporting, exports, print).
+- Added Phase 1 VPS validation runbook for analytics ingestion and exports.
+
+---
+
+## [3.8.0] - 2026-01-21
+
+### ✨ Highlights
+- Phase 0 stabilization release marker for factory/auth/CSRF and deployment alignment.
+
+---
+
 ## [3.7.1] - 2026-01-07
 
 ### ✨ Highlights
