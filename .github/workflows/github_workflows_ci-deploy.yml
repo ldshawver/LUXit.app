@@ -1,119 +1,64 @@
-# Deploy-only workflow: SSH to VPS, git pull/reset, optional venv install, restart service.
-# Triggers: push to main or manual run.
-#
-# Required repo secrets:
-# - VPS_SSH_KEY  (private key that the runner will use to SSH into the VPS)
-# - VPS_HOST     (IP or hostname of the VPS)
-# - VPS_USER     (user on the VPS to login as)
-#
-# Notes:
-# - The VPS user must have the public key (corresponding to VPS_SSH_KEY) in its ~/.ssh/authorized_keys.
-# - The VPS must be able to pull from GitHub: give the VPS account a deploy key on the repo OR
-#   add a GitHub account key that has access to the repo.
-# - Adjust DEPLOY_DIR and SERVICE_NAME to match your server.
-name: Deploy to VPS
+- name: Deploy to VPS
+  env:
+    SSH_USER: ${{ secrets.VPS_USER }}
+    SSH_HOST: ${{ secrets.VPS_HOST }}
+    DEPLOY_DIR: /opt/luxit
+    REPO_SSH: git@github.com:ldshawver/LUXit.app.git
+    BRANCH: main
+    SERVICE_NAME: lux-marketing.service
+  run: |
+    set -euo pipefail
 
-on:
-  push:
-    branches:
-      - main
-  workflow_dispatch:
+    ssh -o StrictHostKeyChecking=yes -i ~/.ssh/id_ed25519_vps_actions "${SSH_USER}@${SSH_HOST}" bash -l <<'REMOTE'
+      set -euo pipefail
 
-permissions:
-  contents: read
+      DEPLOY_DIR=/opt/luxit
+      BRANCH=main
+      REPO_SSH=git@github.com:ldshawver/LUXit.app.git
+      SERVICE_NAME=lux-marketing.service
 
-env:
-  REPO_SSH: git@github.com:ldshawver/LUXit.app.git
-  DEPLOY_DIR: /opt/luxit         # change to your app path on the VPS
-  DEPLOY_BRANCH: main
-  SERVICE_NAME: lux-marketing.service  # change to your systemd service, or leave blank to skip restart
+      # Avoid 'dubious ownership' safety block for this directory (idempotent)
+      git config --global --add safe.directory "${DEPLOY_DIR}" || true
 
-jobs:
-  deploy:
-    runs-on: ubuntu-latest
+      if [ ! -d "${DEPLOY_DIR}" ]; then
+        echo "== remote: cloning repository..."
+        git clone --branch "${BRANCH}" "${REPO_SSH}" "${DEPLOY_DIR}"
+      else
+        echo "== remote: fetching..."
+        cd "${DEPLOY_DIR}" || exit 1
+        git fetch origin "${BRANCH}" --quiet || true
 
-    steps:
-      - name: Verify required secrets present
-        run: |
-          if [ -z "${{ secrets.VPS_SSH_KEY }}" ]; then
-            echo "ERROR: VPS_SSH_KEY is not set or not available to this job"; exit 1
+        # prefer resetting to remote tracking branch if it exists, otherwise use FETCH_HEAD
+        if git show-ref --verify --quiet "refs/remotes/origin/${BRANCH}"; then
+          git reset --hard "origin/${BRANCH}"
+        else
+          HASH=$(git rev-parse --verify FETCH_HEAD 2>/dev/null || true)
+          if [ -n "${HASH}" ]; then
+            git checkout -B "${BRANCH}" "${HASH}"
+            git reset --hard "${HASH}"
+          else
+            # fallback attempt
+            git fetch origin "${BRANCH}" --quiet
+            git checkout -B "${BRANCH}" "origin/${BRANCH}"
+            git reset --hard "origin/${BRANCH}"
           fi
-          if [ -z "${{ secrets.VPS_HOST }}" ]; then
-            echo "ERROR: VPS_HOST is not set or not available to this job"; exit 1
-          fi
-          if [ -z "${{ secrets.VPS_USER }}" ]; then
-            echo "ERROR: VPS_USER is not set or not available to this job"; exit 1
-          fi
-          echo "Secrets present."
+        fi
+      fi
 
-      - name: Setup SSH agent with VPS key
-        uses: webfactory/ssh-agent@v0.9.0
-        with:
-          ssh-private-key: ${{ secrets.VPS_SSH_KEY }}
+      # Ensure future pulls use SSH (so actions can pull via the key if needed)
+      git remote set-url origin "${REPO_SSH}" || true
 
-      - name: Debug: list keys loaded into ssh-agent
-        run: ssh-add -l || true
+      # Optional: activate virtualenv and install deps (if present)
+      if [ -f requirements.txt ] && [ -d venv ]; then
+        . venv/bin/activate || true
+        pip install -r requirements.txt || true
+      fi
 
-      - name: Add VPS host to known_hosts
-        run: |
-          mkdir -p ~/.ssh
-          ssh-keyscan -H "${{ secrets.VPS_HOST }}" >> ~/.ssh/known_hosts || true
-          chmod 600 ~/.ssh/known_hosts
+      # Restart service and print logs
+      sudo systemctl daemon-reload || true
+      sudo systemctl restart "${SERVICE_NAME}" || true
+      sudo systemctl status "${SERVICE_NAME}" --no-pager -l
+      sudo journalctl -u "${SERVICE_NAME}" -n 200 --no-pager
 
-      - name: Deploy: git pull/reset and restart service
-        env:
-          SSH_USER: ${{ secrets.VPS_USER }}
-          SSH_HOST: ${{ secrets.VPS_HOST }}
-          DEPLOY_DIR: ${{ env.DEPLOY_DIR }}
-          REPO_SSH: ${{ env.REPO_SSH }}
-          BRANCH: ${{ env.DEPLOY_BRANCH }}
-          SERVICE_NAME: ${{ env.SERVICE_NAME }}
-        run: |
-          set -euo pipefail
-
-          # Use verbose SSH to capture useful logs in Actions output
-          ssh -vvv -o StrictHostKeyChecking=yes "${SSH_USER}@${SSH_HOST}" bash -l -c "
-            set -euo pipefail
-            echo '== remote: connected as:' \$(whoami) '@' \$(hostname)
-            echo '== remote: deploy dir:' ${DEPLOY_DIR}
-
-            if [ ! -d \"${DEPLOY_DIR}\" ]; then
-              echo '== remote: cloning repository...'
-              git clone --branch ${BRANCH} ${REPO_SSH} ${DEPLOY_DIR}
-            else
-              echo '== remote: fetching and resetting to origin/${BRANCH}...'
-              cd ${DEPLOY_DIR}
-              git fetch origin ${BRANCH}
-              git reset --hard origin/${BRANCH}
-            fi
-
-            cd ${DEPLOY_DIR}
-
-            # Optional: create/activate venv and install requirements if present
-            if [ -f requirements.txt ]; then
-              echo '== remote: ensuring venv and installing dependencies (if venv exists)'
-              if [ -d venv ]; then
-                . venv/bin/activate || true
-                pip install -r requirements.txt || true
-              else
-                echo '== remote: no venv found; skipping pip install (create venv if you want deps installed)'
-              fi
-            fi
-
-            # Optional: run migrations or build steps here
-            # e.g., python manage.py migrate || true
-
-            # Restart service if SERVICE_NAME is set and systemctl exists
-            if [ -n \"${SERVICE_NAME}\" ] && command -v systemctl >/dev/null 2>&1; then
-              echo '== remote: restarting systemd service: ${SERVICE_NAME}'
-              sudo systemctl daemon-reload || true
-              sudo systemctl restart ${SERVICE_NAME}
-            else
-              echo '== remote: skipping service restart (SERVICE_NAME empty or systemctl not present)'
-            fi
-
-            echo '== remote: deployment finished at:' \$(date -u)
-          "
-
-      - name: Done
-        run: echo "Deploy job completed."
+      echo "== remote: done"
+REMOTE
