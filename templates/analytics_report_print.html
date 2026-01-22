@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Analytics Report (Print)</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/custom.css') }}">
+    <style>
+      body {
+        background: #fff;
+        color: #111;
+        padding: 24px;
+      }
+      .print-card {
+        border: 1px solid #ddd;
+        border-radius: 12px;
+        padding: 16px;
+        margin-bottom: 16px;
+      }
+      .print-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 12px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="print-header">
+      <h1>LUX Marketing Analytics Report</h1>
+      <div>
+        <div>Range: {{ range_result.start.date() }} to {{ range_result.end.date() }}</div>
+        <div>Generated at: {{ generated_at }}</div>
+      </div>
+    </div>
+
+    <div class="print-card">
+      <h3>Summary KPIs</h3>
+      <p>Total Events: {{ summary.total_events }}</p>
+      <p>Total Sessions: {{ summary.total_sessions }}</p>
+      <p>Consent Suppressed: {{ summary.consent_suppressed }}</p>
+    </div>
+
+    <div class="print-card">
+      <h3>Top Pages</h3>
+      <ul>
+        {% for row in summary.top_pages %}
+          <li>{{ row.page }} ({{ row.hits }})</li>
+        {% else %}
+          <li>No data yet.</li>
+        {% endfor %}
+      </ul>
+    </div>
+
+    <div class="print-card">
+      <h3>Top Referrers</h3>
+      <ul>
+        {% for row in summary.top_referrers %}
+          <li>{{ row.referrer }} ({{ row.hits }})</li>
+        {% else %}
+          <li>No data yet.</li>
+        {% endfor %}
+      </ul>
+    </div>
+  </body>
+</html>
