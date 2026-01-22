@@ -1,5 +1,21 @@
 # CHANGELOG - LUX Marketing Platform
 
+## [3.8.7] - 2026-01-21
+
+### ✨ Highlights
+- Phase 7 release marker for alerts + insights validation.
+- Added Phase 7 VPS runbook for alert checks.
+
+---
+
+## [3.8.6] - 2026-01-21
+
+### ✨ Highlights
+- Phase 6 release marker for creative fatigue detection validation.
+- Added Phase 6 VPS runbook for creative fatigue checks.
+
+---
+
 ## [3.8.5] - 2026-01-21
 
 ### ✨ Highlights
