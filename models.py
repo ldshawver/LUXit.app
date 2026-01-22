@@ -1,4 +1,6 @@
 from datetime import datetime
+import logging
+
 from extensions import db
 from flask_login import UserMixin
 from sqlalchemy import JSON, Text
@@ -130,18 +132,23 @@ class User(UserMixin, db.Model):
     
     def get_default_company(self):
         """Get the user's default company"""
-        if self.default_company_id:
-            return Company.query.get(self.default_company_id)
-        result = db.session.execute(
-            db.select(user_company).where(
-                user_company.c.user_id == self.id,
-                user_company.c.is_default == True
-            )
-        ).first()
-        if result:
-            return Company.query.get(result.company_id)
-        all_companies = Company.query.filter_by(is_active=True).all()
-        return all_companies[0] if all_companies else None
+        logger = logging.getLogger(__name__)
+        try:
+            if self.default_company_id:
+                return Company.query.get(self.default_company_id)
+            result = db.session.execute(
+                db.select(user_company).where(
+                    user_company.c.user_id == self.id,
+                    user_company.c.is_default == True
+                )
+            ).first()
+            if result:
+                return Company.query.get(result.company_id)
+            all_companies = Company.query.filter_by(is_active=True).all()
+            return all_companies[0] if all_companies else None
+        except Exception as exc:
+            logger.warning("Default company lookup failed for user %s: %s", self.id, exc)
+            return None
     
     def set_default_company(self, company_id):
         """Set the user's default company"""

@@ -1,7 +1,7 @@
 # Gunicorn configuration file for production deployment
 
 # Server socket
-bind = "0.0.0.0:5000"
+bind = "127.0.0.1:5000"
 backlog = 2048
 
 # Worker processes
