@@ -56,6 +56,8 @@ def create_app():
         g.request_id = request.headers.get("X-Request-ID", str(uuid4()))
         if app.testing:
             return None
+        if request.path in {"/healthz", "/__version"}:
+            return None
         host = (request.headers.get("X-Forwarded-Host") or request.host or "").split(":")[0].lower()
         if host and host not in ALLOWED_HOSTS:
             return redirect(f"https://{CANONICAL_HOST}{request.full_path.rstrip('?')}", 301)

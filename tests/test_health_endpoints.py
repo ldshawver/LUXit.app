@@ -24,3 +24,14 @@ def test_version_endpoint_defaults():
     assert payload["app"] == "luxit"
     assert "version" in payload
     assert "git_sha" in payload
+
+
+def test_healthz_skips_canonical_redirect():
+    app = create_app()
+    app.config.update(TESTING=False, SERVER_NAME="localhost")
+
+    with app.test_client() as client:
+        response = client.get("/healthz", headers={"Host": "evil.example"})
+
+    assert response.status_code == 200
+    assert response.get_json() == {"status": "ok"}

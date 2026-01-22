@@ -226,6 +226,41 @@ def admin_fix_approve(proposal_id):
     return jsonify(proposal)
 from sqlalchemy.exc import SQLAlchemyError
 
+
+@main_bp.route('/admin/diagnostics')
+@login_required
+def admin_diagnostics():
+    if not current_user.is_admin_user:
+        return jsonify({"error": "Admin access required"}), 403
+
+    db_status = {"ok": False}
+    try:
+        db.session.execute(text("SELECT 1"))
+        db_status["ok"] = True
+    except Exception as exc:
+        logger.warning("Diagnostics DB check failed: %s", exc)
+        db_status["error"] = str(exc)
+
+    recent_errors = []
+    try:
+        recent_errors = [
+            error.to_dict()
+            for error in ErrorLog.query.order_by(ErrorLog.created_at.desc()).limit(10).all()
+        ]
+    except Exception as exc:
+        logger.warning("Diagnostics error log fetch failed: %s", exc)
+
+    diagnostics = {
+        "app_version": get_app_version(),
+        "environment": os.getenv("CODEX_ENV", "unknown"),
+        "blueprints": sorted(current_app.blueprints.keys()),
+        "database": db_status,
+        "system_health": ApplicationDiagnostics.get_system_health(),
+        "recent_errors": recent_errors,
+    }
+
+    return render_template("admin_diagnostics.html", diagnostics=diagnostics)
+
 @main_bp.route('/dashboard')
 @login_required
 def dashboard():
