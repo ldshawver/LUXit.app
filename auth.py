@@ -1,18 +1,52 @@
 import logging
+from uuid import uuid4
 from urllib.parse import urlparse
 
-from flask import Blueprint, flash, redirect, render_template, request, url_for
-from flask_login import current_user, login_required, login_user, logout_user
+from flask import (
+    Blueprint,
+    render_template,
+    request,
+    redirect,
+    url_for,
+    flash,
+    g,
+)
+from flask_login import (
+    current_user,
+    login_user,
+    logout_user,
+    login_required,
+)
 from sqlalchemy import or_
 from sqlalchemy.exc import SQLAlchemyError
 from werkzeug.security import check_password_hash
 
 from models import User
+from extensions import db
 
 logger = logging.getLogger(__name__)
 
-auth_bp = Blueprint("auth", __name__, url_prefix="/auth")
+# ============================================================
+# Constants
+# ============================================================
 
+CANONICAL_HOST = "luxit.app"
+ALLOWED_HOSTS = {"luxit.app", "www.luxit.app"}
+
+# ============================================================
+# Blueprint
+# ============================================================
+
+auth_bp = Blueprint(
+    "auth",
+    __name__,
+    template_folder="templates",
+    url_prefix="/auth",
+)
+
+# ============================================================
+# Helpers
+# ============================================================
 
 def _is_safe_next(value: str) -> bool:
     if not value:
@@ -26,25 +60,38 @@ def _is_safe_next(value: str) -> bool:
         return False
 
 
+@auth_bp.before_app_request
+def ensure_request_id():
+    if not hasattr(g, "request_id"):
+        g.request_id = request.headers.get("X-Request-ID", str(uuid4()))
+
+# ============================================================
+# Routes
+# ============================================================
+
 @auth_bp.route("/login", methods=["GET", "POST"])
 def login():
     if current_user.is_authenticated:
-        return redirect(url_for("main.dashboard"))
+        return redirect(url_for("main.dashboard", _external=False))
 
     if request.method == "POST":
-        identifier = (request.form.get("username") or request.form.get("email") or "").strip()
+        username_or_email = (
+            request.form.get("username")
+            or request.form.get("email")
+            or ""
+        ).strip()
         password = request.form.get("password") or ""
 
-        if not identifier or not password:
+        if not username_or_email or not password:
             flash("Username/email and password are required.", "error")
             return render_template("auth/login.html")
 
-        normalized_identifier = identifier.lower()
         try:
+            normalized = username_or_email.lower()
             user = User.query.filter(
                 or_(
-                    User.username == identifier,
-                    User.email == normalized_identifier,
+                    User.username == username_or_email,
+                    User.email == normalized,
                 )
             ).first()
         except SQLAlchemyError:
@@ -53,11 +100,11 @@ def login():
             return render_template("auth/login.html")
 
         if not user or not user.password_hash:
-            flash("Invalid credentials.", "error")
+            flash("Invalid username/email or password.", "error")
             return render_template("auth/login.html")
 
         if not check_password_hash(user.password_hash, password):
-            flash("Invalid credentials.", "error")
+            flash("Invalid username/email or password.", "error")
             return render_template("auth/login.html")
 
         login_user(user)
@@ -66,7 +113,7 @@ def login():
         if nxt and _is_safe_next(nxt):
             return redirect(nxt)
 
-        return redirect(url_for("main.dashboard"))
+        return redirect(url_for("main.dashboard", _external=False))
 
     return render_template("auth/login.html")
 
@@ -75,4 +122,4 @@ def login():
 @login_required
 def logout():
     logout_user()
-    return redirect(url_for("auth.login"))
+    return redirect(url_for("auth.login", _external=False))
