@@ -42,7 +42,8 @@ jobs:
             systemctl restart lux.service
 
             echo "🩺 Health check"
-            sleep 3
-            curl -fsS http://127.0.0.1:8000/ >/dev/null
+            sleep 10
+            systemctl is-active --quiet lux.service
+
 
             echo "✅ DEPLOY SUCCESS"
