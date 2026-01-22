@@ -53,12 +53,6 @@ def _resolve_primary(preset: str, today: date) -> tuple[date, date]:
     elif preset == "this_quarter":
         quarter = (today.month - 1) // 3 + 1
         start_day, end_day = _quarter_bounds(today.year, quarter)
-    elif preset == "last_month":
-        end_day = today
-        start_day = today - timedelta(days=29)
-    elif preset == "last_quarter":
-        end_day = today
-        start_day = today - timedelta(days=89)
     elif preset in {"last_year", "year"}:
         end_day = today
         start_day = today - timedelta(days=364)
