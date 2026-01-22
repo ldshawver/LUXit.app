@@ -1,4 +1,10 @@
-from app import app
+from flask import Blueprint, render_template
+from flask_login import login_required
 
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000, debug=True)
+main_bp = Blueprint("main", __name__, url_prefix="/main")
+
+
+@main_bp.route("/dashboard")
+@login_required
+def dashboard():
+    return render_template("dashboard.html")
