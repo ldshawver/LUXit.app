@@ -15,12 +15,11 @@ from flask import Blueprint, flash, redirect, render_template, request, url_for
 from flask_login import current_user, login_user, logout_user
 from sqlalchemy import or_
 from werkzeug.security import check_password_hash
-
+ 
 from models import User
 from dotenv import load_dotenv
 from urllib.parse import urlparse
 
-from dotenv import load_dotenv
 from flask import Flask, redirect, url_for, request, g, has_request_context
 from flask_login import LoginManager
 from werkzeug.middleware.proxy_fix import ProxyFix
@@ -43,6 +42,7 @@ ALLOWED_HOSTS = {"luxit.app", "www.luxit.app"}
         username_or_email = (request.form.get("username") or request.form.get("email") or "").strip()
         password = request.form.get("password") or ""
 # ============================================================
+# Logging (NO record factory, NO recursion)
 # Logging
 # ============================================================
 
@@ -76,6 +76,75 @@ root_logger.addFilter(RequestIdFilter())
 root_logger.addFilter(RedactionFilter())
 
 # ============================================================
+# Flask App (SINGLE instance)
+# ============================================================
+
+app = Flask(__name__)
+
+# REQUIRED secret
+app.config["SECRET_KEY"] = os.getenv("SESSION_SECRET") or os.getenv("SECRET_KEY")
+if not app.config["SECRET_KEY"]:
+    raise RuntimeError("SESSION_SECRET or SECRET_KEY must be set")
+
+# Trust nginx
+app.wsgi_app = ProxyFix(
+    app.wsgi_app,
+    x_for=1,
+    x_proto=1,
+    x_host=1,
+    x_port=1,
+)
+
+# Canonical HTTPS behavior
+app.config.update(
+    SERVER_NAME="luxit.app",
+    PREFERRED_URL_SCHEME="https",
+    SESSION_COOKIE_SECURE=True,
+    SESSION_COOKIE_SAMESITE="None",
+)
+
+# ============================================================
+# Extensions
+# ============================================================
+
+from extensions import db, csrf
+
+# ============================================================
+# Database
+# ============================================================
+
+db_url = os.getenv("DATABASE_URL", "sqlite:///email_marketing.db")
+
+if db_url.startswith("mysql") and importlib.util.find_spec("MySQLdb") is None:
+    if importlib.util.find_spec("pymysql"):
+        db_url = db_url.replace("mysql://", "mysql+pymysql://", 1)
+
+app.config["SQLALCHEMY_DATABASE_URI"] = db_url
+app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
+    "pool_pre_ping": True,
+    "pool_recycle": 300,
+}
+app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+
+db.init_app(app)
+csrf.init_app(app)
+
+# ============================================================
+# Flask-Login
+# ============================================================
+
+login_manager = LoginManager()
+login_manager.init_app(app)
+login_manager.login_view = "auth.login"
+login_manager.login_message = None
+
+@login_manager.user_loader
+def load_user(user_id):
+    from models import User
+    return User.query.get(int(user_id))
+
+# ============================================================
+# Blueprints
 # Flask Factory
 # ============================================================
 
@@ -338,6 +407,15 @@ def index():
     from flask_login import current_user
     if current_user.is_authenticated:
         return redirect(url_for("main.dashboard", _external=False))
+    return redirect(url_for("auth.login", _external=False))
+
+# ============================================================
+# Startup
+# ============================================================
+
+with app.app_context():
+    import models
+    db.create_all()
 
     if request.method == "POST":
         username_or_email = (

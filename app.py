@@ -1,3 +1,21 @@
+"""Application entry point."""
+import os
+
+from flask import redirect, request
+
+from lux import create_app as _create_app
+
+
+def create_app():
+    """Create the Flask app using the lux factory."""
+    config_name = os.environ.get("FLASK_ENV")
+    app = _create_app(config_name)
+
+    @app.before_request
+    def enforce_canonical_host():
+        allowed_hosts = {"luxit.app", "www.luxit.app"}
+        if app.testing:
+            allowed_hosts.update({"localhost", "127.0.0.1"})
 # ============================================================
 # app.py — Canonical, Compile-Safe Application Entry
 # ============================================================
@@ -61,6 +79,10 @@ class RequestIdFilter(logging.Filter):
     def filter(self, record):
         record.request_id = getattr(g, "request_id", "-")
         return True
+
+        host = (request.headers.get("X-Forwarded-Host") or request.host or "").split(":")[0].lower()
+        if host and host not in allowed_hosts:
+            return redirect(f"https://luxit.app{request.full_path.rstrip('?')}", code=301)
 
 
 class RedactionFilter(logging.Filter):

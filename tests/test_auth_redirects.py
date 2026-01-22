@@ -40,6 +40,22 @@ def test_login_redirects_to_dashboard(client):
     assert response.headers["Location"].endswith("/dashboard")
 
 
+def test_login_with_email_redirects_to_dashboard(client):
+    user = User(
+        username="lux-admin",
+        email="admin@luxit.app",
+        password_hash=generate_password_hash("supersecret"),
+        is_admin=True,
+    )
+    db.session.add(user)
+    db.session.commit()
+
+    response = client.post(
+        "/auth/login",
+        data={"username": "admin@luxit.app", "password": "supersecret"},
+        follow_redirects=False,
+    )
+
 def test_next_param_redirects_back_to_login(client):
     response = client.get("/?next=https://194.195.92.52/", follow_redirects=False)
 

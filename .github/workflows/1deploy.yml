@@ -12,6 +12,7 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
 - name: Debug secrets
   run: |
     echo "HOST=${{ secrets.VPS_HOST }}"
