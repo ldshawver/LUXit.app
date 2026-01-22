@@ -1,3 +1,16 @@
+import logging
+from uuid import uuid4
+from urllib.parse import urlparse
+
+from flask import (
+    Blueprint,
+    render_template,
+    request,
+    redirect,
+    url_for,
+    flash,
+    g,
+    current_app,
 from flask import Blueprint, flash, redirect, render_template, request, url_for
 from flask_login import current_user, login_user, logout_user
 from sqlalchemy import or_
@@ -74,57 +87,29 @@ app.wsgi_app = ProxyFix(
     x_host=1,
     x_port=1,
 )
-
-# Canonical HTTPS behavior
-app.config.update(
-    SERVER_NAME="luxit.app",
-    PREFERRED_URL_SCHEME="https",
-    SESSION_COOKIE_SECURE=True,
-    SESSION_COOKIE_SAMESITE="None",
+from flask_login import (
+    login_user,
+    logout_user,
+    login_required,
+    current_user,
 )
+from werkzeug.security import check_password_hash
+from sqlalchemy import or_
+from sqlalchemy.exc import SQLAlchemyError
+
+from extensions import db
+from models import User
+
+logger = logging.getLogger(__name__)
 
 # ============================================================
-# Extensions
+# Blueprint
 # ============================================================
 
-from extensions import db, csrf
+auth_bp = Blueprint("auth", __name__, template_folder="templates")
 
 # ============================================================
-# Database
-# ============================================================
-
-db_url = os.getenv("DATABASE_URL", "sqlite:///email_marketing.db")
-
-if db_url.startswith("mysql") and importlib.util.find_spec("MySQLdb") is None:
-    if importlib.util.find_spec("pymysql"):
-        db_url = db_url.replace("mysql://", "mysql+pymysql://", 1)
-
-app.config["SQLALCHEMY_DATABASE_URI"] = db_url
-app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
-    "pool_pre_ping": True,
-    "pool_recycle": 300,
-}
-app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
-
-db.init_app(app)
-csrf.init_app(app)
-
-# ============================================================
-# Flask-Login
-# ============================================================
-
-login_manager = LoginManager()
-login_manager.init_app(app)
-login_manager.login_view = "auth.login"
-login_manager.login_message = None
-
-@login_manager.user_loader
-def load_user(user_id):
-    from models import User
-    return User.query.get(int(user_id))
-
-# ============================================================
-# Blueprints
+# Helpers
 # ============================================================
 
         if not username_or_email or not password:
@@ -179,6 +164,17 @@ def _is_safe_next(value: str) -> bool:
     except Exception:
         return False
 
+# ============================================================
+# Routes
+# ============================================================
+
+@auth_bp.before_app_request
+def ensure_request_id():
+    g.request_id = getattr(g, "request_id", None) or str(uuid4())
+
+
+@auth_bp.route("/login", methods=["GET", "POST"])
+def login():
 @app.after_request
 def attach_request_id(resp):
     resp.headers["X-Request-ID"] = g.request_id
@@ -194,12 +190,48 @@ def index():
     from flask_login import current_user
     if current_user.is_authenticated:
         return redirect(url_for("main.dashboard", _external=False))
+
+    if request.method == "POST":
+        username_or_email = (
+            request.form.get("username")
+            or request.form.get("email")
+            or ""
+        ).strip()
+        password = request.form.get("password") or ""
+
+        if not username_or_email or not password:
+            flash("Username/email and password are required.", "error")
+            return render_template("auth/login.html")
+
+        try:
+            normalized = username_or_email.lower()
+            user = User.query.filter(
+                or_(
+                    User.username == username_or_email,
+                    User.email == normalized,
+                )
+            ).first()
+        except SQLAlchemyError:
+            logger.exception("Login query failed")
+            flash("Login temporarily unavailable.", "error")
+            return render_template("auth/login.html")
+
+        if not user or not check_password_hash(user.password_hash, password):
+            flash("Invalid credentials.", "error")
+            return render_template("auth/login.html")
+
+        login_user(user)
+        nxt = request.args.get("next")
+        if nxt and _is_safe_next(nxt):
+            return redirect(nxt)
+
+        return redirect(url_for("main.dashboard", _external=False))
+
+    return render_template("auth/login.html")
+
+
+@auth_bp.route("/logout")
+@login_required
+def logout():
+    logout_user()
     return redirect(url_for("auth.login", _external=False))
-
-# ============================================================
-# Startup
-# ============================================================
-
-with app.app_context():
-    import models
-    db.create_all()
