@@ -1,7 +1,7 @@
 import pytest
 from werkzeug.security import generate_password_hash
 
-from app import create_app
+from lux import create_app
 from lux.extensions import db
 from lux.models.user import User
 
