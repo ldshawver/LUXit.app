@@ -22,45 +22,42 @@ jobs:
           script: |
             set -euxo pipefail
 
-            echo "📦 Reporting remote user/host"
-            whoami || true
-            hostname || true
+            echo "📦 Connect OK - reporting remote user/host"
+            whoami
+            hostname
+            pwd || true
 
             echo "📁 Check app directory and venv"
-            if [ ! -d "/opt/luxit" ]; then
-              echo "❌ /opt/luxit not found"
+            if [ ! -d "/opt/lux-marketing" ]; then
+              echo "❌ /opt/lux-marketing not found"
               ls -la /
               exit 1
             fi
-            cd /opt/luxit
+            cd /opt/lux-marketing
 
             echo "🔎 Show files"
             ls -la
 
-            echo "🐍 Check and activate virtualenv"
+            echo "🐍 Check virtualenv"
             if [ ! -f "venv/bin/activate" ]; then
               echo "❌ venv not found at venv/bin/activate"
               exit 1
             fi
-            # shellcheck disable=SC1091
             source venv/bin/activate
 
             echo "🧪 Python compile check"
             python3 -m py_compile app.py
 
-            echo "🔁 Restarting service"
-            # If VPS_USER is not root, the sudo must be passwordless for systemctl commands
-            if sudo -n true 2>/dev/null; then
-              sudo systemctl restart lux.service
-            else
-              echo "⚠️ sudo requires a password for this user. Either use root or enable passwordless sudo for systemctl."
+            echo "🔁 Restarting service (no passwordless sudo will fail here)"
+            # Prefer running as root user or ensure VPS_USER has passwordless sudo for systemctl
+            sudo -n systemctl restart lux.service || {
+              echo "❌ systemctl restart failed - showing journal and service status"
+              sudo systemctl status lux --no-pager -l || true
+              sudo journalctl -u lux -n 200 --no-pager || true
               exit 1
-            fi
+            }
 
-            echo "Waiting a moment for service..."
-            sleep 5
-
-            echo "Checking service health"
+            echo "✅ Deployment complete - quick health check"
             if timeout 15 curl -sSf http://127.0.0.1:5000/ >/dev/null 2>&1; then
               echo "✅ Backend responding locally"
             else
@@ -69,5 +66,3 @@ jobs:
               sudo journalctl -u lux -n 200 --no-pager || true
               exit 1
             fi
-
-            echo "✅ Deployment complete"
