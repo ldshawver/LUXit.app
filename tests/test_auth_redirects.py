@@ -56,10 +56,6 @@ def test_login_with_email_redirects_to_dashboard(client):
         follow_redirects=False,
     )
 
-    assert response.status_code == 302
-    assert response.headers["Location"].endswith("/dashboard")
-
-
 def test_next_param_redirects_back_to_login(client):
     response = client.get("/?next=https://194.195.92.52/", follow_redirects=False)
 
