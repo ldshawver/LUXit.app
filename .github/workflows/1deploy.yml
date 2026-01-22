@@ -1,232 +1,178 @@
-name: Deploy LUXit.app to VPS (main only)
+- name: Deploy to VPS
+  uses: appleboy/ssh-action@v1.0.3
+  with:
+    host: ${{ secrets.VPS_HOST }}
+    username: ${{ secrets.VPS_USER }}
+    key: ${{ secrets.VPS_SSH_KEY }}
+    script: |
+      # Hardened deploy script with rollback and diagnostics
+      set -euxo pipefail
 
-on:
-  push:
-    branches:
-      - main   # ONLY main deploys
+      # Configuration - edit to match your VPS/app
+      APP_DIR="/opt/luxit"                      # must match actual repo dir on VPS
+      VENV_PATH="venv"
+      SERVICE_NAME="lux-marketing.service"      # adjust if different
+      HEALTH_URL="http://127.0.0.1:5000/"
+      HEALTH_RETRIES=6
+      HEALTH_INTERVAL=5
+      DRY_RUN="${DRY_RUN:-false}"
 
-jobs:
-  deploy:
-    runs-on: ubuntu-latest
+      echo "📦 Deploy started: user=$(whoami) host=$(hostname) pwd=$(pwd || true)"
+      echo "🔒 DRY_RUN=$DRY_RUN"
 
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      LOCKFILE="/tmp/deploy_${SERVICE_NAME}.lock"
+      if [ -e "$LOCKFILE" ]; then
+        echo "❌ Deploy lock present ($LOCKFILE). Aborting."
+        exit 1
+      fi
+      trap 'rm -f "$LOCKFILE"' EXIT
+      touch "$LOCKFILE"
 
-      - name: Deploy to VPS
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.VPS_HOST }}
-          username: ${{ secrets.VPS_USER }}
-          key: ${{ secrets.VPS_SSH_KEY }}
-          script: |
-            # Hardened deploy script with rollback and diagnostics
-            set -euxo pipefail
+      for cmd in git python3 systemctl; do
+        if ! command -v "$cmd" >/dev/null 2>&1; then
+          echo "❌ Required command not found: $cmd"
+          exit 1
+        fi
+      done
 
-            # Configuration - edit to match your VPS/app
-            APP_DIR="/opt/lux-marketing"
-            VENV_PATH="venv"
-            SERVICE_NAME="lux.service"
-            HEALTH_URL="http://127.0.0.1:5000/"
-            HEALTH_RETRIES=6        # number of attempts
-            HEALTH_INTERVAL=5       # seconds between attempts
-            DRY_RUN="${DRY_RUN:-false}"  # set to true to test without destructive actions
+      if ! command -v curl >/dev/null 2>&1; then
+        echo "⚠️ curl not found; health checks will be skipped"
+        HAVE_CURL=false
+      else
+        HAVE_CURL=true
+      fi
 
-            echo "📦 Deploy started: user=$(whoami) host=$(hostname) pwd=$(pwd || true)"
-            echo "🔒 DRY_RUN=$DRY_RUN"
+      if [ ! -d "$APP_DIR" ]; then
+        echo "❌ App directory not found: $APP_DIR"
+        ls -la "$(dirname "$APP_DIR")" || true
+        exit 1
+      fi
+      cd "$APP_DIR"
 
-            # Simple concurrency protection
-            LOCKFILE="/tmp/deploy_${SERVICE_NAME}.lock"
-            if [ -e "$LOCKFILE" ]; then
-              echo "❌ Deploy lock present ($LOCKFILE). Another deploy may be running. Aborting."
-              exit 1
-            fi
-            trap 'rm -f "$LOCKFILE"' EXIT
-            touch "$LOCKFILE"
+      # Avoid dubious ownership error for this directory (idempotent)
+      git config --global --add safe.directory "$APP_DIR" || true
 
-            # Basic command availability checks
-            for cmd in git python3 systemctl; do
-              if ! command -v "$cmd" >/dev/null 2>&1; then
-                echo "❌ Required command not found: $cmd"
-                exit 1
-              fi
-            done
+      PREV_COMMIT="$(git rev-parse --short HEAD 2>/dev/null || true)"
+      echo "🔁 Previous commit: ${PREV_COMMIT:-<none>}"
 
-            if ! command -v curl >/dev/null 2>&1; then
-              echo "⚠️ curl not found; health checks will be skipped"
-              HAVE_CURL=false
-            else
-              HAVE_CURL=true
-            fi
+      if [ "$DRY_RUN" = "true" ]; then
+        echo "DRY-RUN: would fetch and reset to origin/main"
+      else
+        # fetch the branch (quiet by default)
+        git fetch origin main --quiet || true
 
-            # Ensure app directory exists
-            if [ ! -d "$APP_DIR" ]; then
-              echo "❌ App directory not found: $APP_DIR"
-              ls -la "$(dirname "$APP_DIR")" || true
-              exit 1
-            fi
-            cd "$APP_DIR"
+        # If remote tracking branch exists, reset to it. Otherwise use FETCH_HEAD safely.
+        if git show-ref --verify --quiet "refs/remotes/origin/main"; then
+          git checkout main --quiet || git checkout -B main --quiet
+          git reset --hard origin/main --quiet
+        else
+          # fallback: use FETCH_HEAD commit hash explicitly to avoid ambiguous name errors
+          HASH=$(git rev-parse --verify FETCH_HEAD 2>/dev/null || true)
+          if [ -n "$HASH" ]; then
+            git checkout -B main "$HASH" --quiet
+            git reset --hard "$HASH" --quiet
+          else
+            # try a full fetch and then checkout origin/main
+            git fetch origin --quiet
+            git checkout -B main origin/main --quiet || true
+            git reset --hard origin/main --quiet || true
+          fi
+        fi
+      fi
 
-            # Record previous commit so we can rollback
-            PREV_COMMIT="$(git rev-parse --short HEAD || true)"
-            echo "🔁 Previous commit: ${PREV_COMMIT:-<none>}"
+      # Ensure future remote operations use SSH (so the server can use its SSH key)
+      git remote set-url origin git@github.com:ldshawver/LUXit.app.git || true
 
-            # Fetch and update to origin/main
-            if [ "$DRY_RUN" = "true" ]; then
-              echo "DRY-RUN: would fetch and reset to origin/main"
-            else
-              git fetch origin --quiet
-              # ensure branch exists locally
-              if git rev-parse --verify main >/dev/null 2>&1; then
-                git checkout main --quiet
-              else
-                git checkout -b main --track origin/main --quiet || true
-              fi
-              git reset --hard origin/main --quiet
-            fi
+      NEW_COMMIT="$(git rev-parse --short HEAD 2>/dev/null || true)"
+      echo "✅ New commit: ${NEW_COMMIT:-<none>}"
 
-            NEW_COMMIT="$(git rev-parse --short HEAD || true)"
-            echo "✅ New commit: ${NEW_COMMIT:-<none>}"
+      git --no-pager log -1 --oneline || true
+      ls -la
 
-            if [ "$PREV_COMMIT" = "$NEW_COMMIT" ]; then
-              echo "ℹ️ No changes between previous and new commit. Still running health check and sanity steps."
-            fi
+      if [ ! -f "${VENV_PATH}/bin/activate" ]; then
+        echo "❌ virtualenv not found at ${VENV_PATH}/bin/activate"
+        exit 1
+      fi
+      # shellcheck disable=SC1091
+      source "${VENV_PATH}/bin/activate"
 
-            # Show last commit info for diagnostics
-            git --no-pager log -1 --oneline || true
-            ls -la
+      NEED_PIP_INSTALL=false
+      if [ -n "$PREV_COMMIT" ] && [ -n "$NEW_COMMIT" ] && [ "$PREV_COMMIT" != "$NEW_COMMIT" ]; then
+        if git diff --name-only "$PREV_COMMIT" "$NEW_COMMIT" | grep -q -E '^requirements(\.txt)?$'; then
+          NEED_PIP_INSTALL=true
+        fi
+      fi
+      if [ -z "$PREV_COMMIT" ]; then
+        NEED_PIP_INSTALL=true
+      fi
 
-            # Check virtualenv and activate
-            if [ ! -f "${VENV_PATH}/bin/activate" ]; then
-              echo "❌ virtualenv not found at ${VENV_PATH}/bin/activate"
-              exit 1
-            fi
-            # shellcheck disable=SC1091
-            source "${VENV_PATH}/bin/activate"
+      if [ "$NEED_PIP_INSTALL" = "true" ]; then
+        echo "📥 Installing/upgrading dependencies (pip)"
+        if [ "$DRY_RUN" != "true" ] && [ -f "requirements.txt" ]; then
+          pip install --upgrade pip setuptools wheel || true
+          pip install -r requirements.txt
+        fi
+      else
+        echo "ℹ️ requirements.txt unchanged; skipping pip install"
+      fi
 
-            # If requirements.txt changed between PREV and NEW, install deps
-            NEED_PIP_INSTALL=false
-            if [ -n "$PREV_COMMIT" ] && [ -n "$NEW_COMMIT" ] && [ "$PREV_COMMIT" != "$NEW_COMMIT" ]; then
-              if git diff --name-only "$PREV_COMMIT" "$NEW_COMMIT" | grep -q -E '^requirements(\.txt)?$'; then
-                NEED_PIP_INSTALL=true
-              fi
-            fi
-            # If prev commit not known (first deploy), install anyway
-            if [ -z "$PREV_COMMIT" ]; then
-              NEED_PIP_INSTALL=true
-            fi
+      echo "🧪 Running Python compile checks"
+      if [ "$DRY_RUN" != "true" ]; then
+        python3 -m py_compile app.py || { echo "❌ Python syntax check failed"; exit 1; }
+      fi
 
-            if [ "$NEED_PIP_INSTALL" = "true" ]; then
-              echo "📥 Installing/upgrading dependencies (pip)"
-              if [ "$DRY_RUN" = "true" ]; then
-                echo "DRY-RUN: would run pip install -r requirements.txt"
-              else
-                if [ -f "requirements.txt" ]; then
-                  pip install --upgrade pip setuptools wheel || true
-                  pip install -r requirements.txt
-                else
-                  echo "⚠️ requirements.txt not present; skipping pip install"
-                fi
-              fi
-            else
-              echo "ℹ️ requirements.txt unchanged; skipping pip install"
-            fi
+      check_health() {
+        if [ "$HAVE_CURL" = "false" ]; then
+          echo "⚠️ curl not available; skipping health check"
+          return 0
+        fi
+        local i=0
+        while [ $i -lt "$HEALTH_RETRIES" ]; do
+          if timeout $HEALTH_INTERVAL curl -sSf "$HEALTH_URL" >/dev/null 2>&1; then
+            echo "✅ Health check OK (attempt $((i+1)))"
+            return 0
+          fi
+          echo "⏳ Health check attempt $((i+1)) failed; waiting $HEALTH_INTERVALs"
+          i=$((i+1))
+          sleep "$HEALTH_INTERVAL"
+        done
+        echo "❌ Health check failed"
+        return 1
+      }
 
-            # Python compile checks (quick sanity)
-            echo "🧪 Running Python compile checks"
-            if [ "$DRY_RUN" = "true" ]; then
-              echo "DRY-RUN: would run python -m py_compile"
-            else
-              python3 -m py_compile app.py || {
-                echo "❌ Python syntax check failed"
-                exit 1
-              }
-            fi
+      echo "🔁 Restarting service: $SERVICE_NAME"
+      if [ "$DRY_RUN" = "true" ]; then
+        echo "DRY-RUN: would run sudo -n systemctl restart $SERVICE_NAME"
+      else
+        sudo -n systemctl restart "$SERVICE_NAME" || {
+          echo "❌ systemctl restart failed. Dumping status and journal"
+          sudo systemctl status "$SERVICE_NAME" --no-pager -l || true
+          sudo journalctl -u "${SERVICE_NAME%.*}" -n 200 --no-pager || true
+          exit 1
+        }
+      fi
 
-            # Helper: health check function
-            check_health() {
-              if [ "$HAVE_CURL" = "false" ]; then
-                echo "⚠️ curl not available; skipping health check"
-                return 0
-              fi
-              local i=0
-              while [ $i -lt "$HEALTH_RETRIES" ]; do
-                if timeout $HEALTH_INTERVAL curl -sSf "$HEALTH_URL" >/dev/null 2>&1; then
-                  echo "✅ Health check OK (attempt $((i+1)))"
-                  return 0
-                fi
-                echo "⏳ Health check attempt $((i+1)) failed; waiting $HEALTH_INTERVALs before retry"
-                i=$((i+1))
-                sleep "$HEALTH_INTERVAL"
-              done
-              echo "❌ Health check failed after $HEALTH_RETRIES attempts"
-              return 1
-            }
+      echo "🔎 Running post-deploy health check"
+      if check_health; then
+        echo "✅ Deployment healthy"
+        exit 0
+      fi
 
-            # Restart service
-            echo "🔁 Restarting service: $SERVICE_NAME (sudo -n)"
-            if [ "$DRY_RUN" = "true" ]; then
-              echo "DRY-RUN: would run sudo -n systemctl restart $SERVICE_NAME"
-            else
-              sudo -n systemctl restart "$SERVICE_NAME" || {
-                echo "❌ systemctl restart failed. Dumping status and journal"
-                sudo systemctl status "$SERVICE_NAME" --no-pager -l || true
-                sudo journalctl -u "${SERVICE_NAME%.*}" -n 200 --no-pager || true
-                exit 1
-              }
-            fi
+      echo "⚠️ Deployment unhealthy. Attempting rollback to previous commit: $PREV_COMMIT"
+      if [ -z "$PREV_COMMIT" ]; then
+        echo "❌ No previous commit available to rollback to. Dumping diagnostics and aborting."
+        sudo systemctl status "$SERVICE_NAME" --no-pager -l || true
+        sudo journalctl -u "${SERVICE_NAME%.*}" -n 200 --no-pager || true
+        exit 1
+      fi
 
-            # Post-deploy health check
-            echo "🔎 Running post-deploy health check"
-            if check_health; then
-              echo "✅ Deployment healthy"
-              exit 0
-            fi
+      if [ "$DRY_RUN" = "true" ]; then
+        echo "DRY-RUN: would rollback to $PREV_COMMIT and restart"
+        exit 1
+      fi
 
-            # Health failed: attempt rollback if we have a previous commit
-            echo "⚠️ Deployment unhealthy. Attempting rollback to previous commit: $PREV_COMMIT"
-            if [ -z "$PREV_COMMIT" ]; then
-              echo "❌ No previous commit available to rollback to. Dumping diagnostics and aborting."
-              sudo systemctl status "$SERVICE_NAME" --no-pager -l || true
-              sudo journalctl -u "${SERVICE_NAME%.*}" -n 200 --no-pager || true
-              exit 1
-            fi
-
-            if [ "$DRY_RUN" = "true" ]; then
-              echo "DRY-RUN: would rollback to $PREV_COMMIT and restart"
-              exit 1
-            fi
-
-            # Perform rollback
-            git reset --hard "$PREV_COMMIT" --quiet || {
-              echo "❌ git reset to previous commit failed"
-              sudo systemctl status "$SERVICE_NAME" --no-pager -l || true
-              sudo journalctl -u "${SERVICE_NAME%.*}" -n 200 --no-pager || true
-              exit 1
-            }
-
-            # If requirements changed during failed deploy, try restoring previous deps
-            if [ "$NEED_PIP_INSTALL" = "true" ] && [ -f "requirements.txt" ]; then
-              echo "📥 Restoring dependencies for previous commit"
-              pip install --upgrade pip setuptools wheel || true
-              pip install -r requirements.txt || true
-            fi
-
-            echo "🔁 Restarting service after rollback"
-            sudo -n systemctl restart "$SERVICE_NAME" || {
-              echo "❌ systemctl restart after rollback failed - dump diagnostics"
-              sudo systemctl status "$SERVICE_NAME" --no-pager -l || true
-              sudo journalctl -u "${SERVICE_NAME%.*}" -n 200 --no-pager || true
-              exit 1
-            }
-
-            echo "🔎 Running health check after rollback"
-            if check_health; then
-              echo "✅ Rollback succeeded; service restored to previous commit $PREV_COMMIT"
-              exit 0
-            else
-              echo "❌ Rollback failed; service still unhealthy. Dumping final diagnostics"
-              sudo systemctl status "$SERVICE_NAME" --no-pager -l || true
-              sudo journalctl -u "${SERVICE_NAME%.*}" -n 500 --no-pager || true
-              exit 1
-            fi
+      git reset --hard "$PREV_COMMIT" --quiet || {
+        echo "❌ git reset to previous commit failed"
+        sudo systemctl status "$SERVICE_NAME" --no-pager -l || true
+        sudo journalctl -u "${SERVICE_NAME%](#)
+
