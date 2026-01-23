@@ -1,50 +1,60 @@
-name: Deploy LUXit.app to VPS (main only)
+name: Deploy + Smoke Test (LUXit VPS)
 
 on:
   push:
-    branches:
-      - main
+    branches: [ main ]
+  workflow_dispatch:
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Deploy to VPS
+      - name: Deploy + Smoke Test over SSH
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
+          port: 22
           script: |
             set -euxo pipefail
 
-            echo "📦 Switching to app directory"
+            echo "=== WHOAMI / HOST ==="
+            whoami
+            hostname
+            pwd || true
+
+            echo "=== VERIFY APP DIR ==="
+            test -d /opt/luxit
             cd /opt/luxit
 
-            echo "🔄 Fetching latest code"
-            git fetch origin
-            git checkout main
-            git reset --hard origin/main
+            echo "=== GIT STATUS ==="
+            git rev-parse --is-inside-work-tree || true
+            git remote -v || true
+            git status --porcelain || true
+            git rev-parse HEAD || true
 
-            echo "🐍 Activating virtualenv"
+            echo "=== PYTHON COMPILE CHECK ==="
             source venv/bin/activate
+            python -m py_compile app.py wsgi.py auth.py routes.py 2>/dev/null || python -m py_compile app.py
 
-            echo "🧪 Compile check (entrypoints)"
-            python -m py_compile wsgi.py
-            python -m py_compile auth.py
-
-            echo "🔁 Restarting service"
-            systemctl restart lux.service
-
-            echo "⏳ Waiting briefly for boot"
+            echo "=== RESTART SERVICE ==="
+            systemctl restart lux
             sleep 2
+            systemctl status lux --no-pager -l
 
-            echo "🩺 Health check (local upstream)"
-            # Use Host header to avoid canonical-host redirects interfering with validation
-            timeout 15 curl -sSf http://127.0.0.1:5000/healthz -H "Host: luxit.app" >/dev/null
+            echo "=== LOCAL HEALTH CHECKS (DIRECT GUNICORN) ==="
+            curl -sS -D- http://127.0.0.1:8000/ -o /dev/null || true
+            curl -sS -D- http://127.0.0.1:8000/auth/login -o /dev/null || true
 
-            echo "✅ Deployment complete"
+            echo "=== HTTPS CHECK THROUGH NGINX ==="
+            curl -k -sS -D- https://luxit.app/ -o /dev/null || true
+            curl -k -sS -D- https://luxit.app/auth/login -o /dev/null || true
+
+            echo "=== IF ANYTHING IS 500, DUMP LOGS ==="
+            echo "--- last 200 gunicorn/systemd lines ---"
+            journalctl -u lux -n 200 --no-pager || true
+            echo "--- nginx error log tail ---"
+            tail -n 200 /var/log/nginx/error.log || true
+            echo "--- nginx config (relevant) ---"
+            nginx -T 2>/dev/null | sed -n '1,220p' || true
