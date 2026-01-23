@@ -6,7 +6,7 @@
 ```bash
 cd /opt/luxit
 source /opt/luxit/venv/bin/activate
-python -m py_compile app.py auth.py wsgi.py
+  12555wpython -m py_compile app.py auth.py wsgi.py
 systemctl status lux.service --no-pager -l
 ```
 
