@@ -9,9 +9,7 @@ def test_healthz_endpoint():
         response = client.get("/healthz")
 
     assert response.status_code == 200
-    payload = response.get_json()
-    assert payload["status"] in {"ok", "degraded"}
-    assert "db_ok" in payload
+    assert response.get_json() == {"status": "ok"}
 
 
 def test_version_endpoint_defaults():
@@ -36,15 +34,4 @@ def test_healthz_skips_canonical_redirect():
         response = client.get("/healthz", headers={"Host": "evil.example"})
 
     assert response.status_code == 200
-    payload = response.get_json()
-    assert payload["status"] in {"ok", "degraded"}
-
-
-def test_health_skips_canonical_redirect():
-    app = create_app()
-    app.config.update(TESTING=False, SERVER_NAME="localhost")
-
-    with app.test_client() as client:
-        response = client.get("/health", headers={"Host": "evil.example"})
-
-    assert response.status_code in {200, 500}
+    assert response.get_json() == {"status": "ok"}

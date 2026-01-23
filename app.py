@@ -1,8 +1,9 @@
+"""Application entry point."""
 import os
 from uuid import uuid4
 
 from dotenv import load_dotenv
-from flask import Flask, g, jsonify, redirect, request, url_for
+from flask import Flask, g, redirect, request, url_for
 from flask_login import LoginManager
 from werkzeug.middleware.proxy_fix import ProxyFix
 
@@ -56,10 +57,6 @@ def create_app():
         g.request_id = request.headers.get("X-Request-ID", str(uuid4()))
         if app.testing:
             return None
-        if request.host.startswith("127.0.0.1"):
-            return None
-        if request.path in {"/health", "/healthz", "/health/config", "/health/deep", "/__version"}:
-            return None
         host = (request.headers.get("X-Forwarded-Host") or request.host or "").split(":")[0].lower()
         if host and host not in ALLOWED_HOSTS:
             return redirect(f"https://{CANONICAL_HOST}{request.full_path.rstrip('?')}", 301)
@@ -70,23 +67,6 @@ def create_app():
 
     app.register_blueprint(main_bp)
     app.register_blueprint(auth_bp, url_prefix="/auth")
-
-    @app.route("/healthz")
-    def healthz():
-        return app.view_functions["main.health_check"]()
-
-    @app.route("/__version")
-    def version():
-        return (
-            jsonify(
-                {
-                    "app": "luxit",
-                    "version": os.getenv("APP_VERSION", "unknown"),
-                    "git_sha": os.getenv("GIT_SHA", "unknown"),
-                }
-            ),
-            200,
-        )
 
     @app.route("/")
     def index():
