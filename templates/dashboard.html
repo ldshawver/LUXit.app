@@ -2,519 +2,107 @@
 
 {% block title %}Dashboard - LUX Marketing{% endblock %}
 
-{# Dashboard uses the default page_header which shows "Name Marketing Wizard of Company" #}
-
 {% block content %}
-<style>
-  .dashboard-container {
-    min-height: 100vh;
-    background: transparent;
-    padding: 0;
-    margin: -2rem auto 0;
-    max-width: 66.666%;
-  }
-  
-  .dashboard-header {
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    padding: 2rem 1rem;
-    background: transparent;
-    position: relative;
-  }
-  
-  .nav-arrows {
-    position: relative;
-    display: flex;
-    gap: 1rem;
-  }
-  
-  .nav-arrow {
-    background: transparent;
-    border: none;
-    color: #00ffb4;
-    width: 40px;
-    height: 40px;
-    border-radius: 8px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-  }
-  
-  .nav-arrow:disabled {
-    opacity: 0.3;
-    cursor: not-allowed;
-  }
-  
-  body {
-    background: var(--lux-pure-black) !important;
-  }
-  
-  .dashboard-greeting {
-    text-align: center;
-    padding: 2rem 0;
-    font-size: 1.8rem;
-    font-weight: 300;
-  }
-  
-  .user-name-teal {
-    color: #00ffb4;
-    font-weight: 500;
-    text-transform: capitalize;
-  }
-  
-  .wizard-purple {
-    color: #bc00ed;
-    font-weight: 300;
-  }
-  
-  .company-name-teal {
-    color: #00ffb4;
-    font-weight: 500;
-  }
-  
-  .header-right {
-    display: flex;
-    align-items: center;
-    gap: 1rem;
-  }
-  
-  .company-logo-container {
-    width: 50px;
-    height: 50px;
-    border-radius: 8px;
-    overflow: hidden;
-    position: relative;
-  }
-  
-  .company-logo-container::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: linear-gradient(135deg, rgba(139, 92, 246, 0.3) 0%, rgba(74, 222, 128, 0.3) 100%);
-    z-index: 1;
-    pointer-events: none;
-  }
-  
-  .company-logo {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-  }
-  
-  .settings-btn {
-    padding: 0;
-    border: none;
-  }
-  
-  .settings-icon {
-    color: #4ade80;
-    width: 28px;
-    height: 28px;
-    cursor: pointer;
-    transition: all 0.3s ease;
-  }
-  
-  .settings-icon:hover {
-    color: #22c55e;
-    transform: rotate(90deg);
-  }
-  
-  .tiles-container {
-    max-width: 1100px;
-    margin: 0 auto;
-    padding: 2.5rem 3rem;
-  }
-  
-  .tiles-grid {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 1.5rem;
-    border-radius: 16px;
-    padding: 2rem;
-    background: linear-gradient(145deg, #1a1a1a 0%, #0f0f0f 40%, #080808 100%);
-    position: relative;
-    border: 1px solid rgba(100, 100, 100, 0.3);
-    box-shadow: 
-      inset 0 2px 4px rgba(255, 255, 255, 0.1),
-      inset 0 -2px 4px rgba(0, 0, 0, 0.4);
-  }
-  
-  .nav-tile {
-    display: block;
-    cursor: pointer;
-    text-decoration: none;
-    transition: all 0.3s ease;
-    background: transparent;
-    border-radius: 8px;
-    overflow: hidden;
-    position: relative;
-    min-height: 44px;
-  }
-  
-  .nav-tile:hover {
-    transform: translateY(-5px);
-  }
-  
-  .nav-tile:hover .tile-image {
-    opacity: 0;
-  }
-  
-  .nav-tile:hover .tile-hover {
-    opacity: 1;
-  }
-  
-  .tile-image {
-    width: 100%;
-    height: auto;
-    display: block;
-    background: transparent;
-    transition: opacity 0.3s ease;
-  }
-  
-  .tile-hover {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    opacity: 0;
-    transition: opacity 0.3s ease;
-    object-fit: cover;
-  }
-  
-  @keyframes pulse-glow {
-    0%, 100% {
-      box-shadow: 
-        0 0 30px rgba(188, 0, 237, 0.4), 
-        0 0 60px rgba(0, 255, 180, 0.2),
-        inset 0 1px 0 rgba(255, 255, 255, 0.1);
-    }
-    33% {
-      box-shadow: 
-        0 0 30px rgba(0, 255, 180, 0.4), 
-        0 0 60px rgba(0, 68, 255, 0.2),
-        inset 0 1px 0 rgba(255, 255, 255, 0.1);
-    }
-    66% {
-      box-shadow: 
-        0 0 30px rgba(0, 68, 255, 0.4), 
-        0 0 60px rgba(228, 5, 92, 0.2),
-        inset 0 1px 0 rgba(255, 255, 255, 0.1);
-    }
-  }
-  
-  .tiles-grid {
-    animation: pulse-glow 6s ease-in-out infinite;
-  }
-  
-  .chatbot-float {
-    position: fixed;
-    bottom: 2rem;
-    right: calc(16.666% + 1rem);
-    background: transparent;
-    cursor: pointer;
-    transition: all 0.3s ease;
-    z-index: 1000;
-  }
-  
-  .chatbot-float img {
-    height: 80px;
-    width: auto;
-  }
-  
-  .chatbot-float:hover {
-    transform: scale(1.1);
-  }
-  
-  .chatbot-float svg {
-    width: 32px;
-    height: 32px;
-    color: #fff;
-  }
-
-  .app-version {
-    position: fixed;
-    bottom: 1rem;
-    left: 1rem;
-    font-size: 0.8rem;
-    color: #9ca3af;
-    letter-spacing: 0.02em;
-    z-index: 900;
-  }
-  
-  @media (max-width: 1024px) {
-    .tiles-grid {
-      grid-template-columns: repeat(2, 1fr);
-      gap: 1.5rem;
-      padding: 2rem;
-    }
-    
-    .lux-logo {
-      height: 60px;
-    }
-    
-    .dashboard-container {
-      padding: 1.5rem;
-    }
-    
-    .dashboard-greeting {
-      font-size: 1.5rem;
-      padding: 1.5rem 0;
-    }
-  }
-  
-  .config-alerts-section {
-    margin-top: 2rem;
-    padding: 1.5rem;
-    background: rgba(0, 0, 0, 0.6);
-    border-radius: 16px;
-    border: 1px solid rgba(188, 0, 237, 0.3);
-  }
-  
-  .config-alerts-header {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    margin-bottom: 1rem;
-    padding-bottom: 1rem;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-  }
-  
-  .alerts-icon {
-    font-size: 1.5rem;
-  }
-  
-  .alerts-title {
-    font-size: 1.1rem;
-    font-weight: 600;
-    color: #fff;
-  }
-  
-  .alerts-count {
-    font-size: 0.85rem;
-    color: #888;
-    margin-left: auto;
-  }
-  
-  .config-alerts-grid {
-    display: flex;
-    flex-direction: column;
-    gap: 0.75rem;
-  }
-  
-  .config-alert-card {
-    display: flex;
-    align-items: center;
-    gap: 1rem;
-    padding: 1rem;
-    background: rgba(30, 30, 30, 0.8);
-    border-radius: 10px;
-    border-left: 4px solid #f59e0b;
-  }
-  
-  .config-alert-card.warning {
-    border-left-color: #f59e0b;
-  }
-  
-  .config-alert-card.error {
-    border-left-color: #ef4444;
-  }
-  
-  .config-alert-card.info {
-    border-left-color: #3b82f6;
-  }
-  
-  .alert-icon {
-    font-size: 1.5rem;
-    flex-shrink: 0;
-  }
-  
-  .alert-content {
-    flex: 1;
-    min-width: 0;
-  }
-  
-  .alert-title {
-    font-weight: 600;
-    color: #fff;
-    margin-bottom: 0.25rem;
-  }
-  
-  .alert-message {
-    font-size: 0.85rem;
-    color: #aaa;
-    line-height: 1.4;
-  }
-  
-  .alert-action {
-    flex-shrink: 0;
-    padding: 0.5rem 1rem;
-    background: linear-gradient(135deg, #bc00ed 0%, #00ffb4 100%);
-    color: #fff;
-    text-decoration: none;
-    border-radius: 6px;
-    font-size: 0.85rem;
-    font-weight: 500;
-    transition: all 0.3s ease;
-  }
-  
-  .alert-action:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 4px 15px rgba(188, 0, 237, 0.4);
-  }
-  
-  @media (max-width: 640px) {
-    .tiles-grid {
-      grid-template-columns: 1fr;
-      gap: 0.75rem;
-      padding: 1rem;
-    }
-    
-    .dashboard-header {
-      padding: 1.5rem;
-      flex-wrap: wrap;
-      gap: 1rem;
-      justify-content: center;
-    }
-    
-    .lux-logo {
-      height: 50px;
-    }
-    
-    .dashboard-container {
-      padding: 1rem;
-    }
-    
-    .dashboard-greeting {
-      font-size: 1.2rem;
-      padding: 1rem 0;
-    }
-    
-    .chatbot-float {
-      bottom: 1.5rem;
-      right: 1.5rem;
-    }
-    
-    .chatbot-float img {
-      height: 60px !important;
-      width: auto !important;
-    }
-  }
-</style>
-
-<div class="dashboard-container">
-  {% if current_user.is_authenticated %}
-  {% endif %}
-  
-  <div class="tiles-container">
-  <div class="tiles-grid">
-    <a href="{{ url_for('main.email_hub') }}" class="nav-tile">
-      <img src="{{ url_for('static', filename='Tile_01.png') }}" alt="Email" class="tile-image">
-      <img src="{{ url_for('static', filename='hover_01.png') }}" alt="Email Hover" class="tile-hover">
-    </a>
-    
-    <a href="{{ url_for('main.sms_dashboard') }}" class="nav-tile">
-      <img src="{{ url_for('static', filename='Tile_02.png') }}" alt="Text" class="tile-image">
-      <img src="{{ url_for('static', filename='hover_02.png') }}" alt="Text Hover" class="tile-hover">
-    </a>
-    
-    <a href="{{ url_for('main.social_media') }}" class="nav-tile">
-      <img src="{{ url_for('static', filename='Tile_03.png') }}" alt="Social" class="tile-image">
-      <img src="{{ url_for('static', filename='hover_03.png') }}" alt="Social Hover" class="tile-hover">
-    </a>
-    
-    <a href="{{ url_for('main.campaign_hub') }}" class="nav-tile">
-      <img src="{{ url_for('static', filename='Tile_04.png') }}" alt="Campaign" class="tile-image">
-      <img src="{{ url_for('static', filename='hover_04.png') }}" alt="Campaign Hover" class="tile-hover">
-    </a>
-    
-    <a href="{{ url_for('main.analytics_hub') }}" class="nav-tile">
-      <img src="{{ url_for('static', filename='Tile_05.png') }}" alt="Analytics" class="tile-image">
-      <img src="{{ url_for('static', filename='hover_05.png') }}" alt="Analytics Hover" class="tile-hover">
-    </a>
-    
-    <a href="{{ url_for('main.marketing_calendar') }}" class="nav-tile">
-      <img src="{{ url_for('static', filename='Tile_06.png') }}" alt="Calendar" class="tile-image">
-      <img src="{{ url_for('static', filename='hover_06.png') }}" alt="Calendar Hover" class="tile-hover">
-    </a>
-    
-    <a href="{{ url_for('main.automation_dashboard') }}" class="nav-tile">
-      <img src="{{ url_for('static', filename='Tile_07.png') }}" alt="Automations & Agents" class="tile-image">
-      <img src="{{ url_for('static', filename='hover_07.png') }}" alt="Automations & Agents Hover" class="tile-hover">
-    </a>
-    
-    <a href="{{ url_for('main.lux_crm') }}" class="nav-tile">
-      <img src="{{ url_for('static', filename='Tile_00.png') }}" alt="LUX CRM" class="tile-image">
-      <img src="{{ url_for('static', filename='hover_00.png') }}" alt="LUX CRM Hover" class="tile-hover">
-    </a>
-    
-    <a href="{{ url_for('main.ads_hub') }}" class="nav-tile">
-      <img src="{{ url_for('static', filename='Tile_09.png') }}" alt="Ads" class="tile-image">
-      <img src="{{ url_for('static', filename='hover_09.png') }}" alt="Ads Hover" class="tile-hover">
-    </a>
-  </div>
-  </div>
-  
-  {% if config_alerts and config_alerts|length > 0 %}
-  <div class="config-alerts-section">
-    <div class="config-alerts-header">
-      <span class="alerts-icon">⚙️</span>
-      <span class="alerts-title">Setup Required</span>
-      <span class="alerts-count">{{ config_alerts|length }} integration{{ 's' if config_alerts|length > 1 else '' }} need{{ '' if config_alerts|length > 1 else 's' }} configuration</span>
-    </div>
-    <div class="config-alerts-grid">
-      {% for alert in config_alerts %}
-      <div class="config-alert-card {{ alert.type }}">
-        <div class="alert-icon">{{ alert.icon }}</div>
-        <div class="alert-content">
-          <div class="alert-title">{{ alert.title }}</div>
-          <div class="alert-message">{{ alert.message }}</div>
-        </div>
-        <a href="{{ alert.action_url }}" class="alert-action">{{ alert.action_text }}</a>
-      </div>
-      {% endfor %}
+<div class="hero">
+  <div class="glow-orb"></div>
+  <div class="hero-content">
+    <h1>Your growth command center</h1>
+    <p>Launch campaigns, track performance, and orchestrate automation from one unified workspace.</p>
+    <div class="d-flex flex-wrap gap-2">
+      <a class="btn btn-lux btn-lux-primary" href="{{ url_for('main.campaign_hub') }}">Launch Campaign</a>
+      <a class="btn btn-lux btn-lux-secondary" href="{{ url_for('main.analytics_hub') }}">View Insights</a>
     </div>
   </div>
-  {% endif %}
 </div>
 
-{% if app_version %}
-<div class="app-version">v{{ app_version }}</div>
+<section class="mb-5">
+  <div class="section-title">
+    <h2>Core Systems</h2>
+    <span>Move faster across your highest impact areas.</span>
+  </div>
+  <div class="tile-grid">
+    <a class="tile-card" href="{{ url_for('main.agents_hub') }}">
+      <div class="tile-icon"><i data-feather="cpu"></i></div>
+      <h3>Agents</h3>
+      <p>Deploy AI agents for research, content, and outreach.</p>
+    </a>
+    <a class="tile-card" href="{{ url_for('main.analytics_hub') }}">
+      <div class="tile-icon"><i data-feather="bar-chart-2"></i></div>
+      <h3>Analytics</h3>
+      <p>Monitor attribution, ROI, and lifecycle performance.</p>
+    </a>
+    <a class="tile-card" href="{{ url_for('main.campaign_hub') }}">
+      <div class="tile-icon"><i data-feather="send"></i></div>
+      <h3>Campaigns</h3>
+      <p>Launch multi-channel campaigns with clarity and speed.</p>
+    </a>
+    <a class="tile-card" href="{{ url_for('main.lux_crm') }}">
+      <div class="tile-icon"><i data-feather="briefcase"></i></div>
+      <h3>CRM</h3>
+      <p>Unify pipeline, contacts, and revenue operations.</p>
+    </a>
+    <a class="tile-card" href="{{ url_for('main.automation_dashboard') }}">
+      <div class="tile-icon"><i data-feather="zap"></i></div>
+      <h3>Automations</h3>
+      <p>Activate lifecycle journeys with intelligent triggers.</p>
+    </a>
+  </div>
+</section>
+
+<section class="mb-5">
+  <div class="section-title">
+    <h2>Channels & Ops</h2>
+    <span>Expand into every engagement surface.</span>
+  </div>
+  <div class="tile-grid">
+    <a class="tile-card" href="{{ url_for('main.email_hub') }}">
+      <div class="tile-icon"><i data-feather="mail"></i></div>
+      <h3>Email Hub</h3>
+      <p>Design and automate high-performing email flows.</p>
+    </a>
+    <a class="tile-card" href="{{ url_for('main.sms_dashboard') }}">
+      <div class="tile-icon"><i data-feather="message-circle"></i></div>
+      <h3>SMS</h3>
+      <p>Deliver real-time messaging with precision timing.</p>
+    </a>
+    <a class="tile-card" href="{{ url_for('main.social_media') }}">
+      <div class="tile-icon"><i data-feather="share-2"></i></div>
+      <h3>Social</h3>
+      <p>Coordinate content and scheduling across platforms.</p>
+    </a>
+    <a class="tile-card" href="{{ url_for('main.ads_hub') }}">
+      <div class="tile-icon"><i data-feather="target"></i></div>
+      <h3>Ads</h3>
+      <p>Plan and optimize paid media from one cockpit.</p>
+    </a>
+    <a class="tile-card" href="{{ url_for('main.marketing_calendar') }}">
+      <div class="tile-icon"><i data-feather="calendar"></i></div>
+      <h3>Calendar</h3>
+      <p>Maintain a strategic marketing timeline.</p>
+    </a>
+  </div>
+</section>
+
+{% if config_alerts and config_alerts|length > 0 %}
+<section class="alert-panel mb-5">
+  <div class="section-title">
+    <h2>Setup Required</h2>
+    <span>{{ config_alerts|length }} integration{{ 's' if config_alerts|length > 1 else '' }} need attention</span>
+  </div>
+  {% for alert in config_alerts %}
+  <div class="alert-item">
+    <div class="alert-icon">{{ alert.icon }}</div>
+    <div class="alert-content">
+      <h4>{{ alert.title }}</h4>
+      <p>{{ alert.message }}</p>
+    </div>
+    <a class="btn btn-lux btn-lux-amber" href="{{ alert.action_url }}">{{ alert.action_text }}</a>
+  </div>
+  {% endfor %}
+</section>
 {% endif %}
 
-<script>
-  feather.replace();
-  
-  function goBack() {
-    window.history.back();
-  }
-  
-  function goForward() {
-    window.history.forward();
-  }
-  
-  document.addEventListener('DOMContentLoaded', function() {
-    const tiles = document.querySelectorAll('.nav-tile');
-    tiles.forEach(tile => {
-      const img = tile.querySelector('.tile-image');
-      if (!img) return;
-      
-      const normalSrc = img.getAttribute('src');
-      const hoverSrc = normalSrc.replace('/Tile_', '/hover_');
-      
-      tile.addEventListener('mouseenter', () => {
-        img.setAttribute('src', hoverSrc);
-      });
-      
-      tile.addEventListener('mouseleave', () => {
-        img.setAttribute('src', normalSrc);
-      });
-    });
-  });
-</script>
+{% if app_version %}
+<div class="text-end text-muted">v{{ app_version }}</div>
+{% endif %}
 {% endblock %}

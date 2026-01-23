@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+
+{% block title %}Admin Diagnostics - LUX Marketing{% endblock %}
+
+{% block content %}
+<div class="hero">
+  <div class="hero-content">
+    <h1>Admin Diagnostics</h1>
+    <p>Read-only status snapshot for environment, health, and recent auth/system errors.</p>
+  </div>
+</div>
+
+<section class="mb-4">
+  <div class="section-title">
+    <h2>Environment</h2>
+    <span>Deployment identifiers and active blueprints.</span>
+  </div>
+  <div class="card glass-card p-4">
+    <p><strong>Version:</strong> {{ diagnostics.app_version }}</p>
+    <p><strong>Environment:</strong> {{ diagnostics.environment }}</p>
+    <p><strong>Blueprints:</strong> {{ diagnostics.blueprints | join(", ") }}</p>
+  </div>
+</section>
+
+<section class="mb-4">
+  <div class="section-title">
+    <h2>Database</h2>
+    <span>Connectivity check for the active database.</span>
+  </div>
+  <div class="card glass-card p-4">
+    {% if diagnostics.database.ok %}
+      <p class="text-success"><strong>Status:</strong> Connected</p>
+    {% else %}
+      <p class="text-danger"><strong>Status:</strong> Error</p>
+      {% if diagnostics.database.error %}
+        <p class="text-muted small">{{ diagnostics.database.error }}</p>
+      {% endif %}
+    {% endif %}
+  </div>
+</section>
+
+<section class="mb-4">
+  <div class="section-title">
+    <h2>System Health</h2>
+    <span>Aggregated diagnostics from the error log.</span>
+  </div>
+  <div class="card glass-card p-4">
+    {% for key, value in diagnostics.system_health.items() %}
+      <p><strong>{{ key|replace("_", " ")|title }}:</strong> {{ value }}</p>
+    {% endfor %}
+  </div>
+</section>
+
+<section class="mb-5">
+  <div class="section-title">
+    <h2>Recent Errors</h2>
+    <span>Latest 10 error records (PII-safe).</span>
+  </div>
+  {% if diagnostics.recent_errors %}
+  <div class="card glass-card p-0 overflow-hidden">
+    <div class="table-responsive">
+      <table class="table table-dark mb-0">
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Type</th>
+            <th>Endpoint</th>
+            <th>Method</th>
+            <th>Severity</th>
+            <th>Created</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for error in diagnostics.recent_errors %}
+          <tr>
+            <td>{{ error.id }}</td>
+            <td>{{ error.type }}</td>
+            <td>{{ error.endpoint }}</td>
+            <td>{{ error.method }}</td>
+            <td>{{ error.severity }}</td>
+            <td>{{ error.created_at }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% else %}
+  <div class="card glass-card p-4">
+    <p class="text-muted mb-0">No recent errors found.</p>
+  </div>
+  {% endif %}
+</section>
+{% endblock %}
