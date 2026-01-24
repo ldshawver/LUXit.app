@@ -1,0 +1,43 @@
+name: VPS Validation (Mode B)
+
+on:
+  push:
+    branches: [main, dev]
+  workflow_dispatch:
+
+jobs:
+  vps-validate:
+    runs-on: self-hosted
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Show workspace
+        run: |
+          echo "Workspace: $GITHUB_WORKSPACE"
+          ls -la
+
+      - name: Python syntax check
+        run: |
+          python -m py_compile wsgi.py lux/__init__.py
+
+      - name: Restart app service
+        run: |
+          sudo systemctl daemon-reload
+          sudo systemctl restart lux.service
+          sleep 3
+
+      - name: Verify Gunicorn port
+        run: |
+          ss -lntp | grep 5000
+
+      - name: Health checks
+        run: |
+          curl -sf http://127.0.0.1:5000/health -H "Host: luxit.app"
+          curl -sf http://127.0.0.1:5000/auth/login -H "Host: luxit.app"
+
+      - name: Fail on errors
+        run: echo "VPS validation passed ✅"
+
