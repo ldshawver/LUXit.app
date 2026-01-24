@@ -10,54 +10,115 @@ jobs:
     runs-on: self-hosted
 
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Prepare SSH key
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/.ssh"
+          printf '%s\n' "${{ secrets.VPS_SSH_KEY }}" > "$HOME/.ssh/vps_key"
+          chmod 600 "$HOME/.ssh/vps_key"
+          ssh-keyscan -H "${{ secrets.VPS_HOST }}" >> "$HOME/.ssh/known_hosts"
+
       - name: VPS Live Validation
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.VPS_HOST }}
-          username: ${{ secrets.VPS_USER }}
-          key: ${{ secrets.VPS_SSH_KEY }}
-          port: 22
-          timeout: 30s
-          command_timeout: 10m
-          script: |
-            set -euxo pipefail
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          LUXIT_TEST_EMAIL: ${{ secrets.LUXIT_TEST_EMAIL }}
+          LUXIT_TEST_PASSWORD: ${{ secrets.LUXIT_TEST_PASSWORD }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$GITHUB_WORKSPACE/artifacts"
 
-            echo "=== WHOAMI / HOST ==="
-            whoami
-            hostname
+          LUXIT_TEST_EMAIL_ESCAPED=$(printf '%q' "$LUXIT_TEST_EMAIL")
+          LUXIT_TEST_PASSWORD_ESCAPED=$(printf '%q' "$LUXIT_TEST_PASSWORD")
 
-            echo "=== VERIFY APP DIR ==="
-            cd /opt/luxit
+          ssh -i "$HOME/.ssh/vps_key" -o StrictHostKeyChecking=yes "${VPS_USER}@${VPS_HOST}" \
+            "LUXIT_TEST_EMAIL=${LUXIT_TEST_EMAIL_ESCAPED} LUXIT_TEST_PASSWORD=${LUXIT_TEST_PASSWORD_ESCAPED} bash -s" <<'EOF' \
+            | tee "$GITHUB_WORKSPACE/artifacts/vps_validation.log"
+          set -eEuo pipefail
 
-            echo "=== GIT STATE ==="
-            git rev-parse HEAD
-            git status --porcelain
-
-            echo "=== PYTHON COMPILE CHECK ==="
-            source venv/bin/activate
-            python -m py_compile wsgi.py lux/__init__.py
-
-            echo "=== RESTART SERVICE ==="
-            systemctl daemon-reload
-            systemctl restart lux.service
-            sleep 3
-            systemctl status lux.service --no-pager -l
-
-            echo "=== LOCAL GUNICORN CHECK ==="
-            ss -lntp | grep gunicorn
-
-            echo "=== LOCAL HEALTH CHECK ==="
-            curl -fsS http://127.0.0.1:5000/health \
-              -H "Host: luxit.app"
-
-            echo "=== DASHBOARD CHECK ==="
-            curl -fsS https://luxit.app/dashboard \
-              -H "Host: luxit.app"
-
-            echo "=== AUTH CHECK ==="
-            curl -fsS https://luxit.app/auth/login
-
-            echo "=== LOG DUMP (IF FAILURE OCCURS ABOVE, THIS RUNS) ==="
-            journalctl -u lux.service -n 200 --no-pager
+          dump_logs() {
+            echo "=== LOG DUMP (ON ERROR) ==="
+            journalctl -u lux.service -n 200 --no-pager || true
             tail -n 200 /var/log/nginx/error.log || true
-            nginx -T | sed -n '1,200p'
+            nginx -T | sed -n '1,200p' || true
+          }
+
+          trap dump_logs ERR
+
+          echo "=== WHOAMI / HOST / PWD ==="
+          whoami
+          hostname
+          pwd
+
+          echo "=== RESTART SERVICE ==="
+          systemctl daemon-reload
+          systemctl restart lux.service
+          sleep 3
+          systemctl status lux.service --no-pager -l
+
+          echo "=== GUNICORN CHECK ==="
+          ss -lntp | grep -E '5000|8000|gunicorn'
+
+          echo "=== NGINX CONFIG ==="
+          nginx -T
+
+          echo "=== VERIFY APP DIR ==="
+          cd /opt/luxit
+
+          echo "=== PYTHON COMPILE CHECK ==="
+          if [ ! -d venv ]; then
+            echo "Missing venv in /opt/luxit"
+            exit 1
+          fi
+          source venv/bin/activate
+          python -m py_compile $(find . -type f -name '*.py')
+
+          echo "=== HEALTH CHECKS ==="
+          curl -fsS -D - -o /dev/null http://127.0.0.1:5000/health -H "Host: luxit.app"
+          curl -fsS -D - -o /dev/null http://127.0.0.1:5000/health/deep -H "Host: luxit.app"
+          curl -fsS -D - -o /dev/null https://luxit.app/health
+
+          echo "=== AUTH LOGIN PAGE ==="
+          LOGIN_PAGE=$(curl -fsS https://luxit.app/auth/login)
+          CSRF_TOKEN=$(LOGIN_PAGE="$LOGIN_PAGE" python - <<'PY'
+          import os, re, sys
+          html = os.environ.get("LOGIN_PAGE", "")
+          match = re.search(r'name="csrf_token" value="([^"]+)"', html)
+          if not match:
+            print("Missing csrf_token on login page", file=sys.stderr)
+            sys.exit(1)
+          print(match.group(1))
+          PY
+          )
+
+          if [ -z "${LUXIT_TEST_EMAIL:-}" ] || [ -z "${LUXIT_TEST_PASSWORD:-}" ]; then
+            echo "Missing LUXIT_TEST_EMAIL or LUXIT_TEST_PASSWORD secrets."
+            exit 1
+          fi
+
+          echo "=== LOGIN POST ==="
+          curl -fsS -D - -o /dev/null -c /tmp/luxit_cookies.txt -b /tmp/luxit_cookies.txt \
+            -d "email=${LUXIT_TEST_EMAIL}&password=${LUXIT_TEST_PASSWORD}&csrf_token=${CSRF_TOKEN}" \
+            https://luxit.app/auth/login
+
+          echo "=== DASHBOARD CHECK (AUTHENTICATED) ==="
+          curl -fsS -D - -o /dev/null -b /tmp/luxit_cookies.txt https://luxit.app/dashboard
+
+          echo "=== ROUTE CHECKS ==="
+          curl -fsS -D - -o /dev/null https://luxit.app/
+          curl -fsS -D - -o /dev/null https://luxit.app/analytics
+          curl -fsS -D - -o /dev/null https://luxit.app/settings
+
+          echo "=== LOG DUMP (FINAL) ==="
+          dump_logs
+          EOF
+
+      - name: Upload validation artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: vps-validation-artifacts
+          path: ${{ github.workspace }}/artifacts
