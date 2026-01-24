@@ -1,43 +1,63 @@
-name: VPS Validation (Mode B)
+name: VPS Mode B Validation
 
 on:
-  push:
-    branches: [main, dev]
   workflow_dispatch:
+  push:
+    branches: [ main ]
 
 jobs:
   vps-validate:
     runs-on: self-hosted
-    timeout-minutes: 10
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - name: VPS Live Validation
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: 22
+          timeout: 30s
+          command_timeout: 10m
+          script: |
+            set -euxo pipefail
 
-      - name: Show workspace
-        run: |
-          echo "Workspace: $GITHUB_WORKSPACE"
-          ls -la
+            echo "=== WHOAMI / HOST ==="
+            whoami
+            hostname
 
-      - name: Python syntax check
-        run: |
-          python -m py_compile wsgi.py lux/__init__.py
+            echo "=== VERIFY APP DIR ==="
+            cd /opt/luxit
 
-      - name: Restart app service
-        run: |
-          sudo systemctl daemon-reload
-          sudo systemctl restart lux.service
-          sleep 3
+            echo "=== GIT STATE ==="
+            git rev-parse HEAD
+            git status --porcelain
 
-      - name: Verify Gunicorn port
-        run: |
-          ss -lntp | grep 5000
+            echo "=== PYTHON COMPILE CHECK ==="
+            source venv/bin/activate
+            python -m py_compile wsgi.py lux/__init__.py
 
-      - name: Health checks
-        run: |
-          curl -sf http://127.0.0.1:5000/health -H "Host: luxit.app"
-          curl -sf http://127.0.0.1:5000/auth/login -H "Host: luxit.app"
+            echo "=== RESTART SERVICE ==="
+            systemctl daemon-reload
+            systemctl restart lux.service
+            sleep 3
+            systemctl status lux.service --no-pager -l
 
-      - name: Fail on errors
-        run: echo "VPS validation passed ✅"
+            echo "=== LOCAL GUNICORN CHECK ==="
+            ss -lntp | grep gunicorn
 
+            echo "=== LOCAL HEALTH CHECK ==="
+            curl -fsS http://127.0.0.1:5000/health \
+              -H "Host: luxit.app"
+
+            echo "=== DASHBOARD CHECK ==="
+            curl -fsS https://luxit.app/dashboard \
+              -H "Host: luxit.app"
+
+            echo "=== AUTH CHECK ==="
+            curl -fsS https://luxit.app/auth/login
+
+            echo "=== LOG DUMP (IF FAILURE OCCURS ABOVE, THIS RUNS) ==="
+            journalctl -u lux.service -n 200 --no-pager
+            tail -n 200 /var/log/nginx/error.log || true
+            nginx -T | sed -n '1,200p'
