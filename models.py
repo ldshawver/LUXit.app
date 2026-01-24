@@ -158,6 +158,15 @@ class User(UserMixin, db.Model):
     def get_all_companies(self):
         """Get all companies (all companies are shared across users)"""
         return Company.query.filter_by(is_active=True).order_by(Company.name).all()
+
+    def get_companies_safe(self):
+        """Get companies safely for rendering contexts."""
+        logger = logging.getLogger(__name__)
+        try:
+            return list(self.companies)
+        except Exception as exc:
+            logger.warning("Company list lookup failed for user %s: %s", self.id, exc)
+            return []
     
     def get_company_access(self, company_id):
         """Get user's access level for a specific company"""

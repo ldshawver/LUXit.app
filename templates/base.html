@@ -61,7 +61,8 @@
                             <li><a class="dropdown-item" href="{{ url_for('main.analytics_hub') }}"><i data-feather="bar-chart-2"></i> Analytics Hub</a></li>
                             <li><hr class="dropdown-divider"></li>
                             <li><h6 class="dropdown-header">Companies</h6></li>
-                            {% for company in current_user.companies %}
+                            {% set user_companies = current_user.get_companies_safe() %}
+                            {% for company in user_companies %}
                             <li><a class="dropdown-item" href="#" onclick="selectCompany({{ company.id }})">
                                 <i data-feather="briefcase"></i> {{ company.name }}
                                 {% if current_user.get_default_company() and company.id == current_user.get_default_company().id %}
