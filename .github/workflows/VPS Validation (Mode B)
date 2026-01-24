@@ -49,7 +49,7 @@ jobs:
 
           dump_logs() {
             echo "=== LOG DUMP (ON ERROR) ==="
-            sudo journalctl -u lux.service -n 200 --no-pager || true
+            sudo journalctl -u lux.service -n 300 --no-pager || true
             sudo tail -n 200 /var/log/nginx/error.log || true
             sudo nginx -T | sed -n '1,200p' || true
           }
@@ -62,6 +62,7 @@ jobs:
           pwd
 
           echo "=== RESTART SERVICE ==="
+          sudo systemctl status lux.service --no-pager -l
           sudo systemctl daemon-reload
           sudo systemctl restart lux.service
           sleep 3
@@ -121,48 +122,51 @@ jobs:
 
           echo "=== ROUTE CHECKS ==="
           curl -fsS -D - -o /dev/null https://luxit.app/
+          curl -fsS -D - -o /dev/null https://luxit.app/auth/login
           curl -fsS -D - -o /dev/null https://luxit.app/analytics
           curl -fsS -D - -o /dev/null https://luxit.app/settings
           curl -fsS -D - -o /dev/null -b /tmp/luxit_cookies.txt https://luxit.app/api/system/health
+          curl -fsS -D - -o /dev/null -b /tmp/luxit_cookies.txt https://luxit.app/api/diagnostics/health
+          curl -fsS -D - -o /dev/null -b /tmp/luxit_cookies.txt https://luxit.app/api/diagnostics/errors
 
           echo "=== EMAIL SEND TEST ==="
-          if [ -n "${LUXIT_SMOKE_EMAIL:-}" ]; then
-            EMAIL_CSRF_TOKEN=$(curl -fsS -b /tmp/luxit_cookies.txt https://luxit.app/test-email | \
-              python - <<'PY'
-            import re, sys
-            html = sys.stdin.read()
-            match = re.search(r'name="csrf_token" value="([^"]+)"', html)
-            if not match:
-              raise SystemExit("Missing csrf_token for /test-email")
-            print(match.group(1))
-            PY
-            )
-            curl -fsS -D - -o /dev/null -b /tmp/luxit_cookies.txt \
-              -d "test_email=${LUXIT_SMOKE_EMAIL}&csrf_token=${EMAIL_CSRF_TOKEN}" \
-              https://luxit.app/test-email
-          else
-            echo "LUXIT_SMOKE_EMAIL secret not set; skipping email send test."
+          if [ -z "${LUXIT_SMOKE_EMAIL:-}" ]; then
+            echo "Missing LUXIT_SMOKE_EMAIL secret."
+            exit 1
           fi
+          EMAIL_CSRF_TOKEN=$(curl -fsS -b /tmp/luxit_cookies.txt https://luxit.app/test-email | \
+            python - <<'PY'
+          import re, sys
+          html = sys.stdin.read()
+          match = re.search(r'name="csrf_token" value="([^"]+)"', html)
+          if not match:
+            raise SystemExit("Missing csrf_token for /test-email")
+          print(match.group(1))
+          PY
+          )
+          curl -fsS -D - -o /dev/null -b /tmp/luxit_cookies.txt \
+            -d "test_email=${LUXIT_SMOKE_EMAIL}&csrf_token=${EMAIL_CSRF_TOKEN}" \
+            https://luxit.app/test-email
 
           echo "=== SMS SEND TEST ==="
-          if [ -n "${LUXIT_SMOKE_SMS_TO:-}" ]; then
-            python - <<'PY'
-            import os
-            from sms_service import SMSService
-
-            to_number = os.environ.get("LUXIT_SMOKE_SMS_TO")
-            if not to_number:
-              raise SystemExit("Missing LUXIT_SMOKE_SMS_TO")
-
-            service = SMSService()
-            result = service.send_sms(to_number, "LUXit SMS smoke test")
-            print(result)
-            if not result.get("success"):
-              raise SystemExit("SMS send failed")
-            PY
-          else
-            echo "LUXIT_SMOKE_SMS_TO secret not set; skipping SMS send test."
+          if [ -z "${LUXIT_SMOKE_SMS_TO:-}" ]; then
+            echo "Missing LUXIT_SMOKE_SMS_TO secret."
+            exit 1
           fi
+          python - <<'PY'
+          import os
+          from sms_service import SMSService
+
+          to_number = os.environ.get("LUXIT_SMOKE_SMS_TO")
+          if not to_number:
+            raise SystemExit("Missing LUXIT_SMOKE_SMS_TO")
+
+          service = SMSService()
+          result = service.send_sms(to_number, "LUXit SMS smoke test")
+          print(result)
+          if not result.get("success"):
+            raise SystemExit("SMS send failed")
+          PY
 
           echo "=== DATA INTEGRITY CHECKS ==="
           python - <<'PY'
