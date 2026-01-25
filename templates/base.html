@@ -27,7 +27,7 @@
                     <h1>
                         {% block page_header %}
                         {% if current_user.is_authenticated %}
-                            {% set header_company = current_user.get_default_company() %}
+                            {% set header_company = current_company %}
                             {% set user_name = (current_user.first_name or current_user.username) %}
                             Welcome back, {{ user_name[0]|upper }}{{ user_name[1:] }}
                         {% else %}
@@ -61,10 +61,10 @@
                             <li><a class="dropdown-item" href="{{ url_for('main.analytics_hub') }}"><i data-feather="bar-chart-2"></i> Analytics Hub</a></li>
                             <li><hr class="dropdown-divider"></li>
                             <li><h6 class="dropdown-header">Companies</h6></li>
-                            {% for company in current_user.companies %}
+                            {% for company in user_companies %}
                             <li><a class="dropdown-item" href="#" onclick="selectCompany({{ company.id }})">
                                 <i data-feather="briefcase"></i> {{ company.name }}
-                                {% if current_user.get_default_company() and company.id == current_user.get_default_company().id %}
+                                {% if current_company and company.id == current_company.id %}
                                 <span class="badge bg-success">Current</span>
                                 {% endif %}
                             </a></li>
@@ -76,7 +76,6 @@
                             <li><a class="dropdown-item text-danger" href="{{ url_for('auth.logout') }}"><i data-feather="log-out"></i> Sign Out</a></li>
                         </ul>
                     </div>
-                    {% set current_company = current_user.get_default_company() %}
                     {% if current_company and current_company.logo_path %}
                     <img src="{{ url_for('static', filename=current_company.logo_path) }}" alt="{{ current_company.name }}" class="rounded-3" style="height: 44px; width: auto;">
                     {% elif current_company %}
@@ -105,9 +104,9 @@
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script src="{{ url_for('static', filename='js/ui.js') }}"></script>
-    {% if current_user.is_authenticated and current_user.get_default_company is defined %}
+    {% if current_user.is_authenticated and current_company is defined %}
     <script>
-      window.LUX_COMPANY_ID = {{ current_user.get_default_company().id if current_user.get_default_company() else 'null' }};
+      window.LUX_COMPANY_ID = {{ current_company.id if current_company else 'null' }};
     </script>
     <script src="{{ url_for('static', filename='js/analytics.js') }}"></script>
     {% endif %}
