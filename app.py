@@ -3,8 +3,9 @@ import os
 from uuid import uuid4
 
 from dotenv import load_dotenv
-from flask import Flask, g, redirect, request, url_for
+from flask import Flask, g, redirect, render_template, request, url_for
 from flask_login import LoginManager
+from sqlalchemy.exc import SQLAlchemyError
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 from extensions import db, csrf
@@ -50,7 +51,15 @@ def create_app():
     @login_manager.user_loader
     def load_user(user_id):
         from models import User
-        return User.query.get(int(user_id))
+        try:
+            return User.query.get(int(user_id))
+        except SQLAlchemyError as exc:
+            app.logger.error("User loader DB error: %s", exc)
+            try:
+                db.session.rollback()
+            except Exception:
+                pass
+            return None
 
     @app.before_request
     def canonical_and_request_id():
@@ -62,15 +71,48 @@ def create_app():
             return redirect(f"https://{CANONICAL_HOST}{request.full_path.rstrip('?')}", 301)
         return None
 
+    @app.context_processor
+    def inject_company_context():
+        from flask_login import current_user
+        try:
+            if not current_user.is_authenticated:
+                return {}
+            return {
+                "current_company": current_user.get_default_company(),
+                "user_companies": current_user.get_companies_safe(),
+            }
+        except SQLAlchemyError as exc:
+            app.logger.error("Template context DB error: %s", exc)
+            try:
+                db.session.rollback()
+            except Exception:
+                pass
+            return {}
+
+    @app.teardown_request
+    def rollback_on_error(_exception=None):
+        if _exception:
+            try:
+                db.session.rollback()
+            except Exception:
+                pass
+
     from routes import main_bp
     from auth import auth_bp
+    from marketing import marketing_bp
 
     app.register_blueprint(main_bp)
     app.register_blueprint(auth_bp, url_prefix="/auth")
+    app.register_blueprint(marketing_bp)
 
     @app.route("/")
-    def index():
-        return redirect(url_for("auth.login"))
+    def marketing_home():
+        return render_template("marketing/index.html")
+
+    @app.route("/login")
+    def login():
+        from auth import login as auth_login
+        return auth_login()
 
     return app
 

@@ -30,7 +30,7 @@
             <div class="flex-grow-1">
               <h5 class="card-title mb-0" style="color: {{ company.primary_color or '#bc00ed' }};">
                 {{ company.name }}
-                {% if current_user.get_default_company() and company.id == current_user.get_default_company().id %}
+                {% if current_company and company.id == current_company.id %}
                 <span class="badge" style="background: {{ company.secondary_color or '#00ffb4' }}; color: #000;">Current</span>
                 {% endif %}
               </h5>
