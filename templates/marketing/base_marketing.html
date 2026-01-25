@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}LUX IT{% endblock %}</title>
+  <link rel="icon" type="image/png" href="{{ url_for('static', filename='favicon.png') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/custom.css') }}">
+  <style>
+    body { background: #0b0d12; color: #f7f7fb; }
+    .marketing-shell { max-width: 1200px; margin: 0 auto; padding: 32px 24px 80px; }
+    .hero { display: grid; gap: 24px; padding: 56px 0; }
+    .hero h1 { font-size: clamp(2.6rem, 5vw, 4rem); }
+    .hero p { max-width: 640px; font-size: 1.1rem; color: #c7c7d9; }
+    .hero-actions { display: flex; flex-wrap: wrap; gap: 12px; }
+    .lux-btn { padding: 12px 20px; border-radius: 999px; border: 1px solid #4d4d68; text-decoration: none; color: inherit; }
+    .lux-btn.primary { background: linear-gradient(120deg, #8a6cff, #49f3ff); color: #0b0d12; font-weight: 600; border: none; }
+    .lux-btn.secondary { background: transparent; }
+    .section-title { margin-top: 56px; margin-bottom: 16px; font-size: 1.6rem; }
+    .comparison-table { width: 100%; border-collapse: collapse; margin-top: 16px; }
+    .comparison-table th, .comparison-table td { border: 1px solid #2a2f45; padding: 12px; text-align: center; }
+    .comparison-table th { background: #151826; color: #f7f7fb; }
+    .pricing-grid { display: grid; gap: 20px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+    .pricing-card { background: #151826; border: 1px solid #2a2f45; padding: 24px; border-radius: 20px; }
+    .pricing-card h3 { margin-bottom: 8px; }
+    .pricing-card ul { margin: 12px 0 0; padding-left: 18px; color: #c7c7d9; }
+    .comparison-table td { color: #c7c7d9; }
+    .badge { display: inline-block; padding: 4px 10px; border-radius: 999px; background: #222840; color: #c7c7d9; font-size: 0.85rem; }
+    footer { margin-top: 64px; color: #9094b4; font-size: 0.9rem; }
+  </style>
+</head>
+<body>
+  <div class="marketing-shell">
+    {% block content %}{% endblock %}
+    <footer>
+      <p>© {{ 2024 }} LUX IT. Licensable infrastructure for modern revenue teams.</p>
+    </footer>
+  </div>
+</body>
+</html>

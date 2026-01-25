@@ -16,10 +16,11 @@ def create_app(config_name=None):
     if config_name is None:
         config_name = os.environ.get("FLASK_ENV", "production")
 
+    base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
     app = Flask(
         __name__,
-        template_folder="templates",
-        static_folder="static",
+        template_folder=os.path.join(base_dir, "templates"),
+        static_folder=os.path.join(base_dir, "static"),
     )
 
     # --------------------------------------------------
@@ -58,6 +59,10 @@ def create_app(config_name=None):
     def block_next_param():
         if "next" in request.args:
             return redirect(url_for("auth.login"))
+
+    @app.route("/login")
+    def login_alias():
+        return redirect(url_for("auth.login"))
 
     # --------------------------------------------------
     # Blueprints
@@ -111,8 +116,9 @@ def create_app(config_name=None):
     # --------------------------------------------------
     # Scheduler
     # --------------------------------------------------
-    from scheduler import init_scheduler
-    init_scheduler(app)
+    if not app.config.get("TESTING"):
+        from scheduler import init_scheduler
+        init_scheduler(app)
 
     logger.info("LUXit initialized (%s)", config_name)
     return app
