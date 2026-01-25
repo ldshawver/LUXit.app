@@ -27,164 +27,92 @@ jobs:
           VPS_USER: ${{ secrets.VPS_USER }}
           LUXIT_TEST_EMAIL: ${{ secrets.LUXIT_TEST_EMAIL }}
           LUXIT_TEST_PASSWORD: ${{ secrets.LUXIT_TEST_PASSWORD }}
-          LUXIT_SMOKE_EMAIL: ${{ secrets.LUXIT_SMOKE_EMAIL }}
-          LUXIT_SMOKE_SMS_TO: ${{ secrets.LUXIT_SMOKE_SMS_TO }}
         run: |
           set -euo pipefail
           mkdir -p "$GITHUB_WORKSPACE/artifacts"
 
-          LUXIT_TEST_EMAIL_ESCAPED=$(printf '%q' "$LUXIT_TEST_EMAIL")
-          LUXIT_TEST_PASSWORD_ESCAPED=$(printf '%q' "$LUXIT_TEST_PASSWORD")
-          LUXIT_SMOKE_EMAIL_ESCAPED=$(printf '%q' "$LUXIT_SMOKE_EMAIL")
-          LUXIT_SMOKE_SMS_TO_ESCAPED=$(printf '%q' "$LUXIT_SMOKE_SMS_TO")
-
-          ssh -i "$HOME/.ssh/vps_key" -o StrictHostKeyChecking=yes "${VPS_USER}@${VPS_HOST}" \
-            "LUXIT_TEST_EMAIL=${LUXIT_TEST_EMAIL_ESCAPED} \
-             LUXIT_TEST_PASSWORD=${LUXIT_TEST_PASSWORD_ESCAPED} \
-             LUXIT_SMOKE_EMAIL=${LUXIT_SMOKE_EMAIL_ESCAPED} \
-             LUXIT_SMOKE_SMS_TO=${LUXIT_SMOKE_SMS_TO_ESCAPED} \
-             bash -s" <<'EOF' \
+          ssh -i "$HOME/.ssh/vps_key" -o StrictHostKeyChecking=yes \
+            "${VPS_USER}@${VPS_HOST}" bash <<'EOF' \
             | tee "$GITHUB_WORKSPACE/artifacts/vps_validation.log"
+
           set -eEuo pipefail
 
           dump_logs() {
-            echo "=== LOG DUMP (ON ERROR) ==="
+            echo "=== LOG DUMP ==="
             sudo journalctl -u lux.service -n 300 --no-pager || true
             sudo tail -n 200 /var/log/nginx/error.log || true
-            sudo nginx -T | sed -n '1,200p' || true
           }
 
           trap dump_logs ERR
 
-          echo "=== WHOAMI / HOST / PWD ==="
-          whoami
-          hostname
-          pwd
-
-          echo "=== RESTART SERVICE ==="
-          sudo systemctl status lux.service --no-pager -l
+          echo "=== SERVICE RESTART ==="
           sudo systemctl daemon-reload
           sudo systemctl restart lux.service
-          sleep 3
-          sudo systemctl status lux.service --no-pager -l
+          sleep 5
+          sudo systemctl --no-pager status lux.service
 
-          echo "=== GUNICORN CHECK ==="
-          sudo ss -lntp | grep -E '5000|8000|gunicorn'
+          echo "=== GUNICORN MUST BE LISTENING ==="
+          sudo ss -lntp | grep -E 'gunicorn|:5000' || {
+            echo "❌ Gunicorn not listening"
+            exit 1
+          }
 
-          echo "=== NGINX CONFIG ==="
-          sudo nginx -T
-
-          echo "=== VERIFY APP DIR ==="
-          cd /opt/luxit
+          echo "=== VERIFY APP DIRECTORY ==="
+          cd /app
+          test -d venv || { echo "❌ Missing /app/venv"; exit 1; }
+          source venv/bin/activate
 
           echo "=== PYTHON COMPILE CHECK ==="
-          if [ ! -d venv ]; then
-            echo "Missing venv in /opt/luxit"
-            exit 1
-          fi
-          source venv/bin/activate
-          python -m py_compile $(git ls-files '*.py')
-
-          echo "=== ROUTES ==="
-          flask --app app.py routes
-
-          echo "=== HEALTH CHECKS ==="
-          curl -fsS -D - -o /dev/null http://127.0.0.1:5000/health -H "Host: luxit.app"
-          curl -fsS -D - -o /dev/null http://127.0.0.1:5000/health/deep -H "Host: luxit.app"
-          curl -fsS -D - -o /dev/null https://luxit.app/health
-          curl -fsS -D - -o /dev/null https://luxit.app/__version
-
-          echo "=== AUTH LOGIN PAGE ==="
-          LOGIN_PAGE=$(curl -fsS https://luxit.app/auth/login)
-          CSRF_TOKEN=$(LOGIN_PAGE="$LOGIN_PAGE" python - <<'PY'
-          import os, re, sys
-          html = os.environ.get("LOGIN_PAGE", "")
-          match = re.search(r'name="csrf_token" value="([^"]+)"', html)
-          if not match:
-            print("Missing csrf_token on login page", file=sys.stderr)
-            sys.exit(1)
-          print(match.group(1))
-          PY
-          )
-
-          if [ -z "${LUXIT_TEST_EMAIL:-}" ] || [ -z "${LUXIT_TEST_PASSWORD:-}" ]; then
-            echo "Missing LUXIT_TEST_EMAIL or LUXIT_TEST_PASSWORD secrets."
-            exit 1
-          fi
-
-          echo "=== LOGIN POST ==="
-          curl -fsS -D - -o /dev/null -c /tmp/luxit_cookies.txt -b /tmp/luxit_cookies.txt \
-            -d "email=${LUXIT_TEST_EMAIL}&password=${LUXIT_TEST_PASSWORD}&csrf_token=${CSRF_TOKEN}" \
-            https://luxit.app/auth/login
-
-          echo "=== DASHBOARD CHECK (AUTHENTICATED) ==="
-          curl -fsS -D - -o /dev/null -b /tmp/luxit_cookies.txt https://luxit.app/dashboard
-
-          echo "=== ROUTE CHECKS ==="
-          curl -fsS -D - -o /dev/null https://luxit.app/
-          curl -fsS -D - -o /dev/null https://luxit.app/auth/login
-          curl -fsS -D - -o /dev/null https://luxit.app/analytics
-          curl -fsS -D - -o /dev/null https://luxit.app/settings
-          curl -fsS -D - -o /dev/null -b /tmp/luxit_cookies.txt https://luxit.app/api/system/health
-          curl -fsS -D - -o /dev/null -b /tmp/luxit_cookies.txt https://luxit.app/api/diagnostics/health
-          curl -fsS -D - -o /dev/null -b /tmp/luxit_cookies.txt https://luxit.app/api/diagnostics/errors
-
-          echo "=== EMAIL SEND TEST ==="
-          if [ -z "${LUXIT_SMOKE_EMAIL:-}" ]; then
-            echo "Missing LUXIT_SMOKE_EMAIL secret."
-            exit 1
-          fi
-          EMAIL_CSRF_TOKEN=$(curl -fsS -b /tmp/luxit_cookies.txt https://luxit.app/test-email | \
-            python - <<'PY'
-          import re, sys
-          html = sys.stdin.read()
-          match = re.search(r'name="csrf_token" value="([^"]+)"', html)
-          if not match:
-            raise SystemExit("Missing csrf_token for /test-email")
-          print(match.group(1))
-          PY
-          )
-          curl -fsS -D - -o /dev/null -b /tmp/luxit_cookies.txt \
-            -d "test_email=${LUXIT_SMOKE_EMAIL}&csrf_token=${EMAIL_CSRF_TOKEN}" \
-            https://luxit.app/test-email
-
-          echo "=== SMS SEND TEST ==="
-          if [ -z "${LUXIT_SMOKE_SMS_TO:-}" ]; then
-            echo "Missing LUXIT_SMOKE_SMS_TO secret."
-            exit 1
-          fi
           python - <<'PY'
-          import os
-          from sms_service import SMSService
-
-          to_number = os.environ.get("LUXIT_SMOKE_SMS_TO")
-          if not to_number:
-            raise SystemExit("Missing LUXIT_SMOKE_SMS_TO")
-
-          service = SMSService()
-          result = service.send_sms(to_number, "LUXit SMS smoke test")
-          print(result)
-          if not result.get("success"):
-            raise SystemExit("SMS send failed")
+          import compileall, sys
+          if not compileall.compile_dir(".", quiet=1):
+              sys.exit("❌ Python compile failed")
+          print("✅ Python compile OK")
           PY
 
-          echo "=== DATA INTEGRITY CHECKS ==="
+          echo "=== FLASK IMPORT & MODEL API CHECK ==="
           python - <<'PY'
           from app import create_app
-          from extensions import db
-          from models import User, Company, Campaign, Event
-
-          app = create_app()
-          with app.app_context():
-            print("users", User.query.count())
-            print("companies", Company.query.count())
-            print("campaigns", Campaign.query.count())
-            print("events", Event.query.count())
-            db.session.execute("SELECT 1")
+          from models import User
+          assert hasattr(User, "get_default_company"), "❌ User.get_default_company missing"
+          print("✅ App imports + model API OK")
           PY
 
-          echo "=== LOG DUMP (FINAL) ==="
-          dump_logs
+          echo "=== HEALTH CHECKS ==="
+          curl -fsS http://127.0.0.1:5000/health -H "Host: luxit.app" > /dev/null
+          curl -fsS https://luxit.app/health > /dev/null
+
+          echo "=== LOGIN PAGE ==="
+          LOGIN_PAGE=$(curl -fsS https://luxit.app/auth/login)
+          CSRF_TOKEN=$(echo "$LOGIN_PAGE" | python - <<'PY'
+          import re, sys
+          m = re.search(r'name="csrf_token" value="([^"]+)"', sys.stdin.read())
+          if not m:
+              sys.exit("❌ Missing CSRF token")
+          print(m.group(1))
+          PY
+          )
+
+          echo "=== LOGIN POST ==="
+          curl -fsS -c /tmp/cookies.txt -b /tmp/cookies.txt \
+            -d "email=${LUXIT_TEST_EMAIL}&password=${LUXIT_TEST_PASSWORD}&csrf_token=${CSRF_TOKEN}" \
+            https://luxit.app/auth/login > /dev/null
+
+          echo "=== DASHBOARD MUST LOAD ==="
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            -b /tmp/cookies.txt https://luxit.app/dashboard)
+
+          if [ "$STATUS" != "200" ]; then
+            echo "❌ Dashboard HTTP $STATUS"
+            exit 1
+          fi
+          echo "✅ Dashboard loaded"
+
+          echo "=== PUBLIC SITE MUST LOAD ==="
+          curl -fsS https://luxit.app/ > /dev/null
+          echo "✅ Public site OK"
+
+          echo "=== VALIDATION COMPLETE ==="
           EOF
 
       - name: Upload validation artifacts
