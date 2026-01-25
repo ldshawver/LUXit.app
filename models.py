@@ -5,12 +5,14 @@ from extensions import db
 from flask_login import UserMixin
 from sqlalchemy import JSON, Text
 
-user_company = db.Table('user_company',
-    db.Column('user_id', db.Integer, db.ForeignKey('user.id'), primary_key=True),
-    db.Column('company_id', db.Integer, db.ForeignKey('company.id'), primary_key=True),
-    db.Column('is_default', db.Boolean, default=False),
-    db.Column('created_at', db.DateTime, default=datetime.utcnow)
-)
+user_company = db.metadata.tables.get("user_company")
+if user_company is None:
+    user_company = db.Table('user_company',
+        db.Column('user_id', db.Integer, db.ForeignKey('user.id'), primary_key=True),
+        db.Column('company_id', db.Integer, db.ForeignKey('company.id'), primary_key=True),
+        db.Column('is_default', db.Boolean, default=False),
+        db.Column('created_at', db.DateTime, default=datetime.utcnow)
+    )
 
 
 class UserCompanyAccess(db.Model):
@@ -74,6 +76,7 @@ class UserCompanyAccess(db.Model):
         }.get(role, 'Unknown')
 
 class User(UserMixin, db.Model):
+    __table_args__ = {"extend_existing": True}
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(64), unique=True, nullable=False)
     email = db.Column(db.String(120), unique=True, nullable=False)
@@ -131,22 +134,30 @@ class User(UserMixin, db.Model):
         return self.tags and tag.lower() in self.tags.lower()
     
     def get_default_company(self):
-        """Get the user's default company"""
+        """Get the user's default company safely (never poisons the DB session)."""
         logger = logging.getLogger(__name__)
         try:
             if self.default_company_id:
+                if hasattr(self, "default_company") and self.default_company is not None:
+                    return self.default_company
                 return Company.query.get(self.default_company_id)
-            result = db.session.execute(
-                db.select(user_company).where(
-                    user_company.c.user_id == self.id,
-                    user_company.c.is_default == True
-                )
-            ).first()
-            if result:
-                return Company.query.get(result.company_id)
-            all_companies = Company.query.filter_by(is_active=True).all()
-            return all_companies[0] if all_companies else None
+
+            access = (
+                UserCompanyAccess.query
+                .filter_by(user_id=self.id, is_default=True)
+                .join(Company, Company.id == UserCompanyAccess.company_id)
+                .filter(Company.is_active == True)
+                .first()
+            )
+            if access:
+                return access.company
+
+            return Company.query.filter_by(is_active=True).order_by(Company.id.asc()).first()
         except Exception as exc:
+            try:
+                db.session.rollback()
+            except Exception:
+                pass
             logger.warning("Default company lookup failed for user %s: %s", self.id, exc)
             return None
     
@@ -158,6 +169,15 @@ class User(UserMixin, db.Model):
     def get_all_companies(self):
         """Get all companies (all companies are shared across users)"""
         return Company.query.filter_by(is_active=True).order_by(Company.name).all()
+
+    def get_companies_safe(self):
+        """Get companies safely for rendering contexts."""
+        logger = logging.getLogger(__name__)
+        try:
+            return list(self.companies)
+        except Exception as exc:
+            logger.warning("Company list lookup failed for user %s: %s", self.id, exc)
+            return []
     
     def get_company_access(self, company_id):
         """Get user's access level for a specific company"""
