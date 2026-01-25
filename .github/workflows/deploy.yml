@@ -8,6 +8,7 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+
     steps:
       - name: Deploy + Smoke Test over SSH
         uses: appleboy/ssh-action@v1.0.3
@@ -17,44 +18,88 @@ jobs:
           key: ${{ secrets.VPS_SSH_KEY }}
           port: 22
           script: |
-            set -euxo pipefail
+            set -euo pipefail
 
             echo "=== WHOAMI / HOST ==="
             whoami
             hostname
-            pwd || true
 
-            echo "=== VERIFY APP DIR ==="
-            test -d /opt/luxit
-            cd /opt/luxit
+            echo "=== VERIFY APP DIRECTORY ==="
+            test -d /app || { echo "❌ /app missing"; exit 1; }
+            cd /app
 
             echo "=== GIT STATUS ==="
-            git rev-parse --is-inside-work-tree || true
-            git remote -v || true
-            git status --porcelain || true
-            git rev-parse HEAD || true
+            git rev-parse --is-inside-work-tree
+            git rev-parse HEAD
 
-            echo "=== PYTHON COMPILE CHECK ==="
+            echo "=== ACTIVATE VENV ==="
+            test -d venv || { echo "❌ venv missing"; exit 1; }
             source venv/bin/activate
-            python -m py_compile app.py wsgi.py auth.py routes.py 2>/dev/null || python -m py_compile app.py
+
+            echo "=== PYTHON COMPILE CHECK (ALL FILES) ==="
+            python - <<'PY'
+            import compileall, sys
+            if not compileall.compile_dir(".", quiet=1):
+                sys.exit("❌ Python compile failed")
+            print("✅ Python compile OK")
+            PY
+
+            echo "=== FLASK IMPORT & MODEL API CHECK ==="
+            python - <<'PY'
+            from app import create_app
+            from models import User
+            assert hasattr(User, "get_default_company"), "❌ User.get_default_company missing"
+            print("✅ Flask app + model API OK")
+            PY
 
             echo "=== RESTART SERVICE ==="
-            systemctl restart lux
-            sleep 2
-            systemctl status lux --no-pager -l
+            sudo systemctl daemon-reload
+            sudo systemctl restart lux.service
+            sleep 4
+            sudo systemctl --no-pager status lux.service
 
-            echo "=== LOCAL HEALTH CHECKS (DIRECT GUNICORN) ==="
-            curl -sS -D- http://127.0.0.1:8000/ -o /dev/null || true
-            curl -sS -D- http://127.0.0.1:8000/auth/login -o /dev/null || true
+            echo "=== VERIFY GUNICORN LISTENING ==="
+            sudo ss -lntp | grep -E 'gunicorn|:5000' || {
+              echo "❌ Gunicorn not listening on 5000"
+              exit 1
+            }
 
-            echo "=== HTTPS CHECK THROUGH NGINX ==="
-            curl -k -sS -D- https://luxit.app/ -o /dev/null || true
-            curl -k -sS -D- https://luxit.app/auth/login -o /dev/null || true
+            echo "=== LOCAL HEALTH CHECK ==="
+            curl -fsS http://127.0.0.1:5000/health > /dev/null
 
-            echo "=== IF ANYTHING IS 500, DUMP LOGS ==="
-            echo "--- last 200 gunicorn/systemd lines ---"
-            journalctl -u lux -n 200 --no-pager || true
-            echo "--- nginx error log tail ---"
-            tail -n 200 /var/log/nginx/error.log || true
-            echo "--- nginx config (relevant) ---"
-            nginx -T 2>/dev/null | sed -n '1,220p' || true
+            echo "=== LOGIN PAGE CHECK ==="
+            LOGIN_PAGE=$(curl -fsS https://luxit.app/auth/login)
+            CSRF=$(echo "$LOGIN_PAGE" | python - <<'PY'
+            import re, sys
+            m = re.search(r'name="csrf_token" value="([^"]+)"', sys.stdin.read())
+            if not m:
+                sys.exit("❌ Missing CSRF token")
+            print(m.group(1))
+            PY
+            )
+
+            echo "=== LOGIN POST ==="
+            curl -fsS -c /tmp/cookies.txt -b /tmp/cookies.txt \
+              -d "email=${{ secrets.LUXIT_TEST_EMAIL }}&password=${{ secrets.LUXIT_TEST_PASSWORD }}&csrf_token=${CSRF}" \
+              https://luxit.app/auth/login > /dev/null
+
+            echo "=== DASHBOARD MUST LOAD (NO 500) ==="
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+              -b /tmp/cookies.txt https://luxit.app/dashboard)
+
+            if [ "$STATUS" != "200" ]; then
+              echo "❌ Dashboard returned HTTP $STATUS"
+              echo "--- journalctl (last 200) ---"
+              journalctl -u lux.service -n 200 --no-pager || true
+              echo "--- nginx error log ---"
+              tail -n 200 /var/log/nginx/error.log || true
+              exit 1
+            fi
+
+            echo "✅ LOGIN + DASHBOARD SUCCESS"
+
+            echo "=== PUBLIC SITE CHECK ==="
+            curl -fsS https://luxit.app/ > /dev/null
+            echo "✅ PUBLIC SITE OK"
+
+            echo "=== DEPLOY + SMOKE TEST PASSED ==="
