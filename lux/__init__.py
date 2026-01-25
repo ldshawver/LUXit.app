@@ -7,6 +7,7 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 
 from lux.config import config
 from lux.extensions import db, login_manager, csrf, limiter
+from sqlalchemy.exc import SQLAlchemyError
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -53,7 +54,15 @@ def create_app(config_name=None):
     @login_manager.user_loader
     def load_user(user_id):
         from lux.models.user import User
-        return User.query.get(int(user_id))
+        try:
+            return User.query.get(int(user_id))
+        except SQLAlchemyError as exc:
+            current_app.logger.error("User loader DB error: %s", exc)
+            try:
+                db.session.rollback()
+            except Exception:
+                pass
+            return None
 
     @app.before_request
     def block_next_param():
@@ -63,6 +72,32 @@ def create_app(config_name=None):
     @app.route("/login")
     def login_alias():
         return redirect(url_for("auth.login"))
+
+    @app.context_processor
+    def inject_company_context():
+        from flask_login import current_user
+        try:
+            if not current_user.is_authenticated:
+                return {}
+            return {
+                "current_company": current_user.get_default_company(),
+                "user_companies": current_user.get_companies_safe(),
+            }
+        except SQLAlchemyError as exc:
+            current_app.logger.error("Template context DB error: %s", exc)
+            try:
+                db.session.rollback()
+            except Exception:
+                pass
+            return {}
+
+    @app.teardown_request
+    def rollback_on_error(_exception=None):
+        if _exception:
+            try:
+                db.session.rollback()
+            except Exception:
+                pass
 
     # --------------------------------------------------
     # Blueprints
