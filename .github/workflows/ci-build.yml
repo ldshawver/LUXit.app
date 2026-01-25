@@ -11,6 +11,10 @@ jobs:
     name: ci / build
     runs-on: ubuntu-latest
 
+    env:
+      FLASK_ENV: testing
+      FLASK_DEBUG: "0"
+
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
@@ -25,6 +29,83 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Compile check
+      # --------------------------------------------------
+      # 1️⃣ Compile ALL python files (not just app.py)
+      # --------------------------------------------------
+      - name: Python compile check (entire repo)
         run: |
-          python -m py_compile app.py
+          python - <<'PY'
+          import compileall, sys
+          ok = compileall.compile_dir(".", quiet=1)
+          if not ok:
+              sys.exit("❌ Python compile failed")
+          print("✅ Python compilation OK")
+          PY
+
+      # --------------------------------------------------
+      # 2️⃣ Import app + models (catches scope bugs)
+      # --------------------------------------------------
+      - name: Import app and models
+        run: |
+          python - <<'PY'
+          from app import app
+          from models import User
+          assert hasattr(User, "get_default_company"), "❌ User.get_default_company missing"
+          print("✅ App + models import OK")
+          PY
+
+      # --------------------------------------------------
+      # 3️⃣ Enforce template safety (NO model calls)
+      # --------------------------------------------------
+      - name: Template safety check
+        run: |
+          python - <<'PY'
+          import pathlib, sys, re
+
+          forbidden = [
+              r"current_user\\.get_",
+              r"\\.query\\(",
+              r"session\\.query",
+          ]
+
+          for path in pathlib.Path("templates").rglob("*.html"):
+              text = path.read_text()
+              for rule in forbidden:
+                  if re.search(rule, text):
+                      sys.exit(f"❌ Forbidden pattern '{rule}' in {path}")
+
+          print("✅ Templates are safe")
+          PY
+
+      # --------------------------------------------------
+      # 4️⃣ Flask test client: dashboard must render
+      # --------------------------------------------------
+      - name: Render dashboard template
+        run: |
+          python - <<'PY'
+          from app import app
+          from flask_login import login_user
+          from models import User
+          from extensions import db
+
+          with app.app_context():
+              # Create fake user (no DB write needed)
+              u = User(id=1, username="ci", email="ci@test.local")
+              with app.test_request_context("/dashboard"):
+                  login_user(u)
+                  resp = app.view_functions["dashboard"]()
+                  assert resp is not None, "❌ Dashboard did not render"
+
+          print("✅ Dashboard renders without exception")
+          PY
+
+      # --------------------------------------------------
+      # 5️⃣ Run pytest (if present)
+      # --------------------------------------------------
+      - name: Run tests
+        run: |
+          if [ -d tests ]; then
+            pytest -q
+          else
+            echo "ℹ️ No tests directory, skipping pytest"
+          fi
