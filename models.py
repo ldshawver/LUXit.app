@@ -5,12 +5,14 @@ from extensions import db
 from flask_login import UserMixin
 from sqlalchemy import JSON, Text
 
-user_company = db.Table('user_company',
-    db.Column('user_id', db.Integer, db.ForeignKey('user.id'), primary_key=True),
-    db.Column('company_id', db.Integer, db.ForeignKey('company.id'), primary_key=True),
-    db.Column('is_default', db.Boolean, default=False),
-    db.Column('created_at', db.DateTime, default=datetime.utcnow)
-)
+user_company = db.metadata.tables.get("user_company")
+if user_company is None:
+    user_company = db.Table('user_company',
+        db.Column('user_id', db.Integer, db.ForeignKey('user.id'), primary_key=True),
+        db.Column('company_id', db.Integer, db.ForeignKey('company.id'), primary_key=True),
+        db.Column('is_default', db.Boolean, default=False),
+        db.Column('created_at', db.DateTime, default=datetime.utcnow)
+    )
 
 
 class UserCompanyAccess(db.Model):
@@ -74,6 +76,7 @@ class UserCompanyAccess(db.Model):
         }.get(role, 'Unknown')
 
 class User(UserMixin, db.Model):
+    __table_args__ = {"extend_existing": True}
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(64), unique=True, nullable=False)
     email = db.Column(db.String(120), unique=True, nullable=False)

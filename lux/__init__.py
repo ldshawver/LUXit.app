@@ -71,7 +71,8 @@ def create_app(config_name=None):
 
     @app.route("/login")
     def login_alias():
-        return redirect(url_for("auth.login"))
+        from lux.blueprints.auth.routes import login as auth_login
+        return auth_login()
 
     @app.context_processor
     def inject_company_context():

@@ -2,15 +2,11 @@ import pytest
 from werkzeug.security import generate_password_hash
 
 from app import create_app
-from lux.extensions import db
-from lux.models.user import User
+from extensions import db
+from models import User
 
 @pytest.fixture
 def client(monkeypatch):
-    import scheduler
-
-    monkeypatch.setattr(scheduler, "init_scheduler", lambda app: None)
-
     app = create_app()
     app.config["TESTING"] = True
     app.config["SECRET_KEY"] = "test-secret"

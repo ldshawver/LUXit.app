@@ -3,7 +3,7 @@ import os
 from uuid import uuid4
 
 from dotenv import load_dotenv
-from flask import Flask, g, redirect, request, url_for
+from flask import Flask, g, redirect, render_template, request, url_for
 from flask_login import LoginManager
 from sqlalchemy.exc import SQLAlchemyError
 from werkzeug.middleware.proxy_fix import ProxyFix
@@ -105,9 +105,14 @@ def create_app():
     app.register_blueprint(auth_bp, url_prefix="/auth")
     app.register_blueprint(marketing_bp)
 
+    @app.route("/")
+    def marketing_home():
+        return render_template("marketing/index.html")
+
     @app.route("/login")
     def login():
-        return redirect(url_for("auth.login"))
+        from auth import login as auth_login
+        return auth_login()
 
     return app
 
