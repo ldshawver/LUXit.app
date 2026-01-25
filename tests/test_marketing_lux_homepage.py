@@ -28,3 +28,7 @@ def test_lux_login_alias_redirects(client):
     response = client.get("/login")
 
     assert response.status_code == 200
+    response = client.get("/login", follow_redirects=False)
+
+    assert response.status_code == 302
+    assert response.headers["Location"].endswith("/auth/login")
