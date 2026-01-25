@@ -26,6 +26,11 @@ def test_login_alias_renders_login_page():
 
 
 def test_login_alias_no_redirect():
+    assert "Forgot your password" in body
+    assert "Register here" in body
+
+
+def test_login_alias_redirects_to_auth_login():
     app = create_app()
     app.config.update(TESTING=True, WTF_CSRF_ENABLED=False, SERVER_NAME="localhost")
 
