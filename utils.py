@@ -2,6 +2,8 @@ import re
 import logging
 from datetime import datetime
 
+from extensions import db
+
 def validate_email(email):
     """Validate email address format"""
     pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
@@ -84,4 +86,8 @@ def safe_count(query, fallback=0, context=""):
         return query.count()
     except Exception as exc:
         logger.warning("Dashboard metric query failed%s: %s", f" ({context})" if context else "", exc)
+        try:
+            db.session.rollback()
+        except Exception:
+            pass
         return fallback

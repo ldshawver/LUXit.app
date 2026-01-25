@@ -23,10 +23,10 @@ from agents.executive_strategy_agent import ExecutiveStrategyAgent
 main_bp = Blueprint('main', __name__, template_folder='../../templates')
 
 
-@main_bp.route('/')
+@main_bp.route("/")
 def index():
-    """Landing page."""
-    return render_template('index.html')
+    """Public marketing landing page."""
+    return render_template("marketing/index.html")
 
 
 @main_bp.route('/dashboard')

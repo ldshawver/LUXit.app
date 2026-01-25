@@ -250,6 +250,7 @@ def dashboard():
         recent_campaigns = Campaign.query.order_by(Campaign.created_at.desc()).limit(5).all()
     except Exception as exc:
         logger.warning("Dashboard recent campaigns query failed: %s", exc)
+        db.session.rollback()
         recent_campaigns = []
     
     # Email statistics
@@ -284,6 +285,7 @@ def dashboard():
         current_company = current_user.get_default_company()
     except Exception as exc:
         logger.warning("Dashboard company lookup failed: %s", exc)
+        db.session.rollback()
         current_company = None
     
     if current_company:
@@ -291,6 +293,7 @@ def dashboard():
             config_alerts = ConfigStatusService.get_dashboard_alerts(current_company)
         except Exception as exc:
             logger.warning("Dashboard config alerts failed: %s", exc)
+            db.session.rollback()
             config_alerts = []
     else:
         config_alerts = []
@@ -3157,7 +3160,7 @@ def refresh_segment(segment_id):
         matched = 0
         
         for contact in contacts:
-            if segment.segment_type == 'newsletter' and getattr(contact, 'is_subscribed', False):
+            if segment.segment_type == 'newsletter' and 'newsletter' in (contact.tags or ''):
                 member = SegmentMember(segment_id=segment_id, contact_id=contact.id)
                 db.session.add(member)
                 matched += 1
@@ -4718,7 +4721,10 @@ def save_landing_page_api():
 def newsletters():
     """Newsletter management page"""
     newsletters = NewsletterArchive.query.order_by(NewsletterArchive.published_at.desc()).all()
-    subscriber_count = Contact.query.filter_by(is_subscribed=True, is_active=True).count()
+    subscriber_count = Contact.query.filter(
+        Contact.is_active == True,
+        Contact.tags.ilike("%newsletter%")
+    ).count()
     return render_template('newsletters.html', newsletters=newsletters, subscriber_count=subscriber_count)
 
 @main_bp.route('/newsletters/create', methods=['GET', 'POST'])
@@ -4891,7 +4897,6 @@ def newsletter_subscribe():
     
     if contact:
         if 'newsletter' not in (contact.tags or ''):
-            # Add newsletter tag
             existing_tags = contact.tags.split(',') if contact.tags else []
             if 'newsletter' not in existing_tags:
                 existing_tags.append('newsletter')
@@ -4906,8 +4911,7 @@ def newsletter_subscribe():
         email=email,
         source='newsletter_archive',
         tags='newsletter',
-        is_active=True,
-        is_subscribed=True
+        is_active=True
     )
     
     db.session.add(contact)
@@ -8241,11 +8245,20 @@ def user_profile():
     user = current_user
     company = user.get_default_company()
     all_companies = user.get_all_companies()
+    company_roles = {}
+    for comp in all_companies:
+        try:
+            company_roles[comp.id] = user.get_company_role(comp.id)
+        except Exception as exc:
+            logger.warning("User profile role lookup failed for company %s: %s", comp.id, exc)
+            db.session.rollback()
+            company_roles[comp.id] = "viewer"
     
     return render_template('user_profile.html', 
                          user=user, 
                          company=company,
-                         all_companies=all_companies)
+                         all_companies=all_companies,
+                         company_roles=company_roles)
 
 @main_bp.route('/user/profile/edit', methods=['GET', 'POST'])
 @login_required
@@ -9852,8 +9865,10 @@ def add_subscriber():
         
         existing = Contact.query.filter_by(email=email).first()
         if existing:
-            if not existing.is_subscribed:
-                existing.is_subscribed = True
+            if 'newsletter' not in (existing.tags or ''):
+                existing_tags = existing.tags.split(',') if existing.tags else []
+                existing_tags.append('newsletter')
+                existing.tags = ','.join(existing_tags)
                 existing.subscribed_at = datetime.utcnow()
                 existing.subscription_source = 'manual'
                 if existing.segment == 'lead':
@@ -9874,7 +9889,6 @@ def add_subscriber():
             last_name=last_name or None,
             segment='newsletter',
             source='manual',
-            is_subscribed=True,
             subscribed_at=datetime.utcnow(),
             subscription_source='manual',
             is_active=True,
