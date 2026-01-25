@@ -1,4 +1,6 @@
 """User management blueprint routes."""
+import logging
+
 from flask import Blueprint, render_template, request, flash, redirect, url_for
 from flask_login import login_required, current_user
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -7,6 +9,8 @@ from lux.extensions import db
 from lux.models.user import User
 from lux.core.utils import validate_email
 
+logger = logging.getLogger(__name__)
+
 user_bp = Blueprint('user', __name__, template_folder='../../templates')
 
 
@@ -14,7 +18,34 @@ user_bp = Blueprint('user', __name__, template_folder='../../templates')
 @login_required
 def profile():
     """User profile page."""
-    return render_template('user_profile.html', user=current_user)
+    user = current_user
+    try:
+        company = user.get_default_company()
+    except Exception as exc:
+        db.session.rollback()
+        company = None
+        logger.warning("User profile company lookup failed: %s", exc)
+    try:
+        all_companies = user.get_all_companies()
+    except Exception as exc:
+        db.session.rollback()
+        all_companies = []
+        logger.warning("User profile company list lookup failed: %s", exc)
+    company_roles = {}
+    for comp in all_companies:
+        try:
+            company_roles[comp.id] = user.get_company_role(comp.id)
+        except Exception as exc:
+            db.session.rollback()
+            company_roles[comp.id] = "viewer"
+            logger.warning("User profile role lookup failed for company %s: %s", comp.id, exc)
+    return render_template(
+        'user_profile.html',
+        user=user,
+        company=company,
+        all_companies=all_companies,
+        company_roles=company_roles,
+    )
 
 
 @user_bp.route('/change-password', methods=['GET', 'POST'])

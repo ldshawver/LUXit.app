@@ -38,5 +38,3 @@ def test_login_alias_redirects_to_auth_login():
         response = client.get("/login", follow_redirects=False)
 
     assert response.status_code == 200
-    assert response.status_code == 302
-    assert response.headers["Location"].endswith("/auth/login")

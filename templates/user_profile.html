@@ -138,7 +138,7 @@
                                     {% if comp.industry %}<br><small style="color: #888;">{{ comp.industry }}</small>{% endif %}
                                 </td>
                                 <td>
-                                    {% set role = current_user.get_company_role(comp.id) %}
+                                    {% set role = company_roles.get(comp.id, 'viewer') %}
                                     <span class="badge" style="background: {% if role == 'owner' %}#e4055c{% elif role == 'admin' %}#bc00ed{% elif role == 'editor' %}#0044ff{% else %}#444{% endif %}; color: white;">
                                         {{ role|upper if role else 'VIEWER' }}
                                     </span>
