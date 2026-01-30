@@ -4,6 +4,8 @@ import logging
 from flask_login import UserMixin
 from sqlalchemy import JSON, Text
 
+from extensions import db
+
 user_company = db.metadata.tables.get("user_company")
 if user_company is None:
     user_company = db.Table('user_company',
