@@ -1,13 +1,13 @@
 amodules = ["python-3.11", "postgresql-16", "python3"]
-modules = ["python-3.11", "postgresql-16"]
+modules = ["web", "python-3.11", "bash", "nodejs-20", "postgresql-16"]
 
 [nix]
 channel = "stable-25_05"
-packages = ["cargo", "freetype", "glibcLocales", "lcms2", "libiconv", "libimagequant", "libjpeg", "libtiff", "libwebp", "libxcrypt", "openjpeg", "openssl", "pkg-config", "postgresql", "rsync", "rustc", "u-root-cmds", "openssh", "nano"]
+packages = ["cargo", "freetype", "glibcLocales", "lcms2", "libiconv", "libimagequant", "libjpeg", "libtiff", "libwebp", "libxcrypt", "nano", "openjpeg", "openssh", "openssl", "pkg-config", "postgresql", "rsync", "rustc", "u-root-cmds"]
 
 [deployment]
 deploymentTarget = "autoscale"
-run = ["gunicorn", "--bind", "0.0.0.0:5000", "main:app"]
+run = ["gunicorn", "--bind", "0.0.0.0:5000", "app:app"]
 
 [workflows]
 runButton = "Project"
@@ -25,9 +25,12 @@ args = "Start application"
 name = "Start application"
 author = "agent"
 
+[workflows.workflow.metadata]
+outputType = "webview"
+
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "gunicorn --bind 0.0.0.0:5000 --reuse-port --reload main:app"
+args = "gunicorn --bind 0.0.0.0:5000 --reuse-port --reload app:app"
 waitForPort = 5000
 
 [[ports]]

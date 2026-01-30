@@ -65,9 +65,7 @@ def create_app(testing: bool = False):
     app.register_blueprint(marketing_bp)
 
     # ---- Routes ----
-    @app.route("/")
-    def index():
-        return redirect(url_for("auth.login"))
+    # "/" is handled by marketing_bp for the public marketing homepage
 
     @app.route("/health")
     def health():

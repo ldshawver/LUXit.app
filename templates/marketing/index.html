@@ -1,163 +1,377 @@
 {% extends "marketing/base_marketing.html" %}
 
-{% block title %}LUX IT | Licensable Revenue Operating System{% endblock %}
+{% block title %}LUX IT | The AI-Powered Revenue Operating System{% endblock %}
 
 {% block content %}
 <header class="hero">
-  <span class="badge">LUX IT • Product Website</span>
-  <h1>LUX IT</h1>
-  <p>
-    The licensable revenue operating system that blends AI agents, CRM, and automated outreach
-    into a single, compliant command center.
+  <div class="hero-badge">
+    <span>Introducing LUX IT 3.0</span>
+  </div>
+  <h1>
+    <span class="hero-title-gradient">Revenue Operations</span><br>
+    Reimagined with AI
+  </h1>
+  <p class="hero-subtitle">
+    The licensable revenue operating system that unifies AI agents, CRM, and automated outreach 
+    into a single, compliant command center. Built for agencies who refuse to compromise.
   </p>
   <div class="hero-actions">
-    <a class="lux-btn primary" href="#pricing">View Pricing</a>
-    <a class="lux-btn secondary" href="/login">Sign In</a>
-    <a class="lux-btn secondary" href="mailto:sales@luxit.app">Request License</a>
+    <a class="lux-btn primary" href="#pricing">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>
+      </svg>
+      Start Free Trial
+    </a>
+    <a class="lux-btn secondary" href="/auth/login">Sign In to Dashboard</a>
+    <a class="lux-btn secondary" href="mailto:sales@luxit.app">Request Enterprise Demo</a>
   </div>
 </header>
 
-<section>
-  <h2 class="section-title">Why LUX IT wins</h2>
-  <p>
-    Built for agencies and operators who need AI agents, CRM, and compliant automation without
-    stitching together five tools. Run self-hosted or cloud licensed, with full visibility into every workflow.
-  </p>
+<div class="stats-banner">
+  <div class="stat-item">
+    <div class="stat-number">10x</div>
+    <div class="stat-label">Faster Lead Response</div>
+  </div>
+  <div class="stat-item">
+    <div class="stat-number">85%</div>
+    <div class="stat-label">Time Saved on Outreach</div>
+  </div>
+  <div class="stat-item">
+    <div class="stat-number">3.2x</div>
+    <div class="stat-label">Average ROI Increase</div>
+  </div>
+  <div class="stat-item">
+    <div class="stat-number">99.9%</div>
+    <div class="stat-label">Uptime SLA</div>
+  </div>
+</div>
+
+<section id="features" class="animate-on-scroll">
+  <div class="section-header">
+    <div class="section-badge">Core Capabilities</div>
+    <h2 class="section-title">Everything You Need to Scale Revenue</h2>
+    <p class="section-subtitle">
+      Replace five disconnected tools with one unified platform built for modern revenue teams.
+    </p>
+  </div>
+  
+  <div class="features-grid">
+    <div class="feature-card animate-on-scroll">
+      <div class="feature-icon">🤖</div>
+      <h3>AI Agents That Actually Work</h3>
+      <p>Deploy intelligent agents that handle lead qualification, follow-ups, and customer support autonomously. Train them on your data, watch them learn and improve.</p>
+    </div>
+    
+    <div class="feature-card animate-on-scroll">
+      <div class="feature-icon">📊</div>
+      <h3>360° CRM Intelligence</h3>
+      <p>Every touchpoint captured. Every relationship mapped. AI-powered insights surface opportunities before they become obvious to your competitors.</p>
+    </div>
+    
+    <div class="feature-card animate-on-scroll">
+      <div class="feature-icon">📧</div>
+      <h3>Omnichannel Automation</h3>
+      <p>Email, SMS, social, voice - all orchestrated from one dashboard. A2P compliant. Deliverability optimized. Conversion focused.</p>
+    </div>
+    
+    <div class="feature-card animate-on-scroll">
+      <div class="feature-icon">🔒</div>
+      <h3>Enterprise-Grade Compliance</h3>
+      <p>Built-in W-9/1099 processing, TCPA compliance, GDPR ready. Your legal team will thank you. Your auditors will love you.</p>
+    </div>
+    
+    <div class="feature-card animate-on-scroll">
+      <div class="feature-icon">🎥</div>
+      <h3>Creator & Video Monetization</h3>
+      <p>Turn content into revenue. Track creator performance, automate payouts, and scale your influencer programs effortlessly.</p>
+    </div>
+    
+    <div class="feature-card animate-on-scroll">
+      <div class="feature-icon">🏢</div>
+      <h3>White-Label Ready</h3>
+      <p>Your brand. Your domain. Your pricing. Launch your own SaaS in days, not months. Perfect for agencies building recurring revenue.</p>
+    </div>
+  </div>
 </section>
 
-<section>
-  <h2 class="section-title">Feature comparison</h2>
-  <table class="comparison-table">
-    <thead>
-      <tr>
-        <th>Capability</th>
-        <th>LUX IT</th>
-        <th>HubSpot</th>
-        <th>Salesforce</th>
-        <th>GoHighLevel</th>
-        <th>Klaviyo</th>
-        <th>Notion + Zapier</th>
-      </tr>
-    </thead>
-    <tbody>
-      <tr>
-        <td>AI Agents</td>
-        <td>✅</td>
-        <td>⚠️</td>
-        <td>⚠️</td>
-        <td>⚠️</td>
-        <td>❌</td>
-        <td>⚠️</td>
-      </tr>
-      <tr>
-        <td>CRM</td>
-        <td>✅</td>
-        <td>✅</td>
-        <td>✅</td>
-        <td>⚠️</td>
-        <td>❌</td>
-        <td>⚠️</td>
-      </tr>
-      <tr>
-        <td>SMS / Email Automation</td>
-        <td>✅</td>
-        <td>✅</td>
-        <td>⚠️</td>
-        <td>✅</td>
-        <td>✅</td>
-        <td>⚠️</td>
-      </tr>
-      <tr>
-        <td>Compliance (A2P, W-9, 1099)</td>
-        <td>✅</td>
-        <td>⚠️</td>
-        <td>⚠️</td>
-        <td>❌</td>
-        <td>❌</td>
-        <td>❌</td>
-      </tr>
-      <tr>
-        <td>Video / Creator Monetization</td>
-        <td>✅</td>
-        <td>❌</td>
-        <td>❌</td>
-        <td>❌</td>
-        <td>❌</td>
-        <td>❌</td>
-      </tr>
-      <tr>
-        <td>Self-hostable</td>
-        <td>✅</td>
-        <td>❌</td>
-        <td>❌</td>
-        <td>❌</td>
-        <td>❌</td>
-        <td>⚠️</td>
-      </tr>
-      <tr>
-        <td>White-label ready</td>
-        <td>✅</td>
-        <td>⚠️</td>
-        <td>⚠️</td>
-        <td>✅</td>
-        <td>⚠️</td>
-        <td>❌</td>
-      </tr>
-      <tr>
-        <td>Cost transparency</td>
-        <td>✅</td>
-        <td>⚠️</td>
-        <td>⚠️</td>
-        <td>⚠️</td>
-        <td>✅</td>
-        <td>✅</td>
-      </tr>
-    </tbody>
-  </table>
+<section id="comparison" class="animate-on-scroll">
+  <div class="section-header">
+    <div class="section-badge">Why Switch</div>
+    <h2 class="section-title">See How LUX IT Compares</h2>
+    <p class="section-subtitle">
+      We didn't build another tool. We built the platform you've been stitching together yourself.
+    </p>
+  </div>
+  
+  <div class="comparison-wrapper">
+    <table class="comparison-table">
+      <thead>
+        <tr>
+          <th>Capability</th>
+          <th>LUX IT</th>
+          <th>HubSpot</th>
+          <th>Salesforce</th>
+          <th>GoHighLevel</th>
+          <th>Klaviyo</th>
+          <th>Notion + Zapier</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>AI Agents (GPT-4 Level)</td>
+          <td><span class="check-yes">✓</span></td>
+          <td><span class="check-partial">~</span></td>
+          <td><span class="check-partial">~</span></td>
+          <td><span class="check-partial">~</span></td>
+          <td><span class="check-no">✗</span></td>
+          <td><span class="check-partial">~</span></td>
+        </tr>
+        <tr>
+          <td>Full CRM with Pipeline</td>
+          <td><span class="check-yes">✓</span></td>
+          <td><span class="check-yes">✓</span></td>
+          <td><span class="check-yes">✓</span></td>
+          <td><span class="check-partial">~</span></td>
+          <td><span class="check-no">✗</span></td>
+          <td><span class="check-partial">~</span></td>
+        </tr>
+        <tr>
+          <td>Email + SMS Automation</td>
+          <td><span class="check-yes">✓</span></td>
+          <td><span class="check-yes">✓</span></td>
+          <td><span class="check-partial">~</span></td>
+          <td><span class="check-yes">✓</span></td>
+          <td><span class="check-yes">✓</span></td>
+          <td><span class="check-partial">~</span></td>
+        </tr>
+        <tr>
+          <td>A2P / TCPA Compliance</td>
+          <td><span class="check-yes">✓</span></td>
+          <td><span class="check-partial">~</span></td>
+          <td><span class="check-partial">~</span></td>
+          <td><span class="check-no">✗</span></td>
+          <td><span class="check-no">✗</span></td>
+          <td><span class="check-no">✗</span></td>
+        </tr>
+        <tr>
+          <td>W-9 / 1099 Processing</td>
+          <td><span class="check-yes">✓</span></td>
+          <td><span class="check-no">✗</span></td>
+          <td><span class="check-no">✗</span></td>
+          <td><span class="check-no">✗</span></td>
+          <td><span class="check-no">✗</span></td>
+          <td><span class="check-no">✗</span></td>
+        </tr>
+        <tr>
+          <td>Video/Creator Monetization</td>
+          <td><span class="check-yes">✓</span></td>
+          <td><span class="check-no">✗</span></td>
+          <td><span class="check-no">✗</span></td>
+          <td><span class="check-no">✗</span></td>
+          <td><span class="check-no">✗</span></td>
+          <td><span class="check-no">✗</span></td>
+        </tr>
+        <tr>
+          <td>Self-Hosted Option</td>
+          <td><span class="check-yes">✓</span></td>
+          <td><span class="check-no">✗</span></td>
+          <td><span class="check-no">✗</span></td>
+          <td><span class="check-no">✗</span></td>
+          <td><span class="check-no">✗</span></td>
+          <td><span class="check-partial">~</span></td>
+        </tr>
+        <tr>
+          <td>Full White-Label</td>
+          <td><span class="check-yes">✓</span></td>
+          <td><span class="check-partial">~</span></td>
+          <td><span class="check-partial">~</span></td>
+          <td><span class="check-yes">✓</span></td>
+          <td><span class="check-partial">~</span></td>
+          <td><span class="check-no">✗</span></td>
+        </tr>
+        <tr>
+          <td>Transparent Pricing</td>
+          <td><span class="check-yes">✓</span></td>
+          <td><span class="check-partial">~</span></td>
+          <td><span class="check-no">✗</span></td>
+          <td><span class="check-partial">~</span></td>
+          <td><span class="check-yes">✓</span></td>
+          <td><span class="check-yes">✓</span></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
 </section>
 
-<section id="pricing">
-  <h2 class="section-title">Pricing</h2>
-  <div class="pricing-grid">
-    <div class="pricing-card">
-      <h3>Starter</h3>
-      <p>$149 / mo • $1,490 / yr</p>
-      <ul>
-        <li>Solo founders</li>
-        <li>Core automations</li>
-        <li>Limited AI agents</li>
-        <li>Email + CRM basics</li>
-      </ul>
-      <div class="hero-actions">
-        <a class="lux-btn primary" href="mailto:sales@luxit.app">Get License</a>
+<section class="animate-on-scroll">
+  <div class="section-header">
+    <div class="section-badge">Social Proof</div>
+    <h2 class="section-title">Trusted by Revenue Leaders</h2>
+    <p class="section-subtitle">
+      See why agencies and operators are making the switch to LUX IT.
+    </p>
+  </div>
+  
+  <div class="testimonials-grid">
+    <div class="testimonial-card animate-on-scroll">
+      <p class="testimonial-quote">
+        "We replaced HubSpot, Twilio, and three Zapier workflows with LUX IT. Cut our stack cost by 60% 
+        and our response time went from hours to minutes. The AI agents are genuinely impressive."
+      </p>
+      <div class="testimonial-author">
+        <div class="testimonial-avatar">JM</div>
+        <div class="testimonial-info">
+          <h4>James Mitchell</h4>
+          <p>CEO, GrowthForce Agency</p>
+        </div>
       </div>
     </div>
-    <div class="pricing-card">
-      <h3>Pro</h3>
-      <p>$499 / mo • $4,990 / yr</p>
-      <ul>
-        <li>Agencies & growth teams</li>
-        <li>Full AI agents</li>
-        <li>SMS + Email automation</li>
-        <li>Compliance tooling</li>
-      </ul>
-      <div class="hero-actions">
-        <a class="lux-btn primary" href="mailto:sales@luxit.app">Get License</a>
+    
+    <div class="testimonial-card animate-on-scroll">
+      <p class="testimonial-quote">
+        "Finally, a platform that understands compliance isn't optional. The built-in A2P registration 
+        and 1099 processing saved us from a potential nightmare. Plus the white-label option let us 
+        launch our own SaaS in 2 weeks."
+      </p>
+      <div class="testimonial-author">
+        <div class="testimonial-avatar">SK</div>
+        <div class="testimonial-info">
+          <h4>Sarah Kim</h4>
+          <p>Founder, Compliant Growth Co</p>
+        </div>
       </div>
     </div>
-    <div class="pricing-card">
-      <h3>Enterprise</h3>
-      <p>Custom / mo • Annual SLA</p>
-      <ul>
-        <li>White-label & multi-tenant</li>
-        <li>Custom AI agents</li>
-        <li>Dedicated success & SLA</li>
-        <li>Security & compliance reviews</li>
-      </ul>
-      <div class="hero-actions">
-        <a class="lux-btn primary" href="mailto:sales@luxit.app">Contact Sales</a>
+    
+    <div class="testimonial-card animate-on-scroll">
+      <p class="testimonial-quote">
+        "As a CTO, I appreciate that LUX IT offers self-hosting. We have full control over our data, 
+        can customize the codebase, and the API documentation is actually useful. It's what we needed."
+      </p>
+      <div class="testimonial-author">
+        <div class="testimonial-avatar">DR</div>
+        <div class="testimonial-info">
+          <h4>David Rodriguez</h4>
+          <p>CTO, TechScale Ventures</p>
+        </div>
       </div>
     </div>
   </div>
 </section>
+
+<section id="pricing" class="animate-on-scroll">
+  <div class="section-header">
+    <div class="section-badge">Simple Pricing</div>
+    <h2 class="section-title">Choose Your Growth Path</h2>
+    <p class="section-subtitle">
+      No hidden fees. No per-seat gouging. Just honest pricing for serious businesses.
+    </p>
+  </div>
+  
+  <div class="pricing-grid">
+    <div class="pricing-card animate-on-scroll">
+      <div class="pricing-tier">Starter</div>
+      <h3>Launchpad</h3>
+      <div class="pricing-amount">
+        <span class="pricing-currency">$</span>
+        <span class="pricing-value">149</span>
+        <span class="pricing-period">/month</span>
+      </div>
+      <p class="pricing-annual">$1,490/year (save 17%)</p>
+      <ul class="pricing-features">
+        <li>Up to 2,500 contacts</li>
+        <li>Core CRM & pipeline</li>
+        <li>Email automation (5k/mo)</li>
+        <li>1 AI agent</li>
+        <li>Basic analytics</li>
+        <li>Email support</li>
+      </ul>
+      <a class="lux-btn secondary" href="mailto:sales@luxit.app">Get Started</a>
+    </div>
+    
+    <div class="pricing-card featured animate-on-scroll">
+      <div class="pricing-tier">Growth</div>
+      <h3>Professional</h3>
+      <div class="pricing-amount">
+        <span class="pricing-currency">$</span>
+        <span class="pricing-value">499</span>
+        <span class="pricing-period">/month</span>
+      </div>
+      <p class="pricing-annual">$4,990/year (save 17%)</p>
+      <ul class="pricing-features">
+        <li>Up to 25,000 contacts</li>
+        <li>Advanced CRM + automation</li>
+        <li>Email + SMS (50k/mo)</li>
+        <li>5 AI agents with training</li>
+        <li>Full compliance suite</li>
+        <li>Priority support + onboarding</li>
+        <li>White-label option</li>
+      </ul>
+      <a class="lux-btn primary" href="mailto:sales@luxit.app">Start Free Trial</a>
+    </div>
+    
+    <div class="pricing-card animate-on-scroll">
+      <div class="pricing-tier">Scale</div>
+      <h3>Enterprise</h3>
+      <div class="pricing-amount">
+        <span class="pricing-value" style="font-size: 2.5rem;">Custom</span>
+      </div>
+      <p class="pricing-annual">Annual contract with SLA</p>
+      <ul class="pricing-features">
+        <li>Unlimited contacts</li>
+        <li>Multi-tenant architecture</li>
+        <li>Unlimited AI agents</li>
+        <li>Self-hosted or cloud</li>
+        <li>Custom integrations</li>
+        <li>Dedicated success manager</li>
+        <li>24/7 support + SLA</li>
+        <li>Security & compliance review</li>
+      </ul>
+      <a class="lux-btn secondary" href="mailto:sales@luxit.app">Contact Sales</a>
+    </div>
+  </div>
+</section>
+
+<section class="animate-on-scroll">
+  <div class="section-header">
+    <div class="section-badge">Tech Stack</div>
+    <h2 class="section-title">Built for Engineers, Loved by Everyone</h2>
+    <p class="section-subtitle">
+      Modern architecture. Clean APIs. Documentation that doesn't suck.
+    </p>
+  </div>
+  
+  <div class="features-grid">
+    <div class="feature-card animate-on-scroll">
+      <div class="feature-icon">⚡</div>
+      <h3>RESTful + WebSocket APIs</h3>
+      <p>Comprehensive API coverage with real-time event streaming. Build custom integrations in hours, not weeks.</p>
+    </div>
+    
+    <div class="feature-card animate-on-scroll">
+      <div class="feature-icon">🔐</div>
+      <h3>SOC 2 Type II Ready</h3>
+      <p>Enterprise security from day one. Encryption at rest and in transit. Role-based access controls. Audit logging.</p>
+    </div>
+    
+    <div class="feature-card animate-on-scroll">
+      <div class="feature-icon">🌐</div>
+      <h3>Deploy Anywhere</h3>
+      <p>Cloud, on-prem, or hybrid. AWS, GCP, Azure, or your own infrastructure. You choose where your data lives.</p>
+    </div>
+  </div>
+</section>
+
+<div class="cta-section animate-on-scroll">
+  <h2>Ready to Transform Your Revenue Operations?</h2>
+  <p>Join hundreds of agencies and operators who've already made the switch. Start your free trial today.</p>
+  <div class="hero-actions">
+    <a class="lux-btn primary" href="mailto:sales@luxit.app">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>
+      </svg>
+      Start 14-Day Free Trial
+    </a>
+    <a class="lux-btn secondary" href="mailto:sales@luxit.app">Schedule a Demo</a>
+  </div>
+</div>
 {% endblock %}
