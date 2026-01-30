@@ -34,6 +34,7 @@ ALLOWED_HOSTS = {
 
 def create_app(testing: bool = False):
     app = Flask(__name__, template_folder="templates", static_folder="static")
+    app.testing = testing
 
     secret_key = (
         os.getenv("SESSION_SECRET")
@@ -41,7 +42,10 @@ def create_app(testing: bool = False):
         or ("ci-test-secret" if testing else None)
     )
     if not secret_key:
-        raise RuntimeError("SESSION_SECRET or SECRET_KEY must be set")
+        if testing:
+            secret_key = "luxit-test-secret"
+        else:
+            raise RuntimeError("SESSION_SECRET or SECRET_KEY must be set")
 
     app.config.update(
         SECRET_KEY=secret_key,
