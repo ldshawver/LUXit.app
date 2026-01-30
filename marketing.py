@@ -6,7 +6,7 @@ from jinja2 import TemplateNotFound
 
 logger = logging.getLogger(__name__)
 
-marketing_bp = Blueprint("marketing", __name__, template_folder="marketing/templates")
+marketing_bp = Blueprint("marketing", __name__, template_folder="templates")
 
 
 @marketing_bp.route("/")
