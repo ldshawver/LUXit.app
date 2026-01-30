@@ -1,6 +1,8 @@
 """
 Application entry point.
 """
+print("🔥 LOADED app.py FROM:", __file__)
+
 import os
 from uuid import uuid4
 
@@ -127,3 +129,5 @@ app = create_app(testing=os.getenv("FLASK_ENV") == "testing")
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)
+    
+
