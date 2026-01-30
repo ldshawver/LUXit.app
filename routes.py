@@ -1,38 +1,116 @@
 import csv
 import io
 import base64
+import logging
 import os
 from datetime import datetime, timedelta
 from flask import Blueprint, render_template, request, flash, redirect, url_for, jsonify, make_response, send_file, current_app, g
 from flask_login import login_required, current_user
 from sqlalchemy import or_, case, text
 from extensions import db, csrf
-from models import (Contact, Campaign, EmailTemplate, CampaignRecipient, EmailTracking, 
-                    BrandKit, EmailComponent, Poll, PollResponse, ABTest, Automation, 
-                    AutomationStep, SMSCampaign, SMSRecipient, SMSTemplate, SocialPost, Segment, 
-                    SegmentMember, WebForm, FormSubmission, Event, EventRegistration, EventTicket,
-                    Product, Order, CalendarEvent, AutomationTemplate, AutomationExecution,
-                    AutomationAction, LandingPage, NewsletterArchive, NonOpenerResend,
-                    SEOKeyword, SEOBacklink, SEOCompetitor, SEOAudit, SEOPage,
-                    TicketPurchase, EventCheckIn, SocialMediaAccount, SocialMediaSchedule,
-                    AutomationTest, AutomationTriggerLibrary, AutomationABTest, Company, user_company,
-                    Deal, LeadScore, PersonalizationRule, KeywordResearch)
-from email_service import EmailService
-from utils import validate_email, safe_count
-from tracking import decode_tracking_data, record_email_event
-import logging
+try:
+    from models import (
+        Contact, Campaign, EmailTemplate, CampaignRecipient, EmailTracking,
+        BrandKit, EmailComponent, Poll, PollResponse, ABTest, Automation,
+        AutomationStep, SMSCampaign, SMSRecipient, SMSTemplate, SocialPost, Segment,
+        SegmentMember, WebForm, FormSubmission, Event, EventRegistration, EventTicket,
+        Product, Order, CalendarEvent, AutomationTemplate, AutomationExecution,
+        AutomationAction, LandingPage, NewsletterArchive, NonOpenerResend,
+        SEOKeyword, SEOBacklink, SEOCompetitor, SEOAudit, SEOPage,
+        TicketPurchase, EventCheckIn, SocialMediaAccount, SocialMediaSchedule,
+        AutomationTest, AutomationTriggerLibrary, AutomationABTest, Company, user_company,
+        Deal, LeadScore, PersonalizationRule, KeywordResearch,
+    )
+    MODELS_AVAILABLE = True
+except ImportError as exc:
+    logging.getLogger(__name__).warning("Core models unavailable; disabling dependent routes: %s", exc)
+    MODELS_AVAILABLE = False
+    Contact = Campaign = EmailTemplate = CampaignRecipient = EmailTracking = None
+    BrandKit = EmailComponent = Poll = PollResponse = ABTest = Automation = None
+    AutomationStep = SMSCampaign = SMSRecipient = SMSTemplate = SocialPost = None
+    Segment = SegmentMember = WebForm = FormSubmission = Event = None
+    EventRegistration = EventTicket = Product = Order = CalendarEvent = None
+    AutomationTemplate = AutomationExecution = AutomationAction = LandingPage = None
+    NewsletterArchive = NonOpenerResend = SEOKeyword = SEOBacklink = None
+    SEOCompetitor = SEOAudit = SEOPage = TicketPurchase = EventCheckIn = None
+    SocialMediaAccount = SocialMediaSchedule = AutomationTest = None
+    AutomationTriggerLibrary = AutomationABTest = Company = user_company = None
+    Deal = LeadScore = PersonalizationRule = KeywordResearch = None
+try:
+    from email_service import EmailService
+except ImportError as exc:
+    logging.getLogger(__name__).warning("EmailService unavailable: %s", exc)
+    EmailService = None
+try:
+    from utils import validate_email, safe_count
+except ImportError as exc:
+    logging.getLogger(__name__).warning("Utils unavailable: %s", exc)
+    validate_email = None
+    safe_count = None
+try:
+    from tracking import decode_tracking_data, record_email_event
+except ImportError as exc:
+    logging.getLogger(__name__).warning("Tracking helpers unavailable: %s", exc)
+    decode_tracking_data = None
+    record_email_event = None
 import json
-from ai_agent import get_lux_agent
-from seo_service import seo_service
-from error_logger import log_application_error, ApplicationDiagnostics, ErrorLog
-from log_reader import LogReader
-from auto_repair_service import AutoRepairService
-from error_fixes import ErrorFixService
-from ai_code_fixer import AICodeFixer
-from ai_action_executor import AIActionExecutor
-from services.config_status_service import ConfigStatusService
-from services.sms_service import SMSService
-from services.scheduling_service import SchedulingService
+try:
+    from ai_agent import get_lux_agent
+except ImportError as exc:
+    logging.getLogger(__name__).warning("AI agent unavailable: %s", exc)
+    get_lux_agent = None
+try:
+    from seo_service import seo_service
+except ImportError as exc:
+    logging.getLogger(__name__).warning("SEO service unavailable: %s", exc)
+    seo_service = None
+try:
+    from error_logger import log_application_error, ApplicationDiagnostics, ErrorLog
+except ImportError as exc:
+    logging.getLogger(__name__).warning("Error logger unavailable: %s", exc)
+    log_application_error = None
+    ApplicationDiagnostics = None
+    ErrorLog = None
+try:
+    from log_reader import LogReader
+except ImportError as exc:
+    logging.getLogger(__name__).warning("Log reader unavailable: %s", exc)
+    LogReader = None
+try:
+    from auto_repair_service import AutoRepairService
+except ImportError as exc:
+    logging.getLogger(__name__).warning("Auto repair service unavailable: %s", exc)
+    AutoRepairService = None
+try:
+    from error_fixes import ErrorFixService
+except ImportError as exc:
+    logging.getLogger(__name__).warning("Error fixes unavailable: %s", exc)
+    ErrorFixService = None
+try:
+    from ai_code_fixer import AICodeFixer
+except ImportError as exc:
+    logging.getLogger(__name__).warning("AI code fixer unavailable: %s", exc)
+    AICodeFixer = None
+try:
+    from ai_action_executor import AIActionExecutor
+except ImportError as exc:
+    logging.getLogger(__name__).warning("AI action executor unavailable: %s", exc)
+    AIActionExecutor = None
+try:
+    from services.config_status_service import ConfigStatusService
+except ImportError as exc:
+    logging.getLogger(__name__).warning("Config status service unavailable: %s", exc)
+    ConfigStatusService = None
+try:
+    from services.sms_service import SMSService
+except ImportError as exc:
+    logging.getLogger(__name__).warning("SMS service unavailable: %s", exc)
+    SMSService = None
+try:
+    from services.scheduling_service import SchedulingService
+except ImportError as exc:
+    logging.getLogger(__name__).warning("Scheduling service unavailable: %s", exc)
+    SchedulingService = None
 from uuid import uuid4
 
 logger = logging.getLogger(__name__)
@@ -45,7 +123,7 @@ def _safe_int(value, default):
         return default
 
 
-main_bp = Blueprint('main', __name__)
+main_bp = Blueprint('main', __name__, template_folder="dashboard/templates")
 
 def get_app_version() -> str:
     version_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "VERSION")
@@ -229,91 +307,16 @@ from sqlalchemy.exc import SQLAlchemyError
 @main_bp.route('/dashboard')
 @login_required
 def dashboard():
-    try:
-        db.session.rollback()
-    except SQLAlchemyError:
-        pass
-    """Dashboard with overview statistics"""
-    total_contacts = safe_count(
-        Contact.query.filter_by(is_active=True),
-        context="active contacts"
+    ai_status = "enabled" if os.getenv("OPENAI_API_KEY") else "disabled"
+    scheduler_status = "running" if _scheduler_status() == "running" else "disabled"
+    return render_template(
+        'dashboard/index.html',
+        user=current_user,
+        app_version=get_app_version(),
+        plan_status="Not configured",
+        ai_status=ai_status,
+        scheduler_status=scheduler_status,
     )
-    total_campaigns = safe_count(
-        Campaign.query,
-        context="campaigns"
-    )
-    active_campaigns = safe_count(
-        Campaign.query.filter_by(status='sending'),
-        context="active campaigns"
-    )
-    try:
-        recent_campaigns = Campaign.query.order_by(Campaign.created_at.desc()).limit(5).all()
-    except Exception as exc:
-        logger.warning("Dashboard recent campaigns query failed: %s", exc)
-        db.session.rollback()
-        recent_campaigns = []
-    
-    # Email statistics
-    total_sent = safe_count(
-        db.session.query(CampaignRecipient).filter_by(status='sent'),
-        context="sent campaign recipients"
-    )
-    total_failed = safe_count(
-        db.session.query(CampaignRecipient).filter_by(status='failed'),
-        context="failed campaign recipients"
-    )
-    
-    # Version 4.1 & 4.2 Feature Metrics
-    ai_campaigns = safe_count(
-        Campaign.query.filter_by(ai_generated=True),
-        context="ai_generated campaigns"
-    )
-    utm_campaigns = safe_count(
-        Campaign.query.filter(Campaign.utm_keyword.isnot(None)),
-        context="utm_keyword campaigns"
-    )
-    social_with_media = safe_count(
-        SocialPost.query.filter(SocialPost.media_urls.isnot(None)),
-        context="social media posts with media"
-    )
-    total_social_posts = safe_count(
-        SocialPost.query,
-        context="social posts"
-    )
-    
-    try:
-        current_company = current_user.get_default_company()
-    except Exception as exc:
-        logger.warning("Dashboard company lookup failed: %s", exc)
-        db.session.rollback()
-        current_company = None
-    
-    if current_company:
-        try:
-            config_alerts = ConfigStatusService.get_dashboard_alerts(current_company)
-        except Exception as exc:
-            logger.warning("Dashboard config alerts failed: %s", exc)
-            db.session.rollback()
-            config_alerts = []
-    else:
-        config_alerts = []
-    
-    app_version = get_app_version()
-
-    return render_template('dashboard.html',
-                         total_contacts=total_contacts,
-                         total_campaigns=total_campaigns,
-                         active_campaigns=active_campaigns,
-                         recent_campaigns=recent_campaigns,
-                         total_sent=total_sent,
-                         total_failed=total_failed,
-                         ai_campaigns=ai_campaigns,
-                         utm_campaigns=utm_campaigns,
-                         social_with_media=social_with_media,
-                         total_social_posts=total_social_posts,
-                         current_company=current_company,
-                         config_alerts=config_alerts,
-                         app_version=app_version)
 
 @main_bp.route('/email-hub')
 @login_required
@@ -6465,13 +6468,15 @@ def health_check():
         logger.error(f"Health check failed: {exc}")
     payload = {
         "status": "ok" if db_ok else "degraded",
+        "db": "connected" if db_ok else "error",
+        "auth": "ready" if "auth" in current_app.blueprints else "unavailable",
+        "ai": "enabled" if os.getenv("OPENAI_API_KEY") else "disabled",
         "version": get_app_version(),
-        "db_ok": db_ok,
         "timestamp": datetime.utcnow().isoformat()
     }
     if db_error:
         payload["db_error"] = db_error[:200]
-    return jsonify(payload), 200 if db_ok else 500
+    return jsonify(payload), 200 if db_ok else 503
 
 
 def _feature_config_summary():
@@ -8837,7 +8842,11 @@ def zapier_contact_webhook():
         }), 500
 
 # ============= BLOG POST ROUTES =============
-from models import BlogPost, ContactActivity, AnalyticsData
+try:
+    from models import BlogPost, ContactActivity, AnalyticsData
+except ImportError as exc:
+    logger.warning("Blog models unavailable: %s", exc)
+    BlogPost = ContactActivity = AnalyticsData = None
 
 @main_bp.route('/blog')
 @login_required
@@ -9705,7 +9714,11 @@ print("  - POST /api/agents/<type>/suggestions (get AI suggestions)")
 # =============================================================================
 # SUBSCRIBER SYNC ROUTES
 # =============================================================================
-from services.subscriber_sync_service import SubscriberSyncService
+try:
+    from services.subscriber_sync_service import SubscriberSyncService
+except ImportError as exc:
+    logger.warning("Subscriber sync service unavailable: %s", exc)
+    SubscriberSyncService = None
 
 @main_bp.route('/api/subscribers/sync', methods=['POST'])
 @login_required
@@ -9914,7 +9927,12 @@ print("✓ Newsletter search & subscriber routes loaded")
 # APPROVAL QUEUE & FEATURE TOGGLE ROUTES
 # =============================================================================
 
-from services.approval_service import ApprovalService, FeatureToggleService
+try:
+    from services.approval_service import ApprovalService, FeatureToggleService
+except ImportError as exc:
+    logger.warning("Approval services unavailable: %s", exc)
+    ApprovalService = None
+    FeatureToggleService = None
 
 @main_bp.route('/approval-queue')
 @login_required

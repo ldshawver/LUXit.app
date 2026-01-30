@@ -1,4 +1,5 @@
 """Application entry point."""
+import logging
 import os
 from uuid import uuid4
 
@@ -16,12 +17,16 @@ ALLOWED_HOSTS = {"luxit.app", "www.luxit.app", "app.luxit.app", "api.luxit.app"}
 load_dotenv("/etc/lux-marketing/lux.env")
 
 
-def create_app():
+def create_app(testing: bool = False):
     app = Flask(__name__, template_folder="templates", static_folder="static")
+    app.testing = testing
 
     secret_key = os.getenv("SESSION_SECRET") or os.getenv("SECRET_KEY")
     if not secret_key:
-        raise RuntimeError("SESSION_SECRET or SECRET_KEY must be set")
+        if testing:
+            secret_key = "luxit-test-secret"
+        else:
+            raise RuntimeError("SESSION_SECRET or SECRET_KEY must be set")
 
     app.config.update(
         SECRET_KEY=secret_key,
@@ -77,12 +82,15 @@ def create_app():
         try:
             if not current_user.is_authenticated:
                 return {}
+            import models
+            if not hasattr(models, "Company"):
+                return {}
             return {
                 "current_company": current_user.get_default_company(),
                 "user_companies": current_user.get_companies_safe(),
             }
-        except SQLAlchemyError as exc:
-            app.logger.error("Template context DB error: %s", exc)
+        except Exception as exc:
+            app.logger.error("Template context error: %s", exc)
             try:
                 db.session.rollback()
             except Exception:
@@ -114,7 +122,15 @@ def create_app():
         from auth import login as auth_login
         return auth_login()
 
+    @app.route("/logout")
+    def logout():
+        from auth import logout as auth_logout
+        return auth_logout()
+
     return app
+
+
+app = create_app(testing=os.getenv("FLASK_ENV") == "testing")
 
 
 if __name__ == "__main__":
