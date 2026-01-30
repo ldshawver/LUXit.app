@@ -4,18 +4,11 @@ Application entry point.
 import os
 from uuid import uuid4
 
-from dotenv import load_dotenv
 from flask import Flask, g, redirect, request, url_for
 from flask_login import LoginManager
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 from extensions import db, csrf
-
-# --------------------------------------------------
-# Environment
-# --------------------------------------------------
-
-load_dotenv("/etc/lux-marketing/lux.env")
 
 # --------------------------------------------------
 # Application factory
