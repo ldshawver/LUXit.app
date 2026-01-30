@@ -128,7 +128,6 @@ def create_app(testing: bool = False):
 # 🔑 REQUIRED EXPORT (CI + GUNICORN)
 # --------------------------------------------------
 
-app = create_app(testing=os.getenv("FLASK_ENV") == "testing")
 
 # --------------------------------------------------
 # Local dev
