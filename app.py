@@ -60,14 +60,21 @@ def create_app(testing: bool = False):
     )
 
     # ---- Proxy awareness ----
-    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_port=1)
+    app.wsgi_app = ProxyFix(
+        app.wsgi_app,
+        x_for=1,
+        x_proto=1,
+        x_host=1,
+        x_port=1,
+    )
 
     # ---- Extensions ----
     db.init_app(app)
     csrf.init_app(app)
 
-    # ---- Login ----
-    login_manager = LoginManager(app)
+    # ---- Login manager ----
+    login_manager = LoginManager()
+    login_manager.init_app(app)
     login_manager.login_view = "auth.login"
     login_manager.login_message = None
 
@@ -106,9 +113,10 @@ def create_app(testing: bool = False):
     from marketing import marketing_bp
 
     app.register_blueprint(main_bp)
-    app.register_blueprint(auth_bp, url_prefix="/auth")
+    app.register_blueprint(auth_bp)
     app.register_blueprint(marketing_bp)
 
+    # ---- Public root ----
     @app.route("/")
     def marketing_home():
         return render_template("marketing/index.html")
@@ -117,11 +125,10 @@ def create_app(testing: bool = False):
 
 
 # --------------------------------------------------
-# 🔑 REQUIRED EXPORT (THIS IS WHAT CI NEEDS)
+# 🔑 REQUIRED EXPORT (CI + GUNICORN)
 # --------------------------------------------------
 
 app = create_app(testing=os.getenv("FLASK_ENV") == "testing")
-
 
 # --------------------------------------------------
 # Local dev
@@ -129,5 +136,3 @@ app = create_app(testing=os.getenv("FLASK_ENV") == "testing")
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)
-    
-
