@@ -66,7 +66,7 @@ def create_app(testing: bool = False):
         from models import User
         return User.query.get(int(user_id))
 
-    from routes import main_bp
+    from main import main_bp
     from auth import auth_bp
     from marketing import marketing_bp
 
