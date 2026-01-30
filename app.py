@@ -70,15 +70,20 @@ def create_app(testing: bool = False):
         from models import User
         return User.query.get(int(user_id))
 
-    from main import main_bp
-    from auth import auth_bp
-    from marketing import marketing_bp
+ from main import main_bp
+from auth import auth_bp
+from marketing import marketing_bp
 
-    app.register_blueprint(main_bp)
-    app.register_blueprint(auth_bp)
-    app.register_blueprint(marketing_bp)
+app.register_blueprint(main_bp)
+app.register_blueprint(auth_bp)
+app.register_blueprint(marketing_bp)
 
-    return app
+# ---- Health check (CI + load balancers) ----
+@app.route("/health")
+def health():
+    return {"status": "ok"}, 200
+
+return app
 
 
 # --------------------------------------------------
