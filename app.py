@@ -1,4 +1,5 @@
 """Application entry point."""
+import logging
 import os
 from uuid import uuid4
 
@@ -77,12 +78,15 @@ def create_app():
         try:
             if not current_user.is_authenticated:
                 return {}
+            import models
+            if not hasattr(models, "Company"):
+                return {}
             return {
                 "current_company": current_user.get_default_company(),
                 "user_companies": current_user.get_companies_safe(),
             }
-        except SQLAlchemyError as exc:
-            app.logger.error("Template context DB error: %s", exc)
+        except Exception as exc:
+            app.logger.error("Template context error: %s", exc)
             try:
                 db.session.rollback()
             except Exception:
@@ -114,7 +118,15 @@ def create_app():
         from auth import login as auth_login
         return auth_login()
 
+    @app.route("/logout")
+    def logout():
+        from auth import logout as auth_logout
+        return auth_logout()
+
     return app
+
+
+app = create_app()
 
 
 if __name__ == "__main__":
