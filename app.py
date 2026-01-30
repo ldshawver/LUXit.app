@@ -1,5 +1,6 @@
-"""Application entry point."""
-import logging
+"""
+Application entry point.
+"""
 import os
 from uuid import uuid4
 
@@ -12,7 +13,7 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 from extensions import db, csrf
 
 # --------------------------------------------------
-# Environment & constants
+# Environment
 # --------------------------------------------------
 
 load_dotenv("/etc/lux-marketing/lux.env")
@@ -29,14 +30,14 @@ ALLOWED_HOSTS = {
 # Application factory
 # --------------------------------------------------
 
-def create_app():
+def create_app(testing: bool = False):
     app = Flask(__name__, template_folder="templates", static_folder="static")
 
-    # ---- Security / session ----
+    # ---- Secret handling (CI SAFE) ----
     secret_key = (
         os.getenv("SESSION_SECRET")
         or os.getenv("SECRET_KEY")
-        or ("test-secret-key" if os.getenv("FLASK_ENV") == "testing" else None)
+        or ("ci-test-secret" if testing else None)
     )
 
     if not secret_key:
@@ -44,35 +45,27 @@ def create_app():
 
     app.config.update(
         SECRET_KEY=secret_key,
+        TESTING=testing,
         PREFERRED_URL_SCHEME="https",
-        SESSION_COOKIE_SECURE=True,
+        SESSION_COOKIE_SECURE=not testing,
         SESSION_COOKIE_SAMESITE="None",
         WTF_CSRF_TIME_LIMIT=3600,
+        SQLALCHEMY_DATABASE_URI=os.getenv(
+            "DATABASE_URL",
+            "sqlite:///email_marketing.db",
+        ),
+        SQLALCHEMY_TRACK_MODIFICATIONS=False,
     )
 
-    # ---- Database ----
-    app.config["SQLALCHEMY_DATABASE_URI"] = os.getenv(
-        "DATABASE_URL",
-        "sqlite:///email_marketing.db",
-    )
-    app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
-
-    # ---- Proxy / HTTPS awareness ----
-    app.wsgi_app = ProxyFix(
-        app.wsgi_app,
-        x_for=1,
-        x_proto=1,
-        x_host=1,
-        x_port=1,
-    )
+    # ---- Proxy awareness ----
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_port=1)
 
     # ---- Extensions ----
     db.init_app(app)
     csrf.init_app(app)
 
-    # ---- Login manager ----
-    login_manager = LoginManager()
-    login_manager.init_app(app)
+    # ---- Login ----
+    login_manager = LoginManager(app)
     login_manager.login_view = "auth.login"
     login_manager.login_message = None
 
@@ -81,15 +74,11 @@ def create_app():
         from models import User
         try:
             return User.query.get(int(user_id))
-        except SQLAlchemyError as exc:
-            app.logger.error("User loader DB error: %s", exc)
-            try:
-                db.session.rollback()
-            except Exception:
-                pass
+        except SQLAlchemyError:
+            db.session.rollback()
             return None
 
-    # ---- Canonical host enforcement + request id ----
+    # ---- Request hooks ----
     @app.before_request
     def canonical_and_request_id():
         g.request_id = request.headers.get("X-Request-ID", str(uuid4()))
@@ -109,39 +98,6 @@ def create_app():
                 301,
             )
 
-        return None
-
-    # ---- Template context ----
-    @app.context_processor
-    def inject_company_context():
-        from flask_login import current_user
-        try:
-            if not current_user.is_authenticated:
-                return {}
-            import models
-            if not hasattr(models, "Company"):
-                return {}
-            return {
-                "current_company": current_user.get_default_company(),
-                "user_companies": current_user.get_companies_safe(),
-            }
-        except Exception as exc:
-            app.logger.error("Template context error: %s", exc)
-            try:
-                db.session.rollback()
-            except Exception:
-                pass
-            return {}
-
-    # ---- Rollback on request error ----
-    @app.teardown_request
-    def rollback_on_error(_exception=None):
-        if _exception:
-            try:
-                db.session.rollback()
-            except Exception:
-                pass
-
     # ---- Blueprints ----
     from routes import main_bp
     from auth import auth_bp
@@ -151,35 +107,23 @@ def create_app():
     app.register_blueprint(auth_bp, url_prefix="/auth")
     app.register_blueprint(marketing_bp)
 
-    # ---- Routes ----
     @app.route("/")
     def marketing_home():
         return render_template("marketing/index.html")
 
-    @app.route("/login")
-    def login_redirect():
-        from auth import login as auth_login
-        return auth_login()
-
-    @app.route("/logout")
-    def logout():
-        from auth import logout as auth_logout
-        return auth_logout()
-
     return app
 
-# --------------------------------------------------
-# 🔑 EXPORT APP (CI + GUNICORN SAFE)
-# --------------------------------------------------
-
-app = create_app()
 
 # --------------------------------------------------
-# Local dev entry point
+# 🔑 REQUIRED EXPORT (THIS IS WHAT CI NEEDS)
 # --------------------------------------------------
 
-app = create_app()
+app = create_app(testing=os.getenv("FLASK_ENV") == "testing")
 
+
+# --------------------------------------------------
+# Local dev
+# --------------------------------------------------
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)
