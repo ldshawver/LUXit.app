@@ -28,10 +28,6 @@ jobs:
             test -d /app || { echo "❌ /app missing"; exit 1; }
             cd /app
 
-            echo "=== GIT STATUS ==="
-            git rev-parse --is-inside-work-tree
-            git rev-parse HEAD
-
             echo "=== ACTIVATE VENV ==="
             test -d venv || { echo "❌ venv missing"; exit 1; }
             source venv/bin/activate
