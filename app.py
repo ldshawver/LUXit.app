@@ -33,10 +33,15 @@ def create_app():
     app = Flask(__name__, template_folder="templates", static_folder="static")
 
     # ---- Security / session ----
-    secret_key = os.getenv("SESSION_SECRET") or os.getenv("SECRET_KEY")
-    if not secret_key:
-        raise RuntimeError("SESSION_SECRET or SECRET_KEY must be set")
+  secret_key = (
+    os.getenv("SESSION_SECRET")
+    or os.getenv("SECRET_KEY")
+    or ("test-secret-key" if os.getenv("FLASK_ENV") == "testing" else None)
+)
 
+if not secret_key:
+    raise RuntimeError("SESSION_SECRET or SECRET_KEY must be set")
+    
     app.config.update(
         SECRET_KEY=secret_key,
         PREFERRED_URL_SCHEME="https",
