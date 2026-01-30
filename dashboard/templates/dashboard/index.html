@@ -1,0 +1,38 @@
+{% extends "dashboard/base.html" %}
+
+{% block title %}Dashboard • LUXit{% endblock %}
+
+{% block content %}
+<section class="card" style="margin-bottom: 24px;">
+  <h1>Welcome{% if user and user.first_name %}, {{ user.first_name }}{% endif %}</h1>
+  <p class="muted">This is your live LUXit platform. Everything shown here is production-ready.</p>
+  {% if app_version %}<span class="pill">Version {{ app_version }}</span>{% endif %}
+</section>
+
+<section class="grid" style="margin-bottom: 24px;">
+  <div class="card">
+    <h3>Account status</h3>
+    <p class="muted">Plan: {{ plan_status }}</p>
+    <p class="muted">AI enabled: {{ ai_status }}</p>
+    <p class="muted">Scheduler: {{ scheduler_status }}</p>
+  </div>
+  <div class="card">
+    <h3>Campaign summary</h3>
+    <p class="muted">Campaign data is unavailable until core campaign models are activated.</p>
+    <span class="pill">Coming Soon</span>
+  </div>
+  <div class="card">
+    <h3>Analytics snapshot</h3>
+    <p class="muted">Analytics are disabled until tracking sources are configured.</p>
+    <span class="pill">Coming Soon</span>
+  </div>
+</section>
+
+<section class="card">
+  <h3>Primary actions</h3>
+  <div class="actions" style="margin-top: 12px;">
+    <a class="btn-link" href="/contact">Settings</a>
+    <a class="btn-link" href="/auth/logout">Log out</a>
+  </div>
+</section>
+{% endblock %}

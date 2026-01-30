@@ -118,6 +118,9 @@ def create_app():
         try:
             if not current_user.is_authenticated:
                 return {}
+            import models
+            if not hasattr(models, "Company"):
+                return {}
             return {
                 "current_company": current_user.get_default_company(),
                 "user_companies": current_user.get_companies_safe(),
@@ -158,6 +161,11 @@ def create_app():
         from auth import login as auth_login
         return auth_login()
 
+    @app.route("/logout")
+    def logout():
+        from auth import logout as auth_logout
+        return auth_logout()
+
     return app
 
 # --------------------------------------------------
@@ -169,6 +177,9 @@ app = create_app()
 # --------------------------------------------------
 # Local dev entry point
 # --------------------------------------------------
+
+app = create_app()
+
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)
