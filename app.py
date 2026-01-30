@@ -81,7 +81,7 @@ def create_app(testing: bool = False):
         return {"status": "ok"}, 200
 
     # ---- Side effects (PROD ONLY) ----
-    if not testing:
+    if False:
         with app.app_context():
             import models
             db.create_all()
