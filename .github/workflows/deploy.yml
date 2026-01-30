@@ -26,10 +26,11 @@ jobs:
 
             echo "=== VERIFY APP DIRECTORY ==="
             test -d /app || { echo "❌ /app missing"; exit 1; }
-            cd /app
+            cd /app/releases
+            LATEST_RELEASE=$(ls -td release_* | head -n 1)
+            cd "$LATEST_RELEASE"
 
-            echo "=== ACTIVATE VENV ==="
-            test -d venv || { echo "❌ venv missing"; exit 1; }
+            test -d venv || { echo "❌ venv missing in $LATEST_RELEASE"; exit 1; }
             source venv/bin/activate
 
             echo "=== PYTHON COMPILE CHECK (ALL FILES) ==="
