@@ -4,46 +4,73 @@ import os
 from uuid import uuid4
 
 from dotenv import load_dotenv
-from flask import Flask, g, redirect, render_template, request, url_for
+from flask import Flask, g, redirect, render_template, request
 from flask_login import LoginManager
 from sqlalchemy.exc import SQLAlchemyError
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 from extensions import db, csrf
 
-CANONICAL_HOST = os.environ.get("CANONICAL_HOST", "app.luxit.app")
-ALLOWED_HOSTS = {"luxit.app", "www.luxit.app", "app.luxit.app", "api.luxit.app"}
+# --------------------------------------------------
+# Environment & constants
+# --------------------------------------------------
 
 load_dotenv("/etc/lux-marketing/lux.env")
 
+CANONICAL_HOST = os.environ.get("CANONICAL_HOST", "luxit.app")
+ALLOWED_HOSTS = {
+    "luxit.app",
+    "www.luxit.app",
+    "app.luxit.app",
+    "api.luxit.app",
+}
+
+# --------------------------------------------------
+# Application factory
+# --------------------------------------------------
 
 def create_app():
     app = Flask(__name__, template_folder="templates", static_folder="static")
 
-    secret_key = os.getenv("SESSION_SECRET") or os.getenv("SECRET_KEY")
+    # ---- Security / session ----
+    secret_key = (
+        os.getenv("SESSION_SECRET")
+        or os.getenv("SECRET_KEY")
+        or ("test-secret-key" if os.getenv("FLASK_ENV") == "testing" else None)
+    )
+
     if not secret_key:
         raise RuntimeError("SESSION_SECRET or SECRET_KEY must be set")
 
     app.config.update(
         SECRET_KEY=secret_key,
-        SERVER_NAME=CANONICAL_HOST,
         PREFERRED_URL_SCHEME="https",
         SESSION_COOKIE_SECURE=True,
         SESSION_COOKIE_SAMESITE="None",
         WTF_CSRF_TIME_LIMIT=3600,
     )
 
+    # ---- Database ----
     app.config["SQLALCHEMY_DATABASE_URI"] = os.getenv(
         "DATABASE_URL",
         "sqlite:///email_marketing.db",
     )
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
-    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_port=1)
+    # ---- Proxy / HTTPS awareness ----
+    app.wsgi_app = ProxyFix(
+        app.wsgi_app,
+        x_for=1,
+        x_proto=1,
+        x_host=1,
+        x_port=1,
+    )
 
+    # ---- Extensions ----
     db.init_app(app)
     csrf.init_app(app)
 
+    # ---- Login manager ----
     login_manager = LoginManager()
     login_manager.init_app(app)
     login_manager.login_view = "auth.login"
@@ -62,16 +89,29 @@ def create_app():
                 pass
             return None
 
+    # ---- Canonical host enforcement + request id ----
     @app.before_request
     def canonical_and_request_id():
         g.request_id = request.headers.get("X-Request-ID", str(uuid4()))
+
         if app.testing:
             return None
-        host = (request.headers.get("X-Forwarded-Host") or request.host or "").split(":")[0].lower()
+
+        host = (
+            request.headers.get("X-Forwarded-Host")
+            or request.host
+            or ""
+        ).split(":")[0].lower()
+
         if host and host not in ALLOWED_HOSTS:
-            return redirect(f"https://{CANONICAL_HOST}{request.full_path.rstrip('?')}", 301)
+            return redirect(
+                f"https://{CANONICAL_HOST}{request.full_path.rstrip('?')}",
+                301,
+            )
+
         return None
 
+    # ---- Template context ----
     @app.context_processor
     def inject_company_context():
         from flask_login import current_user
@@ -93,6 +133,7 @@ def create_app():
                 pass
             return {}
 
+    # ---- Rollback on request error ----
     @app.teardown_request
     def rollback_on_error(_exception=None):
         if _exception:
@@ -101,6 +142,7 @@ def create_app():
             except Exception:
                 pass
 
+    # ---- Blueprints ----
     from routes import main_bp
     from auth import auth_bp
     from marketing import marketing_bp
@@ -109,12 +151,13 @@ def create_app():
     app.register_blueprint(auth_bp, url_prefix="/auth")
     app.register_blueprint(marketing_bp)
 
+    # ---- Routes ----
     @app.route("/")
     def marketing_home():
         return render_template("marketing/index.html")
 
     @app.route("/login")
-    def login():
+    def login_redirect():
         from auth import login as auth_login
         return auth_login()
 
@@ -125,10 +168,18 @@ def create_app():
 
     return app
 
+# --------------------------------------------------
+# 🔑 EXPORT APP (CI + GUNICORN SAFE)
+# --------------------------------------------------
+
+app = create_app()
+
+# --------------------------------------------------
+# Local dev entry point
+# --------------------------------------------------
 
 app = create_app()
 
 
 if __name__ == "__main__":
-    application = create_app()
-    application.run()
+    app.run(host="0.0.0.0", port=5000, debug=True)
