@@ -7,7 +7,7 @@ import os
 from uuid import uuid4
 
 from dotenv import load_dotenv
-from flask import Flask, g, redirect, render_template, request
+from flask import Flask, g, redirect, render_template, request, url_for
 from flask_login import LoginManager
 from sqlalchemy.exc import SQLAlchemyError
 from werkzeug.middleware.proxy_fix import ProxyFix
@@ -39,13 +39,10 @@ def create_app(testing: bool = False):
     secret_key = (
         os.getenv("SESSION_SECRET")
         or os.getenv("SECRET_KEY")
-        or ("ci-test-secret" if testing else None)
+        or ("luxit-test-secret" if testing else None)
     )
     if not secret_key:
-        if testing:
-            secret_key = "luxit-test-secret"
-        else:
-            raise RuntimeError("SESSION_SECRET or SECRET_KEY must be set")
+        raise RuntimeError("SESSION_SECRET or SECRET_KEY must be set")
 
     app.config.update(
         SECRET_KEY=secret_key,
@@ -57,37 +54,54 @@ def create_app(testing: bool = False):
         SQLALCHEMY_TRACK_MODIFICATIONS=False,
     )
 
+    # Proxy / load balancer support
     app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1)
 
+    # Extensions
     db.init_app(app)
     csrf.init_app(app)
 
+    # Login manager
     login_manager = LoginManager(app)
     login_manager.login_view = "auth.login"
 
     @login_manager.user_loader
     def load_user(user_id):
         from models import User
-        return User.query.get(int(user_id))
+        try:
+            return User.query.get(int(user_id))
+        except SQLAlchemyError:
+            db.session.rollback()
+            return None
 
- from main import main_bp
-from auth import auth_bp
-from marketing import marketing_bp
+    # --------------------------------------------------
+    # Blueprints (REGISTER ONCE, HERE)
+    # --------------------------------------------------
+    from main import main_bp
+    from auth import auth_bp
+    from marketing import marketing_bp
 
-app.register_blueprint(main_bp)
-app.register_blueprint(auth_bp)
-app.register_blueprint(marketing_bp)
+    app.register_blueprint(main_bp)
+    app.register_blueprint(auth_bp, url_prefix="/auth")
+    app.register_blueprint(marketing_bp)
 
-# ---- Health check (CI + load balancers) ----
-@app.route("/health")
-def health():
-    return {"status": "ok"}, 200
+    # --------------------------------------------------
+    # Routes
+    # --------------------------------------------------
 
-return app
+    @app.route("/")
+    def index():
+        return redirect(url_for("auth.login"))
+
+    @app.route("/health")
+    def health():
+        return {"status": "ok"}, 200
+
+    return app
 
 
 # --------------------------------------------------
-# 🔑 CANONICAL EXPORTS (THIS IS THE KEY PART)
+# 🔑 CANONICAL EXPORT (Gunicorn + CI)
 # --------------------------------------------------
 
 app = create_app(testing=os.getenv("FLASK_ENV") == "testing")
