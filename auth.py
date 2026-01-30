@@ -96,3 +96,43 @@ def login():
 def logout():
     logout_user()
     return redirect(url_for("auth.login", _external=False))
+
+# --------------------------------------------------
+# Application factory
+# --------------------------------------------------
+
+def create_app(testing: bool = False):
+    app = Flask(__name__, template_folder="templates", static_folder="static")
+
+    # ---- secrets (CI-safe) ----
+    secret_key = (
+        os.getenv("SESSION_SECRET")
+        or os.getenv("SECRET_KEY")
+        or ("ci-test-secret" if testing or os.getenv("FLASK_ENV") == "testing" else None)
+    )
+
+    if not secret_key:
+        raise RuntimeError("SESSION_SECRET or SECRET_KEY must be set")
+
+    app.config["SECRET_KEY"] = secret_key
+    app.config["TESTING"] = testing
+
+    # rest of your config + blueprints here
+
+    return app
+
+
+# --------------------------------------------------
+# REQUIRED EXPORTS (DO NOT TOUCH)
+# --------------------------------------------------
+
+# CI + gunicorn import target
+app = create_app(testing=os.getenv("FLASK_ENV") == "testing")
+
+
+# --------------------------------------------------
+# Local dev only
+# --------------------------------------------------
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=5000, debug=True)
