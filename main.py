@@ -1,8 +1,7 @@
 from flask import Blueprint, render_template
 from flask_login import login_required
 
-main_bp = Blueprint("main", __name__, url_prefix="/main")
-
+main_bp = Blueprint("main", __name__)  # 🔥 REMOVE url_prefix
 
 @main_bp.route("/dashboard")
 @login_required

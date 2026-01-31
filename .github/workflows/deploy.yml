@@ -1,105 +1,136 @@
-name: Deploy + Smoke Test (LUXit VPS)
+"""
+Application entry point.
+"""
 
-on:
-  push:
-    branches: [ main ]
-  workflow_dispatch:
+import os
+import logging
+from uuid import uuid4
 
-jobs:
-  deploy:
-    runs-on: ubuntu-latest
+from dotenv import load_dotenv
+from flask import Flask, g, redirect, render_template, request
+from flask_login import LoginManager
+from sqlalchemy.exc import SQLAlchemyError
+from werkzeug.middleware.proxy_fix import ProxyFix
 
-    steps:
-      - name: Deploy + Smoke Test over SSH
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.VPS_HOST }}
-          username: ${{ secrets.VPS_USER }}
-          key: ${{ secrets.VPS_SSH_KEY }}
-          port: 22
-          script: |
-            set -euo pipefail
+from extensions import db, csrf
 
-            echo "=== WHOAMI / HOST ==="
-            whoami
-            hostname
+# --------------------------------------------------
+# Environment
+# --------------------------------------------------
 
-            echo "=== VERIFY APP DIRECTORY ==="
-            test -d /app || { echo "❌ /app missing"; exit 1; }
-            cd /app
+load_dotenv("/etc/lux-marketing/lux.env")
 
-            echo "=== GIT STATUS ==="
-            git rev-parse --is-inside-work-tree
-            git rev-parse HEAD
+CANONICAL_HOST = os.environ.get("CANONICAL_HOST", "luxit.app")
+ALLOWED_HOSTS = {
+    "luxit.app",
+    "www.luxit.app",
+    "app.luxit.app",
+    "api.luxit.app",
+}
 
-            echo "=== ACTIVATE VENV ==="
-            test -d venv || { echo "❌ venv missing"; exit 1; }
-            source venv/bin/activate
+# --------------------------------------------------
+# Application factory (IMPORT-SAFE)
+# --------------------------------------------------
 
-            echo "=== PYTHON COMPILE CHECK (ALL FILES) ==="
-            python - <<'PY'
-            import compileall, sys
-            if not compileall.compile_dir(".", quiet=1):
-                sys.exit("❌ Python compile failed")
-            print("✅ Python compile OK")
-            PY
+def create_app():
+    app = Flask(__name__, template_folder="templates", static_folder="static")
 
-            echo "=== FLASK IMPORT & MODEL API CHECK ==="
-            python - <<'PY'
-            from app import create_app
-            from models import User
-            assert hasattr(User, "get_default_company"), "❌ User.get_default_company missing"
-            print("✅ Flask app + model API OK")
-            PY
+    # ---- Secret key (CI-safe) ----
+    secret_key = (
+        os.getenv("SESSION_SECRET")
+        or os.getenv("SECRET_KEY")
+        or ("ci-test-secret" if os.getenv("CI") or os.getenv("FLASK_ENV") == "testing" else None)
+    )
 
-            echo "=== RESTART SERVICE ==="
-            sudo systemctl daemon-reload
-            sudo systemctl restart lux.service
-            sleep 4
-            sudo systemctl --no-pager status lux.service
+    if not secret_key:
+        raise RuntimeError("SESSION_SECRET or SECRET_KEY must be set")
 
-            echo "=== VERIFY GUNICORN LISTENING ==="
-            sudo ss -lntp | grep -E 'gunicorn|:5000' || {
-              echo "❌ Gunicorn not listening on 5000"
-              exit 1
-            }
+    app.config.update(
+        SECRET_KEY=secret_key,
+        PREFERRED_URL_SCHEME="https",
+        SESSION_COOKIE_SECURE=True,
+        SESSION_COOKIE_SAMESITE="None",
+        WTF_CSRF_TIME_LIMIT=3600,
+    )
 
-            echo "=== LOCAL HEALTH CHECK ==="
-            curl -fsS http://127.0.0.1:5000/health > /dev/null
+    # ---- Database ----
+    app.config["SQLALCHEMY_DATABASE_URI"] = os.getenv(
+        "DATABASE_URL", "sqlite:///email_marketing.db"
+    )
+    app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
-            echo "=== LOGIN PAGE CHECK ==="
-            LOGIN_PAGE=$(curl -fsS https://luxit.app/auth/login)
-            CSRF=$(echo "$LOGIN_PAGE" | python - <<'PY'
-            import re, sys
-            m = re.search(r'name="csrf_token" value="([^"]+)"', sys.stdin.read())
-            if not m:
-                sys.exit("❌ Missing CSRF token")
-            print(m.group(1))
-            PY
-            )
+    # ---- Proxy ----
+    app.wsgi_app = ProxyFix(
+        app.wsgi_app,
+        x_for=1,
+        x_proto=1,
+        x_host=1,
+        x_port=1,
+    )
 
-            echo "=== LOGIN POST ==="
-            curl -fsS -c /tmp/cookies.txt -b /tmp/cookies.txt \
-              -d "email=${{ secrets.LUXIT_TEST_EMAIL }}&password=${{ secrets.LUXIT_TEST_PASSWORD }}&csrf_token=${CSRF}" \
-              https://luxit.app/auth/login > /dev/null
+    # ---- Extensions ----
+    db.init_app(app)
+    csrf.init_app(app)
 
-            echo "=== DASHBOARD MUST LOAD (NO 500) ==="
-            STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
-              -b /tmp/cookies.txt https://luxit.app/dashboard)
+    # ---- Login manager ----
+    login_manager = LoginManager()
+    login_manager.init_app(app)
+    login_manager.login_view = "auth.login"
+    login_manager.login_message = None
 
-            if [ "$STATUS" != "200" ]; then
-              echo "❌ Dashboard returned HTTP $STATUS"
-              echo "--- journalctl (last 200) ---"
-              journalctl -u lux.service -n 200 --no-pager || true
-              echo "--- nginx error log ---"
-              tail -n 200 /var/log/nginx/error.log || true
-              exit 1
-            fi
+    @login_manager.user_loader
+    def load_user(user_id):
+        from models import User
+        try:
+            return User.query.get(int(user_id))
+        except SQLAlchemyError:
+            db.session.rollback()
+            return None
 
-            echo "✅ LOGIN + DASHBOARD SUCCESS"
+    # ---- Request hooks ----
+    @app.before_request
+    def enforce_canonical_host():
+        g.request_id = request.headers.get("X-Request-ID", str(uuid4()))
 
-            echo "=== PUBLIC SITE CHECK ==="
-            curl -fsS https://luxit.app/ > /dev/null
-            echo "✅ PUBLIC SITE OK"
+        if app.testing:
+            return None
 
-            echo "=== DEPLOY + SMOKE TEST PASSED ==="
+        host = (request.headers.get("X-Forwarded-Host") or request.host or "").split(":")[0].lower()
+        if host and host not in ALLOWED_HOSTS:
+            return redirect(f"https://{CANONICAL_HOST}{request.full_path.rstrip('?')}", 301)
+
+    # ---- Blueprints (LAZY IMPORT) ----
+    from routes import main_bp
+    from auth import auth_bp
+    from marketing import marketing_bp
+
+    app.register_blueprint(main_bp)
+    app.register_blueprint(auth_bp, url_prefix="/auth")
+    app.register_blueprint(marketing_bp)
+
+    # ---- Public routes ----
+    @app.route("/")
+    def marketing_home():
+        return render_template("marketing/index.html")
+
+    @app.route("/login")
+    def login_redirect():
+        from auth import login as auth_login
+        return auth_login()
+
+    return app
+
+
+# --------------------------------------------------
+# WSGI entrypoint (Gunicorn uses this)
+# --------------------------------------------------
+
+app = create_app()
+
+
+# --------------------------------------------------
+# Local dev
+# --------------------------------------------------
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=5000, debug=True)

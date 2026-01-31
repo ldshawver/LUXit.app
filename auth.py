@@ -14,6 +14,16 @@ logger = logging.getLogger(__name__)
 
 auth_bp = Blueprint("auth", __name__, url_prefix="/auth", template_folder="templates")
 
+auth_bp = Blueprint(
+    "auth",
+    __name__,
+    url_prefix="/auth",
+    template_folder="templates",
+)
+
+# --------------------------------------------------
+# Helpers
+# --------------------------------------------------
 
 def _is_safe_next(value: str) -> bool:
     if not value:
@@ -26,6 +36,9 @@ def _is_safe_next(value: str) -> bool:
     except Exception:
         return False
 
+# --------------------------------------------------
+# Routes
+# --------------------------------------------------
 
 @auth_bp.route("/login", methods=["GET", "POST"])
 def login():
@@ -33,7 +46,11 @@ def login():
         return redirect(url_for("main.dashboard", _external=False))
 
     if request.method == "POST":
-        identifier = (request.form.get("username") or request.form.get("email") or "").strip()
+        identifier = (
+            request.form.get("username")
+            or request.form.get("email")
+            or ""
+        ).strip()
         password = request.form.get("password") or ""
 
         if not identifier or not password:
@@ -96,3 +113,15 @@ def login():
 def logout():
     logout_user()
     return redirect(url_for("auth.login", _external=False))
+
+
+# --------------------------------------------------
+# Template helper
+# --------------------------------------------------
+
+def _render_login():
+    try:
+        return render_template("auth/login.html")
+    except TemplateNotFound as exc:
+        logger.warning("Auth login template missing: %s", exc)
+        return render_template("login.html")
