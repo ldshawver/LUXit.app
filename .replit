@@ -7,7 +7,7 @@ packages = ["cargo", "freetype", "glibcLocales", "lcms2", "libiconv", "libimageq
 
 [deployment]
 deploymentTarget = "autoscale"
-run = ["gunicorn", "--bind", "0.0.0.0:5000", "app:app"]
+run = ["gunicorn", "--bind=0.0.0.0:5000", "--workers=4", "--reuse-port", "wsgi:app"]
 
 [workflows]
 runButton = "Project"

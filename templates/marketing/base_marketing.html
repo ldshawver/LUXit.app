@@ -184,13 +184,9 @@
     .nav-logo {
       display: flex;
       align-items: center;
-      gap: 12px;
+      gap: 8px;
       font-size: 1.5rem;
       font-weight: 700;
-      background: linear-gradient(135deg, var(--accent-cyan), var(--accent-purple));
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      background-clip: text;
       text-decoration: none;
     }
 
@@ -198,6 +194,24 @@
       height: 40px;
       width: auto;
       filter: drop-shadow(0 0 20px rgba(0, 245, 255, 0.4));
+    }
+
+    .nav-logo .brand-it {
+      background: linear-gradient(135deg, var(--accent-cyan), var(--accent-purple));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .nav-logo .brand-app {
+      font-size: 0.65rem;
+      font-weight: 500;
+      color: var(--accent-magenta);
+      writing-mode: vertical-rl;
+      text-orientation: mixed;
+      letter-spacing: 1px;
+      margin-left: -4px;
+      opacity: 0.9;
     }
 
     .nav-links {
@@ -623,13 +637,13 @@
     }
 
     .pricing-card.featured {
-      background: rgba(139, 92, 246, 0.1);
-      border-color: rgba(139, 92, 246, 0.4);
+      background: rgba(20, 10, 40, 0.95);
+      border-color: rgba(139, 92, 246, 0.5);
       transform: scale(1.02);
     }
 
     .pricing-card.featured::before {
-      opacity: 1;
+      opacity: 0.6;
     }
 
     .pricing-card.featured::after {
@@ -644,6 +658,20 @@
       font-size: 0.75rem;
       font-weight: 700;
       letter-spacing: 1px;
+    }
+
+    .pricing-card.featured h3,
+    .pricing-card.featured .pricing-tier,
+    .pricing-card.featured .pricing-value {
+      color: #ffffff;
+      -webkit-text-fill-color: #ffffff;
+    }
+
+    .pricing-card.featured .pricing-features li,
+    .pricing-card.featured .pricing-annual,
+    .pricing-card.featured .pricing-period,
+    .pricing-card.featured .pricing-currency {
+      color: #e0e0e0;
     }
 
     .pricing-card:hover {
@@ -992,7 +1020,7 @@
     <nav class="nav">
       <a href="/" class="nav-logo">
         <img src="{{ url_for('static', filename='lux_logo.png') }}" alt="LUX IT">
-        LUX IT
+        <span class="brand-it">IT</span><span class="brand-app">.app</span>
       </a>
       <button class="mobile-menu-btn" aria-label="Toggle menu" onclick="toggleMobileMenu()">
         <span id="menu-icon">☰</span>
