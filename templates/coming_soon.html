@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{ title or 'Coming Soon' }} • LUXit</title>
+  <link rel="icon" type="image/png" href="{{ url_for('static', filename='favicon.png') }}">
+  <style>
+    body { margin: 0; font-family: "Inter", system-ui, sans-serif; background: #0b0d12; color: #f7f7fb; }
+    .shell { max-width: 720px; margin: 0 auto; padding: 120px 24px; text-align: center; }
+    .badge { display: inline-flex; padding: 6px 12px; border-radius: 999px; border: 1px solid #2a3242; color: #9aa4b2; font-size: 0.85rem; }
+    h1 { font-size: 2.4rem; margin: 24px 0 12px; }
+    p { color: #9aa4b2; }
+    a { color: #7c3aed; text-decoration: none; }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <span class="badge">Coming Soon</span>
+    <h1>{{ title or 'This feature is on the way.' }}</h1>
+    <p>{{ message or 'We are preparing this experience for the full data model release.' }}</p>
+    <p><a href="/">Return to homepage</a></p>
+  </div>
+</body>
+</html>
