@@ -1,0 +1,44 @@
+name: ci
+
+on:
+  push:
+    branches: [ main, dev ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+    name: ci / build
+    runs-on: ubuntu-latest
+
+    env:
+      FLASK_ENV: testing
+      FLASK_DEBUG: "0"
+      SECRET_KEY: testing-secret
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Boot safety checks
+        run: |
+          python - <<'PY'
+          from app import app
+
+          with app.test_client() as client:
+              assert client.get("/").status_code == 200, "❌ / failed"
+              assert client.get("/health").status_code == 200, "❌ /health failed"
+              assert client.get("/auth/login").status_code == 200, "❌ /auth/login failed"
+
+          print("✅ Boot safety checks passed")
+          PY
