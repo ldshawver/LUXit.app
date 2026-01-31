@@ -37,6 +37,10 @@ def create_app(testing: bool = False):
             "sqlite:///email_marketing.db",
         ),
         SQLALCHEMY_TRACK_MODIFICATIONS=False,
+        SESSION_COOKIE_SECURE=False,
+        SESSION_COOKIE_HTTPONLY=True,
+        SESSION_COOKIE_SAMESITE='Lax',
+        WTF_CSRF_SSL_STRICT=False,
     )
 
     app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1)
