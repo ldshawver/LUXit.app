@@ -52,13 +52,13 @@
                             <span class="btn-lux btn-lux-primary">Settings</span>
                         </button>
                         <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="settingsDropdown">
-                            <li><a class="dropdown-item" href="{{ url_for('user.profile') }}"><i data-feather="user"></i> Profile</a></li>
-                            <li><a class="dropdown-item" href="{{ url_for('user.change_password') }}"><i data-feather="lock"></i> Change Password</a></li>
+                            <li><a class="dropdown-item" href="#"><i data-feather="user"></i> Profile</a></li>
+                            <li><a class="dropdown-item" href="#"><i data-feather="lock"></i> Change Password</a></li>
                             <li><hr class="dropdown-divider"></li>
                             <li><h6 class="dropdown-header">AI & Tools</h6></li>
-                            <li><a class="dropdown-item" href="{{ url_for('main.ai_dashboard') }}"><i data-feather="cpu"></i> LUX AI Dashboard</a></li>
-                            <li><a class="dropdown-item" href="{{ url_for('main.agents_hub') }}"><i data-feather="users"></i> AI Agents Hub</a></li>
-                            <li><a class="dropdown-item" href="{{ url_for('main.analytics_hub') }}"><i data-feather="bar-chart-2"></i> Analytics Hub</a></li>
+                            <li><a class="dropdown-item" href="#"><i data-feather="cpu"></i> LUX AI Dashboard</a></li>
+                            <li><a class="dropdown-item" href="#"><i data-feather="users"></i> AI Agents Hub</a></li>
+                            <li><a class="dropdown-item" href="#"><i data-feather="bar-chart-2"></i> Analytics Hub</a></li>
                             <li><hr class="dropdown-divider"></li>
                             <li><h6 class="dropdown-header">Companies</h6></li>
                             {% for company in user_companies %}
@@ -70,8 +70,8 @@
                             </a></li>
                             {% endfor %}
                             <li><hr class="dropdown-divider"></li>
-                            <li><a class="dropdown-item" href="{{ url_for('main.companies_list') }}"><i data-feather="edit"></i> Manage Companies</a></li>
-                            <li><a class="dropdown-item" href="{{ url_for('main.add_company') }}"><i data-feather="plus"></i> Add Company</a></li>
+                            <li><a class="dropdown-item" href="#"><i data-feather="edit"></i> Manage Companies</a></li>
+                            <li><a class="dropdown-item" href="#"><i data-feather="plus"></i> Add Company</a></li>
                             <li><hr class="dropdown-divider"></li>
                             <li><a class="dropdown-item text-danger" href="{{ url_for('auth.logout') }}"><i data-feather="log-out"></i> Sign Out</a></li>
                         </ul>

@@ -69,3 +69,48 @@ Key technical implementations and features include:
 - **Bootstrap 5**: Dark theme UI framework.
 - **Feather Icons**: Lightweight icon set.
 - **Custom CSS/JS**: Glassmorphism UI and interaction helpers.
+
+## Deployment
+
+### Replit Deployment
+- Configured for Autoscale deployment with gunicorn
+- Run command: `gunicorn --bind=0.0.0.0:5000 --workers=4 --reuse-port wsgi:app`
+- Click the "Publish" button in Replit to deploy
+
+### VPS Deployment
+See `deploy/README_VPS.md` for complete VPS deployment instructions including:
+- Systemd service configuration
+- Nginx reverse proxy setup
+- SSL certificate setup with Certbot
+- PostgreSQL database setup
+
+### Docker Deployment
+```bash
+cd deploy
+docker-compose up -d
+```
+
+### Admin Credentials
+- **Username:** admin
+- **Password:** admin123 (change immediately after first login)
+
+## File Structure
+```
+/
+├── app.py              # Flask app factory
+├── wsgi.py             # WSGI entry point
+├── extensions.py       # Flask extensions (db, login manager)
+├── models.py           # SQLAlchemy models
+├── auth.py             # Authentication routes
+├── marketing.py        # Marketing page routes
+├── templates/          # Jinja2 templates
+│   ├── marketing/      # Marketing site templates
+│   └── auth/           # Authentication templates
+├── static/             # Static assets (CSS, JS, images)
+├── deploy/             # VPS deployment files
+│   ├── README_VPS.md   # Deployment guide
+│   ├── Dockerfile      # Docker configuration
+│   ├── docker-compose.yml
+│   └── gunicorn.conf.py
+└── requirements.txt    # Python dependencies
+```

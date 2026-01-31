@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}LUX Marketing{% endblock %}</title>
+  <link rel="icon" type="image/png" href="{{ url_for('static', filename='favicon.png') }}">
+  <link href="https://cdn.replit.com/agent/bootstrap-agent-dark-theme.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/custom.css') }}">
+  <style>
+    .v1-shell { max-width: 1100px; margin: 0 auto; padding: 32px 16px 64px; }
+    .v1-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 32px; }
+    .v1-brand { display: flex; align-items: center; gap: 12px; font-weight: 600; }
+    .v1-brand img { height: 36px; width: auto; }
+    .v1-card { background: #111827; border: 1px solid #1f2937; border-radius: 16px; padding: 24px; }
+    .v1-grid { display: grid; gap: 20px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+    .v1-pill { display: inline-flex; align-items: center; gap: 8px; padding: 6px 14px; border-radius: 999px; border: 1px solid #303a52; font-size: 0.85rem; }
+    .v1-muted { color: #9ca3af; }
+  </style>
+</head>
+<body>
+  <div class="v1-shell">
+    <header class="v1-header">
+      <div class="v1-brand">
+        <a href="{{ url_for('main.dashboard') }}" aria-label="LUX Marketing dashboard">
+          <img src="{{ url_for('static', filename='lux_logo.png') }}" alt="LUX Marketing">
+        </a>
+        <span>LUX Marketing</span>
+      </div>
+      <div>
+        {% if current_user.is_authenticated %}
+          <span class="v1-pill">{{ current_user.email }}</span>
+          <a class="btn btn-sm btn-outline-light ms-2" href="{{ url_for('auth.logout') }}">Sign out</a>
+        {% endif %}
+      </div>
+    </header>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        {% for category, message in messages %}
+          <div class="alert alert-{{ 'danger' if category == 'error' else category }} alert-dismissible fade show" role="alert">
+            {{ message }}
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+          </div>
+        {% endfor %}
+      {% endif %}
+    {% endwith %}
+
+    {% block content %}{% endblock %}
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

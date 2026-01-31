@@ -2,7 +2,12 @@ import logging
 from urllib.parse import urlparse
 
 from flask import Blueprint, flash, redirect, render_template, request, url_for
-from flask_login import current_user, login_required, login_user, logout_user
+from flask_login import (
+    current_user,
+    login_required,
+    login_user,
+    logout_user,
+)
 from jinja2 import TemplateNotFound
 from sqlalchemy import or_
 from sqlalchemy.exc import SQLAlchemyError
@@ -12,8 +17,20 @@ from models import User
 
 logger = logging.getLogger(__name__)
 
-auth_bp = Blueprint("auth", __name__, url_prefix="/auth", template_folder="templates")
+# --------------------------------------------------
+# Blueprint
+# --------------------------------------------------
 
+auth_bp = Blueprint(
+    "auth",
+    __name__,
+    url_prefix="/auth",
+    template_folder="templates",
+)
+
+# --------------------------------------------------
+# Helpers
+# --------------------------------------------------
 
 def _is_safe_next(value: str) -> bool:
     if not value:
@@ -26,6 +43,9 @@ def _is_safe_next(value: str) -> bool:
     except Exception:
         return False
 
+# --------------------------------------------------
+# Routes
+# --------------------------------------------------
 
 @auth_bp.route("/login", methods=["GET", "POST"])
 def login():
@@ -33,16 +53,16 @@ def login():
         return redirect(url_for("main.dashboard", _external=False))
 
     if request.method == "POST":
-        identifier = (request.form.get("username") or request.form.get("email") or "").strip()
+        identifier = (
+            request.form.get("username")
+            or request.form.get("email")
+            or ""
+        ).strip()
         password = request.form.get("password") or ""
 
         if not identifier or not password:
             flash("Username/email and password are required.", "error")
-            try:
-                return render_template("auth/login.html")
-            except TemplateNotFound as exc:
-                logger.warning("Auth login template missing: %s", exc)
-                return render_template("login.html")
+            return _render_login()
 
         try:
             user = User.query.filter(
@@ -54,27 +74,15 @@ def login():
         except SQLAlchemyError:
             logger.exception("Login query failed")
             flash("Login temporarily unavailable.", "error")
-            try:
-                return render_template("auth/login.html")
-            except TemplateNotFound as exc:
-                logger.warning("Auth login template missing: %s", exc)
-                return render_template("login.html")
+            return _render_login()
 
         if not user or not user.password_hash:
             flash("Invalid credentials.", "error")
-            try:
-                return render_template("auth/login.html")
-            except TemplateNotFound as exc:
-                logger.warning("Auth login template missing: %s", exc)
-                return render_template("login.html")
+            return _render_login()
 
         if not check_password_hash(user.password_hash, password):
             flash("Invalid credentials.", "error")
-            try:
-                return render_template("auth/login.html")
-            except TemplateNotFound as exc:
-                logger.warning("Auth login template missing: %s", exc)
-                return render_template("login.html")
+            return _render_login()
 
         login_user(user)
 
@@ -84,11 +92,7 @@ def login():
 
         return redirect(url_for("main.dashboard", _external=False))
 
-    try:
-        return render_template("auth/login.html")
-    except TemplateNotFound as exc:
-        logger.warning("Auth login template missing: %s", exc)
-        return render_template("login.html")
+    return _render_login()
 
 
 @auth_bp.route("/logout")
@@ -96,3 +100,15 @@ def login():
 def logout():
     logout_user()
     return redirect(url_for("auth.login", _external=False))
+
+
+# --------------------------------------------------
+# Template helper
+# --------------------------------------------------
+
+def _render_login():
+    try:
+        return render_template("auth/login.html")
+    except TemplateNotFound as exc:
+        logger.warning("Auth login template missing: %s", exc)
+        return render_template("login.html")

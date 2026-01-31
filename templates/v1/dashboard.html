@@ -1,0 +1,54 @@
+{% extends "v1/base.html" %}
+
+{% block title %}Dashboard • LUX Marketing{% endblock %}
+
+{% block content %}
+<section class="v1-card mb-4">
+  <h1 class="mb-2">Welcome back{% if user and user.first_name %}, {{ user.first_name }}{% endif %}</h1>
+  <p class="v1-muted">Your LUX Marketing platform is live and stable. Core messaging, authentication, and health monitoring are online.</p>
+  <div class="d-flex flex-wrap gap-2 mt-3">
+    <span class="v1-pill">Status: Live</span>
+    <span class="v1-pill">Platform v1</span>
+    {% if app_version %}<span class="v1-pill">v{{ app_version }}</span>{% endif %}
+  </div>
+</section>
+
+<section class="mb-4">
+  <h2 class="h4 mb-3">What’s available now</h2>
+  <div class="v1-grid">
+    <div class="v1-card">
+      <h3 class="h6">Secure Login</h3>
+      <p class="v1-muted">Access management and session handling are active.</p>
+    </div>
+    <div class="v1-card">
+      <h3 class="h6">Marketing Site</h3>
+      <p class="v1-muted">The public-facing site is ready for launch and updates.</p>
+    </div>
+    <div class="v1-card">
+      <h3 class="h6">Health Monitoring</h3>
+      <p class="v1-muted">Use /health for real-time service diagnostics.</p>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2 class="h4 mb-3">Coming soon</h2>
+  <div class="v1-grid">
+    <div class="v1-card">
+      <h3 class="h6">Campaign orchestration</h3>
+      <p class="v1-muted">Multi-channel campaign planning is in development.</p>
+      <span class="badge bg-secondary">Coming Soon</span>
+    </div>
+    <div class="v1-card">
+      <h3 class="h6">Analytics & insights</h3>
+      <p class="v1-muted">Unified performance dashboards will arrive in v1.1.</p>
+      <span class="badge bg-secondary">Coming Soon</span>
+    </div>
+    <div class="v1-card">
+      <h3 class="h6">Automation workflows</h3>
+      <p class="v1-muted">Automations will be enabled once core data models land.</p>
+      <span class="badge bg-secondary">Coming Soon</span>
+    </div>
+  </div>
+</section>
+{% endblock %}
