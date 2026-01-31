@@ -16,6 +16,7 @@ from extensions import db, csrf
 
 def create_app(testing: bool = False):
     app = Flask(__name__, template_folder="templates", static_folder="static")
+    app.testing = testing
 
     secret_key = (
         os.getenv("SESSION_SECRET")
@@ -23,7 +24,10 @@ def create_app(testing: bool = False):
         or ("ci-test-secret" if testing else None)
     )
     if not secret_key:
-        raise RuntimeError("SESSION_SECRET or SECRET_KEY must be set")
+        if testing:
+            secret_key = "luxit-test-secret"
+        else:
+            raise RuntimeError("SESSION_SECRET or SECRET_KEY must be set")
 
     app.config.update(
         SECRET_KEY=secret_key,
@@ -54,6 +58,43 @@ def create_app(testing: bool = False):
     @app.before_request
     def request_id():
         g.request_id = request.headers.get("X-Request-ID", str(uuid4()))
+        if app.testing:
+            return None
+        host = (request.headers.get("X-Forwarded-Host") or request.host or "").split(":")[0].lower()
+        if host and host not in ALLOWED_HOSTS:
+            return redirect(f"https://{CANONICAL_HOST}{request.full_path.rstrip('?')}", 301)
+        return None
+
+    @app.context_processor
+    def inject_company_context():
+        from flask_login import current_user
+        try:
+            if not current_user.is_authenticated:
+                return {}
+            import models
+            if not hasattr(models, "Company"):
+                return {}
+            return {
+                "current_company": current_user.get_default_company(),
+                "user_companies": current_user.get_companies_safe(),
+            }
+        except Exception as exc:
+            app.logger.error("Template context error: %s", exc)
+            try:
+                db.session.rollback()
+            except Exception:
+                pass
+            return {}
+
+    @app.teardown_request
+    def rollback_on_error(_exception=None):
+        if _exception:
+            try:
+                db.session.rollback()
+            except Exception:
+                pass
+
+    from routes import main_bp
 
     # ---- Blueprints ----
     from main import main_bp
@@ -76,6 +117,11 @@ def create_app(testing: bool = False):
         with app.app_context():
             import models
             db.create_all()
+
+    @app.route("/logout")
+    def logout():
+        from auth import logout as auth_logout
+        return auth_logout()
 
     return app
 
