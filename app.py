@@ -1,6 +1,5 @@
-"""
-Application entry point.
-"""
+"""Application entry point."""
+import logging
 import os
 from uuid import uuid4
 
@@ -13,6 +12,9 @@ from extensions import db, csrf
 # --------------------------------------------------
 # Application factory
 # --------------------------------------------------
+
+load_dotenv("/etc/lux-marketing/lux.env")
+
 
 def create_app(testing: bool = False):
     app = Flask(__name__, template_folder="templates", static_folder="static")
@@ -31,16 +33,17 @@ def create_app(testing: bool = False):
 
     app.config.update(
         SECRET_KEY=secret_key,
-        TESTING=testing,
-        SQLALCHEMY_DATABASE_URI=os.getenv(
-            "DATABASE_URL",
-            "sqlite:///email_marketing.db",
-        ),
-        SQLALCHEMY_TRACK_MODIFICATIONS=False,
-        SESSION_COOKIE_SECURE=False,
-        SESSION_COOKIE_HTTPONLY=True,
-        SESSION_COOKIE_SAMESITE='Lax',
-        WTF_CSRF_SSL_STRICT=False,
+        PREFERRED_URL_SCHEME="https",
+        SESSION_COOKIE_SECURE=True,
+        SESSION_COOKIE_SAMESITE="None",
+        WTF_CSRF_TIME_LIMIT=3600,
+    )
+    if os.environ.get("CANONICAL_HOST"):
+        app.config["SERVER_NAME"] = CANONICAL_HOST
+
+    app.config["SQLALCHEMY_DATABASE_URI"] = os.getenv(
+        "DATABASE_URL",
+        "sqlite:///email_marketing.db",
     )
 
     app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1)
@@ -127,11 +130,17 @@ def create_app(testing: bool = False):
         from auth import logout as auth_logout
         return auth_logout()
 
+    @app.route("/logout")
+    def logout():
+        from auth import logout as auth_logout
+        return auth_logout()
+
     return app
 
 
-# --------------------------------------------------
-# Canonical export (Gunicorn imports THIS)
-# --------------------------------------------------
-
 app = create_app(testing=os.getenv("FLASK_ENV") == "testing")
+
+
+if __name__ == "__main__":
+    application = create_app()
+    application.run()

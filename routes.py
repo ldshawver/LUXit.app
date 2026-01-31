@@ -141,6 +141,7 @@ def enforce_v1_scope():
         ), 501
     return None
 
+main_bp = Blueprint('main', __name__, template_folder="dashboard/templates")
 
 def get_app_version() -> str:
     version_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "VERSION")
