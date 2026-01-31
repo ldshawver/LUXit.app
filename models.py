@@ -4,6 +4,8 @@ import logging
 from flask_login import UserMixin
 from sqlalchemy import JSON, Text
 
+from extensions import db
+
 user_company = db.metadata.tables.get("user_company")
 if user_company is None:
     user_company = db.Table('user_company',
@@ -299,3 +301,526 @@ class TikTokOAuth(db.Model):
     updated_at = db.Column(
         db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
     )
+
+
+class Company(db.Model):
+    __tablename__ = "company"
+
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(255))
+    is_active = db.Column(db.Boolean, default=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class Contact(db.Model):
+    __tablename__ = "contact"
+
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=True)
+    email = db.Column(db.String(255))
+    first_name = db.Column(db.String(120))
+    last_name = db.Column(db.String(120))
+    company = db.Column(db.String(255))
+    phone = db.Column(db.String(50))
+    tags = db.Column(db.String(255))
+    is_active = db.Column(db.Boolean, default=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class Campaign(db.Model):
+    __tablename__ = "campaign"
+
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=True)
+    name = db.Column(db.String(255))
+    status = db.Column(db.String(50))
+    scheduled_at = db.Column(db.DateTime)
+    sent_at = db.Column(db.DateTime)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class CampaignRecipient(db.Model):
+    __tablename__ = "campaign_recipient"
+
+    id = db.Column(db.Integer, primary_key=True)
+    contact_id = db.Column(db.Integer, db.ForeignKey("contact.id"), nullable=True)
+    campaign_id = db.Column(db.Integer, db.ForeignKey("campaign.id"), nullable=True)
+    opened_at = db.Column(db.DateTime)
+    clicked_at = db.Column(db.DateTime)
+
+
+class EmailTemplate(db.Model):
+    __tablename__ = "email_template"
+
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(255))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class EmailTracking(db.Model):
+    __tablename__ = "email_tracking"
+
+    id = db.Column(db.Integer, primary_key=True)
+    campaign_id = db.Column(db.Integer, db.ForeignKey("campaign.id"), nullable=True)
+    event_type = db.Column(db.String(50))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class BlogPost(db.Model):
+    __tablename__ = "blog_post"
+
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=True)
+    title = db.Column(db.String(255))
+    content = db.Column(db.Text)
+    excerpt = db.Column(db.Text)
+    category = db.Column(db.String(120))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class CompanySecret(db.Model):
+    __tablename__ = "company_secret"
+
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=True)
+    key = db.Column(db.String(255))
+    value = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class ContactActivity(db.Model):
+    __tablename__ = "contact_activity"
+
+    id = db.Column(db.Integer, primary_key=True)
+    contact_id = db.Column(db.Integer, db.ForeignKey("contact.id"), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class AnalyticsData(db.Model):
+    __tablename__ = "analytics_data"
+
+    id = db.Column(db.Integer, primary_key=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class BrandKit(db.Model):
+    __tablename__ = "brand_kit"
+
+    id = db.Column(db.Integer, primary_key=True)
+
+
+class EmailComponent(db.Model):
+    __tablename__ = "email_component"
+
+    id = db.Column(db.Integer, primary_key=True)
+
+
+class Poll(db.Model):
+    __tablename__ = "poll"
+
+    id = db.Column(db.Integer, primary_key=True)
+
+
+class PollResponse(db.Model):
+    __tablename__ = "poll_response"
+
+    id = db.Column(db.Integer, primary_key=True)
+
+
+class ABTest(db.Model):
+    __tablename__ = "ab_test"
+
+    id = db.Column(db.Integer, primary_key=True)
+
+
+class Automation(db.Model):
+    __tablename__ = "automation"
+
+    id = db.Column(db.Integer, primary_key=True)
+
+
+class AutomationStep(db.Model):
+    __tablename__ = "automation_step"
+
+    id = db.Column(db.Integer, primary_key=True)
+    step_order = db.Column(db.Integer)
+
+
+class SMSCampaign(db.Model):
+    __tablename__ = "sms_campaign"
+
+    id = db.Column(db.Integer, primary_key=True)
+    status = db.Column(db.String(50))
+    scheduled_at = db.Column(db.DateTime)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class SMSRecipient(db.Model):
+    __tablename__ = "sms_recipient"
+
+    id = db.Column(db.Integer, primary_key=True)
+
+
+class SMSTemplate(db.Model):
+    __tablename__ = "sms_template"
+
+    id = db.Column(db.Integer, primary_key=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class SocialPost(db.Model):
+    __tablename__ = "social_post"
+
+    id = db.Column(db.Integer, primary_key=True)
+    status = db.Column(db.String(50))
+    scheduled_at = db.Column(db.DateTime)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class Segment(db.Model):
+    __tablename__ = "segment"
+
+    id = db.Column(db.Integer, primary_key=True)
+
+
+class SegmentMember(db.Model):
+    __tablename__ = "segment_member"
+
+    id = db.Column(db.Integer, primary_key=True)
+
+
+class WebForm(db.Model):
+    __tablename__ = "web_form"
+
+    id = db.Column(db.Integer, primary_key=True)
+
+
+class FormSubmission(db.Model):
+    __tablename__ = "form_submission"
+
+    id = db.Column(db.Integer, primary_key=True)
+
+
+class Event(db.Model):
+    __tablename__ = "event"
+
+    id = db.Column(db.Integer, primary_key=True)
+    start_date = db.Column(db.DateTime)
+
+
+class EventRegistration(db.Model):
+    __tablename__ = "event_registration"
+
+    id = db.Column(db.Integer, primary_key=True)
+
+
+class EventTicket(db.Model):
+    __tablename__ = "event_ticket"
+
+    id = db.Column(db.Integer, primary_key=True)
+    event_id = db.Column(db.Integer, db.ForeignKey("event.id"), nullable=True)
+
+
+class Product(db.Model):
+    __tablename__ = "product"
+
+    id = db.Column(db.Integer, primary_key=True)
+
+
+class Order(db.Model):
+    __tablename__ = "order"
+
+    id = db.Column(db.Integer, primary_key=True)
+
+
+class CalendarEvent(db.Model):
+    __tablename__ = "calendar_event"
+
+    id = db.Column(db.Integer, primary_key=True)
+    event_type = db.Column(db.String(50))
+    start_date = db.Column(db.DateTime)
+
+
+class AutomationTemplate(db.Model):
+    __tablename__ = "automation_template"
+
+    id = db.Column(db.Integer, primary_key=True)
+
+
+class AutomationExecution(db.Model):
+    __tablename__ = "automation_execution"
+
+    id = db.Column(db.Integer, primary_key=True)
+    started_at = db.Column(db.DateTime)
+
+
+class AutomationAction(db.Model):
+    __tablename__ = "automation_action"
+
+    id = db.Column(db.Integer, primary_key=True)
+
+
+class LandingPage(db.Model):
+    __tablename__ = "landing_page"
+
+    id = db.Column(db.Integer, primary_key=True)
+
+
+class NewsletterArchive(db.Model):
+    __tablename__ = "newsletter_archive"
+
+    id = db.Column(db.Integer, primary_key=True)
+    title = db.Column(db.String(255))
+    html_content = db.Column(db.Text)
+    published_at = db.Column(db.DateTime)
+
+
+class NonOpenerResend(db.Model):
+    __tablename__ = "non_opener_resend"
+
+    id = db.Column(db.Integer, primary_key=True)
+
+
+class SEOKeyword(db.Model):
+    __tablename__ = "seo_keyword"
+
+    id = db.Column(db.Integer, primary_key=True)
+    current_position = db.Column(db.Integer)
+
+
+class SEOBacklink(db.Model):
+    __tablename__ = "seo_backlink"
+
+    id = db.Column(db.Integer, primary_key=True)
+    domain_authority = db.Column(db.Float)
+
+
+class SEOCompetitor(db.Model):
+    __tablename__ = "seo_competitor"
+
+    id = db.Column(db.Integer, primary_key=True)
+
+
+class SEOAudit(db.Model):
+    __tablename__ = "seo_audit"
+
+    id = db.Column(db.Integer, primary_key=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class SEOPage(db.Model):
+    __tablename__ = "seo_page"
+
+    id = db.Column(db.Integer, primary_key=True)
+
+
+class TicketPurchase(db.Model):
+    __tablename__ = "ticket_purchase"
+
+    id = db.Column(db.Integer, primary_key=True)
+
+
+class EventCheckIn(db.Model):
+    __tablename__ = "event_check_in"
+
+    id = db.Column(db.Integer, primary_key=True)
+
+
+class SocialMediaAccount(db.Model):
+    __tablename__ = "social_media_account"
+
+    id = db.Column(db.Integer, primary_key=True)
+
+
+class SocialMediaSchedule(db.Model):
+    __tablename__ = "social_media_schedule"
+
+    id = db.Column(db.Integer, primary_key=True)
+
+
+class AutomationTest(db.Model):
+    __tablename__ = "automation_test"
+
+    id = db.Column(db.Integer, primary_key=True)
+
+
+class AutomationTriggerLibrary(db.Model):
+    __tablename__ = "automation_trigger_library"
+
+    id = db.Column(db.Integer, primary_key=True)
+
+
+class AutomationABTest(db.Model):
+    __tablename__ = "automation_ab_test"
+
+    id = db.Column(db.Integer, primary_key=True)
+
+
+class Deal(db.Model):
+    __tablename__ = "deal"
+
+    id = db.Column(db.Integer, primary_key=True)
+    stage = db.Column(db.String(100))
+    value = db.Column(db.Float)
+
+
+class LeadScore(db.Model):
+    __tablename__ = "lead_score"
+
+    id = db.Column(db.Integer, primary_key=True)
+    contact_id = db.Column(db.Integer, db.ForeignKey("contact.id"), nullable=True)
+
+
+class PersonalizationRule(db.Model):
+    __tablename__ = "personalization_rule"
+
+    id = db.Column(db.Integer, primary_key=True)
+
+
+class KeywordResearch(db.Model):
+    __tablename__ = "keyword_research"
+
+    id = db.Column(db.Integer, primary_key=True)
+
+
+class AgentTask(db.Model):
+    __tablename__ = "agent_task"
+
+    id = db.Column(db.Integer, primary_key=True)
+    agent_type = db.Column(db.String(100))
+    status = db.Column(db.String(50))
+    scheduled_at = db.Column(db.DateTime)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class AgentLog(db.Model):
+    __tablename__ = "agent_log"
+
+    id = db.Column(db.Integer, primary_key=True)
+    agent_type = db.Column(db.String(100))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class AgentReport(db.Model):
+    __tablename__ = "agent_report"
+
+    id = db.Column(db.Integer, primary_key=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class AgentSchedule(db.Model):
+    __tablename__ = "agent_schedule"
+
+    id = db.Column(db.Integer, primary_key=True)
+
+
+class AgentDeliverable(db.Model):
+    __tablename__ = "agent_deliverable"
+
+    id = db.Column(db.Integer, primary_key=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class AgentPerformance(db.Model):
+    __tablename__ = "agent_performance"
+
+    id = db.Column(db.Integer, primary_key=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class AgentMemory(db.Model):
+    __tablename__ = "agent_memory"
+
+    id = db.Column(db.Integer, primary_key=True)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class MarketSignal(db.Model):
+    __tablename__ = "market_signal"
+
+    id = db.Column(db.Integer, primary_key=True)
+    signal_date = db.Column(db.DateTime)
+
+
+class StrategyRecommendation(db.Model):
+    __tablename__ = "strategy_recommendation"
+
+    id = db.Column(db.Integer, primary_key=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class Competitor(db.Model):
+    __tablename__ = "competitor"
+
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(255))
+
+
+class FacebookOAuth(db.Model):
+    __tablename__ = "facebook_oauth"
+
+    id = db.Column(db.Integer, primary_key=True)
+
+
+class InstagramOAuth(db.Model):
+    __tablename__ = "instagram_oauth"
+
+    id = db.Column(db.Integer, primary_key=True)
+
+
+class WordPressIntegration(db.Model):
+    __tablename__ = "wordpress_integration"
+
+    id = db.Column(db.Integer, primary_key=True)
+
+
+class CompetitorProfile(db.Model):
+    __tablename__ = "competitor_profile"
+
+    id = db.Column(db.Integer, primary_key=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class MultivariateTest(db.Model):
+    __tablename__ = "multivariate_test"
+
+    id = db.Column(db.Integer, primary_key=True)
+
+
+class CampaignCost(db.Model):
+    __tablename__ = "campaign_cost"
+
+    id = db.Column(db.Integer, primary_key=True)
+    amount = db.Column(db.Float)
+
+
+class AttributionModel(db.Model):
+    __tablename__ = "attribution_model"
+
+    id = db.Column(db.Integer, primary_key=True)
+    revenue = db.Column(db.Float)
+
+
+class SurveyResponse(db.Model):
+    __tablename__ = "survey_response"
+
+    id = db.Column(db.Integer, primary_key=True)
+
+
+class AgentConfiguration(db.Model):
+    __tablename__ = "agent_configuration"
+
+    id = db.Column(db.Integer, primary_key=True)
+
+
+class CompanyIntegrationConfig(db.Model):
+    __tablename__ = "company_integration_config"
+
+    id = db.Column(db.Integer, primary_key=True)
+
+
+class AgentAutomation(db.Model):
+    __tablename__ = "agent_automation"
+
+    id = db.Column(db.Integer, primary_key=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
