@@ -13,7 +13,6 @@ from extensions import db, csrf
 # Application factory
 # --------------------------------------------------
 
-load_dotenv("/etc/lux-marketing/lux.env")
 
 
 def create_app(testing: bool = False):
