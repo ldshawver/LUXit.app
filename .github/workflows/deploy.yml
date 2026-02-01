@@ -30,10 +30,10 @@ jobs:
             sed -i 's/psycopg2-binary.*/psycopg[binary]==3.2.4/' requirements.txt
             echo "=== Activating venv ==="
             source venv/bin/activate
-            echo "=== Uninstalling old psycopg2 ==="
-            pip uninstall -y psycopg2-binary 2>/dev/null || true
+            echo "=== Upgrading SQLAlchemy for Python 3.13 ==="
+            pip install --upgrade 'SQLAlchemy>=2.0.25'
             echo "=== Installing dependencies ==="
-            pip install -r requirements.txt
+            pip install -r requirements.txt --upgrade
             echo "=== Restarting service ==="
             sudo systemctl restart luxit
             sleep 5
