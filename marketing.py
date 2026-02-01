@@ -1,55 +1,38 @@
 """Marketing site routes."""
 import logging
 
-from flask import Blueprint, render_template
-from jinja2 import TemplateNotFound
+from flask import Blueprint, redirect, render_template, url_for
 
 logger = logging.getLogger(__name__)
 
-marketing_bp = Blueprint("marketing", __name__, template_folder="marketing/templates")
+marketing_bp = Blueprint("marketing", __name__, template_folder="templates")
 
 
 @marketing_bp.route("/")
 def marketing_home():
     """Public marketing homepage."""
-    try:
-        return render_template("marketing/index.html")
-    except TemplateNotFound as exc:
-        logger.warning("Marketing index template missing: %s", exc)
-        return render_template("marketing/base.html")
+    return render_template("marketing/index.html")
 
 
 @marketing_bp.route("/features")
 def marketing_features():
-    try:
-        return render_template("marketing/features.html")
-    except TemplateNotFound as exc:
-        logger.warning("Marketing features template missing: %s", exc)
-        return render_template("marketing/base.html")
+    """Redirect to features section on homepage."""
+    return redirect(url_for("marketing.marketing_home") + "#features")
 
 
 @marketing_bp.route("/pricing")
 def marketing_pricing():
-    try:
-        return render_template("marketing/pricing.html")
-    except TemplateNotFound as exc:
-        logger.warning("Marketing pricing template missing: %s", exc)
-        return render_template("marketing/base.html")
+    """Redirect to pricing section on homepage."""
+    return redirect(url_for("marketing.marketing_home") + "#pricing")
 
 
 @marketing_bp.route("/about")
 def marketing_about():
-    try:
-        return render_template("marketing/about.html")
-    except TemplateNotFound as exc:
-        logger.warning("Marketing about template missing: %s", exc)
-        return render_template("marketing/base.html")
+    """Redirect to homepage (about info is on main page)."""
+    return redirect(url_for("marketing.marketing_home"))
 
 
 @marketing_bp.route("/contact")
 def marketing_contact():
-    try:
-        return render_template("marketing/contact.html")
-    except TemplateNotFound as exc:
-        logger.warning("Marketing contact template missing: %s", exc)
-        return render_template("marketing/base.html")
+    """Redirect to email contact."""
+    return redirect("mailto:sales@luxit.app")
