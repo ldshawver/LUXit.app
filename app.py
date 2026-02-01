@@ -62,11 +62,6 @@ def create_app(testing: bool = False):
     @app.before_request
     def request_id():
         g.request_id = request.headers.get("X-Request-ID", str(uuid4()))
-        if app.testing:
-            return None
-        host = (request.headers.get("X-Forwarded-Host") or request.host or "").split(":")[0].lower()
-        if host and host not in ALLOWED_HOSTS:
-            return redirect(f"https://{CANONICAL_HOST}{request.full_path.rstrip('?')}", 301)
         return None
 
     @app.context_processor
@@ -121,11 +116,6 @@ def create_app(testing: bool = False):
         with app.app_context():
             import models
             db.create_all()
-
-    @app.route("/logout")
-    def logout():
-        from auth import logout as auth_logout
-        return auth_logout()
 
     return app
 
