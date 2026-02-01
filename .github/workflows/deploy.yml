@@ -26,8 +26,9 @@ jobs:
             echo "=== Pulling latest code ==="
             git fetch origin main
             git reset --hard origin/main
-            echo "=== Fixing psycopg for Python 3.13 ==="
+            echo "=== Fixing packages for Python 3.13 ==="
             sed -i 's/psycopg2-binary.*/psycopg[binary]==3.2.4/' requirements.txt
+            sed -i 's/SQLAlchemy==2.0.23/SQLAlchemy>=2.0.25/' requirements.txt
             echo "=== Activating venv ==="
             source venv/bin/activate
             echo "=== Upgrading SQLAlchemy for Python 3.13 ==="
