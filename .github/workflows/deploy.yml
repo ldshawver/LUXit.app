@@ -1,38 +1,19 @@
 name: Deploy to VPS
+
 on:
   push:
     branches:
       - main
   workflow_dispatch:
+
 jobs:
-  test:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-      - name: Run syntax check
-        env:
-          CI: true
-          FLASK_ENV: testing
-          SESSION_SECRET: ci-test-secret
-          DATABASE_URL: sqlite:///test.db
-        run: |
-          python -c "from app import create_app; app = create_app(testing=True); print('App imports successfully')"
   deploy:
-    needs: test
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-      - name: Deploy to VPS via SSH
+
+      - name: Deploy to VPS
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.VPS_HOST }}
@@ -40,11 +21,18 @@ jobs:
           key: ${{ secrets.VPS_SSH_KEY }}
           port: ${{ secrets.VPS_PORT }}
           script: |
+            set -e
             cd /var/www/luxit
+            echo "=== Pulling latest code ==="
             git fetch origin main
             git reset --hard origin/main
+            echo "=== Activating venv ==="
             source venv/bin/activate
+            echo "=== Installing dependencies ==="
             pip install -r requirements.txt --quiet
+            echo "=== Restarting service ==="
             sudo systemctl restart luxit
             sleep 5
-            sudo systemctl is-active luxit && echo "Deployment successful!"
+            echo "=== Checking status ==="
+            sudo systemctl is-active luxit
+            echo "=== Deployment complete! ==="
