@@ -1,124 +1,27 @@
-import os
-import logging
-from uuid import uuid4
-from flask import Flask, g, redirect, render_template, request
-from flask_login import LoginManager
-from sqlalchemy.exc import SQLAlchemyError
-from werkzeug.middleware.proxy_fix import ProxyFix
-from dotenv import load_dotenv
-from extensions import db, csrf
+version: '3.8'
 
-# --------------------------------------------------
-# Environment
-# --------------------------------------------------
+services:
+  web:
+    build: .
+    ports:
+      - "5000:5000"
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - SESSION_SECRET=${SESSION_SECRET}
+      - FLASK_ENV=production
+    depends_on:
+      - db
+    restart: unless-stopped
 
-if not os.path.isfile("/etc/lux-marketing/lux.env"):
-    logging.warning("Environment file not found: /etc/lux-marketing/lux.env")
-load_dotenv("/etc/lux-marketing/lux.env")
+  db:
+    image: postgres:15-alpine
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    environment:
+      - POSTGRES_DB=luxit
+      - POSTGRES_USER=luxit
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+    restart: unless-stopped
 
-CANONICAL_HOST = os.getenv("CANONICAL_HOST")
-if not CANONICAL_HOST:
-    raise RuntimeError("CANONICAL_HOST must be set for deployment")
-
-ALLOWED_HOSTS = {
-    "luxit.app",
-    "www.luxit.app",
-    "app.luxit.app",
-    "api.luxit.app",
-    "127.0.0.1",
-    "localhost",
-    CANONICAL_HOST,
-}
-
-# --------------------------------------------------
-# Application factory (IMPORT-SAFE)
-# --------------------------------------------------
-
-def create_app():
-    app = Flask(__name__, template_folder="templates", static_folder="static")
-
-    # ---- Secret key (CI-safe) ----
-    secret_key = os.getenv("SESSION_SECRET") or os.getenv("SECRET_KEY")
-    if not secret_key:
-        raise RuntimeError("SESSION_SECRET or SECRET_KEY must be set for deployment")
-
-    app.config.update(
-        SECRET_KEY=secret_key,
-        PREFERRED_URL_SCHEME="https",
-        SESSION_COOKIE_SECURE=True,
-        SESSION_COOKIE_SAMESITE="None",
-        WTF_CSRF_TIME_LIMIT=3600,
-    )
-
-    # ---- Database ----
-    database_url = os.getenv("DATABASE_URL")
-    if not database_url:
-        raise RuntimeError("DATABASE_URL must be set for production")
-    app.config["SQLALCHEMY_DATABASE_URI"] = database_url
-    app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
-
-    # ---- Proxy ----
-    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_port=1)
-
-    # ---- Extensions ----
-    db.init_app(app)
-    csrf.init_app(app)
-
-    # ---- Login manager ----
-    login_manager = LoginManager()
-    login_manager.init_app(app)
-    login_manager.login_view = "auth.login"
-    login_manager.login_message = None
-
-    @login_manager.user_loader
-    def load_user(user_id):
-        from models import User
-        try:
-            return User.query.get(int(user_id))
-        except SQLAlchemyError:
-            db.session.rollback()
-            return None
-
-    # ---- Request hooks ----
-    @app.before_request
-    def enforce_canonical_host():
-        g.request_id = request.headers.get("X-Request-ID", str(uuid4()))
-        if not app.debug:
-            host = (request.headers.get("X-Forwarded-Host") or request.host or "").split(":")[0].lower()
-            if host and host not in ALLOWED_HOSTS:
-                return redirect(f"https://{CANONICAL_HOST}{request.full_path.rstrip('?')}", 301)
-
-    # ---- Blueprints ----
-    from routes import main_bp
-    from auth import auth_bp
-    from marketing import marketing_bp
-
-    app.register_blueprint(main_bp)
-    app.register_blueprint(auth_bp, url_prefix="/auth")
-    app.register_blueprint(marketing_bp)
-
-    # ---- Public routes ----
-    @app.route("/")
-    def marketing_home():
-        return render_template("marketing/index.html")
-
-    @app.route("/login")
-    def login_redirect():
-        from auth import login as auth_login
-        return auth_login()
-
-    return app
-
-
-# --------------------------------------------------
-# WSGI entrypoint (Gunicorn uses this)
-# --------------------------------------------------
-
-app = create_app()
-
-# --------------------------------------------------
-# Local dev
-# --------------------------------------------------
-
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(os.getenv("PORT", 5000)), debug=os.getenv("FLASK_ENV") == "development")
+volumes:
+  postgres_data:
