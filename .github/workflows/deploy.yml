@@ -1,27 +1,50 @@
-version: '3.8'
-
-services:
-  web:
-    build: .
-    ports:
-      - "5000:5000"
-    environment:
-      - DATABASE_URL=${DATABASE_URL}
-      - SESSION_SECRET=${SESSION_SECRET}
-      - FLASK_ENV=production
-    depends_on:
-      - db
-    restart: unless-stopped
-
-  db:
-    image: postgres:15-alpine
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    environment:
-      - POSTGRES_DB=luxit
-      - POSTGRES_USER=luxit
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
-    restart: unless-stopped
-
-volumes:
-  postgres_data:
+name: Deploy to VPS
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: Run syntax check
+        env:
+          CI: true
+          FLASK_ENV: testing
+          SESSION_SECRET: ci-test-secret
+          DATABASE_URL: sqlite:///test.db
+        run: |
+          python -c "from app import create_app; app = create_app(testing=True); print('App imports successfully')"
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Deploy to VPS via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.VPS_PORT }}
+          script: |
+            cd /var/www/luxit
+            git fetch origin main
+            git reset --hard origin/main
+            source venv/bin/activate
+            pip install -r requirements.txt --quiet
+            sudo systemctl restart luxit
+            sleep 5
+            sudo systemctl is-active luxit && echo "Deployment successful!"
