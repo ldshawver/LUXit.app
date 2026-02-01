@@ -1,15 +1,18 @@
 name: Deploy to VPS
+
 on:
   push:
     branches:
       - main
   workflow_dispatch:
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
       - name: Deploy to VPS
         uses: appleboy/ssh-action@v1.0.3
         with:
@@ -23,10 +26,14 @@ jobs:
             echo "=== Pulling latest code ==="
             git fetch origin main
             git reset --hard origin/main
+            echo "=== Fixing psycopg for Python 3.13 ==="
+            sed -i 's/psycopg2-binary.*/psycopg[binary]==3.2.4/' requirements.txt
             echo "=== Activating venv ==="
             source venv/bin/activate
+            echo "=== Uninstalling old psycopg2 ==="
+            pip uninstall -y psycopg2-binary 2>/dev/null || true
             echo "=== Installing dependencies ==="
-            pip install -r requirements.txt --quiet
+            pip install -r requirements.txt
             echo "=== Restarting service ==="
             sudo systemctl restart luxit
             sleep 5
