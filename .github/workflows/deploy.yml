@@ -10,15 +10,34 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      - name: Test SSH Connection
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Deploy to VPS
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
           port: ${{ secrets.VPS_PORT }}
-          timeout: 60s
           script: |
-            echo "SSH connection successful!"
-            whoami
-            hostname
+            set -e
+            cd /var/www/luxit
+            echo "=== Pulling latest code ==="
+            git fetch origin main
+            git reset --hard origin/main
+            echo "=== Fixing packages for Python 3.13 ==="
+            sed -i 's/psycopg2-binary.*/psycopg[binary]==3.2.4/' requirements.txt
+            sed -i 's/SQLAlchemy==2.0.23/SQLAlchemy>=2.0.25/' requirements.txt
+            echo "=== Activating venv ==="
+            source venv/bin/activate
+            echo "=== Upgrading SQLAlchemy for Python 3.13 ==="
+            pip install --upgrade 'SQLAlchemy>=2.0.25'
+            echo "=== Installing dependencies ==="
+            pip install -r requirements.txt --upgrade
+            echo "=== Restarting service ==="
+            sudo systemctl restart luxit
+            sleep 5
+            echo "=== Checking status ==="
+            sudo systemctl is-active luxit
+            echo "=== Deployment complete! ==="
