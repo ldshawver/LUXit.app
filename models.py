@@ -310,6 +310,15 @@ class Company(db.Model):
     name = db.Column(db.String(255))
     is_active = db.Column(db.Boolean, default=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    logo_path = db.Column(db.String(255))
+    website_url = db.Column(db.String(255))
+    primary_color = db.Column(db.String(20), default='#bc00ed')
+    secondary_color = db.Column(db.String(20), default='#00ffb4')
+    accent_color = db.Column(db.String(20), default='#e4055c')
+    font_family = db.Column(db.String(100), default='Inter, sans-serif')
+    industry = db.Column(db.String(100))
+    description = db.Column(Text)
 
 
 class Contact(db.Model):
@@ -660,8 +669,19 @@ class Deal(db.Model):
     __tablename__ = "deal"
 
     id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=True)
     stage = db.Column(db.String(100))
     value = db.Column(db.Float)
+    name = db.Column(db.String(200))
+    contact_id = db.Column(db.Integer, db.ForeignKey("contact.id"), nullable=True)
+    expected_close_date = db.Column(db.DateTime)
+    probability = db.Column(db.Float, default=0.5)
+    notes = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    company = db.relationship("Company", backref="deals")
+    contact = db.relationship("Contact", backref="deals")
 
 
 class LeadScore(db.Model):
@@ -687,52 +707,197 @@ class AgentTask(db.Model):
     __tablename__ = "agent_task"
 
     id = db.Column(db.Integer, primary_key=True)
-    agent_type = db.Column(db.String(100))
-    status = db.Column(db.String(50))
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=False, index=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True)
+    agent_type = db.Column(db.String(100), nullable=False, index=True)
+    agent_name = db.Column(db.String(200))
+    task_name = db.Column(db.String(255))
+    task_type = db.Column(db.String(100))
+    task_data = db.Column(db.Text)
+    result_data = db.Column(db.Text)
+    status = db.Column(db.String(50), default='pending', index=True)
+    priority = db.Column(db.Integer, default=5)
     scheduled_at = db.Column(db.DateTime)
+    started_at = db.Column(db.DateTime)
+    completed_at = db.Column(db.DateTime)
+    error_message = db.Column(db.Text)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    company = db.relationship("Company", backref="agent_tasks")
+    user = db.relationship("User", backref="agent_tasks")
+    
+    __table_args__ = (
+        db.Index("ix_agent_task_company_status", "company_id", "status"),
+        db.Index("ix_agent_task_agent_type_status", "agent_type", "status"),
+    )
 
 
 class AgentLog(db.Model):
     __tablename__ = "agent_log"
 
     id = db.Column(db.Integer, primary_key=True)
-    agent_type = db.Column(db.String(100))
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=False, index=True)
+    agent_type = db.Column(db.String(100), nullable=False)
+    agent_name = db.Column(db.String(200))
+    activity_type = db.Column(db.String(100))
+    details = db.Column(db.Text)
+    status = db.Column(db.String(50))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    company = db.relationship("Company", backref="agent_logs")
 
 
 class AgentReport(db.Model):
     __tablename__ = "agent_report"
 
     id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=False, index=True)
+    agent_type = db.Column(db.String(100), nullable=False, index=True)
+    agent_name = db.Column(db.String(200))
+    report_type = db.Column(db.String(50), nullable=False)
+    report_frequency = db.Column(db.String(50))
+    title = db.Column(db.String(500))
+    summary = db.Column(db.Text)
+    report_data = db.Column(db.Text)
+    insights = db.Column(db.Text)
+    recommendations = db.Column(db.Text)
+    external_factors = db.Column(db.Text)
+    report_period_start = db.Column(db.DateTime)
+    report_period_end = db.Column(db.DateTime)
+    status = db.Column(db.String(50), default='generated')
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    company = db.relationship("Company", backref="agent_reports")
+    
+    __table_args__ = (
+        db.Index("ix_agent_report_company_agent", "company_id", "agent_type"),
+    )
 
 
 class AgentSchedule(db.Model):
     __tablename__ = "agent_schedule"
 
     id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=False, index=True)
+    agent_type = db.Column(db.String(100), nullable=False)
+    schedule_type = db.Column(db.String(50))
+    frequency = db.Column(db.String(50))
+    cron_expression = db.Column(db.String(100))
+    is_active = db.Column(db.Boolean, default=True)
+    last_run = db.Column(db.DateTime)
+    next_run = db.Column(db.DateTime)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    company = db.relationship("Company", backref="agent_schedules")
 
 
 class AgentDeliverable(db.Model):
     __tablename__ = "agent_deliverable"
 
     id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=False, index=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True)
+    agent_type = db.Column(db.String(100), nullable=False, index=True)
+    deliverable_type = db.Column(db.String(100))
+    title = db.Column(db.String(500))
+    description = db.Column(db.Text)
+    request_data = db.Column(db.Text)
+    output_data = db.Column(db.Text)
+    file_path = db.Column(db.String(500))
+    status = db.Column(db.String(50), default='requested')
+    priority = db.Column(db.Integer, default=5)
+    due_date = db.Column(db.DateTime)
+    completed_at = db.Column(db.DateTime)
+    feedback = db.Column(db.Text)
+    rating = db.Column(db.Integer)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    company = db.relationship("Company", backref="agent_deliverables")
+    user = db.relationship("User", backref="agent_deliverables")
+    
+    __table_args__ = (
+        db.Index("ix_agent_deliverable_company_status", "company_id", "status"),
+    )
 
 
 class AgentPerformance(db.Model):
     __tablename__ = "agent_performance"
 
     id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=False, index=True)
+    agent_type = db.Column(db.String(100), nullable=False)
+    metric_type = db.Column(db.String(100))
+    metric_value = db.Column(db.Float)
+    metric_data = db.Column(db.Text)
+    period_start = db.Column(db.DateTime)
+    period_end = db.Column(db.DateTime)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    company = db.relationship("Company", backref="agent_performance")
 
 
 class AgentMemory(db.Model):
     __tablename__ = "agent_memory"
 
     id = db.Column(db.Integer, primary_key=True)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=False, index=True)
+    agent_type = db.Column(db.String(100), nullable=False, index=True)
+    memory_type = db.Column(db.String(100))
+    memory_key = db.Column(db.String(255))
+    memory_value = db.Column(db.Text)
+    context = db.Column(db.Text)
+    relevance_score = db.Column(db.Float, default=1.0)
+    expires_at = db.Column(db.DateTime)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    company = db.relationship("Company", backref="agent_memories")
+    
+    __table_args__ = (
+        db.Index("ix_agent_memory_company_agent", "company_id", "agent_type"),
+    )
+
+
+class AgentConversation(db.Model):
+    __tablename__ = "agent_conversation"
+
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=False, index=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    agent_type = db.Column(db.String(100), nullable=False, index=True)
+    session_id = db.Column(db.String(100))
+    role = db.Column(db.String(20))
+    message = db.Column(db.Text)
+    message_metadata = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    company = db.relationship("Company", backref="agent_conversations")
+    user = db.relationship("User", backref="agent_conversations")
+    
+    __table_args__ = (
+        db.Index("ix_agent_conversation_session", "company_id", "session_id"),
+    )
+
+
+class AgentReview(db.Model):
+    __tablename__ = "agent_review"
+
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=False, index=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True)
+    agent_type = db.Column(db.String(100), nullable=False)
+    review_type = db.Column(db.String(100))
+    item_type = db.Column(db.String(100))
+    item_id = db.Column(db.Integer)
+    item_content = db.Column(db.Text)
+    analysis = db.Column(db.Text)
+    suggestions = db.Column(db.Text)
+    score = db.Column(db.Float)
+    status = db.Column(db.String(50), default='pending')
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    company = db.relationship("Company", backref="agent_reviews")
+    user = db.relationship("User", backref="agent_reviews")
 
 
 class MarketSignal(db.Model):

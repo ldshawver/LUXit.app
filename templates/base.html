@@ -47,40 +47,49 @@
                 {% if current_user.is_authenticated %}
                 <div class="header-actions">
                     <span class="glass-pill">{{ current_user.email }}</span>
+                    
+                    <!-- Company Logo/Icon -->
+                    {% if current_company %}
+                    <div class="company-badge" style="display: flex; align-items: center; gap: 8px; background: rgba(188,0,237,0.15); padding: 6px 12px; border-radius: 8px; border: 1px solid rgba(188,0,237,0.3);">
+                        {% if current_company.logo_path %}
+                        <img src="{{ url_for('static', filename=current_company.logo_path) }}" alt="{{ current_company.name }}" class="rounded" style="height: 28px; width: 28px; object-fit: cover;">
+                        {% else %}
+                        <div style="height: 28px; width: 28px; background: linear-gradient(135deg, #bc00ed, #00ffb4); border-radius: 6px; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 12px; color: #fff;">
+                            {{ current_company.name[0]|upper }}
+                        </div>
+                        {% endif %}
+                        <span style="font-size: 13px; font-weight: 600; color: #bc00ed;">{{ current_company.name }}</span>
+                    </div>
+                    {% endif %}
+                    
+                    <!-- Settings Gear Dropdown -->
                     <div class="dropdown">
-                        <button class="btn btn-link p-0" type="button" id="settingsDropdown" data-bs-toggle="dropdown" aria-expanded="false">
-                            <span class="btn-lux btn-lux-primary">Settings</span>
+                        <button class="btn btn-link p-0" type="button" id="settingsDropdown" data-bs-toggle="dropdown" aria-expanded="false" style="background: rgba(0,255,180,0.1); border: 1px solid rgba(0,255,180,0.3); border-radius: 8px; padding: 8px; display: flex; align-items: center; justify-content: center;">
+                            <i data-feather="settings" style="width: 20px; height: 20px; color: #00ffb4;"></i>
                         </button>
-                        <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="settingsDropdown">
-                            <li><a class="dropdown-item" href="#"><i data-feather="user"></i> Profile</a></li>
-                            <li><a class="dropdown-item" href="#"><i data-feather="lock"></i> Change Password</a></li>
+                        <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="settingsDropdown" style="min-width: 280px;">
+                            <li><h6 class="dropdown-header">Account</h6></li>
+                            <li><a class="dropdown-item" href="{{ url_for('main.user_profile') }}"><i data-feather="user"></i> My Profile</a></li>
+                            <li><a class="dropdown-item" href="{{ url_for('main.change_password') }}"><i data-feather="lock"></i> Change Password</a></li>
+                            <li><a class="dropdown-item" href="{{ url_for('main.manage_users') }}"><i data-feather="users"></i> Manage Users</a></li>
                             <li><hr class="dropdown-divider"></li>
-                            <li><h6 class="dropdown-header">AI & Tools</h6></li>
-                            <li><a class="dropdown-item" href="#"><i data-feather="cpu"></i> LUX AI Dashboard</a></li>
-                            <li><a class="dropdown-item" href="#"><i data-feather="users"></i> AI Agents Hub</a></li>
-                            <li><a class="dropdown-item" href="#"><i data-feather="bar-chart-2"></i> Analytics Hub</a></li>
+                            <li><h6 class="dropdown-header">Company Settings</h6></li>
+                            <li><a class="dropdown-item" href="{{ url_for('main.settings_integrations') }}"><i data-feather="sliders"></i> Connections & API Keys</a></li>
+                            <li><a class="dropdown-item" href="{{ url_for('main.companies_list') }}"><i data-feather="briefcase"></i> Manage Companies</a></li>
                             <li><hr class="dropdown-divider"></li>
-                            <li><h6 class="dropdown-header">Companies</h6></li>
+                            <li><h6 class="dropdown-header">Switch Company</h6></li>
                             {% for company in user_companies %}
-                            <li><a class="dropdown-item" href="#" onclick="selectCompany({{ company.id }})">
-                                <i data-feather="briefcase"></i> {{ company.name }}
+                            <li><a class="dropdown-item d-flex align-items-center justify-content-between" href="#" onclick="switchToCompany({{ company.id }}); return false;">
+                                <span><i data-feather="building"></i> {{ company.name }}</span>
                                 {% if current_company and company.id == current_company.id %}
-                                <span class="badge bg-success">Current</span>
+                                <span class="badge bg-success">Active</span>
                                 {% endif %}
                             </a></li>
                             {% endfor %}
                             <li><hr class="dropdown-divider"></li>
-                            <li><a class="dropdown-item" href="#"><i data-feather="edit"></i> Manage Companies</a></li>
-                            <li><a class="dropdown-item" href="#"><i data-feather="plus"></i> Add Company</a></li>
-                            <li><hr class="dropdown-divider"></li>
                             <li><a class="dropdown-item text-danger" href="{{ url_for('auth.logout') }}"><i data-feather="log-out"></i> Sign Out</a></li>
                         </ul>
                     </div>
-                    {% if current_company and current_company.logo_path %}
-                    <img src="{{ url_for('static', filename=current_company.logo_path) }}" alt="{{ current_company.name }}" class="rounded-3" style="height: 44px; width: auto;">
-                    {% elif current_company %}
-                    <img src="{{ url_for('static', filename='lux_logo.png') }}" alt="{{ current_company.name }}" class="rounded-3" style="height: 44px; width: auto;">
-                    {% endif %}
                 </div>
                 {% endif %}
             </div>
@@ -107,6 +116,26 @@
     {% if current_user.is_authenticated and current_company is defined %}
     <script>
       window.LUX_COMPANY_ID = {{ current_company.id if current_company else 'null' }};
+      
+      function switchToCompany(companyId) {
+        fetch('/api/user/set-default-company', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': document.querySelector('meta[name="csrf-token"]').content
+          },
+          body: JSON.stringify({ company_id: companyId })
+        })
+        .then(r => r.json())
+        .then(data => {
+          if (data.success) {
+            window.location.reload();
+          } else {
+            alert('Failed to switch company: ' + (data.error || 'Unknown error'));
+          }
+        })
+        .catch(err => alert('Error: ' + err));
+      }
     </script>
     <script src="{{ url_for('static', filename='js/analytics.js') }}"></script>
     {% endif %}

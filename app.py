@@ -17,16 +17,12 @@ def create_app(testing: bool = False):
     app = Flask(__name__, template_folder="templates", static_folder="static")
     app.testing = testing
 
-    secret_key = (os.getenv("SESSION_SECRET") or os.getenv("SECRET_KEY")
-                  or ("ci-test-secret" if testing else None))
-    if not secret_key:
-        if testing:
-            secret_key = "luxit-test-secret"
-        else:
-            raise RuntimeError("SESSION_SECRET or SECRET_KEY must be set")
-
+    app.secret_key = os.environ.get("SESSION_SECRET")
+    if not app.secret_key and testing:
+        app.secret_key = "luxit-test-secret"
+    
     app.config.update(
-        SECRET_KEY=secret_key,
+        SECRET_KEY=app.secret_key,
         PREFERRED_URL_SCHEME="https",
         SESSION_COOKIE_SECURE=True,
         SESSION_COOKIE_SAMESITE="None",
@@ -90,10 +86,8 @@ def create_app(testing: bool = False):
             except Exception:
                 pass
 
-    from routes import main_bp
-
     # ---- Blueprints ----
-    from main import main_bp
+    from routes import main_bp
     from auth import auth_bp
     from marketing import marketing_bp
 
@@ -103,20 +97,12 @@ def create_app(testing: bool = False):
 
     # ---- Routes ----
     # "/" is handled by marketing_bp for the public marketing homepage
-
-    @app.route("/health")
-    def health():
-        return {"status": "ok"}, 200
+    # /health is handled by main_bp.health_check in routes.py
 
     # ---- Side effects (PROD ONLY) ----
     if False:
         with app.app_context():
             db.create_all()
-
-    @app.route("/logout")
-    def logout():
-        from auth import logout as auth_logout
-        return auth_logout()
 
     @app.route("/logout")
     def logout():

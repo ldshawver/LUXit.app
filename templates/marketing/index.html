@@ -1,126 +1,305 @@
 {% extends "marketing/base.html" %}
 
-{% block title %}LUXit — Your Entire Marketing Department, Automated{% endblock %}
+{% block title %}LUX IT — Revenue Operations Reimagined with AI{% endblock %}
 
 {% block content %}
+<!-- Hero -->
 <section class="hero">
-  <div>
-    <span class="badge">LUXit Platform v1</span>
-    <h1>Your Entire Marketing Department.<br>Automated.</h1>
-    <p>Strategy. Campaigns. Analytics. Optimization. Powered by AI. Run by LUXit.</p>
-    <div style="display:flex; gap:12px; flex-wrap:wrap; margin-top:24px;">
-      <a class="cta-primary" href="/auth/login">Access the Platform</a>
-      <a class="cta-secondary" href="#how-it-works">See how it works</a>
+  <div class="hero-content">
+    <div class="hero-badge">Introducing LUX IT 3.0</div>
+    <h1 class="hero-title">
+      <span class="line"><span class="gradient-text"><span id="typewriter"></span></span></span>
+      <span class="line">Reimagined with AI</span>
+    </h1>
+    <p class="hero-subtitle">
+      The licensable revenue operating system that unifies AI agents, CRM, and automated outreach into one compliant command center.
+    </p>
+    <div class="hero-buttons">
+      <a class="btn-primary" href="/auth/login">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+        Start Free Trial
+      </a>
+      <a class="btn-secondary" href="/auth/login">Sign In to Dashboard</a>
     </div>
   </div>
 </section>
 
-<section class="section">
-  <h2 class="section-title">The problem</h2>
-  <p class="section-subtitle">Too many tools. Too much manual work. Growth teams are drowning in dashboards instead of building momentum.</p>
-  <div class="grid">
-    <div class="card">
-      <h3>Fragmented stack</h3>
-      <p class="section-subtitle">Email, analytics, ads, and automation are scattered across vendors that never talk.</p>
+<!-- Stats -->
+<div class="stats-row">
+  <div class="stat"><div class="stat-number">11</div><div class="stat-label">AI Agents</div></div>
+  <div class="stat"><div class="stat-number">3x</div><div class="stat-label">Productivity</div></div>
+  <div class="stat"><div class="stat-number">60%</div><div class="stat-label">Cost Savings</div></div>
+  <div class="stat"><div class="stat-number">50+</div><div class="stat-label">Integrations</div></div>
+</div>
+
+<!-- Features -->
+<section class="section" id="features">
+  <div class="section-header">
+    <div class="section-label">Platform</div>
+    <h2 class="section-title">Everything You Need to Scale</h2>
+    <p class="section-subtitle">A complete revenue operating system for modern agencies and enterprises.</p>
+  </div>
+  <svg style="position:absolute;width:0;height:0;">
+    <defs>
+      <linearGradient id="iconGrad" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#00e5ff"/><stop offset="100%" stop-color="#a855f7"/></linearGradient>
+    </defs>
+  </svg>
+  <div class="feature-grid">
+    <div class="feature-card">
+      <div class="feature-summary">
+        <div class="feature-card-icon">
+          <svg viewBox="0 0 48 48" fill="none" stroke="url(#iconGrad)" stroke-width="1.5">
+            <rect x="8" y="6" width="32" height="24" rx="4" fill="none"/>
+            <circle cx="18" cy="16" r="3" fill="#00e5ff" stroke="none"/>
+            <circle cx="30" cy="16" r="3" fill="#00e5ff" stroke="none"/>
+            <path d="M16 24c0 0 3 4 8 4s8-4 8-4" stroke-linecap="round"/>
+            <rect x="20" y="30" width="8" height="4" rx="1"/>
+            <rect x="14" y="34" width="20" height="3" rx="1.5"/>
+            <path d="M6 14l-3-2M6 20l-3 2M42 14l3-2M42 20l3 2" stroke-linecap="round" opacity="0.6"/>
+            <circle cx="24" cy="3" r="2" fill="#a855f7" stroke="none"/>
+            <line x1="24" y1="5" x2="24" y2="6" stroke-width="2"/>
+          </svg>
+        </div>
+        <div class="feature-content">
+          <h3>11 Autonomous AI Agents</h3>
+          <p>Research, outreach, follow-ups, and optimization running 24/7 without manual intervention.</p>
+        </div>
+        <div class="expand-indicator"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg></div>
+      </div>
+      <div class="feature-details">
+        <ul>
+          <li>Lead Research Agent - Finds and qualifies prospects automatically</li>
+          <li>Content Writer Agent - Generates blog posts, emails, and social content</li>
+          <li>Email CRM Agent - Manages campaigns and follow-up sequences</li>
+          <li>Social Media Agent - Schedules and publishes across all platforms</li>
+          <li>Analytics Agent - Tracks KPIs and generates performance reports</li>
+          <li>SEO Agent - Optimizes content and tracks keyword rankings</li>
+        </ul>
+      </div>
     </div>
-    <div class="card">
-      <h3>Manual execution</h3>
-      <p class="section-subtitle">High-impact campaigns still require spreadsheets, handoffs, and late-night QA.</p>
+    <div class="feature-card">
+      <div class="feature-summary">
+        <div class="feature-card-icon">
+          <svg viewBox="0 0 48 48" fill="none" stroke="url(#iconGrad)" stroke-width="1.5">
+            <ellipse cx="24" cy="24" rx="20" ry="8" fill="none"/>
+            <ellipse cx="24" cy="24" rx="8" ry="20" fill="none" transform="rotate(60 24 24)"/>
+            <ellipse cx="24" cy="24" rx="8" ry="20" fill="none" transform="rotate(-60 24 24)"/>
+            <circle cx="24" cy="24" r="4" fill="#00e5ff" stroke="none"/>
+            <circle cx="24" cy="4" r="2" fill="#a855f7" stroke="none"/>
+            <circle cx="41" cy="34" r="2" fill="#ec4899" stroke="none"/>
+            <circle cx="7" cy="34" r="2" fill="#00e5ff" stroke="none"/>
+            <path d="M24 28v8M20 36h8" stroke-linecap="round" opacity="0.5"/>
+          </svg>
+        </div>
+        <div class="feature-content">
+          <h3>Multi-Channel Outreach</h3>
+          <p>Email, SMS, social media orchestrated from one dashboard with compliance built in.</p>
+        </div>
+        <div class="expand-indicator"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg></div>
+      </div>
+      <div class="feature-details">
+        <ul>
+          <li>Email campaigns with A/B testing and smart scheduling</li>
+          <li>SMS marketing with Twilio integration</li>
+          <li>Social publishing to Instagram, TikTok, Facebook, LinkedIn, X</li>
+          <li>Unified inbox for all channel responses</li>
+          <li>Automated drip sequences and nurture campaigns</li>
+        </ul>
+      </div>
     </div>
-    <div class="card">
-      <h3>Blind optimization</h3>
-      <p class="section-subtitle">Without a unified system, performance insights arrive too late to matter.</p>
+    <div class="feature-card">
+      <div class="feature-summary">
+        <div class="feature-card-icon">
+          <svg viewBox="0 0 48 48" fill="none" stroke="url(#iconGrad)" stroke-width="1.5">
+            <path d="M24 4L6 14v16c0 8 8 14 18 14s18-6 18-14V14L24 4z" fill="none"/>
+            <path d="M24 8L10 16v12c0 6 6 10 14 10s14-4 14-10V16L24 8z" fill="rgba(0,229,255,0.1)" stroke="none"/>
+            <path d="M16 24l6 6 12-12" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+            <circle cx="24" cy="42" r="2" fill="#00e5ff" stroke="none"/>
+            <path d="M6 14l4 2M42 14l-4 2" stroke-linecap="round" opacity="0.5"/>
+          </svg>
+        </div>
+        <div class="feature-content">
+          <h3>Enterprise Security</h3>
+          <p>Approval workflows, audit logs, emergency stops, and role-based permissions.</p>
+        </div>
+        <div class="expand-indicator"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg></div>
+      </div>
+      <div class="feature-details">
+        <ul>
+          <li>Content approval queue before publishing</li>
+          <li>Full audit trail of all actions</li>
+          <li>Emergency stop to halt all automation instantly</li>
+          <li>Role-based access control (Admin, Manager, User)</li>
+          <li>GDPR and CAN-SPAM compliance tools</li>
+        </ul>
+      </div>
+    </div>
+    <div class="feature-card">
+      <div class="feature-summary">
+        <div class="feature-card-icon">
+          <svg viewBox="0 0 48 48" fill="none" stroke="url(#iconGrad)" stroke-width="1.5">
+            <rect x="4" y="8" width="40" height="32" rx="3" fill="none"/>
+            <line x1="4" y1="16" x2="44" y2="16"/>
+            <circle cx="10" cy="12" r="1.5" fill="#ec4899" stroke="none"/>
+            <circle cx="16" cy="12" r="1.5" fill="#f59e0b" stroke="none"/>
+            <circle cx="22" cy="12" r="1.5" fill="#00e5ff" stroke="none"/>
+            <rect x="10" y="22" width="6" height="14" rx="1" fill="rgba(0,229,255,0.3)" stroke="none"/>
+            <rect x="21" y="26" width="6" height="10" rx="1" fill="rgba(168,85,247,0.3)" stroke="none"/>
+            <rect x="32" y="20" width="6" height="16" rx="1" fill="rgba(236,72,153,0.3)" stroke="none"/>
+            <path d="M8 32l8-6 8 4 8-10 8 6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            <circle cx="40" cy="26" r="2" fill="#00e5ff" stroke="none"/>
+          </svg>
+        </div>
+        <div class="feature-content">
+          <h3>Analytics & Intelligence</h3>
+          <p>Real-time dashboards with CAC, LTV, attribution, and campaign performance metrics.</p>
+        </div>
+        <div class="expand-indicator"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg></div>
+      </div>
+      <div class="feature-details">
+        <ul>
+          <li>Customer Acquisition Cost (CAC) tracking</li>
+          <li>Lifetime Value (LTV) calculations</li>
+          <li>Multi-touch attribution modeling</li>
+          <li>Campaign ROI and conversion analytics</li>
+          <li>Cohort analysis and retention metrics</li>
+          <li>Custom report builder with export options</li>
+        </ul>
+      </div>
     </div>
   </div>
 </section>
 
-<section class="section">
-  <h2 class="section-title">The solution</h2>
-  <p class="section-subtitle">LUXit replaces the scattered stack with a single, automated marketing department.</p>
-  <div class="grid">
-    <div class="card">
-      <h3>Unified control room</h3>
-      <p class="section-subtitle">One platform for strategy, execution, and measurement.</p>
+<!-- Comparison -->
+<section class="comparison-section" id="compare">
+  <div class="section-header">
+    <div class="section-label">Comparison</div>
+    <h2 class="section-title">Replace Your Entire Stack</h2>
+    <p class="section-subtitle">Stop paying for 10 different tools. LUX IT consolidates everything.</p>
+  </div>
+  <table class="comparison-table">
+    <thead>
+      <tr>
+        <th>Feature</th>
+        <th class="highlight">LUX IT</th>
+        <th>HubSpot</th>
+        <th>Salesforce</th>
+        <th>ActiveCampaign</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>AI Agents (Autonomous)</td>
+        <td class="highlight"><span class="check">✓ 11 Agents</span></td>
+        <td><span class="cross">✗</span></td>
+        <td><span class="partial">Limited</span></td>
+        <td><span class="cross">✗</span></td>
+      </tr>
+      <tr>
+        <td>Multi-Channel Outreach</td>
+        <td class="highlight"><span class="check">✓ All Channels</span></td>
+        <td><span class="check">✓</span></td>
+        <td><span class="check">✓</span></td>
+        <td><span class="partial">Email Only</span></td>
+      </tr>
+      <tr>
+        <td>White-Label / Licensable</td>
+        <td class="highlight"><span class="check">✓ Full</span></td>
+        <td><span class="cross">✗</span></td>
+        <td><span class="cross">✗</span></td>
+        <td><span class="cross">✗</span></td>
+      </tr>
+      <tr>
+        <td>Approval Workflows</td>
+        <td class="highlight"><span class="check">✓ Built-in</span></td>
+        <td><span class="partial">Add-on</span></td>
+        <td><span class="check">✓</span></td>
+        <td><span class="cross">✗</span></td>
+      </tr>
+      <tr>
+        <td>Social Media Publishing</td>
+        <td class="highlight"><span class="check">✓ All Platforms</span></td>
+        <td><span class="partial">Limited</span></td>
+        <td><span class="cross">✗</span></td>
+        <td><span class="cross">✗</span></td>
+      </tr>
+      <tr>
+        <td>Starting Price</td>
+        <td class="highlight"><span class="check">$199/mo</span></td>
+        <td>$800/mo</td>
+        <td>$1,250/mo</td>
+        <td>$149/mo</td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- Pricing -->
+<section class="pricing-section" id="pricing">
+  <div class="section-header">
+    <div class="section-label">Pricing</div>
+    <h2 class="section-title">Plans That Scale With You</h2>
+    <p class="section-subtitle">From startups to enterprise. No hidden fees.</p>
+  </div>
+  <div class="pricing-grid">
+    <div class="pricing-card">
+      <div class="pricing-tier">Starter</div>
+      <div class="pricing-name">Small Business</div>
+      <div class="pricing-price">$199<span>/mo</span></div>
+      <div class="pricing-desc">Perfect for growing teams</div>
+      <ul class="pricing-features">
+        <li>3 AI Agents</li>
+        <li>2,500 Contacts</li>
+        <li>Email & SMS Outreach</li>
+        <li>Basic Analytics</li>
+        <li>5 Team Members</li>
+      </ul>
+      <a href="/auth/login" class="pricing-btn secondary">Get Started</a>
     </div>
-    <div class="card">
-      <h3>Always-on intelligence</h3>
-      <p class="section-subtitle">AI agents handle research, planning, and optimization in real time.</p>
+    <div class="pricing-card featured">
+      <div class="pricing-tier">Professional</div>
+      <div class="pricing-name">Agencies & Teams</div>
+      <div class="pricing-price">$499<span>/mo</span></div>
+      <div class="pricing-desc">Manage multiple companies</div>
+      <ul class="pricing-features">
+        <li>All 11 AI Agents</li>
+        <li>50,000 Contacts</li>
+        <li>Multi-Company Dashboard</li>
+        <li>All Channels + Social</li>
+        <li>Advanced Analytics</li>
+        <li>Unlimited Team</li>
+        <li>Priority Support</li>
+      </ul>
+      <a href="/auth/login" class="pricing-btn primary">Start Free Trial</a>
     </div>
-    <div class="card">
-      <h3>Execution without chaos</h3>
-      <p class="section-subtitle">Launch campaigns with precision workflows and guided approvals.</p>
+    <div class="pricing-card">
+      <div class="pricing-tier">Enterprise</div>
+      <div class="pricing-name">White Label</div>
+      <div class="pricing-price">Custom</div>
+      <div class="pricing-desc">Your brand, your platform</div>
+      <ul class="pricing-features">
+        <li>Full White-Label</li>
+        <li>Unlimited Everything</li>
+        <li>Custom Integrations</li>
+        <li>Dedicated Support</li>
+        <li>On-Premise Option</li>
+        <li>SLA Guarantee</li>
+      </ul>
+      <a href="/auth/login" class="pricing-btn secondary">Contact Sales</a>
     </div>
   </div>
 </section>
 
-<section class="section">
-  <h2 class="section-title">Core capabilities</h2>
-  <p class="section-subtitle">Everything you need to run an elite marketing organization.</p>
-  <div class="grid">
-    <div class="card">
-      <h3>Strategy</h3>
-      <p class="section-subtitle">Market insight, positioning, and campaign architecture.</p>
-    </div>
-    <div class="card">
-      <h3>Execution</h3>
-      <p class="section-subtitle">Multi-channel orchestration across email, paid, and lifecycle touchpoints.</p>
-    </div>
-    <div class="card">
-      <h3>Analytics</h3>
-      <p class="section-subtitle">Unified performance intelligence with no guesswork.</p>
-    </div>
-    <div class="card">
-      <h3>Optimization</h3>
-      <p class="section-subtitle">AI-driven iteration that keeps every campaign improving.</p>
-    </div>
+<!-- CTA -->
+<section class="cta-section">
+  <h2 class="cta-title">Ready to <span class="gradient-text">Transform Everything?</span></h2>
+  <p class="cta-subtitle">Join hundreds of agencies scaling with LUX IT.</p>
+  <div class="hero-buttons" style="opacity:1;transform:none;">
+    <a class="btn-primary" href="/auth/login">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+      Start Your Free Trial
+    </a>
+    <a class="btn-secondary" href="/auth/login">Request Demo</a>
   </div>
-</section>
-
-<section class="section">
-  <h2 class="section-title">Your entire marketing department</h2>
-  <p class="section-subtitle">LUXit integrates the functions you normally hire for—strategists, analysts, campaign managers, and optimizers—into one coordinated system.</p>
-  <div class="grid">
-    <div class="card">
-      <h3>Strategist</h3>
-      <p class="section-subtitle">Plans your growth roadmap and clarifies positioning.</p>
-    </div>
-    <div class="card">
-      <h3>Campaign lead</h3>
-      <p class="section-subtitle">Launches and manages coordinated initiatives.</p>
-    </div>
-    <div class="card">
-      <h3>Analyst</h3>
-      <p class="section-subtitle">Surfaces the metrics that matter, continuously.</p>
-    </div>
-  </div>
-</section>
-
-<section class="section" id="how-it-works">
-  <h2 class="section-title">How it works</h2>
-  <p class="section-subtitle">Four steps from strategy to compounding growth.</p>
-  <div class="grid">
-    <div class="card">
-      <h3>1. Connect</h3>
-      <p class="section-subtitle">Bring your brand, channels, and goals into one workspace.</p>
-    </div>
-    <div class="card">
-      <h3>2. Plan</h3>
-      <p class="section-subtitle">LUXit builds a clear roadmap with measurable priorities.</p>
-    </div>
-    <div class="card">
-      <h3>3. Launch</h3>
-      <p class="section-subtitle">Ship coordinated campaigns across your stack.</p>
-    </div>
-    <div class="card">
-      <h3>4. Optimize</h3>
-      <p class="section-subtitle">AI-driven insights guide what happens next.</p>
-    </div>
-  </div>
-</section>
-
-<section class="section">
-  <h2 class="section-title">Ready to activate your marketing department?</h2>
-  <p class="section-subtitle">Gain access to LUXit and run your marketing operation from one intelligent command center.</p>
-  <a class="cta-primary" href="/auth/login">Access the Platform</a>
 </section>
 {% endblock %}

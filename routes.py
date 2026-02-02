@@ -121,27 +121,7 @@ from sqlalchemy import text
 
 from extensions import db
 
-main_bp = Blueprint('main', __name__, template_folder="dashboard/templates")
-
-ALLOWED_V1_ENDPOINTS = {
-    "main.dashboard",
-    "main.health_check",
-}
-
-
-@main_bp.before_request
-def enforce_v1_scope():
-    endpoint = request.endpoint or ""
-    if endpoint.startswith("main.") and endpoint not in ALLOWED_V1_ENDPOINTS:
-        logger.warning("Route %s is disabled in V1 scope.", endpoint)
-        return render_template(
-            "coming_soon.html",
-            title="Coming Soon",
-            message="This feature will return once the full data model is available.",
-        ), 501
-    return None
-
-main_bp = Blueprint('main', __name__, template_folder="dashboard/templates")
+main_bp = Blueprint('main', __name__)
 
 def get_app_version() -> str:
     version_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "VERSION")
@@ -152,6 +132,13 @@ def get_app_version() -> str:
         current_app.logger.warning("Unable to read app version from %s: %s", version_path, exc)
         return "unknown"
 
+def _safe_int(value, default: int = 0) -> int:
+    """Safely convert a value to int, returning default if conversion fails."""
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
 
 @main_bp.route('/dashboard')
 @login_required
@@ -159,7 +146,7 @@ def dashboard():
     ai_status = "enabled" if os.getenv("OPENAI_API_KEY") else "disabled"
     scheduler_status = "running" if _scheduler_status() == "running" else "disabled"
     return render_template(
-        'dashboard/index.html',
+        'dashboard.html',
         user=current_user,
         app_version=get_app_version(),
         plan_status="Not configured",
@@ -179,6 +166,34 @@ def campaign_hub():
     """Campaign Hub with SEO, Competitors, and AI Campaign Generator"""
     return render_template('campaign_hub.html')
 
+@main_bp.route('/campaigns')
+@login_required
+def campaigns():
+    """Email Campaigns list - redirect to campaign hub"""
+    from models import Campaign, Company, user_company
+    
+    company = db.session.query(Company).join(
+        user_company, Company.id == user_company.c.company_id
+    ).filter(user_company.c.user_id == current_user.id).first()
+    company_id = company.id if company else None
+    
+    status_filter = request.args.get('status', '')
+    page = request.args.get('page', 1, type=int)
+    
+    query = Campaign.query.filter_by(company_id=company_id)
+    if status_filter:
+        query = query.filter_by(status=status_filter)
+    
+    campaigns = query.order_by(Campaign.created_at.desc()).paginate(page=page, per_page=20)
+    
+    return render_template('campaigns.html', campaigns=campaigns, status_filter=status_filter)
+
+@main_bp.route('/analytics')
+@login_required
+def analytics():
+    """Analytics page - redirect to analytics hub"""
+    return redirect(url_for('main.analytics_hub'))
+
 @main_bp.route('/ai-dashboard')
 @login_required
 def ai_dashboard():
@@ -197,20 +212,41 @@ def ai_dashboard():
     jobs = scheduler.get_scheduled_jobs()
     
     # Get recent agent tasks (last 7 days)
-    recent_tasks = AgentTask.query.filter(
-        AgentTask.created_at >= datetime.now() - timedelta(days=7)
-    ).order_by(AgentTask.created_at.desc()).limit(50).all()
+    # Get current company for filtering
+    from models import Company, user_company
+    company = db.session.query(Company).join(
+        user_company, Company.id == user_company.c.company_id
+    ).filter(user_company.c.user_id == current_user.id).first()
+    company_id = company.id if company else None
     
-    # Calculate agent statistics
+    try:
+        tasks_query = AgentTask.query.filter(
+            AgentTask.created_at >= datetime.now() - timedelta(days=7)
+        )
+        if company_id:
+            tasks_query = tasks_query.filter(AgentTask.company_id == company_id)
+        recent_tasks = tasks_query.order_by(AgentTask.created_at.desc()).limit(50).all()
+    except Exception as exc:
+        logger.warning(f"Recent tasks query error: {exc}")
+        recent_tasks = []
+    
+    # Calculate agent statistics with company scoping (company_id already defined above)
     from sqlalchemy import case
-    agent_stats = db.session.query(
-        AgentTask.agent_type,
-        func.count(AgentTask.id).label('total_tasks'),
-        func.sum(case((AgentTask.status == 'completed', 1), else_=0)).label('completed'),
-        func.sum(case((AgentTask.status == 'failed', 1), else_=0)).label('failed')
-    ).filter(
-        AgentTask.created_at >= datetime.now() - timedelta(days=30)
-    ).group_by(AgentTask.agent_type).all()
+    try:
+        stats_query = db.session.query(
+            AgentTask.agent_type,
+            func.count(AgentTask.id).label('total_tasks'),
+            func.sum(case((AgentTask.status == 'completed', 1), else_=0)).label('completed'),
+            func.sum(case((AgentTask.status == 'failed', 1), else_=0)).label('failed')
+        ).filter(
+            AgentTask.created_at >= datetime.now() - timedelta(days=30)
+        )
+        if company_id:
+            stats_query = stats_query.filter(AgentTask.company_id == company_id)
+        agent_stats = stats_query.group_by(AgentTask.agent_type).all()
+    except Exception as exc:
+        logger.warning(f"Agent stats query error (likely schema not synced): {exc}")
+        agent_stats = []
     
     # Format stats for template
     stats_dict = {}
@@ -242,9 +278,9 @@ def ai_dashboard():
 @main_bp.route('/ai-dashboard/agent/<agent_type>')
 @login_required
 def ai_agent_detail(agent_type):
-    """Detailed view of a specific AI agent"""
+    """Detailed view of a specific AI agent with chat, reports, deliverables, and memory"""
     from agent_scheduler import get_agent_scheduler
-    from models import AgentTask
+    from models import AgentTask, AgentReport, AgentDeliverable, AgentMemory, AgentConversation, Company, user_company
     
     scheduler = get_agent_scheduler()
     agent = scheduler.agents.get(agent_type)
@@ -253,12 +289,39 @@ def ai_agent_detail(agent_type):
         flash('Agent not found', 'error')
         return redirect(url_for('main.ai_dashboard'))
     
-    # Get agent tasks
-    tasks = AgentTask.query.filter_by(agent_type=agent_type).order_by(
-        AgentTask.created_at.desc()
-    ).limit(100).all()
+    company = db.session.query(Company).join(
+        user_company, Company.id == user_company.c.company_id
+    ).filter(user_company.c.user_id == current_user.id).first()
+    company_id = company.id if company else None
     
-    return render_template('ai_agent_detail.html', agent=agent, tasks=tasks, agent_type=agent_type)
+    tasks = AgentTask.query.filter_by(
+        agent_type=agent_type, company_id=company_id
+    ).order_by(AgentTask.created_at.desc()).limit(100).all()
+    
+    reports = AgentReport.query.filter_by(
+        agent_type=agent_type, company_id=company_id
+    ).order_by(AgentReport.created_at.desc()).limit(20).all()
+    
+    deliverables = AgentDeliverable.query.filter_by(
+        agent_type=agent_type, company_id=company_id
+    ).order_by(AgentDeliverable.created_at.desc()).limit(20).all()
+    
+    memories = AgentMemory.query.filter_by(
+        agent_type=agent_type, company_id=company_id
+    ).order_by(AgentMemory.updated_at.desc()).limit(20).all()
+    
+    conversations = AgentConversation.query.filter_by(
+        agent_type=agent_type, company_id=company_id, user_id=current_user.id
+    ).order_by(AgentConversation.created_at.desc()).limit(50).all()
+    
+    return render_template('ai_agent_detail.html', 
+                         agent=agent, 
+                         tasks=tasks, 
+                         agent_type=agent_type,
+                         reports=reports,
+                         deliverables=deliverables,
+                         memories=memories,
+                         conversations=conversations)
 
 @main_bp.route('/ai-dashboard/execute/<agent_type>', methods=['POST'])
 @login_required
@@ -984,16 +1047,6 @@ def _scheduler_status():
         return "disabled"
 
 
-@main_bp.route('/dashboard')
-@login_required
-def dashboard():
-    return render_template(
-        'v1/dashboard.html',
-        user=current_user,
-        app_version=get_app_version(),
-    )
-
-
 @main_bp.route('/health')
 def health_check():
     db_ok, db_error = _db_status()
@@ -1617,6 +1670,13 @@ def automation_dashboard():
         logger.error(f"Agent scheduler unavailable: {exc}")
         agents = {}
 
+    def safe_agent_count(model, agent_type):
+        """Safely count agent records, returning 0 if table doesn't exist"""
+        try:
+            return model.query.filter_by(agent_type=agent_type).count()
+        except Exception:
+            return 0
+    
     # Build detailed agent info for enhanced tiles
     agent_details = [
         {
@@ -1625,8 +1685,8 @@ def automation_dashboard():
             'icon': '🎯',
             'purpose': 'Market research, competitive analysis, brand positioning, and quarterly strategy planning.',
             'scheduled_tasks': ['Quarterly Strategy', 'Monthly Research'],
-            'deliverables_count': AgentDeliverable.query.filter_by(agent_type='brand_strategy').count(),
-            'reports_count': AgentReport.query.filter_by(agent_type='brand_strategy').count()
+            'deliverables_count': safe_agent_count(AgentDeliverable, 'brand_strategy'),
+            'reports_count': safe_agent_count(AgentReport, 'brand_strategy')
         },
         {
             'type': 'content_seo',
@@ -1634,8 +1694,8 @@ def automation_dashboard():
             'icon': '✍️',
             'purpose': 'Blog posts, SEO optimization, content calendars, and keyword research.',
             'scheduled_tasks': ['Weekly Blog Post', 'Monthly Calendar'],
-            'deliverables_count': AgentDeliverable.query.filter_by(agent_type='content_seo').count(),
-            'reports_count': AgentReport.query.filter_by(agent_type='content_seo').count()
+            'deliverables_count': safe_agent_count(AgentDeliverable, 'content_seo'),
+            'reports_count': safe_agent_count(AgentReport, 'content_seo')
         },
         {
             'type': 'analytics',
@@ -1643,8 +1703,8 @@ def automation_dashboard():
             'icon': '📊',
             'purpose': 'Performance tracking, KPIs, optimization recommendations, and data insights.',
             'scheduled_tasks': ['Daily Recommendations', 'Weekly Summary', 'Monthly Report'],
-            'deliverables_count': AgentDeliverable.query.filter_by(agent_type='analytics').count(),
-            'reports_count': AgentReport.query.filter_by(agent_type='analytics').count()
+            'deliverables_count': safe_agent_count(AgentDeliverable, 'analytics'),
+            'reports_count': safe_agent_count(AgentReport, 'analytics')
         },
         {
             'type': 'creative_design',
@@ -1652,8 +1712,8 @@ def automation_dashboard():
             'icon': '🎨',
             'purpose': 'Graphics, images, visual assets, and brand creative using DALL-E 3.',
             'scheduled_tasks': ['Weekly Assets'],
-            'deliverables_count': AgentDeliverable.query.filter_by(agent_type='creative_design').count(),
-            'reports_count': AgentReport.query.filter_by(agent_type='creative_design').count()
+            'deliverables_count': safe_agent_count(AgentDeliverable, 'creative_design'),
+            'reports_count': safe_agent_count(AgentReport, 'creative_design')
         },
         {
             'type': 'advertising',
@@ -1661,8 +1721,8 @@ def automation_dashboard():
             'icon': '📢',
             'purpose': 'Campaign strategy, ad copy, audience targeting, and performance optimization.',
             'scheduled_tasks': ['Weekly Strategy Review'],
-            'deliverables_count': AgentDeliverable.query.filter_by(agent_type='advertising').count(),
-            'reports_count': AgentReport.query.filter_by(agent_type='advertising').count()
+            'deliverables_count': safe_agent_count(AgentDeliverable, 'advertising'),
+            'reports_count': safe_agent_count(AgentReport, 'advertising')
         },
         {
             'type': 'social_media',
@@ -1670,8 +1730,8 @@ def automation_dashboard():
             'icon': '📱',
             'purpose': 'Social content, posting schedules, engagement, and community management.',
             'scheduled_tasks': ['Daily Posts'],
-            'deliverables_count': AgentDeliverable.query.filter_by(agent_type='social_media').count(),
-            'reports_count': AgentReport.query.filter_by(agent_type='social_media').count()
+            'deliverables_count': safe_agent_count(AgentDeliverable, 'social_media'),
+            'reports_count': safe_agent_count(AgentReport, 'social_media')
         },
         {
             'type': 'email_crm',
@@ -1679,8 +1739,8 @@ def automation_dashboard():
             'icon': '📧',
             'purpose': 'Email campaigns, subscriber sync, CRM automation, and customer outreach.',
             'scheduled_tasks': ['Weekly Campaign', 'Daily Subscriber Sync'],
-            'deliverables_count': AgentDeliverable.query.filter_by(agent_type='email_crm').count(),
-            'reports_count': AgentReport.query.filter_by(agent_type='email_crm').count()
+            'deliverables_count': safe_agent_count(AgentDeliverable, 'email_crm'),
+            'reports_count': safe_agent_count(AgentReport, 'email_crm')
         },
         {
             'type': 'sales_enablement',
@@ -1688,8 +1748,8 @@ def automation_dashboard():
             'icon': '💼',
             'purpose': 'Lead scoring, sales materials, prospect insights, and pipeline optimization.',
             'scheduled_tasks': ['Weekly Lead Scoring'],
-            'deliverables_count': AgentDeliverable.query.filter_by(agent_type='sales_enablement').count(),
-            'reports_count': AgentReport.query.filter_by(agent_type='sales_enablement').count()
+            'deliverables_count': safe_agent_count(AgentDeliverable, 'sales_enablement'),
+            'reports_count': safe_agent_count(AgentReport, 'sales_enablement')
         },
         {
             'type': 'retention',
@@ -1697,8 +1757,8 @@ def automation_dashboard():
             'icon': '❤️',
             'purpose': 'Churn prevention, loyalty programs, win-back campaigns, and customer success.',
             'scheduled_tasks': ['Monthly Churn Analysis'],
-            'deliverables_count': AgentDeliverable.query.filter_by(agent_type='retention').count(),
-            'reports_count': AgentReport.query.filter_by(agent_type='retention').count()
+            'deliverables_count': safe_agent_count(AgentDeliverable, 'retention'),
+            'reports_count': safe_agent_count(AgentReport, 'retention')
         },
         {
             'type': 'operations',
@@ -1706,8 +1766,8 @@ def automation_dashboard():
             'icon': '⚙️',
             'purpose': 'System health, integration checks, workflow automation, and infrastructure.',
             'scheduled_tasks': ['Daily Health Check'],
-            'deliverables_count': AgentDeliverable.query.filter_by(agent_type='operations').count(),
-            'reports_count': AgentReport.query.filter_by(agent_type='operations').count()
+            'deliverables_count': safe_agent_count(AgentDeliverable, 'operations'),
+            'reports_count': safe_agent_count(AgentReport, 'operations')
         },
         {
             'type': 'app_intelligence',
@@ -1715,8 +1775,8 @@ def automation_dashboard():
             'icon': '🧠',
             'purpose': 'Platform monitoring, usage analysis, self-diagnosis, and improvement suggestions.',
             'scheduled_tasks': ['Hourly Health', 'Daily Analysis', 'Weekly Improvements'],
-            'deliverables_count': AgentDeliverable.query.filter_by(agent_type='app_intelligence').count(),
-            'reports_count': AgentReport.query.filter_by(agent_type='app_intelligence').count()
+            'deliverables_count': safe_agent_count(AgentDeliverable, 'app_intelligence'),
+            'reports_count': safe_agent_count(AgentReport, 'app_intelligence')
         }
     ]
     
@@ -4337,29 +4397,7 @@ def system_init():
     return redirect(url_for('main.dashboard'))
 
 # ===== MONITORING & HEALTH CHECK =====
-@main_bp.route('/health')
-def health_check():
-    """Health check endpoint for monitoring"""
-    db_ok = True
-    db_error = None
-    try:
-        db.session.execute(text("SELECT 1"))
-    except Exception as exc:
-        db_ok = False
-        db_error = str(exc)
-        logger.error(f"Health check failed: {exc}")
-    payload = {
-        "status": "ok" if db_ok else "degraded",
-        "db": "connected" if db_ok else "error",
-        "auth": "ready" if "auth" in current_app.blueprints else "unavailable",
-        "ai": "enabled" if os.getenv("OPENAI_API_KEY") else "disabled",
-        "version": get_app_version(),
-        "timestamp": datetime.utcnow().isoformat()
-    }
-    if db_error:
-        payload["db_error"] = db_error[:200]
-    return jsonify(payload), 200 if db_ok else 503
-
+# Primary health_check function is defined earlier in the file
 
 def _feature_config_summary():
     return {
@@ -4720,6 +4758,36 @@ def company_settings(company_id):
     except Exception as e:
         logger.error(f"Settings page error: {e}")
         return redirect(url_for('main.dashboard'))
+
+@main_bp.route('/user/change-password', methods=['GET', 'POST'])
+@login_required
+def change_password():
+    """Change password page"""
+    if request.method == 'POST':
+        from werkzeug.security import generate_password_hash, check_password_hash
+        current_password = request.form.get('current_password')
+        new_password = request.form.get('new_password')
+        confirm_password = request.form.get('confirm_password')
+        
+        if not current_user.password_hash or check_password_hash(current_user.password_hash, current_password):
+            if new_password == confirm_password and len(new_password) >= 6:
+                current_user.password_hash = generate_password_hash(new_password)
+                db.session.commit()
+                flash('Password changed successfully!', 'success')
+                return redirect(url_for('main.dashboard'))
+            else:
+                flash('Passwords do not match or are too short', 'error')
+        else:
+            flash('Current password is incorrect', 'error')
+    return render_template('change_password.html')
+
+@main_bp.route('/user/manage-users')
+@login_required
+def manage_users():
+    """Manage users page"""
+    from models import User
+    users = User.query.all() if current_user.is_admin else [current_user]
+    return render_template('manage_users.html', users=users)
 
 @main_bp.route('/api/user/set-default-company', methods=['POST'])
 @login_required
@@ -5377,14 +5445,26 @@ def crm_dashboard():
     """CRM dashboard with deals and pipeline"""
     from models import Deal
     from sqlalchemy import func
-    company = current_user.get_default_company()
     
-    deals = Deal.query.filter_by(company_id=company.id).all()
-    pipeline_data = db.session.query(
-        Deal.stage,
-        func.count(Deal.id).label('count'),
-        func.sum(Deal.value).label('total_value')
-    ).filter_by(company_id=company.id).group_by(Deal.stage).all()
+    try:
+        company = current_user.get_default_company()
+        company_id = company.id if company else None
+        
+        deals = Deal.query.filter_by(company_id=company_id).all() if company_id else []
+        pipeline_data = []
+        if company_id:
+            try:
+                pipeline_data = db.session.query(
+                    Deal.stage,
+                    func.count(Deal.id).label('count'),
+                    func.sum(Deal.value).label('total_value')
+                ).filter_by(company_id=company_id).group_by(Deal.stage).all()
+            except Exception as exc:
+                logger.warning(f"Pipeline query error: {exc}")
+    except Exception as exc:
+        logger.warning(f"CRM dashboard error: {exc}")
+        deals = []
+        pipeline_data = []
     
     return render_template('crm_dashboard.html', deals=deals, pipeline_data=pipeline_data)
 
@@ -7586,6 +7666,272 @@ def get_agent_suggestions(agent_type):
     except Exception as e:
         logger.error(f"Agent suggestions error: {e}")
         return jsonify({'success': True, 'suggestions': []})
+
+@main_bp.route('/api/agents/<agent_type>/reports', methods=['GET'])
+@login_required
+def get_agent_reports(agent_type):
+    """Get reports generated by a specific agent"""
+    from models import AgentReport, Company, user_company
+    
+    company = db.session.query(Company).join(
+        user_company, Company.id == user_company.c.company_id
+    ).filter(user_company.c.user_id == current_user.id).first()
+    company_id = company.id if company else None
+    
+    reports = AgentReport.query.filter_by(
+        agent_type=agent_type, company_id=company_id
+    ).order_by(AgentReport.created_at.desc()).limit(50).all()
+    
+    return jsonify({
+        'success': True,
+        'reports': [{
+            'id': r.id,
+            'report_type': r.report_type,
+            'title': r.title,
+            'period_start': r.period_start.isoformat() if r.period_start else None,
+            'period_end': r.period_end.isoformat() if r.period_end else None,
+            'status': r.status,
+            'created_at': r.created_at.isoformat() if r.created_at else None
+        } for r in reports]
+    })
+
+@main_bp.route('/api/agents/<agent_type>/reports', methods=['POST'])
+@login_required
+def create_agent_report(agent_type):
+    """Generate a new report from an agent"""
+    from models import AgentReport, Company, user_company
+    from datetime import datetime, timedelta
+    import os
+    from openai import OpenAI
+    
+    try:
+        data = request.get_json()
+        report_type = data.get('report_type', 'weekly')
+        
+        company = db.session.query(Company).join(
+            user_company, Company.id == user_company.c.company_id
+        ).filter(user_company.c.user_id == current_user.id).first()
+        company_id = company.id if company else None
+        
+        now = datetime.utcnow()
+        if report_type == 'daily':
+            period_start = now - timedelta(days=1)
+            period_end = now
+        elif report_type == 'weekly':
+            period_start = now - timedelta(weeks=1)
+            period_end = now
+        elif report_type == 'monthly':
+            period_start = now - timedelta(days=30)
+            period_end = now
+        elif report_type == 'quarterly':
+            period_start = now - timedelta(days=90)
+            period_end = now
+        else:
+            period_start = now - timedelta(weeks=1)
+            period_end = now
+        
+        agent_titles = {
+            'brand_strategy': 'Brand & Strategy',
+            'content_seo': 'Content & SEO',
+            'analytics': 'Analytics',
+            'creative_design': 'Creative Design',
+            'advertising': 'Advertising',
+            'social_media': 'Social Media',
+            'email_crm': 'Email & CRM',
+            'sales_enablement': 'Sales Enablement',
+            'retention': 'Customer Retention',
+            'operations': 'Operations',
+            'app_intelligence': 'APP Intelligence'
+        }
+        
+        title = f"{agent_titles.get(agent_type, agent_type.title())} {report_type.title()} Report"
+        
+        report = AgentReport(
+            company_id=company_id,
+            agent_type=agent_type,
+            report_type=report_type,
+            title=title,
+            period_start=period_start,
+            period_end=period_end,
+            status='generating'
+        )
+        db.session.add(report)
+        db.session.commit()
+        
+        api_key = os.environ.get("OPENAI_API_KEY")
+        if api_key:
+            try:
+                client = OpenAI(api_key=api_key)
+                prompt = f"""Generate a {report_type} marketing report for the {agent_titles.get(agent_type, agent_type)} area.
+                
+Include:
+1. Executive Summary
+2. Key Metrics & Performance
+3. Insights & Trends
+4. Recommendations
+5. Action Items
+
+Format as clean, professional markdown."""
+
+                response = client.chat.completions.create(
+                    model="gpt-4o",
+                    messages=[
+                        {"role": "system", "content": f"You are the {agent_titles.get(agent_type, agent_type)} Agent, generating a professional marketing report."},
+                        {"role": "user", "content": prompt}
+                    ],
+                    temperature=0.7,
+                    max_tokens=2000
+                )
+                
+                report.content = response.choices[0].message.content
+                report.status = 'completed'
+            except Exception as e:
+                logger.error(f"AI report generation error: {e}")
+                report.content = f"Report generation encountered an error. Please try again later."
+                report.status = 'failed'
+        else:
+            report.content = "AI report generation is not available. Please configure the OpenAI API key."
+            report.status = 'completed'
+        
+        db.session.commit()
+        
+        return jsonify({
+            'success': True,
+            'report_id': report.id,
+            'status': report.status
+        })
+        
+    except Exception as e:
+        db.session.rollback()
+        logger.error(f"Create report error: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@main_bp.route('/api/agents/<agent_type>/reports/<int:report_id>', methods=['GET'])
+@login_required
+def get_agent_report_detail(agent_type, report_id):
+    """Get a specific report with company validation"""
+    from models import AgentReport, Company, user_company
+    
+    company = db.session.query(Company).join(
+        user_company, Company.id == user_company.c.company_id
+    ).filter(user_company.c.user_id == current_user.id).first()
+    company_id = company.id if company else None
+    
+    report = AgentReport.query.get(report_id)
+    if not report or report.agent_type != agent_type or report.company_id != company_id:
+        return jsonify({'success': False, 'error': 'Report not found'}), 404
+    
+    return jsonify({
+        'success': True,
+        'report': {
+            'id': report.id,
+            'report_type': report.report_type,
+            'title': report.title,
+            'content': report.content,
+            'period_start': report.period_start.strftime('%Y-%m-%d') if report.period_start else None,
+            'period_end': report.period_end.strftime('%Y-%m-%d') if report.period_end else None,
+            'status': report.status,
+            'created_at': report.created_at.isoformat() if report.created_at else None
+        }
+    })
+
+@main_bp.route('/api/agents/<agent_type>/deliverables', methods=['GET'])
+@login_required
+def get_agent_deliverables(agent_type):
+    """Get deliverables for a specific agent"""
+    from models import AgentDeliverable, Company, user_company
+    
+    company = db.session.query(Company).join(
+        user_company, Company.id == user_company.c.company_id
+    ).filter(user_company.c.user_id == current_user.id).first()
+    company_id = company.id if company else None
+    
+    deliverables = AgentDeliverable.query.filter_by(
+        agent_type=agent_type, company_id=company_id
+    ).order_by(AgentDeliverable.created_at.desc()).limit(50).all()
+    
+    return jsonify({
+        'success': True,
+        'deliverables': [{
+            'id': d.id,
+            'deliverable_type': d.deliverable_type,
+            'title': d.title,
+            'priority': d.priority,
+            'status': d.status,
+            'created_at': d.created_at.isoformat() if d.created_at else None
+        } for d in deliverables]
+    })
+
+@main_bp.route('/api/agents/<agent_type>/deliverables', methods=['POST'])
+@login_required
+def create_agent_deliverable(agent_type):
+    """Request a new deliverable from an agent"""
+    from models import AgentDeliverable, Company, user_company
+    
+    try:
+        data = request.get_json()
+        deliverable_type = data.get('deliverable_type', 'custom')
+        description = data.get('description', '')
+        priority = data.get('priority', 'normal')
+        
+        company = db.session.query(Company).join(
+            user_company, Company.id == user_company.c.company_id
+        ).filter(user_company.c.user_id == current_user.id).first()
+        company_id = company.id if company else None
+        
+        title = description[:100] if description else f"{deliverable_type.replace('_', ' ').title()} Deliverable"
+        
+        deliverable = AgentDeliverable(
+            company_id=company_id,
+            agent_type=agent_type,
+            deliverable_type=deliverable_type,
+            title=title,
+            description=description,
+            priority=priority,
+            status='pending',
+            requested_by_id=current_user.id
+        )
+        db.session.add(deliverable)
+        db.session.commit()
+        
+        return jsonify({
+            'success': True,
+            'deliverable_id': deliverable.id
+        })
+        
+    except Exception as e:
+        db.session.rollback()
+        logger.error(f"Create deliverable error: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@main_bp.route('/api/agents/<agent_type>/deliverables/<int:deliverable_id>', methods=['GET'])
+@login_required
+def get_agent_deliverable_detail(agent_type, deliverable_id):
+    """Get a specific deliverable with company validation"""
+    from models import AgentDeliverable, Company, user_company
+    
+    company = db.session.query(Company).join(
+        user_company, Company.id == user_company.c.company_id
+    ).filter(user_company.c.user_id == current_user.id).first()
+    company_id = company.id if company else None
+    
+    deliverable = AgentDeliverable.query.get(deliverable_id)
+    if not deliverable or deliverable.agent_type != agent_type or deliverable.company_id != company_id:
+        return jsonify({'success': False, 'error': 'Deliverable not found'}), 404
+    
+    return jsonify({
+        'success': True,
+        'deliverable': {
+            'id': deliverable.id,
+            'type': deliverable.deliverable_type,
+            'title': deliverable.title,
+            'description': deliverable.description,
+            'content': deliverable.content,
+            'priority': deliverable.priority,
+            'status': deliverable.status,
+            'created_at': deliverable.created_at.isoformat() if deliverable.created_at else None
+        }
+    })
 
 print("✓ AI Agent interaction endpoints loaded:")
 print("  - POST /api/agents/chat (chat with any agent)")

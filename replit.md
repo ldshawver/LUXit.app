@@ -94,6 +94,15 @@ docker-compose up -d
 - **Username:** admin
 - **Password:** admin123 (change immediately after first login)
 
+## Recent Changes (February 2026)
+- Fixed Settings page: Added gear icon dropdown in header with user profile, change password, manage users, connections & API keys, and company switcher
+- Added company badge display in header showing current company name with logo/initials
+- Updated Company model with branding columns: logo_path, website_url, primary_color, secondary_color, accent_color, font_family, industry, description
+- Fixed duplicate route definitions in routes.py that were causing startup failures
+- Fixed app.py secret_key handling to use SESSION_SECRET environment variable
+- Removed duplicate health check route from app.py
+- User management routes: /user/profile, /user/change-password, /user/manage-users, /companies
+
 ## File Structure
 ```
 /

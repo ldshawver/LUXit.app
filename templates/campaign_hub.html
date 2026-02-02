@@ -21,7 +21,7 @@
         <div class="card-body">
           <h5 class="card-title"><i data-feather="zap" style="color: gold;"></i> AI Campaign Generator</h5>
           <p class="card-text">Let AI create comprehensive multi-channel campaigns for you</p>
-          <a href="{{ url_for('main.create_campaign') }}" class="btn btn-primary">Generate Campaign</a>
+          <a href="#" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#aiCampaignModal">Generate Campaign</a>
         </div>
       </div>
     </div>
@@ -78,7 +78,73 @@
   </div>
 </div>
 
+<div class="modal fade" id="aiCampaignModal" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content bg-dark">
+      <div class="modal-header border-secondary">
+        <h5 class="modal-title"><i data-feather="zap" style="color: gold;"></i> AI Campaign Generator</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="mb-3">
+          <label class="form-label">Campaign Goal</label>
+          <select class="form-select bg-secondary text-white" id="campaignGoal">
+            <option value="awareness">Brand Awareness</option>
+            <option value="leads">Lead Generation</option>
+            <option value="sales">Drive Sales</option>
+            <option value="engagement">Boost Engagement</option>
+            <option value="retention">Customer Retention</option>
+          </select>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Target Audience</label>
+          <input type="text" class="form-control bg-secondary text-white" id="targetAudience" placeholder="e.g., Small business owners, Tech enthusiasts">
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Campaign Description</label>
+          <textarea class="form-control bg-secondary text-white" id="campaignDescription" rows="3" placeholder="Describe what you want to promote or achieve..."></textarea>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Channels</label>
+          <div class="form-check">
+            <input class="form-check-input" type="checkbox" id="channelEmail" checked>
+            <label class="form-check-label" for="channelEmail">Email</label>
+          </div>
+          <div class="form-check">
+            <input class="form-check-input" type="checkbox" id="channelSocial" checked>
+            <label class="form-check-label" for="channelSocial">Social Media</label>
+          </div>
+          <div class="form-check">
+            <input class="form-check-input" type="checkbox" id="channelSMS">
+            <label class="form-check-label" for="channelSMS">SMS</label>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer border-secondary">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-primary" onclick="generateAICampaign()">
+          <i data-feather="zap"></i> Generate Campaign
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <script>
   feather.replace();
+  
+  function generateAICampaign() {
+    const goal = document.getElementById('campaignGoal').value;
+    const audience = document.getElementById('targetAudience').value;
+    const description = document.getElementById('campaignDescription').value;
+    
+    if (!audience || !description) {
+      alert('Please fill in all fields');
+      return;
+    }
+    
+    alert('AI Campaign generation coming soon! Your campaign will include:\n- Goal: ' + goal + '\n- Target: ' + audience);
+    bootstrap.Modal.getInstance(document.getElementById('aiCampaignModal')).hide();
+  }
 </script>
 {% endblock %}
