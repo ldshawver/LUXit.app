@@ -1,0 +1,336 @@
+{% extends "base.html" %}
+{% block title %}Press Releases & Media - LUX IT{% endblock %}
+{% block content %}
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h1><i data-feather="file-text"></i> Press Releases & Media</h1>
+        <div>
+            <button class="btn btn-outline-info me-2" data-bs-toggle="modal" data-bs-target="#mediaContactModal">
+                <i data-feather="users"></i> Media Contacts
+            </button>
+            <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createPressReleaseModal">
+                <i data-feather="plus"></i> Create Press Release
+            </button>
+        </div>
+    </div>
+
+    <div class="row mb-4">
+        <div class="col-md-3">
+            <div class="card bg-dark text-white">
+                <div class="card-body text-center">
+                    <h3 class="text-info">{{ press_releases|length if press_releases else 0 }}</h3>
+                    <small>Total Releases</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card bg-dark text-white">
+                <div class="card-body text-center">
+                    <h3 class="text-success">{{ press_releases|selectattr('status', 'equalto', 'published')|list|length if press_releases else 0 }}</h3>
+                    <small>Published</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card bg-dark text-white">
+                <div class="card-body text-center">
+                    <h3 class="text-warning">{{ media_contacts|length if media_contacts else 0 }}</h3>
+                    <small>Media Contacts</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card bg-dark text-white">
+                <div class="card-body text-center">
+                    <h3 class="text-primary">{{ total_pickups|default(0) }}</h3>
+                    <small>Media Pickups</small>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-lg-8">
+            <div class="card bg-dark border-secondary">
+                <div class="card-header bg-transparent">
+                    <h5 class="mb-0"><i data-feather="list"></i> Press Releases</h5>
+                </div>
+                <div class="card-body">
+                    {% if press_releases %}
+                    <div class="table-responsive">
+                        <table class="table table-dark table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Title</th>
+                                    <th>Status</th>
+                                    <th>Release Date</th>
+                                    <th>Pickups</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for pr in press_releases %}
+                                <tr>
+                                    <td>
+                                        <strong>{{ pr.title }}</strong>
+                                        {% if pr.embargo_until %}
+                                        <br><small class="text-warning"><i data-feather="lock" style="width:12px;height:12px;"></i> Embargo until {{ pr.embargo_until.strftime('%b %d, %Y') if pr.embargo_until else '' }}</small>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        <span class="badge bg-{% if pr.status == 'published' %}success{% elif pr.status == 'sent' %}info{% elif pr.status == 'draft' %}secondary{% else %}warning{% endif %}">
+                                            {{ pr.status|title }}
+                                        </span>
+                                    </td>
+                                    <td>{{ pr.release_date.strftime('%b %d, %Y') if pr.release_date else '-' }}</td>
+                                    <td><span class="badge bg-primary">{{ pr.pickups or 0 }}</span></td>
+                                    <td>
+                                        <div class="btn-group btn-group-sm">
+                                            <button class="btn btn-outline-info" onclick="viewPressRelease({{ pr.id }})"><i data-feather="eye" style="width:14px;height:14px;"></i></button>
+                                            <button class="btn btn-outline-warning" onclick="editPressRelease({{ pr.id }})"><i data-feather="edit" style="width:14px;height:14px;"></i></button>
+                                            <button class="btn btn-outline-success" onclick="sendPressRelease({{ pr.id }})"><i data-feather="send" style="width:14px;height:14px;"></i></button>
+                                        </div>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% else %}
+                    <div class="text-center py-5">
+                        <i data-feather="file-text" style="width:48px;height:48px;color:#6c757d;"></i>
+                        <p class="text-muted mt-3">No press releases yet. Create your first one!</p>
+                        <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createPressReleaseModal">
+                            <i data-feather="plus"></i> Create Press Release
+                        </button>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-lg-4">
+            <div class="card bg-dark border-secondary mb-4">
+                <div class="card-header bg-transparent">
+                    <h5 class="mb-0"><i data-feather="users"></i> Top Media Contacts</h5>
+                </div>
+                <div class="card-body">
+                    {% if media_contacts %}
+                    {% for contact in media_contacts[:5] %}
+                    <div class="d-flex align-items-center py-2 border-bottom border-secondary">
+                        <div class="me-3" style="width:40px;height:40px;background:linear-gradient(135deg,#bc00ed,#00e5ff);border-radius:50%;display:flex;align-items:center;justify-content:center;">
+                            <span class="text-white fw-bold">{{ contact.name[0]|upper }}</span>
+                        </div>
+                        <div class="flex-grow-1">
+                            <strong class="text-white">{{ contact.name }}</strong>
+                            <br><small class="text-muted">{{ contact.outlet or 'Unknown Outlet' }}</small>
+                        </div>
+                        <span class="badge bg-{% if contact.relationship_score >= 7 %}success{% elif contact.relationship_score >= 4 %}warning{% else %}secondary{% endif %}">
+                            {{ contact.relationship_score or 0 }}/10
+                        </span>
+                    </div>
+                    {% endfor %}
+                    {% else %}
+                    <p class="text-muted text-center py-3">No media contacts added yet.</p>
+                    {% endif %}
+                </div>
+            </div>
+            
+            <div class="card bg-dark border-secondary">
+                <div class="card-header bg-transparent">
+                    <h5 class="mb-0"><i data-feather="zap"></i> Quick Actions</h5>
+                </div>
+                <div class="card-body">
+                    <button class="btn btn-outline-primary w-100 mb-2" data-bs-toggle="modal" data-bs-target="#createPressReleaseModal">
+                        <i data-feather="file-plus"></i> New Press Release
+                    </button>
+                    <button class="btn btn-outline-info w-100 mb-2" data-bs-toggle="modal" data-bs-target="#addMediaContactModal">
+                        <i data-feather="user-plus"></i> Add Media Contact
+                    </button>
+                    <button class="btn btn-outline-success w-100" onclick="importContacts()">
+                        <i data-feather="upload"></i> Import Contacts
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="createPressReleaseModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content bg-dark border-secondary">
+            <div class="modal-header border-secondary">
+                <h5 class="modal-title"><i data-feather="file-plus"></i> Create Press Release</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <form method="POST" action="{{ url_for('main.create_press_release') }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">Title</label>
+                        <input type="text" name="title" class="form-control" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Subtitle</label>
+                        <input type="text" name="subtitle" class="form-control">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Content</label>
+                        <textarea name="content" class="form-control" rows="8" required></textarea>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Release Date</label>
+                            <input type="date" name="release_date" class="form-control">
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Embargo Until</label>
+                            <input type="datetime-local" name="embargo_until" class="form-control">
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Contact Info</label>
+                        <textarea name="contact_info" class="form-control" rows="2" placeholder="Media contact details..."></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer border-secondary">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" name="action" value="draft" class="btn btn-outline-warning">Save as Draft</button>
+                    <button type="submit" name="action" value="publish" class="btn btn-success">Publish</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="addMediaContactModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content bg-dark border-secondary">
+            <div class="modal-header border-secondary">
+                <h5 class="modal-title"><i data-feather="user-plus"></i> Add Media Contact</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <form method="POST" action="{{ url_for('main.add_media_contact') }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">Name</label>
+                        <input type="text" name="name" class="form-control" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Email</label>
+                        <input type="email" name="email" class="form-control">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Outlet/Publication</label>
+                        <input type="text" name="outlet" class="form-control">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Beat/Topic Area</label>
+                        <input type="text" name="beat" class="form-control" placeholder="e.g., Technology, Business, Lifestyle">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Notes</label>
+                        <textarea name="notes" class="form-control" rows="3"></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer border-secondary">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Add Contact</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="mediaContactModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content bg-dark border-secondary">
+            <div class="modal-header border-secondary">
+                <h5 class="modal-title"><i data-feather="users"></i> Media Contacts</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                {% if media_contacts %}
+                <div class="table-responsive">
+                    <table class="table table-dark table-hover">
+                        <thead>
+                            <tr>
+                                <th>Name</th>
+                                <th>Outlet</th>
+                                <th>Beat</th>
+                                <th>Score</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for contact in media_contacts %}
+                            <tr>
+                                <td>{{ contact.name }}<br><small class="text-muted">{{ contact.email or '' }}</small></td>
+                                <td>{{ contact.outlet or '-' }}</td>
+                                <td>{{ contact.beat or '-' }}</td>
+                                <td><span class="badge bg-info">{{ contact.relationship_score or 0 }}/10</span></td>
+                                <td>
+                                    <button class="btn btn-sm btn-outline-info" onclick="emailContact({{ contact.id }})"><i data-feather="mail" style="width:14px;height:14px;"></i></button>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <p class="text-muted text-center py-4">No media contacts yet. Add your first contact!</p>
+                {% endif %}
+            </div>
+            <div class="modal-footer border-secondary">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addMediaContactModal">Add Contact</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    feather.replace();
+});
+
+function viewPressRelease(id) {
+    window.location.href = `/press-releases/${id}`;
+}
+
+function editPressRelease(id) {
+    window.location.href = `/press-releases/${id}/edit`;
+}
+
+function sendPressRelease(id) {
+    if (confirm('Send this press release to your media contacts?')) {
+        fetch(`/api/press-releases/${id}/send`, { 
+            method: 'POST',
+            headers: {
+                'X-CSRFToken': document.querySelector('meta[name="csrf-token"]').content
+            }
+        })
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                alert('Press release sent successfully!');
+                location.reload();
+            } else {
+                alert(data.error || 'Failed to send');
+            }
+        });
+    }
+}
+
+function emailContact(id) {
+    alert('Email composer opening...');
+}
+
+function importContacts() {
+    alert('Import functionality coming soon. Upload a CSV file with Name, Email, Outlet, Beat columns.');
+}
+</script>
+{% endblock %}
