@@ -3,7 +3,8 @@ name: Deploy to VPS
 on:
   push:
     branches:
-      - main  # Adjust this to the branch you want to trigger deployment from
+      - main  # Deploy whenever you push to the main branch
+  workflow_dispatch:  # Optional: Allow manual deployment from GitHub's Actions tab
 
 jobs:
   deploy:
@@ -11,33 +12,31 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # Step 1: Checkout the latest code
+      # Step 1: Check out the repository
       - name: Checkout Code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
-      # Step 2: Set up the SSH agent
+      # Step 2: Set up SSH
       - name: Set up SSH Agent
         uses: webfactory/ssh-agent@v0.5.4
         with:
           ssh-private-key: ${{ secrets.VPS_SSH_KEY }}
 
-      # Step 3: Deploy Code to Target VPS
+      # Step 3: Deploy to VPS
       - name: Deploy to VPS
         run: |
+          echo "Connecting to VPS and deploying code..."
           ssh -o StrictHostKeyChecking=no ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} << 'EOF'
-            # Navigate to the directory on the VPS
-            cd /home/u766184830/domains/lucifercruz.com/public_html/
-            
-            # Make sure we have the latest code from GitHub
-            git pull origin main
-            
-            # OPTIONAL: Install/Update dependencies (if necessary)
-            # Assuming you're using Python
-            source /etc/lux-marketing/lux.env
-            python3 -m venv venv
+            set -e
+            echo "Pulling latest code..."
+            cd /home/u766184830/domains/lucifercruz.com/public_html
+            git fetch origin main
+            git reset --hard origin/main
+            echo "Activating virtual environment..."
             source venv/bin/activate
-            pip install -r requirements.txt
-            
-            # Restart the application (adjust for your setup)
-            sudo systemctl restart your_app.service
+            echo "Installing/updating dependencies..."
+            pip install -r requirements.txt --upgrade
+            echo "Restarting application..."
+            sudo systemctl restart luxit
+            echo "Deployment complete!"
           EOF
