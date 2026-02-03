@@ -946,7 +946,18 @@ class CompetitorProfile(db.Model):
     __tablename__ = "competitor_profile"
 
     id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=True)
+    name = db.Column(db.String(200))
+    website_url = db.Column(db.String(255))
+    industry = db.Column(db.String(100))
+    description = db.Column(Text)
+    strengths = db.Column(Text)
+    weaknesses = db.Column(Text)
+    market_position = db.Column(db.String(50))
+    threat_level = db.Column(db.String(20), default='medium')
+    is_active = db.Column(db.Boolean, default=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
 class MultivariateTest(db.Model):

@@ -166,6 +166,75 @@ def campaign_hub():
     """Campaign Hub with SEO, Competitors, and AI Campaign Generator"""
     return render_template('campaign_hub.html')
 
+@main_bp.route('/competitor-analysis')
+@login_required
+def competitor_analysis():
+    """Competitor Analysis - Track and analyze competitors"""
+    from models import CompetitorProfile, Company, user_company
+    
+    company = db.session.query(Company).join(
+        user_company, Company.id == user_company.c.company_id
+    ).filter(user_company.c.user_id == current_user.id).first()
+    company_id = company.id if company else None
+    
+    competitors = CompetitorProfile.query.filter_by(company_id=company_id, is_active=True).order_by(CompetitorProfile.name).all() if company_id else []
+    return render_template('competitor_analysis.html', competitors=competitors)
+
+@main_bp.route('/deals')
+@login_required
+def deals():
+    """Deal Pipeline - Kanban view of sales deals"""
+    from models import Deal, Company, user_company
+    
+    company = db.session.query(Company).join(
+        user_company, Company.id == user_company.c.company_id
+    ).filter(user_company.c.user_id == current_user.id).first()
+    company_id = company.id if company else None
+    
+    deals = Deal.query.filter_by(company_id=company_id).order_by(Deal.created_at.desc()).all()
+    
+    # Group deals by stage for Kanban view
+    stages = ['Lead', 'Qualified', 'Proposal', 'Negotiation', 'Closed Won', 'Closed Lost']
+    deals_by_stage = {stage: [] for stage in stages}
+    for deal in deals:
+        stage = deal.stage if deal.stage in stages else 'Lead'
+        deals_by_stage[stage].append(deal)
+    
+    return render_template('deals.html', deals=deals, deals_by_stage=deals_by_stage, stages=stages)
+
+@main_bp.route('/add-deal', methods=['POST'])
+@login_required
+def add_deal():
+    """Add a new deal to the pipeline"""
+    from models import Deal, Company, user_company
+    from datetime import datetime
+    
+    company = db.session.query(Company).join(
+        user_company, Company.id == user_company.c.company_id
+    ).filter(user_company.c.user_id == current_user.id).first()
+    
+    if not company:
+        flash('No company found', 'error')
+        return redirect(url_for('main.deals'))
+    
+    try:
+        deal = Deal(
+            company_id=company.id,
+            name=request.form.get('name'),
+            value=float(request.form.get('value', 0)),
+            stage=request.form.get('stage', 'Lead'),
+            probability=0.3 if request.form.get('stage') == 'Lead' else 0.5,
+            expected_close_date=datetime.strptime(request.form.get('expected_close_date'), '%Y-%m-%d') if request.form.get('expected_close_date') else None
+        )
+        db.session.add(deal)
+        db.session.commit()
+        flash('Deal created successfully!', 'success')
+    except Exception as e:
+        db.session.rollback()
+        flash(f'Error creating deal: {str(e)}', 'error')
+    
+    return redirect(url_for('main.deals'))
+
 @main_bp.route('/campaigns')
 @login_required
 def campaigns():
@@ -2195,6 +2264,7 @@ def resume_automation(id):
 
 # SMS Marketing Module (Phase 0-1)
 @main_bp.route('/sms')
+@main_bp.route('/sms-dashboard')
 @login_required
 def sms_dashboard():
     """SMS marketing dashboard"""
@@ -5491,13 +5561,15 @@ def lead_scoring():
     
     return render_template('lead_scoring.html', contacts_with_scores=contacts_with_scores)
 
-# ============= COMPETITOR ANALYSIS =============
+# ============= COMPETITOR LIST =============
 @main_bp.route('/competitors')
 @login_required
-def competitor_analysis():
-    """Competitor analysis and tracking"""
+def competitors_list():
+    """Competitor list view"""
     from models import CompetitorProfile
     company = current_user.get_default_company()
+    if not company:
+        return redirect(url_for('main.dashboard'))
     competitors = CompetitorProfile.query.filter_by(company_id=company.id, is_active=True).order_by(CompetitorProfile.created_at.desc()).all()
     return render_template('competitor_analysis.html', competitors=competitors)
 
@@ -6307,7 +6379,7 @@ def update_user_profile_api():
 print("✓ User profile routes loaded")
 
 # ============= CRM HUB =============
-@main_bp.route('/crm/hub')
+@main_bp.route('/crm-hub')
 @login_required
 def crm_hub():
     """CRM Features Hub - Showcase all 15 CRM capabilities"""
