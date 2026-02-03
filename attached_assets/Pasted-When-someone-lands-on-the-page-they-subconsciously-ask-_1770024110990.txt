@@ -1,0 +1,181 @@
+When someone lands on the page, they subconsciously ask:
+
+Is this for marketing, sales, or leadership?
+
+Does it automate or just report?
+
+Does it replace tools or add another one?
+
+Is this analytics, execution, or both?
+
+Your current version answers #1 and #4, but only partially answers #2 and #3.
+
+The Stronger, Search-Aligned Version (Recommended Upgrade)
+✅ Best Overall Balance (Search + Clarity + Authority)
+
+Revenue Operations
+Marketing Operations · Sales Operations · Revenue Intelligence · Automation & Insights
+Reimagined with AI
+
+Why this is stronger
+
+“Automation” is a top conversion keyword
+
+“Insights” keeps the AI / analytics promise
+
+Still enterprise-safe
+
+Still accurate to what the app does
+
+This version bridges:
+
+What they search
+
+What they buy
+
+What you actually built
+
+If the Middle Line Rotates (Even Better)
+
+If each item rotates individually, this is ideal:
+
+Marketing Operations
+
+Sales Operations
+
+Revenue Intelligence
+
+AI Automation & Insights
+
+Each one maps cleanly to:
+
+A feature cluster
+
+A landing page
+
+A pricing tier
+
+A sales conversation
+
+Why “Company Insights” Is the Weakest Term
+
+Not because it’s wrong — but because it’s underspecified.
+
+Problems with it:
+
+Doesn’t clearly imply action
+
+Sounds passive
+
+Not a common search phrase
+
+Feels like a dashboard, not a system
+
+If you want to keep that concept, better variants are:
+
+Business Intelligence
+
+Revenue Intelligence
+
+Operational Intelligence
+
+AI Insights & Forecasting
+
+Final Verdict (Straight Talk)
+Is your original pick bad?
+
+No — it’s good and defensible.
+
+Is it the best for:
+
+search?
+
+conversions?
+
+explaining value fast?
+
+👉 Not quite.
+
+The best-performing version is:
+
+Revenue Operations
+Marketing Operations · Sales Operations · Revenue Intelligence · Automation & Insights
+Reimagined with AI
+
+That version:
+
+Matches how buyers think
+
+Matches how they search
+
+Matches how you sell
+
+Matches what the app actually does
+
+If you want, next we can:
+
+Map each phrase → exact feature set
+
+Align this to SEO landing pages
+
+Stress-test it against competitors
+
+Create enterprise vs SMB variants
+
+Write the Codex logic for rotation + fallback tex🎟️ Events & Commerce
+
+Event Registration Forms: Collect attendee info easily.
+
+Payment Integration: Accept payments for tickets, services, or products.
+
+Product Sales in Campaigns: Embed buy buttons directly in emails or posts.4. BrandKit Integration
+
+Centralized brand assets: logo, fonts, color palette, and style rules.
+
+Automatically applies brand consistency across emails and social posts.
+
+5. AI Content Recommendations
+
+Suggests personalized product or content blocks for each recipient.
+
+Uses engagement data to recommend optimal send time and subject line.
+
+6. Polls & Surveys
+
+Embed single-question polls or surveys inside emails to collect feedback.
+
+Auto-segment users based on responses for future targeting.
+
+7. Scheduled Email Sends
+
+Choose exact send times or let AI optimize delivery for best open rates.
+
+Supports campaign calendars and recurring sends.
+
+8. Subject Line Tools
+
+A/B Testing: Test two subject lines on small audience, send winning version to rest.
+
+Recommendations: AI suggests high-performing subject line ideas.
+
+Personalization: Add recipient name, location, or behavior triggers dynamically.1. Drag-and-Drop Email Editor
+
+Intuitive visual builder to design emails without coding.
+
+Supports layout blocks, images, buttons, and text areas.
+
+Includes reusable drag-and-drop templates for faster campaign creation.
+
+2. AI Copy Generator
+
+Automatically creates subject lines, headlines, and email body text.
+
+Adjust tone (friendly, professional, sensual, playful, etc.) based on campaign type.
+
+Learns from brand tone and past engagement data.
+
+3. Email Templates & Dynamic Content
+
+Professionally designed email templates categorized by industry and goal.
+
+Dynamic content changes based on customer data (name, purchase history, location).

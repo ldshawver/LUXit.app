@@ -1,0 +1,645 @@
+~
+~
+~
+~
+~
+~
+~
+~
+...skipping...
+
+                   SUMMARY OF LESS COMMANDS
+
+      Commands marked with * may be preceded by a number, N.
+      Notes in parentheses indicate the behavior if N is given.
+      A key preceded by a caret indicates the Ctrl key; thus ^K is ctrl-K.
+
+  h  H                 Display this help.
+  q  :q  Q  :Q  ZZ     Exit.
+
+                   SUMMARY OF LESS COMMANDS
+
+      Commands marked with * may be preceded by a number, N.
+      Notes in parentheses indicate the behavior if N is given.
+      A key preceded by a caret indicates the Ctrl key; thus ^K is ctrl-K.
+
+  h  H                 Display this help.
+  q  :q  Q  :Q  ZZ     Exit.
+ ---------------------------------------------------------------------------
+
+                           MOVING
+
+  e  ^E  j  ^N  CR  *  Forward  one line   (or N lines).
+  y  ^Y  k  ^K  ^P  *  Backward one line   (or N lines).
+  f  ^F  ^V  SPACE  *  Forward  one window (or N lines).
+  b  ^B  ESC-v      *  Backward one window (or N lines).
+  z                 *  Forward  one window (and set window to N).
+  w                 *  Backward one window (and set window to N).
+  ESC-SPACE         *  Forward  one window, but don't stop at end-of-file.
+  d  ^D             *  Forward  one half-window (and set half-window to N).
+  u  ^U             *  Backward one half-window (and set half-window to N).
+  ESC-)  RightArrow *  Right one half screen width (or N positions).
+  ESC-(  LeftArrow  *  Left  one half screen width (or N positions).
+  ESC-}  ^RightArrow   Right to last column displayed.
+  ESC-{  ^LeftArrow    Left  to first column.
+  F                    Forward forever; like "tail -f".
+  ESC-F                Like F but stop when search pattern is found.
+  r  ^R  ^L            Repaint screen.
+  R                    Repaint screen, discarding buffered input.
+        ---------------------------------------------------
+        Default "window" is the screen height.
+        Default "half-window" is half of the screen height.
+ ---------------------------------------------------------------------------
+
+                          SEARCHING
+
+  /pattern          *  Search forward for (N-th) matching line.
+  ?pattern          *  Search backward for (N-th) matching line.
+  n                 *  Repeat previous search (for N-th occurrence).
+  N                 *  Repeat previous search in reverse direction.
+  ESC-n             *  Repeat previous search, spanning files.
+  ESC-N             *  Repeat previous search, reverse dir. & spanning files.
+  ^O^N  ^On         *  Search forward for (N-th) OSC8 hyperlink.
+  ^O^P  ^Op         *  Search backward for (N-th) OSC8 hyperlink.
+  ^O^L  ^Ol            Jump to the currently selected OSC8 hyperlink.
+  ESC-u                Undo (toggle) search highlighting.
+  ESC-U                Clear search highlighting.
+  &pattern          *  Display only matching lines.
+...skipping...
+
+                   SUMMARY OF LESS COMMANDS
+
+      Commands marked with * may be preceded by a number, N.
+      Notes in parentheses indicate the behavior if N is given.
+      A key preceded by a caret indicates the Ctrl key; thus ^K is ctrl-K.
+
+  h  H                 Display this help.
+  q  :q  Q  :Q  ZZ     Exit.
+ ---------------------------------------------------------------------------
+
+                           MOVING
+
+  e  ^E  j  ^N  CR  *  Forward  one line   (or N lines).
+  y  ^Y  k  ^K  ^P  *  Backward one line   (or N lines).
+  f  ^F  ^V  SPACE  *  Forward  one window (or N lines).
+  b  ^B  ESC-v      *  Backward one window (or N lines).
+  z                 *  Forward  one window (and set window to N).
+  w                 *  Backward one window (and set window to N).
+  ESC-SPACE         *  Forward  one window, but don't stop at end-of-file.
+  d  ^D             *  Forward  one half-window (and set half-window to N).
+  u  ^U             *  Backward one half-window (and set half-window to N).
+  ESC-)  RightArrow *  Right one half screen width (or N positions).
+  ESC-(  LeftArrow  *  Left  one half screen width (or N positions).
+  ESC-}  ^RightArrow   Right to last column displayed.
+  ESC-{  ^LeftArrow    Left  to first column.
+  F                    Forward forever; like "tail -f".
+  ESC-F                Like F but stop when search pattern is found.
+  r  ^R  ^L            Repaint screen.
+  R                    Repaint screen, discarding buffered input.
+        ---------------------------------------------------
+        Default "window" is the screen height.
+        Default "half-window" is half of the screen height.
+ ---------------------------------------------------------------------------
+
+                          SEARCHING
+
+  /pattern          *  Search forward for (N-th) matching line.
+  ?pattern          *  Search backward for (N-th) matching line.
+  n                 *  Repeat previous search (for N-th occurrence).
+  N                 *  Repeat previous search in reverse direction.
+  ESC-n             *  Repeat previous search, spanning files.
+  ESC-N             *  Repeat previous search, reverse dir. & spanning files.
+  ^O^N  ^On         *  Search forward for (N-th) OSC8 hyperlink.
+  ^O^P  ^Op         *  Search backward for (N-th) OSC8 hyperlink.
+  ^O^L  ^Ol            Jump to the currently selected OSC8 hyperlink.
+  ESC-u                Undo (toggle) search highlighting.
+  ESC-U                Clear search highlighting.
+  &pattern          *  Display only matching lines.
+
+                   SUMMARY OF LESS COMMANDS
+
+      Commands marked with * may be preceded by a number, N.
+      Notes in parentheses indicate the behavior if N is given.
+      A key preceded by a caret indicates the Ctrl key; thus ^K is ctrl-K.
+
+  h  H                 Display this help.
+  q  :q  Q  :Q  ZZ     Exit.
+ ---------------------------------------------------------------------------
+
+                           MOVING
+
+  e  ^E  j  ^N  CR  *  Forward  one line   (or N lines).
+  y  ^Y  k  ^K  ^P  *  Backward one line   (or N lines).
+  f  ^F  ^V  SPACE  *  Forward  one window (or N lines).
+  b  ^B  ESC-v      *  Backward one window (or N lines).
+  z                 *  Forward  one window (and set window to N).
+  w                 *  Backward one window (and set window to N).
+  ESC-SPACE         *  Forward  one window, but don't stop at end-of-file.
+  d  ^D             *  Forward  one half-window (and set half-window to N).
+  u  ^U             *  Backward one half-window (and set half-window to N).
+  ESC-)  RightArrow *  Right one half screen width (or N positions).
+  ESC-(  LeftArrow  *  Left  one half screen width (or N positions).
+  ESC-}  ^RightArrow   Right to last column displayed.
+  ESC-{  ^LeftArrow    Left  to first column.
+  F                    Forward forever; like "tail -f".
+  ESC-F                Like F but stop when search pattern is found.
+  r  ^R  ^L            Repaint screen.
+  R                    Repaint screen, discarding buffered input.
+        ---------------------------------------------------
+        Default "window" is the screen height.
+        Default "half-window" is half of the screen height.
+ ---------------------------------------------------------------------------
+
+                          SEARCHING
+
+  /pattern          *  Search forward for (N-th) matching line.
+  ?pattern          *  Search backward for (N-th) matching line.
+  n                 *  Repeat previous search (for N-th occurrence).
+  N                 *  Repeat previous search in reverse direction.
+  ESC-n             *  Repeat previous search, spanning files.
+  ESC-N             *  Repeat previous search, reverse dir. & spanning files.
+  ^O^N  ^On         *  Search forward for (N-th) OSC8 hyperlink.
+  ^O^P  ^Op         *  Search backward for (N-th) OSC8 hyperlink.
+  ^O^L  ^Ol            Jump to the currently selected OSC8 hyperlink.
+  ESC-u                Undo (toggle) search highlighting.
+  ESC-U                Clear search highlighting.
+  &pattern          *  Display only matching lines.
+...skipping...
+● luxit.service - LUX IT Gunicorn Application
+     Loaded: loaded (/etc/systemd/system/luxit.service; enabled; preset: enabled)
+     Active: active (running) since Sat 2026-01-31 04:51:55 UTC; 64ms ago
+ Invocation: b76c83412ac64866970aa05c8ed5f6fc
+   Main PID: 22114 (gunicorn)
+      Tasks: 1 (limit: 9486)
+     Memory: 1.5M (peak: 1.7M)
+        CPU: 10ms
+     CGroup: /system.slice/luxit.service
+             └─22114 /var/www/luxit/venv/bin/python3.13 /var/www/luxit/venv/bin/gunicorn --workers 4 --bind 127.0.>
+
+Jan 31 04:51:55 luxit-vps.internal systemd[1]: Started luxit.service - LUX IT Gunicorn Application.
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+curl: (7) Failed to connect to 127.0.0.1 port 8000 after 0 ms: Could not connect to server
+(venv) root@luxit-vps:/var/www/luxit# 
+(venv) root@luxit-vps:/var/www/luxit# curl http://194.195.92.52
+<html>
+<head><title>502 Bad Gateway</title></head>
+<body>
+<center><h1>502 Bad Gateway</h1></center>
+<hr><center>nginx</center>
+</body>
+</html>
+(venv) root@luxit-vps:/var/www/luxit# # Install the packages that work with Python 3.13
+pip install flask flask-sqlalchemy flask-login werkzeug gunicorn
+
+# Use psycopg (v3) instead of psycopg2-binary - it supports Python 3.13
+pip install "psycopg[binary]"
+
+# Install the rest of the dependencies manually
+pip install jinja2 apscheduler msal openai requests email-validator sqlalchemy itsdangerous
+pip install twilio beautifulsoup4 flask-wtf flask-limiter
+Requirement already satisfied: flask in ./venv/lib/python3.13/site-packages (3.1.2)
+Collecting flask-sqlalchemy
+  Using cached flask_sqlalchemy-3.1.1-py3-none-any.whl.metadata (3.4 kB)
+Collecting flask-login
+  Using cached Flask_Login-0.6.3-py3-none-any.whl.metadata (5.8 kB)
+Requirement already satisfied: werkzeug in ./venv/lib/python3.13/site-packages (3.1.5)
+Requirement already satisfied: gunicorn in ./venv/lib/python3.13/site-packages (24.1.1)
+Requirement already satisfied: blinker>=1.9.0 in ./venv/lib/python3.13/site-packages (from flask) (1.9.0)
+Requirement already satisfied: click>=8.1.3 in ./venv/lib/python3.13/site-packages (from flask) (8.3.1)
+Requirement already satisfied: itsdangerous>=2.2.0 in ./venv/lib/python3.13/site-packages (from flask) (2.2.0)
+Requirement already satisfied: jinja2>=3.1.2 in ./venv/lib/python3.13/site-packages (from flask) (3.1.6)
+Requirement already satisfied: markupsafe>=2.1.1 in ./venv/lib/python3.13/site-packages (from flask) (3.0.3)
+Collecting sqlalchemy>=2.0.16 (from flask-sqlalchemy)
+  Using cached sqlalchemy-2.0.46-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl.metadata (9.5 kB)
+Requirement already satisfied: packaging in ./venv/lib/python3.13/site-packages (from gunicorn) (26.0)
+Collecting greenlet>=1 (from sqlalchemy>=2.0.16->flask-sqlalchemy)
+  Using cached greenlet-3.3.1-cp313-cp313-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl.metadata (3.7 kB)
+Collecting typing-extensions>=4.6.0 (from sqlalchemy>=2.0.16->flask-sqlalchemy)
+  Using cached typing_extensions-4.15.0-py3-none-any.whl.metadata (3.3 kB)
+Using cached flask_sqlalchemy-3.1.1-py3-none-any.whl (25 kB)
+Using cached Flask_Login-0.6.3-py3-none-any.whl (17 kB)
+Using cached sqlalchemy-2.0.46-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl (3.3 MB)
+Using cached greenlet-3.3.1-cp313-cp313-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl (612 kB)
+Using cached typing_extensions-4.15.0-py3-none-any.whl (44 kB)
+Installing collected packages: typing-extensions, greenlet, sqlalchemy, flask-sqlalchemy, flask-login
+Successfully installed flask-login-0.6.3 flask-sqlalchemy-3.1.1 greenlet-3.3.1 sqlalchemy-2.0.46 typing-extensions-
+4.15.0
+Collecting psycopg[binary]
+  Using cached psycopg-3.3.2-py3-none-any.whl.metadata (4.3 kB)
+Collecting psycopg-binary==3.3.2 (from psycopg[binary])
+  Using cached psycopg_binary-3.3.2-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.whl.metadata (2.7 kB)
+Using cached psycopg-3.3.2-py3-none-any.whl (212 kB)
+Using cached psycopg_binary-3.3.2-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.whl (5.1 MB)
+Installing collected packages: psycopg-binary, psycopg
+Successfully installed psycopg-3.3.2 psycopg-binary-3.3.2
+Requirement already satisfied: jinja2 in ./venv/lib/python3.13/site-packages (3.1.6)
+Collecting apscheduler
+  Downloading apscheduler-3.11.2-py3-none-any.whl.metadata (6.4 kB)
+Collecting msal
+  Downloading msal-1.34.0-py3-none-any.whl.metadata (11 kB)
+Collecting openai
+  Downloading openai-2.16.0-py3-none-any.whl.metadata (29 kB)
+Collecting requests
+  Using cached requests-2.32.5-py3-none-any.whl.metadata (4.9 kB)
+Collecting email-validator
+  Downloading email_validator-2.3.0-py3-none-any.whl.metadata (26 kB)
+Requirement already satisfied: sqlalchemy in ./venv/lib/python3.13/site-packages (2.0.46)
+Requirement already satisfied: itsdangerous in ./venv/lib/python3.13/site-packages (2.2.0)
+Requirement already satisfied: MarkupSafe>=2.0 in ./venv/lib/python3.13/site-packages (from jinja2) (3.0.3)
+Collecting tzlocal>=3.0 (from apscheduler)
+  Using cached tzlocal-5.3.1-py3-none-any.whl.metadata (7.6 kB)
+Collecting PyJWT<3,>=1.0.0 (from PyJWT[crypto]<3,>=1.0.0->msal)
+  Using cached pyjwt-2.11.0-py3-none-any.whl.metadata (4.0 kB)
+Collecting cryptography<49,>=2.5 (from msal)
+  Using cached cryptography-46.0.4-cp311-abi3-manylinux_2_34_x86_64.whl.metadata (5.7 kB)
+Collecting charset_normalizer<4,>=2 (from requests)
+  Using cached charset_normalizer-3.4.4-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl.metadata (37 kB)
+Collecting idna<4,>=2.5 (from requests)
+  Using cached idna-3.11-py3-none-any.whl.metadata (8.4 kB)
+Collecting urllib3<3,>=1.21.1 (from requests)
+  Using cached urllib3-2.6.3-py3-none-any.whl.metadata (6.9 kB)
+Collecting certifi>=2017.4.17 (from requests)
+  Using cached certifi-2026.1.4-py3-none-any.whl.metadata (2.5 kB)
+Collecting cffi>=2.0.0 (from cryptography<49,>=2.5->msal)
+  Using cached cffi-2.0.0-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.whl.metadata (2.6 kB)
+Collecting anyio<5,>=3.5.0 (from openai)
+  Using cached anyio-4.12.1-py3-none-any.whl.metadata (4.3 kB)
+Collecting distro<2,>=1.7.0 (from openai)
+  Using cached distro-1.9.0-py3-none-any.whl.metadata (6.8 kB)
+Collecting httpx<1,>=0.23.0 (from openai)
+  Using cached httpx-0.28.1-py3-none-any.whl.metadata (7.1 kB)
+Collecting jiter<1,>=0.10.0 (from openai)
+  Using cached jiter-0.12.0-cp313-cp313-manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (5.2 kB)
+Collecting pydantic<3,>=1.9.0 (from openai)
+  Using cached pydantic-2.12.5-py3-none-any.whl.metadata (90 kB)
+Collecting sniffio (from openai)
+  Using cached sniffio-1.3.1-py3-none-any.whl.metadata (3.9 kB)
+Collecting tqdm>4 (from openai)
+  Using cached tqdm-4.67.2-py3-none-any.whl.metadata (57 kB)
+Requirement already satisfied: typing-extensions<5,>=4.11 in ./venv/lib/python3.13/site-packages (from openai) (4.15.0)
+Collecting httpcore==1.* (from httpx<1,>=0.23.0->openai)
+  Using cached httpcore-1.0.9-py3-none-any.whl.metadata (21 kB)
+Collecting h11>=0.16 (from httpcore==1.*->httpx<1,>=0.23.0->openai)
+  Using cached h11-0.16.0-py3-none-any.whl.metadata (8.3 kB)
+Collecting annotated-types>=0.6.0 (from pydantic<3,>=1.9.0->openai)
+  Using cached annotated_types-0.7.0-py3-none-any.whl.metadata (15 kB)
+Collecting pydantic-core==2.41.5 (from pydantic<3,>=1.9.0->openai)
+  Using cached pydantic_core-2.41.5-cp313-cp313-manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (7.3 kB)
+Collecting typing-inspection>=0.4.2 (from pydantic<3,>=1.9.0->openai)
+  Using cached typing_inspection-0.4.2-py3-none-any.whl.metadata (2.6 kB)
+Collecting dnspython>=2.0.0 (from email-validator)
+  Using cached dnspython-2.8.0-py3-none-any.whl.metadata (5.7 kB)
+Requirement already satisfied: greenlet>=1 in ./venv/lib/python3.13/site-packages (from sqlalchemy) (3.3.1)
+Collecting pycparser (from cffi>=2.0.0->cryptography<49,>=2.5->msal)
+  Using cached pycparser-3.0-py3-none-any.whl.metadata (8.2 kB)
+Downloading apscheduler-3.11.2-py3-none-any.whl (64 kB)
+Downloading msal-1.34.0-py3-none-any.whl (116 kB)
+Using cached requests-2.32.5-py3-none-any.whl (64 kB)
+Using cached charset_normalizer-3.4.4-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl (153 kB)
+Using cached cryptography-46.0.4-cp311-abi3-manylinux_2_34_x86_64.whl (4.5 MB)
+Using cached idna-3.11-py3-none-any.whl (71 kB)
+Using cached pyjwt-2.11.0-py3-none-any.whl (28 kB)
+Using cached urllib3-2.6.3-py3-none-any.whl (131 kB)
+Downloading openai-2.16.0-py3-none-any.whl (1.1 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 1.1/1.1 MB 21.9 MB/s  0:00:00
+Using cached anyio-4.12.1-py3-none-any.whl (113 kB)
+Using cached distro-1.9.0-py3-none-any.whl (20 kB)
+Using cached httpx-0.28.1-py3-none-any.whl (73 kB)
+Using cached httpcore-1.0.9-py3-none-any.whl (78 kB)
+Using cached jiter-0.12.0-cp313-cp313-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (361 kB)
+Using cached pydantic-2.12.5-py3-none-any.whl (463 kB)
+Using cached pydantic_core-2.41.5-cp313-cp313-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (2.1 MB)
+Downloading email_validator-2.3.0-py3-none-any.whl (35 kB)
+Using cached annotated_types-0.7.0-py3-none-any.whl (13 kB)
+Using cached certifi-2026.1.4-py3-none-any.whl (152 kB)
+Using cached cffi-2.0.0-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.whl (219 kB)
+Using cached dnspython-2.8.0-py3-none-any.whl (331 kB)
+Using cached h11-0.16.0-py3-none-any.whl (37 kB)
+Using cached tqdm-4.67.2-py3-none-any.whl (78 kB)
+Using cached typing_inspection-0.4.2-py3-none-any.whl (14 kB)
+Using cached tzlocal-5.3.1-py3-none-any.whl (18 kB)
+Using cached pycparser-3.0-py3-none-any.whl (48 kB)
+Using cached sniffio-1.3.1-py3-none-any.whl (10 kB)
+Installing collected packages: urllib3, tzlocal, typing-inspection, tqdm, sniffio, PyJWT, pydantic-core, pycparser, jiter, idna, h11, dnspython, distro, charset_normalizer, certifi, annotated-types, requests, pydantic, httpcore, email-validator, cffi, apscheduler, anyio, httpx, cryptography, openai, msal
+Successfully installed PyJWT-2.11.0 annotated-types-0.7.0 anyio-4.12.1 apscheduler-3.11.2 certifi-2026.1.4 cffi-2.0
+.0 charset_normalizer-3.4.4 cryptography-46.0.4 distro-1.9.0 dnspython-2.8.0 email-validator-2.3.0 h11-0.16.0 httpcore-1.0.9 httpx-0.28.1 idna-3.11 jiter-0.12.0 msal-1.34.0 openai-2.16.0 pycparser-3.0 pydantic-2.12.5 pydantic-core-2.41.5 requests-2.32.5 sniffio-1.3.1 tqdm-4.67.2 typing-inspection-0.4.2 tzlocal-5.3.1 urllib3-2.6.3
+Collecting twilio
+  Using cached twilio-9.10.0-py2.py3-none-any.whl.metadata (13 kB)
+Collecting beautifulsoup4
+  Using cached beautifulsoup4-4.14.3-py3-none-any.whl.metadata (3.8 kB)
+Collecting flask-wtf
+  Using cached flask_wtf-1.2.2-py3-none-any.whl.metadata (3.4 kB)
+Collecting flask-limiter
+  Using cached flask_limiter-4.1.1-py3-none-any.whl.metadata (6.3 kB)
+Requirement already satisfied: requests>=2.0.0 in ./venv/lib/python3.13/site-packages (from twilio) (2.32.5)
+Requirement already satisfied: PyJWT<3.0.0,>=2.0.0 in ./venv/lib/python3.13/site-packages (from twilio) (2.11.0)
+Collecting aiohttp>=3.8.4 (from twilio)
+  Using cached aiohttp-3.13.3-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl.metadata (8.1 kB)
+Collecting aiohttp-retry>=2.8.3 (from twilio)
+  Using cached aiohttp_retry-2.9.1-py3-none-any.whl.metadata (8.8 kB)
+Collecting soupsieve>=1.6.1 (from beautifulsoup4)
+  Using cached soupsieve-2.8.3-py3-none-any.whl.metadata (4.6 kB)
+Requirement already satisfied: typing-extensions>=4.0.0 in ./venv/lib/python3.13/site-packages (from beautifulsoup4) (4.15.0)
+Requirement already satisfied: flask in ./venv/lib/python3.13/site-packages (from flask-wtf) (3.1.2)
+Requirement already satisfied: itsdangerous in ./venv/lib/python3.13/site-packages (from flask-wtf) (2.2.0)
+Collecting wtforms (from flask-wtf)
+  Using cached wtforms-3.2.1-py3-none-any.whl.metadata (5.3 kB)
+Collecting limits>=3.13 (from flask-limiter)
+  Using cached limits-5.6.0-py3-none-any.whl.metadata (10 kB)
+Collecting ordered-set<5,>4 (from flask-limiter)
+  Using cached ordered_set-4.1.0-py3-none-any.whl.metadata (5.3 kB)
+Collecting aiohappyeyeballs>=2.5.0 (from aiohttp>=3.8.4->twilio)
+  Using cached aiohappyeyeballs-2.6.1-py3-none-any.whl.metadata (5.9 kB)
+Collecting aiosignal>=1.4.0 (from aiohttp>=3.8.4->twilio)
+  Using cached aiosignal-1.4.0-py3-none-any.whl.metadata (3.7 kB)
+Collecting attrs>=17.3.0 (from aiohttp>=3.8.4->twilio)
+  Using cached attrs-25.4.0-py3-none-any.whl.metadata (10 kB)
+Collecting frozenlist>=1.1.1 (from aiohttp>=3.8.4->twilio)
+  Using cached frozenlist-1.8.0-cp313-cp313-manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64.whl.metadata (20 kB)
+Collecting multidict<7.0,>=4.5 (from aiohttp>=3.8.4->twilio)
+  Using cached multidict-6.7.1-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl.metadata (5.3 kB)
+Collecting propcache>=0.2.0 (from aiohttp>=3.8.4->twilio)
+  Using cached propcache-0.4.1-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl.metadata (13 kB)
+Collecting yarl<2.0,>=1.17.0 (from aiohttp>=3.8.4->twilio)
+  Using cached yarl-1.22.0-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl.metadata (75 kB)
+Requirement already satisfied: idna>=2.0 in ./venv/lib/python3.13/site-packages (from yarl<2.0,>=1.17.0->aiohttp>=3.8.4->twilio) (3.11)
+Requirement already satisfied: blinker>=1.9.0 in ./venv/lib/python3.13/site-packages (from flask->flask-wtf) (1.9.0)
+Requirement already satisfied: click>=8.1.3 in ./venv/lib/python3.13/site-packages (from flask->flask-wtf) (8.3.1)
+Requirement already satisfied: jinja2>=3.1.2 in ./venv/lib/python3.13/site-packages (from flask->flask-wtf) (3.1.6)
+Requirement already satisfied: markupsafe>=2.1.1 in ./venv/lib/python3.13/site-packages (from flask->flask-wtf) (3.0.3)
+Requirement already satisfied: werkzeug>=3.1.0 in ./venv/lib/python3.13/site-packages (from flask->flask-wtf) (3.1.5)
+Collecting deprecated>=1.2 (from limits>=3.13->flask-limiter)
+  Using cached deprecated-1.3.1-py2.py3-none-any.whl.metadata (5.9 kB)
+Requirement already satisfied: packaging>=21 in ./venv/lib/python3.13/site-packages (from limits>=3.13->flask-limiter) (26.0)
+Collecting wrapt<3,>=1.10 (from deprecated>=1.2->limits>=3.13->flask-limiter)
+  Using cached wrapt-2.0.1-cp313-cp313-manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64.whl.metadata (9.0 kB)
+Requirement already satisfied: charset_normalizer<4,>=2 in ./venv/lib/python3.13/site-packages (from requests>=2.0.0->twilio) (3.4.4)
+Requirement already satisfied: urllib3<3,>=1.21.1 in ./venv/lib/python3.13/site-packages (from requests>=2.0.0->twilio) (2.6.3)
+Requirement already satisfied: certifi>=2017.4.17 in ./venv/lib/python3.13/site-packages (from requests>=2.0.0->twilio) (2026.1.4)
+Using cached twilio-9.10.0-py2.py3-none-any.whl (2.3 MB)
+Using cached beautifulsoup4-4.14.3-py3-none-any.whl (107 kB)
+Using cached flask_wtf-1.2.2-py3-none-any.whl (12 kB)
+Using cached flask_limiter-4.1.1-py3-none-any.whl (30 kB)
+Using cached ordered_set-4.1.0-py3-none-any.whl (7.6 kB)
+Using cached aiohttp-3.13.3-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl (1.7 MB)
+Using cached multidict-6.7.1-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl (254 kB)
+Using cached yarl-1.22.0-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl (377 kB)
+Using cached aiohappyeyeballs-2.6.1-py3-none-any.whl (15 kB)
+Using cached aiohttp_retry-2.9.1-py3-none-any.whl (10.0 kB)
+Using cached aiosignal-1.4.0-py3-none-any.whl (7.5 kB)
+Using cached attrs-25.4.0-py3-none-any.whl (67 kB)
+Using cached frozenlist-1.8.0-cp313-cp313-manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64.whl (234 kB)
+Using cached limits-5.6.0-py3-none-any.whl (60 kB)
+Using cached deprecated-1.3.1-py2.py3-none-any.whl (11 kB)
+Using cached wrapt-2.0.1-cp313-cp313-manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64.whl (121 kB)
+Using cached propcache-0.4.1-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl (204 kB)
+Using cached soupsieve-2.8.3-py3-none-any.whl (37 kB)
+Using cached wtforms-3.2.1-py3-none-any.whl (152 kB)
+Installing collected packages: wtforms, wrapt, soupsieve, propcache, ordered-set, multidict, frozenlist, attrs, aiohappyeyeballs, yarl, deprecated, beautifulsoup4, aiosignal, limits, flask-wtf, aiohttp, flask-limiter, aiohttp-retry, twilio
+Successfully installed aiohappyeyeballs-2.6.1 aiohttp-3.13.3 aiohttp-retry-2.9.1 aiosignal-1.4.0 attrs-25.4.0 beaut
+ifulsoup4-4.14.3 deprecated-1.3.1 flask-limiter-4.1.1 flask-wtf-1.2.2 frozenlist-1.8.0 limits-5.6.0 multidict-6.7.1 ordered-set-4.1.0 propcache-0.4.1 soupsieve-2.8.3 twilio-9.10.0 wrapt-2.0.1 wtforms-3.2.1 yarl-1.22.0
+(venv) root@luxit-vps:/var/www/luxit# export $(cat .env | xargs)
+gunicorn --bind 127.0.0.1:8000 wsgi:app
+Traceback (most recent call last):
+  File "/var/www/luxit/venv/bin/gunicorn", line 8, in <module>
+    sys.exit(run())
+             ~~~^^
+  File "/var/www/luxit/venv/lib/python3.13/site-packages/gunicorn/app/wsgiapp.py", line 66, in run
+    WSGIApplication("%(prog)s [OPTIONS] [APP_MODULE]", prog=prog).run()
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "/var/www/luxit/venv/lib/python3.13/site-packages/gunicorn/app/base.py", line 235, in run
+    super().run()
+    ~~~~~~~~~~~^^
+  File "/var/www/luxit/venv/lib/python3.13/site-packages/gunicorn/app/base.py", line 71, in run
+    Arbiter(self).run()
+    ~~~~~~~^^^^^^
+  File "/var/www/luxit/venv/lib/python3.13/site-packages/gunicorn/arbiter.py", line 61, in __init__
+    self.setup(app)
+    ~~~~~~~~~~^^^^^
+  File "/var/www/luxit/venv/lib/python3.13/site-packages/gunicorn/arbiter.py", line 121, in setup
+    self.app.wsgi()
+    ~~~~~~~~~~~~~^^
+  File "/var/www/luxit/venv/lib/python3.13/site-packages/gunicorn/app/base.py", line 66, in wsgi
+    self.callable = self.load()
+                    ~~~~~~~~~^^
+  File "/var/www/luxit/venv/lib/python3.13/site-packages/gunicorn/app/wsgiapp.py", line 57, in load
+    return self.load_wsgiapp()
+           ~~~~~~~~~~~~~~~~~^^
+  File "/var/www/luxit/venv/lib/python3.13/site-packages/gunicorn/app/wsgiapp.py", line 47, in load_wsgiapp
+    return util.import_app(self.app_uri)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^
+  File "/var/www/luxit/venv/lib/python3.13/site-packages/gunicorn/util.py", line 366, in import_app
+    mod = importlib.import_module(module)
+  File "/usr/lib/python3.13/importlib/__init__.py", line 88, in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<frozen importlib._bootstrap>", line 1387, in _gcd_import
+  File "<frozen importlib._bootstrap>", line 1360, in _find_and_load
+  File "<frozen importlib._bootstrap>", line 1331, in _find_and_load_unlocked
+  File "<frozen importlib._bootstrap>", line 935, in _load_unlocked
+  File "<frozen importlib._bootstrap_external>", line 1026, in exec_module
+  File "<frozen importlib._bootstrap>", line 488, in _call_with_frames_removed
+  File "/var/www/luxit/wsgi.py", line 5, in <module>
+    from app import app
+  File "/var/www/luxit/app.py", line 147, in <module>
+    db.init_app(app)
+    ~~~~~~~~~~~^^^^^
+  File "/var/www/luxit/venv/lib/python3.13/site-packages/flask_sqlalchemy/extension.py", line 374, in init_app
+    engines[key] = self._make_engine(key, options, app)
+                   ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^
+  File "/var/www/luxit/venv/lib/python3.13/site-packages/flask_sqlalchemy/extension.py", line 665, in _make_engine
+    return sa.engine_from_config(options, prefix="")
+           ~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^
+  File "/var/www/luxit/venv/lib/python3.13/site-packages/sqlalchemy/engine/create.py", line 838, in engine_from_config
+    return create_engine(url, **options)
+  File "<string>", line 2, in create_engine
+  File "/var/www/luxit/venv/lib/python3.13/site-packages/sqlalchemy/util/deprecations.py", line 281, in warned
+    return fn(*args, **kwargs)  # type: ignore[no-any-return]
+  File "/var/www/luxit/venv/lib/python3.13/site-packages/sqlalchemy/engine/create.py", line 617, in create_engine
+    dbapi = dbapi_meth(**dbapi_args)
+  File "/var/www/luxit/venv/lib/python3.13/site-packages/sqlalchemy/dialects/postgresql/psycopg2.py", line 696, in import_dbapi
+    import psycopg2
+ModuleNotFoundError: No module named 'psycopg2'
+(venv) root@luxit-vps:/var/www/luxit# # Edit the .env file
+nano /var/www/luxit/.env
+(venv) root@luxit-vps:/var/www/luxit# export $(cat .env | xargs)
+gunicorn --bind 127.0.0.1:8000 wsgi:app
+2026-01-31 04:55:19,622 ERROR [ai_agent] [request_id=-] OPENAI_API_KEY environment variable is required
+✓ All feature routes loaded successfully
+✓ WordPress connection routes loaded
+✓ LUX CRM routes loaded
+✓ AI Agent reporting routes loaded
+✓ User profile routes loaded
+✓ CRM Hub route loaded
+✓ Forminator newsletter import routes loaded
+✓ WordPress user import routes loaded
+✓ Delete automation route loaded: /automations/<id>/delete
+✓ Blog post routes loaded: /blog, /blog/create, /blog/<id>/edit, /api/blog/generate
+✓ Customer engagement tracking routes loaded: /contacts/<id>/activities
+✓ Comprehensive analytics route loaded: /analytics/comprehensive
+✓ WordPress import test and view routes loaded
+✓ Zapier webhook endpoint loaded at /api/webhook/zapier-contact
+✓ Error logging and diagnostics endpoints loaded
+✓ AI Chatbot configured for error analysis, auto-repair, and server log reading
+✓ Log reading capability: Nginx, Gunicorn, systemd, and app logs
+✓ Automated error repair and resolution testing enabled
+✓ Auto-repair endpoints: /api/auto-repair/start and /api/auto-repair/clear
+✓ System health and diagnostics endpoints:
+  - /api/system/diagnosis (comprehensive analysis)
+  - /api/system/health (resource usage)
+  - /api/system/validate-openai (API key validation)
+  - /api/system/endpoint-check (404 detection)
+✓ AI Action Executor endpoints (autonomous, action-oriented):
+  - POST /api/ai/execute-action (execute AI actions immediately)
+  - GET /api/company/<id>/secrets (retrieve company secrets)
+✓ CompanySecret model created for secure secret storage per company
+✓ Secrets populated for Lucifer Cruz company from environment variables
+✓ AI Agent interaction endpoints loaded:
+  - POST /api/agents/chat (chat with any agent)
+  - GET/POST /api/agents/<type>/tasks (manage agent tasks)
+  - PATCH/DELETE /api/agents/<type>/tasks/<id> (update/delete tasks)
+  - POST /api/agents/<type>/suggestions (get AI suggestions)
+✓ Subscriber sync routes loaded:
+  - POST /api/subscribers/sync (full bidirectional sync)
+  - GET /api/subscribers (list all subscribers)
+  - GET /api/subscribers/stats (subscriber statistics)
+  - POST /api/contacts/<id>/subscribe (subscribe contact)
+  - POST /api/contacts/<id>/unsubscribe (unsubscribe contact)
+  - POST /api/contacts/bulk-subscribe (bulk subscribe)
+  - POST /api/contacts/bulk-unsubscribe (bulk unsubscribe)
+✓ Newsletter search & subscriber routes loaded
+✓ Approval Queue & Feature Toggle routes loaded:
+  - GET /approval-queue (Admin dashboard)
+  - GET/POST /api/approval-queue (Queue management)
+  - POST /api/approval-queue/<id>/approve|reject|edit|cancel
+  - GET/PATCH /api/feature-toggles
+  - POST /api/feature-toggles/emergency-stop|resume-all
+2026-01-31 04:55:19,822 WARNING [services.secret_vault] [request_id=-] ENCRYPTION_MASTER_KEY not found, generating new key
+2026-01-31 04:55:19,823 INFO [services.secret_vault] [request_id=-] Generated new encryption key. Add to secrets: ZqUox_fpn2APgMWoqTfGImNfeDPjp2VXQAM0p8CU0dc=
+2026-01-31 04:55:19,968 WARNING [root] [request_id=-] Replit Auth not available: No module named 'flask_dance'
+2026-01-31 04:55:19,974 INFO [root] [request_id=-] TikTok OAuth blueprint registered
+2026-01-31 04:55:19,977 INFO [root] [request_id=-] Facebook OAuth blueprint registered
+2026-01-31 04:55:19,980 INFO [root] [request_id=-] Instagram OAuth blueprint registered
+2026-01-31 04:55:19,981 INFO [root] [request_id=-] Facebook webhook blueprint registered
+2026-01-31 04:55:20,883 INFO [root] [request_id=-] Automation trigger library seeded
+2026-01-31 04:55:20,883 INFO [root] [request_id=-] Error logging initialized
+2026-01-31 04:55:20,961 INFO [agents.app_agent] [request_id=-] APP Agent initialized successfully
+2026-01-31 04:55:20,962 DEBUG [tzlocal] [request_id=-] /etc/localtime found
+2026-01-31 04:55:20,964 DEBUG [tzlocal] [request_id=-] 1 found:
+ {'/etc/localtime is a symlink to': 'Etc/UTC'}
+2026-01-31 04:55:20,964 INFO [agent_scheduler] [request_id=-] Agent Scheduler initialized
+2026-01-31 04:55:20,964 ERROR [agent_scheduler] [request_id=-] Failed to initialize agent scheduler: Brand & Strategy Agent: OPENAI_API_KEY environment variable is required
+2026-01-31 04:55:20,964 INFO [root] [request_id=-] AI Agent Scheduler initialized with 0 agents
+[2026-01-31 04:55:20 +0000] [22417] [INFO] Starting gunicorn 24.1.1
+[2026-01-31 04:55:20 +0000] [22417] [INFO] Listening at: http://127.0.0.1:8000 (22417)
+[2026-01-31 04:55:20 +0000] [22417] [INFO] Using worker: sync
+[2026-01-31 04:55:20 +0000] [22422] [INFO] Booting worker with pid: 22422
+[2026-01-31 04:55:21 +0000] [22423] [INFO] Booting worker with pid: 22423
+[2026-01-31 04:55:21 +0000] [22424] [INFO] Booting worker with pid: 22424
+[2026-01-31 04:55:21 +0000] [22426] [INFO] Booting worker with pid: 22426
+sudo systemctl restart luxit
+sudo systemctl status luxit
+curl http://127.0.0.1:8000/
+
+
+sudo systemctl restart luxit
+curl http://127.0.0.1:8000/
+172.56.14.243 - - [31/Jan/2026:04:57:35 +0000] "GET / HTTP/1.0" 302 227 "-" "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36 Edg/144.0.0.0"
+172.56.14.243 - - [31/Jan/2026:04:57:35 +0000] "GET /auth/login?next=%2F HTTP/1.0" 200 15144 "-" "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36 Edg/144.0.0.0"
+2026-01-31 04:57:50,241 INFO [flask_wtf.csrf] [request_id=-] The CSRF session token is missing.
+2026-01-31 04:57:50,259 INFO [error_logger] [request_id=-] Logged error: CSRFError - 400 Bad Request: The CSRF session token is missing.
+172.56.14.243 - - [31/Jan/2026:04:57:50 +0000] "POST /auth/login?next=%2F HTTP/1.0" 400 125 "http://194.195.92.52/auth/login?next=%2F" "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36 Edg/144.0.0.0"
+2026-01-31 04:57:50,352 INFO [error_logger] [request_id=-] Logged error: NotFound - 404 Not Found: The requested URL was not found on the server. If you entered the URL manually please
+172.56.14.243 - - [31/Jan/2026:04:57:50 +0000] "GET /favicon.ico HTTP/1.0" 404 207 "http://194.195.92.52/auth/login?next=%2F" "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36 Edg/144.0.0.0"
+2026-01-31 04:57:58,698 INFO [flask_wtf.csrf] [request_id=-] The CSRF session token is missing.
+2026-01-31 04:57:58,735 INFO [error_logger] [request_id=-] Logged error: CSRFError - 400 Bad Request: The CSRF session token is missing.
+172.56.14.243 - - [31/Jan/2026:04:57:58 +0000] "POST /auth/login?next=%2F HTTP/1.0" 400 125 "http://194.195.92.52/auth/login?next=%2F" "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36 Edg/144.0.0.0"
+172.56.14.243 - - [31/Jan/2026:04:58:05 +0000] "GET /auth/login?next=%2F HTTP/1.0" 200 15144 "-" "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36 Edg/144.0.0.0"
+172.56.14.243 - - [31/Jan/2026:04:58:06 +0000] "GET /auth/login?next=%2F HTTP/1.0" 200 15144 "-" "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36 Edg/144.0.0.0"
+172.56.14.243 - - [31/Jan/2026:04:58:42 +0000] "GET /auth/register HTTP/1.0" 200 16232 "http://194.195.92.52/auth/login?next=%2F" "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36 Edg/144.0.0.0"
+172.56.14.243 - - [31/Jan/2026:04:59:08 +0000] "GET /auth/login HTTP/1.0" 200 15144 "http://194.195.92.52/auth/register" "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36 Edg/144.0.0.0"
+2026-01-31 04:59:18,654 INFO [flask_wtf.csrf] [request_id=-] The CSRF session token is missing.
+2026-01-31 04:59:18,667 INFO [error_logger] [request_id=-] Logged error: CSRFError - 400 Bad Request: The CSRF session token is missing.
+172.56.14.243 - - [31/Jan/2026:04:59:18 +0000] "POST /auth/login HTTP/1.0" 400 125 "http://194.195.92.52/auth/login" "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36 Edg/144.0.0.0"
+cd /var/www/luxit
+sudo -u www-data git pull
+sudo systemctl restart luxit
+172.56.14.243 - - [31/Jan/2026:04:59:46 +0000] "GET /auth/login HTTP/1.0" 200 15144 "-" "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36 Edg/144.0.0.0"
+2026-01-31 04:59:55,772 INFO [flask_wtf.csrf] [request_id=-] The CSRF session token is missing.
+2026-01-31 04:59:55,781 INFO [error_logger] [request_id=-] Logged error: CSRFError - 400 Bad Request: The CSRF session token is missing.
+172.56.14.243 - - [31/Jan/2026:04:59:55 +0000] "POST /auth/login HTTP/1.0" 400 125 "http://194.195.92.52/auth/login" "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36 Edg/144.0.0.0"
+2026-01-31 05:00:04,095 INFO [flask_wtf.csrf] [request_id=-] The CSRF session token is missing.
+2026-01-31 05:00:04,118 INFO [error_logger] [request_id=-] Logged error: CSRFError - 400 Bad Request: The CSRF session token is missing.
+172.56.14.243 - - [31/Jan/2026:05:00:04 +0000] "POST /auth/login HTTP/1.0" 400 125 "http://194.195.92.52/auth/login" "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36 Edg/144.0.0.0"
+cd /var/www/luxit
+git pull origin main
+sudo systemctl restart luxit
+git stash
+git pull origin main
+sudo systemctl restart luxit
+172.56.14.243 - - [31/Jan/2026:05:00:39 +0000] "GET /auth/login HTTP/1.0" 200 15144 "-" "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36 Edg/144.0.0.0"
+2026-01-31 05:00:54,118 INFO [flask_wtf.csrf] [request_id=-] The CSRF session token is missing.
+2026-01-31 05:00:54,127 INFO [error_logger] [request_id=-] Logged error: CSRFError - 400 Bad Request: The CSRF session token is missing.
+172.56.14.243 - - [31/Jan/2026:05:00:54 +0000] "POST /auth/login HTTP/1.0" 400 125 "http://194.195.92.52/auth/login" "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36 Edg/144.0.0.0"
+nano /var/www/luxit/app.py
+nano /var/www/luxit/app.py
+
+q
+qqq
+
+
+
+^Z
+[1]+  Stopped                 gunicorn --bind 127.0.0.1:8000 wsgi:app
+(venv) root@luxit-vps:/var/www/luxit# nano /var/www/luxit/app.py
+(venv) root@luxit-vps:/var/www/luxit# sudo systemctl restart luxit
+(venv) root@luxit-vps:/var/www/luxit# sudo systemctl restart luxit
+(venv) root@luxit-vps:/var/www/luxit# cd /var/www/luxit
+git pull origin main
+sudo systemctl restart luxit
+fatal: detected dubious ownership in repository at '/var/www/luxit'
+To add an exception for this directory, call:
+
+        git config --global --add safe.directory /var/www/luxit
+(venv) root@luxit-vps:/var/www/luxit# sudo systemctl restart luxit
+curl http://127.0.0.1:8000/
+export $(cat .env | xargs)
+gunicorn --bind 127.0.0.1:8000 wsgi:app
+# Restart the systemd service
+sudo systemctl restart luxit

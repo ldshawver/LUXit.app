@@ -1,0 +1,373 @@
+1.2 Bing Webmaster / Bing Search API (FREE TIER)
+
+What you get
+
+Keyword ranking data
+
+Site performance metrics
+
+Competitive SERP visibility
+
+Integration
+
+Microsoft Bing Search API (free tier available)
+
+Cleaner + safer than Google scraping
+
+UX
+
+“Search visibility comparison”
+
+Bing often reveals gaps Google hides
+
+2. WEBSITE TECHNOLOGY & STACK ANALYSIS
+2.1 BuiltWith (Limited free access)
+
+What you get
+
+CMS
+
+Analytics tools
+
+Ad platforms
+
+Payment processors
+
+Hosting provider
+
+Integration
+
+No fully free API
+
+Use:
+
+HTML scrape
+
+BuiltWith lookup via server proxy
+
+UX
+
+“Competitor Tech Stack”
+
+Useful for:
+
+marketing strategy
+
+ad channel detection
+
+2.2 Wappalyzer (BEST free option)
+
+What you get
+
+Frontend frameworks
+
+CMS
+
+Analytics
+
+CRM tools
+
+Payment gateways
+
+Integration
+
+Free API tier
+
+OR open-source Wappalyzer engine (Node)
+
+Highly recommended
+This is one of the best free integrations for competitor analysis.
+
+UX
+
+“What tools your competitors use”
+
+Filter by:
+
+analytics
+
+marketing
+
+ecommerce
+
+3. TRAFFIC & ENGAGEMENT ESTIMATES (FREE SIGNAL DATA)
+3.1 SimilarWeb (Limited free)
+
+What you get
+
+Estimated traffic ranges
+
+Traffic sources (search, social, direct)
+
+Country distribution
+
+Integration
+
+No free public API
+
+Scraping only (light usage)
+
+UX
+
+Show ranges, not exact numbers
+
+“Traffic trend comparison”
+
+3.2 Cloudflare Radar (FREE + API)
+
+What you get
+
+Traffic trends
+
+Industry benchmarks
+
+Country-level insights
+
+Integration
+
+Free API
+
+Clean, reliable data
+
+UX
+
+“Industry benchmark comparison”
+
+“Your site vs market trend”
+
+4. SOCIAL MEDIA COMPETITOR INTELLIGENCE
+4.1 Native Social APIs (FREE but rate-limited)
+
+Platforms:
+
+X (Twitter) API (limited)
+
+YouTube Data API
+
+Reddit API
+
+TikTok (public data only)
+
+What you get
+
+Posting frequency
+
+Engagement (likes, comments)
+
+Content themes
+
+UX
+
+“Competitor social cadence”
+
+“Most engaging competitor posts”
+
+4.2 RSS + Page Scraping (Very powerful)
+
+What you get
+
+Blog posts
+
+Product launches
+
+Press releases
+
+Integration
+
+RSS feeds
+
+HTML parsing
+
+UX
+
+“Competitor activity feed”
+
+Alert-based system:
+
+“Competitor published new content”
+
+5. AD & CAMPAIGN INTELLIGENCE (FREE SOURCES)
+5.1 Meta Ads Library (FREE & LEGAL)
+
+What you get
+
+Active Facebook & Instagram ads
+
+Creative copy
+
+CTA types
+
+Campaign duration
+
+Integration
+
+Public API
+
+No auth required
+
+UX
+
+“Competitor ad creatives”
+
+“Messaging & CTA analysis”
+
+5.2 Google Ads Transparency Center (FREE)
+
+What you get
+
+Active Google ads
+
+Creative formats
+
+Regions targeted
+
+Integration
+
+Scraping (no public API)
+
+Cache aggressively
+
+UX
+
+“Competitor paid search presence”
+
+6. EMAIL & MARKETING FUNNEL INTEL (FREE METHODS)
+6.1 Email Capture + Analysis
+
+What you get
+
+Email cadence
+
+Subject line patterns
+
+Offer types
+
+Integration
+
+Manual input OR IMAP mailbox parsing
+
+UX
+
+“Competitor email patterns”
+
+Subject line heatmap
+
+6.2 Webhook-Driven Funnel Tracking
+
+Track competitor:
+
+signup flows
+
+checkout steps
+
+pricing models
+
+Integration
+
+Headless browser (Playwright/Puppeteer)
+
+UX
+
+Funnel visualization
+
+Drop-off inference
+
+7. AI-POWERED COMPETITOR INSIGHTS (YOUR SECRET WEAPON)
+7.1 AI Summary Engine (No external API needed)
+
+Feed AI:
+
+competitor homepage text
+
+pricing page
+
+feature list
+
+ads
+
+social posts
+
+AI outputs:
+
+Positioning summary
+
+Value proposition
+
+Differentiation
+
+Weaknesses
+
+UX
+
+“AI Competitor Brief”
+
+“How to beat this competitor”
+
+8. DATA SOURCES YOU SHOULD SUPPORT IN YOUR APP
+
+Your CRM / Marketing app should allow competitor analysis via:
+
+Data Inputs
+
+Domain URL
+
+Social handle
+
+Brand name
+
+Keywords
+
+Data Collection Methods
+
+API
+
+Scraping
+
+RSS
+
+Manual input
+
+Webhooks
+
+9. UX MUST-HAVE FEATURES
+🔹 Transparency
+
+Show data source for each insight
+
+Show last refresh time
+
+🔹 Ranges, not fake precision
+
+Avoid fake “exact numbers”
+
+Use:
+
+Low / Medium / High
+
+Trend arrows
+
+Percent change
+
+🔹 Caching
+
+Competitor data ≠ real-time
+
+Cache 6–24 hours minimum
+
+10. RECOMMENDED STACK (FREE-FIRST)
+
+If I had to choose a minimum free competitor stack:
+
+Wappalyzer (tech stack)
+
+Bing Search API (SEO)
+
+Meta Ads Library
+
+Cloudflare Radar
+
+RSS + scraping
+
+AI summarization layer
+
+That combo alone gives you 80% of what paid tools like SEMrush/Ahrefs provide, at zero cost.

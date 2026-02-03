@@ -1,0 +1,451 @@
+  x86_64-linux-gnu-gcc -fno-strict-overflow -Wsign-compare -DNDEBUG -g -O2 -Wall -fPIC "-DPSYCOPG_VERSION=2.9.9 (dt dec pq3 ext lo64)" -DPSYCOPG_DEBUG=1 -DPG_VERSION_NUM=170007 -DHAVE_LO64=1 -DPSYCOPG_DEBUG=1 -I/var/www/luxit/venv/include -I/usr/include/python3.13 -I. -I/usr/include/postgresql -I/usr/include/postgresql/17/server -I/usr/include/libxml2 -c psycopg/utils.c -o build/temp.linux-x86_64-cpython-313/psycopg/utils.o -Wdeclaration-after-statement
+      psycopg/utils.c: In function ‘psyco_is_main_interp’:
+      psycopg/utils.c:397:12: error: implicit declaration of function ‘_PyInterpreterState_Get’; did you mean ‘PyInterpreterState_Get’? [-Wimplicit-function-declaration]
+        397 |     return _PyInterpreterState_Get() == PyInterpreterState_Main();
+            |            ^~~~~~~~~~~~~~~~~~~~~~~
+            |            PyInterpreterState_Get
+      psycopg/utils.c:397:38: warning: comparison between pointer and integer
+        397 |     return _PyInterpreterState_Get() == PyInterpreterState_Main();
+            |                                      ^~
+      error: command '/usr/bin/x86_64-linux-gnu-gcc' failed with exit code 1
+      [end of output]
+  
+  note: This error originates from a subprocess, and is likely not a problem with pip.
+  ERROR: Failed building wheel for psycopg2-binary
+Failed to build psycopg2-binary
+error: failed-wheel-build-for-install
+
+× Failed to build installable wheels for some pyproject.toml based projects
+╰─> psycopg2-binary
+(venv) root@luxit-vps:/var/www/luxit# export $(cat .env | xargs)
+gunicorn --bind 127.0.0.1:8000 wsgi:app
+Traceback (most recent call last):
+  File "/var/www/luxit/venv/bin/gunicorn", line 8, in <module>
+    sys.exit(run())
+             ~~~^^
+  File "/var/www/luxit/venv/lib/python3.13/site-packages/gunicorn/app/wsgiapp.py", line 66, in run
+    WSGIApplication("%(prog)s [OPTIONS] [APP_MODULE]", prog=prog).run()
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "/var/www/luxit/venv/lib/python3.13/site-packages/gunicorn/app/base.py", line 235, in run
+    super().run()
+    ~~~~~~~~~~~^^
+  File "/var/www/luxit/venv/lib/python3.13/site-packages/gunicorn/app/base.py", line 71, in run
+    Arbiter(self).run()
+    ~~~~~~~^^^^^^
+  File "/var/www/luxit/venv/lib/python3.13/site-packages/gunicorn/arbiter.py", line 61, in __init__
+    self.setup(app)
+    ~~~~~~~~~~^^^^^
+  File "/var/www/luxit/venv/lib/python3.13/site-packages/gunicorn/arbiter.py", line 121, in setup
+    self.app.wsgi()
+    ~~~~~~~~~~~~~^^
+  File "/var/www/luxit/venv/lib/python3.13/site-packages/gunicorn/app/base.py", line 66, in wsgi
+    self.callable = self.load()
+                    ~~~~~~~~~^^
+  File "/var/www/luxit/venv/lib/python3.13/site-packages/gunicorn/app/wsgiapp.py", line 57, in load
+    return self.load_wsgiapp()
+           ~~~~~~~~~~~~~~~~~^^
+  File "/var/www/luxit/venv/lib/python3.13/site-packages/gunicorn/app/wsgiapp.py", line 47, in load_wsgiapp
+    return util.import_app(self.app_uri)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^
+  File "/var/www/luxit/venv/lib/python3.13/site-packages/gunicorn/util.py", line 366, in import_app
+    mod = importlib.import_module(module)
+  File "/usr/lib/python3.13/importlib/__init__.py", line 88, in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<frozen importlib._bootstrap>", line 1387, in _gcd_import
+  File "<frozen importlib._bootstrap>", line 1360, in _find_and_load
+  File "<frozen importlib._bootstrap>", line 1331, in _find_and_load_unlocked
+  File "<frozen importlib._bootstrap>", line 935, in _load_unlocked
+  File "<frozen importlib._bootstrap_external>", line 1026, in exec_module
+  File "<frozen importlib._bootstrap>", line 488, in _call_with_frames_removed
+  File "/var/www/luxit/wsgi.py", line 5, in <module>
+    from app import app
+  File "/var/www/luxit/app.py", line 9, in <module>
+    from flask_sqlalchemy import SQLAlchemy
+ModuleNotFoundError: No module named 'flask_sqlalchemy'
+(venv) root@luxit-vps:/var/www/luxit# # Test Gunicorn directly
+export $(cat .env | xargs)
+gunicorn --bind 127.0.0.1:8000 wsgi:app
+Traceback (most recent call last):
+  File "/var/www/luxit/venv/bin/gunicorn", line 8, in <module>
+    sys.exit(run())
+             ~~~^^
+  File "/var/www/luxit/venv/lib/python3.13/site-packages/gunicorn/app/wsgiapp.py", line 66, in run
+    WSGIApplication("%(prog)s [OPTIONS] [APP_MODULE]", prog=prog).run()
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "/var/www/luxit/venv/lib/python3.13/site-packages/gunicorn/app/base.py", line 235, in run
+    super().run()
+    ~~~~~~~~~~~^^
+  File "/var/www/luxit/venv/lib/python3.13/site-packages/gunicorn/app/base.py", line 71, in run
+    Arbiter(self).run()
+    ~~~~~~~^^^^^^
+  File "/var/www/luxit/venv/lib/python3.13/site-packages/gunicorn/arbiter.py", line 61, in __init__
+    self.setup(app)
+    ~~~~~~~~~~^^^^^
+  File "/var/www/luxit/venv/lib/python3.13/site-packages/gunicorn/arbiter.py", line 121, in setup
+    self.app.wsgi()
+    ~~~~~~~~~~~~~^^
+  File "/var/www/luxit/venv/lib/python3.13/site-packages/gunicorn/app/base.py", line 66, in wsgi
+    self.callable = self.load()
+                    ~~~~~~~~~^^
+  File "/var/www/luxit/venv/lib/python3.13/site-packages/gunicorn/app/wsgiapp.py", line 57, in load
+    return self.load_wsgiapp()
+           ~~~~~~~~~~~~~~~~~^^
+  File "/var/www/luxit/venv/lib/python3.13/site-packages/gunicorn/app/wsgiapp.py", line 47, in load_wsgiapp
+    return util.import_app(self.app_uri)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^
+  File "/var/www/luxit/venv/lib/python3.13/site-packages/gunicorn/util.py", line 366, in import_app
+    mod = importlib.import_module(module)
+  File "/usr/lib/python3.13/importlib/__init__.py", line 88, in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<frozen importlib._bootstrap>", line 1387, in _gcd_import
+  File "<frozen importlib._bootstrap>", line 1360, in _find_and_load
+  File "<frozen importlib._bootstrap>", line 1331, in _find_and_load_unlocked
+  File "<frozen importlib._bootstrap>", line 935, in _load_unlocked
+  File "<frozen importlib._bootstrap_external>", line 1026, in exec_module
+  File "<frozen importlib._bootstrap>", line 488, in _call_with_frames_removed
+  File "/var/www/luxit/wsgi.py", line 5, in <module>
+    from app import app
+  File "/var/www/luxit/app.py", line 9, in <module>
+    from flask_sqlalchemy import SQLAlchemy
+ModuleNotFoundError: No module named 'flask_sqlalchemy'
+(venv) root@luxit-vps:/var/www/luxit# # Restart the systemd service
+sudo systemctl restart luxit
+
+# Check status
+sudo systemctl status luxit
+
+# Test with curl
+curl http://127.0.0.1:8000/
+● luxit.service - LUX IT Gunicorn Application
+     Loaded: loaded (/etc/systemd/system/luxit.service; enabled; preset: enabled)
+     Active: active (running) since Sat 2026-01-31 04:51:55 UTC; 64ms ago
+ Invocation: b76c83412ac64866970aa05c8ed5f6fc
+   Main PID: 22114 (gunicorn)
+      Tasks: 1 (limit: 9486)
+     Memory: 1.5M (peak: 1.7M)
+        CPU: 10ms
+     CGroup: /system.slice/luxit.service
+             └─22114 /var/www/luxit/venv/bin/python3.13 /var/www/luxit/venv/bin/gunicorn --workers 4 --bind 127.0.>
+
+Jan 31 04:51:55 luxit-vps.internal systemd[1]: Started luxit.service - LUX IT Gunicorn Application.
+...skipping...
+● luxit.service - LUX IT Gunicorn Application
+     Loaded: loaded (/etc/systemd/system/luxit.service; enabled; preset: enabled)
+     Active: active (running) since Sat 2026-01-31 04:51:55 UTC; 64ms ago
+ Invocation: b76c83412ac64866970aa05c8ed5f6fc
+   Main PID: 22114 (gunicorn)
+      Tasks: 1 (limit: 9486)
+     Memory: 1.5M (peak: 1.7M)
+        CPU: 10ms
+     CGroup: /system.slice/luxit.service
+             └─22114 /var/www/luxit/venv/bin/python3.13 /var/www/luxit/venv/bin/gunicorn --workers 4 --bind 127.0.>
+
+Jan 31 04:51:55 luxit-vps.internal systemd[1]: Started luxit.service - LUX IT Gunicorn Application.
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+...skipping...
+● luxit.service - LUX IT Gunicorn Application
+     Loaded: loaded (/etc/systemd/system/luxit.service; enabled; preset: enabled)
+     Active: active (running) since Sat 2026-01-31 04:51:55 UTC; 64ms ago
+ Invocation: b76c83412ac64866970aa05c8ed5f6fc
+   Main PID: 22114 (gunicorn)
+      Tasks: 1 (limit: 9486)
+     Memory: 1.5M (peak: 1.7M)
+        CPU: 10ms
+     CGroup: /system.slice/luxit.service
+             └─22114 /var/www/luxit/venv/bin/python3.13 /var/www/luxit/venv/bin/gunicorn --workers 4 --bind 127.0.>
+
+Jan 31 04:51:55 luxit-vps.internal systemd[1]: Started luxit.service - LUX IT Gunicorn Application.
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+...skipping...
+
+                   SUMMARY OF LESS COMMANDS
+
+      Commands marked with * may be preceded by a number, N.
+      Notes in parentheses indicate the behavior if N is given.
+      A key preceded by a caret indicates the Ctrl key; thus ^K is ctrl-K.
+
+  h  H                 Display this help.
+  q  :q  Q  :Q  ZZ     Exit.
+
+                   SUMMARY OF LESS COMMANDS
+
+      Commands marked with * may be preceded by a number, N.
+      Notes in parentheses indicate the behavior if N is given.
+      A key preceded by a caret indicates the Ctrl key; thus ^K is ctrl-K.
+
+  h  H                 Display this help.
+  q  :q  Q  :Q  ZZ     Exit.
+ ---------------------------------------------------------------------------
+
+                           MOVING
+
+  e  ^E  j  ^N  CR  *  Forward  one line   (or N lines).
+  y  ^Y  k  ^K  ^P  *  Backward one line   (or N lines).
+  f  ^F  ^V  SPACE  *  Forward  one window (or N lines).
+  b  ^B  ESC-v      *  Backward one window (or N lines).
+  z                 *  Forward  one window (and set window to N).
+  w                 *  Backward one window (and set window to N).
+  ESC-SPACE         *  Forward  one window, but don't stop at end-of-file.
+  d  ^D             *  Forward  one half-window (and set half-window to N).
+  u  ^U             *  Backward one half-window (and set half-window to N).
+  ESC-)  RightArrow *  Right one half screen width (or N positions).
+  ESC-(  LeftArrow  *  Left  one half screen width (or N positions).
+  ESC-}  ^RightArrow   Right to last column displayed.
+  ESC-{  ^LeftArrow    Left  to first column.
+  F                    Forward forever; like "tail -f".
+  ESC-F                Like F but stop when search pattern is found.
+  r  ^R  ^L            Repaint screen.
+  R                    Repaint screen, discarding buffered input.
+        ---------------------------------------------------
+        Default "window" is the screen height.
+        Default "half-window" is half of the screen height.
+ ---------------------------------------------------------------------------
+
+                          SEARCHING
+
+  /pattern          *  Search forward for (N-th) matching line.
+  ?pattern          *  Search backward for (N-th) matching line.
+  n                 *  Repeat previous search (for N-th occurrence).
+  N                 *  Repeat previous search in reverse direction.
+  ESC-n             *  Repeat previous search, spanning files.
+  ESC-N             *  Repeat previous search, reverse dir. & spanning files.
+  ^O^N  ^On         *  Search forward for (N-th) OSC8 hyperlink.
+  ^O^P  ^Op         *  Search backward for (N-th) OSC8 hyperlink.
+  ^O^L  ^Ol            Jump to the currently selected OSC8 hyperlink.
+  ESC-u                Undo (toggle) search highlighting.
+  ESC-U                Clear search highlighting.
+  &pattern          *  Display only matching lines.
+...skipping...
+
+                   SUMMARY OF LESS COMMANDS
+
+      Commands marked with * may be preceded by a number, N.
+      Notes in parentheses indicate the behavior if N is given.
+      A key preceded by a caret indicates the Ctrl key; thus ^K is ctrl-K.
+
+  h  H                 Display this help.
+  q  :q  Q  :Q  ZZ     Exit.
+ ---------------------------------------------------------------------------
+
+                           MOVING
+
+  e  ^E  j  ^N  CR  *  Forward  one line   (or N lines).
+  y  ^Y  k  ^K  ^P  *  Backward one line   (or N lines).
+  f  ^F  ^V  SPACE  *  Forward  one window (or N lines).
+  b  ^B  ESC-v      *  Backward one window (or N lines).
+  z                 *  Forward  one window (and set window to N).
+  w                 *  Backward one window (and set window to N).
+  ESC-SPACE         *  Forward  one window, but don't stop at end-of-file.
+  d  ^D             *  Forward  one half-window (and set half-window to N).
+  u  ^U             *  Backward one half-window (and set half-window to N).
+  ESC-)  RightArrow *  Right one half screen width (or N positions).
+  ESC-(  LeftArrow  *  Left  one half screen width (or N positions).
+  ESC-}  ^RightArrow   Right to last column displayed.
+  ESC-{  ^LeftArrow    Left  to first column.
+  F                    Forward forever; like "tail -f".
+  ESC-F                Like F but stop when search pattern is found.
+  r  ^R  ^L            Repaint screen.
+  R                    Repaint screen, discarding buffered input.
+        ---------------------------------------------------
+        Default "window" is the screen height.
+        Default "half-window" is half of the screen height.
+ ---------------------------------------------------------------------------
+
+                          SEARCHING
+
+  /pattern          *  Search forward for (N-th) matching line.
+  ?pattern          *  Search backward for (N-th) matching line.
+  n                 *  Repeat previous search (for N-th occurrence).
+  N                 *  Repeat previous search in reverse direction.
+  ESC-n             *  Repeat previous search, spanning files.
+  ESC-N             *  Repeat previous search, reverse dir. & spanning files.
+  ^O^N  ^On         *  Search forward for (N-th) OSC8 hyperlink.
+  ^O^P  ^Op         *  Search backward for (N-th) OSC8 hyperlink.
+  ^O^L  ^Ol            Jump to the currently selected OSC8 hyperlink.
+  ESC-u                Undo (toggle) search highlighting.
+  ESC-U                Clear search highlighting.
+  &pattern          *  Display only matching lines.
+
+                   SUMMARY OF LESS COMMANDS
+
+      Commands marked with * may be preceded by a number, N.
+      Notes in parentheses indicate the behavior if N is given.
+      A key preceded by a caret indicates the Ctrl key; thus ^K is ctrl-K.
+
+  h  H                 Display this help.
+  q  :q  Q  :Q  ZZ     Exit.
+ ---------------------------------------------------------------------------
+
+                           MOVING
+
+  e  ^E  j  ^N  CR  *  Forward  one line   (or N lines).
+  y  ^Y  k  ^K  ^P  *  Backward one line   (or N lines).
+  f  ^F  ^V  SPACE  *  Forward  one window (or N lines).
+  b  ^B  ESC-v      *  Backward one window (or N lines).
+  z                 *  Forward  one window (and set window to N).
+  w                 *  Backward one window (and set window to N).
+  ESC-SPACE         *  Forward  one window, but don't stop at end-of-file.
+  d  ^D             *  Forward  one half-window (and set half-window to N).
+  u  ^U             *  Backward one half-window (and set half-window to N).
+  ESC-)  RightArrow *  Right one half screen width (or N positions).
+  ESC-(  LeftArrow  *  Left  one half screen width (or N positions).
+  ESC-}  ^RightArrow   Right to last column displayed.
+  ESC-{  ^LeftArrow    Left  to first column.
+  F                    Forward forever; like "tail -f".
+  ESC-F                Like F but stop when search pattern is found.
+  r  ^R  ^L            Repaint screen.
+  R                    Repaint screen, discarding buffered input.
+        ---------------------------------------------------
+        Default "window" is the screen height.
+        Default "half-window" is half of the screen height.
+ ---------------------------------------------------------------------------
+
+                          SEARCHING
+
+  /pattern          *  Search forward for (N-th) matching line.
+  ?pattern          *  Search backward for (N-th) matching line.
+  n                 *  Repeat previous search (for N-th occurrence).
+  N                 *  Repeat previous search in reverse direction.
+  ESC-n             *  Repeat previous search, spanning files.
+  ESC-N             *  Repeat previous search, reverse dir. & spanning files.
+  ^O^N  ^On         *  Search forward for (N-th) OSC8 hyperlink.
+  ^O^P  ^Op         *  Search backward for (N-th) OSC8 hyperlink.
+  ^O^L  ^Ol            Jump to the currently selected OSC8 hyperlink.
+  ESC-u                Undo (toggle) search highlighting.
+  ESC-U                Clear search highlighting.
+  &pattern          *  Display only matching lines.
+...skipping...
+● luxit.service - LUX IT Gunicorn Application
+     Loaded: loaded (/etc/systemd/system/luxit.service; enabled; preset: enabled)
+     Active: active (running) since Sat 2026-01-31 04:51:55 UTC; 64ms ago
+ Invocation: b76c83412ac64866970aa05c8ed5f6fc
+   Main PID: 22114 (gunicorn)
+      Tasks: 1 (limit: 9486)
+     Memory: 1.5M (peak: 1.7M)
+        CPU: 10ms
+     CGroup: /system.slice/luxit.service
+             └─22114 /var/www/luxit/venv/bin/python3.13 /var/www/luxit/venv/bin/gunicorn --workers 4 --bind 127.0.>
+
+Jan 31 04:51:55 luxit-vps.internal systemd[1]: Started luxit.service - LUX IT Gunicorn Application.
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+curl: (7) Failed to connect to 127.0.0.1 port 8000 after 0 ms: Could not connect to server
+(venv) root@luxit-vps:/var/www/luxit# 
+(venv) root@luxit-vps:/var/www/luxit# curl http://194.195.92.52
+<html>
+<head><title>502 Bad Gateway</title></head>
+<body>
+<center><h1>502 Bad Gateway</h1></center>
+<hr><center>nginx</center>
+</body>
+</html>
+(venv) root@luxit-vps:/var/www/luxit# 

@@ -1,0 +1,22 @@
+venv) root@luxit-vps:/var/www/luxit# sudo journalctl -u luxit -n 20 --no-pager
+Jan 31 05:59:30 luxit-vps.internal systemd[1]: Stopped luxit.service - LUX IT Gunicorn Application.
+Jan 31 05:59:30 luxit-vps.internal systemd[1]: luxit.service: Consumed 4.838s CPU time, 271M memory peak.
+Jan 31 05:59:30 luxit-vps.internal systemd[1]: Started luxit.service - LUX IT Gunicorn Application.
+Jan 31 05:59:33 luxit-vps.internal gunicorn[26753]: 2026-01-31 05:59:33,467 ERROR [ai_agent] [request_id=-] OPENAI_
+API_KEY environment variable is required
+Jan 31 05:59:33 luxit-vps.internal gunicorn[26753]: 2026-01-31 05:59:33,663 WARNING [services.secret_vault] [request_id=-] ENCRYPTION_MASTER_KEY not found, generating new key
+Jan 31 05:59:33 luxit-vps.internal gunicorn[26753]: 2026-01-31 05:59:33,663 INFO [services.secret_vault] [request_id=-] Generated new encryption key. Add to secrets: U14m2nSWH7WCjxwFBNurTBxhVGsMmb6AOghZzPSi3ak=
+Jan 31 05:59:33 luxit-vps.internal gunicorn[26753]: 2026-01-31 05:59:33,797 WARNING [root] [request_id=-] Replit Auth not available: No module named 'flask_dance'
+Jan 31 05:59:33 luxit-vps.internal gunicorn[26753]: 2026-01-31 05:59:33,802 INFO [root] [request_id=-] TikTok OAuth blueprint registered
+Jan 31 05:59:33 luxit-vps.internal gunicorn[26753]: 2026-01-31 05:59:33,805 INFO [root] [request_id=-] Facebook OAuth blueprint registered
+Jan 31 05:59:33 luxit-vps.internal gunicorn[26753]: 2026-01-31 05:59:33,807 INFO [root] [request_id=-] Instagram OAuth blueprint registered
+Jan 31 05:59:33 luxit-vps.internal gunicorn[26753]: 2026-01-31 05:59:33,807 INFO [root] [request_id=-] Facebook webhook blueprint registered
+Jan 31 05:59:34 luxit-vps.internal gunicorn[26753]: 2026-01-31 05:59:34,159 INFO [root] [request_id=-] Automation trigger library seeded
+Jan 31 05:59:34 luxit-vps.internal gunicorn[26753]: 2026-01-31 05:59:34,159 INFO [root] [request_id=-] Error logging initialized
+Jan 31 05:59:34 luxit-vps.internal gunicorn[26753]: 2026-01-31 05:59:34,187 INFO [agents.app_agent] [request_id=-] APP Agent initialized successfully
+Jan 31 05:59:34 luxit-vps.internal gunicorn[26753]: 2026-01-31 05:59:34,188 DEBUG [tzlocal] [request_id=-] /etc/localtime found
+Jan 31 05:59:34 luxit-vps.internal gunicorn[26753]: 2026-01-31 05:59:34,188 DEBUG [tzlocal] [request_id=-] 1 found:
+Jan 31 05:59:34 luxit-vps.internal gunicorn[26753]:  {'/etc/localtime is a symlink to': 'Etc/UTC'}
+Jan 31 05:59:34 luxit-vps.internal gunicorn[26753]: 2026-01-31 05:59:34,188 INFO [agent_scheduler] [request_id=-] Agent Scheduler initialized
+Jan 31 05:59:34 luxit-vps.internal gunicorn[26753]: 2026-01-31 05:59:34,188 ERROR [agent_scheduler] [request_id=-] Failed to initialize agent scheduler: Brand & Strategy Agent: OPENAI_API_KEY environment variable is required
+Jan 31 05:59:34 luxit-vps.internal gunicorn[26753]: 2026-01-31 05:59:34,188 INFO [root] [request_id=-] AI Agent Scheduler initialized with 0 agents

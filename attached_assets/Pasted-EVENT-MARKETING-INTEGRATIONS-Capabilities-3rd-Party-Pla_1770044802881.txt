@@ -1,0 +1,385 @@
+EVENT MARKETING & INTEGRATIONS
+
+(Capabilities, 3rd-Party Platforms, UX & Feature Strategy)
+
+1. CORE EVENT OBJECT (FOUNDATION)
+
+Every event in your app should support:
+
+Event name, description, category
+
+Date(s), time(s), timezone
+
+Venue (physical, virtual, hybrid)
+
+Capacity limits
+
+Ticket types (paid, free, comp)
+
+Promo rules
+
+Social + calendar distribution
+
+Attribution & analytics
+
+Key UX principle:
+
+Events are marketing assets, not just calendar entries.
+
+2. TICKETING & EVENT PLATFORM INTEGRATIONS
+2.1 Eventbrite (HIGH PRIORITY)
+
+Why
+
+Best API support
+
+Widely used
+
+Free + paid events
+
+Promo codes & comp tickets
+
+Check-in support
+
+Capabilities to integrate
+
+Create/manage events
+
+Sync ticket inventory
+
+Issue promo codes
+
+Generate 100% off / comp tickets
+
+Pull attendee data into CRM
+
+UX ideas
+
+“Sync with Eventbrite”
+
+“Mirror event + tickets”
+
+“Import attendees as leads”
+
+2.2 Ticketmaster (LIMITED, ENTERPRISE)
+
+Reality check
+
+API access is restricted
+
+Often requires approval
+
+More useful for promotion, not management
+
+Use case
+
+Promote major concerts / venues
+
+Affiliate-style promotion
+
+Link-out tracking
+
+UX
+
+“Featured Events”
+
+“Affiliate ticket links”
+
+Conversion tracking only
+
+2.3 Other Ticketing Platforms (Nice-to-have)
+
+Universe
+
+Tito
+
+Splash
+
+Eventcube
+
+Brown Paper Tickets
+
+Design recommendation
+
+Use a generic ticketing adapter layer so platforms can be swapped without UI changes.
+
+3. FREE TICKETS, GIVEAWAYS & PROMOS (CRITICAL)
+
+Your app should natively support:
+
+🎟 Free Tickets / Comp Access
+
+100% discount codes
+
+Invite-only tickets
+
+Limited-quantity giveaways
+
+Role-based access (VIP, press, staff)
+
+Important UX
+
+“Give away tickets” ≠ “free event”
+
+Must support controlled free access
+
+🎁 Giveaway Campaigns
+
+Examples:
+
+“First 100 signups”
+
+“Refer a friend”
+
+“Email subscriber exclusive”
+
+“Social share unlocks ticket”
+
+Integrations
+
+Email campaigns
+
+Social sharing
+
+Referral tracking
+
+4. EVENT CALENDAR INTEGRATIONS (VERY IMPORTANT)
+4.1 Google Calendar
+
+Must-have
+
+Add-to-calendar links
+
+OAuth sync (optional)
+
+ICS export
+
+4.2 Apple Calendar / Outlook
+
+Universal ICS support
+
+One-click add buttons
+
+4.3 Public Event Calendars
+
+External discovery
+
+Google Events
+
+Event Aggregators
+
+City / venue calendars
+
+Feature
+
+“Publish event to public calendars”
+
+4.4 Internal Event Calendar (CRM)
+
+Filter by:
+
+campaign
+
+company
+
+location
+
+audience
+
+Show:
+
+RSVPs
+
+registrations
+
+attendance rate
+
+5. SOCIAL MEDIA EVENT CREATION (HUGE VALUE)
+5.1 Facebook Events (HIGH PRIORITY)
+
+Capabilities
+
+Create Facebook Event
+
+Sync event updates
+
+Track interest / going metrics
+
+UX
+
+“Create Facebook Event”
+
+“Sync changes automatically”
+
+5.2 Instagram (Indirect)
+
+No native event objects
+
+Use:
+
+bio links
+
+story stickers
+
+reminders
+
+Feature
+
+Auto-generate IG-ready assets
+
+5.3 LinkedIn Events (B2B)
+
+Strong for professional events
+
+API support is improving
+
+Use case
+
+Webinars
+
+Conferences
+
+Networking events
+
+5.4 X / Twitter
+
+Event reminders
+
+Countdown posts
+
+Hashtag tracking
+
+6. EMAIL, SMS & AUTOMATION (CORE MARKETING POWER)
+6.1 Email Campaigns
+
+Announcement
+
+Reminder sequences
+
+Last-chance alerts
+
+Post-event follow-up
+
+Smart features
+
+Dynamic countdown timers
+
+Calendar links embedded
+
+Personalized CTAs
+
+6.2 SMS Marketing
+
+Event reminders
+
+Venue updates
+
+“Starting soon” alerts
+
+6.3 Automation Triggers
+
+Examples:
+
+Registered → send confirmation
+
+Attended → tag as “engaged”
+
+No-show → follow-up campaign
+
+Gave away ticket → upsell later
+
+7. EVENT ANALYTICS & INSIGHTS (MUST-HAVE)
+Metrics to track
+
+Views → registrations
+
+Registration → attendance
+
+Free vs paid conversion
+
+Campaign source attribution
+
+Social platform performance
+
+AI-Driven Insights
+
+Best-performing event types
+
+Best days/times
+
+Optimal promo timing
+
+Suggested pricing
+
+Audience overlap between events
+
+8. ADVANCED EVENT FEATURES (DIFFERENTIATORS)
+🎥 Virtual & Hybrid Support
+
+Zoom / Google Meet
+
+Streaming links
+
+Access control per ticket type
+
+🧑‍🤝‍🧑 Networking & Engagement
+
+Attendee lists (opt-in)
+
+Messaging
+
+Polls / Q&A
+
+Live feedback
+
+🏷 Sponsorships & Partners
+
+Sponsor slots
+
+Branded tickets
+
+Partner promo codes
+
+Revenue tracking
+
+9. LEGAL & UX SAFETY CONSIDERATIONS
+
+Consent for marketing follow-ups
+
+Clear refund policies
+
+Explicit free-ticket terms
+
+GDPR / CAN-SPAM compliance
+
+10. RECOMMENDED “MVP” EVENT STACK (FREE-FIRST)
+
+If you want maximum value with minimal cost:
+
+Eventbrite (ticketing + giveaways)
+
+Google Calendar / ICS
+
+Facebook Events
+
+Email + SMS automation
+
+Internal CRM event analytics
+
+AI summaries + recommendations
+
+This alone competes with Eventbrite + Mailchimp + Hootsuite combined.
+
+11. HOW TO POSITION THIS IN YOUR APP
+
+Instead of “Events”, call it:
+
+Event Marketing
+
+Campaign Events
+
+Live Experiences
+
+Audience Engagement
+
+Language matters — this is not just scheduling.

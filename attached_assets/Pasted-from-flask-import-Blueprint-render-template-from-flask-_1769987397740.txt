@@ -1,0 +1,65 @@
+from flask import Blueprint, render_template
+from flask_login import login_required
+
+main_bp = Blueprint("main", __name__)
+
+@main_bp.route("/dashboard")
+@login_required
+def dashboard():
+    return render_template("dashboard.html")
+EOF
+root@luxit:~# 
+root@luxit:~# sudo systemctl restart luxit
+root@luxit:~# curl http://127.0.0.1:8000/
+curl: (7) Failed to connect to 127.0.0.1 port 8000 after 0 ms: Could not connect to server
+root@luxit:~# sudo journalctl -u luxit -n 50 --no-pager
+Feb 01 23:09:42 luxit gunicorn[15393]: Traceback (most recent call last):
+Feb 01 23:09:42 luxit gunicorn[15393]:   File "/var/www/luxit/venv/bin/gunicorn", line 6, in <module>
+Feb 01 23:09:42 luxit gunicorn[15393]:     sys.exit(run())
+Feb 01 23:09:42 luxit gunicorn[15393]:              ~~~^^
+Feb 01 23:09:42 luxit gunicorn[15393]:   File "/var/www/luxit/venv/lib/python3.13/site-packages/gunicorn/app/wsgiapp.py", line 67, in run
+Feb 01 23:09:42 luxit gunicorn[15393]:     WSGIApplication("%(prog)s [OPTIONS] [APP_MODULE]", prog=prog).run()
+Feb 01 23:09:42 luxit gunicorn[15393]:     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^
+Feb 01 23:09:42 luxit gunicorn[15393]:   File "/var/www/luxit/venv/lib/python3.13/site-packages/gunicorn/app/base.py", line 236, in run
+Feb 01 23:09:42 luxit gunicorn[15393]:     super().run()
+Feb 01 23:09:42 luxit gunicorn[15393]:     ~~~~~~~~~~~^^
+Feb 01 23:09:42 luxit gunicorn[15393]:   File "/var/www/luxit/venv/lib/python3.13/site-packages/gunicorn/app/base.py", line 72, in run
+Feb 01 23:09:42 luxit gunicorn[15393]:     Arbiter(self).run()
+Feb 01 23:09:42 luxit gunicorn[15393]:     ~~~~~~~^^^^^^
+Feb 01 23:09:42 luxit gunicorn[15393]:   File "/var/www/luxit/venv/lib/python3.13/site-packages/gunicorn/arbiter.py", line 58, in __init__
+Feb 01 23:09:42 luxit gunicorn[15393]:     self.setup(app)
+Feb 01 23:09:42 luxit gunicorn[15393]:     ~~~~~~~~~~^^^^^
+Feb 01 23:09:42 luxit gunicorn[15393]:   File "/var/www/luxit/venv/lib/python3.13/site-packages/gunicorn/arbiter.py", line 118, in setup
+Feb 01 23:09:42 luxit gunicorn[15393]:     self.app.wsgi()
+Feb 01 23:09:42 luxit gunicorn[15393]:     ~~~~~~~~~~~~~^^
+Feb 01 23:09:42 luxit gunicorn[15393]:   File "/var/www/luxit/venv/lib/python3.13/site-packages/gunicorn/app/base.py", line 67, in wsgi
+Feb 01 23:09:42 luxit gunicorn[15393]:     self.callable = self.load()
+Feb 01 23:09:42 luxit gunicorn[15393]:                     ~~~~~~~~~^^
+Feb 01 23:09:42 luxit gunicorn[15393]:   File "/var/www/luxit/venv/lib/python3.13/site-packages/gunicorn/app/wsgiapp.py", line 58, in load
+Feb 01 23:09:42 luxit gunicorn[15393]:     return self.load_wsgiapp()
+Feb 01 23:09:42 luxit gunicorn[15393]:            ~~~~~~~~~~~~~~~~~^^
+Feb 01 23:09:42 luxit gunicorn[15393]:   File "/var/www/luxit/venv/lib/python3.13/site-packages/gunicorn/app/wsgiapp.py", line 48, in load_wsgiapp
+Feb 01 23:09:42 luxit gunicorn[15393]:     return util.import_app(self.app_uri)
+Feb 01 23:09:42 luxit gunicorn[15393]:            ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^
+Feb 01 23:09:42 luxit gunicorn[15393]:   File "/var/www/luxit/venv/lib/python3.13/site-packages/gunicorn/util.py", line 371, in import_app
+Feb 01 23:09:42 luxit gunicorn[15393]:     mod = importlib.import_module(module)
+Feb 01 23:09:42 luxit gunicorn[15393]:   File "/usr/lib/python3.13/importlib/__init__.py", line 88, in import_module
+Feb 01 23:09:42 luxit gunicorn[15393]:     return _bootstrap._gcd_import(name[level:], package, level)
+Feb 01 23:09:42 luxit gunicorn[15393]:            ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Feb 01 23:09:42 luxit gunicorn[15393]:   File "<frozen importlib._bootstrap>", line 1387, in _gcd_import
+Feb 01 23:09:42 luxit gunicorn[15393]:   File "<frozen importlib._bootstrap>", line 1360, in _find_and_load
+Feb 01 23:09:42 luxit gunicorn[15393]:   File "<frozen importlib._bootstrap>", line 1331, in _find_and_load_unlocked
+Feb 01 23:09:42 luxit gunicorn[15393]:   File "<frozen importlib._bootstrap>", line 935, in _load_unlocked
+Feb 01 23:09:42 luxit gunicorn[15393]:   File "<frozen importlib._bootstrap_external>", line 1026, in exec_module
+Feb 01 23:09:42 luxit gunicorn[15393]:   File "<frozen importlib._bootstrap>", line 488, in _call_with_frames_removed
+Feb 01 23:09:42 luxit gunicorn[15393]:   File "/var/www/luxit/wsgi.py", line 5, in <module>
+Feb 01 23:09:42 luxit gunicorn[15393]:     from app import app
+Feb 01 23:09:42 luxit gunicorn[15393]:   File "/var/www/luxit/app.py", line 248, in <module>
+Feb 01 23:09:42 luxit gunicorn[15393]:     from marketing import marketing_bp
+Feb 01 23:09:42 luxit gunicorn[15393]:   File "/var/www/luxit/marketing.py", line 38
+Feb 01 23:09:42 luxit gunicorn[15393]:     return redirect("mailto:sales@luxit.app")"""Marketing site routes."""
+Feb 01 23:09:42 luxit gunicorn[15393]:                                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Feb 01 23:09:42 luxit gunicorn[15393]: SyntaxError: invalid syntax
+Feb 01 23:09:42 luxit systemd[1]: luxit.service: Main process exited, code=exited, status=1/FAILURE
+Feb 01 23:09:42 luxit systemd[1]: luxit.service: Failed with result 'exit-code'.
+Feb 01 23:09:42 luxit systemd[1]: luxit.service: Consumed 2.066s CPU time, 81.4M memory peak.

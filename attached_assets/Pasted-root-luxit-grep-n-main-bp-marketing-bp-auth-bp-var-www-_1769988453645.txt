@@ -1,0 +1,45 @@
+root@luxit:~# grep -n "main_bp\|marketing_bp\|auth_bp" /var/www/luxit/app.py
+242:from routes import main_bp
+243:from auth import auth_bp
+246:from main import main_bp
+247:from auth import auth_bp
+248:from marketing import marketing_bp
+270:    from facebook_auth import facebook_auth_bp
+271:    app.register_blueprint(facebook_auth_bp)
+277:    from instagram_auth import instagram_auth_bp
+278:    app.register_blueprint(instagram_auth_bp)
+root@luxit:~# nano /var/www/luxit/app.py
+root@luxit:~# nano /var/www/luxit/app.py
+root@luxit:~# grep -n "main_bp\|marketing_bp\|auth_bp" /var/www/luxit/app.py
+242:from auth import auth_bp
+245:from main import main_bp
+246:from auth import auth_bp
+247:from marketing import marketing_bp
+269:    from facebook_auth import facebook_auth_bp
+270:    app.register_blueprint(facebook_auth_bp)
+276:    from instagram_auth import instagram_auth_bp
+277:    app.register_blueprint(instagram_auth_bp)
+root@luxit:~# sudo systemctl restart luxit
+curl http://127.0.0.1:8000/
+curl: (7) Failed to connect to 127.0.0.1 port 8000 after 0 ms: Could not connect to server
+root@luxit:~# sudo journalctl -u luxit -n 20 --no-pager
+Feb 01 23:26:49 luxit systemd[1]: luxit.service: Deactivated successfully.
+Feb 01 23:26:49 luxit systemd[1]: Stopped luxit.service - LUX IT Gunicorn Application.
+Feb 01 23:26:49 luxit systemd[1]: luxit.service: Consumed 5.743s CPU time, 437.1M memory peak.
+Feb 01 23:26:49 luxit systemd[1]: Started luxit.service - LUX IT Gunicorn Application.
+Feb 01 23:26:49 luxit gunicorn[16339]: 2026-02-01 23:26:49,887 WARNING [services.secret_vault] [request_id=-] ENCRYPTION_MASTER_KEY not found, generating new key
+Feb 01 23:26:49 luxit gunicorn[16339]: 2026-02-01 23:26:49,887 INFO [services.secret_vault] [request_id=-] Generated new encryption key. Add to secrets: He3wfTAr7C8P19tm2VTBm75_dG7xZ40wE58dieSWrbg=
+Feb 01 23:26:49 luxit gunicorn[16339]: 2026-02-01 23:26:49,942 WARNING [root] [request_id=-] Replit Auth not available: No module named 'flask_dance'
+Feb 01 23:26:49 luxit gunicorn[16339]: 2026-02-01 23:26:49,943 INFO [root] [request_id=-] TikTok OAuth blueprint registered
+Feb 01 23:26:49 luxit gunicorn[16339]: 2026-02-01 23:26:49,951 INFO [root] [request_id=-] Facebook OAuth blueprint registered
+Feb 01 23:26:49 luxit gunicorn[16339]: 2026-02-01 23:26:49,953 INFO [root] [request_id=-] Instagram OAuth blueprint registered
+Feb 01 23:26:49 luxit gunicorn[16339]: 2026-02-01 23:26:49,954 INFO [root] [request_id=-] Facebook webhook blueprint registered
+Feb 01 23:26:50 luxit gunicorn[16339]: 2026-02-01 23:26:50,342 INFO [root] [request_id=-] Automation trigger library seeded
+Feb 01 23:26:50 luxit gunicorn[16339]: 2026-02-01 23:26:50,342 INFO [root] [request_id=-] Error logging initialized
+Feb 01 23:26:50 luxit gunicorn[16339]: 2026-02-01 23:26:50,999 INFO [agents.app_agent] [request_id=-] APP Agent initialized successfully
+Feb 01 23:26:51 luxit gunicorn[16339]: 2026-02-01 23:26:51,000 DEBUG [tzlocal] [request_id=-] /etc/localtime found
+Feb 01 23:26:51 luxit gunicorn[16339]: 2026-02-01 23:26:51,000 DEBUG [tzlocal] [request_id=-] 1 found:
+Feb 01 23:26:51 luxit gunicorn[16339]:  {'/etc/localtime is a symlink to': 'Etc/UTC'}
+Feb 01 23:26:51 luxit gunicorn[16339]: 2026-02-01 23:26:51,000 INFO [agent_scheduler] [request_id=-] Agent Scheduler initialized
+Feb 01 23:26:51 luxit gunicorn[16339]: 2026-02-01 23:26:51,001 ERROR [agent_scheduler] [request_id=-] Failed to initialize agent scheduler: Brand & Strategy Agent: OPENAI_API_KEY environment variable is required
+Feb 01 23:26:51 luxit gunicorn[16339]: 2026-02-01 23:26:51,001 INFO [root] [request_id=-] AI Agent Scheduler initialized with 0 agents

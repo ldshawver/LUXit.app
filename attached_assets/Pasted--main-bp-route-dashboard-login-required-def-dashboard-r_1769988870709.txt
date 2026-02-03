@@ -1,0 +1,318 @@
+@main_bp.route("/dashboard")
+@login_required
+def dashboard():
+    return render_template("dashboard.html")
+EOF
+root@luxit:~# cat > /var/www/luxit/main.py << 'EOF'
+from flask import Blueprint, render_template
+from flask_login import login_required
+
+main_bp = Blueprint("main", __name__)
+
+@main_bp.route("/dashboard")
+@login_required
+def dashboard():
+    return render_template("dashboard.html")
+EOF
+root@luxit:~# sudo systemctl restart luxit
+root@luxit:~# curl http://127.0.0.1:8000/
+curl: (7) Failed to connect to 127.0.0.1 port 8000 after 0 ms: Could not connect to server
+root@luxit:~# curl http://127.0.0.1:8000/
+curl: (7) Failed to connect to 127.0.0.1 port 8000 after 0 ms: Could not connect to server
+root@luxit:~# cat > /var/www/luxit/main.py << 'EOF'
+from flask import Blueprint, render_template
+from flask_login import login_required
+
+main_bp = Blueprint("main", __name__)
+
+@main_bp.route("/dashboard")
+@login_required
+def dashboard():
+    return render_template("dashboard.html")
+EOF
+root@luxit:~# 
+root@luxit:~# sudo systemctl restart luxit
+root@luxit:~# curl http://127.0.0.1:8000/
+curl: (7) Failed to connect to 127.0.0.1 port 8000 after 0 ms: Could not connect to server
+root@luxit:~# sudo journalctl -u luxit -n 50 --no-pager
+Feb 01 23:09:42 luxit gunicorn[15393]: Traceback (most recent call last):
+Feb 01 23:09:42 luxit gunicorn[15393]:   File "/var/www/luxit/venv/bin/gunicorn", line 6, in <module>
+Feb 01 23:09:42 luxit gunicorn[15393]:     sys.exit(run())
+Feb 01 23:09:42 luxit gunicorn[15393]:              ~~~^^
+Feb 01 23:09:42 luxit gunicorn[15393]:   File "/var/www/luxit/venv/lib/python3.13/site-packages/gunicorn/app/wsgiapp.py", line 67, in run
+Feb 01 23:09:42 luxit gunicorn[15393]:     WSGIApplication("%(prog)s [OPTIONS] [APP_MODULE]", prog=prog).run()
+Feb 01 23:09:42 luxit gunicorn[15393]:     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^
+Feb 01 23:09:42 luxit gunicorn[15393]:   File "/var/www/luxit/venv/lib/python3.13/site-packages/gunicorn/app/base.py", line 236, in run
+Feb 01 23:09:42 luxit gunicorn[15393]:     super().run()
+Feb 01 23:09:42 luxit gunicorn[15393]:     ~~~~~~~~~~~^^
+Feb 01 23:09:42 luxit gunicorn[15393]:   File "/var/www/luxit/venv/lib/python3.13/site-packages/gunicorn/app/base.py", line 72, in run
+Feb 01 23:09:42 luxit gunicorn[15393]:     Arbiter(self).run()
+Feb 01 23:09:42 luxit gunicorn[15393]:     ~~~~~~~^^^^^^
+Feb 01 23:09:42 luxit gunicorn[15393]:   File "/var/www/luxit/venv/lib/python3.13/site-packages/gunicorn/arbiter.py", line 58, in __init__
+Feb 01 23:09:42 luxit gunicorn[15393]:     self.setup(app)
+Feb 01 23:09:42 luxit gunicorn[15393]:     ~~~~~~~~~~^^^^^
+Feb 01 23:09:42 luxit gunicorn[15393]:   File "/var/www/luxit/venv/lib/python3.13/site-packages/gunicorn/arbiter.py", line 118, in setup
+Feb 01 23:09:42 luxit gunicorn[15393]:     self.app.wsgi()
+Feb 01 23:09:42 luxit gunicorn[15393]:     ~~~~~~~~~~~~~^^
+Feb 01 23:09:42 luxit gunicorn[15393]:   File "/var/www/luxit/venv/lib/python3.13/site-packages/gunicorn/app/base.py", line 67, in wsgi
+Feb 01 23:09:42 luxit gunicorn[15393]:     self.callable = self.load()
+Feb 01 23:09:42 luxit gunicorn[15393]:                     ~~~~~~~~~^^
+Feb 01 23:09:42 luxit gunicorn[15393]:   File "/var/www/luxit/venv/lib/python3.13/site-packages/gunicorn/app/wsgiapp.py", line 58, in load
+Feb 01 23:09:42 luxit gunicorn[15393]:     return self.load_wsgiapp()
+Feb 01 23:09:42 luxit gunicorn[15393]:            ~~~~~~~~~~~~~~~~~^^
+Feb 01 23:09:42 luxit gunicorn[15393]:   File "/var/www/luxit/venv/lib/python3.13/site-packages/gunicorn/app/wsgiapp.py", line 48, in load_wsgiapp
+Feb 01 23:09:42 luxit gunicorn[15393]:     return util.import_app(self.app_uri)
+Feb 01 23:09:42 luxit gunicorn[15393]:            ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^
+Feb 01 23:09:42 luxit gunicorn[15393]:   File "/var/www/luxit/venv/lib/python3.13/site-packages/gunicorn/util.py", line 371, in import_app
+Feb 01 23:09:42 luxit gunicorn[15393]:     mod = importlib.import_module(module)
+Feb 01 23:09:42 luxit gunicorn[15393]:   File "/usr/lib/python3.13/importlib/__init__.py", line 88, in import_module
+Feb 01 23:09:42 luxit gunicorn[15393]:     return _bootstrap._gcd_import(name[level:], package, level)
+Feb 01 23:09:42 luxit gunicorn[15393]:            ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Feb 01 23:09:42 luxit gunicorn[15393]:   File "<frozen importlib._bootstrap>", line 1387, in _gcd_import
+Feb 01 23:09:42 luxit gunicorn[15393]:   File "<frozen importlib._bootstrap>", line 1360, in _find_and_load
+Feb 01 23:09:42 luxit gunicorn[15393]:   File "<frozen importlib._bootstrap>", line 1331, in _find_and_load_unlocked
+Feb 01 23:09:42 luxit gunicorn[15393]:   File "<frozen importlib._bootstrap>", line 935, in _load_unlocked
+Feb 01 23:09:42 luxit gunicorn[15393]:   File "<frozen importlib._bootstrap_external>", line 1026, in exec_module
+Feb 01 23:09:42 luxit gunicorn[15393]:   File "<frozen importlib._bootstrap>", line 488, in _call_with_frames_removed
+Feb 01 23:09:42 luxit gunicorn[15393]:   File "/var/www/luxit/wsgi.py", line 5, in <module>
+Feb 01 23:09:42 luxit gunicorn[15393]:     from app import app
+Feb 01 23:09:42 luxit gunicorn[15393]:   File "/var/www/luxit/app.py", line 248, in <module>
+Feb 01 23:09:42 luxit gunicorn[15393]:     from marketing import marketing_bp
+Feb 01 23:09:42 luxit gunicorn[15393]:   File "/var/www/luxit/marketing.py", line 38
+Feb 01 23:09:42 luxit gunicorn[15393]:     return redirect("mailto:sales@luxit.app")"""Marketing site routes."""
+Feb 01 23:09:42 luxit gunicorn[15393]:                                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Feb 01 23:09:42 luxit gunicorn[15393]: SyntaxError: invalid syntax
+Feb 01 23:09:42 luxit systemd[1]: luxit.service: Main process exited, code=exited, status=1/FAILURE
+Feb 01 23:09:42 luxit systemd[1]: luxit.service: Failed with result 'exit-code'.
+Feb 01 23:09:42 luxit systemd[1]: luxit.service: Consumed 2.066s CPU time, 81.4M memory peak.
+root@luxit:~# cat > /var/www/luxit/marketing.py << 'EOF'
+"""Marketing site routes."""
+import logging
+
+from flask import Blueprint, redirect, render_template, url_for
+
+logger = logging.getLogger(__name__)
+
+marketing_bp = Blueprint("marketing", __name__, template_folder="templates")
+
+
+@marketing_bp.route("/")
+def marketing_home():
+    """Public marketing homepage."""
+    return render_template("marketing/index.html")
+
+
+@marketing_bp.route("/features")
+def marketing_features():
+    """Redirect to features section on homepage."""
+    return redirect(url_for("marketing.marketing_home") + "#features")
+
+
+@marketing_bp.route("/pricing")
+EOF return redirect("mailto:sales@luxit.app")ing_home") + "#about")")
+root@luxit:~# sudo systemctl restart luxit
+curl http://127.0.0.1:8000/
+curl: (7) Failed to connect to 127.0.0.1 port 8000 after 0 ms: Could not connect to server
+root@luxit:~# sudo systemctl restart luxit
+curl http://127.0.0.1:8000/
+curl: (7) Failed to connect to 127.0.0.1 port 8000 after 0 ms: Could not connect to server
+root@luxit:~# nano /var/www/luxit/marketing.py
+root@luxit:~# sudo systemctl restart luxit
+curl http://127.0.0.1:8000/
+curl: (7) Failed to connect to 127.0.0.1 port 8000 after 0 ms: Could not connect to server
+root@luxit:~# sudo journalctl -u luxit -n 30 --no-pager
+Feb 01 23:13:04 luxit gunicorn[15604]:   File "/usr/lib/python3.13/importlib/__init__.py", line 88, in import_module
+Feb 01 23:13:04 luxit gunicorn[15604]:     return _bootstrap._gcd_import(name[level:], package, level)
+Feb 01 23:13:04 luxit gunicorn[15604]:            ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Feb 01 23:13:04 luxit gunicorn[15604]:   File "<frozen importlib._bootstrap>", line 1387, in _gcd_import
+Feb 01 23:13:04 luxit gunicorn[15604]:   File "<frozen importlib._bootstrap>", line 1360, in _find_and_load
+Feb 01 23:13:04 luxit gunicorn[15604]:   File "<frozen importlib._bootstrap>", line 1331, in _find_and_load_unlocked
+Feb 01 23:13:04 luxit gunicorn[15604]:   File "<frozen importlib._bootstrap>", line 935, in _load_unlocked
+Feb 01 23:13:04 luxit gunicorn[15604]:   File "<frozen importlib._bootstrap_external>", line 1026, in exec_module
+Feb 01 23:13:04 luxit gunicorn[15604]:   File "<frozen importlib._bootstrap>", line 488, in _call_with_frames_removed
+Feb 01 23:13:04 luxit gunicorn[15604]:   File "/var/www/luxit/wsgi.py", line 5, in <module>
+Feb 01 23:13:04 luxit gunicorn[15604]:     from app import app
+Feb 01 23:13:04 luxit gunicorn[15604]:   File "/var/www/luxit/app.py", line 253, in <module>
+Feb 01 23:13:04 luxit gunicorn[15604]:     app.register_blueprint(main_bp)
+Feb 01 23:13:04 luxit gunicorn[15604]:     ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^
+Feb 01 23:13:04 luxit gunicorn[15604]:   File "/var/www/luxit/venv/lib/python3.13/site-packages/flask/sansio/scaffold.py", line 47, in wrapper_func
+Feb 01 23:13:04 luxit gunicorn[15604]:     return f(self, *args, **kwargs)
+Feb 01 23:13:04 luxit gunicorn[15604]:   File "/var/www/luxit/venv/lib/python3.13/site-packages/flask/sansio/app.py", line 595, in register_blueprint
+Feb 01 23:13:04 luxit gunicorn[15604]:     blueprint.register(self, options)
+Feb 01 23:13:04 luxit gunicorn[15604]:     ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^
+Feb 01 23:13:04 luxit gunicorn[15604]:   File "/var/www/luxit/venv/lib/python3.13/site-packages/flask/sansio/blueprints.py", line 310, in register
+Feb 01 23:13:04 luxit gunicorn[15604]:     raise ValueError(
+Feb 01 23:13:04 luxit gunicorn[15604]:     ...<3 lines>...
+Feb 01 23:13:04 luxit gunicorn[15604]:     )
+Feb 01 23:13:04 luxit gunicorn[15604]: ValueError: The name 'main' is already registered for this blueprint. Use 'name=' to provide a unique name.
+Feb 01 23:13:05 luxit systemd[1]: luxit.service: Main process exited, code=exited, status=1/FAILURE
+Feb 01 23:13:05 luxit systemd[1]: luxit.service: Failed with result 'exit-code'.
+Feb 01 23:13:05 luxit systemd[1]: luxit.service: Consumed 1.979s CPU time, 81.6M memory peak.
+Feb 01 23:13:10 luxit systemd[1]: luxit.service: Scheduled restart job, restart counter is at 2.
+Feb 01 23:13:10 luxit systemd[1]: Started luxit.service - LUX IT Gunicorn Application.
+Feb 01 23:13:12 luxit gunicorn[15612]: 2026-02-01 23:13:12,602 ERROR [ai_agent] [request_id=-] OPENAI_API_KEY environment variable is required
+root@luxit:~# grep -n "register_blueprint" /var/www/luxit/app.py
+250:app.register_blueprint(main_bp)
+251:app.register_blueprint(auth_bp)
+252:app.register_blueprint(marketing_bp)
+253:app.register_blueprint(main_bp)
+254:app.register_blueprint(auth_bp, url_prefix="/auth")
+255:app.register_blueprint(user_bp, url_prefix="/user")
+256:app.register_blueprint(advanced_config_bp)
+266:            app.register_blueprint(bp, url_prefix="/replit-auth")
+273:    app.register_blueprint(tiktok_bp)
+274:    app.register_blueprint(tiktok_api_bp)
+281:    app.register_blueprint(facebook_auth_bp)
+288:    app.register_blueprint(instagram_auth_bp)
+295:    app.register_blueprint(fb_webhook)
+root@luxit:~# nano /var/www/luxit/app.py
+root@luxit:~# ^C
+root@luxit:~# nano /var/www/luxit/app.py
+root@luxit:~# grep -n "register_blueprint" /var/www/luxit/app.py
+258:            app.register_blueprint(bp, url_prefix="/replit-auth")
+265:    app.register_blueprint(tiktok_bp)
+266:    app.register_blueprint(tiktok_api_bp)
+273:    app.register_blueprint(facebook_auth_bp)
+280:    app.register_blueprint(instagram_auth_bp)
+287:    app.register_blueprint(fb_webhook)
+root@luxit:~# nano /var/www/luxit/app.py
+root@luxit:~# grep -n "register_blueprint" /var/www/luxit/app.py
+258:            app.register_blueprint(bp, url_prefix="/replit-auth")
+271:    app.register_blueprint(facebook_auth_bp)
+278:    app.register_blueprint(instagram_auth_bp)
+285:    app.register_blueprint(fb_webhook)
+root@luxit:~# nano /var/www/luxit/app.py
+root@luxit:~# grep -n "main_bp" /var/www/luxit/app.py
+242:from routes import main_bp
+246:from main import main_bp
+root@luxit:~# grep -n "main_bp\|marketing_bp\|auth_bp" /var/www/luxit/app.py
+242:from routes import main_bp
+243:from auth import auth_bp
+246:from main import main_bp
+247:from auth import auth_bp
+248:from marketing import marketing_bp
+270:    from facebook_auth import facebook_auth_bp
+271:    app.register_blueprint(facebook_auth_bp)
+277:    from instagram_auth import instagram_auth_bp
+278:    app.register_blueprint(instagram_auth_bp)
+root@luxit:~# nano /var/www/luxit/app.py
+root@luxit:~# nano /var/www/luxit/app.py
+root@luxit:~# grep -n "main_bp\|marketing_bp\|auth_bp" /var/www/luxit/app.py
+242:from auth import auth_bp
+245:from main import main_bp
+246:from auth import auth_bp
+247:from marketing import marketing_bp
+269:    from facebook_auth import facebook_auth_bp
+270:    app.register_blueprint(facebook_auth_bp)
+276:    from instagram_auth import instagram_auth_bp
+277:    app.register_blueprint(instagram_auth_bp)
+root@luxit:~# sudo systemctl restart luxit
+curl http://127.0.0.1:8000/
+curl: (7) Failed to connect to 127.0.0.1 port 8000 after 0 ms: Could not connect to server
+root@luxit:~# sudo journalctl -u luxit -n 20 --no-pager
+Feb 01 23:26:49 luxit systemd[1]: luxit.service: Deactivated successfully.
+Feb 01 23:26:49 luxit systemd[1]: Stopped luxit.service - LUX IT Gunicorn Application.
+Feb 01 23:26:49 luxit systemd[1]: luxit.service: Consumed 5.743s CPU time, 437.1M memory peak.
+Feb 01 23:26:49 luxit systemd[1]: Started luxit.service - LUX IT Gunicorn Application.
+Feb 01 23:26:49 luxit gunicorn[16339]: 2026-02-01 23:26:49,887 WARNING [services.secret_vault] [request_id=-] ENCRYPTION_MASTER_KEY not found, generating new key
+Feb 01 23:26:49 luxit gunicorn[16339]: 2026-02-01 23:26:49,887 INFO [services.secret_vault] [request_id=-] Generated new encryption key. Add to secrets: He3wfTAr7C8P19tm2VTBm75_dG7xZ40wE58dieSWrbg=
+Feb 01 23:26:49 luxit gunicorn[16339]: 2026-02-01 23:26:49,942 WARNING [root] [request_id=-] Replit Auth not available: No module named 'flask_dance'
+Feb 01 23:26:49 luxit gunicorn[16339]: 2026-02-01 23:26:49,943 INFO [root] [request_id=-] TikTok OAuth blueprint registered
+Feb 01 23:26:49 luxit gunicorn[16339]: 2026-02-01 23:26:49,951 INFO [root] [request_id=-] Facebook OAuth blueprint registered
+Feb 01 23:26:49 luxit gunicorn[16339]: 2026-02-01 23:26:49,953 INFO [root] [request_id=-] Instagram OAuth blueprint registered
+Feb 01 23:26:49 luxit gunicorn[16339]: 2026-02-01 23:26:49,954 INFO [root] [request_id=-] Facebook webhook blueprint registered
+Feb 01 23:26:50 luxit gunicorn[16339]: 2026-02-01 23:26:50,342 INFO [root] [request_id=-] Automation trigger library seeded
+Feb 01 23:26:50 luxit gunicorn[16339]: 2026-02-01 23:26:50,342 INFO [root] [request_id=-] Error logging initialized
+Feb 01 23:26:50 luxit gunicorn[16339]: 2026-02-01 23:26:50,999 INFO [agents.app_agent] [request_id=-] APP Agent initialized successfully
+Feb 01 23:26:51 luxit gunicorn[16339]: 2026-02-01 23:26:51,000 DEBUG [tzlocal] [request_id=-] /etc/localtime found
+Feb 01 23:26:51 luxit gunicorn[16339]: 2026-02-01 23:26:51,000 DEBUG [tzlocal] [request_id=-] 1 found:
+Feb 01 23:26:51 luxit gunicorn[16339]:  {'/etc/localtime is a symlink to': 'Etc/UTC'}
+Feb 01 23:26:51 luxit gunicorn[16339]: 2026-02-01 23:26:51,000 INFO [agent_scheduler] [request_id=-] Agent Scheduler initialized
+Feb 01 23:26:51 luxit gunicorn[16339]: 2026-02-01 23:26:51,001 ERROR [agent_scheduler] [request_id=-] Failed to initialize agent scheduler: Brand & Strategy Agent: OPENAI_API_KEY environment variable is required
+Feb 01 23:26:51 luxit gunicorn[16339]: 2026-02-01 23:26:51,001 INFO [root] [request_id=-] AI Agent Scheduler initialized with 0 agents
+root@luxit:~# sleep 3 && curl http://127.0.0.1:8000/
+Internal Serveps aux | grep gunicorns aux | grep gunicorn
+www-data   16339  0.6  1.5 157604 123004 ?       Ss   23:26   0:01 /var/www/luxit/venv/bin/python3.13 /var/www/luxit/venv/bin/gunicorn --workers 4 --bind 127.0.0.1:8000 --access-logfile /var/log/luxit-access.log --error-logfile /var/log/luxit-error.log wsgi:app
+www-data   16342  0.0  1.2 157604 102028 ?       S    23:26   0:00 /var/www/luxit/venv/bin/python3.13 /var/www/luxit/venv/bin/gunicorn --workers 4 --bind 127.0.0.1:8000 --access-logfile /var/log/luxit-access.log --error-logfile /var/log/luxit-error.log wsgi:app
+www-data   16343  0.0  1.2 157604 98480 ?        S    23:26   0:00 /var/www/luxit/venv/bin/python3.13 /var/www/luxit/venv/bin/gunicorn --workers 4 --bind 127.0.0.1:8000 --access-logfile /var/log/luxit-access.log --error-logfile /var/log/luxit-error.log wsgi:app
+www-data   16344  0.0  1.2 157604 98480 ?        S    23:26   0:00 /var/www/luxit/venv/bin/python3.13 /var/www/luxit/venv/bin/gunicorn --workers 4 --bind 127.0.0.1:8000 --access-logfile /var/log/luxit-access.log --error-logfile /var/log/luxit-error.log wsgi:app
+www-data   16345  0.0  1.2 157604 98480 ?        S    23:26   0:00 /var/www/luxit/venv/bin/python3.13 /var/www/luxit/venv/bin/gunicorn --workers 4 --bind 127.0.0.1:8000 --access-logfile /var/log/luxit-access.log --error-logfile /var/log/luxit-error.log wsgi:app
+root       16555  3.8  0.2  33744 23384 ?        Ss   23:31   0:00 /app/releases/release_20260125_153806/venv/bin/python3 /app/current/venv/bin/gunicorn --bind 127.0.0.1:5000 -c gunicorn.conf.py wsgi:app
+root       16556 50.2  1.0  99308 85532 ?        R    23:31   0:01 /app/releases/release_20260125_153806/venv/bin/python3 /app/current/venv/bin/gunicorn --bind 127.0.0.1:5000 -c gunicorn.conf.py wsgi:app
+root       16557 53.2  1.0  99308 85536 ?        R    23:31   0:01 /app/releases/release_20260125_153806/venv/bin/python3 /app/current/venv/bin/gunicorn --bind 127.0.0.1:5000 -c gunicorn.conf.py wsgi:app
+root       16558 48.9  1.0  99308 85428 ?        R    23:31   0:01 /app/releases/release_20260125_153806/venv/bin/python3 /app/current/venv/bin/gunicorn --bind 127.0.0.1:5000 -c gunicorn.conf.py wsgi:app
+root       16559 48.7  1.0  96180 81848 ?        R    23:31   0:01 /app/releases/release_20260125_153806/venv/bin/python3 /app/current/venv/bin/gunicorn --bind 127.0.0.1:5000 -c gunicorn.conf.py wsgi:app
+root       16561  0.0  0.0   6600  2248 pts/1    S+   23:31   0:00 grep gunicorn
+root@luxit:~# cat /var/log/luxit-error.log | tail -50
+[2026-02-01 22:46:47 +0000] [13504] [INFO] Worker exiting (pid: 13504)
+[2026-02-01 22:46:47 +0000] [13503] [INFO] Worker exiting (pid: 13503)
+[2026-02-01 22:46:49 +0000] [13493] [INFO] Shutting down: Master
+[2026-02-01 22:46:52 +0000] [14174] [INFO] Starting gunicorn 22.0.0
+[2026-02-01 22:46:52 +0000] [14174] [INFO] Listening at: http://127.0.0.1:8000 (14174)
+[2026-02-01 22:46:52 +0000] [14174] [INFO] Using worker: sync
+[2026-02-01 22:46:52 +0000] [14178] [INFO] Booting worker with pid: 14178
+[2026-02-01 22:46:52 +0000] [14180] [INFO] Booting worker with pid: 14180
+[2026-02-01 22:46:52 +0000] [14181] [INFO] Booting worker with pid: 14181
+[2026-02-01 22:46:52 +0000] [14185] [INFO] Booting worker with pid: 14185
+[2026-02-01 22:58:59 +0000] [14178] [INFO] Worker exiting (pid: 14178)
+[2026-02-01 22:58:59 +0000] [14174] [INFO] Handling signal: term
+[2026-02-01 22:58:59 +0000] [14180] [INFO] Worker exiting (pid: 14180)
+[2026-02-01 22:58:59 +0000] [14181] [INFO] Worker exiting (pid: 14181)
+[2026-02-01 22:58:59 +0000] [14185] [INFO] Worker exiting (pid: 14185)
+[2026-02-01 22:58:59 +0000] [14174] [ERROR] Worker (pid:14180) was sent SIGTERM!
+[2026-02-01 22:59:01 +0000] [14174] [INFO] Shutting down: Master
+[2026-02-01 22:59:06 +0000] [14807] [INFO] Starting gunicorn 22.0.0
+[2026-02-01 22:59:06 +0000] [14807] [INFO] Listening at: http://127.0.0.1:8000 (14807)
+[2026-02-01 22:59:06 +0000] [14807] [INFO] Using worker: sync
+[2026-02-01 22:59:06 +0000] [14811] [INFO] Booting worker with pid: 14811
+[2026-02-01 22:59:06 +0000] [14812] [INFO] Booting worker with pid: 14812
+[2026-02-01 22:59:06 +0000] [14813] [INFO] Booting worker with pid: 14813
+[2026-02-01 22:59:06 +0000] [14814] [INFO] Booting worker with pid: 14814
+[2026-02-01 23:03:25 +0000] [14807] [INFO] Handling signal: term
+[2026-02-01 23:03:25 +0000] [14814] [INFO] Worker exiting (pid: 14814)
+[2026-02-01 23:03:25 +0000] [14811] [INFO] Worker exiting (pid: 14811)
+[2026-02-01 23:03:25 +0000] [14812] [INFO] Worker exiting (pid: 14812)
+[2026-02-01 23:03:25 +0000] [14813] [INFO] Worker exiting (pid: 14813)
+[2026-02-01 23:03:27 +0000] [14807] [INFO] Shutting down: Master
+[2026-02-01 23:20:53 +0000] [16049] [INFO] Starting gunicorn 22.0.0
+[2026-02-01 23:20:53 +0000] [16049] [INFO] Listening at: http://127.0.0.1:8000 (16049)
+[2026-02-01 23:20:53 +0000] [16049] [INFO] Using worker: sync
+[2026-02-01 23:20:53 +0000] [16052] [INFO] Booting worker with pid: 16052
+[2026-02-01 23:20:53 +0000] [16053] [INFO] Booting worker with pid: 16053
+[2026-02-01 23:20:53 +0000] [16054] [INFO] Booting worker with pid: 16054
+[2026-02-01 23:20:53 +0000] [16055] [INFO] Booting worker with pid: 16055
+[2026-02-01 23:26:46 +0000] [16049] [INFO] Handling signal: term
+[2026-02-01 23:26:46 +0000] [16053] [INFO] Worker exiting (pid: 16053)
+[2026-02-01 23:26:46 +0000] [16052] [INFO] Worker exiting (pid: 16052)
+[2026-02-01 23:26:46 +0000] [16054] [INFO] Worker exiting (pid: 16054)
+[2026-02-01 23:26:46 +0000] [16055] [INFO] Worker exiting (pid: 16055)
+[2026-02-01 23:26:48 +0000] [16049] [INFO] Shutting down: Master
+[2026-02-01 23:26:51 +0000] [16339] [INFO] Starting gunicorn 22.0.0
+[2026-02-01 23:26:51 +0000] [16339] [INFO] Listening at: http://127.0.0.1:8000 (16339)
+[2026-02-01 23:26:51 +0000] [16339] [INFO] Using worker: sync
+[2026-02-01 23:26:51 +0000] [16342] [INFO] Booting worker with pid: 16342
+[2026-02-01 23:26:51 +0000] [16343] [INFO] Booting worker with pid: 16343
+[2026-02-01 23:26:51 +0000] [16344] [INFO] Booting worker with pid: 16344
+[2026-02-01 23:26:51 +0000] [16345] [INFO] Booting worker with pid: 16345
+root@luxit:~# cat /var/log/luxit-access.log | tail -10
+172.56.14.243 - - [01/Feb/2026:22:59:16 +0000] "GET /static/hover_06.png HTTP/1.0" 304 0 "https://luxit.app/" "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36"
+172.56.14.243 - - [01/Feb/2026:22:59:16 +0000] "GET /static/hover_05.png HTTP/1.0" 304 0 "https://luxit.app/" "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36"
+172.56.14.243 - - [01/Feb/2026:22:59:16 +0000] "GET /static/hover_00.png HTTP/1.0" 304 0 "https://luxit.app/" "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36"
+172.56.14.243 - - [01/Feb/2026:22:59:16 +0000] "GET /static/Tile_09.png HTTP/1.0" 304 0 "https://luxit.app/" "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36"
+172.56.14.243 - - [01/Feb/2026:22:59:16 +0000] "GET /static/Tile_00.png HTTP/1.0" 304 0 "https://luxit.app/" "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36"
+172.56.14.243 - - [01/Feb/2026:22:59:16 +0000] "GET /static/Tile_07.png HTTP/1.0" 304 0 "https://luxit.app/" "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36"
+172.56.14.243 - - [01/Feb/2026:22:59:16 +0000] "GET /static/lux-ai-assistant.gif HTTP/1.0" 304 0 "https://luxit.app/" "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36"
+172.56.14.243 - - [01/Feb/2026:22:59:16 +0000] "GET /static/favicon.png HTTP/1.0" 304 0 "https://luxit.app/" "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36"
+127.0.0.1 - - [01/Feb/2026:23:30:57 +0000] "GET / HTTP/1.1" 500 21 "-" "curl/8.14.1"
+161.115.234.3 - - [01/Feb/2026:23:32:07 +0000] "GET / HTTP/1.0" 500 21 "https://www.google.com" "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/99.0.4844.51 Safari/537.36 Edg/99.0.1150.30"
+root@luxit:~# sudo journalctl -u luxit -n 50 --no-pager | grep -A5 "Error\|Traceback\|Exception"
+Feb 01 23:26:50 luxit gunicorn[16339]: 2026-02-01 23:26:50,342 INFO [root] [request_id=-] Error logging initialized
+Feb 01 23:26:50 luxit gunicorn[16339]: 2026-02-01 23:26:50,999 INFO [agents.app_agent] [request_id=-] APP Agent initialized successfully
+Feb 01 23:26:51 luxit gunicorn[16339]: 2026-02-01 23:26:51,000 DEBUG [tzlocal] [request_id=-] /etc/localtime found
+Feb 01 23:26:51 luxit gunicorn[16339]: 2026-02-01 23:26:51,000 DEBUG [tzlocal] [request_id=-] 1 found:
+Feb 01 23:26:51 luxit gunicorn[16339]:  {'/etc/localtime is a symlink to': 'Etc/UTC'}
+Feb 01 23:26:51 luxit gunicorn[16339]: 2026-02-01 23:26:51,000 INFO [agent_scheduler] [request_id=-] Agent Scheduler initialized
+--
+Feb 01 23:30:57 luxit gunicorn[16342]: 2026-02-01 23:30:57,425 INFO [error_logger] [request_id=-] Logged error: BuildError - Could not build url for endpoint 'auth.login'. Did you mean 'facebook_auth.connect' instead?
+Feb 01 23:32:07 luxit gunicorn[16345]: 2026-02-01 23:32:07,458 INFO [error_logger] [request_id=-] Logged error: BuildError - Could not build url for endpoint 'auth.login'. Did you mean 'facebook_auth.connect' instead?
+root@luxit:~# cd /var/www/luxit && source venv/bin/activate && python -c "from marketing import marketing_bp; print('OK')"

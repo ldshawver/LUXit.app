@@ -1,0 +1,113 @@
+ls -la /var/www/luxit/marketing.py
+
+# Add the marketing blueprint registration after line 249
+sed -i '249a\app.register_blueprint(marketing_bp)' /var/www/luxit/app.py
+
+# Add the import near the top (after other blueprint imports)
+sed -i '/from auth import/a from marketing import marketing_bp' /var/www/luxit/app.py
+
+# Verify the changes
+grep -n "marketing" /var/www/luxit/app.py
+
+# Restart
+sudo systemctl restart luxit
+sleep 3
+
+# Test
+curl http://127.0.0.1:8000/
+ls: cannot access '/var/www/luxit/marketing.py': No such file or directory
+118:db_url = os.environ.get("DATABASE_URL", "sqlite:///email_marketing.db")
+127:        db_url = "sqlite:///email_marketing.db"
+244:from marketing import marketing_bp
+251:app.register_blueprint(marketing_bp)
+curl: (7) Failed to connect to 127.0.0.1 port 8000 after 0 ms: Could not connect to server
+root@luxit-vps:/var/www/luxit# cat > /var/www/luxit/marketing.py<< 'EOF'
+"""Marketing site routes."""
+import logging
+from flask import Blueprint, redirect, render_template, url_for
+logger = logging.getLogger(__name__)
+marketing_bp = Blueprint("marketing", __name__, template_folder="templates")
+@marketing_bp.route("/")
+def marketing_home():
+    """Public marketing homepage."""
+    return render_template("marketing/index.html")
+@marketing_bp.route("/features")
+def marketing_features():
+    """Redirect to features section on homepage."""
+    return redirect(url_for("marketing.marketing_home") + "#features")
+@marketing_bp.route("/pricing")
+def marketing_pricing():
+    """Redirect to pricing section on homepage."""
+    return redirect(url_for("marketing.marketing_home") + "#pricing")
+@marketing_bp.route("/about")
+def marketing_about():
+    """Redirect to homepage (about info is on main page)."""
+    return redirect(url_for("marketing.marketing_home"))
+@marketing_bp.route("/contact")
+def marketing_contact():
+    """Redirect to email contact."""
+    return redirect("mailto:sales@luxit.app")
+EOF
+# Also check if the marketing templates exist
+ls -la /var/www/luxit/templates/marketing/
+# Restart
+sudo systemctl restart luxit
+sleep 3
+# Test
+curl http://127.0.0.1:8000/
+ls: cannot access '/var/www/luxit/templates/marketing/': No such file or directory
+<!doctype html>
+<html lang=en>
+<title>Redirecting...</title>
+<h1>Redirecting...</h1>
+<p>You should be redirected automatically to the target URL: <a href="/auth/login?next=%2F">/auth/login?next=%2F</a>. If not, click the link.
+● luxit.service - LUX IT Gunicorn Application
+     Loaded: loaded (/etc/systemd/system/luxit.service; enabled; preset: enabled)
+     Active: active (running) since Sat 2026-01-31 06:52:38 UTC; 2s ago
+ Invocation: 4b4b86c192104d188f3139ad81889637
+   Main PID: 29676 (gunicorn)
+      Tasks: 1 (limit: 9486)
+     Memory: 67.6M (peak: 67.8M)
+        CPU: 1.014s
+     CGroup: /system.slice/luxit.service
+             └─29676 /var/www/luxit/venv/bin/python3.13 /var/www/luxit/venv/bin/gunicorn --workers 4 --bind 127.0>
+
+Jan 31 06:52:38 luxit-vps.internal systemd[1]: luxit.service: Scheduled restart job, restart counter is at 100.
+Jan 31 06:52:38 luxit-vps.internal systemd[1]: Started luxit.service - LUX IT Gunicorn Application.
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+lines 1-13/13 (END)

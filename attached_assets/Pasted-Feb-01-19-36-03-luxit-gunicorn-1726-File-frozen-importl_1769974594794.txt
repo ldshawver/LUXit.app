@@ -1,0 +1,101 @@
+Feb 01 19:36:03 luxit gunicorn[1726]:   File "<frozen importlib._bootstrap>", line 1360, in _find_and_load
+Feb 01 19:36:03 luxit gunicorn[1726]:   File "<frozen importlib._bootstrap>", line 1331, in _find_and_load_unlocked
+Feb 01 19:36:03 luxit gunicorn[1726]:   File "<frozen importlib._bootstrap>", line 935, in _load_unlocked
+Feb 01 19:36:03 luxit gunicorn[1726]:   File "<frozen importlib._bootstrap_external>", line 1026, in exec_module
+Feb 01 19:36:03 luxit gunicorn[1726]:   File "<frozen importlib._bootstrap>", line 488, in _call_with_frames_removed
+Feb 01 19:36:03 luxit gunicorn[1726]:   File "/var/www/luxit/wsgi.py", line 5, in <module>
+Feb 01 19:36:03 luxit gunicorn[1726]:     from app import app
+Feb 01 19:36:03 luxit gunicorn[1726]:   File "/var/www/luxit/app.py", line 9, in <module>
+Feb 01 19:36:03 luxit gunicorn[1726]:     from flask_sqlalchemy import SQLAlchemy
+Feb 01 19:36:03 luxit gunicorn[1726]:   File "/var/www/luxit/venv/lib/python3.13/site-packages/flask_sqlalchemy/__init__.py", line 5, in <module>
+Feb 01 19:36:03 luxit gunicorn[1726]:     from .extension import SQLAlchemy
+Feb 01 19:36:03 luxit gunicorn[1726]:   File "/var/www/luxit/venv/lib/python3.13/site-packages/flask_sqlalchemy/extension.py", line 9, in <module>
+Feb 01 19:36:03 luxit gunicorn[1726]:     import sqlalchemy as sa
+Feb 01 19:36:03 luxit gunicorn[1726]:   File "/var/www/luxit/venv/lib/python3.13/site-packages/sqlalchemy/__init__.py", line 13, in <module>
+Feb 01 19:36:03 luxit gunicorn[1726]:     from .engine import AdaptedConnection as AdaptedConnection
+Feb 01 19:36:03 luxit gunicorn[1726]:   File "/var/www/luxit/venv/lib/python3.13/site-packages/sqlalchemy/engine/__init__.py", line 18, in <module>
+Feb 01 19:36:03 luxit gunicorn[1726]:     from . import events as events
+Feb 01 19:36:03 luxit gunicorn[1726]:   File "/var/www/luxit/venv/lib/python3.13/site-packages/sqlalchemy/engine/events.py", line 19, in <module>
+Feb 01 19:36:03 luxit gunicorn[1726]:     from .base import Connection
+Feb 01 19:36:03 luxit gunicorn[1726]:   File "/var/www/luxit/venv/lib/python3.13/site-packages/sqlalchemy/engine/base.py", line 30, in <module>
+Feb 01 19:36:03 luxit gunicorn[1726]:     from .interfaces import BindTyping
+Feb 01 19:36:03 luxit gunicorn[1726]:   File "/var/www/luxit/venv/lib/python3.13/site-packages/sqlalchemy/engine/interfaces.py", line 38, in <module>
+Feb 01 19:36:03 luxit gunicorn[1726]:     from ..sql.compiler import Compiled as Compiled
+Feb 01 19:36:03 luxit gunicorn[1726]:   File "/var/www/luxit/venv/lib/python3.13/site-packages/sqlalchemy/sql/__init__.py", line 14, in <module>
+Feb 01 19:36:03 luxit gunicorn[1726]:     from .compiler import COLLECT_CARTESIAN_PRODUCTS as COLLECT_CARTESIAN_PRODUCTS
+Feb 01 19:36:03 luxit gunicorn[1726]:   File "/var/www/luxit/venv/lib/python3.13/site-packages/sqlalchemy/sql/compiler.py", line 61, in <module>
+Feb 01 19:36:03 luxit gunicorn[1726]:     from . import crud
+Feb 01 19:36:03 luxit gunicorn[1726]:   File "/var/www/luxit/venv/lib/python3.13/site-packages/sqlalchemy/sql/crud.py", line 34, in <module>
+Feb 01 19:36:03 luxit gunicorn[1726]:     from . import dml
+Feb 01 19:36:03 luxit gunicorn[1726]:   File "/var/www/luxit/venv/lib/python3.13/site-packages/sqlalchemy/sql/dml.py", line 34, in <module>
+Feb 01 19:36:03 luxit gunicorn[1726]:     from . import util as sql_util
+Feb 01 19:36:03 luxit gunicorn[1726]:   File "/var/www/luxit/venv/lib/python3.13/site-packages/sqlalchemy/sql/util.py", line 46, in <module>
+Feb 01 19:36:03 luxit gunicorn[1726]:     from .ddl import sort_tables as sort_tables  # noqa: F401
+Feb 01 19:36:03 luxit gunicorn[1726]:     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Feb 01 19:36:03 luxit gunicorn[1726]:   File "/var/www/luxit/venv/lib/python3.13/site-packages/sqlalchemy/sql/ddl.py", line 30, in <module>
+Feb 01 19:36:03 luxit gunicorn[1726]:     from .elements import ClauseElement
+Feb 01 19:36:03 luxit gunicorn[1726]:   File "/var/www/luxit/venv/lib/python3.13/site-packages/sqlalchemy/sql/elements.py", line 808, in <module>
+Feb 01 19:36:03 luxit gunicorn[1726]:     class SQLCoreOperations(Generic[_T_co], ColumnOperators, TypingOnly):
+Feb 01 19:36:03 luxit gunicorn[1726]:     ...<472 lines>...
+Feb 01 19:36:03 luxit gunicorn[1726]:                 ...
+Feb 01 19:36:03 luxit gunicorn[1726]:   File "/usr/lib/python3.13/typing.py", line 1257, in _generic_init_subclass
+Feb 01 19:36:03 luxit gunicorn[1726]:     super(Generic, cls).__init_subclass__(*args, **kwargs)
+Feb 01 19:36:03 luxit gunicorn[1726]:     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+Feb 01 19:36:03 luxit gunicorn[1726]:   File "/var/www/luxit/venv/lib/python3.13/site-packages/sqlalchemy/util/langhelpers.py", line 1988, in __init_subclass__
+Feb 01 19:36:03 luxit gunicorn[1726]:     raise AssertionError(
+Feb 01 19:36:03 luxit gunicorn[1726]:     ...<2 lines>...
+Feb 01 19:36:03 luxit gunicorn[1726]:     )
+Feb 01 19:36:03 luxit gunicorn[1726]: AssertionError: Class <class 'sqlalchemy.sql.elements.SQLCoreOperations'> directly inherits TypingOnly but has additional attributes {'__static_attributes__', '__firstlineno__'}.
+Feb 01 19:36:03 luxit systemd[1]: luxit.service: Main process exited, code=exited, status=1/FAILURE
+Feb 01 19:36:03 luxit systemd[1]: luxit.service: Failed with result 'exit-code'.
+sudo: lsof: command not found
+root@luxit:~# sudo journalctl -u luxit -n 50 --no-pager
+Feb 01 19:36:09 luxit gunicorn[1735]:   File "<frozen importlib._bootstrap>", line 1360, in _find_and_load
+Feb 01 19:36:09 luxit gunicorn[1735]:   File "<frozen importlib._bootstrap>", line 1331, in _find_and_load_unlocked
+Feb 01 19:36:09 luxit gunicorn[1735]:   File "<frozen importlib._bootstrap>", line 935, in _load_unlocked
+Feb 01 19:36:09 luxit gunicorn[1735]:   File "<frozen importlib._bootstrap_external>", line 1026, in exec_module
+Feb 01 19:36:09 luxit gunicorn[1735]:   File "<frozen importlib._bootstrap>", line 488, in _call_with_frames_removed
+Feb 01 19:36:09 luxit gunicorn[1735]:   File "/var/www/luxit/wsgi.py", line 5, in <module>
+Feb 01 19:36:09 luxit gunicorn[1735]:     from app import app
+Feb 01 19:36:09 luxit gunicorn[1735]:   File "/var/www/luxit/app.py", line 9, in <module>
+Feb 01 19:36:09 luxit gunicorn[1735]:     from flask_sqlalchemy import SQLAlchemy
+Feb 01 19:36:09 luxit gunicorn[1735]:   File "/var/www/luxit/venv/lib/python3.13/site-packages/flask_sqlalchemy/__init__.py", line 5, in <module>
+Feb 01 19:36:09 luxit gunicorn[1735]:     from .extension import SQLAlchemy
+Feb 01 19:36:09 luxit gunicorn[1735]:   File "/var/www/luxit/venv/lib/python3.13/site-packages/flask_sqlalchemy/extension.py", line 9, in <module>
+Feb 01 19:36:09 luxit gunicorn[1735]:     import sqlalchemy as sa
+Feb 01 19:36:09 luxit gunicorn[1735]:   File "/var/www/luxit/venv/lib/python3.13/site-packages/sqlalchemy/__init__.py", line 13, in <module>
+Feb 01 19:36:09 luxit gunicorn[1735]:     from .engine import AdaptedConnection as AdaptedConnection
+Feb 01 19:36:09 luxit gunicorn[1735]:   File "/var/www/luxit/venv/lib/python3.13/site-packages/sqlalchemy/engine/__init__.py", line 18, in <module>
+Feb 01 19:36:09 luxit gunicorn[1735]:     from . import events as events
+Feb 01 19:36:09 luxit gunicorn[1735]:   File "/var/www/luxit/venv/lib/python3.13/site-packages/sqlalchemy/engine/events.py", line 19, in <module>
+Feb 01 19:36:09 luxit gunicorn[1735]:     from .base import Connection
+Feb 01 19:36:09 luxit gunicorn[1735]:   File "/var/www/luxit/venv/lib/python3.13/site-packages/sqlalchemy/engine/base.py", line 30, in <module>
+Feb 01 19:36:09 luxit gunicorn[1735]:     from .interfaces import BindTyping
+Feb 01 19:36:09 luxit gunicorn[1735]:   File "/var/www/luxit/venv/lib/python3.13/site-packages/sqlalchemy/engine/interfaces.py", line 38, in <module>
+Feb 01 19:36:09 luxit gunicorn[1735]:     from ..sql.compiler import Compiled as Compiled
+Feb 01 19:36:09 luxit gunicorn[1735]:   File "/var/www/luxit/venv/lib/python3.13/site-packages/sqlalchemy/sql/__init__.py", line 14, in <module>
+Feb 01 19:36:09 luxit gunicorn[1735]:     from .compiler import COLLECT_CARTESIAN_PRODUCTS as COLLECT_CARTESIAN_PRODUCTS
+Feb 01 19:36:09 luxit gunicorn[1735]:   File "/var/www/luxit/venv/lib/python3.13/site-packages/sqlalchemy/sql/compiler.py", line 61, in <module>
+Feb 01 19:36:09 luxit gunicorn[1735]:     from . import crud
+Feb 01 19:36:09 luxit gunicorn[1735]:   File "/var/www/luxit/venv/lib/python3.13/site-packages/sqlalchemy/sql/crud.py", line 34, in <module>
+Feb 01 19:36:09 luxit gunicorn[1735]:     from . import dml
+Feb 01 19:36:09 luxit gunicorn[1735]:   File "/var/www/luxit/venv/lib/python3.13/site-packages/sqlalchemy/sql/dml.py", line 34, in <module>
+Feb 01 19:36:09 luxit gunicorn[1735]:     from . import util as sql_util
+Feb 01 19:36:09 luxit gunicorn[1735]:   File "/var/www/luxit/venv/lib/python3.13/site-packages/sqlalchemy/sql/util.py", line 46, in <module>
+Feb 01 19:36:09 luxit gunicorn[1735]:     from .ddl import sort_tables as sort_tables  # noqa: F401
+Feb 01 19:36:09 luxit gunicorn[1735]:     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Feb 01 19:36:09 luxit gunicorn[1735]:   File "/var/www/luxit/venv/lib/python3.13/site-packages/sqlalchemy/sql/ddl.py", line 30, in <module>
+Feb 01 19:36:09 luxit gunicorn[1735]:     from .elements import ClauseElement
+Feb 01 19:36:09 luxit gunicorn[1735]:   File "/var/www/luxit/venv/lib/python3.13/site-packages/sqlalchemy/sql/elements.py", line 808, in <module>
+Feb 01 19:36:09 luxit gunicorn[1735]:     class SQLCoreOperations(Generic[_T_co], ColumnOperators, TypingOnly):
+Feb 01 19:36:09 luxit gunicorn[1735]:     ...<472 lines>...
+Feb 01 19:36:09 luxit gunicorn[1735]:                 ...
+Feb 01 19:36:09 luxit gunicorn[1735]:   File "/usr/lib/python3.13/typing.py", line 1257, in _generic_init_subclass
+Feb 01 19:36:09 luxit gunicorn[1735]:     super(Generic, cls).__init_subclass__(*args, **kwargs)
+Feb 01 19:36:09 luxit gunicorn[1735]:     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+Feb 01 19:36:09 luxit gunicorn[1735]:   File "/var/www/luxit/venv/lib/python3.13/site-packages/sqlalchemy/util/langhelpers.py", line 1988, in __init_subclass__
+Feb 01 19:36:09 luxit gunicorn[1735]:     raise AssertionError(
+Feb 01 19:36:09 luxit gunicorn[1735]:     ...<2 lines>...
+Feb 01 19:36:09 luxit gunicorn[1735]:     )
+Feb 01 19:36:09 luxit gunicorn[1735]: AssertionError: Class <class 'sqlalchemy.sql.elements.SQLCoreOperations'> directly inherits TypingOnly but has additional attributes {'__static_attributes__', '__firstlineno__'}.
+Feb 01 19:36:09 luxit systemd[1]: luxit.service: Main process exited, code=exited, status=1/FAILURE

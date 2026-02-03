@@ -1,0 +1,42 @@
+(venv) root@luxit:/var/www/luxit# cat ~/.ssh/id_ed25519
+cat: /root/.ssh/id_ed25519: No such file or directory
+(venv) root@luxit:/var/www/luxit# cd /var/www/luxit
+source venv/bin/activate
+pip install --upgrade 'SQLAlchemy>=2.0.25'
+sudo systemctl restart luxit
+curl http://127.0.0.1:8000/
+Requirement already satisfied: SQLAlchemy>=2.0.25 in ./venv/lib/python3.13/site-packages (2.0.46)
+Requirement already satisfied: greenlet>=1 in ./venv/lib/python3.13/site-packages (from SQLAlchemy>=2.0.25) (3.3.1)
+Requirement already satisfied: typing-extensions>=4.6.0 in ./venv/lib/python3.13/site-packages (from SQLAlchemy>=2.0.25) (4.15.0)
+curl: (7) Failed to connect to 127.0.0.1 port 8000 after 0 ms: Could not connect to server
+(venv) root@luxit:/var/www/luxit# sudo journalctl -u luxit -n 30 --no-pager
+Feb 01 21:45:00 luxit gunicorn[10028]:   - POST /api/contacts/bulk-subscribe (bulk subscribe)
+Feb 01 21:45:00 luxit gunicorn[10028]:   - POST /api/contacts/bulk-unsubscribe (bulk unsubscribe)
+Feb 01 21:45:00 luxit gunicorn[10028]: ✓ Newsletter search & subscriber routes loaded
+Feb 01 21:45:00 luxit gunicorn[10028]: ✓ Approval Queue & Feature Toggle routes loaded:
+Feb 01 21:45:00 luxit gunicorn[10028]:   - GET /approval-queue (Admin dashboard)
+Feb 01 21:45:00 luxit gunicorn[10028]:   - GET/POST /api/approval-queue (Queue management)
+Feb 01 21:45:00 luxit gunicorn[10028]:   - POST /api/approval-queue/<id>/approve|reject|edit|cancel
+Feb 01 21:45:00 luxit gunicorn[10028]:   - GET/PATCH /api/feature-toggles
+Feb 01 21:45:00 luxit gunicorn[10028]:   - POST /api/feature-toggles/emergency-stop|resume-all
+Feb 01 21:45:02 luxit systemd[1]: luxit.service: Deactivated successfully.
+Feb 01 21:45:02 luxit systemd[1]: Stopped luxit.service - LUX IT Gunicorn Application.
+Feb 01 21:45:02 luxit systemd[1]: luxit.service: Consumed 7.159s CPU time, 350.3M memory peak.
+Feb 01 21:45:02 luxit systemd[1]: Started luxit.service - LUX IT Gunicorn Application.
+Feb 01 21:45:04 luxit gunicorn[10331]: 2026-02-01 21:45:04,584 ERROR [ai_agent] [request_id=-] OPENAI_API_KEY environment variable is required
+Feb 01 21:45:04 luxit gunicorn[10331]: 2026-02-01 21:45:04,775 WARNING [services.secret_vault] [request_id=-] ENCRYPTION_MASTER_KEY not found, generating new key
+Feb 01 21:45:04 luxit gunicorn[10331]: 2026-02-01 21:45:04,776 INFO [services.secret_vault] [request_id=-] Generated new encryption key. Add to secrets: kaDVBDyCmPW19Wa4WsQYLc93s73Cs6lJ-7mq6__roIY=
+Feb 01 21:45:04 luxit gunicorn[10331]: 2026-02-01 21:45:04,918 WARNING [root] [request_id=-] Replit Auth not available: No module named 'flask_dance'
+Feb 01 21:45:04 luxit gunicorn[10331]: 2026-02-01 21:45:04,922 INFO [root] [request_id=-] TikTok OAuth blueprint registered
+Feb 01 21:45:04 luxit gunicorn[10331]: 2026-02-01 21:45:04,925 INFO [root] [request_id=-] Facebook OAuth blueprint registered
+Feb 01 21:45:04 luxit gunicorn[10331]: 2026-02-01 21:45:04,928 INFO [root] [request_id=-] Instagram OAuth blueprint registered
+Feb 01 21:45:04 luxit gunicorn[10331]: 2026-02-01 21:45:04,929 INFO [root] [request_id=-] Facebook webhook blueprint registered
+Feb 01 21:45:05 luxit gunicorn[10331]: 2026-02-01 21:45:05,286 INFO [root] [request_id=-] Automation trigger library seeded
+Feb 01 21:45:05 luxit gunicorn[10331]: 2026-02-01 21:45:05,286 INFO [root] [request_id=-] Error logging initialized
+Feb 01 21:45:05 luxit gunicorn[10331]: 2026-02-01 21:45:05,344 INFO [agents.app_agent] [request_id=-] APP Agent initialized successfully
+Feb 01 21:45:05 luxit gunicorn[10331]: 2026-02-01 21:45:05,345 DEBUG [tzlocal] [request_id=-] /etc/localtime found
+Feb 01 21:45:05 luxit gunicorn[10331]: 2026-02-01 21:45:05,345 DEBUG [tzlocal] [request_id=-] 1 found:
+Feb 01 21:45:05 luxit gunicorn[10331]:  {'/etc/localtime is a symlink to': 'Etc/UTC'}
+Feb 01 21:45:05 luxit gunicorn[10331]: 2026-02-01 21:45:05,346 INFO [agent_scheduler] [request_id=-] Agent Scheduler initialized
+Feb 01 21:45:05 luxit gunicorn[10331]: 2026-02-01 21:45:05,346 ERROR [agent_scheduler] [request_id=-] Failed to initialize agent scheduler: Brand & Strategy Agent: OPENAI_API_KEY environment variable is required
+Feb 01 21:45:05 luxit gunicorn[10331]: 2026-02-01 21:45:05,346 INFO [root] [request_id=-] AI Agent Scheduler initialized with 0 agents

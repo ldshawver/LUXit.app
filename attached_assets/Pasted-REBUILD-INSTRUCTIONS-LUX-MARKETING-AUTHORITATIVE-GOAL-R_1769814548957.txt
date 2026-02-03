@@ -1,0 +1,187 @@
+REBUILD INSTRUCTIONS – LUX MARKETING (AUTHORITATIVE)
+
+GOAL
+Recreate the LUX Flask application exactly as it existed after the upgrades, using best-practice Flask architecture. Do not invent structure. Do not simplify. Do not refactor unless specified below.
+
+==================================================
+TECH STACK
+==================================================
+- Python 3.12+
+- Flask
+- Gunicorn
+- SQLAlchemy
+- Flask-Login
+- Flask-WTF (CSRF)
+- python-dotenv
+- Nginx (reverse proxy)
+- SQLite (default) or Postgres (optional)
+
+==================================================
+REQUIRED FILE STRUCTURE
+==================================================
+
+/app
+├── app.py              # Flask application factory + canonical export
+├── wsgi.py             # Gunicorn entry point
+├── extensions.py       # db / csrf singletons
+├── models.py           # SQLAlchemy models (User, Campaign, etc.)
+├── auth.py             # Authentication blueprint
+├── main.py             # Dashboard / core UI blueprint
+├── marketing.py        # Marketing / campaign blueprint
+├── templates/
+├── static/
+├── requirements.txt
+└── venv/
+
+==================================================
+REQUIREMENTS.TXT (MINIMUM)
+==================================================
+
+flask
+flask-login
+flask-wtf
+flask-sqlalchemy
+gunicorn
+python-dotenv
+werkzeug
+
+==================================================
+extensions.py
+==================================================
+
+from flask_sqlalchemy import SQLAlchemy
+from flask_wtf.csrf import CSRFProtect
+
+db = SQLAlchemy()
+csrf = CSRFProtect()
+
+==================================================
+app.py  (CANONICAL – DO NOT DEVIATE)
+==================================================
+
+import os
+from uuid import uuid4
+from dotenv import load_dotenv
+from flask import Flask, g, redirect, request, url_for
+from flask_login import LoginManager
+from werkzeug.middleware.proxy_fix import ProxyFix
+
+from extensions import db, csrf
+
+load_dotenv("/etc/lux-marketing/lux.env")
+
+def create_app(testing: bool = False):
+    app = Flask(__name__, template_folder="templates", static_folder="static")
+
+    secret_key = (
+        os.getenv("SESSION_SECRET")
+        or os.getenv("SECRET_KEY")
+        or ("ci-test-secret" if testing else None)
+    )
+    if not secret_key:
+        raise RuntimeError("SESSION_SECRET or SECRET_KEY must be set")
+
+    app.config.update(
+        SECRET_KEY=secret_key,
+        TESTING=testing,
+        SQLALCHEMY_DATABASE_URI=os.getenv(
+            "DATABASE_URL",
+            "sqlite:///email_marketing.db",
+        ),
+        SQLALCHEMY_TRACK_MODIFICATIONS=False,
+    )
+
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1)
+
+    db.init_app(app)
+    csrf.init_app(app)
+
+    login_manager = LoginManager(app)
+    login_manager.login_view = "auth.login"
+
+    @login_manager.user_loader
+    def load_user(user_id):
+        from models import User
+        return User.query.get(int(user_id))
+
+    @app.before_request
+    def request_id():
+        g.request_id = request.headers.get(
+            "X-Request-ID", str(uuid4())
+        )
+
+    from auth import auth_bp
+    from main import main_bp
+    from marketing import marketing_bp
+
+    app.register_blueprint(auth_bp)
+    app.register_blueprint(main_bp)
+    app.register_blueprint(marketing_bp)
+
+    @app.route("/")
+    def index():
+        return redirect(url_for("auth.login"))
+
+    @app.route("/health")
+    def health():
+        return {"status": "ok"}, 200
+
+    return app
+
+app = create_app(testing=os.getenv("FLASK_ENV") == "testing")
+
+==================================================
+wsgi.py
+==================================================
+
+from app import app
+
+==================================================
+IMPORTANT RULES (DO NOT VIOLATE)
+==================================================
+
+- auth.py, main.py, marketing.py MUST define Flask Blueprints only
+- They MUST NOT create a Flask() instance
+- Gunicorn entry point MUST be: app:app
+- Do NOT use main:app or marketing:app
+- extensions.py MUST exist and be imported
+- SESSION_SECRET MUST be set in environment or systemd
+- /health MUST return HTTP 200 JSON
+- ProxyFix MUST be enabled
+- Do NOT move imports to module top-level
+- Do NOT create additional entry points
+- Do NOT remove CSRF, LoginManager, or db init
+
+==================================================
+SYSTEMD (PRODUCTION)
+==================================================
+
+[Unit]
+Description=LUX Flask App
+After=network.target
+
+[Service]
+User=root
+WorkingDirectory=/app/current
+Environment=SESSION_SECRET=<secure-random-string>
+Environment=FLASK_ENV=production
+Environment=PYTHONPATH=/app/current
+ExecStart=/app/current/venv/bin/gunicorn -b 127.0.0.1:5000 app:app
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+
+==================================================
+SUCCESS CRITERIA
+==================================================
+
+- curl http://127.0.0.1:5000/health → 200
+- curl https://luxit.app/health → 200
+- Login page renders
+- Dashboard accessible after login
+- No ModuleNotFoundError
+- No worker boot failures
+
+END OF INSTRUCTIONS

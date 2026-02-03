@@ -1,0 +1,42 @@
+2s
+✓ AI Action Executor endpoints (autonomous, action-oriented):
+  - POST /api/ai/execute-action (execute AI actions immediately)
+  - GET /api/company/<id>/secrets (retrieve company secrets)
+✓ CompanySecret model created for secure secret storage per company
+✓ Secrets populated for Lucifer Cruz company from environment variables
+✓ AI Agent interaction endpoints loaded:
+  - POST /api/agents/chat (chat with any agent)
+  - GET/POST /api/agents/<type>/tasks (manage agent tasks)
+  - PATCH/DELETE /api/agents/<type>/tasks/<id> (update/delete tasks)
+  - POST /api/agents/<type>/suggestions (get AI suggestions)
+✓ Subscriber sync routes loaded:
+  - POST /api/subscribers/sync (full bidirectional sync)
+  - GET /api/subscribers (list all subscribers)
+  - GET /api/subscribers/stats (subscriber statistics)
+  - POST /api/contacts/<id>/subscribe (subscribe contact)
+  - POST /api/contacts/<id>/unsubscribe (unsubscribe contact)
+  - POST /api/contacts/bulk-subscribe (bulk subscribe)
+  - POST /api/contacts/bulk-unsubscribe (bulk unsubscribe)
+✓ Newsletter search & subscriber routes loaded
+✓ Approval Queue & Feature Toggle routes loaded:
+  - GET /approval-queue (Admin dashboard)
+  - GET/POST /api/approval-queue (Queue management)
+  - POST /api/approval-queue/<id>/approve|reject|edit|cancel
+  - GET/PATCH /api/feature-toggles
+  - POST /api/feature-toggles/emergency-stop|resume-all
+  File "<stdin>", line 1, in <module>
+  File "/home/runner/work/LUXit.app/LUXit.app/app.py", line 140, in <module>
+    app = create_app(testing=os.getenv("FLASK_ENV") == "testing")
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/runner/work/LUXit.app/LUXit.app/app.py", line 132, in create_app
+    @app.route("/logout")
+     ^^^^^^^^^^^^^^^^^^^^
+  File "/opt/hostedtoolcache/Python/3.11.14/x64/lib/python3.11/site-packages/flask/sansio/scaffold.py", line 362, in decorator
+    self.add_url_rule(rule, endpoint, f, **options)
+  File "/opt/hostedtoolcache/Python/3.11.14/x64/lib/python3.11/site-packages/flask/sansio/scaffold.py", line 47, in wrapper_func
+    return f(self, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/hostedtoolcache/Python/3.11.14/x64/lib/python3.11/site-packages/flask/sansio/app.py", line 657, in add_url_rule
+    raise AssertionError(
+AssertionError: View function mapping is overwriting an existing endpoint function: logout
+Error: Process completed with exit code 1.

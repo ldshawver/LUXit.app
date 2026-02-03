@@ -1,0 +1,235 @@
+Linux luxit-vps.internal 6.12.63+deb13-amd64 #1 SMP PREEMPT_DYNAMIC Debian 6.12.63-1 (2025-12-30) x86_64
+
+The programs included with the Debian GNU/Linux system are free software;
+the exact distribution terms for each program are described in the
+individual files in /usr/share/doc/*/copyright.
+
+Debian GNU/Linux comes with ABSOLUTELY NO WARRANTY, to the extent
+permitted by applicable law.
+Last login: Sat Jan 31 05:05:43 2026 from 169.254.0.1
+root@luxit-vps:~# # Test Gunicorn directly
+export $(cat .env | xargs)
+gunicorn --bind 127.0.0.1:8000 wsgi:app
+cat: .env: No such file or directory
+declare -x HOME="/root"
+declare -x LANG="en_US.UTF-8"
+declare -x LANGUAGE="en_US.UTF-8"
+declare -x LC_ALL="en_US.UTF-8"
+declare -x LOGNAME="root"
+declare -x MOTD_SHOWN="pam"
+declare -x OLDPWD
+declare -x PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+declare -x PWD="/root"
+declare -x SHELL="/bin/bash"
+declare -x SHLVL="1"
+declare -x SSH_CLIENT="169.254.0.1 37068 22"
+declare -x SSH_CONNECTION="169.254.0.1 37068 194.195.92.52 22"
+declare -x SSH_TTY="/dev/pts/0"
+declare -x TERM="xterm"
+declare -x USER="root"
+declare -x XDG_RUNTIME_DIR="/run/user/0"
+declare -x XDG_SESSION_CLASS="user"
+declare -x XDG_SESSION_ID="6"
+declare -x XDG_SESSION_TYPE="tty"
+-bash: gunicorn: command not found
+root@luxit-vps:~# # Restart the systemd service
+sudo systemctl restart luxit
+
+# Check status
+sudo systemctl status luxit
+
+# Test with curl
+curl http://127.0.0.1:8000/
+● luxit.service - LUX IT Gunicorn Application
+     Loaded: loaded (/etc/systemd/system/luxit.service; enabled; preset: enabled)
+     Active: active (running) since Sat 2026-01-31 05:15:03 UTC; 60ms ago
+ Invocation: 0be084fe3b274a779f294360ecbab618
+   Main PID: 23679 (gunicorn)
+      Tasks: 1 (limit: 9486)
+     Memory: 3.3M (peak: 3.6M)
+        CPU: 36ms
+     CGroup: /system.slice/luxit.service
+             └─23679 /var/www/luxit/venv/bin/python3.13 /var/www/luxit/venv/bin/gunicorn --workers 4 --bind 127.0.>
+
+Jan 31 05:15:03 luxit-vps.internal systemd[1]: Started luxit.service - LUX IT Gunicorn Application.
+...skipping...
+● luxit.service - LUX IT Gunicorn Application
+     Loaded: loaded (/etc/systemd/system/luxit.service; enabled; preset: enabled)
+     Active: active (running) since Sat 2026-01-31 05:15:03 UTC; 60ms ago
+ Invocation: 0be084fe3b274a779f294360ecbab618
+   Main PID: 23679 (gunicorn)
+      Tasks: 1 (limit: 9486)
+     Memory: 3.3M (peak: 3.6M)
+        CPU: 36ms
+     CGroup: /system.slice/luxit.service
+             └─23679 /var/www/luxit/venv/bin/python3.13 /var/www/luxit/venv/bin/gunicorn --workers 4 --bind 127.0.>
+
+Jan 31 05:15:03 luxit-vps.internal systemd[1]: Started luxit.service - LUX IT Gunicorn Application.
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+...skipping...
+● luxit.service - LUX IT Gunicorn Application
+     Loaded: loaded (/etc/systemd/system/luxit.service; enabled; preset: enabled)
+     Active: active (running) since Sat 2026-01-31 05:15:03 UTC; 60ms ago
+ Invocation: 0be084fe3b274a779f294360ecbab618
+   Main PID: 23679 (gunicorn)
+      Tasks: 1 (limit: 9486)
+     Memory: 3.3M (peak: 3.6M)
+        CPU: 36ms
+     CGroup: /system.slice/luxit.service
+             └─23679 /var/www/luxit/venv/bin/python3.13 /var/www/luxit/venv/bin/gunicorn --workers 4 --bind 127.0.>
+
+Jan 31 05:15:03 luxit-vps.internal systemd[1]: Started luxit.service - LUX IT Gunicorn Application.
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+...skipping...
+
+                   SUMMARY OF LESS COMMANDS
+
+      Commands marked with * may be preceded by a number, N.
+      Notes in parentheses indicate the behavior if N is given.
+      A key preceded by a caret indicates the Ctrl key; thus ^K is ctrl-K.
+
+  h  H                 Display this help.
+  q  :q  Q  :Q  ZZ     Exit.
+ ---------------------------------------------------------------------------
+
+                           MOVING
+
+  e  ^E  j  ^N  CR  *  Forward  one line   (or N lines).
+  y  ^Y  k  ^K  ^P  *  Backward one line   (or N lines).
+  f  ^F  ^V  SPACE  *  Forward  one window (or N lines).
+  b  ^B  ESC-v      *  Backward one window (or N lines).
+  z                 *  Forward  one window (and set window to N).
+  w                 *  Backward one window (and set window to N).
+  ESC-SPACE         *  Forward  one window, but don't stop at end-of-file.
+  d  ^D             *  Forward  one half-window (and set half-window to N).
+  u  ^U             *  Backward one half-window (and set half-window to N).
+  ESC-)  RightArrow *  Right one half screen width (or N positions).
+  ESC-(  LeftArrow  *  Left  one half screen width (or N positions).
+  ESC-}  ^RightArrow   Right to last column displayed.
+  ESC-{  ^LeftArrow    Left  to first column.
+  F                    Forward forever; like "tail -f".
+  ESC-F                Like F but stop when search pattern is found.
+  r  ^R  ^L            Repaint screen.
+  R                    Repaint screen, discarding buffered input.
+        ---------------------------------------------------
+        Default "window" is the screen height.
+        Default "half-window" is half of the screen height.
+ ---------------------------------------------------------------------------
+
+                          SEARCHING
+
+  /pattern          *  Search forward for (N-th) matching line.
+  ?pattern          *  Search backward for (N-th) matching line.
+  n                 *  Repeat previous search (for N-th occurrence).
+  N                 *  Repeat previous search in reverse direction.
+  ESC-n             *  Repeat previous search, spanning files.
+  ESC-N             *  Repeat previous search, reverse dir. & spanning files.
+  ^O^N  ^On         *  Search forward for (N-th) OSC8 hyperlink.
+  ^O^P  ^Op         *  Search backward for (N-th) OSC8 hyperlink.
+  ^O^L  ^Ol            Jump to the currently selected OSC8 hyperlink.
+  ESC-u                Undo (toggle) search highlighting.
+  ESC-U                Clear search highlighting.
+  &pattern          *  Display only matching lines.
+        ---------------------------------------------------
+        A search pattern may begin with one or more of:
+        ^N or !  Search for NON-matching lines.
+        ^E or *  Search multiple files (pass thru END OF FILE).
+        ^F or @  Start search at FIRST file (for /) or last file (for ?).
+        ^K       Highlight matches, but don't move (KEEP position).
+        ^R       Don't use REGULAR EXPRESSIONS.
+        ^S n     Search for match in n-th parenthesized subpattern.
+        ^W       WRAP search if no match found.
+        ^L       Enter next character literally into pattern.
+ ---------------------------------------------------------------------------
+
+                           JUMPING
+
+  g  <  ESC-<       *  Go to first line in file (or line N).
+  G  >  ESC->       *  Go to last line in file (or line N).
+  p  %              *  Go to beginning of file (or N percent into file).
+HELP -- Press RETURN for more, or q when done...skipping...
+● luxit.service - LUX IT Gunicorn Application
+     Loaded: loaded (/etc/systemd/system/luxit.service; enabled; preset: enabled)
+     Active: active (running) since Sat 2026-01-31 05:15:03 UTC; 60ms ago
+ Invocation: 0be084fe3b274a779f294360ecbab618
+   Main PID: 23679 (gunicorn)
+      Tasks: 1 (limit: 9486)
+     Memory: 3.3M (peak: 3.6M)
+        CPU: 36ms
+     CGroup: /system.slice/luxit.service
+             └─23679 /var/www/luxit/venv/bin/python3.13 /var/www/luxit/venv/bin/gunicorn --workers 4 --bind 127.0.>
+
+Jan 31 05:15:03 luxit-vps.internal systemd[1]: Started luxit.service - LUX IT Gunicorn Application.
+~

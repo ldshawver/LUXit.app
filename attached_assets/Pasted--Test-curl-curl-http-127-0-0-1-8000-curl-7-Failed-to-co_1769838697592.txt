@@ -1,0 +1,37 @@
+# Test curl
+curl http://127.0.0.1:8000/
+curl: (7) Failed to connect to 127.0.0.1 port 8000 after 0 ms: Could not connect to server
+root@luxit-vps:/var/www/luxit# curl http://127.0.0.1:8000/
+curl: (7) Failed to connect to 127.0.0.1 port 8000 after 0 ms: Could not connect to server
+root@luxit-vps:/var/www/luxit# sudo journalctl -u luxit -n 30 --no-pager
+Jan 31 05:49:41 luxit-vps.internal gunicorn[26109]:     self.app.wsgi()
+Jan 31 05:49:41 luxit-vps.internal gunicorn[26109]:     ~~~~~~~~~~~~~^^
+Jan 31 05:49:41 luxit-vps.internal gunicorn[26109]:   File "/var/www/luxit/venv/lib/python3.13/site-packages/gunicorn/app/base.py", line 66, in wsgi
+Jan 31 05:49:41 luxit-vps.internal gunicorn[26109]:     self.callable = self.load()
+Jan 31 05:49:41 luxit-vps.internal gunicorn[26109]:                     ~~~~~~~~~^^
+Jan 31 05:49:41 luxit-vps.internal gunicorn[26109]:   File "/var/www/luxit/venv/lib/python3.13/site-packages/gunicorn/app/wsgiapp.py", line 57, in load
+Jan 31 05:49:41 luxit-vps.internal gunicorn[26109]:     return self.load_wsgiapp()
+Jan 31 05:49:41 luxit-vps.internal gunicorn[26109]:            ~~~~~~~~~~~~~~~~~^^
+Jan 31 05:49:41 luxit-vps.internal gunicorn[26109]:   File "/var/www/luxit/venv/lib/python3.13/site-packages/gunicorn/app/wsgiapp.py", line 47, in load_wsgiapp
+Jan 31 05:49:41 luxit-vps.internal gunicorn[26109]:     return util.import_app(self.app_uri)
+Jan 31 05:49:41 luxit-vps.internal gunicorn[26109]:            ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^
+Jan 31 05:49:41 luxit-vps.internal gunicorn[26109]:   File "/var/www/luxit/venv/lib/python3.13/site-packages/gunicorn/util.py", line 366, in import_app
+Jan 31 05:49:41 luxit-vps.internal gunicorn[26109]:     mod = importlib.import_module(module)
+Jan 31 05:49:41 luxit-vps.internal gunicorn[26109]:   File "/usr/lib/python3.13/importlib/__init__.py", line 88, in import_module
+Jan 31 05:49:41 luxit-vps.internal gunicorn[26109]:     return _bootstrap._gcd_import(name[level:], package, level)
+Jan 31 05:49:41 luxit-vps.internal gunicorn[26109]:            ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Jan 31 05:49:41 luxit-vps.internal gunicorn[26109]:   File "<frozen importlib._bootstrap>", line 1387, in _gcd_import
+Jan 31 05:49:41 luxit-vps.internal gunicorn[26109]:   File "<frozen importlib._bootstrap>", line 1360, in _find_and_load
+Jan 31 05:49:41 luxit-vps.internal gunicorn[26109]:   File "<frozen importlib._bootstrap>", line 1331, in _find_and_load_unlocked
+Jan 31 05:49:41 luxit-vps.internal gunicorn[26109]:   File "<frozen importlib._bootstrap>", line 935, in _load_unlocked
+Jan 31 05:49:41 luxit-vps.internal gunicorn[26109]:   File "<frozen importlib._bootstrap_external>", line 1026, in exec_module
+Jan 31 05:49:41 luxit-vps.internal gunicorn[26109]:   File "<frozen importlib._bootstrap>", line 488, in _call_with_frames_removed
+Jan 31 05:49:41 luxit-vps.internal gunicorn[26109]:   File "/var/www/luxit/wsgi.py", line 5, in <module>
+Jan 31 05:49:41 luxit-vps.internal gunicorn[26109]:     from app import app
+Jan 31 05:49:41 luxit-vps.internal gunicorn[26109]:   File "/var/www/luxit/app.py", line 64
+Jan 31 05:49:41 luxit-vps.internal gunicorn[26109]:     SESSION_COOKIE_SECURE=False,
+Jan 31 05:49:41 luxit-vps.internal gunicorn[26109]:     ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Jan 31 05:49:41 luxit-vps.internal gunicorn[26109]: SyntaxError: keyword argument repeated: SESSION_COOKIE_SECURE
+Jan 31 05:49:41 luxit-vps.internal systemd[1]: luxit.service: Main process exited, code=exited, status=1/FAILURE
+Jan 31 05:49:41 luxit-vps.internal systemd[1]: luxit.service: Failed with result 'exit-code'.
+root@luxit-vps:/var/www/luxit# 

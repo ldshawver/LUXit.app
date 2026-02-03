@@ -1,0 +1,376 @@
+CRM FEATURE REQUIREMENTS
+
+(User Experience, Functionality, & System Design Notes)
+
+1. CORE CRM FOUNDATIONS (Non-Negotiable)
+1.1 Multi-Entity Architecture (Critical)
+
+The CRM must support multiple legal entities (companies).
+
+A single user may belong to multiple companies simultaneously.
+
+Each company has:
+
+Its own settings
+
+Its own data visibility
+
+Its own integrations
+
+Users can switch company context without logging out.
+
+UX note:
+Company switching must be obvious, fast, and persistent (top-left selector, remembers last company).
+
+1.2 User ↔ Company Relationship Model
+
+Users are global identities.
+
+Relationships are defined via a membership table:
+
+role
+
+permissions
+
+company-specific metadata
+
+One user:
+
+Admin in Company A
+
+Read-only in Company B
+
+Contractor in Company C
+
+Avoid:
+Hard-coding users to a single company.
+
+2. DATA INGESTION & SYNC (Major Focus)
+2.1 Webhooks (First-Class Feature)
+
+The CRM must accept inbound data from:
+
+WordPress (Forminator, WooCommerce, user registration)
+
+Zapier
+
+Custom apps
+
+AI agents
+
+Requirements:
+
+REST endpoint(s) like:
+
+POST /api/webhook/{source}
+
+
+Support:
+
+JSON payloads
+
+Authentication (Basic Auth / API Key / Header Token)
+
+Ability to map incoming fields → CRM fields
+
+UX highlight:
+Admins should be able to test webhook payloads from the UI.
+
+2.2 Data Mapping & De-Duplication
+
+Incoming data must:
+
+Detect duplicates using configurable keys:
+
+email
+
+phone
+
+external_id
+
+Support:
+
+merge
+
+overwrite
+
+ignore rules
+
+Key concept to document:
+
+“Duplication Key” = the field(s) used to determine whether a record already exists.
+
+2.3 Sync With External Systems
+
+The CRM should support:
+
+One-way sync (import only)
+
+Two-way sync (push + pull)
+
+Scheduled syncs (cron-based)
+
+Examples:
+
+WordPress users → CRM contacts
+
+WooCommerce orders → CRM deals
+
+Payroll / HR systems → CRM profiles
+
+UX note:
+Users must clearly see:
+
+last sync time
+
+sync status
+
+errors per integration
+
+3. CONTACTS & LEAD GENERATION
+3.1 Lead Capture Methods
+
+The CRM must generate leads from:
+
+Website forms
+
+Checkout flows
+
+Chatbots
+
+API calls
+
+Manual entry
+
+Key UX detail:
+Every contact should show how they entered the system.
+
+Example:
+
+Source: Website Form (Forminator)
+Campaign: Summer Promo
+Page: /checkout
+
+3.2 Visitor → Known User Conversion
+
+Anonymous visitors are allowed, but:
+
+Once an email/name is captured, the visitor is promoted to a contact
+
+Historical activity is retained
+
+Important:
+The CRM cannot magically know names/emails without:
+
+Forms
+
+Login
+
+Chat submission
+
+Explicit consent
+
+4. AUTH, SECURITY & ACCESS CONTROL
+4.1 Authentication Types
+
+Support:
+
+Username/password
+
+API keys
+
+Basic Auth (username|password)
+
+Token-based auth for integrations
+
+Important implementation note:
+Authentication must be integration-specific, not global.
+
+4.2 Role-Based Permissions
+
+Roles should be:
+
+Company-scoped
+
+Customizable
+
+Examples:
+
+Owner
+
+Admin
+
+Manager
+
+Sales
+
+Read-only
+
+Automation/Agent
+
+5. ERROR LOGGING, MONITORING & AI ASSISTANCE (UNIQUE FEATURE)
+5.1 Error Logging System
+
+The CRM must log:
+
+API errors
+
+Webhook failures
+
+Integration issues
+
+Auth failures
+
+Internal server errors
+
+Each error record should store:
+
+type
+
+message
+
+stack trace
+
+endpoint
+
+HTTP method
+
+severity
+
+timestamp
+
+resolved flag
+
+resolution notes
+
+5.2 AI-Driven Error Resolution
+
+The AI agent must be able to:
+
+Read error logs
+
+Diagnose the issue
+
+Propose fixes
+
+Test the fix (health checks)
+
+Mark errors as resolved programmatically
+
+UX highlight:
+Users should see:
+
+“AI fixed this issue”
+
+“Pending review”
+
+“Deploy suggested fix?”
+
+5.3 Safe Deployment Flow (No Buttons Required)
+
+Desired flow:
+
+AI fixes an issue
+
+AI tests the fix
+
+If clean → AI asks:
+
+“Do you want to deploy these changes to Git?”
+
+No automatic production pushes without confirmation.
+
+6. DEPLOYMENT & ENVIRONMENT DESIGN
+6.1 Environment Separation
+
+CRM must support:
+
+Local / Dev
+
+Staging
+
+Production
+
+Each environment has:
+
+Separate configs
+
+Separate databases (or schemas)
+
+Separate API keys
+
+6.2 Git-Based Deployment
+
+Deployment expectations:
+
+Git is the source of truth
+
+Server pulls from repo
+
+Systemd manages the service
+
+No manual file editing in prod
+
+Important note from this thread:
+Misconfigured environments cause cascading failures — configs must be explicit.
+
+7. UX & PRODUCT EXPERIENCE PRINCIPLES
+7.1 Zero Confusion Branding
+
+Each product must stand alone
+
+No cross-branding leakage
+
+Clean mental separation for users
+
+7.2 Transparency Over Magic
+
+Users must always know:
+
+Where data came from
+
+Why something failed
+
+What the system did automatically
+
+7.3 Admin Confidence
+
+Admins should feel:
+
+In control
+
+Informed
+
+Not surprised by automation
+
+Logs, previews, confirmations > silent actions.
+
+8. KEY TAKEAWAYS TO HIGHLIGHT FOR USERS
+
+This CRM is integration-first, not UI-first
+
+Multi-company is a core feature, not an add-on
+
+AI assists but does not override human control
+
+Everything is auditable
+
+Everything is reversible
+
+Errors are treated as data, not disasters
+
+9. HOW TO PRESENT THIS TO REPLIT / DEV TEAM
+
+You can summarize it as:
+
+“We are building a multi-entity, integration-first CRM with strong webhook ingestion, AI-assisted error resolution, and Git-based deployment. User experience prioritizes transparency, control, and clear data lineage.”
+
+If you want, next I can:
+
+Convert this into a Replit project brief
+
+Turn it into feature tickets / milestones
+
+Generate DB schemas
+
+Or create user-facing documentation from this same material

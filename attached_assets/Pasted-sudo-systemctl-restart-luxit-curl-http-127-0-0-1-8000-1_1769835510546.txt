@@ -1,0 +1,14 @@
+sudo systemctl restart luxit
+curl http://127.0.0.1:8000/
+172.56.14.243 - - [31/Jan/2026:04:57:35 +0000] "GET / HTTP/1.0" 302 227 "-" "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36 Edg/144.0.0.0"
+172.56.14.243 - - [31/Jan/2026:04:57:35 +0000] "GET /auth/login?next=%2F HTTP/1.0" 200 15144 "-" "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36 Edg/144.0.0.0"
+2026-01-31 04:57:50,241 INFO [flask_wtf.csrf] [request_id=-] The CSRF session token is missing.
+2026-01-31 04:57:50,259 INFO [error_logger] [request_id=-] Logged error: CSRFError - 400 Bad Request: The CSRF session token is missing.
+172.56.14.243 - - [31/Jan/2026:04:57:50 +0000] "POST /auth/login?next=%2F HTTP/1.0" 400 125 "http://194.195.92.52/auth/login?next=%2F" "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36 Edg/144.0.0.0"
+2026-01-31 04:57:50,352 INFO [error_logger] [request_id=-] Logged error: NotFound - 404 Not Found: The requested URL was not found on the server. If you entered the URL manually please
+172.56.14.243 - - [31/Jan/2026:04:57:50 +0000] "GET /favicon.ico HTTP/1.0" 404 207 "http://194.195.92.52/auth/login?next=%2F" "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36 Edg/144.0.0.0"
+2026-01-31 04:57:58,698 INFO [flask_wtf.csrf] [request_id=-] The CSRF session token is missing.
+2026-01-31 04:57:58,735 INFO [error_logger] [request_id=-] Logged error: CSRFError - 400 Bad Request: The CSRF session token is missing.
+172.56.14.243 - - [31/Jan/2026:04:57:58 +0000] "POST /auth/login?next=%2F HTTP/1.0" 400 125 "http://194.195.92.52/auth/login?next=%2F" "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36 Edg/144.0.0.0"
+172.56.14.243 - - [31/Jan/2026:04:58:05 +0000] "GET /auth/login?next=%2F HTTP/1.0" 200 15144 "-" "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36 Edg/144.0.0.0"
+172.56.14.243 - - [31/Jan/2026:04:58:06 +0000] "GET /auth/login?next=%2F HTTP/1.0" 200 15144 "-" "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36 Edg/144.0.0.0"

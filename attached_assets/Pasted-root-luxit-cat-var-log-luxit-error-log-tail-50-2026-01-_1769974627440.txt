@@ -1,0 +1,51 @@
+root@luxit:~# cat /var/log/luxit-error.log | tail -50
+[2026-01-31 06:14:27 +0000] [27488] [INFO] Booting worker with pid: 27488
+[2026-01-31 06:14:27 +0000] [27489] [INFO] Booting worker with pid: 27489
+[2026-01-31 06:14:27 +0000] [27490] [INFO] Booting worker with pid: 27490
+[2026-01-31 06:14:27 +0000] [27491] [INFO] Booting worker with pid: 27491
+[2026-01-31 06:30:54 +0000] [27485] [INFO] Handling signal: term
+[2026-01-31 06:30:54 +0000] [27488] [INFO] Worker exiting (pid: 27488)
+[2026-01-31 06:30:54 +0000] [27490] [INFO] Worker exiting (pid: 27490)
+[2026-01-31 06:30:54 +0000] [27489] [INFO] Worker exiting (pid: 27489)
+[2026-01-31 06:30:54 +0000] [27491] [INFO] Worker exiting (pid: 27491)
+[2026-01-31 06:30:57 +0000] [27485] [INFO] Shutting down: Master
+[2026-01-31 06:31:00 +0000] [28460] [INFO] Starting gunicorn 24.1.1
+[2026-01-31 06:31:00 +0000] [28460] [INFO] Listening at: http://127.0.0.1:8000 (28460)
+[2026-01-31 06:31:00 +0000] [28460] [INFO] Using worker: sync
+[2026-01-31 06:31:00 +0000] [28464] [INFO] Booting worker with pid: 28464
+[2026-01-31 06:31:00 +0000] [28465] [INFO] Booting worker with pid: 28465
+[2026-01-31 06:31:00 +0000] [28466] [INFO] Booting worker with pid: 28466
+[2026-01-31 06:31:00 +0000] [28467] [INFO] Booting worker with pid: 28467
+[2026-01-31 06:33:37 +0000] [28460] [INFO] Handling signal: term
+[2026-01-31 06:33:37 +0000] [28464] [INFO] Worker exiting (pid: 28464)
+[2026-01-31 06:33:37 +0000] [28465] [INFO] Worker exiting (pid: 28465)
+[2026-01-31 06:33:37 +0000] [28467] [INFO] Worker exiting (pid: 28467)
+[2026-01-31 06:33:37 +0000] [28466] [INFO] Worker exiting (pid: 28466)
+[2026-01-31 06:33:40 +0000] [28460] [INFO] Shutting down: Master
+[2026-01-31 06:35:39 +0000] [28720] [INFO] Starting gunicorn 24.1.1
+[2026-01-31 06:35:39 +0000] [28720] [INFO] Listening at: http://127.0.0.1:8000 (28720)
+[2026-01-31 06:35:39 +0000] [28720] [INFO] Using worker: sync
+[2026-01-31 06:35:39 +0000] [28723] [INFO] Booting worker with pid: 28723
+[2026-01-31 06:35:39 +0000] [28724] [INFO] Booting worker with pid: 28724
+[2026-01-31 06:35:39 +0000] [28725] [INFO] Booting worker with pid: 28725
+[2026-01-31 06:35:39 +0000] [28726] [INFO] Booting worker with pid: 28726
+[2026-01-31 06:37:11 +0000] [28724] [INFO] Worker exiting (pid: 28724)
+[2026-01-31 06:37:11 +0000] [28720] [INFO] Handling signal: term
+[2026-01-31 06:37:11 +0000] [28723] [INFO] Worker exiting (pid: 28723)
+[2026-01-31 06:37:11 +0000] [28725] [INFO] Worker exiting (pid: 28725)
+[2026-01-31 06:37:11 +0000] [28726] [INFO] Worker exiting (pid: 28726)
+[2026-01-31 06:37:11 +0000] [28720] [INFO] Worker (pid:28724) was sent SIGTERM!
+[2026-01-31 06:37:12 +0000] [28720] [INFO] Shutting down: Master
+[2026-02-01 19:08:47 +0000] [159237] [INFO] Starting gunicorn 24.1.1
+[2026-02-01 19:08:47 +0000] [159237] [INFO] Listening at: http://127.0.0.1:8000 (159237)
+[2026-02-01 19:08:47 +0000] [159237] [INFO] Using worker: sync
+[2026-02-01 19:08:47 +0000] [159331] [INFO] Booting worker with pid: 159331
+[2026-02-01 19:08:47 +0000] [159332] [INFO] Booting worker with pid: 159332
+[2026-02-01 19:08:47 +0000] [159333] [INFO] Booting worker with pid: 159333
+[2026-02-01 19:08:47 +0000] [159334] [INFO] Booting worker with pid: 159334
+[2026-02-01 19:19:52 +0000] [159332] [INFO] Worker exiting (pid: 159332)
+[2026-02-01 19:19:52 +0000] [159237] [INFO] Handling signal: term
+[2026-02-01 19:19:52 +0000] [159331] [INFO] Worker exiting (pid: 159331)
+[2026-02-01 19:19:52 +0000] [159333] [INFO] Worker exiting (pid: 159333)
+[2026-02-01 19:19:52 +0000] [159334] [INFO] Worker exiting (pid: 159334)
+[2026-02-01 19:19:55 +0000] [159237] [INFO] Shutting down: Master

@@ -1,0 +1,924 @@
+1. Marketing Leadership & Strategy (Top-Level SMEs)
+
+These roles define what gets done and why.
+
+1. Chief Marketing Strategist (CMO-Equivalent)
+
+Focus Area: Overall growth strategy
+Core Responsibilities:
+
+Brand positioning & messaging
+
+Go-to-market (GTM) strategy
+
+Budget allocation across channels
+
+Revenue alignment with sales
+
+Long-term growth planning
+
+Key Outputs:
+
+Annual/quarterly marketing roadmap
+
+Channel investment strategy
+
+KPI framework (what success looks like)
+
+👉 AI Agent Equivalent: Master Strategy Agent
+
+Sets goals for all other agents
+
+Continuously adjusts strategy based on performance + external market signals
+
+2. Brand & Positioning SME
+
+Focus Area: Identity, trust, differentiation
+Core Responsibilities:
+
+Brand voice & tone
+
+Visual identity governance
+
+Messaging consistency
+
+Reputation management
+
+Key Outputs:
+
+Brand guidelines
+
+Messaging frameworks
+
+Campaign narrative approval
+
+👉 AI Agent: Brand Intelligence Agent
+
+Enforces brand rules across content, ads, social, and email
+
+Detects brand drift or inconsistent messaging
+
+2. Demand Generation & Growth (Revenue-Driving SMEs)
+
+These roles directly generate leads, pipeline, and revenue.
+
+3. Performance Marketing SME (Paid Media)
+
+Focus Area: Paid acquisition & ROAS
+Channels:
+
+Google Ads
+
+Meta / Instagram
+
+TikTok
+
+LinkedIn
+
+Native ads
+
+Key Metrics:
+
+CAC
+
+ROAS
+
+Cost per lead
+
+Conversion rate
+
+👉 AI Agent: Paid Media Optimization Agent
+
+Auto-creates, tests, pauses, and scales ads
+
+Reallocates budgets dynamically
+
+Uses predictive ROAS modeling
+
+4. Lifecycle & Email Marketing SME
+
+Focus Area: Lead nurturing & retention
+Responsibilities:
+
+Drip campaigns
+
+Behavioral triggers
+
+Onboarding flows
+
+Re-engagement campaigns
+
+Key Metrics:
+
+Open rate
+
+CTR
+
+Lead-to-customer conversion
+
+Retention rate
+
+👉 AI Agent: Lifecycle Automation Agent
+
+Builds adaptive sequences per user behavior
+
+Personalizes content at scale
+
+Coordinates with CRM + sales signals
+
+5. Conversion Rate Optimization (CRO) SME
+
+Focus Area: Turning traffic into revenue
+Responsibilities:
+
+Funnel optimization
+
+A/B testing
+
+Landing page performance
+
+UX optimization
+
+Key Metrics:
+
+Conversion rate
+
+Drop-off points
+
+Funnel velocity
+
+👉 AI Agent: Funnel Intelligence Agent
+
+Identifies friction points
+
+Runs continuous experiments
+
+Suggests UX and copy changes
+
+3. Content, Media & Organic Growth SMEs
+
+These roles build long-term equity and inbound demand.
+
+6. Content Marketing SME
+
+Focus Area: Authority & inbound traffic
+Responsibilities:
+
+Blog strategy
+
+Case studies
+
+Whitepapers
+
+Video scripts
+
+Long-form content
+
+Key Metrics:
+
+Organic traffic
+
+Time on page
+
+Assisted conversions
+
+👉 AI Agent: Content Strategy Agent
+
+Generates SEO-aligned content
+
+Maps content to funnel stages
+
+Updates content based on performance
+
+7. SEO & Search Intelligence SME
+
+Focus Area: Organic discoverability
+Responsibilities:
+
+Keyword research
+
+On-page SEO
+
+Technical SEO
+
+Competitive SERP analysis
+
+Key Metrics:
+
+Keyword rankings
+
+Organic conversions
+
+Search share of voice
+
+👉 AI Agent: Search Intelligence Agent
+
+Monitors algorithm changes
+
+Auto-optimizes content
+
+Identifies new ranking opportunities
+
+8. Social Media & Community SME
+
+Focus Area: Engagement & audience growth
+Responsibilities:
+
+Social posting & scheduling
+
+Community management
+
+Trend participation
+
+Influencer coordination
+
+Key Metrics:
+
+Engagement rate
+
+Follower growth
+
+Traffic from social
+
+👉 AI Agent: Social Intelligence Agent
+
+Tracks trends in real time
+
+Auto-creates platform-native content
+
+Responds to engagement intelligently
+
+4. Sales Enablement & CRM SMEs
+
+These roles bridge marketing and revenue operations.
+
+9. CRM & Customer Data SME
+
+Focus Area: Data integrity & customer lifecycle
+Responsibilities:
+
+Contact management
+
+Segmentation
+
+Lead scoring
+
+CRM hygiene
+
+Key Metrics:
+
+Lead quality
+
+Sales cycle length
+
+Pipeline velocity
+
+👉 AI Agent: CRM Intelligence Agent
+
+Scores leads dynamically
+
+Detects stale or low-quality leads
+
+Syncs with sales actions
+
+10. Sales Enablement SME
+
+Focus Area: Helping sales close faster
+Responsibilities:
+
+Sales content
+
+Pitch decks
+
+Case studies
+
+Deal insights
+
+Key Metrics:
+
+Win rate
+
+Deal velocity
+
+Content usage
+
+👉 AI Agent: Revenue Enablement Agent
+
+Surfaces best content per deal
+
+Recommends next best action
+
+Aligns marketing messaging with sales needs
+
+5. E-Commerce & Monetization SMEs (If Applicable)
+11. E-Commerce Marketing SME
+
+Focus Area: Online revenue optimization
+Responsibilities:
+
+Product promotion
+
+Cart recovery
+
+Upsells / cross-sells
+
+Marketplace optimization
+
+Key Metrics:
+
+AOV
+
+Cart abandonment
+
+Repeat purchase rate
+
+👉 AI Agent: Commerce Intelligence Agent
+
+Optimizes product funnels
+
+Predicts purchasing behavior
+
+Coordinates promos with inventory
+
+6. Analytics, Intelligence & Insight SMEs
+
+These roles turn data into decisions.
+
+12. Marketing Analytics SME
+
+Focus Area: Performance storytelling
+Responsibilities:
+
+Dashboard creation
+
+Attribution modeling
+
+KPI reporting
+
+Forecasting
+
+Key Metrics:
+
+ROI
+
+CAC vs LTV
+
+Channel contribution
+
+👉 AI Agent: Analytics Storytelling Agent
+
+Converts raw data into narratives
+
+Explains why metrics changed
+
+Predicts future outcomes
+
+13. Market & Competitive Intelligence SME
+
+Focus Area: External awareness
+Responsibilities:
+
+Competitor tracking
+
+Industry trend analysis
+
+Pricing intelligence
+
+News monitoring
+
+👉 AI Agent: External Intelligence Agent
+
+Ingests news, trends, regulations
+
+Alerts strategy shifts
+
+Feeds insights to all agents
+
+7. Marketing Operations & Optimization (Critical Final Layer)
+14. Marketing Operations SME (The Glue)
+
+Focus Area: Systems, efficiency, scale
+Responsibilities:
+
+Tool stack optimization
+
+Process automation
+
+Data governance
+
+UX improvements
+
+👉 AI Agent: Operations & Orchestration Agent (MOST IMPORTANT)
+
+Monitors all agents’ performance
+
+Ensures collaboration
+
+Improves UX + workflows
+
+Identifies feature gaps
+
+Evolves the platform autonomously
+
+TL;DR – How This Maps to Your App
+
+Your app is not “a CRM with AI”.
+
+It is:
+
+A fully autonomous, multi-agent marketing department, wrapped in a best-in-class CRM and analytics platform.
+
+Each SME above = one AI agent or sub-agent, operating in:
+
+Separate company data silos
+
+Shared strategic goals
+
+Continuous learning loops
+
+If you want next:
+
+A visual agent hierarchy
+
+A navigation layout tied to these SMEs
+
+A Replit-ready agent spec (inputs, outputs, permissions)
+
+Say the word and I’ll build it.
+
+organize the features reviewed for the CRM, APP, competitive anaytsis, AI agents, and all other features and points and consolodate them into clear implinentation insructions for replit. This should be the CRM, Commpetiton tools AI Agents, Campaign structure and herarcy. the SEO tools, etc. The instrcutions should get replit to add all the features, test them for rtheir ability to properly work and ensure no broken links, no internal server issues, the app and marketing website is responsive and the app is completed after testing. The analytics should be robust and visual and easy to navigate. The marketing calander should be intuitive and visual and be able to synce with google and apple calenders. Event marketing tools needs to be implimented. 
+
+Below is a single, consolidated, implementation-ready specification you can hand directly to Replit.
+It is written as clear build instructions, not marketing copy.
+This is meant to eliminate ambiguity, feature gaps, half-built flows, and “it kinda works” outcomes.
+
+Think of this as the constitution + build order for the platform.
+
+LUX Marketing Platform
+CRM + AI Marketing Department
+Replit Implementation Instructions (Authoritative)
+0. NON-NEGOTIABLE BUILD PRINCIPLES (READ FIRST)
+
+Replit must follow these principles throughout development:
+
+One Platform, Modular Architecture
+
+CRM, AI Agents, Analytics, Campaigns, SEO, Ads, Social, E-commerce, Events = ONE APP
+
+Modular services, shared data layer
+
+Multi-Tenant, Fully Isolated Companies
+
+Each company = hard data isolation
+
+No cross-training, no data leakage
+
+AI agents learn only from their company’s data
+
+Production-Grade Quality
+
+No broken links
+
+No internal server errors (500s)
+
+No unhandled exceptions
+
+No placeholder UI shipped to prod
+
+Mobile-First, Responsive
+
+App + marketing site must work flawlessly on:
+
+Desktop
+
+Tablet
+
+Mobile
+
+Test on Chrome, Safari, iOS, Android
+
+AI Is Not Cosmetic
+
+AI agents must take real actions
+
+Not “suggestions only”
+
+Must create, modify, pause, optimize, and report
+
+1. CORE PLATFORM ARCHITECTURE
+Tech Expectations (High Level)
+
+Backend: API-first (REST + async jobs)
+
+Frontend: Component-based UI
+
+Real-time updates for analytics
+
+Role-based permissions
+
+Audit logs for AI actions
+
+2. CRM (HUBSPOT / SALESFORCE-LEVEL)
+CRM Core Features (MUST IMPLEMENT ALL)
+
+Contacts & Companies
+
+Contacts (people)
+
+Companies (accounts)
+
+Full activity timeline per contact
+
+Tags, segments, custom fields
+
+Leads & Pipeline
+
+Lead stages (configurable)
+
+MQL / SQL logic
+
+Deal pipelines
+
+Deal value, probability, close date
+
+Sales Enablement
+
+Notes
+
+Tasks
+
+Reminders
+
+Deal-linked campaigns
+
+CRM Rules
+
+Lead scoring (behavior + engagement)
+
+Automatic lifecycle stage updates
+
+AI-driven lead prioritization
+
+Testing Requirements
+
+Create/edit/delete contacts
+
+Move leads across pipeline stages
+
+Ensure activities appear in timelines
+
+No duplicate records unless allowed
+
+3. CAMPAIGN SYSTEM (CORE REVENUE ENGINE)
+Campaign Hierarchy (MANDATORY STRUCTURE)
+Campaign
+ ├── Objective (Awareness / Leads / Revenue / Retention)
+ ├── Channels
+ │    ├── Email
+ │    ├── Paid Ads
+ │    ├── Social
+ │    ├── SEO / Content
+ │    ├── Events
+ ├── Assets
+ │    ├── Copy
+ │    ├── Creatives
+ │    ├── Landing Pages
+ ├── Audience Segments
+ └── KPIs
+
+Campaign Capabilities
+
+Multi-channel campaigns
+
+Budget assignment
+
+Start/end dates
+
+AI-driven optimization
+
+Attribution tracking
+
+Marketing Calendar (CRITICAL)
+
+Visual drag-and-drop calendar
+
+Daily / weekly / monthly views
+
+Filter by channel, campaign, company
+
+Sync with:
+
+Google Calendar
+
+Apple Calendar (iCal)
+
+Testing
+
+Calendar updates reflect in campaigns
+
+External calendar sync works bi-directionally
+
+Timezone accuracy verified
+
+4. AI AGENTS (AUTONOMOUS MARKETING DEPARTMENT)
+Required AI Agents (ALL MUST EXIST)
+
+Strategy Agent
+
+Sets goals
+
+Adjusts budgets
+
+Coordinates other agents
+
+Paid Media Agent
+
+Creates ads
+
+Manages budgets
+
+Optimizes ROAS
+
+SEO Agent
+
+Keyword research
+
+Content optimization
+
+Technical SEO checks
+
+Content Agent
+
+Blogs
+
+Landing copy
+
+Email copy
+
+Ad copy
+
+Email / Lifecycle Agent
+
+Drip campaigns
+
+Behavioral triggers
+
+Retention flows
+
+Social Media Agent
+
+Post scheduling
+
+Trend detection
+
+Engagement responses
+
+Analytics Agent
+
+KPI monitoring
+
+Story-based reporting
+
+Forecasting
+
+Competitive Intelligence Agent
+
+Competitor tracking
+
+Pricing/messaging changes
+
+Industry news ingestion
+
+Operations / Orchestration Agent (MOST IMPORTANT)
+
+Monitors all agents
+
+Flags failures
+
+Improves UX
+
+Identifies missing features
+
+Enforces quality
+
+AI Governance Rules
+
+All AI actions logged
+
+User can:
+
+Approve
+
+Auto-approve
+
+Roll back actions
+
+AI decisions explainable in plain English
+
+5. COMPETITIVE ANALYSIS TOOLS
+Must Track:
+
+Competitor websites
+
+Ad creatives
+
+SEO keywords
+
+Social engagement
+
+Messaging changes
+
+Outputs:
+
+Competitive dashboards
+
+Alerts for changes
+
+Strategic recommendations
+
+Testing
+
+Add competitor
+
+Verify data ingestion
+
+Confirm dashboards populate
+
+6. SEO TOOLING (BUILT-IN, NOT EXTERNAL LINKS)
+SEO Features
+
+Keyword research
+
+SERP tracking
+
+On-page audits
+
+Technical SEO scans
+
+Content gap analysis
+
+AI Integration
+
+SEO agent auto-optimizes content
+
+Alerts for ranking changes
+
+Recommends new content
+
+7. ANALYTICS & DATA VISUALIZATION (STORY-DRIVEN)
+Analytics Must Include
+
+Marketing
+
+Traffic by channel
+
+Campaign ROI
+
+Cost per lead
+
+Conversion rates
+
+Sales
+
+Pipeline velocity
+
+Revenue attribution
+
+Close rates
+
+E-Commerce
+
+Conversion rate
+
+AOV
+
+Cart abandonment
+
+Repeat purchases
+
+AI Performance
+
+What agents changed
+
+What worked
+
+What failed
+
+Visualization Rules
+
+Clear charts (no clutter)
+
+Drill-down capability
+
+Comparative views (MoM, YoY)
+
+Executive summary view
+
+Testing
+
+Data loads correctly
+
+No empty charts
+
+No broken filters
+
+8. EVENT MARKETING TOOLS
+Event Capabilities
+
+Event creation
+
+RSVP tracking
+
+Email + calendar invites
+
+Attendance tracking
+
+Post-event follow-ups
+
+Integration
+
+CRM contacts
+
+Marketing calendar
+
+Campaign attribution
+
+9. MARKETING WEBSITE (SEPARATE FROM APP)
+Website Must:
+
+Clearly explain platform value
+
+Include pricing, features, demos
+
+Be fully responsive
+
+No broken links
+
+SEO-optimized
+
+10. QA, TESTING & COMPLETION CRITERIA
+Replit MUST Perform:
+
+Functional Testing
+
+All CRUD actions
+
+AI agents execute tasks
+
+Campaigns launch correctly
+
+Stability Testing
+
+No 500 errors
+
+No failed async jobs
+
+Graceful error handling
+
+UX Testing
+
+Navigation intuitive
+
+No dead ends
+
+Clear user flows
+
+Performance
+
+Acceptable load times
+
+No blocking UI
+
+11. DEFINITION OF “DONE”
+
+The app is NOT complete unless:
+
+✅ All agents operational
+
+✅ CRM fully functional
+
+✅ Analytics populated with real data
+
+✅ Calendar sync works
+
+✅ Events module works
+
+✅ No broken links
+
+✅ No server errors
+
+✅ Mobile responsive
+
+✅ Multi-company isolation verified
+
+FINAL NOTE (IMPORTANT)
+
+This platform is not:
+
+A dashboard with AI buzzwords
+
+A CRM with “suggestions”
+
+This platform IS:
+
+A fully autonomous, AI-orchestrated marketing department, embedded inside a world-class CRM and analytics engine.

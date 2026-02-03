@@ -1,0 +1,110 @@
+Jan 31 07:04:14 luxit-vps.internal gunicorn[30324]:     self.app.wsgi()
+Jan 31 07:04:14 luxit-vps.internal gunicorn[30324]:     ~~~~~~~~~~~~~^^
+Jan 31 07:04:14 luxit-vps.internal gunicorn[30324]:   File "/var/www/luxit/venv/lib/python3.13/site-packages/gunicorn/app/base.py", line 66, in wsgi
+Jan 31 07:04:14 luxit-vps.internal gunicorn[30324]:     self.callable = self.load()
+Jan 31 07:04:14 luxit-vps.internal gunicorn[30324]:                     ~~~~~~~~~^^
+Jan 31 07:04:14 luxit-vps.internal gunicorn[30324]:   File "/var/www/luxit/venv/lib/python3.13/site-packages/gunicorn/app/wsgiapp.py", line 57, in load
+Jan 31 07:04:14 luxit-vps.internal gunicorn[30324]:     return self.load_wsgiapp()
+Jan 31 07:04:14 luxit-vps.internal gunicorn[30324]:            ~~~~~~~~~~~~~~~~~^^
+Jan 31 07:04:14 luxit-vps.internal gunicorn[30324]:   File "/var/www/luxit/venv/lib/python3.13/site-packages/gunicorn/app/wsgiapp.py", line 47, in load_wsgiapp
+Jan 31 07:04:14 luxit-vps.internal gunicorn[30324]:     return util.import_app(self.app_uri)
+Jan 31 07:04:14 luxit-vps.internal gunicorn[30324]:            ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^
+Jan 31 07:04:14 luxit-vps.internal gunicorn[30324]:   File "/var/www/luxit/venv/lib/python3.13/site-packages/gunicorn/util.py", line 366, in import_app
+Jan 31 07:04:14 luxit-vps.internal gunicorn[30324]:     mod = importlib.import_module(module)
+Jan 31 07:04:14 luxit-vps.internal gunicorn[30324]:   File "/usr/lib/python3.13/importlib/__init__.py", line 88, in import_module
+Jan 31 07:04:14 luxit-vps.internal gunicorn[30324]:     return _bootstrap._gcd_import(name[level:], package, level)
+Jan 31 07:04:14 luxit-vps.internal gunicorn[30324]:            ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Jan 31 07:04:14 luxit-vps.internal gunicorn[30324]:   File "<frozen importlib._bootstrap>", line 1387, in _gcd_import
+Jan 31 07:04:14 luxit-vps.internal gunicorn[30324]:   File "<frozen importlib._bootstrap>", line 1360, in _find_and_load
+Jan 31 07:04:14 luxit-vps.internal gunicorn[30324]:   File "<frozen importlib._bootstrap>", line 1331, in _find_and_load_unlocked
+Jan 31 07:04:14 luxit-vps.internal gunicorn[30324]:   File "<frozen importlib._bootstrap>", line 935, in _load_unlocked
+Jan 31 07:04:14 luxit-vps.internal gunicorn[30324]:   File "<frozen importlib._bootstrap_external>", line 1026, in exec_module
+Jan 31 07:04:14 luxit-vps.internal gunicorn[30324]:   File "<frozen importlib._bootstrap>", line 488, in _call_with_frames_removed
+Jan 31 07:04:14 luxit-vps.internal gunicorn[30324]:   File "/var/www/luxit/wsgi.py", line 5, in <module>
+Jan 31 07:04:14 luxit-vps.internal gunicorn[30324]:     from app import app
+Jan 31 07:04:14 luxit-vps.internal gunicorn[30324]:   File "/var/www/luxit/app.py", line 244, in <module>
+Jan 31 07:04:14 luxit-vps.internal gunicorn[30324]:     from marketing import marketing_bp
+Jan 31 07:04:14 luxit-vps.internal gunicorn[30324]:   File "/var/www/luxit/marketing.py", line 38
+Jan 31 07:04:14 luxit-vps.internal gunicorn[30324]:     return redirect("mailto:sales@luxit.app")"""Marketing site routes."""
+Jan 31 07:04:14 luxit-vps.internal gunicorn[30324]:                                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Jan 31 07:04:14 luxit-vps.internal gunicorn[30324]: SyntaxError: invalid syntax
+root@luxit-vps:/var/www/luxit# 
+root@luxit-vps:/var/www/luxit# grep -n "@main_bp.route\|@login_required" /var/www/luxit/routes/main_routes.py 2>/dev/null | head -20
+root@luxit-vps:/var/www/luxit# mkdir -p /var/www/luxit/templates/marketing
+root@luxit-vps:/var/www/luxit# cat > /var/www/luxit/templates/marketing/index.html << 'EOF'
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LUX IT - Revenue Operating System</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        :root {
+            --purple: #8B5CF6;
+            --cyan: #06B6D4;
+            --pink: #EC4899;
+        }
+        body {
+            background: #000;
+            color: #fff;
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            min-height: 100vh;
+        }
+        .hero {
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            background: radial-gradient(ellipse at top, rgba(139, 92, 246, 0.15) 0%, transparent 50%),
+                        radial-gradient(ellipse at bottom right, rgba(6, 182, 212, 0.1) 0%, transparent 50%);
+        }
+        .gradient-text {
+            background: linear-gradient(135deg, var(--purple), var(--cyan), var(--pink));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        .btn-glow {
+            background: linear-gradient(135deg, var(--purple), var(--pink));
+            border: none;
+            padding: 12px 32px;
+            border-radius: 8px;
+            color: #fff;
+            font-weight: 600;
+            transition: all 0.3s;
+            box-shadow: 0 0 20px rgba(139, 92, 246, 0.4);
+        }
+        .btn-glow:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 0 30px rgba(139, 92, 246, 0.6);
+            color: #fff;
+        }
+        .btn-outline-glow {
+            background: transparent;
+EOFtml>ript src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>r Marketin
+root@luxit-vps:/var/www/luxit# sudo systemctl restart luxit
+sleep 3
+root@luxit-vps:/var/www/luxit# curl http://127.0.0.1:8000/ | head -20
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+  0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0
+curl: (7) Failed to connect to 127.0.0.1 port 8000 after 2 ms: Could not connect to server
+root@luxit-vps:/var/www/luxit# grep -n -A2 "@main_bp.route\(\"/\"\)" /var/www/luxit/routes/main_routes.py
+grep: /var/www/luxit/routes/main_routes.py: No such file or directory
+root@luxit-vps:/var/www/luxit# grep -n "register_blueprint" /var/www/luxit/app.py | head -10
+248:app.register_blueprint(main_bp)
+249:app.register_blueprint(auth_bp, url_prefix="/auth")
+250:app.register_blueprint(user_bp, url_prefix="/user")
+251:app.register_blueprint(marketing_bp)
+252:app.register_blueprint(advanced_config_bp)
+262:            app.register_blueprint(bp, url_prefix="/replit-auth")
+269:    app.register_blueprint(tiktok_bp)
+270:    app.register_blueprint(tiktok_api_bp)
+277:    app.register_blueprint(facebook_auth_bp)
+284:    app.register_blueprint(instagram_auth_bp)
+root@luxit-vps:/var/www/luxit# mkdir -p /var/www/luxit/templates/marketing
+root@luxit-vps:/var/www/luxit# ls -la /var/www/luxit/templates/marketing/
+total 20
+drwxr-xr-x 2 root     root     4096 Jan 31 07:04 .
+drwxr-xr-x 4 www-data www-data 4096 Jan 31 07:04 ..
+-rw-r--r-- 1 root     root     9738 Jan 31 07:04 index.html
