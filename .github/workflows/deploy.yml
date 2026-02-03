@@ -28,7 +28,7 @@ jobs:
             whoami
             hostname
 
-            cd /var/www/luxit
+            cd /root/lux-email-bot
 
             echo "=== Pulling latest code ==="
             git fetch origin main
@@ -39,18 +39,19 @@ jobs:
             sed -i 's/SQLAlchemy==2.0.23/SQLAlchemy>=2.0.25/' requirements.txt || true
 
             echo "=== Activating venv ==="
-            source venv/bin/activate
+            source .venv/bin/activate
 
             echo "=== Installing dependencies ==="
             pip install --upgrade pip
             pip install -r requirements.txt --upgrade
 
             echo "=== Restarting service ==="
-            sudo systemctl restart luxit
+            systemctl restart lux-email-bot
 
             sleep 5
 
             echo "=== Checking status ==="
-            sudo systemctl is-active luxit
+            systemctl is-active lux-email-bot
+
 
             echo "=== Deployment complete! ==="
