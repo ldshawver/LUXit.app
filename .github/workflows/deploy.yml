@@ -34,10 +34,6 @@ jobs:
             git fetch origin main
             git reset --hard origin/main
 
-            echo "=== Fixing packages for Python 3.13 ==="
-            sed -i 's/psycopg2-binary.*/psycopg[binary]==3.2.4/' requirements.txt || true
-            sed -i 's/SQLAlchemy==2.0.23/SQLAlchemy>=2.0.25/' requirements.txt || true
-
             echo "=== Activating venv ==="
             source .venv/bin/activate
 
@@ -48,10 +44,9 @@ jobs:
             echo "=== Restarting service ==="
             systemctl restart lux-email-bot
 
-            sleep 5
+            sleep 3
 
             echo "=== Checking status ==="
             systemctl is-active lux-email-bot
 
-
-            echo "=== Deployment complete! ==="
+            echo "=== Deployment complete ==="
