@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>{% block title %}LUX Marketing{% endblock %}</title>
+  <title>{% block title %}LUX IT{% endblock %}</title>
   <link rel="icon" type="image/png" href="{{ url_for('static', filename='favicon.png') }}">
   <link href="https://cdn.replit.com/agent/bootstrap-agent-dark-theme.min.css" rel="stylesheet">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/custom.css') }}">
@@ -22,10 +22,10 @@
   <div class="v1-shell">
     <header class="v1-header">
       <div class="v1-brand">
-        <a href="{{ url_for('main.dashboard') }}" aria-label="LUX Marketing dashboard">
-          <img src="{{ url_for('static', filename='lux_logo.png') }}" alt="LUX Marketing">
+        <a href="{{ url_for('main.dashboard') }}" aria-label="LUX IT dashboard">
+          <img src="{{ url_for('static', filename='lux_logo.png') }}" alt="LUX IT">
         </a>
-        <span>LUX Marketing</span>
+        <span>LUX IT</span>
       </div>
       <div>
         {% if current_user.is_authenticated %}

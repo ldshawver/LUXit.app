@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 
-{% block title %}Dashboard - LUX Marketing{% endblock %}
+{% block title %}Dashboard - LUX IT{% endblock %}
+{% block page_title %}Dashboard{% endblock %}
 
 {% block content %}
 <div class="hero">
@@ -23,8 +24,8 @@
   <div class="tile-grid">
     <a class="tile-card" href="{{ url_for('main.ai_dashboard') }}">
       <div class="tile-icon"><i data-feather="cpu"></i></div>
-      <h3>Agents</h3>
-      <p>Deploy AI agents for research, content, and outreach.</p>
+      <h3>Agents & Automations</h3>
+      <p>Deploy AI agents with automated workflows for research, content, and outreach.</p>
     </a>
     <a class="tile-card" href="{{ url_for('main.analytics_hub') }}">
       <div class="tile-icon"><i data-feather="bar-chart-2"></i></div>
@@ -40,11 +41,6 @@
       <div class="tile-icon"><i data-feather="briefcase"></i></div>
       <h3>CRM</h3>
       <p>Unify pipeline, contacts, and revenue operations.</p>
-    </a>
-    <a class="tile-card" href="{{ url_for('main.automation_dashboard') }}">
-      <div class="tile-icon"><i data-feather="zap"></i></div>
-      <h3>Automations</h3>
-      <p>Activate lifecycle journeys with intelligent triggers.</p>
     </a>
   </div>
 </section>

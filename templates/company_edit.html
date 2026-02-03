@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}Edit Company - LUX Marketing{% endblock %}
+{% block title %}Edit Company - LUX IT{% endblock %}
 
 {% block content %}
 <div class="container">
@@ -80,6 +80,14 @@
                 <option value="Georgia, serif" {% if company.font_family == 'Georgia, serif' %}selected{% endif %}>Georgia</option>
                 <option value="Times New Roman, serif" {% if company.font_family == 'Times New Roman, serif' %}selected{% endif %}>Times New Roman</option>
               </select>
+            </div>
+
+            <div class="mb-3">
+              <div class="form-check form-switch">
+                <input class="form-check-input" type="checkbox" id="apply_brand_colors" name="apply_brand_colors" {% if company.apply_brand_colors %}checked{% endif %}>
+                <label class="form-check-label" for="apply_brand_colors">Apply Brand Colors to App</label>
+              </div>
+              <small class="text-muted">When enabled, the app will use this company's brand colors instead of the default LUX IT colors. Disable to keep the default purple/cyan/pink theme.</small>
             </div>
 
             <hr>

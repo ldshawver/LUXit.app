@@ -1,11 +1,68 @@
 {% extends "base.html" %}
-{% block title %}SMS Marketing - LUX Marketing{% endblock %}
+{% block title %}Text Message Management - LUX IT{% endblock %}
+{% block page_title %}Text Message Management{% endblock %}
 {% block content %}
+<style>
+.sms-stat-card { background: rgba(10,10,15,0.9); border: 1px solid rgba(188,0,237,0.3); border-radius: 12px; padding: 20px; text-align: center; }
+.sms-stat-value { font-size: 2rem; font-weight: 700; background: linear-gradient(135deg, #bc00ed, #00ffb4); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+.sms-stat-label { color: #a1a7b8; font-size: 0.85rem; }
+.schedule-badge { background: rgba(0,255,180,0.2); color: #00ffb4; padding: 4px 10px; border-radius: 12px; font-size: 0.75rem; }
+.quick-action-btn { background: rgba(188,0,237,0.15); border: 1px solid rgba(188,0,237,0.3); color: #bc00ed; padding: 8px 16px; border-radius: 8px; font-size: 0.85rem; transition: all 0.2s; }
+.quick-action-btn:hover { background: #bc00ed; color: #fff; border-color: #bc00ed; }
+</style>
+
 <div class="d-flex justify-content-between align-items-center mb-4">
-    <h1><i data-feather="message-square"></i> SMS Marketing</h1>
-    <a href="{{ url_for('main.create_sms_campaign') }}" class="btn btn-primary">
-        <i data-feather="plus"></i> Create SMS Campaign
-    </a>
+    <h1 style="background: linear-gradient(135deg, #bc00ed, #00ffb4); -webkit-background-clip: text; -webkit-text-fill-color: transparent;"><i data-feather="message-square" style="stroke: #bc00ed;"></i> Text Message Management</h1>
+    <div class="d-flex gap-2">
+        <button class="btn btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#scheduleModal">
+            <i data-feather="clock"></i> Schedule SMS
+        </button>
+        <a href="{{ url_for('main.create_sms_campaign') }}" class="btn" style="background: linear-gradient(135deg, #bc00ed, #00ffb4); color: #000; font-weight: 600;">
+            <i data-feather="plus"></i> New Campaign
+        </a>
+    </div>
+</div>
+
+<!-- Stats Row -->
+<div class="row mb-4 g-3">
+    <div class="col-md-3">
+        <div class="sms-stat-card">
+            <div class="sms-stat-value">{{ campaigns|length if campaigns else 0 }}</div>
+            <div class="sms-stat-label">Total Campaigns</div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="sms-stat-card">
+            <div class="sms-stat-value">{{ scheduled_count|default(0) }}</div>
+            <div class="sms-stat-label">Scheduled</div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="sms-stat-card">
+            <div class="sms-stat-value">{{ sent_today|default(0) }}</div>
+            <div class="sms-stat-label">Sent Today</div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="sms-stat-card">
+            <div class="sms-stat-value">{{ delivery_rate|default('98') }}%</div>
+            <div class="sms-stat-label">Delivery Rate</div>
+        </div>
+    </div>
+</div>
+
+<!-- Quick Actions -->
+<div class="card mb-4" style="background: rgba(10,10,15,0.9); border: 1px solid rgba(188,0,237,0.3);">
+    <div class="card-body">
+        <h6 style="color: #00ffb4;" class="mb-3"><i data-feather="zap"></i> Quick Actions</h6>
+        <div class="d-flex flex-wrap gap-2">
+            <button class="quick-action-btn" onclick="quickSMS('reminder')"><i data-feather="bell"></i> Appointment Reminder</button>
+            <button class="quick-action-btn" onclick="quickSMS('promo')"><i data-feather="percent"></i> Promo Alert</button>
+            <button class="quick-action-btn" onclick="quickSMS('followup')"><i data-feather="repeat"></i> Follow-up</button>
+            <button class="quick-action-btn" onclick="quickSMS('thank')"><i data-feather="heart"></i> Thank You</button>
+            <button class="quick-action-btn" onclick="quickSMS('event')"><i data-feather="calendar"></i> Event Invite</button>
+        </div>
+    </div>
 </div>
 
 {% if not sms_enabled %}

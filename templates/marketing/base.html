@@ -47,10 +47,23 @@
       transform: perspective(500px) rotateX(60deg);
       transform-origin: center top;
     }
-    .orb { position: absolute; border-radius: 50%; filter: blur(100px); animation: orbPulse 8s ease-in-out infinite; }
-    .orb-1 { width: 400px; height: 400px; background: rgba(0, 229, 255, 0.1); top: 5%; right: 10%; }
-    .orb-2 { width: 300px; height: 300px; background: rgba(168, 85, 247, 0.08); top: 40%; left: 5%; animation-delay: -3s; }
-    @keyframes orbPulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.15); } }
+    .orb { position: absolute; border-radius: 50%; filter: blur(100px); animation: orbFloat 12s ease-in-out infinite; }
+    .orb-1 { width: 500px; height: 500px; background: rgba(0, 229, 255, 0.15); top: 5%; right: 10%; }
+    .orb-2 { width: 400px; height: 400px; background: rgba(168, 85, 247, 0.12); top: 40%; left: 5%; animation-delay: -3s; }
+    .orb-3 { width: 350px; height: 350px; background: rgba(236, 72, 153, 0.1); bottom: 20%; right: 20%; animation-delay: -6s; }
+    .orb-4 { width: 300px; height: 300px; background: rgba(59, 130, 246, 0.1); top: 60%; left: 30%; animation-delay: -9s; }
+    .orb-5 { width: 450px; height: 450px; background: rgba(0, 229, 255, 0.08); bottom: 10%; left: 10%; animation-delay: -4s; }
+    .orb-6 { width: 380px; height: 380px; background: rgba(168, 85, 247, 0.1); top: 25%; right: 30%; animation-delay: -7s; }
+    .orb-7 { width: 280px; height: 280px; background: rgba(0, 229, 255, 0.12); top: 70%; right: 5%; animation-delay: -2s; }
+    .orb-8 { width: 320px; height: 320px; background: rgba(236, 72, 153, 0.08); top: 15%; left: 25%; animation-delay: -5s; }
+    .orb-9 { width: 420px; height: 420px; background: rgba(59, 130, 246, 0.1); bottom: 30%; right: 40%; animation-delay: -8s; }
+    .orb-10 { width: 250px; height: 250px; background: rgba(168, 85, 247, 0.15); top: 50%; left: 50%; animation-delay: -1s; }
+    @keyframes orbFloat { 
+      0%, 100% { transform: scale(1) translate(0, 0); } 
+      25% { transform: scale(1.1) translate(10px, -10px); }
+      50% { transform: scale(1.2) translate(-5px, 15px); } 
+      75% { transform: scale(1.05) translate(-10px, -5px); }
+    }
     .particles { position: absolute; inset: 0; }
     .particle { position: absolute; border-radius: 50%; animation: particleFloat linear infinite; }
     @keyframes particleFloat { 0% { transform: translateY(100vh); opacity: 0; } 10% { opacity: 1; } 90% { opacity: 1; } 100% { transform: translateY(-50px); opacity: 0; } }
@@ -162,15 +175,6 @@
       background: rgba(0,0,0,0.7); backdrop-filter: blur(20px);
       border-bottom: 1px solid rgba(255,255,255,0.05);
     }
-    .nav-logo { display: flex; align-items: center; gap: 0; text-decoration: none; }
-    .nav-logo img { height: 40px; width: auto; }
-    .nav-logo .it-stack { display: flex; flex-direction: column; margin-left: 2px; height: 40px; justify-content: center; gap: 0; }
-    .nav-logo .it { 
-      background: linear-gradient(135deg, var(--accent-cyan), var(--accent-purple));
-      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-      font-size: 1.8rem; font-weight: 900; line-height: 1; letter-spacing: -0.02em;
-    }
-    .nav-logo .app { color: var(--accent-cyan); font-size: 0.7rem; font-weight: 700; line-height: 1; opacity: 0.9; margin-top: -2px; }
     .nav-links { display: flex; align-items: center; gap: 28px; }
     .nav-links a { color: var(--text-secondary); text-decoration: none; font-size: 0.85rem; font-weight: 500; transition: color 0.3s; }
     .nav-links a:hover { color: #fff; }
@@ -198,6 +202,12 @@
     .hero-title .line:nth-child(1) { animation-delay: 0.3s; }
     .hero-title .line:nth-child(2) { animation-delay: 0.5s; }
     .gradient-text { background: linear-gradient(135deg, var(--accent-cyan), var(--accent-purple), var(--accent-pink)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-size: 200% 200%; animation: gradientShift 4s ease infinite; }
+    .reimagined-img {
+      max-width: min(750px, 90vw);
+      height: auto;
+      display: block;
+      margin: 0 auto;
+    }
     @keyframes gradientShift { 0%, 100% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } }
     #typewriter { border-right: 3px solid var(--accent-cyan); animation: blink 0.8s step-end infinite; }
     @keyframes blink { 50% { border-color: transparent; } }
@@ -226,7 +236,7 @@
     .section-subtitle { color: var(--text-secondary); font-size: 1rem; max-width: 550px; margin: 0 auto; line-height: 1.6; }
 
     /* Feature Grid */
-    .feature-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 24px; }
+    .feature-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 24px; align-items: start; }
     .feature-card {
       background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.06);
       border-radius: 16px; padding: 28px; transition: all 0.4s; position: relative; overflow: hidden;
@@ -296,14 +306,14 @@
     .pricing-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; margin-top: 48px; }
     .pricing-card {
       background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.08);
-      border-radius: 20px; padding: 32px; text-align: center; transition: all 0.4s; position: relative;
+      border-radius: 20px; padding: 32px; padding-top: 40px; text-align: center; transition: all 0.4s; position: relative;
     }
     .pricing-card.featured { border-color: var(--accent-cyan); background: rgba(0, 229, 255, 0.03); }
-    .pricing-card.featured::before {
-      content: 'Most Popular'; position: absolute; top: -12px; left: 50%; transform: translateX(-50%);
+    .pricing-card.featured .popular-badge {
+      position: absolute; top: -14px; left: 50%; transform: translateX(-50%);
       background: linear-gradient(135deg, var(--accent-cyan), var(--accent-purple));
-      color: #fff; font-size: 0.7rem; font-weight: 700; padding: 4px 14px; border-radius: 20px;
-      text-shadow: 0 1px 2px rgba(0,0,0,0.3);
+      color: #fff; font-size: 0.7rem; font-weight: 700; padding: 6px 16px; border-radius: 20px;
+      text-shadow: 0 1px 2px rgba(0,0,0,0.3); z-index: 30; white-space: nowrap;
     }
     .pricing-card:hover { transform: translateY(-6px); }
     .pricing-tier { font-size: 0.8rem; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 8px; }
@@ -314,10 +324,207 @@
     .pricing-features { text-align: left; margin-bottom: 24px; }
     .pricing-features li { font-size: 0.85rem; color: var(--text-secondary); padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,0.04); display: flex; align-items: center; gap: 8px; }
     .pricing-features li::before { content: '✓'; color: var(--accent-cyan); font-weight: bold; }
-    .pricing-btn { display: block; width: 100%; padding: 12px; border-radius: 8px; font-weight: 600; text-decoration: none; transition: all 0.3s; }
+    .pricing-btn { display: block; width: 100%; padding: 12px; border-radius: 8px; font-weight: 600; text-decoration: none; transition: all 0.3s; position: relative; overflow: hidden; z-index: 5; }
     .pricing-btn.primary { background: linear-gradient(135deg, var(--accent-cyan), var(--accent-purple)); color: #fff; box-shadow: 0 0 20px rgba(0, 229, 255, 0.3); }
+    .pricing-btn.primary::before {
+      content: ''; position: absolute; top: 0; left: -100%;
+      width: 50%; height: 100%;
+      background: linear-gradient(90deg, transparent, rgba(255,255,255,0.15), transparent);
+      transform: skewX(-20deg);
+      animation: subtleShine 4s ease-in-out infinite;
+    }
+    @keyframes subtleShine {
+      0% { left: -100%; opacity: 0; }
+      10% { opacity: 1; }
+      40% { left: 150%; opacity: 1; }
+      41%, 100% { left: 150%; opacity: 0; }
+    }
     .pricing-btn.secondary { background: rgba(255,255,255,0.05); color: #fff; border: 1px solid rgba(255,255,255,0.1); }
     .pricing-btn:hover { transform: scale(1.02); }
+
+
+    /* CTA Chrome Glow */
+    .cta-chrome-glow {
+      animation: ctaGlow 3s ease-in-out infinite;
+    }
+    @keyframes ctaGlow {
+      0%, 100% { box-shadow: 0 0 20px rgba(0, 229, 255, 0.4); }
+      50% { box-shadow: 0 0 40px rgba(0, 229, 255, 0.7), 0 0 60px rgba(168, 85, 247, 0.4); }
+    }
+
+    /* Button Hover Shine Effect */
+    .btn-primary, .btn-secondary, .pricing-btn, .details-btn, .text-shine {
+      position: relative;
+      overflow: hidden;
+    }
+    .btn-primary::after, .btn-secondary::after, .pricing-btn::after, .details-btn::after, .text-shine::after {
+      content: '';
+      position: absolute;
+      top: 0; left: -100%;
+      width: 60%; height: 100%;
+      background: linear-gradient(90deg, transparent, rgba(255,255,255,0.4), transparent);
+      transform: skewX(-20deg);
+      pointer-events: none;
+      transition: none;
+    }
+    .text-shine::after {
+      animation: textShimmer 3s ease-in-out infinite;
+    }
+    .btn-primary:hover::after, .btn-secondary:hover::after, .pricing-btn:hover::after, .details-btn:hover::after {
+      animation: hoverShimmer 0.6s ease-out forwards;
+    }
+    @keyframes textShimmer {
+      0% { left: -100%; }
+      40%, 100% { left: 150%; }
+    }
+    @keyframes hoverShimmer {
+      0% { left: -100%; }
+      100% { left: 150%; }
+    }
+
+    /* Details Button */
+    .details-btn {
+      background: transparent;
+      border: 1px solid var(--accent-cyan);
+      color: var(--accent-cyan);
+      padding: 4px 12px;
+      border-radius: 4px;
+      font-size: 0.75rem;
+      cursor: pointer;
+      transition: all 0.3s;
+    }
+    .details-btn:hover {
+      background: var(--accent-cyan);
+      color: #000;
+    }
+
+    /* Feature Modal */
+    .feature-modal {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.85);
+      z-index: 9999;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    .feature-modal.show { display: flex; }
+    .feature-modal-content {
+      background: linear-gradient(135deg, #0a0a0f 0%, #1a1a2e 100%);
+      border: 1px solid var(--accent-cyan);
+      border-radius: 16px;
+      padding: 32px;
+      max-width: 600px;
+      width: 100%;
+      max-height: 80vh;
+      overflow-y: auto;
+      position: relative;
+    }
+    .feature-modal-content h3 {
+      font-size: 1.5rem;
+      margin-bottom: 20px;
+      background: linear-gradient(135deg, var(--accent-cyan), var(--accent-purple));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .feature-modal-content ul {
+      margin: 16px 0;
+      padding-left: 20px;
+    }
+    .feature-modal-content li {
+      margin: 8px 0;
+      color: var(--text-secondary);
+    }
+    .feature-modal-content strong { color: var(--text-primary); }
+    .modal-close {
+      position: absolute;
+      top: 16px;
+      right: 16px;
+      background: none;
+      border: none;
+      color: var(--text-secondary);
+      font-size: 1.5rem;
+      cursor: pointer;
+      transition: color 0.3s;
+    }
+    .modal-close:hover { color: var(--accent-cyan); }
+
+    /* Dramatic Scroll Animations - Sharp & Legible */
+    .scroll-reveal {
+      opacity: 0;
+      transform: translateY(200px) rotateX(25deg);
+      transform-origin: center bottom;
+      transition: opacity 0.8s cubic-bezier(0.34, 1.56, 0.64, 1), transform 1s cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+    .scroll-reveal.revealed {
+      opacity: 1;
+      transform: translateY(0) rotateX(0);
+    }
+    .scroll-reveal-left {
+      opacity: 0;
+      transform: translateX(-300px) rotate(-15deg) scale(0.8);
+      transform-origin: left center;
+      transition: opacity 0.7s cubic-bezier(0.34, 1.56, 0.64, 1), transform 0.9s cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+    .scroll-reveal-left.revealed {
+      opacity: 1;
+      transform: translateX(0) rotate(0) scale(1);
+    }
+    .scroll-reveal-right {
+      opacity: 0;
+      transform: translateX(300px) rotate(15deg) scale(0.8);
+      transform-origin: right center;
+      transition: opacity 0.7s cubic-bezier(0.34, 1.56, 0.64, 1), transform 0.9s cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+    .scroll-reveal-right.revealed {
+      opacity: 1;
+      transform: translateX(0) rotate(0) scale(1);
+    }
+    .scroll-reveal-scale {
+      opacity: 0;
+      transform: scale(0.3) rotateY(45deg);
+      transform-origin: center center;
+      transition: opacity 0.8s cubic-bezier(0.34, 1.56, 0.64, 1), transform 1.1s cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+    .scroll-reveal-scale.revealed {
+      opacity: 1;
+      transform: scale(1) rotateY(0);
+    }
+    .scroll-reveal-flip {
+      opacity: 0;
+      transform: perspective(1000px) rotateY(-90deg);
+      transform-origin: left center;
+      transition: opacity 0.6s ease-out, transform 1s cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+    .scroll-reveal-flip.revealed {
+      opacity: 1;
+      transform: perspective(1000px) rotateY(0);
+    }
+    .scroll-reveal-drop {
+      opacity: 0;
+      transform: translateY(-150px) rotate(10deg);
+      transition: opacity 0.5s ease-out, transform 0.8s cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+    .scroll-reveal-drop.revealed {
+      opacity: 1;
+      transform: translateY(0) rotate(0);
+    }
+    .scroll-reveal-zoom {
+      opacity: 0;
+      transform: scale(2.5) translateY(-50px);
+      transition: opacity 0.6s ease-out, transform 0.9s cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+    .scroll-reveal-zoom.revealed {
+      opacity: 1;
+      transform: scale(1) translateY(0);
+    }
+    .delay-1 { transition-delay: 0.1s; }
+    .delay-2 { transition-delay: 0.2s; }
+    .delay-3 { transition-delay: 0.3s; }
+    .delay-4 { transition-delay: 0.4s; }
+    .delay-5 { transition-delay: 0.5s; }
+    .delay-6 { transition-delay: 0.6s; }
 
     /* CTA */
     .cta-section { padding: 100px 24px; text-align: center; }
@@ -347,37 +554,34 @@
     .nav-logo {
       display: flex;
       align-items: center;
-      gap: 2px;
+      gap: 0;
       font-weight: 700;
+      text-decoration: none;
     }
-    .nav-logo .lux { 
-      color: var(--text-primary);
-      font-size: 1.8rem;
-      font-weight: 800;
-      letter-spacing: -0.03em;
+    .nav-logo .lux-img { 
+      height: 38px;
+      width: auto;
+      mix-blend-mode: screen;
     }
     .nav-logo .it-stack {
       display: flex;
       flex-direction: column;
       align-items: flex-start;
+      justify-content: center;
       margin-left: 2px;
+      height: 38px;
     }
     .nav-logo .it { 
-      background: linear-gradient(135deg, var(--accent-cyan), var(--accent-purple));
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      background-clip: text;
-      font-size: 1rem;
-      font-weight: 700;
+      color: var(--accent-cyan);
+      font-size: 1.2rem;
+      font-weight: 800;
       line-height: 1;
     }
     .nav-logo .app {
       color: var(--accent-cyan);
-      font-size: 0.5rem;
+      font-size: 0.85rem;
       font-weight: 600;
-      letter-spacing: 0.05em;
       line-height: 1;
-      opacity: 0.8;
     }
     .nav-links {
       display: flex;
@@ -404,12 +608,13 @@
       transition: width 0.3s;
     }
     .nav-links a:hover::after { width: 100%; }
-    .btn-get-started {
-      background: var(--accent-cyan);
-      color: #000;
+    a.btn-get-started, .btn-get-started {
+      background: linear-gradient(135deg, var(--accent-cyan), var(--accent-purple), var(--accent-pink));
+      background-size: 200% 200%;
+      color: #000 !important;
       padding: 12px 28px;
       border-radius: 8px;
-      font-weight: 700;
+      font-weight: 800;
       font-size: 0.9rem;
       text-decoration: none;
       transition: all 0.3s;
@@ -417,6 +622,10 @@
         0 0 20px rgba(0, 229, 255, 0.4),
         0 0 40px rgba(0, 229, 255, 0.2);
       letter-spacing: -0.01em;
+      animation: gradientShift 4s ease infinite;
+      -webkit-text-fill-color: #000 !important;
+      background-clip: border-box !important;
+      -webkit-background-clip: border-box !important;
     }
     .btn-get-started:hover {
       transform: translateY(-2px);
@@ -663,6 +872,14 @@
     <div class="mesh-grid"></div>
     <div class="orb orb-1"></div>
     <div class="orb orb-2"></div>
+    <div class="orb orb-3"></div>
+    <div class="orb orb-4"></div>
+    <div class="orb orb-5"></div>
+    <div class="orb orb-6"></div>
+    <div class="orb orb-7"></div>
+    <div class="orb orb-8"></div>
+    <div class="orb orb-9"></div>
+    <div class="orb orb-10"></div>
     <div class="particles" id="particles"></div>
   </div>
 
@@ -670,14 +887,9 @@
     <nav class="nav">
 
       <a href="/" class="nav-logo">
-        <img src="{{ url_for('static', filename='images/lux-logo.png') }}" alt="LUX">
-
-        <div class="it-stack">
-          <span class="it">IT</span>
-          <span class="app">.app</span>
-        </div>
-
-      </div>
+        <img src="/static/images/lux-chrome.png" alt="LUX" class="lux-img">
+        <span class="it-stack"><span class="it">IT</span><span class="app">.app</span></span>
+      </a>
 
       <div class="nav-links">
         <a href="#features">Features</a>
@@ -777,85 +989,28 @@
         card.addEventListener('click', ()=> card.classList.toggle('expanded'));
       });
 
-    // Create floating particles
-    document.addEventListener('DOMContentLoaded', function() {
-      const particlesContainer = document.getElementById('particles');
-      const colors = ['#00e5ff', '#a855f7', '#ec4899', '#3b82f6'];
-      
-      function createParticle() {
-        const particle = document.createElement('div');
-        particle.className = 'particle';
-        const size = Math.random() * 4 + 2;
-        const color = colors[Math.floor(Math.random() * colors.length)];
-        const duration = Math.random() * 15 + 10;
-        const left = Math.random() * 100;
-        
-        particle.style.cssText = `
-          width: ${size}px;
-          height: ${size}px;
-          left: ${left}%;
-          background: ${color};
-          box-shadow: 0 0 ${size * 2}px ${color};
-          animation-duration: ${duration}s;
-          animation-delay: ${Math.random() * 5}s;
-        `;
-        
-        particlesContainer.appendChild(particle);
-        
-        setTimeout(() => particle.remove(), (duration + 5) * 1000);
-      }
-      
-      // Create initial particles
-      for (let i = 0; i < 30; i++) {
-        setTimeout(createParticle, i * 200);
-      }
-      
-      // Continuously create particles
-      setInterval(createParticle, 500);
+      // Dramatic scroll reveal animations - smooth re-triggers
+      const revealObserver = new IntersectionObserver((entries) => {
+        entries.forEach(entry => {
+          if (entry.isIntersecting) {
+            entry.target.classList.add('revealed');
+          }
+        });
+      }, { threshold: 0.1, rootMargin: '0px 0px -50px 0px' });
 
-      // Typewriter effect
-      const typewriter = document.getElementById('typewriter');
-      if (!typewriter) return;
-      
-      const phrases = [
-        'Revenue Operations',
-        'Marketing Operations',
-        'Sales Operations',
-        'Revenue Intelligence',
-        'AI Automation & Insights'
-      ];
-      
-      let phraseIndex = 0;
-      let charIndex = 0;
-      let isDeleting = false;
-      let typingSpeed = 80;
-      
-      function type() {
-        const currentPhrase = phrases[phraseIndex];
-        
-        if (isDeleting) {
-          typewriter.textContent = currentPhrase.substring(0, charIndex - 1);
-          charIndex--;
-          typingSpeed = 40;
-        } else {
-          typewriter.textContent = currentPhrase.substring(0, charIndex + 1);
-          charIndex++;
-          typingSpeed = 80;
-        }
-        
-        if (!isDeleting && charIndex === currentPhrase.length) {
-          isDeleting = true;
-          typingSpeed = 2000;
-        } else if (isDeleting && charIndex === 0) {
-          isDeleting = false;
-          phraseIndex = (phraseIndex + 1) % phrases.length;
-          typingSpeed = 500;
-        }
-        
-        setTimeout(type, typingSpeed);
-      }
-      
-      type();
+      // Separate observer for hiding - only hide when completely out of view
+      const hideObserver = new IntersectionObserver((entries) => {
+        entries.forEach(entry => {
+          if (!entry.isIntersecting) {
+            entry.target.classList.remove('revealed');
+          }
+        });
+      }, { threshold: 0, rootMargin: '200px 0px 200px 0px' });
+
+      document.querySelectorAll('.scroll-reveal, .scroll-reveal-left, .scroll-reveal-right, .scroll-reveal-scale, .scroll-reveal-flip, .scroll-reveal-drop, .scroll-reveal-zoom').forEach(el => {
+        revealObserver.observe(el);
+        hideObserver.observe(el);
+      });
 
     });
   </script>

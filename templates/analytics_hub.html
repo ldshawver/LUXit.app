@@ -1,10 +1,7 @@
-{% extends "base_simple.html" %}
+{% extends "base.html" %}
 
-{% block title %}Analytics Hub - LUX Marketing{% endblock %}
-
-{% block page_header %}
-<span style="color: #c0c0c0;">Analytics Hub</span>
-{% endblock %}
+{% block title %}Analytics - LUX IT{% endblock %}
+{% block page_title %}Analytics{% endblock %}
 
 {% block content %}
 <style>
@@ -116,34 +113,55 @@
     </div>
   </div>
 
-  <!-- Date Filter & Export Controls -->
+  <!-- Date Filter & Comparison Controls -->
   <div class="row mb-4">
-    <div class="col-lg-8">
-      <div class="card bg-dark" style="border: 1px solid #bc00ed;">
+    <div class="col-lg-9">
+      <div class="card" style="background: rgba(10,10,15,0.9); border: 1px solid rgba(188,0,237,0.3); border-radius: 12px;">
         <div class="card-body">
           <div class="row align-items-end g-3">
-            <div class="col-md-3">
-              <label style="color: #00ffb4; font-size: 0.9rem;">Time Period</label>
-              <select id="periodSelector" class="form-select bg-dark text-light" style="border: 1px solid #bc00ed;" onchange="updateAnalytics()">
+            <div class="col-md-2">
+              <label style="color: #00ffb4; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.5px;">Period</label>
+              <select id="periodSelector" class="form-select" style="background: rgba(0,0,0,0.5); border: 1px solid rgba(0,255,180,0.3); color: #fff; border-radius: 8px;" onchange="updateAnalytics()">
                 <option value="7">This Week</option>
                 <option value="30" selected>This Month</option>
                 <option value="90">This Quarter</option>
                 <option value="365">This Year</option>
-                <option value="custom">Custom Range</option>
+                <option value="custom">Custom</option>
               </select>
             </div>
-            <div class="col-md-3">
-              <label style="color: #00ffb4; font-size: 0.9rem;">Start Date</label>
-              <input type="date" id="startDate" class="form-control bg-dark text-light" style="border: 1px solid #bc00ed;">
+            <div class="col-md-2">
+              <label style="color: #00ffb4; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.5px;">From</label>
+              <input type="date" id="startDate" class="form-control" style="background: rgba(0,0,0,0.5); border: 1px solid rgba(0,255,180,0.3); color: #fff; border-radius: 8px;">
+            </div>
+            <div class="col-md-2">
+              <label style="color: #00ffb4; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.5px;">To</label>
+              <input type="date" id="endDate" class="form-control" style="background: rgba(0,0,0,0.5); border: 1px solid rgba(0,255,180,0.3); color: #fff; border-radius: 8px;">
             </div>
             <div class="col-md-3">
-              <label style="color: #00ffb4; font-size: 0.9rem;">End Date</label>
-              <input type="date" id="endDate" class="form-control bg-dark text-light" style="border: 1px solid #bc00ed;">
+              <label style="color: #bc00ed; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.5px;">Compare To</label>
+              <select id="compareSelector" class="form-select" style="background: rgba(188,0,237,0.15); border: 1px solid rgba(188,0,237,0.4); color: #fff; border-radius: 8px;">
+                <option value="previous">Previous Period</option>
+                <option value="lastyear">Same Period Last Year</option>
+                <option value="none">No Comparison</option>
+              </select>
             </div>
-            <div class="col-md-3">
-              <button class="btn w-100" style="background: linear-gradient(135deg, #bc00ed, #00ffb4); color: #fff;" onclick="refreshAnalytics()">
-                <i data-feather="refresh-cw"></i> Refresh
+            <div class="col-md-2">
+              <button class="btn w-100" style="background: linear-gradient(135deg, #bc00ed, #00ffb4); color: #000; font-weight: 600; border-radius: 8px;" onclick="refreshAnalytics()">
+                <i data-feather="refresh-cw" style="width:14px;height:14px;"></i> Apply
               </button>
+            </div>
+          </div>
+          <div class="mt-3 pt-3" style="border-top: 1px solid rgba(255,255,255,0.1);">
+            <div class="d-flex align-items-center gap-4">
+              <div class="form-check form-switch">
+                <input class="form-check-input" type="checkbox" id="showComparison" checked style="background-color: #bc00ed; border-color: #bc00ed;">
+                <label class="form-check-label" for="showComparison" style="color: #a1a7b8; font-size: 0.85rem;">Show period comparison</label>
+              </div>
+              <div class="form-check form-switch">
+                <input class="form-check-input" type="checkbox" id="utmOnly" style="background-color: #00ffb4; border-color: #00ffb4;">
+                <label class="form-check-label" for="utmOnly" style="color: #a1a7b8; font-size: 0.85rem;">UTM-tracked only</label>
+              </div>
+              <small style="color: #666;">Data refreshes every 15 minutes</small>
             </div>
           </div>
         </div>

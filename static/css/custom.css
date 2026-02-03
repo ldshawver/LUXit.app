@@ -79,7 +79,172 @@ a:hover {
 .brand {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
+}
+
+.brand-link {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  text-decoration: none;
+  position: relative;
+}
+
+.back-arrow-glow {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  margin-right: 8px;
+  cursor: pointer;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.15);
+  transition: transform 0.2s ease;
+}
+
+.back-arrow-glow svg {
+  width: 16px;
+  height: 16px;
+  stroke: var(--lux-muted);
+  transition: stroke 0.2s ease;
+}
+
+.back-arrow-glow:hover {
+  transform: scale(1.1);
+}
+
+.back-arrow-glow:hover svg {
+  stroke: var(--lux-cyan);
+}
+
+.brand-logo {
+  display: flex;
+  align-items: center;
+  text-decoration: none;
+}
+
+.brand-lux {
+  font-size: 1.8rem;
+  font-weight: 900;
+  font-style: italic;
+  letter-spacing: 0.02em;
+  line-height: 1;
+  background: linear-gradient(
+    180deg,
+    #00e5ff 0%,
+    #0099aa 25%,
+    #2d3748 45%,
+    #1a1a2e 50%,
+    #2d3748 55%,
+    #a855f7 75%,
+    #c084fc 100%
+  );
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.brand-stack {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  line-height: 1;
+  margin-left: 2px;
+}
+
+.brand-it {
+  font-size: 0.9rem;
+  font-weight: 800;
+  font-style: italic;
+  color: #00e5ff;
+  letter-spacing: 0.01em;
+  line-height: 1;
+}
+
+.brand-app {
+  font-size: 0.6rem;
+  font-weight: 600;
+  color: #00e5ff;
+  letter-spacing: 0.02em;
+  line-height: 1.1;
+}
+
+.user-greeting {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  margin-right: 12px;
+}
+
+.greeting-text {
+  font-size: 0.85rem;
+  color: var(--lux-text);
+}
+
+.working-on {
+  font-size: 0.75rem;
+  color: var(--lux-muted);
+}
+
+.working-on strong {
+  color: var(--lux-magenta);
+}
+
+.company-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid rgba(188, 0, 237, 0.4);
+}
+
+.company-icon img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.company-initial {
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(135deg, #bc00ed, #00ffb4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 14px;
+  color: #fff;
+}
+
+.gear-btn {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  padding: 8px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+}
+
+.gear-btn svg {
+  width: 18px;
+  height: 18px;
+  stroke: var(--lux-muted);
+  transition: all 0.3s ease;
+}
+
+.gear-btn:hover {
+  border-color: rgba(71, 245, 255, 0.3);
+}
+
+.gear-btn:hover svg {
+  stroke: var(--lux-cyan);
+  transform: rotate(90deg);
 }
 
 .brand img {

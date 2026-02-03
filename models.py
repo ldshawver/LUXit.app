@@ -310,13 +310,16 @@ class Company(db.Model):
     name = db.Column(db.String(255))
     is_active = db.Column(db.Boolean, default=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
     logo_path = db.Column(db.String(255))
+    icon_path = db.Column(db.String(255))
     website_url = db.Column(db.String(255))
     primary_color = db.Column(db.String(20), default='#bc00ed')
     secondary_color = db.Column(db.String(20), default='#00ffb4')
     accent_color = db.Column(db.String(20), default='#e4055c')
     font_family = db.Column(db.String(100), default='Inter, sans-serif')
+    apply_brand_colors = db.Column(db.Boolean, default=False)
     industry = db.Column(db.String(100))
     description = db.Column(Text)
 

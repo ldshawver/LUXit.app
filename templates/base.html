@@ -4,68 +4,71 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="csrf-token" content="{{ csrf_token() }}">
-    <title>{% block title %}LUX Marketing{% endblock %}</title>
+    <title>{% block title %}LUX IT{% endblock %}</title>
 
     <link rel="icon" type="image/png" href="{{ url_for('static', filename='favicon.png') }}">
     <link href="https://cdn.replit.com/agent/bootstrap-agent-dark-theme.min.css" rel="stylesheet">
     <script src="https://unpkg.com/feather-icons"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/custom.css') }}">
+    {% if current_company and current_company.apply_brand_colors %}
+    <style>
+      :root {
+        --lux-purple: {{ current_company.primary_color or '#bc00ed' }} !important;
+        --lux-cyan: {{ current_company.secondary_color or '#00ffb4' }} !important;
+        --lux-pink: {{ current_company.accent_color or '#e4055c' }} !important;
+      }
+      .btn-lux-primary {
+        background: linear-gradient(135deg, {{ current_company.primary_color or '#bc00ed' }}, {{ current_company.secondary_color or '#00ffb4' }}) !important;
+      }
+      .app-header {
+        border-bottom-color: {{ current_company.primary_color or '#bc00ed' }} !important;
+      }
+      .tile-icon {
+        background: linear-gradient(135deg, {{ current_company.primary_color or '#bc00ed' }}, {{ current_company.secondary_color or '#00ffb4' }}) !important;
+      }
+    </style>
+    {% endif %}
 </head>
 <body>
     <div class="app-shell">
         <header class="app-header">
             <div class="app-header-inner">
                 <div class="brand">
-                    <a href="{{ url_for('main.dashboard') }}" aria-label="LUX Marketing dashboard">
-                        <img src="{{ url_for('static', filename='lux_logo.png') }}" alt="LUX Marketing">
+                    <span class="back-arrow-glow" onclick="history.back();" title="Go back"><i data-feather="chevron-left"></i></span>
+                    <a href="{{ url_for('main.dashboard') }}" aria-label="Dashboard" class="brand-link">
+                        <span class="brand-logo">
+                            <span class="brand-lux">LUX</span><span class="brand-stack"><span class="brand-it">IT</span><span class="brand-app">.app</span></span>
+                        </span>
                     </a>
-                    <span>LUX Marketing</span>
                 </div>
 
                 <div class="header-title">
-                    <h1>
-                        {% block page_header %}
-                        {% if current_user.is_authenticated %}
-                            {% set header_company = current_company %}
-                            {% set user_name = (current_user.first_name or current_user.username) %}
-                            Welcome back, {{ user_name[0]|upper }}{{ user_name[1:] }}
-                        {% else %}
-                            Welcome to LUX Marketing
-                        {% endif %}
-                        {% endblock %}
-                    </h1>
-                    <p>
-                        {% if current_user.is_authenticated %}
-                            {% if header_company %}{{ header_company.name }} workspace{% else %}Your workspace{% endif %}
-                        {% else %}
-                            AI-powered growth command center
-                        {% endif %}
-                    </p>
+                    <h1>{% block page_title %}{% endblock %}</h1>
                 </div>
 
                 {% if current_user.is_authenticated %}
                 <div class="header-actions">
-                    <span class="glass-pill">{{ current_user.email }}</span>
-                    
-                    <!-- Company Logo/Icon -->
-                    {% if current_company %}
-                    <div class="company-badge" style="display: flex; align-items: center; gap: 8px; background: rgba(188,0,237,0.15); padding: 6px 12px; border-radius: 8px; border: 1px solid rgba(188,0,237,0.3);">
-                        {% if current_company.logo_path %}
-                        <img src="{{ url_for('static', filename=current_company.logo_path) }}" alt="{{ current_company.name }}" class="rounded" style="height: 28px; width: 28px; object-fit: cover;">
-                        {% else %}
-                        <div style="height: 28px; width: 28px; background: linear-gradient(135deg, #bc00ed, #00ffb4); border-radius: 6px; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 12px; color: #fff;">
-                            {{ current_company.name[0]|upper }}
-                        </div>
+                    <div class="user-greeting">
+                        <span class="greeting-text">Hello, <strong>{{ current_user.first_name or current_user.username }}</strong></span>
+                        {% if current_company %}
+                        <span class="working-on">working on <strong>{{ current_company.name }}</strong></span>
                         {% endif %}
-                        <span style="font-size: 13px; font-weight: 600; color: #bc00ed;">{{ current_company.name }}</span>
+                    </div>
+                    
+                    {% if current_company %}
+                    <div class="company-icon">
+                        {% if current_company.logo_path %}
+                        <img src="{{ url_for('static', filename=current_company.logo_path) }}" alt="{{ current_company.name }}">
+                        {% else %}
+                        <div class="company-initial">{{ current_company.name[0]|upper }}</div>
+                        {% endif %}
                     </div>
                     {% endif %}
                     
-                    <!-- Settings Gear Dropdown -->
                     <div class="dropdown">
-                        <button class="btn btn-link p-0" type="button" id="settingsDropdown" data-bs-toggle="dropdown" aria-expanded="false" style="background: rgba(0,255,180,0.1); border: 1px solid rgba(0,255,180,0.3); border-radius: 8px; padding: 8px; display: flex; align-items: center; justify-content: center;">
-                            <i data-feather="settings" style="width: 20px; height: 20px; color: #00ffb4;"></i>
+                        <button class="gear-btn" type="button" id="settingsDropdown" data-bs-toggle="dropdown" aria-expanded="false">
+                            <i data-feather="settings"></i>
                         </button>
                         <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="settingsDropdown" style="min-width: 280px;">
                             <li><h6 class="dropdown-header">Account</h6></li>
@@ -75,6 +78,9 @@
                             <li><hr class="dropdown-divider"></li>
                             <li><h6 class="dropdown-header">Company Settings</h6></li>
                             <li><a class="dropdown-item" href="{{ url_for('main.settings_integrations') }}"><i data-feather="sliders"></i> Connections & API Keys</a></li>
+                            {% if current_company %}
+                            <li><a class="dropdown-item" href="{{ url_for('main.edit_company', company_id=current_company.id) }}"><i data-feather="palette"></i> Brand Kit & Colors</a></li>
+                            {% endif %}
                             <li><a class="dropdown-item" href="{{ url_for('main.companies_list') }}"><i data-feather="briefcase"></i> Manage Companies</a></li>
                             <li><hr class="dropdown-divider"></li>
                             <li><h6 class="dropdown-header">Switch Company</h6></li>
