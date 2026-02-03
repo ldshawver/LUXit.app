@@ -90,29 +90,23 @@ a:hover {
 }
 
 .back-arrow-glow {
-  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
   margin-right: 8px;
   cursor: pointer;
-  border-radius: 50%;
-  background: rgba(255,255,255,0.05);
-  border: 1px solid rgba(255,255,255,0.15);
   transition: transform 0.2s ease;
 }
 
 .back-arrow-glow svg {
-  width: 16px;
-  height: 16px;
+  width: 20px;
+  height: 20px;
   stroke: var(--lux-muted);
-  transition: stroke 0.2s ease;
+  transition: stroke 0.2s ease, transform 0.2s ease;
 }
 
 .back-arrow-glow:hover {
-  transform: scale(1.1);
+  transform: translateX(-2px);
 }
 
 .back-arrow-glow:hover svg {
@@ -154,6 +148,13 @@ a:hover {
   margin-left: 2px;
 }
 
+.brand-lux-img {
+  height: 28px;
+  width: auto;
+  mix-blend-mode: screen;
+  vertical-align: middle;
+}
+
 .brand-it {
   font-size: 0.9rem;
   font-weight: 800;
@@ -166,7 +167,7 @@ a:hover {
 .brand-app {
   font-size: 0.6rem;
   font-weight: 600;
-  color: #00e5ff;
+  color: #a855f7;
   letter-spacing: 0.02em;
   line-height: 1.1;
 }

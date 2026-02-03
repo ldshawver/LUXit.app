@@ -6,31 +6,33 @@
 {% block content %}
 <style>
   .analytics-card {
-    background: linear-gradient(135deg, #480749 0%, #004845 100%);
-    border: 1px solid;
-    border-image: linear-gradient(135deg, #bc00ed, #00ffb4) 1;
+    background: rgba(12, 14, 20, 0.85);
+    border: 1px solid rgba(0, 229, 255, 0.2);
+    border-radius: 12px;
     transition: all 0.3s ease;
   }
 
   .analytics-card:hover {
-    transform: translateY(-5px);
-    box-shadow: 0 10px 20px rgba(0, 255, 180, 0.2);
+    transform: translateY(-3px);
+    border-color: rgba(0, 229, 255, 0.4);
+    box-shadow: 0 8px 24px rgba(0, 229, 255, 0.15);
   }
 
   .metric-value {
     font-size: 2.5rem;
     font-weight: 700;
-    background: linear-gradient(135deg, #bc00ed, #00ffb4);
+    background: linear-gradient(135deg, #00e5ff, #a855f7);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
   }
 
   .metric-label {
-    color: #00ffb4;
-    font-size: 0.9rem;
+    color: #00e5ff;
+    font-size: 0.85rem;
     text-transform: uppercase;
     letter-spacing: 1px;
+    opacity: 0.9;
   }
 
   .chart-container {
@@ -40,8 +42,9 @@
   }
   
   .metric-box {
-    background: rgba(0, 0, 0, 0.5);
-    border-radius: 8px;
+    background: rgba(12, 14, 20, 0.9);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 12px;
     padding: 1.5rem;
     text-align: center;
     transition: all 0.3s ease;
@@ -49,54 +52,72 @@
   
   .metric-box:hover {
     transform: translateY(-3px);
-    box-shadow: 0 5px 15px rgba(188, 0, 237, 0.3);
+    box-shadow: 0 8px 24px rgba(0, 229, 255, 0.15);
   }
   
-  .metric-box.cyan { border: 1px solid #00ffb4; }
-  .metric-box.purple { border: 1px solid #bc00ed; }
-  .metric-box.pink { border: 1px solid #e4055c; }
-  .metric-box.blue { border: 1px solid #0044ff; }
+  .metric-box.cyan { border-color: rgba(0, 229, 255, 0.4); }
+  .metric-box.purple { border-color: rgba(168, 85, 247, 0.4); }
+  .metric-box.pink { border-color: rgba(236, 72, 153, 0.4); }
+  .metric-box.blue { border-color: rgba(59, 130, 246, 0.4); }
   
   .metric-box h3 { color: #fff; margin: 0.5rem 0; font-size: 1.8rem; }
-  .metric-box h6 { margin-bottom: 0.5rem; }
-  .metric-box small { opacity: 0.7; }
+  .metric-box h6 { margin-bottom: 0.5rem; color: rgba(255,255,255,0.7); }
+  .metric-box small { opacity: 0.6; }
+  
+  .nav-tabs {
+    border-bottom: 1px solid rgba(255,255,255,0.1);
+  }
   
   .nav-tabs .nav-link {
-    color: #888;
+    color: rgba(255,255,255,0.6);
     border: none;
     padding: 0.75rem 1.25rem;
     transition: all 0.3s ease;
+    border-radius: 8px 8px 0 0;
   }
   
   .nav-tabs .nav-link:hover {
-    color: #00ffb4;
-    border-color: transparent;
+    color: #00e5ff;
+    background: rgba(0, 229, 255, 0.05);
   }
   
   .nav-tabs .nav-link.active {
-    background: linear-gradient(135deg, #480749, #004845);
-    color: #00ffb4;
-    border: 1px solid #00ffb4;
+    background: rgba(0, 229, 255, 0.1);
+    color: #00e5ff;
+    border: 1px solid rgba(0, 229, 255, 0.3);
     border-bottom: none;
   }
   
   .section-card {
-    background: #111;
-    border: 1px solid #333;
+    background: rgba(12, 14, 20, 0.9);
+    border: 1px solid rgba(255, 255, 255, 0.08);
     border-radius: 12px;
     margin-bottom: 1.5rem;
   }
   
   .section-header {
     padding: 1rem 1.5rem;
-    border-bottom: 1px solid #333;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
     display: flex;
     align-items: center;
     gap: 0.75rem;
   }
   
+  .section-header h5 {
+    color: #fff;
+    margin: 0;
+  }
+  
   .trend-up { color: #4ade80; }
   .trend-down { color: #ef4444; }
+  
+  .tab-content {
+    background: rgba(12, 14, 20, 0.5);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-top: none;
+    border-radius: 0 0 12px 12px;
+    padding: 1.5rem;
+  }
   
   .progress-bar-custom {
     height: 8px;
