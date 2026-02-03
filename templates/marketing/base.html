@@ -3,8 +3,63 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>{% block title %}LUX IT{% endblock %}</title>
+  <title>{% block title %}LUX IT - AI-Powered Revenue Operations Platform{% endblock %}</title>
+  <meta name="description" content="{% block meta_description %}LUX IT is the licensable revenue operating system that unifies 11 AI agents, CRM, and automated outreach into one compliant command center. Scale your marketing with AI.{% endblock %}">
+  <meta name="keywords" content="{% block meta_keywords %}revenue operations, AI marketing, CRM, marketing automation, AI agents, sales automation, lead generation, campaign management, marketing platform{% endblock %}">
+  <meta name="author" content="LUX IT">
+  <meta name="robots" content="index, follow">
+  <meta name="theme-color" content="#050508">
+  
+  <!-- Canonical URL -->
+  <link rel="canonical" href="{% block canonical %}{{ request.url }}{% endblock %}">
+  
+  <!-- Open Graph / Facebook -->
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="{{ request.url }}">
+  <meta property="og:title" content="{% block og_title %}LUX IT - AI-Powered Revenue Operations Platform{% endblock %}">
+  <meta property="og:description" content="{% block og_description %}The licensable revenue operating system that unifies 11 AI agents, CRM, and automated outreach into one compliant command center.{% endblock %}">
+  <meta property="og:image" content="{{ url_for('static', filename='images/og-image.png', _external=True) }}">
+  <meta property="og:site_name" content="LUX IT">
+  <meta property="og:locale" content="en_US">
+  
+  <!-- Twitter Card -->
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:url" content="{{ request.url }}">
+  <meta name="twitter:title" content="{% block twitter_title %}LUX IT - AI-Powered Revenue Operations Platform{% endblock %}">
+  <meta name="twitter:description" content="{% block twitter_description %}The licensable revenue operating system that unifies 11 AI agents, CRM, and automated outreach into one compliant command center.{% endblock %}">
+  <meta name="twitter:image" content="{{ url_for('static', filename='images/og-image.png', _external=True) }}">
+  
+  <!-- Structured Data - Organization -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "LUX IT",
+    "applicationCategory": "BusinessApplication",
+    "operatingSystem": "Web",
+    "description": "AI-powered revenue operations platform with 11 AI agents, CRM, and marketing automation",
+    "offers": {
+      "@type": "AggregateOffer",
+      "lowPrice": "199",
+      "highPrice": "499",
+      "priceCurrency": "USD",
+      "offerCount": "3"
+    },
+    "aggregateRating": {
+      "@type": "AggregateRating",
+      "ratingValue": "4.9",
+      "ratingCount": "150"
+    }
+  }
+  </script>
+  
+  <!-- Favicon -->
   <link rel="icon" type="image/png" href="{{ url_for('static', filename='favicon.png') }}">
+  <link rel="apple-touch-icon" href="{{ url_for('static', filename='favicon.png') }}">
+  
+  <!-- Preconnect for performance -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
   <style>
     :root {

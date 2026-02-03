@@ -1,7 +1,8 @@
 """Marketing site routes."""
 import logging
+from datetime import datetime
 
-from flask import Blueprint, redirect, render_template, url_for
+from flask import Blueprint, redirect, render_template, url_for, make_response, request
 
 logger = logging.getLogger(__name__)
 
