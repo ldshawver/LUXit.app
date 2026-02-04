@@ -56,6 +56,19 @@ def create_app(testing: bool = False):
     # --------------------------------------------------
     db.init_app(app)
     csrf.init_app(app)
+  
+    # --------------------------------------------------
+    # Authentication (Flask-Login)
+    # --------------------------------------------------
+    login_manager = LoginManager()
+    login_manager.login_view = "auth.login"
+    login_manager.login_message_category = "warning"
+    login_manager.init_app(app)
+
+    @login_manager.user_loader
+    def load_user(user_id):
+        from models import User
+        return User.query.get(int(user_id))
 
     # --------------------------------------------------
     # Request lifecycle hooks
