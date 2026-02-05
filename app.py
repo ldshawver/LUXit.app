@@ -1,4 +1,4 @@
-""Application entry point."""
+"""Application entry point."""
 import os
 from uuid import uuid4
 
