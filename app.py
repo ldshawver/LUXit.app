@@ -27,24 +27,28 @@ def create_app(testing: bool = False):
         SECRET_KEY=app.secret_key,
         SESSION_COOKIE_SECURE=True,      # HTTPS only
         SESSION_COOKIE_HTTPONLY=True,
-        SESSION_COOKIE_SAMESITE="Lax",   # REQUIRED for login CSRF
+        SESSION_COOKIE_SAMESITE="Lax",
         WTF_CSRF_TIME_LIMIT=3600,
     )
-    canonical_host = os.environ.get("CANONICAL_HOST")
-    if canonical_host:
-        app.config["SERVER_NAME"] = canonical_host
 
-    # 🚫 DO NOT set SERVER_NAME (breaks cookies behind Nginx)
-    # app.config["SERVER_NAME"] = ...
+    # IMPORTANT: Do NOT set SERVER_NAME behind Nginx unless you know exactly why you need it.
+    # Setting it incorrectly can break cookies/session routing.
+    # canonical_host = os.environ.get("CANONICAL_HOST")
+    # if canonical_host:
+    #     app.config["SERVER_NAME"] = canonical_host
 
     # --------------------------------------------------
     # Database
     # --------------------------------------------------
+    # Prefer your existing env var name if you're using it in systemd:
+    # Environment="SQLALCHEMY_DATABASE_URI=sqlite:////root/lux-email-bot/email_marketing.db"
     app.config["SQLALCHEMY_DATABASE_URI"] = os.getenv(
-        "DATABASE_URL",
-        "sqlite:///email_marketing.db",
+        "SQLALCHEMY_DATABASE_URI",
+        os.getenv("DATABASE_URL", "sqlite:////root/lux-email-bot/email_marketing.db"),
     )
-   # --------------------------------------------------
+    app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+
+    # --------------------------------------------------
     # Proxy (Nginx → Flask)
     # --------------------------------------------------
     app.wsgi_app = ProxyFix(
@@ -52,6 +56,7 @@ def create_app(testing: bool = False):
         x_for=1,
         x_proto=1,
         x_host=1,
+        x_port=1,
     )
 
     # --------------------------------------------------
@@ -59,7 +64,7 @@ def create_app(testing: bool = False):
     # --------------------------------------------------
     db.init_app(app)
     csrf.init_app(app)
-  
+
     # --------------------------------------------------
     # Authentication (Flask-Login)
     # --------------------------------------------------
@@ -71,26 +76,23 @@ def create_app(testing: bool = False):
     @login_manager.user_loader
     def load_user(user_id):
         from models import User
-        return User.query.get(int(user_id))
+        try:
+            return db.session.get(User, int(user_id))
+        except Exception:
+            return None
 
     # --------------------------------------------------
     # Request lifecycle hooks
     # --------------------------------------------------
-
     @app.before_request
     def assign_request_id():
-        g.request_id = request.headers.get(
-            "X-Request-ID",
-            str(uuid4())
-        )
+        g.request_id = request.headers.get("X-Request-ID", str(uuid4()))
 
     @app.before_request
     def enforce_auth_boundary():
-        path = request.path
+        path = request.path or "/"
 
-        # ---------------------------
         # Public routes (NO AUTH)
-        # ---------------------------
         if (
             path == "/"
             or path.startswith("/features")
@@ -101,12 +103,12 @@ def create_app(testing: bool = False):
         ):
             return None
 
-        # ---------------------------
         # Locked app + API
-        # ---------------------------
         if path.startswith("/app") or path.startswith("/api"):
             if not current_user.is_authenticated:
                 return redirect(url_for("auth.login"))
+
+        return None
 
     @app.teardown_request
     def rollback_on_error(exc=None):
@@ -116,33 +118,34 @@ def create_app(testing: bool = False):
             except Exception:
                 pass
 
-
-    @app.template_filter('campaign_status_color')
+    @app.template_filter("campaign_status_color")
     def campaign_status_color(status):
         colors = {
-            'draft': 'secondary',
-            'active': 'success',
-            'sending': 'info',
-            'sent': 'primary',
-            'paused': 'warning',
-            'completed': 'success',
-            'failed': 'danger',
-            'cancelled': 'dark',
-            'scheduled': 'info',
+            "draft": "secondary",
+            "active": "success",
+            "sending": "info",
+            "sent": "primary",
+            "paused": "warning",
+            "completed": "success",
+            "failed": "danger",
+            "cancelled": "dark",
+            "scheduled": "info",
         }
-        return colors.get((status or '').lower(), 'secondary')
-
-    # ---- Blueprints ----
+        return colors.get((status or "").lower(), "secondary")
 
     # --------------------------------------------------
     # Blueprints
     # --------------------------------------------------
-    from routes import main_bp
+    # You DO have routes/marketing.py with marketing_bp (you showed it).
+    from routes.marketing import marketing_bp
     from auth import auth_bp
-    from marketing import marketing_bp
 
-    app.register_blueprint(main_bp)
-    app.register_blueprint(auth_bp)
     app.register_blueprint(marketing_bp)
+    app.register_blueprint(auth_bp)
+
+    # If you still want a separate public "main" blueprint, you must create routes/main.py
+    # and export main_bp from there, then import it like:
+    # from routes.main import main_bp
+    # app.register_blueprint(main_bp)
 
     return app
