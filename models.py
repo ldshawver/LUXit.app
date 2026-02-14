@@ -104,6 +104,7 @@ class User(UserMixin, db.Model):
     avatar_path = db.Column(db.String(255))
     tags = db.Column(db.String(255))
     segment = db.Column(db.String(100), default="user")
+    default_hub = db.Column(db.String(20), default="sales")  # 'sales' or 'marketing'
     custom_fields = db.Column(JSON)
     engagement_score = db.Column(db.Float, default=0.0)
     last_activity = db.Column(db.DateTime)
@@ -336,6 +337,9 @@ class Contact(db.Model):
     phone = db.Column(db.String(50))
     tags = db.Column(db.String(255))
     is_active = db.Column(db.Boolean, default=True)
+    is_subscribed = db.Column(db.Boolean, default=True)
+    source = db.Column(db.String(100))
+    segment = db.Column(db.String(100))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 
@@ -405,7 +409,17 @@ class ContactActivity(db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
     contact_id = db.Column(db.Integer, db.ForeignKey("contact.id"), nullable=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=True)
+    activity_type = db.Column(db.String(50))
+    touchpoint = db.Column(db.String(50))
+    source = db.Column(db.String(100))
+    title = db.Column(db.String(255))
+    description = db.Column(db.Text)
+    extra_data = db.Column(JSON)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    contact = db.relationship("Contact", backref="activities")
+    company = db.relationship("Company", backref="contact_activities")
 
 
 class AnalyticsData(db.Model):
@@ -449,6 +463,12 @@ class Automation(db.Model):
     __tablename__ = "automation"
 
     id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(255))
+    is_active = db.Column(db.Boolean, default=True)
+    status = db.Column(db.String(50), default='active')
+    trigger_type = db.Column(db.String(100))
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 
 class AutomationStep(db.Model):
@@ -484,8 +504,14 @@ class SocialPost(db.Model):
     __tablename__ = "social_post"
 
     id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True)
+    platform = db.Column(db.String(50))
+    content = db.Column(db.Text)
+    image_url = db.Column(db.String(500))
     status = db.Column(db.String(50))
     scheduled_at = db.Column(db.DateTime)
+    published_at = db.Column(db.DateTime)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 
@@ -557,13 +583,22 @@ class AutomationTemplate(db.Model):
     __tablename__ = "automation_template"
 
     id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(255))
+    description = db.Column(db.Text)
+    category = db.Column(db.String(100))
+    trigger_type = db.Column(db.String(100))
+    is_predefined = db.Column(db.Boolean, default=False)
+    template_data = db.Column(db.Text)
 
 
 class AutomationExecution(db.Model):
     __tablename__ = "automation_execution"
 
     id = db.Column(db.Integer, primary_key=True)
+    automation_id = db.Column(db.Integer, db.ForeignKey("automation.id"), nullable=True)
+    status = db.Column(db.String(50), default='pending')
     started_at = db.Column(db.DateTime)
+    completed_at = db.Column(db.DateTime)
 
 
 class AutomationAction(db.Model):
@@ -597,7 +632,31 @@ class SEOKeyword(db.Model):
     __tablename__ = "seo_keyword"
 
     id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=True, index=True)
+    keyword = db.Column(db.String(255), nullable=True, default="")
+    monthly_volume = db.Column(db.Integer, default=0)
+    difficulty = db.Column(db.Integer, default=0)
     current_position = db.Column(db.Integer)
+    is_tracking = db.Column(db.Boolean, default=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    company = db.relationship("Company", backref="seo_keywords")
+
+
+class KeywordRanking(db.Model):
+    __tablename__ = "keyword_ranking"
+    
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=True, index=True)
+    keyword_id = db.Column(db.Integer, db.ForeignKey("seo_keyword.id"), nullable=True)
+    position = db.Column(db.Integer)
+    url = db.Column(db.Text)
+    change = db.Column(db.Integer, default=0)
+    recorded_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    company = db.relationship("Company", backref="keyword_rankings")
+    keyword = db.relationship("SEOKeyword", backref="rankings")
 
 
 class SEOBacklink(db.Model):
@@ -617,13 +676,44 @@ class SEOAudit(db.Model):
     __tablename__ = "seo_audit"
 
     id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=True)
+    url = db.Column(db.String(500))
+    score = db.Column(db.Integer, default=0)
+    issues = db.Column(db.Text)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    company = db.relationship("Company", backref="seo_audits")
 
 
 class SEOPage(db.Model):
     __tablename__ = "seo_page"
 
     id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=True)
+    url = db.Column(db.String(500))
+    title = db.Column(db.String(255))
+    meta_description = db.Column(db.Text)
+    h1_count = db.Column(db.Integer, default=0)
+    word_count = db.Column(db.Integer, default=0)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    company = db.relationship("Company", backref="seo_pages")
+
+
+class CompetitorSnapshot(db.Model):
+    __tablename__ = "competitor_snapshot"
+    
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=True)
+    competitor_id = db.Column(db.Integer, db.ForeignKey("seo_competitor.id"), nullable=True)
+    domain_authority = db.Column(db.Integer, default=0)
+    organic_keywords = db.Column(db.Integer, default=0)
+    organic_traffic = db.Column(db.Integer, default=0)
+    backlinks = db.Column(db.Integer, default=0)
+    recorded_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    company = db.relationship("Company", backref="competitor_snapshots")
+    competitor = db.relationship("SEOCompetitor", backref="snapshots")
 
 
 class TicketPurchase(db.Model):
@@ -642,6 +732,19 @@ class SocialMediaAccount(db.Model):
     __tablename__ = "social_media_account"
 
     id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=True, index=True)
+    platform = db.Column(db.String(50), nullable=True, default="")
+    account_name = db.Column(db.String(255))
+    account_id = db.Column(db.String(255))
+    access_token = db.Column(db.Text)
+    refresh_token = db.Column(db.Text)
+    token_expires_at = db.Column(db.DateTime)
+    is_active = db.Column(db.Boolean, default=True)
+    followers_count = db.Column(db.Integer, default=0)
+    last_sync_at = db.Column(db.DateTime)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    company = db.relationship("Company", backref="social_media_accounts")
 
 
 class SocialMediaSchedule(db.Model):
@@ -692,6 +795,141 @@ class LeadScore(db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
     contact_id = db.Column(db.Integer, db.ForeignKey("contact.id"), nullable=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=True)
+    score = db.Column(db.Integer, default=0)
+    engagement_score = db.Column(db.Integer, default=0)
+    fit_score = db.Column(db.Integer, default=0)
+    intent_score = db.Column(db.Integer, default=0)
+    last_activity_date = db.Column(db.DateTime)
+    scoring_factors = db.Column(JSON)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    contact = db.relationship("Contact", backref="lead_scores")
+
+
+class SalesStage(db.Model):
+    __tablename__ = "sales_stage"
+    
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=True)
+    name = db.Column(db.String(100), nullable=False)
+    order = db.Column(db.Integer, default=0)
+    probability = db.Column(db.Float, default=0.0)
+    color = db.Column(db.String(20), default="#bc00ed")
+    description = db.Column(db.Text)
+    suggested_actions = db.Column(JSON)
+    materials = db.Column(JSON)
+    is_active = db.Column(db.Boolean, default=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    company = db.relationship("Company", backref="sales_stages")
+
+
+class CRMTask(db.Model):
+    __tablename__ = "crm_task"
+    
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True)
+    contact_id = db.Column(db.Integer, db.ForeignKey("contact.id"), nullable=True)
+    deal_id = db.Column(db.Integer, db.ForeignKey("deal.id"), nullable=True)
+    title = db.Column(db.String(255), nullable=False)
+    description = db.Column(db.Text)
+    task_type = db.Column(db.String(50))
+    priority = db.Column(db.String(20), default="medium")
+    status = db.Column(db.String(20), default="pending")
+    due_date = db.Column(db.DateTime)
+    completed_at = db.Column(db.DateTime)
+    reminder_at = db.Column(db.DateTime)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    company = db.relationship("Company", backref="crm_tasks")
+    user = db.relationship("User", backref="crm_tasks")
+    contact = db.relationship("Contact", backref="tasks")
+    deal = db.relationship("Deal", backref="tasks")
+
+
+class Meeting(db.Model):
+    __tablename__ = "meeting"
+    
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True)
+    contact_id = db.Column(db.Integer, db.ForeignKey("contact.id"), nullable=True)
+    deal_id = db.Column(db.Integer, db.ForeignKey("deal.id"), nullable=True)
+    title = db.Column(db.String(255), nullable=False)
+    description = db.Column(db.Text)
+    meeting_type = db.Column(db.String(50))
+    start_time = db.Column(db.DateTime)
+    end_time = db.Column(db.DateTime)
+    location = db.Column(db.String(255))
+    meeting_url = db.Column(db.String(500))
+    status = db.Column(db.String(20), default="scheduled")
+    notes = db.Column(db.Text)
+    ai_prep_notes = db.Column(db.Text)
+    ai_follow_up = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    company = db.relationship("Company", backref="meetings")
+    user = db.relationship("User", backref="meetings")
+    contact = db.relationship("Contact", backref="meetings")
+    deal = db.relationship("Deal", backref="meetings")
+
+
+class Playbook(db.Model):
+    __tablename__ = "playbook"
+    
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=False)
+    name = db.Column(db.String(200), nullable=False)
+    description = db.Column(db.Text)
+    playbook_type = db.Column(db.String(50))
+    content = db.Column(JSON)
+    is_active = db.Column(db.Boolean, default=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    company = db.relationship("Company", backref="playbooks")
+
+
+class Document(db.Model):
+    __tablename__ = "document"
+    
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=False)
+    name = db.Column(db.String(255), nullable=False)
+    description = db.Column(db.Text)
+    file_path = db.Column(db.String(500))
+    file_type = db.Column(db.String(50))
+    document_type = db.Column(db.String(50))
+    view_count = db.Column(db.Integer, default=0)
+    share_count = db.Column(db.Integer, default=0)
+    is_active = db.Column(db.Boolean, default=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    company = db.relationship("Company", backref="documents")
+
+
+class TouchpointEvent(db.Model):
+    __tablename__ = "touchpoint_event"
+    
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=False)
+    contact_id = db.Column(db.Integer, db.ForeignKey("contact.id"), nullable=True)
+    visitor_id = db.Column(db.String(100))
+    touchpoint_type = db.Column(db.String(50), nullable=False)
+    source = db.Column(db.String(100))
+    page_url = db.Column(db.String(500))
+    referrer = db.Column(db.String(500))
+    event_data = db.Column(JSON)
+    ip_address = db.Column(db.String(50))
+    user_agent = db.Column(db.String(500))
+    session_id = db.Column(db.String(100))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    company = db.relationship("Company", backref="touchpoint_events")
+    contact = db.relationship("Contact", backref="touchpoint_events")
 
 
 class PersonalizationRule(db.Model):
@@ -934,6 +1172,7 @@ class InstagramOAuth(db.Model):
     __tablename__ = "instagram_oauth"
 
     id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=True)
 
 
 class WordPressIntegration(db.Model):
@@ -1003,3 +1242,116 @@ class AgentAutomation(db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class ApprovalQueue(db.Model):
+    __tablename__ = "approval_queue"
+
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=False, index=True)
+    content_type = db.Column(db.String(100), nullable=False)
+    content_id = db.Column(db.Integer, nullable=True)
+    title = db.Column(db.String(500), nullable=False)
+    content_preview = db.Column(db.Text)
+    content_full = db.Column(db.Text)
+    status = db.Column(db.String(50), default='pending', index=True)
+    creation_mode = db.Column(db.String(50), default='manual')
+    created_by_agent = db.Column(db.String(100))
+    created_by_user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True)
+    reviewed_by_user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True)
+    reviewed_at = db.Column(db.DateTime)
+    review_notes = db.Column(db.Text)
+    ai_rationale = db.Column(db.Text)
+    confidence_score = db.Column(db.Float)
+    risk_level = db.Column(db.String(50), default='low')
+    target_platform = db.Column(db.String(100))
+    target_audience = db.Column(db.String(255))
+    scheduled_publish_at = db.Column(db.DateTime)
+    published_at = db.Column(db.DateTime)
+    edit_history = db.Column(db.Text)
+    version = db.Column(db.Integer, default=1)
+    last_modified_by = db.Column(db.Integer)
+    compliance_flags = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    company = db.relationship("Company", backref="approval_queue_items")
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'company_id': self.company_id,
+            'content_type': self.content_type,
+            'content_id': self.content_id,
+            'title': self.title,
+            'content_preview': self.content_preview,
+            'status': self.status,
+            'creation_mode': self.creation_mode,
+            'created_by_agent': self.created_by_agent,
+            'created_by_user_id': self.created_by_user_id,
+            'reviewed_by_user_id': self.reviewed_by_user_id,
+            'reviewed_at': self.reviewed_at.isoformat() if self.reviewed_at else None,
+            'review_notes': self.review_notes,
+            'ai_rationale': self.ai_rationale,
+            'confidence_score': self.confidence_score,
+            'risk_level': self.risk_level,
+            'target_platform': self.target_platform,
+            'target_audience': self.target_audience,
+            'scheduled_publish_at': self.scheduled_publish_at.isoformat() if self.scheduled_publish_at else None,
+            'published_at': self.published_at.isoformat() if self.published_at else None,
+            'version': self.version,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+        }
+
+
+class ApprovalAuditLog(db.Model):
+    __tablename__ = "approval_audit_log"
+
+    id = db.Column(db.Integer, primary_key=True)
+    approval_queue_id = db.Column(db.Integer, db.ForeignKey("approval_queue.id"), nullable=False)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=False)
+    action = db.Column(db.String(50), nullable=False)
+    previous_status = db.Column(db.String(50))
+    new_status = db.Column(db.String(50))
+    action_by_user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True)
+    action_by_agent = db.Column(db.String(100))
+    notes = db.Column(db.Text)
+    changes_made = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'approval_queue_id': self.approval_queue_id,
+            'action': self.action,
+            'previous_status': self.previous_status,
+            'new_status': self.new_status,
+            'action_by_user_id': self.action_by_user_id,
+            'action_by_agent': self.action_by_agent,
+            'notes': self.notes,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+        }
+
+
+class FeatureToggle(db.Model):
+    __tablename__ = "feature_toggle"
+
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=False, index=True)
+    feature_key = db.Column(db.String(100), nullable=False)
+    is_enabled = db.Column(db.Boolean, default=False)
+    require_approval = db.Column(db.Boolean, default=True)
+    allow_automated_creation = db.Column(db.Boolean, default=False)
+    emergency_stop = db.Column(db.Boolean, default=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'company_id': self.company_id,
+            'feature_key': self.feature_key,
+            'is_enabled': self.is_enabled,
+            'require_approval': self.require_approval,
+            'allow_automated_creation': self.allow_automated_creation,
+            'emergency_stop': self.emergency_stop,
+        }

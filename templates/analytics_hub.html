@@ -188,22 +188,6 @@
         </div>
       </div>
     </div>
-    <div class="col-lg-4">
-      <div class="card bg-dark" style="border: 1px solid #bc00ed;">
-        <div class="card-body">
-          <label style="color: #00ffb4; font-size: 0.9rem; display: block; margin-bottom: 0.5rem;">Export Reports</label>
-          <button class="btn btn-sm me-2 mb-2" style="background: linear-gradient(135deg, #bc00ed, #0044ff); color: #fff;" onclick="exportAnalytics('pdf')">
-            <i data-feather="file-text"></i> PDF
-          </button>
-          <button class="btn btn-sm me-2 mb-2" style="background: linear-gradient(135deg, #00ffb4, #004845); color: #000;" onclick="exportAnalytics('csv')">
-            <i data-feather="grid"></i> CSV
-          </button>
-          <button class="btn btn-sm mb-2" style="background: linear-gradient(135deg, #e4055c, #bc00ed); color: #fff;" onclick="exportAnalytics('excel')">
-            <i data-feather="table"></i> Excel
-          </button>
-        </div>
-      </div>
-    </div>
   </div>
 
   <!-- Analytics Navigation Tabs -->
@@ -324,7 +308,7 @@
             </div>
             <div class="col-md-3">
               <div class="metric-box purple">
-                <h6 style="color: #bc00ed;"><i data-feather="mail-open"></i> Email Open Rate</h6>
+                <h6 style="color: #bc00ed;"><i data-feather="mail"></i> Email Open Rate</h6>
                 <h3>{{ analytics.comprehensive.conversion.open_rate|default(0) }}%</h3>
                 <small>{{ analytics.comprehensive.conversion.emails_opened|default(0) }} opens</small>
               </div>
@@ -584,7 +568,7 @@
             </div>
             <div class="col-md-3">
               <div class="metric-box purple">
-                <h6 style="color: #bc00ed;"><i data-feather="mail-open"></i> Email Open Rate</h6>
+                <h6 style="color: #bc00ed;"><i data-feather="mail"></i> Email Open Rate</h6>
                 <h3>{{ analytics.comprehensive.retention.email_open_rate|default(0) }}%</h3>
                 <small>Engagement signal</small>
               </div>
@@ -1049,6 +1033,31 @@
       </div>
     </div>
 
+  </div>
+  
+  <!-- Export Reports Section (At Bottom) -->
+  <div class="row mt-4">
+    <div class="col-12">
+      <div class="card" style="background: rgba(12, 14, 20, 0.9); border: 1px solid rgba(188, 0, 237, 0.3); border-radius: 12px;">
+        <div class="card-body d-flex justify-content-between align-items-center flex-wrap gap-3">
+          <div>
+            <h5 class="mb-1" style="color: #fff;"><i data-feather="download"></i> Export Reports</h5>
+            <small style="color: #a1a7b8;">Download your analytics data in various formats</small>
+          </div>
+          <div class="d-flex gap-2 flex-wrap">
+            <button class="btn" style="background: linear-gradient(135deg, #bc00ed, #0044ff); color: #fff; border-radius: 8px; padding: 0.5rem 1.25rem;" onclick="exportAnalytics('pdf')">
+              <i data-feather="file-text" style="width:16px;height:16px;"></i> Export as PDF
+            </button>
+            <button class="btn" style="background: linear-gradient(135deg, #00ffb4, #004845); color: #000; border-radius: 8px; padding: 0.5rem 1.25rem;" onclick="exportAnalytics('csv')">
+              <i data-feather="grid" style="width:16px;height:16px;"></i> Export as CSV
+            </button>
+            <button class="btn" style="background: linear-gradient(135deg, #e4055c, #bc00ed); color: #fff; border-radius: 8px; padding: 0.5rem 1.25rem;" onclick="exportAnalytics('excel')">
+              <i data-feather="table" style="width:16px;height:16px;"></i> Export as Excel
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 </div>
 

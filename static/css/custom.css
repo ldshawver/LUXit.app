@@ -149,27 +149,38 @@ a:hover {
 }
 
 .brand-lux-img {
-  height: 28px;
+  height: 32px;
   width: auto;
   mix-blend-mode: screen;
   vertical-align: middle;
 }
 
+.brand-stack {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  height: 32px;
+  line-height: 1;
+  margin-left: 2px;
+}
+
 .brand-it {
-  font-size: 0.9rem;
-  font-weight: 800;
+  font-size: 1.1rem;
+  font-weight: 900;
   font-style: italic;
   color: #00e5ff;
-  letter-spacing: 0.01em;
+  letter-spacing: 0.02em;
   line-height: 1;
+  text-shadow: 0 0 10px rgba(0, 229, 255, 0.4);
 }
 
 .brand-app {
-  font-size: 0.6rem;
+  font-size: 0.55rem;
   font-weight: 600;
   color: #a855f7;
   letter-spacing: 0.02em;
-  line-height: 1.1;
+  line-height: 1;
+  margin-top: 1px;
 }
 
 .user-greeting {

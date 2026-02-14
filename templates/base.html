@@ -14,19 +14,112 @@
     {% if current_company and current_company.apply_brand_colors %}
     <style>
       :root {
-        --lux-purple: {{ current_company.primary_color or '#bc00ed' }} !important;
         --lux-cyan: {{ current_company.secondary_color or '#00ffb4' }} !important;
-        --lux-pink: {{ current_company.accent_color or '#e4055c' }} !important;
+        --lux-magenta: {{ current_company.primary_color or '#bc00ed' }} !important;
+        --lux-glow-cyan: 0 0 22px {{ current_company.secondary_color or '#00ffb4' }}59 !important;
+        --lux-glow-magenta: 0 0 28px {{ current_company.primary_color or '#bc00ed' }}59 !important;
       }
-      .btn-lux-primary {
+      html[data-bs-theme="dark"] {
+        --bs-primary: {{ current_company.secondary_color or '#00ffb4' }} !important;
+        --bs-secondary: {{ current_company.primary_color or '#bc00ed' }} !important;
+        --bs-link-color: {{ current_company.secondary_color or '#00ffb4' }} !important;
+        --bs-link-hover-color: {{ current_company.secondary_color or '#00ffb4' }}cc !important;
+      }
+      .btn-primary, .btn-lux-primary {
         background: linear-gradient(135deg, {{ current_company.primary_color or '#bc00ed' }}, {{ current_company.secondary_color or '#00ffb4' }}) !important;
+        border-color: {{ current_company.primary_color or '#bc00ed' }} !important;
+      }
+      .btn-outline-primary {
+        color: {{ current_company.secondary_color or '#00ffb4' }} !important;
+        border-color: {{ current_company.secondary_color or '#00ffb4' }} !important;
+      }
+      .btn-outline-primary:hover {
+        background: {{ current_company.secondary_color or '#00ffb4' }} !important;
+        color: #000 !important;
       }
       .app-header {
         border-bottom-color: {{ current_company.primary_color or '#bc00ed' }} !important;
       }
-      .tile-icon {
+      .tile-icon, .stat-badge, .quick-action-btn i {
+        background: linear-gradient(135deg, {{ current_company.primary_color or '#bc00ed' }}, {{ current_company.secondary_color or '#00ffb4' }}) !important;
+        -webkit-background-clip: text !important;
+        -webkit-text-fill-color: transparent !important;
+      }
+      .metric-value {
+        background: linear-gradient(135deg, {{ current_company.secondary_color or '#00ffb4' }}, {{ current_company.primary_color or '#bc00ed' }}) !important;
+        -webkit-background-clip: text !important;
+        -webkit-text-fill-color: transparent !important;
+      }
+      .nav-link.active, .nav-link:hover {
+        color: {{ current_company.secondary_color or '#00ffb4' }} !important;
+      }
+      .sidebar-item.active {
+        border-left-color: {{ current_company.secondary_color or '#00ffb4' }} !important;
+      }
+      .text-success, .text-primary {
+        color: {{ current_company.secondary_color or '#00ffb4' }} !important;
+      }
+      .badge.bg-primary {
+        background: {{ current_company.primary_color or '#bc00ed' }} !important;
+      }
+      a:not(.btn):not(.nav-link):not(.brand-link) {
+        color: {{ current_company.secondary_color or '#00ffb4' }};
+      }
+      .action-card:hover {
+        border-color: {{ current_company.secondary_color or '#00ffb4' }}66 !important;
+        box-shadow: 0 8px 32px {{ current_company.secondary_color or '#00ffb4' }}26 !important;
+      }
+      .hub-btn.active {
+        background: linear-gradient(135deg, {{ current_company.secondary_color or '#00ffb4' }}, {{ current_company.primary_color or '#bc00ed' }}) !important;
+      }
+      .progress-bar, .bg-success {
+        background-color: {{ current_company.secondary_color or '#00ffb4' }} !important;
+      }
+      .form-check-input:checked {
+        background-color: {{ current_company.primary_color or '#bc00ed' }} !important;
+        border-color: {{ current_company.primary_color or '#bc00ed' }} !important;
+      }
+      body {
+        background: radial-gradient(circle at top, {{ current_company.secondary_color or '#00ffb4' }}14, transparent 45%),
+          radial-gradient(circle at 20% 20%, {{ current_company.primary_color or '#bc00ed' }}14, transparent 40%),
+          radial-gradient(circle at bottom right, {{ current_company.accent_color or '#e4055c' }}1a, transparent 45%),
+          var(--lux-bg) !important;
+      }
+      .brand-it { color: {{ current_company.secondary_color or '#00ffb4' }} !important; }
+      .brand-app { color: {{ current_company.secondary_color or '#00ffb4' }} !important; }
+      .company-initial {
         background: linear-gradient(135deg, {{ current_company.primary_color or '#bc00ed' }}, {{ current_company.secondary_color or '#00ffb4' }}) !important;
       }
+      .sidebar-item:hover, .sidebar-item.active {
+        background: {{ current_company.secondary_color or '#00ffb4' }}26 !important;
+        border-color: {{ current_company.secondary_color or '#00ffb4' }}59 !important;
+      }
+      .tile:hover {
+        border-color: {{ current_company.secondary_color or '#00ffb4' }}66 !important;
+        box-shadow: var(--lux-shadow), 0 0 28px {{ current_company.secondary_color or '#00ffb4' }}47 !important;
+      }
+      .tile .tile-icon svg {
+        stroke: {{ current_company.secondary_color or '#00ffb4' }} !important;
+      }
+      .form-control:focus, .form-select:focus {
+        border-color: {{ current_company.secondary_color or '#00ffb4' }}59 !important;
+        box-shadow: 0 0 0 0.25rem {{ current_company.secondary_color or '#00ffb4' }}26 !important;
+      }
+      .quick-action-btn {
+        background: linear-gradient(135deg, {{ current_company.secondary_color or '#00ffb4' }}26, {{ current_company.primary_color or '#bc00ed' }}1a) !important;
+        border-color: {{ current_company.secondary_color or '#00ffb4' }}4d !important;
+      }
+      .quick-action-btn:hover {
+        background: linear-gradient(135deg, {{ current_company.secondary_color or '#00ffb4' }}4d, {{ current_company.primary_color or '#bc00ed' }}33) !important;
+        border-color: {{ current_company.secondary_color or '#00ffb4' }} !important;
+      }
+      .quick-action-btn i, .channel-card:hover { color: {{ current_company.secondary_color or '#00ffb4' }} !important; }
+      .ai-badge {
+        background: linear-gradient(135deg, {{ current_company.secondary_color or '#00ffb4' }}, {{ current_company.primary_color or '#bc00ed' }}) !important;
+      }
+      {% if current_company.font_family %}
+      body { font-family: {{ current_company.font_family }} !important; }
+      {% endif %}
     </style>
     {% endif %}
 </head>
@@ -79,14 +172,14 @@
                             <li><h6 class="dropdown-header">Company Settings</h6></li>
                             <li><a class="dropdown-item" href="{{ url_for('main.settings_integrations') }}"><i data-feather="sliders"></i> Connections & API Keys</a></li>
                             {% if current_company %}
-                            <li><a class="dropdown-item" href="{{ url_for('main.edit_company', company_id=current_company.id) }}"><i data-feather="palette"></i> Brand Kit & Colors</a></li>
+                            <li><a class="dropdown-item" href="{{ url_for('main.edit_company', company_id=current_company.id) }}"><i data-feather="droplet"></i> Brand Kit & Colors</a></li>
                             {% endif %}
                             <li><a class="dropdown-item" href="{{ url_for('main.companies_list') }}"><i data-feather="briefcase"></i> Manage Companies</a></li>
                             <li><hr class="dropdown-divider"></li>
                             <li><h6 class="dropdown-header">Switch Company</h6></li>
                             {% for company in user_companies %}
                             <li><a class="dropdown-item d-flex align-items-center justify-content-between" href="#" onclick="switchToCompany({{ company.id }}); return false;">
-                                <span><i data-feather="building"></i> {{ company.name }}</span>
+                                <span><i data-feather="briefcase"></i> {{ company.name }}</span>
                                 {% if current_company and company.id == current_company.id %}
                                 <span class="badge bg-success">Active</span>
                                 {% endif %}

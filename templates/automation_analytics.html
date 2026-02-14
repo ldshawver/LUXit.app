@@ -1,0 +1,121 @@
+{% extends "base.html" %}
+
+{% block title %}Automation Analytics - LUX IT{% endblock %}
+
+{% block page_header %}
+<span style="color: #c0c0c0;">Automation Analytics</span>
+{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1><i data-feather="bar-chart-2" class="text-info"></i> Automation Analytics</h1>
+    <a href="{{ url_for('main.automation_dashboard') }}" class="btn btn-outline-secondary">
+        <i data-feather="arrow-left"></i> Back to Automations
+    </a>
+</div>
+
+<div class="row g-3 mb-4">
+    <div class="col-md-3">
+        <div class="card" style="background: rgba(188, 0, 237, 0.1); border: 1px solid rgba(188, 0, 237, 0.3);">
+            <div class="card-body text-center">
+                <h3 class="mb-0" style="color: #bc00ed;">{{ total_automations }}</h3>
+                <small class="text-muted">Total Automations</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card" style="background: rgba(0, 255, 180, 0.1); border: 1px solid rgba(0, 255, 180, 0.3);">
+            <div class="card-body text-center">
+                <h3 class="mb-0" style="color: #00ffb4;">{{ active_automations }}</h3>
+                <small class="text-muted">Active</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card" style="background: rgba(0, 123, 255, 0.1); border: 1px solid rgba(0, 123, 255, 0.3);">
+            <div class="card-body text-center">
+                <h3 class="mb-0" style="color: #007bff;">{{ total_executions }}</h3>
+                <small class="text-muted">Total Executions</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card" style="background: rgba(40, 167, 69, 0.1); border: 1px solid rgba(40, 167, 69, 0.3);">
+            <div class="card-body text-center">
+                <h3 class="mb-0" style="color: #28a745;">{{ completed_executions }}</h3>
+                <small class="text-muted">Completed</small>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-3">
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0"><i data-feather="activity"></i> Automation Performance</h5>
+            </div>
+            <div class="card-body">
+                {% if automation_stats %}
+                <div class="table-responsive">
+                    <table class="table table-striped">
+                        <thead>
+                            <tr>
+                                <th>Automation</th>
+                                <th>Executions</th>
+                                <th>Completed</th>
+                                <th>Rate</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for stat in automation_stats %}
+                            <tr>
+                                <td>{{ stat.automation.name or 'Unnamed' }}</td>
+                                <td>{{ stat.total_executions }}</td>
+                                <td>{{ stat.completed }}</td>
+                                <td>
+                                    <div class="progress" style="height: 20px;">
+                                        <div class="progress-bar bg-success" style="width: {{ stat.completion_rate }}%">
+                                            {{ "%.0f"|format(stat.completion_rate) }}%
+                                        </div>
+                                    </div>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <div class="text-center text-muted py-4">
+                    <i data-feather="inbox" style="width: 48px; height: 48px;"></i>
+                    <p class="mt-2">No automation data yet. Create and run automations to see analytics.</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0"><i data-feather="clock"></i> Recent Executions</h5>
+            </div>
+            <div class="card-body">
+                {% if recent_executions %}
+                {% for exec in recent_executions %}
+                <div class="d-flex justify-content-between align-items-center mb-2 p-2" style="background: rgba(255,255,255,0.05); border-radius: 6px;">
+                    <div>
+                        <small class="text-muted">{{ exec.started_at.strftime('%m/%d %H:%M') if exec.started_at else 'N/A' }}</small>
+                    </div>
+                    <span class="badge bg-{{ 'success' if exec.status == 'completed' else 'warning' if exec.status == 'running' else 'secondary' }}">
+                        {{ exec.status or 'pending' }}
+                    </span>
+                </div>
+                {% endfor %}
+                {% else %}
+                <p class="text-muted text-center">No recent executions</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

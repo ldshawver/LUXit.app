@@ -337,25 +337,160 @@
     .feature-details li::before { content: ''; width: 4px; height: 4px; background: var(--accent-cyan); border-radius: 50%; }
 
     /* Comparison Table */
-    .comparison-section { 
-      padding: 80px 24px; max-width: 1000px; margin: 0 auto;
-      background: linear-gradient(180deg, rgba(0,229,255,0.02) 0%, transparent 100%);
-      border-radius: 32px; position: relative;
+    /* ===== APPLE IPHONE STYLE SCROLL ANIMATIONS ===== */
+    .apple-reveal {
+      opacity: 0;
+      transform: translateY(80px) scale(0.9);
+      filter: blur(10px);
+      transition: all 1s cubic-bezier(0.16, 1, 0.3, 1);
     }
-    .comparison-table { width: 100%; border-collapse: collapse; margin-top: 40px; }
-    .comparison-table th, .comparison-table td { padding: 16px 20px; text-align: left; border-bottom: 1px solid rgba(255,255,255,0.06); }
+    .apple-reveal.visible {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+      filter: blur(0);
+    }
+    
+    /* Staggered row animations */
+    .apple-row {
+      opacity: 0;
+      transform: translateX(-60px) rotateY(-15deg);
+      filter: blur(8px);
+      transition: all 0.8s cubic-bezier(0.16, 1, 0.3, 1);
+      transform-style: preserve-3d;
+    }
+    .apple-row.visible {
+      opacity: 1;
+      transform: translateX(0) rotateY(0);
+      filter: blur(0);
+    }
+    .apple-row:nth-child(1) { transition-delay: 0.1s; }
+    .apple-row:nth-child(2) { transition-delay: 0.15s; }
+    .apple-row:nth-child(3) { transition-delay: 0.2s; }
+    .apple-row:nth-child(4) { transition-delay: 0.25s; }
+    .apple-row:nth-child(5) { transition-delay: 0.3s; }
+    .apple-row:nth-child(6) { transition-delay: 0.35s; }
+    .apple-row:nth-child(7) { transition-delay: 0.4s; }
+    .apple-row:nth-child(8) { transition-delay: 0.45s; }
+    .apple-row:nth-child(9) { transition-delay: 0.5s; }
+    .apple-row:nth-child(10) { transition-delay: 0.55s; }
+
+    /* Parallax depth effect */
+    .parallax-section {
+      perspective: 1200px;
+      perspective-origin: center;
+    }
+    
+    /* Glow pulse on scroll reveal */
+    .glow-reveal {
+      position: relative;
+    }
+    .glow-reveal::before {
+      content: '';
+      position: absolute;
+      inset: -2px;
+      background: linear-gradient(135deg, var(--accent-cyan), var(--accent-purple), var(--accent-pink));
+      border-radius: inherit;
+      opacity: 0;
+      filter: blur(20px);
+      z-index: -1;
+      transition: opacity 0.8s ease;
+    }
+    .glow-reveal.visible::before {
+      opacity: 0.3;
+      animation: glowPulse 3s ease-in-out infinite;
+    }
+    @keyframes glowPulse {
+      0%, 100% { opacity: 0.2; filter: blur(20px); }
+      50% { opacity: 0.4; filter: blur(30px); }
+    }
+    
+    /* Feature cards 3D flip reveal */
+    .feature-card.apple-card {
+      opacity: 0;
+      transform: perspective(1000px) rotateX(25deg) translateY(60px);
+      filter: blur(6px);
+      transition: all 0.9s cubic-bezier(0.16, 1, 0.3, 1);
+      transform-origin: center bottom;
+    }
+    .feature-card.apple-card.visible {
+      opacity: 1;
+      transform: perspective(1000px) rotateX(0) translateY(0);
+      filter: blur(0);
+    }
+    .feature-card.apple-card:nth-child(odd) { transition-delay: 0.1s; }
+    .feature-card.apple-card:nth-child(even) { transition-delay: 0.25s; }
+    
+    /* ===== ENHANCED COMPARISON TABLE ===== */
+    .comparison-section { 
+      padding: 100px 24px; max-width: 1100px; margin: 0 auto;
+      background: linear-gradient(180deg, rgba(0,229,255,0.04) 0%, rgba(168,85,247,0.03) 50%, transparent 100%);
+      border-radius: 40px; position: relative;
+      border: 1px solid rgba(255,255,255,0.06);
+      overflow: hidden;
+    }
+    .comparison-section::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 50%;
+      transform: translateX(-50%);
+      width: 80%;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, var(--accent-cyan), var(--accent-purple), transparent);
+    }
+    .comparison-table { 
+      width: 100%; 
+      border-collapse: separate; 
+      border-spacing: 0 4px;
+      margin-top: 40px; 
+    }
+    .comparison-table th, .comparison-table td { 
+      padding: 18px 24px; 
+      text-align: left; 
+      border-bottom: 1px solid rgba(255,255,255,0.04);
+      backdrop-filter: blur(10px);
+    }
     .comparison-table th { font-size: 0.85rem; font-weight: 600; color: var(--text-secondary); }
     .comparison-table th:first-child { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.1em; }
-    .comparison-table th.highlight { color: var(--accent-cyan); background: rgba(0, 229, 255, 0.05); border-radius: 8px 8px 0 0; }
+    .comparison-table th.highlight { 
+      color: var(--accent-cyan); 
+      background: linear-gradient(180deg, rgba(0, 229, 255, 0.1) 0%, rgba(0, 229, 255, 0.03) 100%);
+      border-radius: 12px 12px 0 0;
+      position: relative;
+    }
+    .comparison-table th.highlight::after {
+      content: '';
+      position: absolute;
+      top: 0; left: 10%; right: 10%;
+      height: 2px;
+      background: linear-gradient(90deg, transparent, var(--accent-cyan), transparent);
+      border-radius: 2px;
+    }
+    .comparison-table tbody tr {
+      background: rgba(255,255,255,0.01);
+      transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+      border-radius: 8px;
+    }
+    .comparison-table tbody tr:hover {
+      background: rgba(0, 229, 255, 0.06);
+      transform: scale(1.01);
+      box-shadow: 0 4px 30px rgba(0, 229, 255, 0.1);
+    }
     .comparison-table td { font-size: 0.9rem; color: var(--text-secondary); transition: all 0.3s; }
-    .comparison-table td:first-child { color: var(--text-primary); font-weight: 500; cursor: pointer; position: relative; }
+    .comparison-table td:first-child { color: var(--text-primary); font-weight: 500; cursor: pointer; position: relative; border-radius: 8px 0 0 8px; }
+    .comparison-table td:last-child { border-radius: 0 8px 8px 0; }
     .comparison-table td:first-child::after { content: ''; position: absolute; right: 0; top: 50%; width: 16px; height: 16px; background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%2300e5ff'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'/%3E%3C/svg%3E") center/contain no-repeat; transform: translateY(-50%); opacity: 0.5; animation: bounceHint 2s ease-in-out infinite; }
     @keyframes bounceHint { 0%, 100% { transform: translateY(-50%); } 50% { transform: translateY(-30%); } }
-    .comparison-table tr:hover td { background: rgba(0, 229, 255, 0.04); }
-    .comparison-table td.highlight { background: rgba(0, 229, 255, 0.03); }
-    .check { color: var(--accent-cyan); font-weight: bold; }
+    .comparison-table td.highlight { 
+      background: rgba(0, 229, 255, 0.04);
+      position: relative;
+    }
+    .check { 
+      color: var(--accent-cyan); 
+      font-weight: bold;
+      text-shadow: 0 0 20px rgba(0, 229, 255, 0.5);
+    }
     .cross { color: #555; }
-    .partial { color: #f59e0b; }
+    .partial { color: #f59e0b; text-shadow: 0 0 15px rgba(245, 158, 11, 0.3); }
 
     /* Pricing */
     .pricing-section { 
@@ -914,6 +1049,65 @@
       font-size: 0.9rem;
     }
 
+    
+    /* ===== ROLLING FROM DISTANCE SCROLL ANIMATIONS ===== */
+    /* Elements roll in from the distance as you scroll */
+    
+    /* Roll in from distance - 3D perspective roll */
+    .roll-in {
+      opacity: 0;
+      transform: perspective(800px) translateZ(-200px) rotateX(15deg) scale(0.85);
+      transition: opacity 0.8s ease-out, transform 0.8s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+    }
+    .roll-in.visible {
+      opacity: 1;
+      transform: perspective(800px) translateZ(0) rotateX(0) scale(1);
+    }
+    
+    /* Roll in from left distance */
+    .roll-left {
+      opacity: 0;
+      transform: perspective(800px) translateZ(-150px) translateX(-60px) rotateY(12deg) scale(0.9);
+      transition: opacity 0.7s ease-out, transform 0.7s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+    }
+    .roll-left.visible {
+      opacity: 1;
+      transform: perspective(800px) translateZ(0) translateX(0) rotateY(0) scale(1);
+    }
+    
+    /* Roll in from right distance */
+    .roll-right {
+      opacity: 0;
+      transform: perspective(800px) translateZ(-150px) translateX(60px) rotateY(-12deg) scale(0.9);
+      transition: opacity 0.7s ease-out, transform 0.7s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+    }
+    .roll-right.visible {
+      opacity: 1;
+      transform: perspective(800px) translateZ(0) translateX(0) rotateY(0) scale(1);
+    }
+    
+    /* Roll up from below */
+    .roll-up {
+      opacity: 0;
+      transform: perspective(600px) translateZ(-100px) translateY(50px) rotateX(-8deg) scale(0.92);
+      transition: opacity 0.6s ease-out, transform 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+    }
+    .roll-up.visible {
+      opacity: 1;
+      transform: perspective(600px) translateZ(0) translateY(0) rotateX(0) scale(1);
+    }
+    
+    /* Stagger row - roll from distance */
+    .roll-row {
+      opacity: 0;
+      transform: perspective(500px) translateZ(-80px) scale(0.95);
+      transition: opacity 0.5s ease-out, transform 0.5s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+    }
+    .roll-row.visible {
+      opacity: 1;
+      transform: perspective(500px) translateZ(0) scale(1);
+    }
+
     /* Mobile */
     @media (max-width: 768px) {
       .nav { padding: 20px; flex-wrap: wrap; gap: 20px; justify-content: center; }
@@ -922,7 +1116,6 @@
       .hero-buttons { flex-direction: column; align-items: center; }
       .btn-primary, .btn-secondary { width: 100%; max-width: 320px; justify-content: center; }
       .section { padding: 60px 20px; }
-
     }
   </style>
 </head>
@@ -930,6 +1123,7 @@
   <div class="bg-container">
     <div class="bg-gradient"></div>
     <div class="mesh-grid"></div>
+    <!-- Enhanced color orbs - more vibrant -->
     <div class="orb orb-1"></div>
     <div class="orb orb-2"></div>
     <div class="orb orb-3"></div>
@@ -945,7 +1139,7 @@
     <div class="orb orb-13"></div>
     <div class="orb orb-14"></div>
     <div class="orb orb-15"></div>
-    <div class="particles" id="particles"></div>
+        <div class="particles" id="particles"></div>
   </div>
 
   <div class="content-wrapper">
@@ -989,8 +1183,8 @@
         particles.appendChild(p);
         setTimeout(() => p.remove(), 27000);
       }
-      for(let i=0;i<8;i++) setTimeout(createParticle, i*300);
-      setInterval(createParticle, 2000);
+      for(let i=0;i<25;i++) setTimeout(createParticle, i*150);
+      setInterval(createParticle, 800);
 
       // Typewriter
       const tw = document.getElementById('typewriter');
@@ -1054,27 +1248,69 @@
         card.addEventListener('click', ()=> card.classList.toggle('expanded'));
       });
 
-      // Dramatic scroll reveal animations - smooth re-triggers
-      const revealObserver = new IntersectionObserver((entries) => {
+      // ===== ROLLING FROM DISTANCE SCROLL ANIMATIONS =====
+      // Elements roll in closer from the distance
+      
+      const scrollObserver = new IntersectionObserver((entries) => {
         entries.forEach(entry => {
           if (entry.isIntersecting) {
-            entry.target.classList.add('revealed');
+            entry.target.classList.add('visible');
           }
         });
-      }, { threshold: 0.1, rootMargin: '0px 0px -50px 0px' });
+      }, { 
+        threshold: 0.12, 
+        rootMargin: '0px 0px -40px 0px' 
+      });
 
-      // Separate observer for hiding - only hide when completely out of view
-      const hideObserver = new IntersectionObserver((entries) => {
+      // Reset observer for re-triggering
+      const resetObserver = new IntersectionObserver((entries) => {
         entries.forEach(entry => {
-          if (!entry.isIntersecting) {
-            entry.target.classList.remove('revealed');
+          if (!entry.isIntersecting && entry.boundingClientRect.top > 0) {
+            entry.target.classList.remove('visible');
           }
         });
-      }, { threshold: 0, rootMargin: '200px 0px 200px 0px' });
+      }, { 
+        threshold: 0, 
+        rootMargin: '200px 0px 0px 0px' 
+      });
 
-      document.querySelectorAll('.scroll-reveal, .scroll-reveal-left, .scroll-reveal-right, .scroll-reveal-scale, .scroll-reveal-flip, .scroll-reveal-drop, .scroll-reveal-zoom').forEach(el => {
-        revealObserver.observe(el);
-        hideObserver.observe(el);
+      // Feature cards - roll in from distance with stagger
+      document.querySelectorAll('.feature-card').forEach((card, index) => {
+        card.classList.add('roll-in');
+        card.style.transitionDelay = `${index * 0.1}s`;
+        scrollObserver.observe(card);
+        resetObserver.observe(card);
+      });
+
+      // Comparison table rows - roll up from distance
+      document.querySelectorAll('.comparison-table tbody tr').forEach((row, index) => {
+        row.classList.add('roll-row');
+        row.style.transitionDelay = `${0.1 + (index * 0.05)}s`;
+        scrollObserver.observe(row);
+        resetObserver.observe(row);
+      });
+
+      // Pricing cards - roll in from distance
+      document.querySelectorAll('.pricing-card').forEach((card, index) => {
+        card.classList.add('roll-in');
+        card.style.transitionDelay = `${index * 0.12}s`;
+        scrollObserver.observe(card);
+        resetObserver.observe(card);
+      });
+
+      // Section headers - roll up
+      document.querySelectorAll('.section-header').forEach(header => {
+        header.classList.add('roll-up');
+        scrollObserver.observe(header);
+        resetObserver.observe(header);
+      });
+
+      // Cards - alternating roll from left/right distance
+      document.querySelectorAll('.card').forEach((card, index) => {
+        card.classList.add(index % 2 === 0 ? 'roll-left' : 'roll-right');
+        card.style.transitionDelay = `${index * 0.08}s`;
+        scrollObserver.observe(card);
+        resetObserver.observe(card);
       });
 
     });

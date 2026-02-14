@@ -92,11 +92,25 @@
 
             <hr>
 
+            <h5 class="mb-3">Company Details</h5>
+
+            <div class="mb-3">
+              <label for="industry" class="form-label">Industry</label>
+              <input type="text" class="form-control bg-dark text-light" id="industry" name="industry" value="{{ company.industry or '' }}" placeholder="e.g. Technology, Retail, Healthcare">
+            </div>
+
+            <div class="mb-3">
+              <label for="description" class="form-label">Description</label>
+              <textarea class="form-control bg-dark text-light" id="description" name="description" rows="3" placeholder="Brief description of the company">{{ company.description or '' }}</textarea>
+            </div>
+
+            <hr>
+
             <div class="mb-3">
               <h5>API & Integrations</h5>
               <p class="text-muted">Configure API keys and integrations for this company</p>
-              <a href="{{ url_for('advanced_config.integrations_list') }}" class="btn btn-outline-primary">
-                <i data-feather="settings"></i> Configure API & Integrations
+              <a href="{{ url_for('main.settings_integrations') }}" class="btn btn-outline-primary" target="_blank">
+                <i data-feather="settings"></i> Open Settings & Integrations
               </a>
             </div>
 
@@ -119,8 +133,8 @@
           <h6 class="mb-0">Company Info</h6>
         </div>
         <div class="card-body">
-          <p><strong>Created:</strong><br>{{ company.created_at.strftime('%Y-%m-%d %H:%M') }}</p>
-          <p><strong>Last Updated:</strong><br>{{ company.updated_at.strftime('%Y-%m-%d %H:%M') }}</p>
+          <p><strong>Created:</strong><br>{{ company.created_at.strftime('%Y-%m-%d %H:%M') if company.created_at else 'N/A' }}</p>
+          <p><strong>Last Updated:</strong><br>{{ company.updated_at.strftime('%Y-%m-%d %H:%M') if company.updated_at else 'N/A' }}</p>
           <p><strong>Status:</strong><br>
             {% if company.is_active %}
             <span class="badge bg-success">Active</span>

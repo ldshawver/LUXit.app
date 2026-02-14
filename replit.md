@@ -95,12 +95,40 @@ docker-compose up -d
 - **Password:** admin123 (change immediately after first login)
 
 ## Recent Changes (February 2026)
+- **Multi-Hub Architecture**: Implemented dual-hub system with user-selectable defaults
+  - Sales Hub (/dashboard) - Focus on deals, pipeline, customer relationships
+  - Marketing Hub (/marketing-hub) - Focus on campaigns, content, audience growth
+  - Hub switcher in both dashboards for quick navigation
+  - User default_hub preference stored in User model
+  - Hub preference settings in user profile page
+  - API endpoint: POST /api/user/set-default-hub
+- **CRM Platform Transformation**: Converted marketing dashboard into action-driven CRM/Sales Hub
+  - New data models: SalesStage, CRMTask, Meeting, Playbook, Document, TouchpointEvent
+  - Enhanced ContactActivity with touchpoint tracking (website, social, forms, email, calls, referral)
+  - Enhanced LeadScore with engagement scoring and activity tracking
+- **Sales Hub Dashboard**: Complete redesign with action-oriented UI
+  - Quick metrics: Open Deals, Hot Leads, Tasks Due, Meetings Today
+  - Lead sources touchpoint counters with clickable icons
+  - AI Recommendations panel with guided selling suggestions
+  - Visual pipeline stage summary with deal counts and values
+  - Sales tools section with quick action buttons
+- **CRM Pipeline Dashboard**: Enhanced sales journey visualization
+  - Clickable pipeline stages with deal cards and drag support
+  - Suggested actions per stage (e.g., "Send intro email", "Conduct needs assessment")
+  - AI Insights panel with opportunity detection and risk alerts
+  - Sales materials library with usage tracking
+  - Modal dialogs for new deal creation and meeting scheduling
+  - AI-powered meeting prep notes option
+- Fixed database schema: Added deal.created_at, deal.updated_at, instagram_oauth.company_id columns
+- Updated Contact model with source, segment, is_subscribed fields
+- Added ab_tests and connectors routes to fix 500 errors
+- Fixed invalid Feather icons throughout templates (palette→droplet, building→briefcase, mail-open→mail)
+- Redesigned main dashboard with task-focused UI featuring quick stats, to-do list, and activity notifications
+- Updated logo CSS: 'IT' larger than '.app', both matching LUX height
+- Moved analytics export section to bottom of page for better UX
 - Fixed Settings page: Added gear icon dropdown in header with user profile, change password, manage users, connections & API keys, and company switcher
 - Added company badge display in header showing current company name with logo/initials
 - Updated Company model with branding columns: logo_path, website_url, primary_color, secondary_color, accent_color, font_family, industry, description
-- Fixed duplicate route definitions in routes.py that were causing startup failures
-- Fixed app.py secret_key handling to use SESSION_SECRET environment variable
-- Removed duplicate health check route from app.py
 - User management routes: /user/profile, /user/change-password, /user/manage-users, /companies
 
 ## File Structure

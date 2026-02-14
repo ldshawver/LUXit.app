@@ -1,83 +1,561 @@
 {% extends "base.html" %}
 
-{% block title %}Dashboard - LUX IT{% endblock %}
-{% block page_title %}Dashboard{% endblock %}
+{% block title %}Sales Hub - LUX IT{% endblock %}
+{% block page_title %}Sales Hub{% endblock %}
 
 {% block content %}
-<div class="hero">
-  <div class="glow-orb"></div>
-  <div class="hero-content">
-    <h1>Your growth command center</h1>
-    <p>Launch campaigns, track performance, and orchestrate automation from one unified workspace.</p>
-    <div class="d-flex flex-wrap gap-2">
-      <a class="btn btn-lux btn-lux-primary" href="#">Launch Campaign</a>
-      <a class="btn btn-lux btn-lux-secondary" href="#">View Insights</a>
+<style>
+  .action-card {
+    background: rgba(12, 14, 20, 0.95);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 16px;
+    padding: 1.5rem;
+    transition: all 0.3s ease;
+    height: 100%;
+  }
+  .action-card:hover {
+    border-color: rgba(188, 0, 237, 0.4);
+    box-shadow: 0 8px 32px rgba(188, 0, 237, 0.15);
+  }
+  .metric-value {
+    font-size: 2rem;
+    font-weight: 700;
+    background: linear-gradient(135deg, #bc00ed, #00ffb4);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+  .quick-action-btn {
+    background: linear-gradient(135deg, rgba(188, 0, 237, 0.2), rgba(0, 255, 180, 0.1));
+    border: 1px solid rgba(188, 0, 237, 0.3);
+    border-radius: 12px;
+    padding: 1rem 1.5rem;
+    color: #fff;
+    text-decoration: none;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    transition: all 0.3s ease;
+    width: 100%;
+  }
+  .quick-action-btn:hover {
+    background: linear-gradient(135deg, rgba(188, 0, 237, 0.35), rgba(0, 255, 180, 0.2));
+    border-color: #bc00ed;
+    color: #fff;
+    transform: translateY(-2px);
+  }
+  .quick-action-btn i { color: #bc00ed; }
+  .pipeline-stage {
+    background: rgba(0, 0, 0, 0.3);
+    border-radius: 12px;
+    padding: 1rem;
+    min-height: 200px;
+    border: 1px solid rgba(255, 255, 255, 0.05);
+  }
+  .pipeline-stage-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.75rem;
+    padding-bottom: 0.75rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  }
+  .pipeline-stage-header h6 {
+    margin: 0;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  .stage-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+  }
+  .pipeline-deal {
+    background: rgba(12, 14, 20, 0.8);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 8px;
+    padding: 0.75rem;
+    margin-bottom: 0.5rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+  .pipeline-deal:hover {
+    border-color: rgba(188, 0, 237, 0.5);
+    transform: translateX(4px);
+  }
+  .pipeline-deal-value {
+    color: #00ffb4;
+    font-weight: 600;
+  }
+  .touchpoint-card {
+    background: rgba(0, 0, 0, 0.3);
+    border-radius: 10px;
+    padding: 1rem;
+    text-align: center;
+    transition: all 0.3s ease;
+    cursor: pointer;
+  }
+  .touchpoint-card:hover {
+    background: rgba(188, 0, 237, 0.15);
+    transform: translateY(-3px);
+  }
+  .touchpoint-icon {
+    width: 48px;
+    height: 48px;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto 0.75rem;
+    font-size: 1.25rem;
+  }
+  .touchpoint-count {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: #fff;
+  }
+  .ai-suggestion {
+    background: linear-gradient(135deg, rgba(188, 0, 237, 0.1), rgba(99, 102, 241, 0.1));
+    border: 1px solid rgba(188, 0, 237, 0.2);
+    border-radius: 10px;
+    padding: 1rem;
+    margin-bottom: 0.75rem;
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+  }
+  .ai-suggestion:hover {
+    border-color: rgba(188, 0, 237, 0.4);
+  }
+  .ai-badge {
+    background: linear-gradient(135deg, #bc00ed, #6366f1);
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.7rem;
+    font-weight: 600;
+  }
+  .task-priority-high { border-left: 3px solid #f59e0b; }
+  .task-priority-medium { border-left: 3px solid #3b82f6; }
+  .task-priority-low { border-left: 3px solid #6b7280; }
+  .section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+  }
+  .section-header h5 {
+    margin: 0;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  .hub-switcher {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 1.5rem;
+  }
+  .hub-btn {
+    padding: 0.5rem 1.25rem;
+    border-radius: 25px;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    background: transparent;
+    color: #aaa;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    text-decoration: none;
+  }
+  .hub-btn:hover {
+    border-color: rgba(255, 255, 255, 0.3);
+    color: #fff;
+  }
+  .hub-btn.active {
+    background: linear-gradient(135deg, #bc00ed, #00ffb4);
+    border-color: transparent;
+    color: #000;
+    font-weight: 600;
+  }
+</style>
+
+<!-- Hub Switcher -->
+<div class="hub-switcher">
+  <a href="{{ url_for('main.dashboard') }}" class="hub-btn active">
+    <i data-feather="briefcase" style="width:16px;height:16px;margin-right:4px;"></i> Sales Hub
+  </a>
+  <a href="{{ url_for('main.marketing_hub') }}" class="hub-btn">
+    <i data-feather="megaphone" style="width:16px;height:16px;margin-right:4px;"></i> Marketing Hub
+  </a>
+  <button class="hub-btn" onclick="setDefaultHub('sales')" title="Set as default">
+    <i data-feather="star" style="width:14px;height:14px;"></i>
+  </button>
+</div>
+
+<!-- Quick Metrics Row -->
+<div class="row g-3 mb-4">
+  <div class="col-lg-2 col-md-4 col-6">
+    <div class="action-card text-center">
+      <small class="text-muted text-uppercase d-block mb-1">New Leads</small>
+      <div class="metric-value">{{ stats.new_leads|default(24) }}</div>
+      <small class="text-success"><i data-feather="trending-up" style="width:12px;"></i> This week</small>
+    </div>
+  </div>
+  <div class="col-lg-2 col-md-4 col-6">
+    <div class="action-card text-center">
+      <small class="text-muted text-uppercase d-block mb-1">Open Deals</small>
+      <div class="metric-value">{{ stats.open_deals|default(12) }}</div>
+      <small class="text-muted">Worth ${{ stats.pipeline_value|default('45.2K') }}</small>
+    </div>
+  </div>
+  <div class="col-lg-2 col-md-4 col-6">
+    <div class="action-card text-center">
+      <small class="text-muted text-uppercase d-block mb-1">Tasks Due</small>
+      <div class="metric-value">{{ stats.tasks_due|default(7) }}</div>
+      <small class="text-warning"><i data-feather="clock" style="width:12px;"></i> Today</small>
+    </div>
+  </div>
+  <div class="col-lg-2 col-md-4 col-6">
+    <div class="action-card text-center">
+      <small class="text-muted text-uppercase d-block mb-1">Meetings</small>
+      <div class="metric-value">{{ stats.meetings_today|default(3) }}</div>
+      <small class="text-info"><i data-feather="calendar" style="width:12px;"></i> Scheduled</small>
+    </div>
+  </div>
+  <div class="col-lg-2 col-md-4 col-6">
+    <div class="action-card text-center">
+      <small class="text-muted text-uppercase d-block mb-1">Win Rate</small>
+      <div class="metric-value">{{ stats.win_rate|default('32%') }}</div>
+      <small class="text-success"><i data-feather="arrow-up" style="width:12px;"></i> +5%</small>
+    </div>
+  </div>
+  <div class="col-lg-2 col-md-4 col-6">
+    <div class="action-card text-center">
+      <small class="text-muted text-uppercase d-block mb-1">Revenue</small>
+      <div class="metric-value">${{ stats.revenue|default('82K') }}</div>
+      <small class="text-muted">This month</small>
     </div>
   </div>
 </div>
 
-<section class="mb-5">
-  <div class="section-title">
-    <h2>Core Systems</h2>
-    <span>Move faster across your highest impact areas.</span>
-  </div>
-  <div class="tile-grid">
-    <a class="tile-card" href="{{ url_for('main.ai_dashboard') }}">
-      <div class="tile-icon"><i data-feather="cpu"></i></div>
-      <h3>Agents & Automations</h3>
-      <p>Deploy AI agents with automated workflows for research, content, and outreach.</p>
-    </a>
-    <a class="tile-card" href="{{ url_for('main.analytics_hub') }}">
-      <div class="tile-icon"><i data-feather="bar-chart-2"></i></div>
-      <h3>Analytics</h3>
-      <p>Monitor attribution, ROI, and lifecycle performance.</p>
-    </a>
-    <a class="tile-card" href="{{ url_for('main.campaign_hub') }}">
-      <div class="tile-icon"><i data-feather="send"></i></div>
-      <h3>Campaigns</h3>
-      <p>Launch multi-channel campaigns with clarity and speed.</p>
-    </a>
-    <a class="tile-card" href="{{ url_for('main.crm_dashboard') }}">
-      <div class="tile-icon"><i data-feather="briefcase"></i></div>
-      <h3>CRM</h3>
-      <p>Unify pipeline, contacts, and revenue operations.</p>
+<!-- Quick Actions Row -->
+<div class="row g-3 mb-4">
+  <div class="col-lg-3 col-md-6">
+    <a href="{{ url_for('main.contacts') }}?action=new" class="quick-action-btn">
+      <i data-feather="user-plus" style="width:20px;"></i>
+      <div>
+        <strong>Add New Lead</strong>
+        <small class="d-block text-muted">Capture prospect info</small>
+      </div>
     </a>
   </div>
-</section>
+  <div class="col-lg-3 col-md-6">
+    <a href="#" class="quick-action-btn" data-bs-toggle="modal" data-bs-target="#scheduleMeetingModal">
+      <i data-feather="calendar" style="width:20px;"></i>
+      <div>
+        <strong>Schedule Meeting</strong>
+        <small class="d-block text-muted">Book with AI prep</small>
+      </div>
+    </a>
+  </div>
+  <div class="col-lg-3 col-md-6">
+    <a href="{{ url_for('main.crm_dashboard') }}?action=new_deal" class="quick-action-btn">
+      <i data-feather="dollar-sign" style="width:20px;"></i>
+      <div>
+        <strong>Create Deal</strong>
+        <small class="d-block text-muted">Start new opportunity</small>
+      </div>
+    </a>
+  </div>
+  <div class="col-lg-3 col-md-6">
+    <a href="{{ url_for('main.campaign_hub') }}?action=quick" class="quick-action-btn">
+      <i data-feather="send" style="width:20px;"></i>
+      <div>
+        <strong>Quick Campaign</strong>
+        <small class="d-block text-muted">Launch outreach</small>
+      </div>
+    </a>
+  </div>
+</div>
 
-<section class="mb-5">
-  <div class="section-title">
-    <h2>Channels & Ops</h2>
-    <span>Expand into every engagement surface.</span>
+<!-- Main Content -->
+<div class="row g-4 mb-4">
+  <!-- Left Column: Lead Sources & Tasks -->
+  <div class="col-lg-4">
+    <!-- Lead Generation Sources -->
+    <div class="action-card mb-4">
+      <div class="section-header">
+        <h5><i data-feather="target" style="width:18px;color:#bc00ed;"></i> Lead Sources</h5>
+        <a href="{{ url_for('main.analytics_hub') }}" class="text-muted small">Details</a>
+      </div>
+      <div class="row g-2">
+        <div class="col-4">
+          <div class="touchpoint-card">
+            <div class="touchpoint-icon" style="background: rgba(59, 130, 246, 0.2); color: #3b82f6;">
+              <i data-feather="globe" style="width:20px;"></i>
+            </div>
+            <div class="touchpoint-count">{{ touchpoints.website|default(142) }}</div>
+            <small class="text-muted">Website</small>
+          </div>
+        </div>
+        <div class="col-4">
+          <div class="touchpoint-card">
+            <div class="touchpoint-icon" style="background: rgba(236, 72, 153, 0.2); color: #ec4899;">
+              <i data-feather="instagram" style="width:20px;"></i>
+            </div>
+            <div class="touchpoint-count">{{ touchpoints.social|default(89) }}</div>
+            <small class="text-muted">Social</small>
+          </div>
+        </div>
+        <div class="col-4">
+          <div class="touchpoint-card">
+            <div class="touchpoint-icon" style="background: rgba(34, 197, 94, 0.2); color: #22c55e;">
+              <i data-feather="file-text" style="width:20px;"></i>
+            </div>
+            <div class="touchpoint-count">{{ touchpoints.forms|default(67) }}</div>
+            <small class="text-muted">Forms</small>
+          </div>
+        </div>
+        <div class="col-4">
+          <div class="touchpoint-card">
+            <div class="touchpoint-icon" style="background: rgba(245, 158, 11, 0.2); color: #f59e0b;">
+              <i data-feather="mail" style="width:20px;"></i>
+            </div>
+            <div class="touchpoint-count">{{ touchpoints.email|default(234) }}</div>
+            <small class="text-muted">Email</small>
+          </div>
+        </div>
+        <div class="col-4">
+          <div class="touchpoint-card">
+            <div class="touchpoint-icon" style="background: rgba(168, 85, 247, 0.2); color: #a855f7;">
+              <i data-feather="phone" style="width:20px;"></i>
+            </div>
+            <div class="touchpoint-count">{{ touchpoints.calls|default(45) }}</div>
+            <small class="text-muted">Calls</small>
+          </div>
+        </div>
+        <div class="col-4">
+          <div class="touchpoint-card">
+            <div class="touchpoint-icon" style="background: rgba(99, 102, 241, 0.2); color: #6366f1;">
+              <i data-feather="link" style="width:20px;"></i>
+            </div>
+            <div class="touchpoint-count">{{ touchpoints.referral|default(28) }}</div>
+            <small class="text-muted">Referral</small>
+          </div>
+        </div>
+      </div>
+    </div>
+    
+    <!-- AI Suggestions -->
+    <div class="action-card">
+      <div class="section-header">
+        <h5><i data-feather="cpu" style="width:18px;color:#bc00ed;"></i> AI Recommendations</h5>
+        <span class="ai-badge">POWERED BY AI</span>
+      </div>
+      {% for suggestion in ai_suggestions|default([
+        {'type': 'follow_up', 'title': 'Follow up with Sarah Chen', 'reason': 'Proposal viewed 3 times, high intent signal', 'action': 'Send follow-up'},
+        {'type': 'upsell', 'title': 'Upsell opportunity: TechCorp', 'reason': 'Usage increased 40%, ready for upgrade', 'action': 'Start conversation'},
+        {'type': 'at_risk', 'title': 'Deal at risk: GlobalTech', 'reason': 'No activity in 14 days', 'action': 'Re-engage'}
+      ]) %}
+      <div class="ai-suggestion">
+        <div class="flex-shrink-0">
+          {% if suggestion.type == 'follow_up' %}
+          <i data-feather="phone-forwarded" style="width:18px; color:#3b82f6;"></i>
+          {% elif suggestion.type == 'upsell' %}
+          <i data-feather="trending-up" style="width:18px; color:#22c55e;"></i>
+          {% else %}
+          <i data-feather="alert-triangle" style="width:18px; color:#f59e0b;"></i>
+          {% endif %}
+        </div>
+        <div class="flex-grow-1">
+          <strong class="d-block">{{ suggestion.title }}</strong>
+          <small class="text-muted d-block">{{ suggestion.reason }}</small>
+          <a href="#" class="btn btn-sm mt-2" style="background: rgba(188, 0, 237, 0.2); color: #bc00ed; border: 1px solid rgba(188, 0, 237, 0.3);">
+            {{ suggestion.action }} <i data-feather="arrow-right" style="width:14px;"></i>
+          </a>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
   </div>
-  <div class="tile-grid">
-    <a class="tile-card" href="{{ url_for('main.email_hub') }}">
-      <div class="tile-icon"><i data-feather="mail"></i></div>
-      <h3>Email Hub</h3>
-      <p>Design and automate high-performing email flows.</p>
-    </a>
-    <a class="tile-card" href="{{ url_for('main.sms_dashboard') }}">
-      <div class="tile-icon"><i data-feather="message-circle"></i></div>
-      <h3>SMS</h3>
-      <p>Deliver real-time messaging with precision timing.</p>
-    </a>
-    <a class="tile-card" href="{{ url_for('main.social_media') }}">
-      <div class="tile-icon"><i data-feather="share-2"></i></div>
-      <h3>Social</h3>
-      <p>Coordinate content and scheduling across platforms.</p>
-    </a>
-    <a class="tile-card" href="{{ url_for('main.ads_hub') }}">
-      <div class="tile-icon"><i data-feather="target"></i></div>
-      <h3>Ads</h3>
-      <p>Plan and optimize paid media from one cockpit.</p>
-    </a>
-    <a class="tile-card" href="{{ url_for('main.marketing_calendar') }}">
-      <div class="tile-icon"><i data-feather="calendar"></i></div>
-      <h3>Calendar</h3>
-      <p>Maintain a strategic marketing timeline.</p>
-    </a>
+  
+  <!-- Center Column: Sales Pipeline -->
+  <div class="col-lg-5">
+    <div class="action-card">
+      <div class="section-header">
+        <h5><i data-feather="git-merge" style="width:18px;color:#bc00ed;"></i> Sales Pipeline</h5>
+        <a href="{{ url_for('main.crm_dashboard') }}" class="btn btn-sm" style="background: rgba(188, 0, 237, 0.2); color: #bc00ed;">View All</a>
+      </div>
+      <div class="row g-2">
+        {% for stage in pipeline_stages|default([
+          {'name': 'Lead', 'color': '#6366f1', 'deals': [{'name': 'Acme Corp', 'value': 5000}, {'name': 'StartupXYZ', 'value': 3500}], 'count': 8, 'value': 42000},
+          {'name': 'Qualified', 'color': '#8b5cf6', 'deals': [{'name': 'TechStart Inc', 'value': 12000}], 'count': 5, 'value': 65000},
+          {'name': 'Proposal', 'color': '#bc00ed', 'deals': [{'name': 'GlobalTech', 'value': 25000}, {'name': 'MegaCorp', 'value': 18000}], 'count': 4, 'value': 89000},
+          {'name': 'Negotiation', 'color': '#f59e0b', 'deals': [{'name': 'Enterprise Ltd', 'value': 45000}], 'count': 2, 'value': 78000}
+        ]) %}
+        <div class="col-6 col-md-3">
+          <div class="pipeline-stage">
+            <div class="pipeline-stage-header">
+              <h6>
+                <span class="stage-dot" style="background: {{ stage.color }};"></span>
+                {{ stage.name }}
+              </h6>
+              <span class="badge" style="background: {{ stage.color }}20; color: {{ stage.color }};">{{ stage.count }}</span>
+            </div>
+            <div class="text-muted small mb-2">${{ (stage.value / 1000)|round(1) }}K</div>
+            {% for deal in stage.deals[:2] %}
+            <div class="pipeline-deal" onclick="window.location.href='{{ url_for('main.crm_dashboard') }}'">
+              <div class="small text-truncate"><strong>{{ deal.name }}</strong></div>
+              <div class="pipeline-deal-value small">${{ '{:,}'.format(deal.value) }}</div>
+            </div>
+            {% endfor %}
+            {% if stage.count > 2 %}
+            <div class="text-center">
+              <a href="{{ url_for('main.crm_dashboard') }}" class="text-muted small">+{{ stage.count - 2 }} more</a>
+            </div>
+            {% endif %}
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+      
+      <!-- Pipeline Actions -->
+      <div class="d-flex gap-2 mt-3 flex-wrap">
+        <button class="btn btn-sm" style="background: linear-gradient(135deg, #bc00ed, #6366f1); color: #fff;">
+          <i data-feather="plus" style="width:14px;"></i> Add Deal
+        </button>
+        <button class="btn btn-sm" style="background: rgba(0, 255, 180, 0.1); color: #00ffb4; border: 1px solid rgba(0, 255, 180, 0.3);">
+          <i data-feather="filter" style="width:14px;"></i> Filter
+        </button>
+        <button class="btn btn-sm" style="background: rgba(255, 255, 255, 0.05); color: #a1a7b8; border: 1px solid rgba(255, 255, 255, 0.1);">
+          <i data-feather="download" style="width:14px;"></i> Export
+        </button>
+      </div>
+    </div>
   </div>
-</section>
+  
+  <!-- Right Column: Tasks & Meetings -->
+  <div class="col-lg-3">
+    <!-- Today's Tasks -->
+    <div class="action-card mb-4">
+      <div class="section-header">
+        <h5><i data-feather="check-square" style="width:18px;color:#bc00ed;"></i> Today's Tasks</h5>
+        <button class="btn btn-sm p-0" style="background: none; border: none; color: #bc00ed;">
+          <i data-feather="plus" style="width:16px;"></i>
+        </button>
+      </div>
+      {% for task in tasks|default([
+        {'title': 'Follow up with Acme Corp lead', 'time': '2:00 PM', 'priority': 'high'},
+        {'title': 'Send proposal to TechStart', 'time': '4:00 PM', 'priority': 'medium'},
+        {'title': 'Review campaign analytics', 'time': '5:30 PM', 'priority': 'low'}
+      ]) %}
+      <div class="ai-suggestion task-priority-{{ task.priority }}" style="padding: 0.75rem;">
+        <input type="checkbox" class="form-check-input" style="margin-right: 0.5rem;">
+        <div class="flex-grow-1">
+          <div class="small"><strong>{{ task.title }}</strong></div>
+          <small class="text-muted">{{ task.time }}</small>
+        </div>
+      </div>
+      {% endfor %}
+      <a href="#" class="text-muted small d-block text-center mt-2">View all tasks</a>
+    </div>
+    
+    <!-- Upcoming Meetings -->
+    <div class="action-card">
+      <div class="section-header">
+        <h5><i data-feather="video" style="width:18px;color:#bc00ed;"></i> Meetings</h5>
+      </div>
+      {% for meeting in meetings|default([
+        {'title': 'Discovery call - Sarah Chen', 'time': '10:00 AM', 'type': 'video'},
+        {'title': 'Demo - GlobalTech Team', 'time': '2:30 PM', 'type': 'video'},
+        {'title': 'Contract review - Legal', 'time': '4:00 PM', 'type': 'phone'}
+      ]) %}
+      <div class="ai-suggestion" style="padding: 0.75rem;">
+        <div class="flex-shrink-0">
+          {% if meeting.type == 'video' %}
+          <i data-feather="video" style="width:16px; color:#3b82f6;"></i>
+          {% else %}
+          <i data-feather="phone" style="width:16px; color:#22c55e;"></i>
+          {% endif %}
+        </div>
+        <div class="flex-grow-1">
+          <div class="small"><strong>{{ meeting.title }}</strong></div>
+          <small class="text-muted">{{ meeting.time }}</small>
+        </div>
+        <button class="btn btn-sm p-1" style="background: rgba(0, 255, 180, 0.1); color: #00ffb4; border: none;">
+          <i data-feather="external-link" style="width:14px;"></i>
+        </button>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+
+<!-- Sales Tools Row -->
+<div class="row g-3 mb-4">
+  <div class="col-12">
+    <div class="action-card">
+      <div class="section-header">
+        <h5><i data-feather="briefcase" style="width:18px;color:#bc00ed;"></i> Sales Tools</h5>
+      </div>
+      <div class="row g-3">
+        <div class="col-lg-2 col-md-4 col-6">
+          <a href="#" class="touchpoint-card d-block text-decoration-none">
+            <div class="touchpoint-icon" style="background: rgba(188, 0, 237, 0.2); color: #bc00ed;">
+              <i data-feather="book-open" style="width:20px;"></i>
+            </div>
+            <strong class="d-block text-white">Playbooks</strong>
+            <small class="text-muted">Scripts & guides</small>
+          </a>
+        </div>
+        <div class="col-lg-2 col-md-4 col-6">
+          <a href="#" class="touchpoint-card d-block text-decoration-none">
+            <div class="touchpoint-icon" style="background: rgba(59, 130, 246, 0.2); color: #3b82f6;">
+              <i data-feather="file" style="width:20px;"></i>
+            </div>
+            <strong class="d-block text-white">Documents</strong>
+            <small class="text-muted">Track & share</small>
+          </a>
+        </div>
+        <div class="col-lg-2 col-md-4 col-6">
+          <a href="{{ url_for('main.email_hub') }}" class="touchpoint-card d-block text-decoration-none">
+            <div class="touchpoint-icon" style="background: rgba(245, 158, 11, 0.2); color: #f59e0b;">
+              <i data-feather="mail" style="width:20px;"></i>
+            </div>
+            <strong class="d-block text-white">Templates</strong>
+            <small class="text-muted">Email sequences</small>
+          </a>
+        </div>
+        <div class="col-lg-2 col-md-4 col-6">
+          <a href="{{ url_for('main.ai_dashboard') }}" class="touchpoint-card d-block text-decoration-none">
+            <div class="touchpoint-icon" style="background: rgba(34, 197, 94, 0.2); color: #22c55e;">
+              <i data-feather="cpu" style="width:20px;"></i>
+            </div>
+            <strong class="d-block text-white">AI Agents</strong>
+            <small class="text-muted">Automation</small>
+          </a>
+        </div>
+        <div class="col-lg-2 col-md-4 col-6">
+          <a href="{{ url_for('main.analytics_hub') }}" class="touchpoint-card d-block text-decoration-none">
+            <div class="touchpoint-icon" style="background: rgba(236, 72, 153, 0.2); color: #ec4899;">
+              <i data-feather="bar-chart-2" style="width:20px;"></i>
+            </div>
+            <strong class="d-block text-white">Analytics</strong>
+            <small class="text-muted">Insights & reports</small>
+          </a>
+        </div>
+        <div class="col-lg-2 col-md-4 col-6">
+          <a href="{{ url_for('main.campaign_hub') }}" class="touchpoint-card d-block text-decoration-none">
+            <div class="touchpoint-icon" style="background: rgba(99, 102, 241, 0.2); color: #6366f1;">
+              <i data-feather="zap" style="width:20px;"></i>
+            </div>
+            <strong class="d-block text-white">Automation</strong>
+            <small class="text-muted">Workflows</small>
+          </a>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
 
 {% if config_alerts and config_alerts|length > 0 %}
 <section class="alert-panel mb-5">
@@ -98,7 +576,92 @@
 </section>
 {% endif %}
 
+<!-- Schedule Meeting Modal -->
+<div class="modal fade" id="scheduleMeetingModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content" style="background: #0c0e14; border: 1px solid rgba(188, 0, 237, 0.3);">
+      <div class="modal-header border-0">
+        <h5 class="modal-title"><i data-feather="calendar" style="width:18px;"></i> Schedule Meeting</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <form>
+          <div class="mb-3">
+            <label class="form-label small text-muted">Meeting Title</label>
+            <input type="text" class="form-control bg-dark text-white border-secondary" placeholder="e.g., Discovery Call">
+          </div>
+          <div class="mb-3">
+            <label class="form-label small text-muted">Contact</label>
+            <select class="form-select bg-dark text-white border-secondary">
+              <option>Select a contact...</option>
+            </select>
+          </div>
+          <div class="row">
+            <div class="col-6 mb-3">
+              <label class="form-label small text-muted">Date</label>
+              <input type="date" class="form-control bg-dark text-white border-secondary">
+            </div>
+            <div class="col-6 mb-3">
+              <label class="form-label small text-muted">Time</label>
+              <input type="time" class="form-control bg-dark text-white border-secondary">
+            </div>
+          </div>
+          <div class="mb-3">
+            <label class="form-label small text-muted">Meeting Type</label>
+            <div class="d-flex gap-2">
+              <button type="button" class="btn btn-sm flex-fill" style="background: rgba(59, 130, 246, 0.2); color: #3b82f6; border: 1px solid #3b82f6;">
+                <i data-feather="video" style="width:14px;"></i> Video
+              </button>
+              <button type="button" class="btn btn-sm flex-fill" style="background: rgba(255, 255, 255, 0.05); color: #a1a7b8; border: 1px solid rgba(255, 255, 255, 0.1);">
+                <i data-feather="phone" style="width:14px;"></i> Phone
+              </button>
+              <button type="button" class="btn btn-sm flex-fill" style="background: rgba(255, 255, 255, 0.05); color: #a1a7b8; border: 1px solid rgba(255, 255, 255, 0.1);">
+                <i data-feather="map-pin" style="width:14px;"></i> In-Person
+              </button>
+            </div>
+          </div>
+          <div class="form-check mb-3">
+            <input type="checkbox" class="form-check-input" id="aiPrep" checked>
+            <label class="form-check-label small" for="aiPrep">
+              <span class="ai-badge me-1">AI</span> Generate meeting prep notes
+            </label>
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer border-0">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn" style="background: linear-gradient(135deg, #bc00ed, #6366f1); color: #fff;">
+          Schedule Meeting
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  feather.replace();
+  
+  function setDefaultHub(hub) {
+    fetch('/api/user/set-default-hub', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRFToken': document.querySelector('meta[name="csrf-token"]').content
+      },
+      body: JSON.stringify({ hub: hub })
+    })
+    .then(r => r.json())
+    .then(data => {
+      if (data.success) {
+        alert('Sales Hub set as your default!');
+      } else {
+        alert('Failed to set default hub');
+      }
+    });
+  }
+</script>
+
 {% if app_version %}
-<div class="text-end text-muted">v{{ app_version }}</div>
+<div class="text-end text-muted small mt-3">v{{ app_version }}</div>
 {% endif %}
 {% endblock %}

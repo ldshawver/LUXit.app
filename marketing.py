@@ -3,6 +3,7 @@ import logging
 from datetime import datetime
 
 from flask import Blueprint, redirect, render_template, url_for, make_response, request
+from flask_login import current_user
 
 logger = logging.getLogger(__name__)
 
@@ -11,7 +12,12 @@ marketing_bp = Blueprint("marketing", __name__, template_folder="templates")
 
 @marketing_bp.route("/")
 def marketing_home():
-    """Public marketing homepage."""
+    """Public marketing homepage. Redirect authenticated users to dashboard."""
+    if current_user.is_authenticated:
+        hub = getattr(current_user, 'default_hub', 'sales')
+        if hub == 'marketing':
+            return redirect(url_for("main.marketing_hub"))
+        return redirect(url_for("main.dashboard"))
     return render_template("marketing/index.html")
 
 

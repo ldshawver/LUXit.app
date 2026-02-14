@@ -28,8 +28,9 @@ def create_app(testing: bool = False):
         SESSION_COOKIE_SAMESITE="None",
         WTF_CSRF_TIME_LIMIT=3600,
     )
-    if os.environ.get("CANONICAL_HOST"):
-        app.config["SERVER_NAME"] = CANONICAL_HOST
+    canonical_host = os.environ.get("CANONICAL_HOST")
+    if canonical_host:
+        app.config["SERVER_NAME"] = canonical_host
 
     app.config["SQLALCHEMY_DATABASE_URI"] = os.getenv(
         "DATABASE_URL",
@@ -85,6 +86,21 @@ def create_app(testing: bool = False):
                 db.session.rollback()
             except Exception:
                 pass
+
+    @app.template_filter('campaign_status_color')
+    def campaign_status_color(status):
+        colors = {
+            'draft': 'secondary',
+            'active': 'success',
+            'sending': 'info',
+            'sent': 'primary',
+            'paused': 'warning',
+            'completed': 'success',
+            'failed': 'danger',
+            'cancelled': 'dark',
+            'scheduled': 'info',
+        }
+        return colors.get((status or '').lower(), 'secondary')
 
     # ---- Blueprints ----
     from routes import main_bp
