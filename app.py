@@ -2,90 +2,120 @@
 import os
 from uuid import uuid4
 
-from flask import Flask, g, request
-from flask_login import LoginManager
+from flask import Flask, g, request, redirect, url_for
+from flask_login import LoginManager, current_user
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 from extensions import db, csrf
-
-# --------------------------------------------------
-# Application factory
-# --------------------------------------------------
 
 
 def create_app(testing: bool = False):
     app = Flask(__name__, template_folder="templates", static_folder="static")
     app.testing = testing
 
+    # --------------------------------------------------
+    # Secrets
+    # --------------------------------------------------
     app.secret_key = os.environ.get("SESSION_SECRET")
     if not app.secret_key and testing:
         app.secret_key = "luxit-test-secret"
-    
+
+    # --------------------------------------------------
+    # Core config (sessions + CSRF)
+    # --------------------------------------------------
     app.config.update(
         SECRET_KEY=app.secret_key,
-        PREFERRED_URL_SCHEME="https",
-        SESSION_COOKIE_SECURE=True,
-        SESSION_COOKIE_SAMESITE="None",
+        SESSION_COOKIE_SECURE=True,      # HTTPS only
+        SESSION_COOKIE_HTTPONLY=True,
+        SESSION_COOKIE_SAMESITE="Lax",   # REQUIRED for login CSRF
         WTF_CSRF_TIME_LIMIT=3600,
     )
     canonical_host = os.environ.get("CANONICAL_HOST")
     if canonical_host:
         app.config["SERVER_NAME"] = canonical_host
 
+    # 🚫 DO NOT set SERVER_NAME (breaks cookies behind Nginx)
+    # app.config["SERVER_NAME"] = ...
+
+    # --------------------------------------------------
+    # Database
+    # --------------------------------------------------
     app.config["SQLALCHEMY_DATABASE_URI"] = os.getenv(
         "DATABASE_URL",
         "sqlite:///email_marketing.db",
     )
+   # --------------------------------------------------
+    # Proxy (Nginx → Flask)
+    # --------------------------------------------------
+    app.wsgi_app = ProxyFix(
+        app.wsgi_app,
+        x_for=1,
+        x_proto=1,
+        x_host=1,
+    )
 
-    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1)
-
+    # --------------------------------------------------
     # Extensions
+    # --------------------------------------------------
     db.init_app(app)
     csrf.init_app(app)
-
-    # Login
-    login_manager = LoginManager(app)
+  
+    # --------------------------------------------------
+    # Authentication (Flask-Login)
+    # --------------------------------------------------
+    login_manager = LoginManager()
     login_manager.login_view = "auth.login"
+    login_manager.login_message_category = "warning"
+    login_manager.init_app(app)
 
     @login_manager.user_loader
     def load_user(user_id):
         from models import User
         return User.query.get(int(user_id))
 
-    # Request ID
-    @app.before_request
-    def request_id():
-        g.request_id = request.headers.get("X-Request-ID", str(uuid4()))
-        return None
+    # --------------------------------------------------
+    # Request lifecycle hooks
+    # --------------------------------------------------
 
-    @app.context_processor
-    def inject_company_context():
-        from flask_login import current_user
-        try:
+    @app.before_request
+    def assign_request_id():
+        g.request_id = request.headers.get(
+            "X-Request-ID",
+            str(uuid4())
+        )
+
+    @app.before_request
+    def enforce_auth_boundary():
+        path = request.path
+
+        # ---------------------------
+        # Public routes (NO AUTH)
+        # ---------------------------
+        if (
+            path == "/"
+            or path.startswith("/features")
+            or path.startswith("/pricing")
+            or path.startswith("/static")
+            or path.startswith("/health")
+            or path.startswith("/auth")
+        ):
+            return None
+
+        # ---------------------------
+        # Locked app + API
+        # ---------------------------
+        if path.startswith("/app") or path.startswith("/api"):
             if not current_user.is_authenticated:
-                return {}
-            import models
-            if not hasattr(models, "Company"):
-                return {}
-            return {
-                "current_company": current_user.get_default_company(),
-                "user_companies": current_user.get_companies_safe(),
-            }
-        except Exception as exc:
-            app.logger.error("Template context error: %s", exc)
-            try:
-                db.session.rollback()
-            except Exception:
-                pass
-            return {}
+                return redirect(url_for("auth.login"))
 
     @app.teardown_request
-    def rollback_on_error(_exception=None):
-        if _exception:
+    def rollback_on_error(exc=None):
+        if exc:
             try:
                 db.session.rollback()
             except Exception:
                 pass
+
 
     @app.template_filter('campaign_status_color')
     def campaign_status_color(status):
@@ -103,6 +133,10 @@ def create_app(testing: bool = False):
         return colors.get((status or '').lower(), 'secondary')
 
     # ---- Blueprints ----
+
+    # --------------------------------------------------
+    # Blueprints
+    # --------------------------------------------------
     from routes import main_bp
     from auth import auth_bp
     from marketing import marketing_bp
@@ -111,25 +145,4 @@ def create_app(testing: bool = False):
     app.register_blueprint(auth_bp)
     app.register_blueprint(marketing_bp)
 
-    # ---- Routes ----
-    # "/" is handled by marketing_bp for the public marketing homepage
-    # /health is handled by main_bp.health_check in routes.py
-
-    # ---- Side effects (PROD ONLY) ----
-    if False:
-        with app.app_context():
-            db.create_all()
-
-    @app.route("/logout")
-    def logout():
-        from auth import logout as auth_logout
-        return auth_logout()
-
     return app
-
-
-app = create_app(testing=os.getenv("FLASK_ENV") == "testing")
-
-if __name__ == "__main__":
-    application = create_app()
-    application.run()

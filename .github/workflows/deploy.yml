@@ -9,6 +9,7 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -22,22 +23,30 @@ jobs:
           port: ${{ secrets.VPS_PORT }}
           script: |
             set -e
-            cd /var/www/luxit
+
+            echo "=== Connected to VPS ==="
+            whoami
+            hostname
+
+            cd /root/lux-email-bot
+
             echo "=== Pulling latest code ==="
             git fetch origin main
             git reset --hard origin/main
-            echo "=== Fixing packages for Python 3.13 ==="
-            sed -i 's/psycopg2-binary.*/psycopg[binary]==3.2.4/' requirements.txt
-            sed -i 's/SQLAlchemy==2.0.23/SQLAlchemy>=2.0.25/' requirements.txt
+
             echo "=== Activating venv ==="
-            source venv/bin/activate
-            echo "=== Upgrading SQLAlchemy for Python 3.13 ==="
-            pip install --upgrade 'SQLAlchemy>=2.0.25'
+            source .venv/bin/activate
+
             echo "=== Installing dependencies ==="
+            pip install --upgrade pip
             pip install -r requirements.txt --upgrade
+
             echo "=== Restarting service ==="
-            sudo systemctl restart luxit
-            sleep 5
+            systemctl restart lux-email-bot
+
+            sleep 3
+
             echo "=== Checking status ==="
-            sudo systemctl is-active luxit
-            echo "=== Deployment complete! ==="
+            systemctl is-active lux-email-bot
+
+            echo "=== Deployment complete ==="
