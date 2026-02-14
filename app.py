@@ -136,16 +136,12 @@ def create_app(testing: bool = False):
     # --------------------------------------------------
     # Blueprints
     # --------------------------------------------------
-    # You DO have routes/marketing.py with marketing_bp (you showed it).
-    from routes.marketing import marketing_bp
+    from marketing import marketing_bp
     from auth import auth_bp
+    from routes import main_bp
 
     app.register_blueprint(marketing_bp)
     app.register_blueprint(auth_bp)
-
-    # If you still want a separate public "main" blueprint, you must create routes/main.py
-    # and export main_bp from there, then import it like:
-    # from routes.main import main_bp
-    # app.register_blueprint(main_bp)
+    app.register_blueprint(main_bp)
 
     return app
