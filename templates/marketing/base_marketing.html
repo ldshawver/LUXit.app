@@ -343,7 +343,7 @@
                 <li><a href="{{ url_for('marketing.features') }}" class="{% if active_page == 'features' %}active{% endif %}">Features</a></li>
                 <li><a href="{{ url_for('marketing.solutions') }}" class="{% if active_page == 'solutions' %}active{% endif %}">Solutions</a></li>
                 <li><a href="{{ url_for('marketing.security') }}" class="{% if active_page == 'security' %}active{% endif %}">Security</a></li>
-                <li><a href="{{ url_for('auth.login') }}" class="btn-lux-primary">Sign In</a></li>
+                <li><a href="{{ url_for('marketing.book_demo') }}" class="btn-lux-primary">Book a Demo</a></li>
             </ul>
         </div>
     </nav>
@@ -388,10 +388,12 @@
                     </ul>
                 </div>
                 <div class="col-lg-2 col-md-6">
-                    <h6>Get Started</h6>
+                    <h6>Get in Touch</h6>
                     <ul class="list-unstyled d-flex flex-column gap-2">
+                        <li><a href="{{ url_for('marketing.book_demo') }}">Book a Demo</a></li>
+                        <li><a href="tel:+18005551234">Call (800) 555-1234</a></li>
+                        <li><a href="mailto:demo@luxplatform.com">Email Us</a></li>
                         <li><a href="{{ url_for('auth.login') }}">Sign In</a></li>
-                        <li><a href="{{ url_for('auth.register') }}">Create Account</a></li>
                     </ul>
                 </div>
             </div>

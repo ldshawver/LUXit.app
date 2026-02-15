@@ -340,11 +340,16 @@
     <div class="container-lux" style="position:relative;">
         <h2 class="section-title">Which challenge is yours?</h2>
         <p class="section-subtitle mx-auto mb-4">
-            Start with the full platform. See results in your first week.
+            Let us show you the solution for your specific challenge. Schedule a personalized demo.
         </p>
-        <a href="{{ url_for('auth.register') }}" class="btn-lux-primary btn-lux-large">
-            Get Started Free <i data-feather="arrow-right" style="width:18px;height:18px;"></i>
-        </a>
+        <div class="d-flex flex-wrap justify-content-center gap-3">
+            <a href="{{ url_for('marketing.book_demo', from='solutions') }}" class="btn-lux-primary btn-lux-large">
+                Book a Demo <i data-feather="calendar" style="width:18px;height:18px;"></i>
+            </a>
+            <a href="mailto:demo@luxplatform.com" class="btn-lux-outline btn-lux-large">
+                <i data-feather="mail" style="width:18px;height:18px;"></i> Email Us
+            </a>
+        </div>
     </div>
 </section>
 {% endblock %}

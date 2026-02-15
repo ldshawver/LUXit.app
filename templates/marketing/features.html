@@ -417,10 +417,15 @@
     <div style="position:absolute;inset:0;background:radial-gradient(ellipse 70% 50% at 50% 50%,rgba(188,0,237,0.08),transparent);"></div>
     <div class="container-lux" style="position:relative;">
         <h2 class="section-title">See it in action</h2>
-        <p class="section-subtitle mx-auto mb-4">Start with the full platform free. No credit card required.</p>
-        <a href="{{ url_for('auth.register') }}" class="btn-lux-primary btn-lux-large">
-            Get Started Free <i data-feather="arrow-right" style="width:18px;height:18px;"></i>
-        </a>
+        <p class="section-subtitle mx-auto mb-4">See how LUX can transform your marketing. Schedule a personalized demo.</p>
+        <div class="d-flex flex-wrap justify-content-center gap-3">
+            <a href="{{ url_for('marketing.book_demo', from='features') }}" class="btn-lux-primary btn-lux-large">
+                Book a Demo <i data-feather="calendar" style="width:18px;height:18px;"></i>
+            </a>
+            <a href="tel:+18005551234" class="btn-lux-outline btn-lux-large">
+                <i data-feather="phone" style="width:18px;height:18px;"></i> Call Us
+            </a>
+        </div>
     </div>
 </section>
 {% endblock %}

@@ -1,0 +1,172 @@
+{% extends "marketing/base_marketing.html" %}
+{% block title %}Demo Requested{% endblock %}
+
+{% block extra_css %}
+.success-section {
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    padding-top: 6rem;
+    text-align: center;
+}
+
+.success-section::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background:
+        radial-gradient(ellipse 60% 40% at 50% 40%, rgba(0, 255, 180, 0.06), transparent),
+        radial-gradient(ellipse 50% 30% at 50% 70%, rgba(188, 0, 237, 0.04), transparent);
+    pointer-events: none;
+}
+
+.success-card {
+    background: rgba(10, 10, 10, 0.9);
+    border: 1px solid rgba(0, 255, 180, 0.15);
+    border-radius: 20px;
+    padding: 3rem;
+    max-width: 580px;
+    margin: 0 auto;
+    position: relative;
+    overflow: hidden;
+}
+
+.success-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 2px;
+    background: linear-gradient(90deg, var(--lux-cyan), var(--lux-purple));
+}
+
+.success-icon {
+    width: 80px;
+    height: 80px;
+    border-radius: 50%;
+    background: rgba(0, 255, 180, 0.1);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto 1.5rem;
+}
+
+.next-steps {
+    text-align: left;
+    background: rgba(255, 255, 255, 0.03);
+    border-radius: 12px;
+    padding: 1.5rem;
+    margin-top: 2rem;
+}
+
+.next-step-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+    margin-bottom: 1rem;
+}
+
+.next-step-item:last-child { margin-bottom: 0; }
+
+.step-num {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: rgba(0, 255, 180, 0.1);
+    color: var(--lux-cyan);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.8rem;
+    font-weight: 700;
+    flex-shrink: 0;
+}
+
+.direct-contact-row {
+    display: flex;
+    gap: 1rem;
+    margin-top: 2rem;
+    flex-wrap: wrap;
+    justify-content: center;
+}
+
+.direct-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    color: var(--lux-cyan);
+    text-decoration: none;
+    font-weight: 500;
+    font-size: 0.9rem;
+    padding: 0.6rem 1.2rem;
+    border: 1px solid rgba(0, 255, 180, 0.2);
+    border-radius: 8px;
+    transition: all 0.3s;
+}
+
+.direct-link:hover {
+    background: rgba(0, 255, 180, 0.08);
+    border-color: var(--lux-cyan);
+    color: var(--lux-cyan);
+}
+{% endblock %}
+
+{% block content %}
+<section class="success-section">
+    <div class="container-lux" style="position:relative;">
+        <div class="success-card">
+            <div class="success-icon">
+                <i data-feather="check-circle" style="width:40px;height:40px;color:var(--lux-cyan);"></i>
+            </div>
+            <h1 style="font-size:1.8rem;font-weight:800;margin-bottom:0.75rem;">
+                Demo request <span class="gradient-text">received!</span>
+            </h1>
+            <p style="color:rgba(255,255,255,0.55);font-size:1rem;line-height:1.7;">
+                Thanks, {{ demo.first_name }}. We've received your request and a product specialist will reach out
+                {% if demo.preferred_contact == 'phone' %}by phone{% elif demo.preferred_contact == 'video' %}to schedule a video call{% else %}via email at <strong style="color:var(--lux-cyan);">{{ demo.email }}</strong>{% endif %}
+                within one business day.
+            </p>
+
+            <div class="next-steps">
+                <div style="font-weight:600;font-size:0.9rem;margin-bottom:1rem;">What happens next</div>
+                <div class="next-step-item">
+                    <div class="step-num">1</div>
+                    <div style="color:rgba(255,255,255,0.6);font-size:0.9rem;">A product specialist reviews your request and prepares a personalized demo</div>
+                </div>
+                <div class="next-step-item">
+                    <div class="step-num">2</div>
+                    <div style="color:rgba(255,255,255,0.6);font-size:0.9rem;">We'll reach out to schedule a time that works for you</div>
+                </div>
+                <div class="next-step-item">
+                    <div class="step-num">3</div>
+                    <div style="color:rgba(255,255,255,0.6);font-size:0.9rem;">30-minute live walkthrough focused on your specific use cases</div>
+                </div>
+            </div>
+
+            <p style="color:rgba(255,255,255,0.35);font-size:0.85rem;margin-top:1.5rem;">
+                Can't wait? Reach us directly:
+            </p>
+            <div class="direct-contact-row">
+                <a href="tel:+18005551234" class="direct-link">
+                    <i data-feather="phone" style="width:16px;height:16px;"></i> (800) 555-1234
+                </a>
+                <a href="mailto:demo@luxplatform.com" class="direct-link">
+                    <i data-feather="mail" style="width:16px;height:16px;"></i> demo@luxplatform.com
+                </a>
+            </div>
+
+            <div style="margin-top:2rem;">
+                <a href="{{ url_for('marketing.features') }}" class="btn-lux-outline" style="margin-right:0.5rem;">
+                    Explore Features
+                </a>
+                <a href="{{ url_for('marketing.home') }}" class="btn-lux-primary">
+                    Back to Home
+                </a>
+            </div>
+        </div>
+    </div>
+</section>
+{% endblock %}

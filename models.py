@@ -2578,3 +2578,22 @@ def seed_feature_toggles(company_id):
             db.session.add(toggle)
     
     db.session.commit()
+
+
+class DemoRequest(db.Model):
+    __tablename__ = 'demo_request'
+
+    id = db.Column(db.Integer, primary_key=True)
+    first_name = db.Column(db.String(100), nullable=False)
+    last_name = db.Column(db.String(100), nullable=False)
+    email = db.Column(db.String(200), nullable=False)
+    phone = db.Column(db.String(50))
+    company_name = db.Column(db.String(200))
+    job_title = db.Column(db.String(200))
+    team_size = db.Column(db.String(50))
+    message = db.Column(db.Text)
+    preferred_contact = db.Column(db.String(20), default='email')
+    source_page = db.Column(db.String(100))
+    status = db.Column(db.String(20), default='new')
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
