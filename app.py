@@ -243,11 +243,13 @@ from routes import main_bp
 from auth import auth_bp
 from user_management import user_bp
 from advanced_config import advanced_config_bp
+from marketing_routes import marketing_bp
 
 app.register_blueprint(main_bp)
 app.register_blueprint(auth_bp, url_prefix="/auth")
 app.register_blueprint(user_bp, url_prefix="/user")
 app.register_blueprint(advanced_config_bp)
+app.register_blueprint(marketing_bp)
 
 
 # Optional / external integrations

@@ -7442,19 +7442,7 @@ def create_keyword_research():
 @main_bp.route('/crm')
 @login_required
 def crm_dashboard():
-    """CRM dashboard with deals and pipeline"""
-    from models import Deal
-    from sqlalchemy import func
-    company = current_user.get_default_company()
-    
-    deals = Deal.query.filter_by(company_id=company.id).all()
-    pipeline_data = db.session.query(
-        Deal.stage,
-        func.count(Deal.id).label('count'),
-        func.sum(Deal.value).label('total_value')
-    ).filter_by(company_id=company.id).group_by(Deal.stage).all()
-    
-    return render_template('crm_dashboard.html', deals=deals, pipeline_data=pipeline_data)
+    return redirect(url_for('main.lux_crm'))
 
 @main_bp.route('/crm/deals/<int:deal_id>')
 @login_required
@@ -7910,6 +7898,16 @@ def lux_crm():
         'deals_won_this_month': len([d for d in deals if d.stage in ['won', 'closed_won']]),
     }
     
+    import json
+    stage_order = ['prospecting', 'qualification', 'proposal', 'negotiation', 'won', 'lost']
+    stage_labels = ['Prospecting', 'Qualification', 'Proposal', 'Negotiation', 'Won', 'Lost']
+    stage_counts = []
+    stage_values = []
+    for s in stage_order:
+        s_deals = [d for d in deals if d.stage == s]
+        stage_counts.append(len(s_deals))
+        stage_values.append(sum(d.value or 0 for d in s_deals))
+    
     return render_template('lux_crm.html', 
         deals=deals, 
         all_contacts=all_contacts,
@@ -7919,10 +7917,14 @@ def lux_crm():
         next_actions=next_actions,
         activity_stats=activity_stats,
         stale_deals=stale_deals,
-        hot_leads=hot_leads
+        hot_leads=hot_leads,
+        stages_json=json.dumps(stage_labels),
+        counts_json=json.dumps(stage_counts),
+        values_json=json.dumps(stage_values)
     )
 
 @main_bp.route('/crm/deals/create', methods=['POST'])
+@csrf.exempt
 @login_required
 def create_deal():
     """Create a new deal in LUX CRM"""
@@ -7947,6 +7949,146 @@ def create_deal():
     except Exception as e:
         logger.error(f'Deal creation error: {e}')
         return jsonify({'success': False, 'error': str(e)}), 400
+
+@main_bp.route('/crm/deals/<int:deal_id>/update-stage', methods=['POST'])
+@csrf.exempt
+@login_required
+def update_deal_stage(deal_id):
+    try:
+        from models import Deal, DealActivity
+        data = request.get_json()
+        deal = Deal.query.get_or_404(deal_id)
+        company = current_user.get_default_company()
+        if deal.company_id != company.id:
+            return jsonify({'success': False, 'error': 'Unauthorized'}), 403
+        old_stage = deal.stage
+        deal.stage = data.get('stage', deal.stage)
+        if deal.stage == 'won':
+            deal.probability = 1.0
+            deal.closed_at = datetime.utcnow()
+        elif deal.stage == 'lost':
+            deal.probability = 0.0
+            deal.closed_at = datetime.utcnow()
+        deal.updated_at = datetime.utcnow()
+        activity = DealActivity(
+            deal_id=deal.id,
+            activity_type='stage_change',
+            description=f'Stage changed from {old_stage} to {deal.stage}',
+            user_id=current_user.id
+        )
+        db.session.add(activity)
+        db.session.commit()
+        return jsonify({'success': True, 'deal': {'id': deal.id, 'stage': deal.stage, 'probability': deal.probability}})
+    except Exception as e:
+        logger.error(f'Deal stage update error: {e}')
+        return jsonify({'success': False, 'error': str(e)}), 400
+
+@main_bp.route('/crm/deals/<int:deal_id>/update', methods=['POST'])
+@csrf.exempt
+@login_required
+def update_deal(deal_id):
+    try:
+        from models import Deal
+        data = request.get_json()
+        deal = Deal.query.get_or_404(deal_id)
+        company = current_user.get_default_company()
+        if deal.company_id != company.id:
+            return jsonify({'success': False, 'error': 'Unauthorized'}), 403
+        if 'title' in data:
+            deal.title = data['title']
+        if 'value' in data:
+            deal.value = float(data['value'])
+        if 'probability' in data:
+            deal.probability = float(data['probability'])
+        if 'description' in data:
+            deal.description = data['description']
+        if 'expected_close_date' in data and data['expected_close_date']:
+            deal.expected_close_date = datetime.fromisoformat(data['expected_close_date'])
+        if 'contact_id' in data:
+            deal.contact_id = data['contact_id'] or None
+        deal.updated_at = datetime.utcnow()
+        db.session.commit()
+        return jsonify({'success': True})
+    except Exception as e:
+        logger.error(f'Deal update error: {e}')
+        return jsonify({'success': False, 'error': str(e)}), 400
+
+@main_bp.route('/crm/deals/<int:deal_id>/delete', methods=['POST'])
+@csrf.exempt
+@login_required
+def delete_deal(deal_id):
+    try:
+        from models import Deal, DealActivity
+        deal = Deal.query.get_or_404(deal_id)
+        company = current_user.get_default_company()
+        if deal.company_id != company.id:
+            return jsonify({'success': False, 'error': 'Unauthorized'}), 403
+        DealActivity.query.filter_by(deal_id=deal.id).delete()
+        db.session.delete(deal)
+        db.session.commit()
+        return jsonify({'success': True})
+    except Exception as e:
+        logger.error(f'Deal delete error: {e}')
+        return jsonify({'success': False, 'error': str(e)}), 400
+
+@main_bp.route('/crm/deals/<int:deal_id>/activity', methods=['POST'])
+@csrf.exempt
+@login_required
+def add_deal_activity(deal_id):
+    try:
+        from models import Deal, DealActivity
+        data = request.get_json()
+        deal = Deal.query.get_or_404(deal_id)
+        company = current_user.get_default_company()
+        if deal.company_id != company.id:
+            return jsonify({'success': False, 'error': 'Unauthorized'}), 403
+        activity = DealActivity(
+            deal_id=deal.id,
+            activity_type=data.get('activity_type', 'note'),
+            description=data.get('description', ''),
+            user_id=current_user.id
+        )
+        db.session.add(activity)
+        deal.updated_at = datetime.utcnow()
+        db.session.commit()
+        return jsonify({'success': True, 'activity_id': activity.id})
+    except Exception as e:
+        logger.error(f'Deal activity error: {e}')
+        return jsonify({'success': False, 'error': str(e)}), 400
+
+@main_bp.route('/crm/deals/<int:deal_id>/json')
+@login_required
+def get_deal_json(deal_id):
+    try:
+        from models import Deal, DealActivity
+        deal = Deal.query.get_or_404(deal_id)
+        company = current_user.get_default_company()
+        if deal.company_id != company.id:
+            return jsonify({'error': 'Unauthorized'}), 403
+        activities = DealActivity.query.filter_by(deal_id=deal.id).order_by(DealActivity.activity_date.desc()).limit(20).all()
+        return jsonify({
+            'id': deal.id,
+            'title': deal.title,
+            'description': deal.description or '',
+            'value': deal.value or 0,
+            'stage': deal.stage,
+            'probability': deal.probability or 0,
+            'expected_close_date': deal.expected_close_date.isoformat() if deal.expected_close_date else '',
+            'contact_id': deal.contact_id,
+            'contact_name': deal.contact.full_name if deal.contact else '',
+            'contact_email': deal.contact.email if deal.contact else '',
+            'created_at': deal.created_at.strftime('%b %d, %Y') if deal.created_at else '',
+            'updated_at': deal.updated_at.strftime('%b %d, %Y') if deal.updated_at else '',
+            'activities': [{
+                'id': a.id,
+                'type': a.activity_type,
+                'description': a.description,
+                'date': a.activity_date.strftime('%b %d, %Y %H:%M') if a.activity_date else ''
+            } for a in activities]
+        })
+    except Exception as e:
+        logger.error(f'Get deal JSON error: {e}')
+        return jsonify({'error': str(e)}), 500
 
 @main_bp.route('/api/contacts/<int:contact_id>')
 @login_required

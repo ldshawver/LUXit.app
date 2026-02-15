@@ -1,0 +1,350 @@
+{% extends "marketing/base_marketing.html" %}
+{% block title %}Solutions - For Marketers, CTOs & CEOs{% endblock %}
+{% block meta_description %}LUX solves real business problems: eliminate tool sprawl, automate repetitive work, gain competitive intelligence, and prove marketing ROI to the board.{% endblock %}
+
+{% block extra_css %}
+.solutions-hero {
+    padding: 10rem 0 5rem;
+    position: relative;
+}
+
+.solutions-hero::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(ellipse 60% 40% at 50% 0%, rgba(188, 0, 237, 0.06), transparent);
+    pointer-events: none;
+}
+
+.persona-section {
+    padding: 5rem 0;
+    border-top: 1px solid rgba(255, 255, 255, 0.04);
+    position: relative;
+}
+
+.persona-card {
+    background: rgba(10, 10, 10, 0.8);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 16px;
+    padding: 2.5rem;
+    height: 100%;
+    position: relative;
+    overflow: hidden;
+}
+
+.persona-card::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+}
+
+.persona-card.cyan::after { background: linear-gradient(90deg, var(--lux-cyan), transparent); }
+.persona-card.purple::after { background: linear-gradient(90deg, var(--lux-purple), transparent); }
+.persona-card.pink::after { background: linear-gradient(90deg, var(--lux-pink), transparent); }
+
+.persona-role {
+    display: inline-block;
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    padding: 0.3rem 0.75rem;
+    border-radius: 4px;
+    margin-bottom: 1rem;
+}
+
+.pain-point {
+    background: rgba(228, 5, 92, 0.05);
+    border-left: 3px solid var(--lux-pink);
+    padding: 1rem 1.25rem;
+    border-radius: 0 8px 8px 0;
+    margin-bottom: 0.75rem;
+    font-size: 0.9rem;
+    color: rgba(255, 255, 255, 0.65);
+}
+
+.solve-point {
+    background: rgba(0, 255, 180, 0.04);
+    border-left: 3px solid var(--lux-cyan);
+    padding: 1rem 1.25rem;
+    border-radius: 0 8px 8px 0;
+    margin-bottom: 0.75rem;
+    font-size: 0.9rem;
+    color: rgba(255, 255, 255, 0.65);
+}
+
+.use-case-card {
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    border-radius: 14px;
+    padding: 2rem;
+    transition: all 0.3s;
+}
+
+.use-case-card:hover {
+    border-color: rgba(0, 255, 180, 0.2);
+    transform: translateY(-4px);
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4);
+}
+
+.industry-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    padding: 0.4rem 0.9rem;
+    border-radius: 6px;
+    font-size: 0.8rem;
+    color: rgba(255, 255, 255, 0.6);
+    font-weight: 500;
+}
+
+.outcome-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 1.5rem;
+}
+
+.outcome-card {
+    text-align: center;
+    padding: 2.5rem 2rem;
+    border-radius: 16px;
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    background: rgba(10, 10, 10, 0.6);
+}
+
+.outcome-icon {
+    width: 60px;
+    height: 60px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto 1.25rem;
+}
+{% endblock %}
+
+{% block content %}
+<section class="solutions-hero">
+    <div class="container-lux text-center">
+        <div class="section-label mx-auto">
+            <i data-feather="briefcase" style="width:14px;height:14px;"></i>
+            Business Solutions
+        </div>
+        <h1 class="section-title" style="font-size:clamp(2.5rem,5vw,4rem);">
+            Built for the problems<br><span class="gradient-text">you actually have</span>
+        </h1>
+        <p class="section-subtitle mx-auto">
+            Whether you're a VP of Marketing proving ROI, a CTO reducing tool sprawl, or a CEO scaling revenue &mdash; LUX solves your specific challenge.
+        </p>
+    </div>
+</section>
+
+<section class="persona-section" id="marketers">
+    <div class="container-lux">
+        <div class="row g-5 align-items-start">
+            <div class="col-lg-5">
+                <div class="persona-card cyan">
+                    <div class="persona-role" style="background:rgba(0,255,180,0.1);color:var(--lux-cyan);">VP of Marketing / CMO</div>
+                    <h2 style="font-weight:800;font-size:1.8rem;margin-bottom:1rem;">
+                        "I need to do more with fewer people and prove every dollar works."
+                    </h2>
+                    <p style="color:rgba(255,255,255,0.5);font-size:0.95rem;line-height:1.7;">
+                        You're responsible for pipeline, brand, and revenue &mdash; across a dozen channels, with a lean team. You don't need more dashboards. You need execution.
+                    </p>
+                </div>
+            </div>
+            <div class="col-lg-7">
+                <h5 style="font-weight:700;margin-bottom:1.25rem;color:var(--lux-pink);">Your pain points</h5>
+                <div class="pain-point">Team spends 60% of time on repetitive tasks instead of strategy</div>
+                <div class="pain-point">Can't tie marketing spend to revenue in board reports</div>
+                <div class="pain-point">Competitors launch campaigns faster with seemingly fewer resources</div>
+                <div class="pain-point">Content approval bottlenecks slow everything down</div>
+
+                <h5 style="font-weight:700;margin:2rem 0 1.25rem;color:var(--lux-cyan);">How LUX solves it</h5>
+                <div class="solve-point"><strong>11 AI agents</strong> handle campaign creation, scheduling, and optimization &mdash; your team focuses on strategy</div>
+                <div class="solve-point"><strong>Revenue analytics</strong> with multi-touch attribution connects every campaign to pipeline and closed revenue</div>
+                <div class="solve-point"><strong>Competitor intelligence</strong> monitors rival SEO, social, and content &mdash; giving you real-time strategic advantage</div>
+                <div class="solve-point"><strong>Approval queue</strong> with instant review workflow eliminates bottlenecks while maintaining brand safety</div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<section class="persona-section" id="cto">
+    <div class="container-lux">
+        <div class="row g-5 align-items-start">
+            <div class="col-lg-5">
+                <div class="persona-card purple">
+                    <div class="persona-role" style="background:rgba(188,0,237,0.1);color:var(--lux-purple);">CTO / VP of Engineering</div>
+                    <h2 style="font-weight:800;font-size:1.8rem;margin-bottom:1rem;">
+                        "I need one platform, not 12 integrations I have to babysit."
+                    </h2>
+                    <p style="color:rgba(255,255,255,0.5);font-size:0.95rem;line-height:1.7;">
+                        Every new marketing tool means another vendor, another API key, another security review. You need consolidation without losing capability.
+                    </p>
+                </div>
+            </div>
+            <div class="col-lg-7">
+                <h5 style="font-weight:700;margin-bottom:1.25rem;color:var(--lux-pink);">Your pain points</h5>
+                <div class="pain-point">API keys scattered across 8+ platforms with no centralized management</div>
+                <div class="pain-point">Security reviews for every new marketing tool slow down teams</div>
+                <div class="pain-point">Marketing stack has become an unmaintainable integration nightmare</div>
+                <div class="pain-point">No visibility into which tools are actually being used or driving value</div>
+
+                <h5 style="font-weight:700;margin:2rem 0 1.25rem;color:var(--lux-cyan);">How LUX solves it</h5>
+                <div class="solve-point"><strong>Centralized secrets vault</strong> with per-company encrypted storage for all API keys and credentials</div>
+                <div class="solve-point"><strong>One platform</strong> replaces email, social, CRM, ads, analytics, and SEO tools &mdash; fewer vendors, one security review</div>
+                <div class="solve-point"><strong>OAuth 2.0</strong> with JWKS-based JWT verification, CSRF protection, and audit trails on every action</div>
+                <div class="solve-point"><strong>Self-healing system</strong> with AI-powered error diagnostics, auto-repair, and system health monitoring</div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<section class="persona-section" id="ceo">
+    <div class="container-lux">
+        <div class="row g-5 align-items-start">
+            <div class="col-lg-5">
+                <div class="persona-card pink">
+                    <div class="persona-role" style="background:rgba(228,5,92,0.1);color:var(--lux-pink);">CEO / Founder</div>
+                    <h2 style="font-weight:800;font-size:1.8rem;margin-bottom:1rem;">
+                        "I need marketing that scales revenue without scaling headcount."
+                    </h2>
+                    <p style="color:rgba(255,255,255,0.5);font-size:0.95rem;line-height:1.7;">
+                        Growth depends on marketing efficiency. You want a system that generates pipeline automatically, gives you competitive edge, and shows clear ROI without hiring 5 more people.
+                    </p>
+                </div>
+            </div>
+            <div class="col-lg-7">
+                <h5 style="font-weight:700;margin-bottom:1.25rem;color:var(--lux-pink);">Your pain points</h5>
+                <div class="pain-point">Marketing costs grow faster than revenue &mdash; unclear where money actually goes</div>
+                <div class="pain-point">Competitors seem to move faster and capture market share</div>
+                <div class="pain-point">Sales and marketing teams operate in silos with conflicting data</div>
+                <div class="pain-point">Board asks for metrics you can't confidently provide</div>
+
+                <h5 style="font-weight:700;margin:2rem 0 1.25rem;color:var(--lux-cyan);">How LUX solves it</h5>
+                <div class="solve-point"><strong>AI automation</strong> replaces 85% of manual marketing work &mdash; scale output without scaling team</div>
+                <div class="solve-point"><strong>Competitor tracking</strong> gives you real-time intelligence on rival strategies, pricing, and market moves</div>
+                <div class="solve-point"><strong>Unified CRM + Marketing</strong> in one platform eliminates silos &mdash; one source of truth from lead to close</div>
+                <div class="solve-point"><strong>Executive dashboards</strong> with 10 metric categories give you board-ready reporting in seconds</div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<section class="section" style="background:rgba(0,255,180,0.01);">
+    <div class="container-lux">
+        <div class="text-center mb-5">
+            <div class="section-label mx-auto">
+                <i data-feather="briefcase" style="width:14px;height:14px;"></i>
+                Industry Use Cases
+            </div>
+            <h2 class="section-title">Works across <span class="gradient-text">every industry</span></h2>
+        </div>
+        <div class="row g-4">
+            <div class="col-lg-4 col-md-6">
+                <div class="use-case-card h-100">
+                    <div class="industry-tag mb-3"><i data-feather="shopping-bag" style="width:14px;height:14px;"></i> E-Commerce</div>
+                    <h5 style="font-weight:700;margin-bottom:0.75rem;">Drive repeat purchases with automated journeys</h5>
+                    <p style="color:rgba(255,255,255,0.5);font-size:0.85rem;line-height:1.6;">Abandoned cart recovery, post-purchase nurture, loyalty rewards, and AI-powered product recommendations across email and SMS.</p>
+                </div>
+            </div>
+            <div class="col-lg-4 col-md-6">
+                <div class="use-case-card h-100">
+                    <div class="industry-tag mb-3"><i data-feather="monitor" style="width:14px;height:14px;"></i> SaaS / Tech</div>
+                    <h5 style="font-weight:700;margin-bottom:0.75rem;">Convert trials to paying customers at scale</h5>
+                    <p style="color:rgba(255,255,255,0.5);font-size:0.85rem;line-height:1.6;">Trial onboarding sequences, feature adoption campaigns, churn prevention alerts, and product-led growth analytics.</p>
+                </div>
+            </div>
+            <div class="col-lg-4 col-md-6">
+                <div class="use-case-card h-100">
+                    <div class="industry-tag mb-3"><i data-feather="home" style="width:14px;height:14px;"></i> Real Estate</div>
+                    <h5 style="font-weight:700;margin-bottom:0.75rem;">Nurture leads through long sales cycles</h5>
+                    <p style="color:rgba(255,255,255,0.5);font-size:0.85rem;line-height:1.6;">Automated listing alerts, open house follow-ups, mortgage calculator lead magnets, and geographic audience segmentation.</p>
+                </div>
+            </div>
+            <div class="col-lg-4 col-md-6">
+                <div class="use-case-card h-100">
+                    <div class="industry-tag mb-3"><i data-feather="heart" style="width:14px;height:14px;"></i> Healthcare</div>
+                    <h5 style="font-weight:700;margin-bottom:0.75rem;">Patient engagement with compliance guardrails</h5>
+                    <p style="color:rgba(255,255,255,0.5);font-size:0.85rem;line-height:1.6;">Appointment reminders, wellness campaigns, patient education drips, and content approval workflows that ensure regulatory compliance.</p>
+                </div>
+            </div>
+            <div class="col-lg-4 col-md-6">
+                <div class="use-case-card h-100">
+                    <div class="industry-tag mb-3"><i data-feather="briefcase" style="width:14px;height:14px;"></i> Professional Services</div>
+                    <h5 style="font-weight:700;margin-bottom:0.75rem;">Build authority and generate qualified leads</h5>
+                    <p style="color:rgba(255,255,255,0.5);font-size:0.85rem;line-height:1.6;">Thought leadership content automation, event promotion, referral programs, and pipeline management for high-value consulting deals.</p>
+                </div>
+            </div>
+            <div class="col-lg-4 col-md-6">
+                <div class="use-case-card h-100">
+                    <div class="industry-tag mb-3"><i data-feather="book" style="width:14px;height:14px;"></i> Education</div>
+                    <h5 style="font-weight:700;margin-bottom:0.75rem;">Enrollment marketing on autopilot</h5>
+                    <p style="color:rgba(255,255,255,0.5);font-size:0.85rem;line-height:1.6;">Prospective student nurture sequences, open day promotion, alumni engagement campaigns, and enrollment funnel analytics.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<section class="section">
+    <div class="container-lux">
+        <div class="text-center mb-5">
+            <div class="section-label mx-auto">
+                <i data-feather="award" style="width:14px;height:14px;"></i>
+                Business Outcomes
+            </div>
+            <h2 class="section-title">Measurable impact on your <span class="gradient-text">bottom line</span></h2>
+        </div>
+        <div class="outcome-grid">
+            <div class="outcome-card">
+                <div class="outcome-icon" style="background:rgba(0,255,180,0.1);">
+                    <i data-feather="trending-up" style="width:28px;height:28px;color:var(--lux-cyan);"></i>
+                </div>
+                <h4 style="font-weight:800;">Increased Sales</h4>
+                <p style="color:rgba(255,255,255,0.5);font-size:0.9rem;line-height:1.6;">AI-scored leads, coached sales actions, and automated nurture sequences accelerate pipeline velocity and increase close rates.</p>
+            </div>
+            <div class="outcome-card">
+                <div class="outcome-icon" style="background:rgba(188,0,237,0.1);">
+                    <i data-feather="clock" style="width:28px;height:28px;color:var(--lux-purple);"></i>
+                </div>
+                <h4 style="font-weight:800;">Increased Productivity</h4>
+                <p style="color:rgba(255,255,255,0.5);font-size:0.9rem;line-height:1.6;">Eliminate manual campaign work. 11 AI agents handle creation, scheduling, optimization, and reporting automatically.</p>
+            </div>
+            <div class="outcome-card">
+                <div class="outcome-icon" style="background:rgba(228,5,92,0.1);">
+                    <i data-feather="shield" style="width:28px;height:28px;color:var(--lux-pink);"></i>
+                </div>
+                <h4 style="font-weight:800;">Reduced Risk</h4>
+                <p style="color:rgba(255,255,255,0.5);font-size:0.9rem;line-height:1.6;">Centralized security, encrypted credentials, mandatory content approval, audit trails, and emergency stop capabilities.</p>
+            </div>
+            <div class="outcome-card">
+                <div class="outcome-icon" style="background:rgba(0,68,255,0.1);">
+                    <i data-feather="eye" style="width:28px;height:28px;color:var(--lux-blue);"></i>
+                </div>
+                <h4 style="font-weight:800;">Competitive Edge</h4>
+                <p style="color:rgba(255,255,255,0.5);font-size:0.9rem;line-height:1.6;">Real-time competitor monitoring across SEO, social, and content gives you strategic intelligence to outmaneuver rivals.</p>
+            </div>
+        </div>
+    </div>
+</section>
+
+<section style="padding:6rem 0;position:relative;text-align:center;">
+    <div style="position:absolute;inset:0;background:radial-gradient(ellipse 70% 50% at 50% 50%,rgba(0,255,180,0.06),transparent);"></div>
+    <div class="container-lux" style="position:relative;">
+        <h2 class="section-title">Which challenge is yours?</h2>
+        <p class="section-subtitle mx-auto mb-4">
+            Start with the full platform. See results in your first week.
+        </p>
+        <a href="{{ url_for('auth.register') }}" class="btn-lux-primary btn-lux-large">
+            Get Started Free <i data-feather="arrow-right" style="width:18px;height:18px;"></i>
+        </a>
+    </div>
+</section>
+{% endblock %}

@@ -1,0 +1,352 @@
+{% extends "marketing/base_marketing.html" %}
+{% block title %}Security & Compliance - Enterprise-Grade Protection{% endblock %}
+{% block meta_description %}LUX provides enterprise-grade security: encrypted secrets vault, OAuth 2.0, CSRF protection, content approval workflows, audit trails, and emergency stop capabilities.{% endblock %}
+
+{% block extra_css %}
+.security-hero {
+    padding: 10rem 0 5rem;
+    position: relative;
+}
+
+.security-hero::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(ellipse 60% 40% at 50% 0%, rgba(0, 68, 255, 0.06), transparent);
+    pointer-events: none;
+}
+
+.security-layer {
+    padding: 4rem 0;
+    border-top: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.security-card {
+    background: rgba(10, 10, 10, 0.8);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 14px;
+    padding: 2rem;
+    height: 100%;
+    transition: all 0.3s;
+}
+
+.security-card:hover {
+    border-color: rgba(0, 68, 255, 0.3);
+    transform: translateY(-3px);
+}
+
+.security-icon {
+    width: 48px;
+    height: 48px;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 1.25rem;
+    background: rgba(0, 68, 255, 0.1);
+    color: var(--lux-blue);
+}
+
+.compliance-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    background: rgba(0, 255, 180, 0.06);
+    border: 1px solid rgba(0, 255, 180, 0.15);
+    color: var(--lux-cyan);
+    padding: 0.75rem 1.25rem;
+    border-radius: 10px;
+    font-size: 0.9rem;
+    font-weight: 600;
+}
+
+.arch-diagram {
+    background: rgba(10, 10, 10, 0.9);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 16px;
+    padding: 2.5rem;
+    position: relative;
+}
+
+.arch-layer {
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 10px;
+    padding: 1.25rem;
+    margin-bottom: 0.75rem;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+}
+
+.arch-layer .layer-label {
+    font-weight: 700;
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    min-width: 120px;
+}
+
+.arch-layer .layer-detail {
+    font-size: 0.85rem;
+    color: rgba(255, 255, 255, 0.5);
+}
+
+.toggle-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 0.5rem;
+}
+
+.toggle-item {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 0.75rem;
+    background: rgba(255, 255, 255, 0.02);
+    border-radius: 6px;
+    font-size: 0.8rem;
+    color: rgba(255, 255, 255, 0.6);
+}
+
+.toggle-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--lux-cyan);
+    flex-shrink: 0;
+}
+{% endblock %}
+
+{% block content %}
+<section class="security-hero">
+    <div class="container-lux text-center">
+        <div class="section-label mx-auto">
+            <i data-feather="shield" style="width:14px;height:14px;"></i>
+            Security & Compliance
+        </div>
+        <h1 class="section-title" style="font-size:clamp(2.5rem,5vw,4rem);">
+            Enterprise-grade security.<br><span class="gradient-text">Built in, not bolted on.</span>
+        </h1>
+        <p class="section-subtitle mx-auto">
+            Every layer of LUX is designed with security, data protection, and compliance in mind. Your data, credentials, and brand reputation are protected by default.
+        </p>
+    </div>
+</section>
+
+<section class="security-layer">
+    <div class="container-lux">
+        <div class="row g-4 mb-5">
+            <div class="col-lg-4 col-md-6">
+                <div class="security-card">
+                    <div class="security-icon">
+                        <i data-feather="lock" style="width:22px;height:22px;"></i>
+                    </div>
+                    <h5 style="font-weight:700;margin-bottom:0.75rem;">Encrypted Secrets Vault</h5>
+                    <p style="color:rgba(255,255,255,0.5);font-size:0.9rem;line-height:1.7;">
+                        All API keys, OAuth tokens, and third-party credentials are stored in a centralized, encrypted vault with per-company isolation. No more scattered credentials in config files.
+                    </p>
+                </div>
+            </div>
+            <div class="col-lg-4 col-md-6">
+                <div class="security-card">
+                    <div class="security-icon" style="background:rgba(188,0,237,0.1);color:var(--lux-purple);">
+                        <i data-feather="user-check" style="width:22px;height:22px;"></i>
+                    </div>
+                    <h5 style="font-weight:700;margin-bottom:0.75rem;">Secure Authentication</h5>
+                    <p style="color:rgba(255,255,255,0.5);font-size:0.9rem;line-height:1.7;">
+                        OAuth 2.0 authentication supporting Google, GitHub, Apple, and email sign-in. JWKS-based JWT signature verification ensures token integrity and prevents forgery.
+                    </p>
+                </div>
+            </div>
+            <div class="col-lg-4 col-md-6">
+                <div class="security-card">
+                    <div class="security-icon" style="background:rgba(228,5,92,0.1);color:var(--lux-pink);">
+                        <i data-feather="alert-octagon" style="width:22px;height:22px;"></i>
+                    </div>
+                    <h5 style="font-weight:700;margin-bottom:0.75rem;">Emergency Controls</h5>
+                    <p style="color:rgba(255,255,255,0.5);font-size:0.9rem;line-height:1.7;">
+                        Instant emergency stop halts all automation across the platform. 27 feature toggles with safe-off defaults let you control exactly which capabilities are active.
+                    </p>
+                </div>
+            </div>
+            <div class="col-lg-4 col-md-6">
+                <div class="security-card">
+                    <div class="security-icon" style="background:rgba(0,255,180,0.1);color:var(--lux-cyan);">
+                        <i data-feather="check-square" style="width:22px;height:22px;"></i>
+                    </div>
+                    <h5 style="font-weight:700;margin-bottom:0.75rem;">Content Approval Queue</h5>
+                    <p style="color:rgba(255,255,255,0.5);font-size:0.9rem;line-height:1.7;">
+                        Mandatory review workflow for all marketing content &mdash; AI-generated and manual. Nothing goes live without explicit human approval. Complete audit trail on every action.
+                    </p>
+                </div>
+            </div>
+            <div class="col-lg-4 col-md-6">
+                <div class="security-card">
+                    <div class="security-icon">
+                        <i data-feather="shield" style="width:22px;height:22px;"></i>
+                    </div>
+                    <h5 style="font-weight:700;margin-bottom:0.75rem;">CSRF Protection</h5>
+                    <p style="color:rgba(255,255,255,0.5);font-size:0.9rem;line-height:1.7;">
+                        Every form submission and API call is protected with CSRF tokens. Cross-site request forgery attacks are blocked at the framework level across all endpoints.
+                    </p>
+                </div>
+            </div>
+            <div class="col-lg-4 col-md-6">
+                <div class="security-card">
+                    <div class="security-icon" style="background:rgba(188,0,237,0.1);color:var(--lux-purple);">
+                        <i data-feather="activity" style="width:22px;height:22px;"></i>
+                    </div>
+                    <h5 style="font-weight:700;margin-bottom:0.75rem;">Audit Trails</h5>
+                    <p style="color:rgba(255,255,255,0.5);font-size:0.9rem;line-height:1.7;">
+                        Immutable logging of all critical actions: content approvals, stage changes, data modifications, and system access. Full accountability and traceability.
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<section class="security-layer">
+    <div class="container-lux">
+        <div class="row g-5 align-items-center">
+            <div class="col-lg-5">
+                <div class="section-label">
+                    <i data-feather="layers" style="width:14px;height:14px;"></i>
+                    Architecture
+                </div>
+                <h2 class="section-title">Security at <span class="gradient-text">every layer</span></h2>
+                <p class="section-subtitle">
+                    Defense in depth: from the network edge through authentication, authorization, data access, and content delivery.
+                </p>
+            </div>
+            <div class="col-lg-7">
+                <div class="arch-diagram">
+                    <div class="arch-layer">
+                        <div class="layer-label" style="color:var(--lux-cyan);">Network</div>
+                        <div class="layer-detail">HTTPS/TLS encryption, proxy middleware, rate limiting</div>
+                    </div>
+                    <div class="arch-layer">
+                        <div class="layer-label" style="color:var(--lux-purple);">Auth</div>
+                        <div class="layer-detail">OAuth 2.0, JWT with JWKS verification, session management</div>
+                    </div>
+                    <div class="arch-layer">
+                        <div class="layer-label" style="color:var(--lux-pink);">Application</div>
+                        <div class="layer-detail">CSRF tokens, input validation, XSS prevention, secure headers</div>
+                    </div>
+                    <div class="arch-layer">
+                        <div class="layer-label" style="color:var(--lux-blue);">Data</div>
+                        <div class="layer-detail">Encrypted secrets vault, per-company isolation, PostgreSQL with parameterized queries</div>
+                    </div>
+                    <div class="arch-layer">
+                        <div class="layer-label" style="color:var(--lux-cyan);">Content</div>
+                        <div class="layer-detail">Mandatory approval queue, audit logging, emergency stop controls</div>
+                    </div>
+                    <div class="arch-layer">
+                        <div class="layer-label" style="color:var(--lux-purple);">Monitoring</div>
+                        <div class="layer-detail">AI-powered diagnostics, system health checks, auto-repair engine</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<section class="security-layer">
+    <div class="container-lux">
+        <div class="text-center mb-4">
+            <h2 class="section-title">27 Feature Toggles with <span class="gradient-text">Safe-Off Defaults</span></h2>
+            <p class="section-subtitle mx-auto">Every capability can be individually controlled. All default to "off" until explicitly enabled by an administrator.</p>
+        </div>
+        <div class="toggle-list">
+            <div class="toggle-item"><span class="toggle-dot"></span> Email Campaigns</div>
+            <div class="toggle-item"><span class="toggle-dot"></span> SMS Sending</div>
+            <div class="toggle-item"><span class="toggle-dot"></span> Social Publishing</div>
+            <div class="toggle-item"><span class="toggle-dot"></span> AI Content Generation</div>
+            <div class="toggle-item"><span class="toggle-dot"></span> Ad Campaigns</div>
+            <div class="toggle-item"><span class="toggle-dot"></span> Webhook Processing</div>
+            <div class="toggle-item"><span class="toggle-dot"></span> Auto-Scheduling</div>
+            <div class="toggle-item"><span class="toggle-dot"></span> Lead Scoring</div>
+            <div class="toggle-item"><span class="toggle-dot"></span> Competitor Monitoring</div>
+            <div class="toggle-item"><span class="toggle-dot"></span> Blog Auto-Publish</div>
+            <div class="toggle-item"><span class="toggle-dot"></span> Event Integrations</div>
+            <div class="toggle-item"><span class="toggle-dot"></span> Contact Import</div>
+            <div class="toggle-item"><span class="toggle-dot"></span> API Access</div>
+            <div class="toggle-item"><span class="toggle-dot"></span> Reporting Export</div>
+            <div class="toggle-item"><span class="toggle-dot"></span> Automation Triggers</div>
+        </div>
+    </div>
+</section>
+
+<section class="security-layer">
+    <div class="container-lux">
+        <div class="row g-5 align-items-center">
+            <div class="col-lg-6">
+                <h2 class="section-title">Data protection you can <span class="gradient-text">trust</span></h2>
+                <p style="color:rgba(255,255,255,0.5);font-size:1rem;line-height:1.7;margin-bottom:2rem;">
+                    LUX is built on a foundation of data security best practices. From encrypted storage to secure API communications, your business data is protected at every step.
+                </p>
+                <div class="d-flex flex-wrap gap-3">
+                    <div class="compliance-badge">
+                        <i data-feather="check-circle" style="width:18px;height:18px;"></i>
+                        Encrypted at Rest
+                    </div>
+                    <div class="compliance-badge">
+                        <i data-feather="check-circle" style="width:18px;height:18px;"></i>
+                        Encrypted in Transit
+                    </div>
+                    <div class="compliance-badge">
+                        <i data-feather="check-circle" style="width:18px;height:18px;"></i>
+                        Per-Company Isolation
+                    </div>
+                    <div class="compliance-badge">
+                        <i data-feather="check-circle" style="width:18px;height:18px;"></i>
+                        Audit Trail Logging
+                    </div>
+                    <div class="compliance-badge">
+                        <i data-feather="check-circle" style="width:18px;height:18px;"></i>
+                        Secure Token Storage
+                    </div>
+                    <div class="compliance-badge">
+                        <i data-feather="check-circle" style="width:18px;height:18px;"></i>
+                        CSRF Protection
+                    </div>
+                </div>
+            </div>
+            <div class="col-lg-6">
+                <div class="glass-card">
+                    <h5 style="font-weight:700;margin-bottom:1.5rem;"><i data-feather="terminal" style="width:18px;height:18px;color:var(--lux-cyan);margin-right:0.5rem;"></i> Self-Healing System</h5>
+                    <p style="color:rgba(255,255,255,0.5);font-size:0.9rem;line-height:1.7;margin-bottom:1.25rem;">
+                        The AI-powered auto-repair system continuously monitors platform health:
+                    </p>
+                    <ul class="list-unstyled d-flex flex-column gap-2" style="color:rgba(255,255,255,0.6);font-size:0.85rem;">
+                        <li><i data-feather="check" style="width:14px;height:14px;color:var(--lux-cyan);margin-right:0.5rem;"></i> Detects errors and anomalies in real time</li>
+                        <li><i data-feather="check" style="width:14px;height:14px;color:var(--lux-cyan);margin-right:0.5rem;"></i> Generates diagnosis reports with root cause analysis</li>
+                        <li><i data-feather="check" style="width:14px;height:14px;color:var(--lux-cyan);margin-right:0.5rem;"></i> Creates and tests automated fix plans</li>
+                        <li><i data-feather="check" style="width:14px;height:14px;color:var(--lux-cyan);margin-right:0.5rem;"></i> Logs all system health metrics for review</li>
+                        <li><i data-feather="check" style="width:14px;height:14px;color:var(--lux-cyan);margin-right:0.5rem;"></i> Provides comprehensive diagnostics dashboard</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<section style="padding:6rem 0;position:relative;text-align:center;">
+    <div style="position:absolute;inset:0;background:radial-gradient(ellipse 70% 50% at 50% 50%,rgba(0,68,255,0.06),transparent);"></div>
+    <div class="container-lux" style="position:relative;">
+        <h2 class="section-title">Security that scales with you</h2>
+        <p class="section-subtitle mx-auto mb-4">
+            From startup to enterprise, LUX grows with your security requirements.
+        </p>
+        <div class="d-flex flex-wrap justify-content-center gap-3">
+            <a href="{{ url_for('auth.register') }}" class="btn-lux-primary btn-lux-large">
+                Get Started Free <i data-feather="arrow-right" style="width:18px;height:18px;"></i>
+            </a>
+            <a href="{{ url_for('marketing.features') }}" class="btn-lux-outline btn-lux-large">
+                View All Features
+            </a>
+        </div>
+    </div>
+</section>
+{% endblock %}

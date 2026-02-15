@@ -1950,7 +1950,7 @@ class Deal(db.Model):
     """Sales deals/opportunities"""
     id = db.Column(db.Integer, primary_key=True)
     company_id = db.Column(db.Integer, db.ForeignKey('company.id'), nullable=False)
-    contact_id = db.Column(db.Integer, db.ForeignKey('contact.id'), nullable=False)
+    contact_id = db.Column(db.Integer, db.ForeignKey('contact.id'), nullable=True)
     title = db.Column(db.String(255), nullable=False)
     description = db.Column(db.Text)
     value = db.Column(db.Float)  # Deal value

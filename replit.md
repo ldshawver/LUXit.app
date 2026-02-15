@@ -24,7 +24,7 @@ Key technical implementations and features include:
 - **Keyword Research Integrations**: Multi-provider keyword research supporting DataForSEO, SEMrush, and Moz, with dedicated API endpoints.
 - **Event Integrations**: Multi-provider event search supporting Eventbrite and Ticketmaster, with dedicated API endpoints.
 - **Customer Profile & Engagement Tracking**: Comprehensive customer management with editable profiles, lead scoring, activity timelines, and quick-action buttons for logging interactions.
-- **CRM Hub Transformation**: An action-oriented coaching system with pipeline stages, "Next Actions" coaching widgets, and activity-based metrics.
+- **CRM Hub Transformation**: An action-oriented coaching system with pipeline stages, "Next Actions" coaching widgets, and activity-based metrics. Features a unified Sales Hub (/crm-unified) with visual Kanban pipeline, drag-and-drop deal stage management, slide-out 360° deal detail panel with activity timeline, 5 tabs (Pipeline, Deal List, Customers, Lead Scoring, Analytics with Chart.js), and full CRUD API for deals (create/update/delete/stage-change/activity-log). CSRF-protected JSON endpoints. /crm redirects to unified Sales Hub.
 - **Comprehensive Analytics Hub**: An analytics system providing 10 metric categories (Acquisition, Conversion, Revenue, CAC, Retention, Engagement, Attribution, Segments, Campaigns, Compliance) with Chart.js visualizations and a dark theme UI.
 - **Contact-Subscriber Sync**: Bidirectional synchronization between contacts and newsletter subscribers, including automatic daily sync via an AI agent.
 - **Automation Trigger Library**: An expanded library of 25+ automation templates across various marketing categories (Ecommerce, Engagement, Nurture, Retention, SMS, Social) with full CRUD API support.
@@ -57,3 +57,12 @@ Key technical implementations and features include:
 - **Pexels API**: For alternative stock image search.
 - **TinyURL/Bitly API**: For URL shortening.
 - **PostgreSQL**: Primary database for application data, error logs, and contact information.
+
+## Marketing Pages (Public-Facing)
+External marketing pages at `/m/` prefix, accessible without login:
+- `/m/` - Home: Hero, problem/solution, AI agents, capabilities, multi-channel, CTA
+- `/m/features` - Detailed feature breakdowns: Automation, AI Intelligence, Sales CRM, Competitor Intel, Multi-Channel, Analytics, Security
+- `/m/solutions` - Role-based pain points and solutions for CMO, CTO, CEO + industry use cases
+- `/m/security` - Enterprise security architecture, encrypted vault, approval workflows, compliance
+- Uses standalone `base_marketing.html` template (separate from app `base.html`)
+- Routes defined in `marketing_routes.py` via `marketing_bp` Blueprint

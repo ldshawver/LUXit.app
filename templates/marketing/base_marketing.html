@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="{% block meta_description %}LUX - AI-Powered Marketing Automation & CRM Platform. Automate campaigns, gain competitor intelligence, and accelerate revenue growth.{% endblock %}">
+    <title>{% block title %}LUX{% endblock %} | AI-Powered Marketing & Sales Platform</title>
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='favicon.png') }}">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <script src="https://unpkg.com/feather-icons"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --lux-black: #000000;
+            --lux-cyan: #00ffb4;
+            --lux-purple: #bc00ed;
+            --lux-pink: #e4055c;
+            --lux-blue: #0044ff;
+            --lux-silver: #c0c0c0;
+            --lux-pearl: #F5F5F5;
+            --lux-card: #0a0a0a;
+            --lux-border: rgba(188, 0, 237, 0.2);
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: var(--lux-black);
+            color: var(--lux-pearl);
+            overflow-x: hidden;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        .mkt-nav {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            z-index: 1000;
+            padding: 1rem 0;
+            transition: all 0.3s ease;
+            background: transparent;
+        }
+
+        .mkt-nav.scrolled {
+            background: rgba(0, 0, 0, 0.92);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border-bottom: 1px solid rgba(188, 0, 237, 0.15);
+            padding: 0.6rem 0;
+        }
+
+        .mkt-nav .nav-inner {
+            max-width: 1280px;
+            margin: 0 auto;
+            padding: 0 2rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .mkt-nav .logo {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            text-decoration: none;
+            font-weight: 800;
+            font-size: 1.5rem;
+            color: var(--lux-pearl);
+            letter-spacing: -0.02em;
+        }
+
+        .mkt-nav .logo img {
+            height: 36px;
+            width: auto;
+        }
+
+        .mkt-nav .nav-links {
+            display: flex;
+            align-items: center;
+            gap: 2rem;
+            list-style: none;
+            margin: 0;
+            padding: 0;
+        }
+
+        .mkt-nav .nav-links a {
+            color: rgba(255, 255, 255, 0.7);
+            text-decoration: none;
+            font-size: 0.9rem;
+            font-weight: 500;
+            transition: color 0.2s;
+            letter-spacing: 0.01em;
+        }
+
+        .mkt-nav .nav-links a:hover {
+            color: var(--lux-cyan);
+        }
+
+        .mkt-nav .nav-links a.active {
+            color: var(--lux-cyan);
+        }
+
+        .btn-lux-primary {
+            background: linear-gradient(135deg, var(--lux-cyan), var(--lux-blue));
+            color: #000;
+            border: none;
+            padding: 0.65rem 1.75rem;
+            border-radius: 8px;
+            font-weight: 600;
+            font-size: 0.9rem;
+            text-decoration: none;
+            transition: all 0.3s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .btn-lux-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 30px rgba(0, 255, 180, 0.3);
+            color: #000;
+        }
+
+        .btn-lux-outline {
+            background: transparent;
+            color: var(--lux-pearl);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            padding: 0.65rem 1.75rem;
+            border-radius: 8px;
+            font-weight: 500;
+            font-size: 0.9rem;
+            text-decoration: none;
+            transition: all 0.3s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .btn-lux-outline:hover {
+            border-color: var(--lux-cyan);
+            color: var(--lux-cyan);
+            background: rgba(0, 255, 180, 0.05);
+        }
+
+        .btn-lux-large {
+            padding: 1rem 2.5rem;
+            font-size: 1.05rem;
+            border-radius: 10px;
+        }
+
+        .section { padding: 6rem 0; }
+        .section-sm { padding: 4rem 0; }
+
+        .container-lux {
+            max-width: 1280px;
+            margin: 0 auto;
+            padding: 0 2rem;
+        }
+
+        .gradient-text {
+            background: linear-gradient(135deg, var(--lux-cyan), var(--lux-purple));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .gradient-text-warm {
+            background: linear-gradient(135deg, var(--lux-pink), var(--lux-purple));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .section-label {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            background: rgba(0, 255, 180, 0.08);
+            border: 1px solid rgba(0, 255, 180, 0.2);
+            color: var(--lux-cyan);
+            padding: 0.4rem 1rem;
+            border-radius: 50px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            margin-bottom: 1.5rem;
+        }
+
+        .section-title {
+            font-size: clamp(2rem, 4vw, 3.2rem);
+            font-weight: 800;
+            line-height: 1.15;
+            letter-spacing: -0.03em;
+            margin-bottom: 1.25rem;
+        }
+
+        .section-subtitle {
+            font-size: 1.15rem;
+            color: rgba(255, 255, 255, 0.6);
+            line-height: 1.7;
+            max-width: 640px;
+        }
+
+        .glass-card {
+            background: rgba(10, 10, 10, 0.8);
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            border-radius: 16px;
+            padding: 2rem;
+            transition: all 0.4s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .glass-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 1px;
+            background: linear-gradient(90deg, transparent, rgba(0, 255, 180, 0.3), transparent);
+            opacity: 0;
+            transition: opacity 0.4s ease;
+        }
+
+        .glass-card:hover {
+            border-color: rgba(188, 0, 237, 0.2);
+            transform: translateY(-4px);
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+        }
+
+        .glass-card:hover::before { opacity: 1; }
+
+        .icon-box {
+            width: 52px;
+            height: 52px;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 1.25rem;
+            font-size: 1.25rem;
+        }
+
+        .icon-box.cyan { background: rgba(0, 255, 180, 0.1); color: var(--lux-cyan); }
+        .icon-box.purple { background: rgba(188, 0, 237, 0.1); color: var(--lux-purple); }
+        .icon-box.pink { background: rgba(228, 5, 92, 0.1); color: var(--lux-pink); }
+        .icon-box.blue { background: rgba(0, 68, 255, 0.1); color: var(--lux-blue); }
+
+        .stat-number {
+            font-size: clamp(2.5rem, 5vw, 4rem);
+            font-weight: 900;
+            letter-spacing: -0.04em;
+            line-height: 1;
+        }
+
+        .stat-label {
+            font-size: 0.9rem;
+            color: rgba(255, 255, 255, 0.5);
+            margin-top: 0.5rem;
+            font-weight: 500;
+        }
+
+        .mkt-footer {
+            background: rgba(5, 5, 5, 0.95);
+            border-top: 1px solid rgba(255, 255, 255, 0.05);
+            padding: 4rem 0 2rem;
+        }
+
+        .mkt-footer a {
+            color: rgba(255, 255, 255, 0.5);
+            text-decoration: none;
+            font-size: 0.9rem;
+            transition: color 0.2s;
+        }
+
+        .mkt-footer a:hover { color: var(--lux-cyan); }
+
+        .mkt-footer h6 {
+            color: var(--lux-pearl);
+            font-weight: 700;
+            font-size: 0.85rem;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            margin-bottom: 1.25rem;
+        }
+
+        .glow-line {
+            height: 2px;
+            background: linear-gradient(90deg, transparent, var(--lux-cyan), var(--lux-purple), transparent);
+            border: none;
+            margin: 0;
+        }
+
+        .mobile-toggle {
+            display: none;
+            background: none;
+            border: none;
+            color: var(--lux-pearl);
+            font-size: 1.5rem;
+            cursor: pointer;
+        }
+
+        @media (max-width: 991px) {
+            .mobile-toggle { display: block; }
+            .mkt-nav .nav-links {
+                display: none;
+                position: absolute;
+                top: 100%;
+                left: 0;
+                right: 0;
+                background: rgba(0, 0, 0, 0.97);
+                flex-direction: column;
+                padding: 1.5rem 2rem;
+                gap: 1rem;
+                border-bottom: 1px solid var(--lux-border);
+            }
+            .mkt-nav .nav-links.open { display: flex; }
+            .section { padding: 4rem 0; }
+            .section-title { font-size: 2rem; }
+        }
+
+        {% block extra_css %}{% endblock %}
+    </style>
+</head>
+<body>
+    <hr class="glow-line">
+    <nav class="mkt-nav" id="mktNav">
+        <div class="nav-inner">
+            <a href="{{ url_for('marketing.home') }}" class="logo">
+                <img src="{{ url_for('static', filename='lux_logo.png') }}" alt="LUX">
+                LUX
+            </a>
+            <button class="mobile-toggle" onclick="document.getElementById('navLinks').classList.toggle('open')">
+                <i data-feather="menu"></i>
+            </button>
+            <ul class="nav-links" id="navLinks">
+                <li><a href="{{ url_for('marketing.home') }}" class="{% if active_page == 'home' %}active{% endif %}">Home</a></li>
+                <li><a href="{{ url_for('marketing.features') }}" class="{% if active_page == 'features' %}active{% endif %}">Features</a></li>
+                <li><a href="{{ url_for('marketing.solutions') }}" class="{% if active_page == 'solutions' %}active{% endif %}">Solutions</a></li>
+                <li><a href="{{ url_for('marketing.security') }}" class="{% if active_page == 'security' %}active{% endif %}">Security</a></li>
+                <li><a href="{{ url_for('auth.login') }}" class="btn-lux-primary">Sign In</a></li>
+            </ul>
+        </div>
+    </nav>
+
+    {% block content %}{% endblock %}
+
+    <footer class="mkt-footer">
+        <div class="container-lux">
+            <div class="row g-4">
+                <div class="col-lg-4 col-md-6">
+                    <div class="d-flex align-items-center gap-2 mb-3">
+                        <img src="{{ url_for('static', filename='lux_logo.png') }}" alt="LUX" height="32">
+                        <span style="font-weight: 800; font-size: 1.3rem;">LUX</span>
+                    </div>
+                    <p style="color: rgba(255,255,255,0.45); font-size: 0.9rem; line-height: 1.7; max-width: 300px;">
+                        The AI-powered marketing automation and CRM platform built for teams that move fast.
+                    </p>
+                </div>
+                <div class="col-lg-2 col-md-6">
+                    <h6>Platform</h6>
+                    <ul class="list-unstyled d-flex flex-column gap-2">
+                        <li><a href="{{ url_for('marketing.features') }}">Features</a></li>
+                        <li><a href="{{ url_for('marketing.solutions') }}">Solutions</a></li>
+                        <li><a href="{{ url_for('marketing.security') }}">Security</a></li>
+                    </ul>
+                </div>
+                <div class="col-lg-2 col-md-6">
+                    <h6>Capabilities</h6>
+                    <ul class="list-unstyled d-flex flex-column gap-2">
+                        <li><a href="{{ url_for('marketing.features') }}#automation">Automation</a></li>
+                        <li><a href="{{ url_for('marketing.features') }}#intelligence">AI Intelligence</a></li>
+                        <li><a href="{{ url_for('marketing.features') }}#crm">Sales CRM</a></li>
+                        <li><a href="{{ url_for('marketing.features') }}#analytics">Analytics</a></li>
+                    </ul>
+                </div>
+                <div class="col-lg-2 col-md-6">
+                    <h6>Solutions</h6>
+                    <ul class="list-unstyled d-flex flex-column gap-2">
+                        <li><a href="{{ url_for('marketing.solutions') }}#marketers">For Marketers</a></li>
+                        <li><a href="{{ url_for('marketing.solutions') }}#cto">For CTOs</a></li>
+                        <li><a href="{{ url_for('marketing.solutions') }}#ceo">For CEOs</a></li>
+                    </ul>
+                </div>
+                <div class="col-lg-2 col-md-6">
+                    <h6>Get Started</h6>
+                    <ul class="list-unstyled d-flex flex-column gap-2">
+                        <li><a href="{{ url_for('auth.login') }}">Sign In</a></li>
+                        <li><a href="{{ url_for('auth.register') }}">Create Account</a></li>
+                    </ul>
+                </div>
+            </div>
+            <hr style="border-color: rgba(255,255,255,0.06); margin: 3rem 0 1.5rem;">
+            <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
+                <p style="color: rgba(255,255,255,0.3); font-size: 0.8rem; margin: 0;">&copy; {{ now.year if now else '2026' }} LUX Marketing Platform. All rights reserved.</p>
+                <div class="d-flex gap-3">
+                    <a href="#" style="color: rgba(255,255,255,0.3); font-size: 0.8rem;">Privacy Policy</a>
+                    <a href="#" style="color: rgba(255,255,255,0.3); font-size: 0.8rem;">Terms of Service</a>
+                </div>
+            </div>
+        </div>
+    </footer>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        feather.replace();
+        window.addEventListener('scroll', () => {
+            document.getElementById('mktNav').classList.toggle('scrolled', window.scrollY > 40);
+        });
+    </script>
+    {% block extra_js %}{% endblock %}
+</body>
+</html>

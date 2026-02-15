@@ -1,0 +1,426 @@
+{% extends "marketing/base_marketing.html" %}
+{% block title %}Features - Complete Marketing & Sales Platform{% endblock %}
+{% block meta_description %}Explore LUX features: 11 AI agents, visual CRM pipeline, 25+ automations, competitor intelligence, multi-channel publishing, and enterprise-grade analytics.{% endblock %}
+
+{% block extra_css %}
+.features-hero {
+    padding: 10rem 0 5rem;
+    position: relative;
+}
+
+.features-hero::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(ellipse 60% 40% at 50% 0%, rgba(0, 255, 180, 0.06), transparent);
+    pointer-events: none;
+}
+
+.feature-section {
+    padding: 5rem 0;
+    border-top: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.feature-detail-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 1.25rem;
+}
+
+.feature-detail {
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    border-radius: 12px;
+    padding: 1.5rem;
+    transition: all 0.3s;
+}
+
+.feature-detail:hover {
+    border-color: rgba(0, 255, 180, 0.2);
+    background: rgba(0, 255, 180, 0.02);
+}
+
+.feature-detail h6 {
+    font-weight: 700;
+    font-size: 0.95rem;
+    margin-bottom: 0.5rem;
+}
+
+.feature-detail p {
+    color: rgba(255, 255, 255, 0.5);
+    font-size: 0.85rem;
+    line-height: 1.6;
+    margin: 0;
+}
+
+.feature-icon-lg {
+    width: 64px;
+    height: 64px;
+    border-radius: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 1.5rem;
+}
+
+.tab-nav {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    margin-bottom: 3rem;
+    justify-content: center;
+}
+
+.tab-btn {
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    color: rgba(255, 255, 255, 0.6);
+    padding: 0.6rem 1.25rem;
+    border-radius: 8px;
+    font-size: 0.85rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+    text-decoration: none;
+}
+
+.tab-btn:hover, .tab-btn.active {
+    background: rgba(0, 255, 180, 0.08);
+    border-color: var(--lux-cyan);
+    color: var(--lux-cyan);
+}
+{% endblock %}
+
+{% block content %}
+<section class="features-hero">
+    <div class="container-lux text-center">
+        <div class="section-label mx-auto">
+            <i data-feather="layers" style="width:14px;height:14px;"></i>
+            Platform Capabilities
+        </div>
+        <h1 class="section-title" style="font-size:clamp(2.5rem,5vw,4rem);">
+            Every tool your team needs.<br><span class="gradient-text">Powered by intelligence.</span>
+        </h1>
+        <p class="section-subtitle mx-auto">
+            LUX replaces your entire marketing and sales stack with one AI-native platform. Here's everything under the hood.
+        </p>
+        <div class="tab-nav mt-4">
+            <a href="#automation" class="tab-btn active">Automation</a>
+            <a href="#intelligence" class="tab-btn">AI Intelligence</a>
+            <a href="#crm" class="tab-btn">Sales CRM</a>
+            <a href="#competitor" class="tab-btn">Competitor Intel</a>
+            <a href="#multichannel" class="tab-btn">Multi-Channel</a>
+            <a href="#analytics" class="tab-btn">Analytics</a>
+            <a href="#security" class="tab-btn">Security</a>
+        </div>
+    </div>
+</section>
+
+<section class="feature-section" id="automation">
+    <div class="container-lux">
+        <div class="row align-items-start g-5">
+            <div class="col-lg-5">
+                <div class="feature-icon-lg" style="background:rgba(0,255,180,0.1);">
+                    <i data-feather="repeat" style="width:28px;height:28px;color:var(--lux-cyan);"></i>
+                </div>
+                <h2 style="font-weight:800;font-size:2rem;margin-bottom:0.75rem;">Marketing Automation</h2>
+                <p style="color:rgba(255,255,255,0.5);font-size:1.05rem;line-height:1.7;margin-bottom:1.5rem;">
+                    Build sophisticated multi-step workflows without code. Trigger actions based on customer behavior, schedule campaigns across channels, and let AI optimize delivery timing.
+                </p>
+                <ul class="list-unstyled d-flex flex-column gap-2" style="color:rgba(255,255,255,0.6);font-size:0.9rem;">
+                    <li><i data-feather="check" style="width:16px;height:16px;color:var(--lux-cyan);margin-right:0.5rem;"></i> Visual workflow builder with drag-and-drop</li>
+                    <li><i data-feather="check" style="width:16px;height:16px;color:var(--lux-cyan);margin-right:0.5rem;"></i> Behavioral triggers: opens, clicks, page visits, purchases</li>
+                    <li><i data-feather="check" style="width:16px;height:16px;color:var(--lux-cyan);margin-right:0.5rem;"></i> Admin approval queue for content safety</li>
+                    <li><i data-feather="check" style="width:16px;height:16px;color:var(--lux-cyan);margin-right:0.5rem;"></i> Emergency stop: halt all automations instantly</li>
+                </ul>
+            </div>
+            <div class="col-lg-7">
+                <div class="feature-detail-grid">
+                    <div class="feature-detail">
+                        <h6><i data-feather="zap" style="width:16px;height:16px;color:var(--lux-cyan);margin-right:0.4rem;"></i> 25+ Templates</h6>
+                        <p>Pre-built automation workflows for ecommerce, engagement, nurture, retention, SMS, and social campaigns.</p>
+                    </div>
+                    <div class="feature-detail">
+                        <h6><i data-feather="git-branch" style="width:16px;height:16px;color:var(--lux-purple);margin-right:0.4rem;"></i> Conditional Logic</h6>
+                        <p>Branch workflows based on contact attributes, engagement level, purchase history, or custom segment membership.</p>
+                    </div>
+                    <div class="feature-detail">
+                        <h6><i data-feather="clock" style="width:16px;height:16px;color:var(--lux-pink);margin-right:0.4rem;"></i> Smart Scheduling</h6>
+                        <p>AI optimizes send times per contact based on historical open and engagement patterns.</p>
+                    </div>
+                    <div class="feature-detail">
+                        <h6><i data-feather="shield" style="width:16px;height:16px;color:var(--lux-blue);margin-right:0.4rem;"></i> Approval Workflows</h6>
+                        <p>Mandatory review queue for all AI-generated and manual content before it goes live. Full audit trail.</p>
+                    </div>
+                    <div class="feature-detail">
+                        <h6><i data-feather="link" style="width:16px;height:16px;color:var(--lux-cyan);margin-right:0.4rem;"></i> Zapier Integration</h6>
+                        <p>Connect to 5,000+ apps via webhook. Auto-capture contacts and trigger workflows from external events.</p>
+                    </div>
+                    <div class="feature-detail">
+                        <h6><i data-feather="mail" style="width:16px;height:16px;color:var(--lux-purple);margin-right:0.4rem;"></i> Email + SMS</h6>
+                        <p>Coordinate multi-channel sequences: email drips, SMS nudges, social posts, and ad retargeting in one flow.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<section class="feature-section" id="intelligence">
+    <div class="container-lux">
+        <div class="row align-items-start g-5">
+            <div class="col-lg-5">
+                <div class="feature-icon-lg" style="background:rgba(188,0,237,0.1);">
+                    <i data-feather="cpu" style="width:28px;height:28px;color:var(--lux-purple);"></i>
+                </div>
+                <h2 style="font-weight:800;font-size:2rem;margin-bottom:0.75rem;">AI Intelligence Engine</h2>
+                <p style="color:rgba(255,255,255,0.5);font-size:1.05rem;line-height:1.7;margin-bottom:1.5rem;">
+                    11 specialized AI agents powered by GPT-4o operate around the clock &mdash; writing content, analyzing performance, scoring leads, and surfacing actionable insights.
+                </p>
+                <ul class="list-unstyled d-flex flex-column gap-2" style="color:rgba(255,255,255,0.6);font-size:0.9rem;">
+                    <li><i data-feather="check" style="width:16px;height:16px;color:var(--lux-purple);margin-right:0.5rem;"></i> Autonomous campaign creation and optimization</li>
+                    <li><i data-feather="check" style="width:16px;height:16px;color:var(--lux-purple);margin-right:0.5rem;"></i> AI subject line generation with A/B testing</li>
+                    <li><i data-feather="check" style="width:16px;height:16px;color:var(--lux-purple);margin-right:0.5rem;"></i> Predictive lead scoring and deal progression</li>
+                    <li><i data-feather="check" style="width:16px;height:16px;color:var(--lux-purple);margin-right:0.5rem;"></i> Self-healing system with auto-repair diagnostics</li>
+                </ul>
+            </div>
+            <div class="col-lg-7">
+                <div class="feature-detail-grid">
+                    <div class="feature-detail">
+                        <h6><i data-feather="edit-3" style="width:16px;height:16px;color:var(--lux-purple);margin-right:0.4rem;"></i> Content Generation</h6>
+                        <p>AI writes blog posts, social captions, email copy, ad creatives, and landing pages tailored to your brand voice.</p>
+                    </div>
+                    <div class="feature-detail">
+                        <h6><i data-feather="trending-up" style="width:16px;height:16px;color:var(--lux-cyan);margin-right:0.4rem;"></i> Performance Analysis</h6>
+                        <p>Weekly and monthly AI-generated reports with specific, actionable recommendations to improve campaign ROI.</p>
+                    </div>
+                    <div class="feature-detail">
+                        <h6><i data-feather="message-circle" style="width:16px;height:16px;color:var(--lux-pink);margin-right:0.4rem;"></i> AI Marketing Assistant</h6>
+                        <p>Chat-based assistant that answers strategy questions, troubleshoots issues, and executes actions on your behalf.</p>
+                    </div>
+                    <div class="feature-detail">
+                        <h6><i data-feather="tool" style="width:16px;height:16px;color:var(--lux-blue);margin-right:0.4rem;"></i> Auto-Repair System</h6>
+                        <p>AI monitors system health, diagnoses errors, and automatically generates and applies fix plans without human intervention.</p>
+                    </div>
+                    <div class="feature-detail">
+                        <h6><i data-feather="hash" style="width:16px;height:16px;color:var(--lux-cyan);margin-right:0.4rem;"></i> Hashtag Intelligence</h6>
+                        <p>AI-generated hashtag strategies per platform, optimized for reach and engagement based on trending data.</p>
+                    </div>
+                    <div class="feature-detail">
+                        <h6><i data-feather="calendar" style="width:16px;height:16px;color:var(--lux-purple);margin-right:0.4rem;"></i> Content Calendar</h6>
+                        <p>AI plans your monthly content calendar with balanced topic distribution and optimal posting cadence.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<section class="feature-section" id="crm">
+    <div class="container-lux">
+        <div class="row align-items-start g-5">
+            <div class="col-lg-5">
+                <div class="feature-icon-lg" style="background:rgba(228,5,92,0.1);">
+                    <i data-feather="users" style="width:28px;height:28px;color:var(--lux-pink);"></i>
+                </div>
+                <h2 style="font-weight:800;font-size:2rem;margin-bottom:0.75rem;">Visual Sales CRM</h2>
+                <p style="color:rgba(255,255,255,0.5);font-size:1.05rem;line-height:1.7;margin-bottom:1.5rem;">
+                    A modern, action-driven CRM designed for velocity. See your entire pipeline at a glance, get coached on next actions, and close deals faster with AI insights.
+                </p>
+                <ul class="list-unstyled d-flex flex-column gap-2" style="color:rgba(255,255,255,0.6);font-size:0.9rem;">
+                    <li><i data-feather="check" style="width:16px;height:16px;color:var(--lux-pink);margin-right:0.5rem;"></i> Drag-and-drop Kanban pipeline</li>
+                    <li><i data-feather="check" style="width:16px;height:16px;color:var(--lux-pink);margin-right:0.5rem;"></i> 360&deg; customer profiles with full history</li>
+                    <li><i data-feather="check" style="width:16px;height:16px;color:var(--lux-pink);margin-right:0.5rem;"></i> AI-powered lead scoring and prioritization</li>
+                    <li><i data-feather="check" style="width:16px;height:16px;color:var(--lux-pink);margin-right:0.5rem;"></i> Activity timeline and deal coaching</li>
+                </ul>
+            </div>
+            <div class="col-lg-7">
+                <div class="feature-detail-grid">
+                    <div class="feature-detail">
+                        <h6><i data-feather="columns" style="width:16px;height:16px;color:var(--lux-pink);margin-right:0.4rem;"></i> Kanban Pipeline</h6>
+                        <p>Visual deal board with stages from Prospecting to Closed Won. Drag deals between stages with instant updates.</p>
+                    </div>
+                    <div class="feature-detail">
+                        <h6><i data-feather="user" style="width:16px;height:16px;color:var(--lux-cyan);margin-right:0.4rem;"></i> 360&deg; Customer View</h6>
+                        <p>Complete customer profile: contact info, deal history, activity timeline, engagement score, and communication log.</p>
+                    </div>
+                    <div class="feature-detail">
+                        <h6><i data-feather="star" style="width:16px;height:16px;color:var(--lux-purple);margin-right:0.4rem;"></i> Lead Scoring</h6>
+                        <p>AI scores leads based on engagement, fit, and behavior. Automatically surface the highest-value opportunities.</p>
+                    </div>
+                    <div class="feature-detail">
+                        <h6><i data-feather="navigation" style="width:16px;height:16px;color:var(--lux-blue);margin-right:0.4rem;"></i> Next-Action Coaching</h6>
+                        <p>AI recommends the optimal next step for each deal: call, email, demo, or proposal &mdash; and explains why.</p>
+                    </div>
+                    <div class="feature-detail">
+                        <h6><i data-feather="phone" style="width:16px;height:16px;color:var(--lux-cyan);margin-right:0.4rem;"></i> Activity Logging</h6>
+                        <p>Track calls, emails, meetings, and notes. Full activity timeline with automatic CRM-to-marketing sync.</p>
+                    </div>
+                    <div class="feature-detail">
+                        <h6><i data-feather="pie-chart" style="width:16px;height:16px;color:var(--lux-pink);margin-right:0.4rem;"></i> Pipeline Analytics</h6>
+                        <p>Deal velocity, win rates, stage conversion, and revenue forecasting with interactive Chart.js visualizations.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<section class="feature-section" id="competitor">
+    <div class="container-lux">
+        <div class="row align-items-start g-5">
+            <div class="col-lg-5">
+                <div class="feature-icon-lg" style="background:rgba(0,68,255,0.1);">
+                    <i data-feather="eye" style="width:28px;height:28px;color:var(--lux-blue);"></i>
+                </div>
+                <h2 style="font-weight:800;font-size:2rem;margin-bottom:0.75rem;">Competitor Intelligence</h2>
+                <p style="color:rgba(255,255,255,0.5);font-size:1.05rem;line-height:1.7;margin-bottom:1.5rem;">
+                    Stop guessing what your competitors are doing. LUX continuously monitors their digital presence and gives you the intelligence to stay three steps ahead.
+                </p>
+            </div>
+            <div class="col-lg-7">
+                <div class="feature-detail-grid">
+                    <div class="feature-detail">
+                        <h6><i data-feather="search" style="width:16px;height:16px;color:var(--lux-blue);margin-right:0.4rem;"></i> SEO Monitoring</h6>
+                        <p>Track competitor keyword rankings, backlink profiles, and domain authority. Identify gaps and opportunities.</p>
+                    </div>
+                    <div class="feature-detail">
+                        <h6><i data-feather="globe" style="width:16px;height:16px;color:var(--lux-cyan);margin-right:0.4rem;"></i> Social Tracking</h6>
+                        <p>Monitor competitor social media activity, engagement rates, content strategy, and audience growth.</p>
+                    </div>
+                    <div class="feature-detail">
+                        <h6><i data-feather="file-text" style="width:16px;height:16px;color:var(--lux-purple);margin-right:0.4rem;"></i> Content Analysis</h6>
+                        <p>Analyze competitor blog topics, publishing frequency, and content performance to find winning themes.</p>
+                    </div>
+                    <div class="feature-detail">
+                        <h6><i data-feather="bell" style="width:16px;height:16px;color:var(--lux-pink);margin-right:0.4rem;"></i> Alert System</h6>
+                        <p>Real-time alerts when competitors launch new campaigns, change pricing, or shift strategy.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<section class="feature-section" id="multichannel">
+    <div class="container-lux">
+        <div class="row align-items-start g-5">
+            <div class="col-lg-5">
+                <div class="feature-icon-lg" style="background:rgba(0,255,180,0.1);">
+                    <i data-feather="share-2" style="width:28px;height:28px;color:var(--lux-cyan);"></i>
+                </div>
+                <h2 style="font-weight:800;font-size:2rem;margin-bottom:0.75rem;">Multi-Channel Publishing</h2>
+                <p style="color:rgba(255,255,255,0.5);font-size:1.05rem;line-height:1.7;margin-bottom:1.5rem;">
+                    Manage every marketing channel from one dashboard. Full OAuth integrations with 10+ platforms, unified scheduling, and cross-channel performance tracking.
+                </p>
+            </div>
+            <div class="col-lg-7">
+                <div class="feature-detail-grid">
+                    <div class="feature-detail">
+                        <h6><i data-feather="send" style="width:16px;height:16px;color:var(--lux-cyan);margin-right:0.4rem;"></i> Social Publishing</h6>
+                        <p>Publish to Instagram, Facebook, Twitter/X, LinkedIn, YouTube, TikTok, Reddit, and Snapchat from one screen.</p>
+                    </div>
+                    <div class="feature-detail">
+                        <h6><i data-feather="mail" style="width:16px;height:16px;color:var(--lux-purple);margin-right:0.4rem;"></i> Email Campaigns</h6>
+                        <p>Drag-and-drop email builder, template gallery, A/B testing, and AI-powered subject line optimization.</p>
+                    </div>
+                    <div class="feature-detail">
+                        <h6><i data-feather="smartphone" style="width:16px;height:16px;color:var(--lux-pink);margin-right:0.4rem;"></i> SMS Campaigns</h6>
+                        <p>Twilio-powered SMS with bulk sending, AI content generation, compliance checking, and delivery tracking.</p>
+                    </div>
+                    <div class="feature-detail">
+                        <h6><i data-feather="edit" style="width:16px;height:16px;color:var(--lux-blue);margin-right:0.4rem;"></i> Blog & SEO</h6>
+                        <p>Built-in blog with AI content generation, keyword optimization, and search engine ranking tools.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<section class="feature-section" id="analytics">
+    <div class="container-lux">
+        <div class="row align-items-start g-5">
+            <div class="col-lg-5">
+                <div class="feature-icon-lg" style="background:rgba(188,0,237,0.1);">
+                    <i data-feather="bar-chart-2" style="width:28px;height:28px;color:var(--lux-purple);"></i>
+                </div>
+                <h2 style="font-weight:800;font-size:2rem;margin-bottom:0.75rem;">Analytics & Reporting</h2>
+                <p style="color:rgba(255,255,255,0.5);font-size:1.05rem;line-height:1.7;margin-bottom:1.5rem;">
+                    Comprehensive analytics across 10 metric categories. Real-time dashboards, attribution modeling, and AI-generated insights that tell you exactly what to do next.
+                </p>
+            </div>
+            <div class="col-lg-7">
+                <div class="feature-detail-grid">
+                    <div class="feature-detail">
+                        <h6><i data-feather="activity" style="width:16px;height:16px;color:var(--lux-purple);margin-right:0.4rem;"></i> 10 Metric Categories</h6>
+                        <p>Acquisition, Conversion, Revenue, CAC, Retention, Engagement, Attribution, Segments, Campaigns, and Compliance.</p>
+                    </div>
+                    <div class="feature-detail">
+                        <h6><i data-feather="compass" style="width:16px;height:16px;color:var(--lux-cyan);margin-right:0.4rem;"></i> Attribution Modeling</h6>
+                        <p>Understand which channels and touchpoints actually drive conversions. First-touch, last-touch, and multi-touch models.</p>
+                    </div>
+                    <div class="feature-detail">
+                        <h6><i data-feather="dollar-sign" style="width:16px;height:16px;color:var(--lux-pink);margin-right:0.4rem;"></i> ROI Tracking</h6>
+                        <p>Campaign-level ROI analysis with customer acquisition cost, lifetime value, and revenue attribution.</p>
+                    </div>
+                    <div class="feature-detail">
+                        <h6><i data-feather="file-text" style="width:16px;height:16px;color:var(--lux-blue);margin-right:0.4rem;"></i> AI Reports</h6>
+                        <p>Weekly and monthly AI-generated performance reports with actionable optimization recommendations.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<section class="feature-section" id="security">
+    <div class="container-lux">
+        <div class="row align-items-start g-5">
+            <div class="col-lg-5">
+                <div class="feature-icon-lg" style="background:rgba(0,68,255,0.1);">
+                    <i data-feather="shield" style="width:28px;height:28px;color:var(--lux-blue);"></i>
+                </div>
+                <h2 style="font-weight:800;font-size:2rem;margin-bottom:0.75rem;">Security & Compliance</h2>
+                <p style="color:rgba(255,255,255,0.5);font-size:1.05rem;line-height:1.7;">
+                    Enterprise-grade security built into every layer. Encrypted secrets management, CSRF protection, audit trails, and content approval workflows keep your data and brand safe.
+                </p>
+                <a href="{{ url_for('marketing.security') }}" class="btn-lux-outline mt-3">
+                    Learn More <i data-feather="arrow-right" style="width:16px;height:16px;"></i>
+                </a>
+            </div>
+            <div class="col-lg-7">
+                <div class="feature-detail-grid">
+                    <div class="feature-detail">
+                        <h6><i data-feather="lock" style="width:16px;height:16px;color:var(--lux-blue);margin-right:0.4rem;"></i> Encrypted Vault</h6>
+                        <p>Centralized API key and secrets management with per-company encryption. No scattered credentials.</p>
+                    </div>
+                    <div class="feature-detail">
+                        <h6><i data-feather="check-square" style="width:16px;height:16px;color:var(--lux-cyan);margin-right:0.4rem;"></i> Content Approval</h6>
+                        <p>Mandatory review queue with audit trails. Nothing goes live without explicit approval.</p>
+                    </div>
+                    <div class="feature-detail">
+                        <h6><i data-feather="user-check" style="width:16px;height:16px;color:var(--lux-purple);margin-right:0.4rem;"></i> OAuth 2.0</h6>
+                        <p>Secure authentication via Google, GitHub, Apple, and email. JWKS-based JWT signature verification.</p>
+                    </div>
+                    <div class="feature-detail">
+                        <h6><i data-feather="alert-triangle" style="width:16px;height:16px;color:var(--lux-pink);margin-right:0.4rem;"></i> Emergency Controls</h6>
+                        <p>Instant kill switch to halt all automation. Feature toggles with safe-off defaults across 27 system capabilities.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<section class="cta-section" style="padding:6rem 0;position:relative;text-align:center;">
+    <div style="position:absolute;inset:0;background:radial-gradient(ellipse 70% 50% at 50% 50%,rgba(188,0,237,0.08),transparent);"></div>
+    <div class="container-lux" style="position:relative;">
+        <h2 class="section-title">See it in action</h2>
+        <p class="section-subtitle mx-auto mb-4">Start with the full platform free. No credit card required.</p>
+        <a href="{{ url_for('auth.register') }}" class="btn-lux-primary btn-lux-large">
+            Get Started Free <i data-feather="arrow-right" style="width:18px;height:18px;"></i>
+        </a>
+    </div>
+</section>
+{% endblock %}
