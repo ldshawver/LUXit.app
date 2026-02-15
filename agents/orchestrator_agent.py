@@ -6,20 +6,17 @@ import logging
 import json
 from datetime import datetime, timedelta
 from typing import Dict, List, Any, Optional
-from agents.base_agent import BaseAgent
-
 logger = logging.getLogger(__name__)
 
 
-class OrchestratorAgent(BaseAgent):
-    """Master orchestrator agent that governs all platform operations"""
+class OrchestratorAgent:
+    """Master orchestrator agent that governs all platform operations.
+    Does NOT extend BaseAgent because it doesn't need OpenAI - it aggregates internal data only."""
 
     def __init__(self):
-        super().__init__(
-            agent_name="LUX Autonomous Systems & Experience Governor",
-            agent_type="orchestrator",
-            description="Technical + strategic overseer of the entire LUX platform"
-        )
+        self.agent_name = "LUX Autonomous Systems & Experience Governor"
+        self.agent_type = "orchestrator"
+        self.description = "Technical + strategic overseer of the entire LUX platform"
 
     def _define_personality(self) -> str:
         return """
@@ -83,14 +80,30 @@ class OrchestratorAgent(BaseAgent):
             logger.error(f"System health check failed: {e}")
             return {'success': False, 'error': str(e), 'overall_score': 0, 'status': 'unknown'}
 
+    def _get_current_company_id(self) -> Optional[int]:
+        """Get the current user's default company ID for tenant isolation"""
+        try:
+            from flask_login import current_user
+            if current_user and current_user.is_authenticated:
+                company = current_user.get_default_company()
+                return company.id if company else None
+        except Exception:
+            pass
+        return None
+
     def _check_db(self) -> Dict:
         try:
             from app import db
             db.session.execute(db.text('SELECT 1'))
             from models import User, Contact, Campaign, Company
+            company_id = self._get_current_company_id()
+            if company_id:
+                contact_count = Contact.query.filter_by(company_id=company_id).count()
+                campaign_count = Campaign.query.filter_by(company_id=company_id).count()
+            else:
+                contact_count = Contact.query.count()
+                campaign_count = Campaign.query.count()
             user_count = User.query.count()
-            contact_count = Contact.query.count()
-            campaign_count = Campaign.query.count()
             company_count = Company.query.count()
             return {
                 'status': 'healthy', 'score': 100,
@@ -98,6 +111,7 @@ class OrchestratorAgent(BaseAgent):
                 'campaigns': campaign_count, 'companies': company_count
             }
         except Exception as e:
+            logger.error(f"DB health check failed: {e}")
             return {'status': 'error', 'score': 0, 'error': str(e)}
 
     def _get_error_summary(self) -> Dict:
@@ -126,8 +140,10 @@ class OrchestratorAgent(BaseAgent):
                 'recent_errors': [e.to_dict() for e in recent]
             }
         except Exception as e:
-            return {'status': 'healthy', 'score': 95, 'total_unresolved': 0,
-                    'errors_24h': 0, 'errors_7d': 0, 'critical_count': 0, 'recent_errors': []}
+            logger.error(f"Error summary check failed: {e}")
+            return {'status': 'unavailable', 'score': 0, 'total_unresolved': 0,
+                    'errors_24h': 0, 'errors_7d': 0, 'critical_count': 0,
+                    'recent_errors': [], 'error': str(e)}
 
     def _get_auto_repair_status(self) -> Dict:
         try:
@@ -140,17 +156,20 @@ class OrchestratorAgent(BaseAgent):
                 'unresolved_errors': unresolved
             }
         except Exception as e:
-            return {'status': 'unknown', 'score': 80, 'unresolved_count': 0, 'unresolved_errors': []}
+            logger.error(f"Auto-repair status check failed: {e}")
+            return {'status': 'unavailable', 'score': 0, 'unresolved_count': 0,
+                    'unresolved_errors': [], 'error': str(e)}
 
     def _check_critical_endpoints(self) -> Dict:
+        """Check public (unauthenticated) endpoints only to get accurate health"""
         try:
             import requests
-            endpoints = ['/', '/dashboard', '/m/', '/m/features']
+            endpoints = ['/m/', '/m/features', '/m/solutions', '/m/security', '/auth/login']
             results = []
             healthy = 0
             for ep in endpoints:
                 try:
-                    r = requests.get(f'http://localhost:5000{ep}', timeout=3, allow_redirects=True)
+                    r = requests.get(f'http://localhost:5000{ep}', timeout=3, allow_redirects=False)
                     ok = r.status_code < 400
                     results.append({'endpoint': ep, 'status': r.status_code, 'ok': ok})
                     if ok:
@@ -167,7 +186,9 @@ class OrchestratorAgent(BaseAgent):
                 'results': results
             }
         except Exception as e:
-            return {'status': 'unknown', 'score': 70, 'checked': 0, 'healthy': 0, 'results': []}
+            logger.error(f"Endpoint health check failed: {e}")
+            return {'status': 'unavailable', 'score': 0, 'checked': 0,
+                    'healthy': 0, 'results': [], 'error': str(e)}
 
     def get_agent_orchestration_status(self) -> Dict[str, Any]:
         """Get status of all AI agents and their schedules"""
@@ -213,14 +234,18 @@ class OrchestratorAgent(BaseAgent):
             return {'success': False, 'error': str(e), 'total_agents': 0, 'agents': [], 'scheduled_jobs': []}
 
     def get_platform_metrics(self) -> Dict[str, Any]:
-        """Get key platform usage metrics"""
+        """Get key platform usage metrics scoped to current tenant"""
         try:
             from models import (User, Contact, Campaign, Company, Deal,
                                 Newsletter, AutomationTrigger, ApprovalQueue)
-            from error_logger import ErrorLog
 
             cutoff_30d = datetime.utcnow() - timedelta(days=30)
             cutoff_7d = datetime.utcnow() - timedelta(days=7)
+            company_id = self._get_current_company_id()
+
+            contact_q = Contact.query.filter_by(company_id=company_id) if company_id else Contact.query
+            campaign_q = Campaign.query.filter_by(company_id=company_id) if company_id else Campaign.query
+            deal_q = Deal.query.filter_by(company_id=company_id) if company_id else Deal.query
 
             metrics = {
                 'users': {
@@ -228,17 +253,17 @@ class OrchestratorAgent(BaseAgent):
                     'recent_7d': User.query.filter(User.created_at >= cutoff_7d).count() if hasattr(User, 'created_at') else 0,
                 },
                 'contacts': {
-                    'total': Contact.query.count(),
-                    'recent_30d': Contact.query.filter(Contact.created_at >= cutoff_30d).count(),
+                    'total': contact_q.count(),
+                    'recent_30d': contact_q.filter(Contact.created_at >= cutoff_30d).count(),
                 },
                 'campaigns': {
-                    'total': Campaign.query.count(),
-                    'recent_30d': Campaign.query.filter(Campaign.created_at >= cutoff_30d).count(),
+                    'total': campaign_q.count(),
+                    'recent_30d': campaign_q.filter(Campaign.created_at >= cutoff_30d).count(),
                 },
                 'companies': Company.query.count(),
                 'deals': {
-                    'total': Deal.query.count(),
-                    'open': Deal.query.filter(Deal.stage != 'closed_won', Deal.stage != 'closed_lost').count(),
+                    'total': deal_q.count(),
+                    'open': deal_q.filter(Deal.stage != 'closed_won', Deal.stage != 'closed_lost').count(),
                 },
                 'newsletters': Newsletter.query.count(),
                 'automations': AutomationTrigger.query.count(),
@@ -253,10 +278,14 @@ class OrchestratorAgent(BaseAgent):
             return {'success': False, 'error': str(e)}
 
     def get_feature_governance(self) -> Dict[str, Any]:
-        """Get feature toggle and governance status"""
+        """Get feature toggle and governance status for current tenant"""
         try:
             from models import FeatureToggle, Company
-            company = Company.query.first()
+            company_id = self._get_current_company_id()
+            if company_id:
+                company = Company.query.get(company_id)
+            else:
+                company = Company.query.first()
             if not company:
                 return {'success': True, 'toggles': [], 'total': 0}
 

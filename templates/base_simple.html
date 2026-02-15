@@ -22,9 +22,25 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/custom.css') }}">
     
     <style>
+      :root {
+        {% if current_user is defined and current_user.is_authenticated %}
+          {% set brand = current_user.get_default_company() %}
+          --lux-primary: {{ brand.primary_color if brand and brand.primary_color else '#bc00ed' }};
+          --lux-secondary: {{ brand.secondary_color if brand and brand.secondary_color else '#00ffb4' }};
+          --lux-accent: {{ brand.accent_color if brand and brand.accent_color else '#e4055c' }};
+          --lux-font: {{ brand.font_family if brand and brand.font_family else 'Inter, sans-serif' }};
+        {% else %}
+          --lux-primary: #bc00ed;
+          --lux-secondary: #00ffb4;
+          --lux-accent: #e4055c;
+          --lux-font: Inter, sans-serif;
+        {% endif %}
+      }
+
       body {
         background: #000000 !important;
         color: #ffffff;
+        font-family: var(--lux-font);
       }
       
       .lux-header {
@@ -50,7 +66,7 @@
       .nav-arrow {
         background: transparent;
         border: none;
-        color: #00ffb4;
+        color: var(--lux-secondary, #00ffb4);
         width: 40px;
         height: 40px;
         border-radius: 8px;
@@ -62,7 +78,7 @@
       }
       
       .nav-arrow:hover {
-        background: #8b5cf6;
+        background: var(--lux-primary, #bc00ed);
         color: #fff;
         transform: scale(1.1);
       }
@@ -80,14 +96,14 @@
       }
       
       .header-center h1 {
-        color: #00ffb4;
+        color: var(--lux-secondary, #00ffb4);
         font-size: 1.8rem;
         margin: 0;
         font-weight: 600;
       }
       
       .header-center .tagline {
-        color: #bc00ed;
+        color: var(--lux-primary, #bc00ed);
         font-size: 1rem;
         margin: 0.25rem 0 0;
       }
@@ -112,7 +128,7 @@
       }
       
       .settings-icon {
-        color: #4ade80;
+        color: var(--lux-secondary, #00ffb4);
         width: 28px;
         height: 28px;
         cursor: pointer;
@@ -120,7 +136,7 @@
       }
       
       .settings-icon:hover {
-        color: #22c55e;
+        color: var(--lux-accent, #e4055c);
         transform: rotate(90deg);
       }
     </style>

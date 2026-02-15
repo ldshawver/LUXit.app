@@ -22,9 +22,28 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/custom.css') }}">
 
     <style>
+      :root {
+        {% if current_user is defined and current_user.is_authenticated %}
+          {% set brand = current_user.get_default_company() %}
+          --lux-primary: {{ brand.primary_color if brand and brand.primary_color else '#bc00ed' }};
+          --lux-secondary: {{ brand.secondary_color if brand and brand.secondary_color else '#00ffb4' }};
+          --lux-accent: {{ brand.accent_color if brand and brand.accent_color else '#e4055c' }};
+          --lux-font: {{ brand.font_family if brand and brand.font_family else 'Inter, sans-serif' }};
+        {% else %}
+          --lux-primary: #bc00ed;
+          --lux-secondary: #00ffb4;
+          --lux-accent: #e4055c;
+          --lux-font: Inter, sans-serif;
+        {% endif %}
+        --lux-primary-10: color-mix(in srgb, var(--lux-primary), transparent 90%);
+        --lux-secondary-10: color-mix(in srgb, var(--lux-secondary), transparent 90%);
+        --lux-accent-10: color-mix(in srgb, var(--lux-accent), transparent 90%);
+      }
+
       body {
         background: #000000 !important;
         color: #ffffff;
+        font-family: var(--lux-font);
       }
 
       .lux-header {
@@ -60,7 +79,7 @@
       .nav-arrow {
         background: transparent;
         border: none;
-        color: #00ffb4;
+        color: var(--lux-secondary);
         width: 40px;
         height: 40px;
         border-radius: 8px;
@@ -95,7 +114,7 @@
       }
 
       .settings-icon {
-        color: #00ffb4;
+        color: var(--lux-secondary);
         width: 28px;
         height: 28px;
         cursor: pointer;
@@ -103,7 +122,7 @@
       }
 
       .settings-icon:hover {
-        color: #e4055c;
+        color: var(--lux-accent);
         transform: rotate(90deg);
       }
     </style>
@@ -129,9 +148,9 @@
             {% if current_user.is_authenticated %}
               {% set header_company = current_user.get_default_company() %}
               {% set user_name = (current_user.first_name or current_user.username) %}
-              <span style="color: #00ffb4;">{{ user_name[0]|upper }}{{ user_name[1:] }}</span>
-              <span style="color: #bc00ed;"> Marketing Wizard of </span>
-              <span style="color: #00ffb4;">{{ header_company.name if header_company else 'Your Company' }}</span>
+              <span style="color: var(--lux-secondary);">{{ user_name[0]|upper }}{{ user_name[1:] }}</span>
+              <span style="color: var(--lux-primary);"> Marketing Wizard of </span>
+              <span style="color: var(--lux-secondary);">{{ header_company.name if header_company else 'Your Company' }}</span>
             {% endif %}
           {% endblock %}
         </h1>
@@ -148,6 +167,7 @@
             <li><a class="dropdown-item" href="{{ url_for('user.change_password') }}"><i data-feather="lock"></i> Change Password</a></li>
             <li><hr class="dropdown-divider"></li>
             <li><h6 class="dropdown-header">AI & Tools</h6></li>
+            <li><a class="dropdown-item" href="{{ url_for('main.orchestrator_dashboard') }}"><i data-feather="shield"></i> Systems Governor</a></li>
             <li><a class="dropdown-item" href="{{ url_for('main.ai_dashboard') }}"><i data-feather="cpu"></i> LUX AI Dashboard</a></li>
             <li><a class="dropdown-item" href="{{ url_for('main.agents_hub') }}"><i data-feather="users"></i> AI Agents Hub</a></li>
             <li><a class="dropdown-item" href="{{ url_for('main.analytics_hub') }}"><i data-feather="bar-chart-2"></i> Analytics Hub</a></li>

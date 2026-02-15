@@ -225,10 +225,32 @@ def admin_fix_approve(proposal_id):
     REPAIR_PROPOSALS[proposal_id] = proposal
     return jsonify(proposal)
 
+@main_bp.route('/set-hub-preference', methods=['POST'])
+@login_required
+def set_hub_preference():
+    """Set user's preferred hub (marketing or sales)"""
+    try:
+        data = request.get_json() or {}
+        hub = data.get('hub', 'marketing')
+        if hub not in ('marketing', 'sales'):
+            hub = 'marketing'
+        current_user.preferred_hub = hub
+        db.session.commit()
+        return jsonify({'success': True, 'hub': hub})
+    except Exception as e:
+        logger.error(f"Set hub preference error: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 @main_bp.route('/')
 @login_required
 def dashboard():
-    """Dashboard with overview statistics"""
+    """Dashboard - redirects to preferred hub or shows tile dashboard"""
+    hub = getattr(current_user, 'preferred_hub', None)
+    from_hub = request.args.get('from_hub')
+    if hub == 'sales' and not from_hub:
+        return redirect(url_for('main.lux_crm'))
+    elif hub == 'marketing' and not from_hub:
+        pass
     total_contacts = safe_count(
         Contact.query.filter_by(is_active=True),
         context="active contacts"
@@ -318,6 +340,26 @@ def email_hub():
 def campaign_hub():
     """Campaign Hub with SEO, Competitors, and AI Campaign Generator"""
     return render_template('campaign_hub.html')
+
+@main_bp.route('/orchestrator')
+@login_required
+def orchestrator_dashboard():
+    """LUX Autonomous Systems & Experience Governor Dashboard"""
+    from agents.orchestrator_agent import OrchestratorAgent
+
+    orchestrator = OrchestratorAgent()
+    ctx = orchestrator.get_full_dashboard_context()
+
+    report = orchestrator.generate_executive_report()
+
+    return render_template('orchestrator_dashboard.html',
+                         health=ctx.get('health', {}),
+                         agents=ctx.get('agents', {}),
+                         metrics=ctx.get('metrics', {}),
+                         governance=ctx.get('governance', {}),
+                         competitive=ctx.get('competitive', {}),
+                         ux=ctx.get('ux', {}),
+                         report=report)
 
 @main_bp.route('/ai-dashboard')
 @login_required

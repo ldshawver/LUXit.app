@@ -1,0 +1,625 @@
+{% extends "base.html" %}
+{% block title %}Orchestrator - Systems Governor{% endblock %}
+
+{% block page_header %}
+<span style="color: #bc00ed;"><i data-feather="shield" style="width:18px;height:18px;vertical-align:middle;margin-right:4px;"></i> Systems Governor</span>
+{% endblock %}
+
+{% block content %}
+<style>
+    .gov-tabs {
+        display: flex;
+        gap: 0.25rem;
+        flex-wrap: wrap;
+        margin-bottom: 1.5rem;
+        border-bottom: 1px solid rgba(255,255,255,0.06);
+        padding-bottom: 0;
+    }
+    .gov-tab {
+        background: transparent;
+        border: none;
+        color: rgba(255,255,255,0.5);
+        padding: 0.6rem 1rem;
+        font-size: 0.85rem;
+        font-weight: 500;
+        cursor: pointer;
+        border-bottom: 2px solid transparent;
+        transition: all 0.2s;
+        display: flex;
+        align-items: center;
+        gap: 0.4rem;
+    }
+    .gov-tab:hover { color: #00ffb4; }
+    .gov-tab.active {
+        color: #00ffb4;
+        border-bottom-color: #00ffb4;
+    }
+    .gov-panel { display: none; }
+    .gov-panel.active { display: block; }
+
+    .health-score {
+        width: 120px;
+        height: 120px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-direction: column;
+        font-size: 2rem;
+        font-weight: 900;
+        margin: 0 auto 1rem;
+    }
+    .health-score.healthy { border: 4px solid #00ffb4; color: #00ffb4; }
+    .health-score.degraded { border: 4px solid #ffc107; color: #ffc107; }
+    .health-score.critical { border: 4px solid #e4055c; color: #e4055c; }
+
+    .metric-tile {
+        background: rgba(255,255,255,0.03);
+        border: 1px solid rgba(255,255,255,0.06);
+        border-radius: 12px;
+        padding: 1.25rem;
+        text-align: center;
+        transition: all 0.3s;
+    }
+    .metric-tile:hover {
+        border-color: rgba(188,0,237,0.3);
+        transform: translateY(-2px);
+    }
+    .metric-tile .value {
+        font-size: 1.8rem;
+        font-weight: 800;
+        letter-spacing: -0.02em;
+    }
+    .metric-tile .label {
+        font-size: 0.75rem;
+        color: rgba(255,255,255,0.45);
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        margin-top: 0.25rem;
+    }
+
+    .status-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.3rem;
+        padding: 0.25rem 0.75rem;
+        border-radius: 50px;
+        font-size: 0.75rem;
+        font-weight: 600;
+    }
+    .status-badge.healthy { background: rgba(0,255,180,0.1); color: #00ffb4; }
+    .status-badge.degraded { background: rgba(255,193,7,0.1); color: #ffc107; }
+    .status-badge.critical { background: rgba(228,5,92,0.1); color: #e4055c; }
+    .status-badge.active { background: rgba(0,68,255,0.1); color: #4d8bff; }
+    .status-badge.warning { background: rgba(255,193,7,0.1); color: #ffc107; }
+    .status-badge.unknown { background: rgba(255,255,255,0.05); color: rgba(255,255,255,0.4); }
+
+    .agent-card {
+        background: rgba(255,255,255,0.02);
+        border: 1px solid rgba(255,255,255,0.06);
+        border-radius: 12px;
+        padding: 1rem;
+        transition: all 0.3s;
+    }
+    .agent-card:hover {
+        border-color: rgba(0,255,180,0.2);
+        background: rgba(255,255,255,0.04);
+    }
+    .agent-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        display: inline-block;
+        margin-right: 0.4rem;
+    }
+    .agent-dot.active { background: #00ffb4; }
+    .agent-dot.idle { background: rgba(255,255,255,0.2); }
+
+    .comp-card {
+        background: rgba(255,255,255,0.02);
+        border: 1px solid rgba(255,255,255,0.06);
+        border-radius: 12px;
+        padding: 1.25rem;
+    }
+    .comp-card h6 {
+        font-weight: 700;
+        font-size: 0.95rem;
+        margin-bottom: 0.5rem;
+    }
+
+    .ux-card {
+        background: rgba(255,255,255,0.02);
+        border: 1px solid rgba(255,255,255,0.06);
+        border-radius: 12px;
+        padding: 1rem;
+        margin-bottom: 0.75rem;
+    }
+    .ux-card .priority-badge {
+        font-size: 0.7rem;
+        padding: 0.15rem 0.5rem;
+        border-radius: 4px;
+        font-weight: 600;
+        text-transform: uppercase;
+    }
+    .priority-badge.high { background: rgba(228,5,92,0.15); color: #e4055c; }
+    .priority-badge.medium { background: rgba(255,193,7,0.15); color: #ffc107; }
+    .priority-badge.low { background: rgba(0,255,180,0.1); color: #00ffb4; }
+
+    .error-row {
+        background: rgba(228,5,92,0.03);
+        border: 1px solid rgba(228,5,92,0.1);
+        border-radius: 8px;
+        padding: 0.75rem;
+        margin-bottom: 0.5rem;
+        font-size: 0.85rem;
+    }
+
+    .endpoint-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0.5rem 0;
+        border-bottom: 1px solid rgba(255,255,255,0.04);
+        font-size: 0.85rem;
+    }
+
+    .toggle-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0.5rem 0;
+        border-bottom: 1px solid rgba(255,255,255,0.04);
+        font-size: 0.85rem;
+    }
+    .toggle-enabled { color: #00ffb4; }
+    .toggle-disabled { color: rgba(255,255,255,0.3); }
+
+    .section-card {
+        background: rgba(10,10,10,0.6);
+        border: 1px solid rgba(255,255,255,0.06);
+        border-radius: 14px;
+        padding: 1.5rem;
+        margin-bottom: 1.25rem;
+    }
+    .section-card h5 {
+        font-weight: 700;
+        font-size: 1rem;
+        margin-bottom: 1rem;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+
+    .lux-advantage {
+        background: rgba(0,255,180,0.04);
+        border-left: 3px solid #00ffb4;
+        padding: 0.5rem 0.75rem;
+        font-size: 0.8rem;
+        color: rgba(255,255,255,0.6);
+        margin-top: 0.5rem;
+        border-radius: 0 6px 6px 0;
+    }
+
+    .report-summary {
+        background: linear-gradient(135deg, rgba(188,0,237,0.05), rgba(0,255,180,0.03));
+        border: 1px solid rgba(188,0,237,0.15);
+        border-radius: 14px;
+        padding: 2rem;
+    }
+</style>
+
+<div style="margin-bottom:1.5rem;">
+    <h2 style="font-weight:800;font-size:1.5rem;margin-bottom:0.25rem;">
+        <i data-feather="shield" style="width:24px;height:24px;color:#bc00ed;margin-right:0.5rem;vertical-align:middle;"></i>
+        Autonomous Systems Governor
+    </h2>
+    <p style="color:rgba(255,255,255,0.45);font-size:0.9rem;margin:0;">
+        Platform health, AI agent orchestration, competitive intelligence, and executive reporting
+    </p>
+</div>
+
+<div class="gov-tabs">
+    <button class="gov-tab active" onclick="showTab('health')">
+        <i data-feather="activity" style="width:14px;height:14px;"></i> System Health
+    </button>
+    <button class="gov-tab" onclick="showTab('agents')">
+        <i data-feather="cpu" style="width:14px;height:14px;"></i> Agent Orchestration
+    </button>
+    <button class="gov-tab" onclick="showTab('ux')">
+        <i data-feather="layout" style="width:14px;height:14px;"></i> UX Optimization
+    </button>
+    <button class="gov-tab" onclick="showTab('governance')">
+        <i data-feather="toggle-right" style="width:14px;height:14px;"></i> Feature Governance
+    </button>
+    <button class="gov-tab" onclick="showTab('competitive')">
+        <i data-feather="target" style="width:14px;height:14px;"></i> Competitive Intel
+    </button>
+    <button class="gov-tab" onclick="showTab('report')">
+        <i data-feather="file-text" style="width:14px;height:14px;"></i> Executive Report
+    </button>
+</div>
+
+<!-- TAB 1: System Health -->
+<div class="gov-panel active" id="panel-health">
+    <div class="row g-4">
+        <div class="col-md-4">
+            <div class="section-card text-center">
+                <div class="health-score {{ health.status }}">
+                    {{ health.overall_score|default(0)|round|int }}
+                    <span style="font-size:0.7rem;font-weight:500;margin-top:-0.25rem;">/ 100</span>
+                </div>
+                <span class="status-badge {{ health.status }}">
+                    <i data-feather="{% if health.status == 'healthy' %}check-circle{% elif health.status == 'degraded' %}alert-triangle{% else %}alert-octagon{% endif %}" style="width:12px;height:12px;"></i>
+                    {{ health.status|default('unknown')|upper }}
+                </span>
+                <p style="color:rgba(255,255,255,0.35);font-size:0.8rem;margin-top:0.75rem;">Last checked: now</p>
+            </div>
+        </div>
+        <div class="col-md-8">
+            <div class="row g-3">
+                <div class="col-6 col-lg-3">
+                    <div class="metric-tile">
+                        <div class="value" style="color:#00ffb4;">{{ health.database.users|default(0) }}</div>
+                        <div class="label">Users</div>
+                    </div>
+                </div>
+                <div class="col-6 col-lg-3">
+                    <div class="metric-tile">
+                        <div class="value" style="color:#bc00ed;">{{ health.database.contacts|default(0) }}</div>
+                        <div class="label">Contacts</div>
+                    </div>
+                </div>
+                <div class="col-6 col-lg-3">
+                    <div class="metric-tile">
+                        <div class="value" style="color:#e4055c;">{{ health.error_summary.errors_24h|default(0) }}</div>
+                        <div class="label">Errors (24h)</div>
+                    </div>
+                </div>
+                <div class="col-6 col-lg-3">
+                    <div class="metric-tile">
+                        <div class="value" style="color:#ffc107;">{{ health.error_summary.total_unresolved|default(0) }}</div>
+                        <div class="label">Unresolved</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="section-card mt-3">
+                <h5><i data-feather="globe" style="width:16px;height:16px;color:#00ffb4;"></i> Endpoint Health</h5>
+                {% for ep in health.endpoints.results|default([]) %}
+                <div class="endpoint-row">
+                    <span style="font-family:monospace;">{{ ep.endpoint }}</span>
+                    {% if ep.ok %}
+                    <span class="status-badge healthy">{{ ep.status }}</span>
+                    {% else %}
+                    <span class="status-badge critical">{{ ep.status }}</span>
+                    {% endif %}
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+
+    {% if health.error_summary.recent_errors|default([])|length > 0 %}
+    <div class="section-card mt-3">
+        <h5><i data-feather="alert-triangle" style="width:16px;height:16px;color:#e4055c;"></i> Recent Unresolved Errors</h5>
+        {% for err in health.error_summary.recent_errors %}
+        <div class="error-row">
+            <div class="d-flex justify-content-between align-items-center">
+                <strong>{{ err.type }}</strong>
+                <span class="status-badge {{ err.severity }}">{{ err.severity }}</span>
+            </div>
+            <div style="color:rgba(255,255,255,0.5);margin-top:0.25rem;">{{ err.message|truncate(120) }}</div>
+            <div style="color:rgba(255,255,255,0.25);font-size:0.75rem;margin-top:0.25rem;">
+                {{ err.endpoint }} &middot; {{ err.created_at }}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+</div>
+
+<!-- TAB 2: Agent Orchestration -->
+<div class="gov-panel" id="panel-agents">
+    <div class="row g-3 mb-4">
+        <div class="col-md-4">
+            <div class="metric-tile">
+                <div class="value" style="color:#bc00ed;">{{ agents.total_agents|default(0) }}</div>
+                <div class="label">Active Agents</div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="metric-tile">
+                <div class="value" style="color:#00ffb4;">{{ agents.total_jobs|default(0) }}</div>
+                <div class="label">Scheduled Jobs</div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="metric-tile">
+                <div class="value" style="color:#0044ff;">24/7</div>
+                <div class="label">Autonomous</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="section-card">
+        <h5><i data-feather="users" style="width:16px;height:16px;color:#bc00ed;"></i> Agent Fleet</h5>
+        <div class="row g-3">
+            {% for agent in agents.agents|default([]) %}
+            <div class="col-md-6 col-lg-4">
+                <div class="agent-card">
+                    <div class="d-flex align-items-center mb-2">
+                        <span class="agent-dot active"></span>
+                        <strong style="font-size:0.85rem;">{{ agent.name|replace(' Agent', '')|truncate(30) }}</strong>
+                    </div>
+                    <div style="font-size:0.8rem;color:rgba(255,255,255,0.4);margin-bottom:0.5rem;">
+                        {{ agent.description|default('')|truncate(60) }}
+                    </div>
+                    <div class="d-flex justify-content-between" style="font-size:0.75rem;">
+                        <span style="color:rgba(255,255,255,0.35);">Tasks: {{ agent.total_tasks }}</span>
+                        <span style="color:#00ffb4;">{{ agent.success_rate }}% success</span>
+                    </div>
+                    {% if agent.last_activity %}
+                    <div style="font-size:0.7rem;color:rgba(255,255,255,0.25);margin-top:0.35rem;">
+                        Last: {{ agent.last_activity_type }} ({{ agent.last_status }})
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+
+    <div class="section-card">
+        <h5><i data-feather="clock" style="width:16px;height:16px;color:#00ffb4;"></i> Scheduled Jobs</h5>
+        {% for job in agents.scheduled_jobs|default([]) %}
+        <div class="endpoint-row">
+            <span>{{ job.name }}</span>
+            <span style="color:rgba(255,255,255,0.35);font-size:0.8rem;">
+                {% if job.next_run %}Next: {{ job.next_run[:16] }}{% endif %}
+            </span>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+
+<!-- TAB 3: UX Optimization -->
+<div class="gov-panel" id="panel-ux">
+    <div class="row g-3 mb-4">
+        <div class="col-md-4">
+            <div class="metric-tile">
+                <div class="value" style="color:#bc00ed;">{{ ux.total|default(0) }}</div>
+                <div class="label">Recommendations</div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="metric-tile">
+                <div class="value" style="color:#e4055c;">{{ ux.high_priority|default(0) }}</div>
+                <div class="label">High Priority</div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="metric-tile">
+                <div class="value" style="color:#00ffb4;">Active</div>
+                <div class="label">Monitoring</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="section-card">
+        <h5><i data-feather="layout" style="width:16px;height:16px;color:#bc00ed;"></i> UX Improvement Recommendations</h5>
+        {% for rec in ux.recommendations|default([]) %}
+        <div class="ux-card">
+            <div class="d-flex justify-content-between align-items-start mb-2">
+                <div>
+                    <strong style="font-size:0.9rem;">{{ rec.area }}</strong>
+                    <span class="priority-badge {{ rec.priority }} ms-2">{{ rec.priority }}</span>
+                </div>
+            </div>
+            <div style="font-size:0.85rem;color:rgba(255,255,255,0.5);margin-bottom:0.3rem;">
+                <i data-feather="search" style="width:12px;height:12px;margin-right:0.3rem;"></i>
+                {{ rec.finding }}
+            </div>
+            <div style="font-size:0.85rem;color:rgba(255,255,255,0.7);">
+                <i data-feather="arrow-right" style="width:12px;height:12px;color:#00ffb4;margin-right:0.3rem;"></i>
+                {{ rec.recommendation }}
+            </div>
+            <div style="font-size:0.75rem;color:rgba(0,255,180,0.6);margin-top:0.3rem;">
+                <i data-feather="trending-up" style="width:11px;height:11px;margin-right:0.25rem;"></i>
+                Expected: {{ rec.impact }}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+
+<!-- TAB 4: Feature Governance -->
+<div class="gov-panel" id="panel-governance">
+    <div class="row g-3 mb-4">
+        <div class="col-md-4">
+            <div class="metric-tile">
+                <div class="value" style="color:#bc00ed;">{{ governance.total|default(0) }}</div>
+                <div class="label">Feature Toggles</div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="metric-tile">
+                <div class="value" style="color:#00ffb4;">{{ governance.enabled|default(0) }}</div>
+                <div class="label">Enabled</div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="metric-tile">
+                <div class="value" style="color:rgba(255,255,255,0.3);">{{ governance.disabled|default(0) }}</div>
+                <div class="label">Disabled</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="section-card">
+        <h5><i data-feather="toggle-right" style="width:16px;height:16px;color:#00ffb4;"></i> Feature Toggle Status</h5>
+        {% for toggle in governance.toggles|default([]) %}
+        <div class="toggle-row">
+            <div>
+                <span class="{{ 'toggle-enabled' if toggle.is_enabled else 'toggle-disabled' }}">
+                    <i data-feather="{{ 'check-circle' if toggle.is_enabled else 'x-circle' }}" style="width:14px;height:14px;margin-right:0.3rem;"></i>
+                    {{ toggle.display_name|default(toggle.feature_key) }}
+                </span>
+                {% if toggle.category %}
+                <span style="font-size:0.7rem;color:rgba(255,255,255,0.25);margin-left:0.5rem;">{{ toggle.category }}</span>
+                {% endif %}
+            </div>
+            <span class="status-badge {{ 'healthy' if toggle.is_enabled else 'unknown' }}">
+                {{ 'ON' if toggle.is_enabled else 'OFF' }}
+            </span>
+        </div>
+        {% endfor %}
+        {% if not governance.toggles %}
+        <p style="color:rgba(255,255,255,0.3);font-size:0.85rem;">No feature toggles configured yet.</p>
+        {% endif %}
+    </div>
+
+    <div class="section-card">
+        <h5><i data-feather="shield" style="width:16px;height:16px;color:#e4055c;"></i> Governance Rules</h5>
+        <div class="d-flex flex-column gap-2" style="font-size:0.85rem;color:rgba(255,255,255,0.55);">
+            <div><i data-feather="check" style="width:14px;height:14px;color:#00ffb4;margin-right:0.5rem;"></i> All AI-generated content requires admin approval before publishing</div>
+            <div><i data-feather="check" style="width:14px;height:14px;color:#00ffb4;margin-right:0.5rem;"></i> Feature toggles control agent automation per company</div>
+            <div><i data-feather="check" style="width:14px;height:14px;color:#00ffb4;margin-right:0.5rem;"></i> Emergency stop halts all automated actions instantly</div>
+            <div><i data-feather="check" style="width:14px;height:14px;color:#00ffb4;margin-right:0.5rem;"></i> Audit logs track every approval, rejection, and override</div>
+            <div><i data-feather="check" style="width:14px;height:14px;color:#00ffb4;margin-right:0.5rem;"></i> Tenant data isolation enforced across all operations</div>
+        </div>
+    </div>
+</div>
+
+<!-- TAB 5: Competitive Intel -->
+<div class="gov-panel" id="panel-competitive">
+    <div class="section-card mb-4">
+        <h5><i data-feather="award" style="width:16px;height:16px;color:#00ffb4;"></i> LUX Unique Advantages</h5>
+        <div class="row g-2">
+            {% for adv in competitive.lux_unique_advantages|default([]) %}
+            <div class="col-md-6">
+                <div style="display:flex;align-items:center;gap:0.5rem;padding:0.5rem;font-size:0.85rem;">
+                    <i data-feather="star" style="width:14px;height:14px;color:#00ffb4;flex-shrink:0;"></i>
+                    <span>{{ adv }}</span>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+
+    <div class="section-card">
+        <h5><i data-feather="target" style="width:16px;height:16px;color:#e4055c;"></i> Competitor Comparison</h5>
+        <div class="row g-3">
+            {% for comp in competitive.competitors|default([]) %}
+            <div class="col-md-6">
+                <div class="comp-card">
+                    <h6>{{ comp.name }}</h6>
+                    <div style="font-size:0.8rem;color:rgba(255,255,255,0.4);margin-bottom:0.5rem;">
+                        Strengths: {{ comp.strengths|join(', ') }}
+                    </div>
+                    <div class="lux-advantage">
+                        <strong style="color:#00ffb4;">LUX Edge:</strong> {{ comp.lux_advantage }}
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+
+<!-- TAB 6: Executive Report -->
+<div class="gov-panel" id="panel-report">
+    <div class="report-summary mb-4">
+        <div class="d-flex justify-content-between align-items-start mb-3">
+            <div>
+                <h4 style="font-weight:800;margin-bottom:0.25rem;">Executive Summary</h4>
+                <p style="color:rgba(255,255,255,0.4);font-size:0.85rem;margin:0;">
+                    Generated {{ report.report_date|default('today') }}
+                </p>
+            </div>
+            <div class="health-score {{ report.platform_health.status|default('unknown') }}" style="width:80px;height:80px;font-size:1.4rem;">
+                {{ report.platform_health.score|default(0)|round|int }}
+            </div>
+        </div>
+
+        <div class="row g-3 mb-4">
+            <div class="col-md-3 col-6">
+                <div class="metric-tile">
+                    <div class="value" style="color:#00ffb4;">{{ report.platform_health.score|default(0)|round|int }}</div>
+                    <div class="label">Health Score</div>
+                </div>
+            </div>
+            <div class="col-md-3 col-6">
+                <div class="metric-tile">
+                    <div class="value" style="color:#bc00ed;">{{ report.ai_operations.total_agents|default(0) }}</div>
+                    <div class="label">AI Agents</div>
+                </div>
+            </div>
+            <div class="col-md-3 col-6">
+                <div class="metric-tile">
+                    <div class="value" style="color:#e4055c;">{{ report.platform_health.errors_24h|default(0) }}</div>
+                    <div class="label">Errors (24h)</div>
+                </div>
+            </div>
+            <div class="col-md-3 col-6">
+                <div class="metric-tile">
+                    <div class="value" style="color:#0044ff;">{{ report.governance.features_enabled|default(0) }}</div>
+                    <div class="label">Features Active</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="section-card">
+        <h5><i data-feather="bar-chart-2" style="width:16px;height:16px;color:#bc00ed;"></i> Platform Usage</h5>
+        <div class="row g-3">
+            <div class="col-md-3 col-6">
+                <div class="metric-tile">
+                    <div class="value" style="color:#00ffb4;">{{ report.usage.users.total|default(0) }}</div>
+                    <div class="label">Total Users</div>
+                </div>
+            </div>
+            <div class="col-md-3 col-6">
+                <div class="metric-tile">
+                    <div class="value" style="color:#bc00ed;">{{ report.usage.contacts.total|default(0) }}</div>
+                    <div class="label">Contacts</div>
+                </div>
+            </div>
+            <div class="col-md-3 col-6">
+                <div class="metric-tile">
+                    <div class="value" style="color:#e4055c;">{{ report.usage.campaigns.total|default(0) }}</div>
+                    <div class="label">Campaigns</div>
+                </div>
+            </div>
+            <div class="col-md-3 col-6">
+                <div class="metric-tile">
+                    <div class="value" style="color:#0044ff;">{{ report.usage.deals.total|default(0) }}</div>
+                    <div class="label">Deals</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="section-card">
+        <h5><i data-feather="cpu" style="width:16px;height:16px;color:#00ffb4;"></i> AI Agent Performance</h5>
+        {% for a in report.ai_operations.agents_summary|default([]) %}
+        <div class="endpoint-row">
+            <span>{{ a.name|replace(' Agent', '')|truncate(35) }}</span>
+            <div>
+                <span style="color:rgba(255,255,255,0.35);font-size:0.8rem;margin-right:1rem;">{{ a.tasks }} tasks</span>
+                <span style="color:#00ffb4;font-size:0.8rem;font-weight:600;">{{ a.success_rate }}%</span>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+
+<script>
+function showTab(tabName) {
+    document.querySelectorAll('.gov-tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.gov-panel').forEach(p => p.classList.remove('active'));
+    document.getElementById('panel-' + tabName).classList.add('active');
+    event.currentTarget.classList.add('active');
+    feather.replace();
+}
+</script>
+{% endblock %}

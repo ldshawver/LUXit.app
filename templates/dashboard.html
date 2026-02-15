@@ -409,6 +409,14 @@
 
 <div class="dashboard-container">
   {% if current_user.is_authenticated %}
+  <div style="display:flex;justify-content:center;gap:0.5rem;margin-bottom:1.5rem;padding-top:1rem;">
+    <button class="hub-select-btn {{ 'active' if not current_user.preferred_hub or current_user.preferred_hub == 'marketing' }}" onclick="setHubPreference('marketing')" style="background:{{ 'var(--lux-primary, #bc00ed)' if not current_user.preferred_hub or current_user.preferred_hub == 'marketing' else 'rgba(255,255,255,0.04)' }};border:1px solid {{ 'var(--lux-primary, #bc00ed)' if not current_user.preferred_hub or current_user.preferred_hub == 'marketing' else 'rgba(255,255,255,0.08)' }};color:{{ '#fff' if not current_user.preferred_hub or current_user.preferred_hub == 'marketing' else 'rgba(255,255,255,0.5)' }};padding:0.5rem 1.25rem;border-radius:8px;font-size:0.85rem;font-weight:600;cursor:pointer;transition:all 0.2s;display:flex;align-items:center;gap:0.4rem;">
+      <i data-feather="send" style="width:14px;height:14px;"></i> Marketing Hub
+    </button>
+    <button class="hub-select-btn {{ 'active' if current_user.preferred_hub == 'sales' }}" onclick="setHubPreference('sales')" style="background:{{ 'var(--lux-secondary, #00ffb4)' if current_user.preferred_hub == 'sales' else 'rgba(255,255,255,0.04)' }};border:1px solid {{ 'var(--lux-secondary, #00ffb4)' if current_user.preferred_hub == 'sales' else 'rgba(255,255,255,0.08)' }};color:{{ '#000' if current_user.preferred_hub == 'sales' else 'rgba(255,255,255,0.5)' }};padding:0.5rem 1.25rem;border-radius:8px;font-size:0.85rem;font-weight:600;cursor:pointer;transition:all 0.2s;display:flex;align-items:center;gap:0.4rem;">
+      <i data-feather="trending-up" style="width:14px;height:14px;"></i> Sales Hub
+    </button>
+  </div>
   {% endif %}
   
   <div class="tiles-container">
@@ -498,6 +506,25 @@
     window.history.forward();
   }
   
+  function setHubPreference(hub) {
+    const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+    fetch('/set-hub-preference', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken },
+      body: JSON.stringify({ hub: hub })
+    })
+    .then(r => r.json())
+    .then(data => {
+      if (data.success) {
+        if (hub === 'sales') {
+          window.location.href = '{{ url_for("main.lux_crm") }}';
+        } else {
+          window.location.href = '/?from_hub=1';
+        }
+      }
+    });
+  }
+
   document.addEventListener('DOMContentLoaded', function() {
     const tiles = document.querySelectorAll('.nav-tile');
     tiles.forEach(tile => {

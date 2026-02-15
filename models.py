@@ -95,6 +95,7 @@ class User(UserMixin, db.Model):
     engagement_score = db.Column(db.Float, default=0.0)
     last_activity = db.Column(db.DateTime)
     bio = db.Column(db.Text)  # User bio/description
+    preferred_hub = db.Column(db.String(20), default='marketing')  # 'marketing' or 'sales'
     
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

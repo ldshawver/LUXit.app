@@ -1,35 +1,35 @@
 /* LUX Marketing - Brand Color Palette */
+/* Dynamic brand colors (--lux-primary, --lux-secondary, --lux-accent, --lux-font)
+   are set per-company in base.html <style> block via Jinja2 */
 :root {
-  /* LUX Brand Colors from logo */
-  --lux-pure-black: #000000;         /* Pure black background */
-  --lux-polished-silver: #c0c0c0;    /* Silver accents */
-  --lux-cyan-bright: #00ffb4;        /* Bright cyan/teal */
-  --lux-cyan-dark: #004845;          /* Dark cyan/teal */
-  --lux-purple-bright: #bc00ed;      /* Bright purple/magenta */
-  --lux-purple-dark: #480749;        /* Dark purple */
-  --lux-blue-bright: #0044ff;        /* Bright blue */
-  --lux-blue-light: #808fff;         /* Light blue */
-  --lux-pink-magenta: #e4055c;       /* Pink/magenta */
-  --lux-pearl-white: #F5F5F5;        /* Text and clean contrast */
-  
-  /* Functional colors */
+  --lux-pure-black: #000000;
+  --lux-polished-silver: #c0c0c0;
+  --lux-cyan-bright: var(--lux-secondary, #00ffb4);
+  --lux-cyan-dark: #004845;
+  --lux-purple-bright: var(--lux-primary, #bc00ed);
+  --lux-purple-dark: #480749;
+  --lux-blue-bright: #0044ff;
+  --lux-blue-light: #808fff;
+  --lux-pink-magenta: var(--lux-accent, #e4055c);
+  --lux-pearl-white: #F5F5F5;
+
   --lux-dark-bg: #000000;
   --lux-card-bg: #0a0a0a;
 }
 
-/* Override Bootstrap dark theme with LUX colors */
+/* Override Bootstrap dark theme with company brand colors */
 html[data-bs-theme="dark"] {
   --bs-body-bg: var(--lux-dark-bg);
   --bs-body-color: var(--lux-pearl-white);
-  --bs-primary: var(--lux-cyan-bright);
+  --bs-primary: var(--lux-secondary, #00ffb4);
   --bs-primary-rgb: 0, 255, 180;
-  --bs-secondary: var(--lux-purple-bright);
+  --bs-secondary: var(--lux-primary, #bc00ed);
   --bs-light: var(--lux-polished-silver);
   --bs-dark: var(--lux-pure-black);
-  --bs-border-color: rgba(188, 0, 237, 0.3);
+  --bs-border-color: color-mix(in srgb, var(--lux-primary, #bc00ed), transparent 70%);
   --bs-tertiary-bg: rgba(72, 7, 73, 0.2);
-  --bs-link-color: var(--lux-cyan-bright);
-  --bs-link-hover-color: var(--lux-purple-bright);
+  --bs-link-color: var(--lux-secondary, #00ffb4);
+  --bs-link-hover-color: var(--lux-primary, #bc00ed);
 }
 
 /* Ensure body styling is properly applied */
