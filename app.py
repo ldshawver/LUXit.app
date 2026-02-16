@@ -312,6 +312,10 @@ def attach_request_id(response):
             payload = response.get_json(silent=True) or {}
             payload.setdefault("request_id", request_id)
             response.set_data(json.dumps(payload))
+    if response.mimetype == "text/html":
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
     return response
 
 
