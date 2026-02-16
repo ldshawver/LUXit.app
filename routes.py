@@ -6282,43 +6282,6 @@ def create_deal():
         logger.error(f'Deal creation error: {e}')
         return jsonify({'success': False, 'error': str(e)}), 400
 
-# ============= CRM / DEALS =============
-@main_bp.route('/crm')
-@login_required
-def crm_dashboard():
-    return redirect(url_for('main.lux_crm'))
-
-@main_bp.route('/crm/deals/<int:deal_id>')
-@login_required
-def deal_detail(deal_id):
-    """View individual deal"""
-    from models import Deal, DealActivity
-    deal = Deal.query.get_or_404(deal_id)
-    activities = DealActivity.query.filter_by(deal_id=deal_id).order_by(DealActivity.activity_date.desc()).all()
-    return render_template('deal_detail.html', deal=deal, activities=activities)
-
-# ============= LEAD SCORING =============
-@main_bp.route('/lead-scoring')
-@login_required
-def get_contact(contact_id):
-    """Get contact details via API"""
-    try:
-        contact = Contact.query.get(contact_id)
-        if not contact:
-            return jsonify({'error': 'Contact not found'}), 404
-        return jsonify({
-            'id': contact.id,
-            'full_name': contact.full_name,
-            'email': contact.email,
-            'phone': contact.phone or '',
-            'tags': contact.tags or ''
-        }), 200
-    except Exception as e:
-        logger.error(f'Error fetching contact: {e}')
-        return jsonify({'error': str(e)}), 500
-
-print("✓ LUX CRM routes loaded")
-
 # ============= AI AGENT REPORTING & MANAGEMENT =============
 @main_bp.route('/agents/reports')
 @login_required
@@ -6993,58 +6956,24 @@ def view_wordpress_imports():
     if not current_user.is_admin_user:
         return jsonify({'error': 'Admin access required'}), 403
     
-    import json
-    stage_order = ['prospecting', 'qualification', 'proposal', 'negotiation', 'won', 'lost']
-    stage_labels = ['Prospecting', 'Qualification', 'Proposal', 'Negotiation', 'Won', 'Lost']
-    stage_counts = []
-    stage_values = []
-    for s in stage_order:
-        s_deals = [d for d in deals if d.stage == s]
-        stage_counts.append(len(s_deals))
-        stage_values.append(sum(d.value or 0 for d in s_deals))
+    wp_contacts = Contact.query.filter_by(source='wordpress').all()
     
-    return render_template('lux_crm.html', 
-        deals=deals, 
-        all_contacts=all_contacts,
-        lead_scores=lead_scores,
-        personalization_rules=personalization_rules,
-        keywords=keywords,
-        next_actions=next_actions,
-        activity_stats=activity_stats,
-        stale_deals=stale_deals,
-        hot_leads=hot_leads,
-        stages_json=json.dumps(stage_labels),
-        counts_json=json.dumps(stage_counts),
-        values_json=json.dumps(stage_values)
-    )
-
-@main_bp.route('/crm/deals/create', methods=['POST'])
-@csrf.exempt
-@login_required
-def create_deal():
-    """Create a new deal in LUX CRM"""
-    try:
-        wp_contacts = Contact.query.filter_by(source='wordpress').all()
-        
-        return jsonify({
-            'success': True,
-            'count': len(wp_contacts),
-            'contacts': [
-                {
-                    'id': c.id,
-                    'email': c.email,
-                    'name': c.full_name,
-                    'segment': c.segment,
-                    'tags': c.tags,
-                    'source': c.source,
-                    'created_at': c.created_at.isoformat()
-                }
-                for c in wp_contacts
-            ]
-        }), 200
-        
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+    return jsonify({
+        'success': True,
+        'count': len(wp_contacts),
+        'contacts': [
+            {
+                'id': c.id,
+                'email': c.email,
+                'name': c.full_name,
+                'segment': c.segment,
+                'tags': c.tags,
+                'source': c.source,
+                'created_at': c.created_at.isoformat()
+            }
+            for c in wp_contacts
+        ]
+    }), 200
 
 # ============= PUBLIC ZAPIER WEBHOOK ENDPOINT =============
 @main_bp.route('/api/webhook/zapier-contact', methods=['POST'])
@@ -7315,12 +7244,20 @@ def get_contact(contact_id):
         contact = Contact.query.get(contact_id)
         if not contact:
             return jsonify({'error': 'Contact not found'}), 404
-        db.session.rollback()
-        logger.error(f'Zapier webhook error: {str(e)}')
         return jsonify({
-            'success': False,
-            'error': f'Server error: {str(e)}'
-        }), 500
+            'id': contact.id,
+            'first_name': contact.first_name or '',
+            'last_name': contact.last_name or '',
+            'full_name': contact.full_name,
+            'email': contact.email or '',
+            'phone': contact.phone or '',
+            'company': contact.company or '',
+            'source': contact.source or '',
+            'segment': contact.segment or '',
+        })
+    except Exception as e:
+        logger.error(f'Get contact error: {str(e)}')
+        return jsonify({'error': str(e)}), 500
 
 # ============= BLOG POST ROUTES =============
 try:
