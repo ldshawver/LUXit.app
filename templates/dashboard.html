@@ -1,273 +1,326 @@
 {% extends "base.html" %}
 
-{% block title %}Dashboard - LUX Marketing{% endblock %}
-
-{# Dashboard uses the default page_header which shows "Name Marketing Wizard of Company" #}
+{% block title %}Marketing Hub - LUX Marketing{% endblock %}
 
 {% block content %}
 <style>
-  .dashboard-container {
-    min-height: 100vh;
-    background: transparent;
-    padding: 0;
-    margin: -2rem auto 0;
-    max-width: 66.666%;
-  }
-  
-  .dashboard-header {
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    padding: 2rem 1rem;
-    background: transparent;
-    position: relative;
-  }
-  
-  .nav-arrows {
-    position: relative;
-    display: flex;
-    gap: 1rem;
-  }
-  
-  .nav-arrow {
-    background: transparent;
-    border: none;
-    color: #00ffb4;
-    width: 40px;
-    height: 40px;
-    border-radius: 8px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-  }
-  
-  .nav-arrow:disabled {
-    opacity: 0.3;
-    cursor: not-allowed;
-  }
-  
   body {
-    background: var(--lux-pure-black) !important;
+    background: #000 !important;
   }
-  
-  .dashboard-greeting {
-    text-align: center;
-    padding: 2rem 0;
-    font-size: 1.8rem;
-    font-weight: 300;
+
+  .hub-workspace {
+    max-width: 1400px;
+    margin: -1rem auto 0;
+    padding: 0 1.5rem 3rem;
   }
-  
-  .user-name-teal {
-    color: #00ffb4;
-    font-weight: 500;
-    text-transform: capitalize;
-  }
-  
-  .wizard-purple {
-    color: #bc00ed;
-    font-weight: 300;
-  }
-  
-  .company-name-teal {
-    color: #00ffb4;
-    font-weight: 500;
-  }
-  
-  .header-right {
+
+  .hub-top-bar {
     display: flex;
     align-items: center;
+    justify-content: space-between;
+    padding: 1rem 0;
     gap: 1rem;
+    flex-wrap: wrap;
   }
-  
-  .company-logo-container {
-    width: 50px;
-    height: 50px;
+
+  .hub-toggle {
+    display: flex;
+    gap: 0.5rem;
+  }
+
+  .hub-toggle-btn {
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.08);
+    color: rgba(255,255,255,0.5);
+    padding: 0.5rem 1.25rem;
     border-radius: 8px;
-    overflow: hidden;
-    position: relative;
+    font-size: 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
   }
-  
-  .company-logo-container::before {
+
+  .hub-toggle-btn.active-marketing {
+    background: var(--lux-primary, #bc00ed);
+    border-color: var(--lux-primary, #bc00ed);
+    color: #fff;
+  }
+
+  .hub-toggle-btn.active-sales {
+    background: var(--lux-secondary, #00ffb4);
+    border-color: var(--lux-secondary, #00ffb4);
+    color: #000;
+  }
+
+  .hub-greeting {
+    font-size: 1.3rem;
+    font-weight: 300;
+    color: rgba(255,255,255,0.7);
+  }
+
+  .hub-greeting .name {
+    color: var(--lux-secondary, #00ffb4);
+    font-weight: 500;
+  }
+
+  .hub-company-logo {
+    width: 44px;
+    height: 44px;
+    border-radius: 10px;
+    object-fit: cover;
+    border: 1px solid rgba(255,255,255,0.1);
+  }
+
+  .stats-row {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 0.75rem;
+    margin: 1.25rem 0;
+  }
+
+  .stat-card {
+    background: rgba(255,255,255,0.03);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 12px;
+    padding: 1rem;
+    text-align: center;
+  }
+
+  .stat-card .stat-value {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: #fff;
+    line-height: 1.2;
+  }
+
+  .stat-card .stat-label {
+    font-size: 0.7rem;
+    color: rgba(255,255,255,0.45);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin-top: 0.25rem;
+  }
+
+  .quick-actions {
+    display: flex;
+    gap: 0.75rem;
+    margin: 1.25rem 0;
+    flex-wrap: wrap;
+  }
+
+  .quick-action-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.65rem 1.25rem;
+    border-radius: 10px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: #fff;
+    text-decoration: none;
+    transition: all 0.25s;
+    border: none;
+  }
+
+  .quick-action-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(0,0,0,0.4);
+    color: #fff;
+  }
+
+  .qa-campaign { background: linear-gradient(135deg, #bc00ed, #8b00b0); }
+  .qa-social { background: linear-gradient(135deg, #0044ff, #0033cc); }
+  .qa-email { background: linear-gradient(135deg, #00c896, #009972); }
+  .qa-ai { background: linear-gradient(135deg, #e4055c, #b80449); }
+
+  .section-label {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: rgba(255,255,255,0.3);
+    margin: 2rem 0 0.75rem;
+    padding-left: 0.25rem;
+  }
+
+  .nav-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 0.85rem;
+  }
+
+  .nav-card {
+    display: block;
+    background: rgba(10, 10, 10, 0.8);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 14px;
+    padding: 1.25rem;
+    text-decoration: none;
+    transition: all 0.3s ease;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .nav-card::before {
     content: '';
     position: absolute;
     top: 0;
     left: 0;
     right: 0;
-    bottom: 0;
-    background: linear-gradient(135deg, rgba(139, 92, 246, 0.3) 0%, rgba(74, 222, 128, 0.3) 100%);
-    z-index: 1;
-    pointer-events: none;
-  }
-  
-  .company-logo {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-  }
-  
-  .settings-btn {
-    padding: 0;
-    border: none;
-  }
-  
-  .settings-icon {
-    color: #4ade80;
-    width: 28px;
-    height: 28px;
-    cursor: pointer;
-    transition: all 0.3s ease;
-  }
-  
-  .settings-icon:hover {
-    color: #22c55e;
-    transform: rotate(90deg);
-  }
-  
-  .tiles-container {
-    max-width: 1100px;
-    margin: 0 auto;
-    padding: 2.5rem 3rem;
-  }
-  
-  .tiles-grid {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 1.5rem;
-    border-radius: 16px;
-    padding: 2rem;
-    background: linear-gradient(145deg, #1a1a1a 0%, #0f0f0f 40%, #080808 100%);
-    position: relative;
-    border: 1px solid rgba(100, 100, 100, 0.3);
-    box-shadow: 
-      inset 0 2px 4px rgba(255, 255, 255, 0.1),
-      inset 0 -2px 4px rgba(0, 0, 0, 0.4);
-  }
-  
-  .nav-tile {
-    display: block;
-    cursor: pointer;
-    text-decoration: none;
-    transition: all 0.3s ease;
-    background: transparent;
-    border-radius: 8px;
-    overflow: hidden;
-    position: relative;
-    min-height: 44px;
-  }
-  
-  .nav-tile:hover {
-    transform: translateY(-5px);
-  }
-  
-  .nav-tile:hover .tile-image {
+    height: 2px;
+    background: linear-gradient(90deg, var(--lux-primary, #bc00ed), var(--lux-secondary, #00ffb4));
     opacity: 0;
+    transition: opacity 0.3s;
   }
-  
-  .nav-tile:hover .tile-hover {
+
+  .nav-card:hover {
+    border-color: var(--lux-primary, #bc00ed);
+    transform: translateY(-3px);
+    box-shadow: 0 8px 30px rgba(188, 0, 237, 0.15);
+  }
+
+  .nav-card:hover::before {
     opacity: 1;
   }
-  
-  .tile-image {
-    width: 100%;
-    height: auto;
-    display: block;
-    background: transparent;
-    transition: opacity 0.3s ease;
+
+  .nav-card-icon {
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 0.75rem;
+    flex-shrink: 0;
   }
-  
-  .tile-hover {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    opacity: 0;
-    transition: opacity 0.3s ease;
-    object-fit: cover;
-  }
-  
-  @keyframes pulse-glow {
-    0%, 100% {
-      box-shadow: 
-        0 0 30px rgba(188, 0, 237, 0.4), 
-        0 0 60px rgba(0, 255, 180, 0.2),
-        inset 0 1px 0 rgba(255, 255, 255, 0.1);
-    }
-    33% {
-      box-shadow: 
-        0 0 30px rgba(0, 255, 180, 0.4), 
-        0 0 60px rgba(0, 68, 255, 0.2),
-        inset 0 1px 0 rgba(255, 255, 255, 0.1);
-    }
-    66% {
-      box-shadow: 
-        0 0 30px rgba(0, 68, 255, 0.4), 
-        0 0 60px rgba(228, 5, 92, 0.2),
-        inset 0 1px 0 rgba(255, 255, 255, 0.1);
-    }
-  }
-  
-  .tiles-grid {
-    animation: pulse-glow 6s ease-in-out infinite;
-  }
-  
-  .chatbot-float {
-    position: fixed;
-    bottom: 2rem;
-    right: calc(16.666% + 1rem);
-    background: transparent;
-    cursor: pointer;
-    transition: all 0.3s ease;
-    z-index: 1000;
-  }
-  
-  .chatbot-float img {
-    height: 80px;
-    width: auto;
-  }
-  
-  .chatbot-float:hover {
-    transform: scale(1.1);
-  }
-  
-  .chatbot-float svg {
-    width: 32px;
-    height: 32px;
+
+  .nav-card-icon svg, .nav-card-icon i {
+    width: 20px;
+    height: 20px;
     color: #fff;
   }
 
-  .app-version {
-    position: fixed;
-    bottom: 1rem;
-    left: 1rem;
-    font-size: 0.8rem;
-    color: #9ca3af;
-    letter-spacing: 0.02em;
-    z-index: 900;
+  .icon-purple { background: rgba(188, 0, 237, 0.2); }
+  .icon-purple svg { color: #bc00ed !important; }
+  .icon-teal { background: rgba(0, 255, 180, 0.15); }
+  .icon-teal svg { color: #00ffb4 !important; }
+  .icon-blue { background: rgba(0, 68, 255, 0.2); }
+  .icon-blue svg { color: #4488ff !important; }
+  .icon-pink { background: rgba(228, 5, 92, 0.2); }
+  .icon-pink svg { color: #e4055c !important; }
+  .icon-amber { background: rgba(245, 158, 11, 0.2); }
+  .icon-amber svg { color: #f59e0b !important; }
+  .icon-green { background: rgba(34, 197, 94, 0.2); }
+  .icon-green svg { color: #22c55e !important; }
+
+  .nav-card-title {
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: #fff;
+    margin-bottom: 0.25rem;
   }
-  
-  @media (max-width: 1024px) {
-    .tiles-grid {
-      grid-template-columns: repeat(2, 1fr);
-      gap: 1.5rem;
-      padding: 2rem;
-    }
-    
-    .lux-logo {
-      height: 60px;
-    }
-    
-    .dashboard-container {
-      padding: 1.5rem;
-    }
-    
-    .dashboard-greeting {
-      font-size: 1.5rem;
-      padding: 1.5rem 0;
-    }
+
+  .nav-card-desc {
+    font-size: 0.78rem;
+    color: rgba(255,255,255,0.5);
+    line-height: 1.4;
   }
-  
+
+  .templates-section {
+    margin-top: 2.5rem;
+  }
+
+  .templates-header {
+    margin-bottom: 1rem;
+  }
+
+  .templates-header h2 {
+    font-size: 1.2rem;
+    font-weight: 600;
+    color: #fff;
+    margin: 0 0 0.25rem;
+  }
+
+  .templates-header p {
+    font-size: 0.82rem;
+    color: rgba(255,255,255,0.4);
+    margin: 0;
+  }
+
+  .templates-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 0.85rem;
+  }
+
+  .template-card {
+    background: rgba(10, 10, 10, 0.8);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 14px;
+    padding: 1.25rem;
+    display: flex;
+    flex-direction: column;
+    transition: all 0.3s ease;
+  }
+
+  .template-card:hover {
+    border-color: rgba(255,255,255,0.12);
+    transform: translateY(-2px);
+  }
+
+  .template-badge {
+    display: inline-block;
+    font-size: 0.65rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    padding: 0.2rem 0.6rem;
+    border-radius: 4px;
+    margin-bottom: 0.6rem;
+    width: fit-content;
+  }
+
+  .badge-ecommerce { background: rgba(0, 68, 255, 0.2); color: #4488ff; }
+  .badge-engagement { background: rgba(0, 255, 180, 0.15); color: #00ffb4; }
+  .badge-nurture { background: rgba(188, 0, 237, 0.2); color: #d060ff; }
+  .badge-retention { background: rgba(228, 5, 92, 0.2); color: #e4055c; }
+  .badge-sms { background: rgba(245, 158, 11, 0.2); color: #f59e0b; }
+  .badge-social { background: rgba(34, 197, 94, 0.2); color: #22c55e; }
+
+  .template-name {
+    font-size: 0.92rem;
+    font-weight: 600;
+    color: #fff;
+    margin-bottom: 0.3rem;
+  }
+
+  .template-desc {
+    font-size: 0.78rem;
+    color: rgba(255,255,255,0.45);
+    line-height: 1.4;
+    flex: 1;
+    margin-bottom: 0.75rem;
+  }
+
+  .template-use-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--lux-secondary, #00ffb4);
+    text-decoration: none;
+    transition: color 0.2s;
+  }
+
+  .template-use-btn:hover {
+    color: #fff;
+  }
+
   .config-alerts-section {
     margin-top: 2rem;
     padding: 1.5rem;
@@ -275,7 +328,7 @@
     border-radius: 16px;
     border: 1px solid rgba(188, 0, 237, 0.3);
   }
-  
+
   .config-alerts-header {
     display: flex;
     align-items: center;
@@ -284,29 +337,17 @@
     padding-bottom: 1rem;
     border-bottom: 1px solid rgba(255, 255, 255, 0.1);
   }
-  
-  .alerts-icon {
-    font-size: 1.5rem;
-  }
-  
-  .alerts-title {
-    font-size: 1.1rem;
-    font-weight: 600;
-    color: #fff;
-  }
-  
-  .alerts-count {
-    font-size: 0.85rem;
-    color: #888;
-    margin-left: auto;
-  }
-  
+
+  .alerts-icon { font-size: 1.5rem; }
+  .alerts-title { font-size: 1.1rem; font-weight: 600; color: #fff; }
+  .alerts-count { font-size: 0.85rem; color: #888; margin-left: auto; }
+
   .config-alerts-grid {
     display: flex;
     flex-direction: column;
     gap: 0.75rem;
   }
-  
+
   .config-alert-card {
     display: flex;
     align-items: center;
@@ -316,41 +357,17 @@
     border-radius: 10px;
     border-left: 4px solid #f59e0b;
   }
-  
-  .config-alert-card.warning {
-    border-left-color: #f59e0b;
-  }
-  
-  .config-alert-card.error {
-    border-left-color: #ef4444;
-  }
-  
-  .config-alert-card.info {
-    border-left-color: #3b82f6;
-  }
-  
-  .alert-icon {
-    font-size: 1.5rem;
-    flex-shrink: 0;
-  }
-  
-  .alert-content {
-    flex: 1;
-    min-width: 0;
-  }
-  
-  .alert-title {
-    font-weight: 600;
-    color: #fff;
-    margin-bottom: 0.25rem;
-  }
-  
-  .alert-message {
-    font-size: 0.85rem;
-    color: #aaa;
-    line-height: 1.4;
-  }
-  
+
+  .config-alert-card.warning { border-left-color: #f59e0b; }
+  .config-alert-card.error { border-left-color: #ef4444; }
+  .config-alert-card.info { border-left-color: #3b82f6; }
+
+  .alert-icon { font-size: 1.5rem; flex-shrink: 0; }
+
+  .alert-content { flex: 1; min-width: 0; }
+  .alert-title { font-weight: 600; color: #fff; margin-bottom: 0.25rem; }
+  .alert-message { font-size: 0.85rem; color: #aaa; line-height: 1.4; }
+
   .alert-action {
     flex-shrink: 0;
     padding: 0.5rem 1rem;
@@ -362,112 +379,288 @@
     font-weight: 500;
     transition: all 0.3s ease;
   }
-  
+
   .alert-action:hover {
     transform: translateY(-2px);
     box-shadow: 0 4px 15px rgba(188, 0, 237, 0.4);
   }
-  
-  @media (max-width: 640px) {
-    .tiles-grid {
-      grid-template-columns: 1fr;
-      gap: 0.75rem;
-      padding: 1rem;
-    }
-    
-    .dashboard-header {
-      padding: 1.5rem;
-      flex-wrap: wrap;
-      gap: 1rem;
-      justify-content: center;
-    }
-    
-    .lux-logo {
-      height: 50px;
-    }
-    
-    .dashboard-container {
-      padding: 1rem;
-    }
-    
-    .dashboard-greeting {
-      font-size: 1.2rem;
-      padding: 1rem 0;
-    }
-    
-    .chatbot-float {
-      bottom: 1.5rem;
-      right: 1.5rem;
-    }
-    
-    .chatbot-float img {
-      height: 60px !important;
-      width: auto !important;
-    }
+
+  .app-version {
+    position: fixed;
+    bottom: 1rem;
+    left: 1rem;
+    font-size: 0.8rem;
+    color: #9ca3af;
+    letter-spacing: 0.02em;
+    z-index: 900;
+  }
+
+  @media (max-width: 1024px) {
+    .stats-row { grid-template-columns: repeat(3, 1fr); }
+    .nav-grid { grid-template-columns: repeat(3, 1fr); }
+    .templates-grid { grid-template-columns: repeat(3, 1fr); }
+  }
+
+  @media (max-width: 768px) {
+    .hub-workspace { padding: 0 1rem 2rem; }
+    .hub-top-bar { flex-direction: column; align-items: flex-start; }
+    .stats-row { grid-template-columns: repeat(2, 1fr); }
+    .nav-grid { grid-template-columns: repeat(2, 1fr); }
+    .templates-grid { grid-template-columns: repeat(2, 1fr); }
+    .quick-actions { flex-wrap: wrap; }
+    .hub-greeting { font-size: 1.1rem; }
+  }
+
+  @media (max-width: 480px) {
+    .stats-row { grid-template-columns: 1fr; }
+    .nav-grid { grid-template-columns: 1fr; }
+    .templates-grid { grid-template-columns: 1fr; }
+    .quick-actions { flex-direction: column; }
+    .quick-action-btn { justify-content: center; }
   }
 </style>
 
-<div class="dashboard-container">
-  {% if current_user.is_authenticated %}
-  <div style="display:flex;justify-content:center;gap:0.5rem;margin-bottom:1.5rem;padding-top:1rem;">
-    <button class="hub-select-btn {{ 'active' if not current_user.preferred_hub or current_user.preferred_hub == 'marketing' }}" onclick="setHubPreference('marketing')" style="background:{{ 'var(--lux-primary, #bc00ed)' if not current_user.preferred_hub or current_user.preferred_hub == 'marketing' else 'rgba(255,255,255,0.04)' }};border:1px solid {{ 'var(--lux-primary, #bc00ed)' if not current_user.preferred_hub or current_user.preferred_hub == 'marketing' else 'rgba(255,255,255,0.08)' }};color:{{ '#fff' if not current_user.preferred_hub or current_user.preferred_hub == 'marketing' else 'rgba(255,255,255,0.5)' }};padding:0.5rem 1.25rem;border-radius:8px;font-size:0.85rem;font-weight:600;cursor:pointer;transition:all 0.2s;display:flex;align-items:center;gap:0.4rem;">
-      <i data-feather="send" style="width:14px;height:14px;"></i> Marketing Hub
-    </button>
-    <button class="hub-select-btn {{ 'active' if current_user.preferred_hub == 'sales' }}" onclick="setHubPreference('sales')" style="background:{{ 'var(--lux-secondary, #00ffb4)' if current_user.preferred_hub == 'sales' else 'rgba(255,255,255,0.04)' }};border:1px solid {{ 'var(--lux-secondary, #00ffb4)' if current_user.preferred_hub == 'sales' else 'rgba(255,255,255,0.08)' }};color:{{ '#000' if current_user.preferred_hub == 'sales' else 'rgba(255,255,255,0.5)' }};padding:0.5rem 1.25rem;border-radius:8px;font-size:0.85rem;font-weight:600;cursor:pointer;transition:all 0.2s;display:flex;align-items:center;gap:0.4rem;">
-      <i data-feather="trending-up" style="width:14px;height:14px;"></i> Sales Hub
-    </button>
+<div class="hub-workspace">
+
+  <div class="hub-top-bar">
+    <div class="hub-toggle">
+      {% if current_user.is_authenticated %}
+      <button class="hub-toggle-btn {{ 'active-marketing' if not current_user.preferred_hub or current_user.preferred_hub == 'marketing' }}" onclick="setHubPreference('marketing')">
+        <i data-feather="send" style="width:14px;height:14px;"></i> Marketing Hub
+      </button>
+      <button class="hub-toggle-btn {{ 'active-sales' if current_user.preferred_hub == 'sales' }}" onclick="setHubPreference('sales')">
+        <i data-feather="trending-up" style="width:14px;height:14px;"></i> Sales Hub
+      </button>
+      {% endif %}
+    </div>
+
+    <div class="hub-greeting">
+      {% set hour = now().hour if now is defined else 12 %}
+      {% set user_name = (current_user.first_name or current_user.username) if current_user.is_authenticated else 'User' %}
+      Good {{ 'morning' if hour is not defined or hour < 12 else ('afternoon' if hour < 17 else 'evening') }}, <span class="name">{{ user_name }}</span>
+    </div>
+
+    {% if current_company and current_company.logo_path %}
+    <img src="{{ url_for('static', filename=current_company.logo_path) }}" alt="{{ current_company.name }}" class="hub-company-logo">
+    {% elif current_company %}
+    <img src="{{ url_for('static', filename='lux_logo.png') }}" alt="{{ current_company.name }}" class="hub-company-logo">
+    {% endif %}
   </div>
-  {% endif %}
-  
-  <div class="tiles-container">
-  <div class="tiles-grid">
-    <a href="{{ url_for('main.email_hub') }}" class="nav-tile">
-      <img src="{{ url_for('static', filename='Tile_01.png') }}" alt="Email" class="tile-image">
-      <img src="{{ url_for('static', filename='hover_01.png') }}" alt="Email Hover" class="tile-hover">
+
+  <div class="stats-row">
+    <div class="stat-card">
+      <div class="stat-value">{{ total_contacts|default(0) }}</div>
+      <div class="stat-label">Total Contacts</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value">{{ active_campaigns|default(0) }}</div>
+      <div class="stat-label">Active Campaigns</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value">{{ total_sent|default(0) }}</div>
+      <div class="stat-label">Emails Sent</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value">{{ ai_campaigns|default(0) }}</div>
+      <div class="stat-label">AI Campaigns</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value">{{ total_social_posts|default(0) }}</div>
+      <div class="stat-label">Social Posts</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value">{{ total_campaigns|default(0) }}</div>
+      <div class="stat-label">Total Campaigns</div>
+    </div>
+  </div>
+
+  <div class="quick-actions">
+    <a href="{{ url_for('main.campaigns') }}" class="quick-action-btn qa-campaign">
+      <i data-feather="plus-circle" style="width:16px;height:16px;"></i> Create Campaign
     </a>
-    
-    <a href="{{ url_for('main.sms_dashboard') }}" class="nav-tile">
-      <img src="{{ url_for('static', filename='Tile_02.png') }}" alt="Text" class="tile-image">
-      <img src="{{ url_for('static', filename='hover_02.png') }}" alt="Text Hover" class="tile-hover">
+    <a href="{{ url_for('main.social_media') }}" class="quick-action-btn qa-social">
+      <i data-feather="share-2" style="width:16px;height:16px;"></i> New Social Post
     </a>
-    
-    <a href="{{ url_for('main.social_media') }}" class="nav-tile">
-      <img src="{{ url_for('static', filename='Tile_03.png') }}" alt="Social" class="tile-image">
-      <img src="{{ url_for('static', filename='hover_03.png') }}" alt="Social Hover" class="tile-hover">
+    <a href="{{ url_for('main.email_hub') }}" class="quick-action-btn qa-email">
+      <i data-feather="mail" style="width:16px;height:16px;"></i> Send Email
     </a>
-    
-    <a href="{{ url_for('main.campaign_hub') }}" class="nav-tile">
-      <img src="{{ url_for('static', filename='Tile_04.png') }}" alt="Campaign" class="tile-image">
-      <img src="{{ url_for('static', filename='hover_04.png') }}" alt="Campaign Hover" class="tile-hover">
-    </a>
-    
-    <a href="{{ url_for('main.analytics_hub') }}" class="nav-tile">
-      <img src="{{ url_for('static', filename='Tile_05.png') }}" alt="Analytics" class="tile-image">
-      <img src="{{ url_for('static', filename='hover_05.png') }}" alt="Analytics Hover" class="tile-hover">
-    </a>
-    
-    <a href="{{ url_for('main.marketing_calendar') }}" class="nav-tile">
-      <img src="{{ url_for('static', filename='Tile_06.png') }}" alt="Calendar" class="tile-image">
-      <img src="{{ url_for('static', filename='hover_06.png') }}" alt="Calendar Hover" class="tile-hover">
-    </a>
-    
-    <a href="{{ url_for('main.automation_dashboard') }}" class="nav-tile">
-      <img src="{{ url_for('static', filename='Tile_07.png') }}" alt="Automations & Agents" class="tile-image">
-      <img src="{{ url_for('static', filename='hover_07.png') }}" alt="Automations & Agents Hover" class="tile-hover">
-    </a>
-    
-    <a href="{{ url_for('main.lux_crm') }}" class="nav-tile">
-      <img src="{{ url_for('static', filename='Tile_00.png') }}" alt="LUX CRM" class="tile-image">
-      <img src="{{ url_for('static', filename='hover_00.png') }}" alt="LUX CRM Hover" class="tile-hover">
-    </a>
-    
-    <a href="{{ url_for('main.ads_hub') }}" class="nav-tile">
-      <img src="{{ url_for('static', filename='Tile_09.png') }}" alt="Ads" class="tile-image">
-      <img src="{{ url_for('static', filename='hover_09.png') }}" alt="Ads Hover" class="tile-hover">
+    <a href="{{ url_for('main.ai_dashboard') }}" class="quick-action-btn qa-ai">
+      <i data-feather="cpu" style="width:16px;height:16px;"></i> AI Generate
     </a>
   </div>
+
+  <div class="section-label">Content & Channels</div>
+  <div class="nav-grid">
+    <a href="{{ url_for('main.email_hub') }}" class="nav-card">
+      <div class="nav-card-icon icon-purple"><i data-feather="mail"></i></div>
+      <div class="nav-card-title">Email Marketing</div>
+      <div class="nav-card-desc">Campaigns, templates, A/B testing</div>
+    </a>
+    <a href="{{ url_for('main.sms_dashboard') }}" class="nav-card">
+      <div class="nav-card-icon icon-teal"><i data-feather="smartphone"></i></div>
+      <div class="nav-card-title">SMS Marketing</div>
+      <div class="nav-card-desc">Twilio-powered SMS campaigns</div>
+    </a>
+    <a href="{{ url_for('main.social_media') }}" class="nav-card">
+      <div class="nav-card-icon icon-blue"><i data-feather="share-2"></i></div>
+      <div class="nav-card-title">Social Media</div>
+      <div class="nav-card-desc">Publish to 10+ platforms</div>
+    </a>
+    <a href="{{ url_for('main.blog_list') }}" class="nav-card">
+      <div class="nav-card-icon icon-green"><i data-feather="edit-3"></i></div>
+      <div class="nav-card-title">Blog Hub</div>
+      <div class="nav-card-desc">AI-generated blogs, archive, scheduling</div>
+    </a>
   </div>
-  
+
+  <div class="section-label">Campaigns & Automation</div>
+  <div class="nav-grid">
+    <a href="{{ url_for('main.campaign_hub') }}" class="nav-card">
+      <div class="nav-card-icon icon-pink"><i data-feather="target"></i></div>
+      <div class="nav-card-title">Campaign Hub</div>
+      <div class="nav-card-desc">SEO, competitors, AI generator</div>
+    </a>
+    <a href="{{ url_for('main.automation_dashboard') }}" class="nav-card">
+      <div class="nav-card-icon icon-amber"><i data-feather="zap"></i></div>
+      <div class="nav-card-title">Automations</div>
+      <div class="nav-card-desc">25+ templates, triggers, workflows</div>
+    </a>
+    <a href="{{ url_for('main.marketing_calendar') }}" class="nav-card">
+      <div class="nav-card-icon icon-blue"><i data-feather="calendar"></i></div>
+      <div class="nav-card-title">Marketing Calendar</div>
+      <div class="nav-card-desc">Schedule, drag-drop, 30-day view</div>
+    </a>
+    <a href="{{ url_for('main.approval_queue') }}" class="nav-card">
+      <div class="nav-card-icon icon-green"><i data-feather="check-square"></i></div>
+      <div class="nav-card-title">Approval Queue</div>
+      <div class="nav-card-desc">Review AI & manual content</div>
+    </a>
+  </div>
+
+  <div class="section-label">Lead Generation</div>
+  <div class="nav-grid">
+    <a href="{{ url_for('main.landing_pages') }}" class="nav-card">
+      <div class="nav-card-icon icon-purple"><i data-feather="layout"></i></div>
+      <div class="nav-card-title">Landing Pages</div>
+      <div class="nav-card-desc">Drag-and-drop page builder</div>
+    </a>
+    <a href="{{ url_for('main.forms_dashboard') }}" class="nav-card">
+      <div class="nav-card-icon icon-teal"><i data-feather="file-text"></i></div>
+      <div class="nav-card-title">Forms</div>
+      <div class="nav-card-desc">Lead capture, embed codes</div>
+    </a>
+    <a href="{{ url_for('main.polls_management') }}" class="nav-card">
+      <div class="nav-card-icon icon-amber"><i data-feather="bar-chart"></i></div>
+      <div class="nav-card-title">Polls</div>
+      <div class="nav-card-desc">Audience surveys & polls</div>
+    </a>
+    <a href="{{ url_for('main.events_dashboard') }}" class="nav-card">
+      <div class="nav-card-icon icon-pink"><i data-feather="map-pin"></i></div>
+      <div class="nav-card-title">Events</div>
+      <div class="nav-card-desc">Event management & ticketing</div>
+    </a>
+  </div>
+
+  <div class="section-label">Intelligence & Analytics</div>
+  <div class="nav-grid">
+    <a href="{{ url_for('main.analytics_hub') }}" class="nav-card">
+      <div class="nav-card-icon icon-blue"><i data-feather="pie-chart"></i></div>
+      <div class="nav-card-title">Analytics Hub</div>
+      <div class="nav-card-desc">10 metric categories, ROI tracking</div>
+    </a>
+    <a href="{{ url_for('main.agents_hub') }}" class="nav-card">
+      <div class="nav-card-icon icon-purple"><i data-feather="cpu"></i></div>
+      <div class="nav-card-title">AI Agents</div>
+      <div class="nav-card-desc">11 specialized AI agents</div>
+    </a>
+    <a href="{{ url_for('main.seo_dashboard') }}" class="nav-card">
+      <div class="nav-card-icon icon-teal"><i data-feather="search"></i></div>
+      <div class="nav-card-title">SEO Dashboard</div>
+      <div class="nav-card-desc">Keywords, competitors, rankings</div>
+    </a>
+    <a href="{{ url_for('main.ads_hub') }}" class="nav-card">
+      <div class="nav-card-icon icon-amber"><i data-feather="dollar-sign"></i></div>
+      <div class="nav-card-title">Ads Manager</div>
+      <div class="nav-card-desc">Ad campaigns & performance</div>
+    </a>
+  </div>
+
+  <div class="section-label">System</div>
+  <div class="nav-grid">
+    <a href="{{ url_for('main.system_health') }}" class="nav-card">
+      <div class="nav-card-icon icon-green"><i data-feather="activity"></i></div>
+      <div class="nav-card-title">System Health</div>
+      <div class="nav-card-desc">Diagnostics, health checks</div>
+    </a>
+    <a href="{{ url_for('main.orchestrator_dashboard') }}" class="nav-card">
+      <div class="nav-card-icon icon-purple"><i data-feather="settings"></i></div>
+      <div class="nav-card-title">Orchestrator</div>
+      <div class="nav-card-desc">AI governor dashboard</div>
+    </a>
+    <a href="{{ url_for('main.newsletters') }}" class="nav-card">
+      <div class="nav-card-icon icon-blue"><i data-feather="inbox"></i></div>
+      <div class="nav-card-title">Newsletters</div>
+      <div class="nav-card-desc">Subscriber management</div>
+    </a>
+  </div>
+
+  <div class="templates-section">
+    <div class="templates-header">
+      <h2>Automation Templates</h2>
+      <p>Get started quickly with pre-built automation workflows</p>
+    </div>
+    <div class="templates-grid">
+      <div class="template-card">
+        <span class="template-badge badge-engagement">Engagement</span>
+        <div class="template-name">Welcome Series</div>
+        <div class="template-desc">Onboard new subscribers with a 5-email nurture sequence over 14 days.</div>
+        <a href="{{ url_for('main.automation_dashboard') }}" class="template-use-btn">Use Template <i data-feather="arrow-right" style="width:14px;height:14px;"></i></a>
+      </div>
+      <div class="template-card">
+        <span class="template-badge badge-ecommerce">Ecommerce</span>
+        <div class="template-name">Cart Abandonment</div>
+        <div class="template-desc">Recover lost sales with timed reminder emails and discount offers.</div>
+        <a href="{{ url_for('main.automation_dashboard') }}" class="template-use-btn">Use Template <i data-feather="arrow-right" style="width:14px;height:14px;"></i></a>
+      </div>
+      <div class="template-card">
+        <span class="template-badge badge-retention">Retention</span>
+        <div class="template-name">Re-engagement</div>
+        <div class="template-desc">Win back inactive contacts with targeted re-activation campaigns.</div>
+        <a href="{{ url_for('main.automation_dashboard') }}" class="template-use-btn">Use Template <i data-feather="arrow-right" style="width:14px;height:14px;"></i></a>
+      </div>
+      <div class="template-card">
+        <span class="template-badge badge-nurture">Nurture</span>
+        <div class="template-name">Birthday Campaign</div>
+        <div class="template-desc">Delight customers with personalized birthday greetings and offers.</div>
+        <a href="{{ url_for('main.automation_dashboard') }}" class="template-use-btn">Use Template <i data-feather="arrow-right" style="width:14px;height:14px;"></i></a>
+      </div>
+      <div class="template-card">
+        <span class="template-badge badge-ecommerce">Ecommerce</span>
+        <div class="template-name">Post-Purchase Follow-up</div>
+        <div class="template-desc">Build loyalty with review requests and cross-sell recommendations.</div>
+        <a href="{{ url_for('main.automation_dashboard') }}" class="template-use-btn">Use Template <i data-feather="arrow-right" style="width:14px;height:14px;"></i></a>
+      </div>
+      <div class="template-card">
+        <span class="template-badge badge-engagement">Engagement</span>
+        <div class="template-name">Weekly Newsletter</div>
+        <div class="template-desc">Auto-curate and send weekly digest newsletters to subscribers.</div>
+        <a href="{{ url_for('main.automation_dashboard') }}" class="template-use-btn">Use Template <i data-feather="arrow-right" style="width:14px;height:14px;"></i></a>
+      </div>
+      <div class="template-card">
+        <span class="template-badge badge-sms">SMS</span>
+        <div class="template-name">Lead Scoring Update</div>
+        <div class="template-desc">Automatically score and notify sales when leads hit thresholds.</div>
+        <a href="{{ url_for('main.automation_dashboard') }}" class="template-use-btn">Use Template <i data-feather="arrow-right" style="width:14px;height:14px;"></i></a>
+      </div>
+      <div class="template-card">
+        <span class="template-badge badge-social">Social</span>
+        <div class="template-name">Social Engagement Alert</div>
+        <div class="template-desc">Get notified when social posts hit engagement milestones.</div>
+        <a href="{{ url_for('main.automation_dashboard') }}" class="template-use-btn">Use Template <i data-feather="arrow-right" style="width:14px;height:14px;"></i></a>
+      </div>
+    </div>
+  </div>
+
   {% if config_alerts and config_alerts|length > 0 %}
   <div class="config-alerts-section">
     <div class="config-alerts-header">
@@ -489,6 +682,7 @@
     </div>
   </div>
   {% endif %}
+
 </div>
 
 {% if app_version %}
@@ -497,15 +691,7 @@
 
 <script>
   feather.replace();
-  
-  function goBack() {
-    window.history.back();
-  }
-  
-  function goForward() {
-    window.history.forward();
-  }
-  
+
   function setHubPreference(hub) {
     const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
     fetch('/set-hub-preference', {
@@ -524,24 +710,5 @@
       }
     });
   }
-
-  document.addEventListener('DOMContentLoaded', function() {
-    const tiles = document.querySelectorAll('.nav-tile');
-    tiles.forEach(tile => {
-      const img = tile.querySelector('.tile-image');
-      if (!img) return;
-      
-      const normalSrc = img.getAttribute('src');
-      const hoverSrc = normalSrc.replace('/Tile_', '/hover_');
-      
-      tile.addEventListener('mouseenter', () => {
-        img.setAttribute('src', hoverSrc);
-      });
-      
-      tile.addEventListener('mouseleave', () => {
-        img.setAttribute('src', normalSrc);
-      });
-    });
-  });
 </script>
 {% endblock %}

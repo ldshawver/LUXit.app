@@ -2,33 +2,49 @@
 {% block title %}LUX CRM - Sales Hub{% endblock %}
 {% block content %}
 <style>
-.crm-header { background: linear-gradient(135deg, rgba(188,0,237,0.15), rgba(0,255,180,0.05)); border-bottom: 2px solid #bc00ed; padding: 1.5rem 2rem; margin: -1rem -15px 1.5rem; }
-.stat-card { background: rgba(188,0,237,0.08); border: 1px solid rgba(188,0,237,0.25); border-radius: 10px; padding: 1.2rem; text-align: center; transition: transform 0.2s, box-shadow 0.2s; }
+.sales-hub { max-width: 100%; overflow: hidden; }
+.crm-header { background: linear-gradient(135deg, rgba(188,0,237,0.15), rgba(0,255,180,0.05)); border-bottom: 2px solid var(--lux-primary, #bc00ed); padding: 1.5rem 0; margin-bottom: 1.5rem; }
+.hub-selector { display: inline-flex; gap: 4px; background: rgba(0,0,0,0.4); border-radius: 8px; padding: 3px; margin-bottom: 0.75rem; }
+.hub-selector a { padding: 6px 16px; border-radius: 6px; font-size: 0.8rem; font-weight: 500; color: #888; text-decoration: none; transition: all 0.2s; }
+.hub-selector a.active { background: rgba(188,0,237,0.3); color: var(--lux-secondary); }
+.hub-selector a:hover:not(.active) { color: #eee; background: rgba(188,0,237,0.1); }
+.stats-row { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 1.5rem; }
+.stat-card { flex: 1 1 calc(16.666% - 12px); min-width: 140px; background: rgba(188,0,237,0.08); border: 1px solid rgba(188,0,237,0.25); border-radius: 10px; padding: 1rem; text-align: center; transition: transform 0.2s, box-shadow 0.2s; overflow: hidden; }
 .stat-card:hover { transform: translateY(-3px); box-shadow: 0 6px 20px rgba(188,0,237,0.25); }
-.stat-value { font-size: 1.8rem; font-weight: 700; color: #00ffb4; }
-.stat-label { color: #999; font-size: 0.8rem; margin-top: 0.3rem; text-transform: uppercase; letter-spacing: 0.5px; }
-.kanban-board { display: flex; gap: 12px; overflow-x: auto; padding-bottom: 1rem; min-height: 400px; }
-.kanban-column { min-width: 240px; max-width: 280px; flex: 1; background: rgba(0,0,0,0.3); border-radius: 12px; border: 1px solid rgba(188,0,237,0.2); }
+.stat-value { font-size: 1.6rem; font-weight: 700; color: var(--lux-secondary); line-height: 1.2; }
+.stat-label { color: #999; font-size: 0.75rem; margin-top: 0.2rem; text-transform: uppercase; letter-spacing: 0.5px; }
+.stat-sub { color: #666; font-size: 0.7rem; margin-top: 2px; }
+.quick-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 1.5rem; }
+.quick-action-btn { display: inline-flex; align-items: center; gap: 6px; padding: 8px 16px; background: rgba(188,0,237,0.1); border: 1px solid rgba(188,0,237,0.25); border-radius: 8px; color: #ccc; font-size: 0.82rem; font-weight: 500; text-decoration: none; transition: all 0.2s; cursor: pointer; }
+.quick-action-btn:hover { background: rgba(188,0,237,0.2); color: var(--lux-secondary); border-color: var(--lux-primary); transform: translateY(-1px); }
+.crm-tabs { display: flex; gap: 4px; background: rgba(0,0,0,0.3); border-radius: 8px; padding: 4px; margin-bottom: 1.5rem; overflow-x: auto; flex-wrap: nowrap; }
+.crm-tab { padding: 8px 18px; border: none; background: none; color: #999; cursor: pointer; border-radius: 6px; font-weight: 500; font-size: 0.85rem; transition: all 0.2s; white-space: nowrap; }
+.crm-tab.active { background: rgba(188,0,237,0.3); color: var(--lux-secondary); }
+.crm-tab:hover { color: #eee; background: rgba(188,0,237,0.15); }
+.crm-section { display: none; overflow: hidden; }
+.crm-section.active { display: block; }
+.kanban-board { display: flex; gap: 12px; overflow-x: auto; padding-bottom: 1rem; min-height: 400px; max-width: 100%; }
+.kanban-column { min-width: 220px; max-width: 260px; flex: 1 0 220px; background: rgba(0,0,0,0.3); border-radius: 12px; border: 1px solid rgba(188,0,237,0.2); overflow: hidden; }
 .kanban-header { padding: 12px 16px; border-bottom: 1px solid rgba(188,0,237,0.2); display: flex; justify-content: space-between; align-items: center; }
 .kanban-header h6 { margin: 0; font-size: 0.85rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
-.kanban-count { background: rgba(0,255,180,0.15); color: #00ffb4; padding: 2px 8px; border-radius: 10px; font-size: 0.75rem; font-weight: 600; }
+.kanban-count { background: rgba(0,255,180,0.15); color: var(--lux-secondary); padding: 2px 8px; border-radius: 10px; font-size: 0.75rem; font-weight: 600; }
 .kanban-value { font-size: 0.7rem; color: #888; margin-top: 2px; }
-.kanban-body { padding: 8px; min-height: 300px; }
-.kanban-body.drag-over { background: rgba(188,0,237,0.08); border-radius: 0 0 12px 12px; }
+.kanban-body { padding: 8px; min-height: 200px; max-height: 500px; overflow-y: auto; }
+.kanban-body.drag-over { background: rgba(188,0,237,0.08); }
 .deal-card { background: rgba(255,255,255,0.04); border: 1px solid rgba(188,0,237,0.15); border-radius: 8px; padding: 12px; margin-bottom: 8px; cursor: grab; transition: all 0.2s; }
-.deal-card:hover { border-color: #bc00ed; background: rgba(188,0,237,0.08); transform: translateY(-1px); }
+.deal-card:hover { border-color: var(--lux-primary); background: rgba(188,0,237,0.08); transform: translateY(-1px); }
 .deal-card:active { cursor: grabbing; opacity: 0.8; }
 .deal-card.dragging { opacity: 0.4; }
-.deal-card .deal-title { font-weight: 600; color: #eee; font-size: 0.9rem; margin-bottom: 4px; }
+.deal-card .deal-title { font-weight: 600; color: #eee; font-size: 0.9rem; margin-bottom: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .deal-card .deal-contact { color: #888; font-size: 0.78rem; }
-.deal-card .deal-value { color: #00ffb4; font-weight: 700; font-size: 0.9rem; }
+.deal-card .deal-value { color: var(--lux-secondary); font-weight: 700; font-size: 0.9rem; }
 .deal-card .deal-meta { display: flex; justify-content: space-between; align-items: center; margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.05); }
 .deal-card .deal-date { color: #666; font-size: 0.72rem; }
-.deal-card .stale-indicator { background: #ff4757; color: white; font-size: 0.65rem; padding: 1px 6px; border-radius: 4px; animation: pulse 2s infinite; }
-@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.6; } }
+.deal-card .stale-indicator { background: #ff4757; color: white; font-size: 0.65rem; padding: 1px 6px; border-radius: 4px; animation: pulse-stale 2s infinite; }
+@keyframes pulse-stale { 0%,100% { opacity: 1; } 50% { opacity: 0.6; } }
 .prob-bar { height: 4px; background: rgba(255,255,255,0.08); border-radius: 2px; margin-top: 6px; overflow: hidden; }
-.prob-fill { height: 100%; border-radius: 2px; background: linear-gradient(90deg, #bc00ed, #00ffb4); transition: width 0.3s; }
-.action-panel { background: linear-gradient(135deg, rgba(188,0,237,0.12), rgba(0,255,180,0.04)); border: 1px solid rgba(188,0,237,0.3); border-radius: 12px; }
+.prob-fill { height: 100%; border-radius: 2px; background: linear-gradient(90deg, var(--lux-primary), var(--lux-secondary)); transition: width 0.3s; }
+.action-panel { background: linear-gradient(135deg, rgba(188,0,237,0.12), rgba(0,255,180,0.04)); border: 1px solid rgba(188,0,237,0.3); border-radius: 12px; overflow: hidden; }
 .action-item { padding: 12px 16px; border-bottom: 1px solid rgba(188,0,237,0.12); display: flex; align-items: center; gap: 12px; transition: background 0.2s; cursor: pointer; }
 .action-item:last-child { border-bottom: none; }
 .action-item:hover { background: rgba(188,0,237,0.08); }
@@ -37,14 +53,8 @@
 .action-item.info { border-left: 4px solid #00bfff; }
 .priority-high { color: #ff6b6b; font-size: 0.7rem; text-transform: uppercase; font-weight: 600; }
 .priority-medium { color: #ffc107; font-size: 0.7rem; text-transform: uppercase; font-weight: 600; }
-.crm-tabs { display: flex; gap: 4px; background: rgba(0,0,0,0.3); border-radius: 8px; padding: 4px; margin-bottom: 1.5rem; overflow-x: auto; }
-.crm-tab { padding: 8px 18px; border: none; background: none; color: #999; cursor: pointer; border-radius: 6px; font-weight: 500; font-size: 0.85rem; transition: all 0.2s; white-space: nowrap; }
-.crm-tab.active { background: rgba(188,0,237,0.3); color: #00ffb4; }
-.crm-tab:hover { color: #eee; background: rgba(188,0,237,0.15); }
-.crm-section { display: none; }
-.crm-section.active { display: block; }
 .zero-state { text-align: center; padding: 3rem; background: linear-gradient(135deg, rgba(188,0,237,0.08), rgba(0,255,180,0.03)); border-radius: 16px; border: 2px dashed rgba(188,0,237,0.3); }
-.zero-state h3 { color: #00ffb4; margin-bottom: 0.8rem; }
+.zero-state h3 { color: var(--lux-secondary); margin-bottom: 0.8rem; }
 .zero-state p { color: #888; max-width: 500px; margin: 0 auto 1.5rem; }
 .customer-row { cursor: pointer; transition: background 0.15s; }
 .customer-row:hover { background: rgba(188,0,237,0.08) !important; }
@@ -55,76 +65,115 @@
 .modal-header { border-bottom: 1px solid rgba(188,0,237,0.2); }
 .modal-footer { border-top: 1px solid rgba(188,0,237,0.2); }
 .form-control, .form-select { background: rgba(0,0,0,0.3); border: 1px solid rgba(188,0,237,0.2); color: #eee; }
-.form-control:focus, .form-select:focus { border-color: #bc00ed; box-shadow: 0 0 0 0.2rem rgba(188,0,237,0.15); background: rgba(0,0,0,0.4); color: #eee; }
+.form-control:focus, .form-select:focus { border-color: var(--lux-primary); box-shadow: 0 0 0 0.2rem rgba(188,0,237,0.15); background: rgba(0,0,0,0.4); color: #eee; }
 .form-label { color: #aaa; font-size: 0.85rem; }
-.deal-detail-panel { position: fixed; right: -500px; top: 0; width: 480px; height: 100vh; background: #1a1a2e; border-left: 2px solid #bc00ed; z-index: 1050; transition: right 0.3s ease; overflow-y: auto; padding: 1.5rem; }
+.deal-detail-panel { position: fixed; right: -500px; top: 0; width: 480px; height: 100vh; background: #1a1a2e; border-left: 2px solid var(--lux-primary); z-index: 1050; transition: right 0.3s ease; overflow-y: auto; padding: 1.5rem; }
 .deal-detail-panel.open { right: 0; }
 .deal-detail-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1040; display: none; }
 .deal-detail-overlay.open { display: block; }
 .activity-timeline { position: relative; padding-left: 24px; }
 .activity-timeline::before { content: ''; position: absolute; left: 8px; top: 0; bottom: 0; width: 2px; background: rgba(188,0,237,0.2); }
 .timeline-item { position: relative; margin-bottom: 16px; }
-.timeline-item::before { content: ''; position: absolute; left: -20px; top: 4px; width: 10px; height: 10px; border-radius: 50%; background: #bc00ed; border: 2px solid #1a1a2e; }
-.timeline-item.stage_change::before { background: #00ffb4; }
+.timeline-item::before { content: ''; position: absolute; left: -20px; top: 4px; width: 10px; height: 10px; border-radius: 50%; background: var(--lux-primary); border: 2px solid #1a1a2e; }
+.timeline-item.stage_change::before { background: var(--lux-secondary); }
 .timeline-item.call::before { background: #00bfff; }
 .timeline-item.email::before { background: #ffc107; }
+.sales-nav-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 2rem; margin-bottom: 2rem; }
+.sales-nav-card { background: rgba(188,0,237,0.06); border: 1px solid rgba(188,0,237,0.2); border-radius: 12px; padding: 1.2rem; text-decoration: none; color: #ccc; transition: all 0.2s; display: block; overflow: hidden; }
+.sales-nav-card:hover { background: rgba(188,0,237,0.12); border-color: var(--lux-primary); color: var(--lux-secondary); transform: translateY(-2px); }
+.sales-nav-card.active-card { border-color: var(--lux-primary); background: rgba(188,0,237,0.1); }
+.sales-nav-card h6 { color: #eee; margin-bottom: 4px; font-size: 0.9rem; }
+.sales-nav-card p { color: #777; font-size: 0.75rem; margin: 0; }
+.task-item { display: flex; align-items: center; gap: 10px; padding: 10px 14px; background: rgba(255,255,255,0.03); border: 1px solid rgba(188,0,237,0.12); border-radius: 8px; margin-bottom: 6px; }
+.task-item.completed { opacity: 0.5; }
+.task-item.completed .task-title { text-decoration: line-through; }
+.task-title { flex: 1; color: #eee; font-size: 0.85rem; }
+.task-priority { font-size: 0.65rem; text-transform: uppercase; font-weight: 600; padding: 2px 8px; border-radius: 4px; }
+.task-priority.high { background: rgba(255,107,107,0.2); color: #ff6b6b; }
+.task-priority.medium { background: rgba(255,193,7,0.2); color: #ffc107; }
+.task-priority.low { background: rgba(0,191,255,0.2); color: #00bfff; }
+.task-date { color: #666; font-size: 0.72rem; }
+.task-delete { background: none; border: none; color: #666; cursor: pointer; padding: 2px; }
+.task-delete:hover { color: #ff6b6b; }
+@media (max-width: 991px) {
+  .stat-card { flex: 1 1 calc(33.333% - 12px); }
+  .sales-nav-grid { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 767px) {
+  .stat-card { flex: 1 1 calc(50% - 12px); }
+  .sales-nav-grid { grid-template-columns: 1fr; }
+  .deal-detail-panel { width: 100%; right: -100%; }
+}
 </style>
 
-<div class="crm-header">
-  <div class="d-flex justify-content-between align-items-center">
-    <div>
-      <h2 class="mb-0" style="color: #eee;"><i data-feather="briefcase" style="color: #bc00ed;"></i> Sales Hub</h2>
-      <small style="color: #888;">Action-driven CRM pipeline</small>
+<div class="sales-hub">
+  <div class="crm-header">
+    <div class="hub-selector">
+      <a href="{{ url_for('main.lux_crm') }}" class="active">Sales Hub</a>
+      <a href="{{ url_for('main.dashboard') }}">Marketing Hub</a>
     </div>
-    <div>
-      <button class="btn btn-primary me-2" data-bs-toggle="modal" data-bs-target="#newDealModal">
-        <i data-feather="plus" style="width:16px;height:16px;"></i> New Deal
-      </button>
-      <a href="{{ url_for('main.contacts') }}" class="btn btn-outline-light">
-        <i data-feather="users" style="width:16px;height:16px;"></i> Contacts
-      </a>
+    <div class="d-flex justify-content-between align-items-center">
+      <div>
+        <h2 class="mb-0" style="color: #eee;"><i data-feather="briefcase" style="color: var(--lux-primary);"></i> Sales Hub</h2>
+        <small style="color: #888;">Action-driven CRM workspace</small>
+      </div>
+      <div class="d-flex gap-2 flex-wrap">
+        <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#newDealModal">
+          <i data-feather="plus" style="width:16px;height:16px;"></i> New Deal
+        </button>
+        <a href="{{ url_for('main.contacts') }}" class="btn btn-outline-light">
+          <i data-feather="users" style="width:16px;height:16px;"></i> Contacts
+        </a>
+      </div>
     </div>
   </div>
-</div>
 
-<div class="container-fluid px-4">
-  <div class="row mb-4">
-    <div class="col-lg-2 col-md-4 col-6 mb-3">
-      <div class="stat-card">
-        <div class="stat-value" style="color: #00bfff;">{{ activity_stats.new_leads_this_week|default(0) }}</div>
-        <div class="stat-label">New Leads</div>
-      </div>
+  <div class="stats-row">
+    <div class="stat-card">
+      <div class="stat-value" style="color: #00bfff;">{{ activity_stats.new_leads_this_week|default(0) }}</div>
+      <div class="stat-label">New Leads</div>
+      <div class="stat-sub">This week</div>
     </div>
-    <div class="col-lg-2 col-md-4 col-6 mb-3">
-      <div class="stat-card">
-        <div class="stat-value">{{ activity_stats.active_deals|default(0) }}</div>
-        <div class="stat-label">Active Deals</div>
-      </div>
+    <div class="stat-card">
+      <div class="stat-value">{{ activity_stats.active_deals|default(0) }}</div>
+      <div class="stat-label">Open Deals</div>
+      <div class="stat-sub">Worth ${{ deals|map(attribute='value')|sum|int }}</div>
     </div>
-    <div class="col-lg-2 col-md-4 col-6 mb-3">
-      <div class="stat-card">
-        <div class="stat-value" style="color: #ff6b6b;">{{ activity_stats.stale_deals|default(0) }}</div>
-        <div class="stat-label">Need Follow-up</div>
-      </div>
+    <div class="stat-card">
+      <div class="stat-value" style="color: #ff6b6b;">{{ activity_stats.stale_deals|default(0) }}</div>
+      <div class="stat-label">Need Follow-up</div>
+      <div class="stat-sub">Stale deals</div>
     </div>
-    <div class="col-lg-2 col-md-4 col-6 mb-3">
-      <div class="stat-card">
-        <div class="stat-value" style="color: #00ff88;">{{ activity_stats.hot_leads|default(0) }}</div>
-        <div class="stat-label">Hot Leads</div>
-      </div>
+    <div class="stat-card">
+      <div class="stat-value" style="color: #00ff88;">{{ activity_stats.hot_leads|default(0) }}</div>
+      <div class="stat-label">Hot Leads</div>
+      <div class="stat-sub">Score 70+</div>
     </div>
-    <div class="col-lg-2 col-md-4 col-6 mb-3">
-      <div class="stat-card">
-        <div class="stat-value" style="color: #bc00ed;">{{ activity_stats.deals_won_this_month|default(0) }}</div>
-        <div class="stat-label">Won This Month</div>
-      </div>
+    <div class="stat-card">
+      <div class="stat-value" style="color: var(--lux-primary);">{{ activity_stats.deals_won_this_month|default(0) }}</div>
+      <div class="stat-label">Won This Month</div>
+      <div class="stat-sub">Closed deals</div>
     </div>
-    <div class="col-lg-2 col-md-4 col-6 mb-3">
-      <div class="stat-card">
-        <div class="stat-value">${{ deals|map(attribute='value')|sum|int }}</div>
-        <div class="stat-label">Pipeline Value</div>
-      </div>
+    <div class="stat-card">
+      <div class="stat-value">${{ deals|map(attribute='value')|sum|int }}</div>
+      <div class="stat-label">Pipeline Value</div>
+      <div class="stat-sub">Total value</div>
     </div>
+  </div>
+
+  <div class="quick-actions">
+    <a href="{{ url_for('main.contacts') }}" class="quick-action-btn">
+      <i data-feather="user-plus" style="width:16px;height:16px;"></i> Add New Lead
+    </a>
+    <a href="{{ url_for('main.marketing_calendar') }}" class="quick-action-btn">
+      <i data-feather="calendar" style="width:16px;height:16px;"></i> Schedule Meeting
+    </a>
+    <button class="quick-action-btn" data-bs-toggle="modal" data-bs-target="#newDealModal">
+      <i data-feather="plus-circle" style="width:16px;height:16px;"></i> Create Deal
+    </button>
+    <a href="{{ url_for('main.campaigns') }}" class="quick-action-btn">
+      <i data-feather="send" style="width:16px;height:16px;"></i> Quick Campaign
+    </a>
   </div>
 
   <div class="crm-tabs">
@@ -133,6 +182,7 @@
     <button class="crm-tab" data-section="customers"><i data-feather="users" style="width:14px;height:14px;"></i> Customers</button>
     <button class="crm-tab" data-section="lead-scoring"><i data-feather="trending-up" style="width:14px;height:14px;"></i> Lead Scoring</button>
     <button class="crm-tab" data-section="crm-analytics"><i data-feather="bar-chart-2" style="width:14px;height:14px;"></i> Analytics</button>
+    <button class="crm-tab" data-section="tasks"><i data-feather="check-square" style="width:14px;height:14px;"></i> Tasks</button>
   </div>
 
   <!-- PIPELINE VIEW (KANBAN) -->
@@ -141,7 +191,7 @@
       <div class="col-lg-3 mb-4">
         <div class="action-panel h-100">
           <div class="p-3" style="border-bottom: 1px solid rgba(188,0,237,0.2);">
-            <h6 style="color: #00ffb4; margin: 0;"><i data-feather="zap" style="width:16px;height:16px;"></i> Next Actions</h6>
+            <h6 style="color: var(--lux-secondary); margin: 0;"><i data-feather="zap" style="width:16px;height:16px;"></i> Next Actions</h6>
           </div>
           {% if next_actions %}
             {% for action in next_actions %}
@@ -212,7 +262,7 @@
         </div>
         {% else %}
         <div class="zero-state">
-          <i data-feather="target" style="width:64px;height:64px;color:#bc00ed;margin-bottom:1rem;"></i>
+          <i data-feather="target" style="width:64px;height:64px;color:var(--lux-primary);margin-bottom:1rem;"></i>
           <h3>Build Your Sales Pipeline</h3>
           <p>Add your first deal to start tracking opportunities. Drag deals between stages as they progress through your sales process.</p>
           <button class="btn btn-primary btn-lg" data-bs-toggle="modal" data-bs-target="#newDealModal">
@@ -226,9 +276,9 @@
 
   <!-- DEAL LIST VIEW -->
   <div class="crm-section" data-section="deals-list">
-    <div class="card" style="background: rgba(0,0,0,0.3); border: 1px solid rgba(188,0,237,0.2);">
+    <div class="card" style="background: rgba(0,0,0,0.3); border: 1px solid rgba(188,0,237,0.2); overflow: hidden;">
       <div class="card-header d-flex justify-content-between" style="background:transparent;border-bottom:1px solid rgba(188,0,237,0.2);">
-        <h5 class="mb-0" style="color:#00ffb4;">All Deals</h5>
+        <h5 class="mb-0" style="color:var(--lux-secondary);">All Deals</h5>
         <small style="color:#888;">{{ deals|length }} deals | ${{ deals|map(attribute='value')|sum|int }} total</small>
       </div>
       <div class="card-body">
@@ -236,7 +286,7 @@
         <div class="table-responsive">
           <table class="table table-hover">
             <thead>
-              <tr style="color:#00ffb4;">
+              <tr style="color:var(--lux-secondary);">
                 <th>Deal</th>
                 <th>Contact</th>
                 <th>Stage</th>
@@ -258,7 +308,7 @@
                   {% set stage_colors = {'prospecting': '#00bfff', 'qualification': '#bc00ed', 'proposal': '#ff6b6b', 'negotiation': '#ffc107', 'won': '#00ff88', 'lost': '#666'} %}
                   <span class="badge" style="background:{{ stage_colors.get(deal.stage, '#888') }}22;color:{{ stage_colors.get(deal.stage, '#888') }};">{{ deal.stage|title }}</span>
                 </td>
-                <td style="color:#00ffb4;font-weight:600;">${{ deal.value|int if deal.value else 0 }}</td>
+                <td style="color:var(--lux-secondary);font-weight:600;">${{ deal.value|int if deal.value else 0 }}</td>
                 <td>
                   <div class="d-flex align-items-center gap-2">
                     <div class="prob-bar" style="width:60px;">
@@ -313,15 +363,15 @@
       </div>
       <div class="col-md-3 mb-3">
         <div class="stat-card">
-          <div class="stat-value" style="color:#bc00ed;">{{ deals|selectattr('stage', 'equalto', 'won')|list|length }}</div>
+          <div class="stat-value" style="color:var(--lux-primary);">{{ deals|selectattr('stage', 'equalto', 'won')|list|length }}</div>
           <div class="stat-label">Deals Won</div>
         </div>
       </div>
     </div>
 
-    <div class="card" style="background:rgba(0,0,0,0.3);border:1px solid rgba(188,0,237,0.2);">
+    <div class="card" style="background:rgba(0,0,0,0.3);border:1px solid rgba(188,0,237,0.2);overflow:hidden;">
       <div class="card-header d-flex justify-content-between align-items-center" style="background:transparent;border-bottom:1px solid rgba(188,0,237,0.2);">
-        <h5 class="mb-0" style="color:#00ffb4;">Customer Directory</h5>
+        <h5 class="mb-0" style="color:var(--lux-secondary);">Customer Directory</h5>
         <a href="{{ url_for('main.contacts') }}" class="btn btn-sm btn-outline-primary">View All Contacts</a>
       </div>
       <div class="card-body">
@@ -329,7 +379,7 @@
         <div class="table-responsive">
           <table class="table table-hover">
             <thead>
-              <tr style="color:#00ffb4;">
+              <tr style="color:var(--lux-secondary);">
                 <th>Name</th>
                 <th>Email</th>
                 <th>Phone</th>
@@ -357,7 +407,7 @@
                   <span class="badge badge-cold">{{ score }}</span>
                   {% endif %}
                 </td>
-                <td><span class="badge" style="background:rgba(188,0,237,0.2);color:#bc00ed;">{{ contact.segment|title if contact.segment else 'Lead' }}</span></td>
+                <td><span class="badge" style="background:rgba(188,0,237,0.2);color:var(--lux-primary);">{{ contact.segment|title if contact.segment else 'Lead' }}</span></td>
                 <td style="color:#666;">{{ contact.last_activity.strftime('%b %d') if contact.last_activity else 'Never' }}</td>
               </tr>
               {% endfor %}
@@ -397,16 +447,16 @@
       </div>
     </div>
 
-    <div class="card" style="background:rgba(0,0,0,0.3);border:1px solid rgba(188,0,237,0.2);">
+    <div class="card" style="background:rgba(0,0,0,0.3);border:1px solid rgba(188,0,237,0.2);overflow:hidden;">
       <div class="card-header" style="background:transparent;border-bottom:1px solid rgba(188,0,237,0.2);">
-        <h5 class="mb-0" style="color:#00ffb4;">Lead Scores</h5>
+        <h5 class="mb-0" style="color:var(--lux-secondary);">Lead Scores</h5>
       </div>
       <div class="card-body">
         {% if lead_scores %}
         <div class="table-responsive">
           <table class="table table-hover">
             <thead>
-              <tr style="color:#00ffb4;">
+              <tr style="color:var(--lux-secondary);">
                 <th>Contact</th>
                 <th>Score</th>
                 <th>Grade</th>
@@ -419,7 +469,7 @@
               {% for score in lead_scores %}
               <tr>
                 <td><strong style="color:#eee;">{{ score.contact.full_name if score.contact else 'Unknown' }}</strong></td>
-                <td style="color:#00ffb4;font-weight:600;">{{ (score.lead_score)|int }}/100</td>
+                <td style="color:var(--lux-secondary);font-weight:600;">{{ (score.lead_score)|int }}/100</td>
                 <td>
                   {% if score.lead_score >= 80 %}<span class="badge" style="background:#00ff88;">A</span>
                   {% elif score.lead_score >= 60 %}<span class="badge" style="background:#ffc107;color:#000;">B</span>
@@ -476,9 +526,9 @@
 
     <div class="row">
       <div class="col-md-6 mb-4">
-        <div class="card" style="background:rgba(0,0,0,0.3);border:1px solid rgba(188,0,237,0.2);">
+        <div class="card" style="background:rgba(0,0,0,0.3);border:1px solid rgba(188,0,237,0.2);overflow:hidden;">
           <div class="card-header" style="background:transparent;border-bottom:1px solid rgba(188,0,237,0.2);">
-            <h6 style="color:#00ffb4;">Pipeline by Stage</h6>
+            <h6 style="color:var(--lux-secondary);">Pipeline by Stage</h6>
           </div>
           <div class="card-body">
             <canvas id="pipelineChart" height="200"></canvas>
@@ -486,9 +536,9 @@
         </div>
       </div>
       <div class="col-md-6 mb-4">
-        <div class="card" style="background:rgba(0,0,0,0.3);border:1px solid rgba(188,0,237,0.2);">
+        <div class="card" style="background:rgba(0,0,0,0.3);border:1px solid rgba(188,0,237,0.2);overflow:hidden;">
           <div class="card-header" style="background:transparent;border-bottom:1px solid rgba(188,0,237,0.2);">
-            <h6 style="color:#00ffb4;">Deal Value by Stage</h6>
+            <h6 style="color:var(--lux-secondary);">Deal Value by Stage</h6>
           </div>
           <div class="card-body">
             <canvas id="valueChart" height="200"></canvas>
@@ -497,13 +547,92 @@
       </div>
     </div>
   </div>
+
+  <!-- TASKS TAB -->
+  <div class="crm-section" data-section="tasks">
+    <div class="card" style="background:rgba(0,0,0,0.3);border:1px solid rgba(188,0,237,0.2);overflow:hidden;">
+      <div class="card-header d-flex justify-content-between align-items-center" style="background:transparent;border-bottom:1px solid rgba(188,0,237,0.2);">
+        <h5 class="mb-0" style="color:var(--lux-secondary);">Today's Tasks</h5>
+        <button class="btn btn-sm btn-primary" onclick="document.getElementById('taskForm').style.display=document.getElementById('taskForm').style.display==='none'?'flex':'none'">
+          <i data-feather="plus" style="width:14px;height:14px;"></i> Add Task
+        </button>
+      </div>
+      <div class="card-body">
+        <div id="taskForm" style="display:none;gap:8px;flex-wrap:wrap;margin-bottom:1rem;padding:12px;background:rgba(188,0,237,0.06);border-radius:8px;align-items:flex-end;">
+          <div style="flex:2;min-width:180px;">
+            <label class="form-label" style="font-size:0.75rem;">Task</label>
+            <input type="text" class="form-control form-control-sm" id="taskTitle" placeholder="What needs to be done?">
+          </div>
+          <div style="flex:0 0 110px;">
+            <label class="form-label" style="font-size:0.75rem;">Priority</label>
+            <select class="form-select form-select-sm" id="taskPriority">
+              <option value="high">High</option>
+              <option value="medium" selected>Medium</option>
+              <option value="low">Low</option>
+            </select>
+          </div>
+          <div style="flex:1;min-width:140px;">
+            <label class="form-label" style="font-size:0.75rem;">Assign to</label>
+            <select class="form-select form-select-sm" id="taskAssign">
+              <option value="">None</option>
+              {% for deal in deals %}
+              <option value="deal:{{ deal.id }}">Deal: {{ deal.title }}</option>
+              {% endfor %}
+              {% for contact in all_contacts[:20] %}
+              <option value="contact:{{ contact.id }}">Contact: {{ contact.full_name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div style="flex:0 0 140px;">
+            <label class="form-label" style="font-size:0.75rem;">Due Date</label>
+            <input type="date" class="form-control form-control-sm" id="taskDate">
+          </div>
+          <div style="flex:0 0 auto;">
+            <button class="btn btn-sm btn-primary" onclick="addTask()">Add</button>
+          </div>
+        </div>
+        <div id="taskList"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SALES TOOLS NAVIGATION -->
+  <div style="margin-top:2rem;">
+    <h5 style="color:var(--lux-secondary);margin-bottom:1rem;"><i data-feather="grid" style="width:18px;height:18px;"></i> Sales Tools</h5>
+    <div class="sales-nav-grid">
+      <a href="{{ url_for('main.crm_hub') }}" class="sales-nav-card">
+        <h6><i data-feather="layers" style="width:16px;height:16px;color:var(--lux-primary);"></i> CRM Features</h6>
+        <p>Complete feature suite</p>
+      </a>
+      <a href="{{ url_for('main.contacts') }}" class="sales-nav-card">
+        <h6><i data-feather="users" style="width:16px;height:16px;color:var(--lux-primary);"></i> Contacts</h6>
+        <p>Customer database & profiles</p>
+      </a>
+      <a href="{{ url_for('main.lux_crm') }}" class="sales-nav-card active-card">
+        <h6><i data-feather="git-branch" style="width:16px;height:16px;color:var(--lux-secondary);"></i> Pipeline</h6>
+        <p>Visual Kanban board</p>
+      </a>
+      <a href="{{ url_for('main.agents_hub') }}" class="sales-nav-card">
+        <h6><i data-feather="cpu" style="width:16px;height:16px;color:var(--lux-primary);"></i> AI Agents</h6>
+        <p>Sales AI assistance</p>
+      </a>
+      <a href="{{ url_for('main.analytics_hub') }}" class="sales-nav-card">
+        <h6><i data-feather="bar-chart-2" style="width:16px;height:16px;color:var(--lux-primary);"></i> Analytics</h6>
+        <p>Revenue & conversion metrics</p>
+      </a>
+      <a href="{{ url_for('main.automation_dashboard') }}" class="sales-nav-card">
+        <h6><i data-feather="zap" style="width:16px;height:16px;color:var(--lux-primary);"></i> Automations</h6>
+        <p>Sales workflow triggers</p>
+      </a>
+    </div>
+  </div>
 </div>
 
 <!-- Deal Detail Slide Panel -->
 <div class="deal-detail-overlay" id="dealOverlay" onclick="closeDealPanel()"></div>
 <div class="deal-detail-panel" id="dealPanel">
   <div class="d-flex justify-content-between align-items-center mb-3">
-    <h5 style="color:#00ffb4;margin:0;" id="panelTitle">Deal Details</h5>
+    <h5 style="color:var(--lux-secondary);margin:0;" id="panelTitle">Deal Details</h5>
     <button class="btn btn-sm btn-outline-light" onclick="closeDealPanel()"><i data-feather="x" style="width:16px;height:16px;"></i></button>
   </div>
   <div id="dealPanelContent">
@@ -516,7 +645,7 @@
   <div class="modal-dialog">
     <div class="modal-content">
       <div class="modal-header">
-        <h5 class="modal-title" style="color:#00ffb4;">New Deal</h5>
+        <h5 class="modal-title" style="color:var(--lux-secondary);">New Deal</h5>
         <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
       </div>
       <div class="modal-body">
@@ -580,6 +709,7 @@ document.querySelectorAll('.crm-tab').forEach(tab => {
     this.classList.add('active');
     document.querySelector(`.crm-section[data-section="${this.dataset.section}"]`).classList.add('active');
     if (this.dataset.section === 'crm-analytics') initCharts();
+    if (this.dataset.section === 'tasks') renderTasks();
     feather.replace();
   });
 });
@@ -644,7 +774,7 @@ function openDealPanel(dealId) {
       activitiesHtml = '<div class="activity-timeline">';
       deal.activities.forEach(a => {
         activitiesHtml += `<div class="timeline-item ${a.type}">
-          <div style="color:#eee;font-size:0.85rem;"><strong>${a.type.replace('_',' ').replace(/\\b\\w/g, l => l.toUpperCase())}</strong></div>
+          <div style="color:#eee;font-size:0.85rem;"><strong>${a.type.replace('_',' ').replace(/\b\w/g, l => l.toUpperCase())}</strong></div>
           <div style="color:#888;font-size:0.8rem;">${a.description || 'No description'}</div>
           <div style="color:#555;font-size:0.72rem;">${a.date}</div>
         </div>`;
@@ -781,6 +911,76 @@ function initCharts() {
   }
 }
 
-document.addEventListener('DOMContentLoaded', function() { feather.replace(); });
+const TASKS_KEY = 'lux_crm_tasks';
+function getTasks() {
+  try { return JSON.parse(localStorage.getItem(TASKS_KEY)) || []; }
+  catch(e) { return []; }
+}
+function saveTasks(tasks) {
+  localStorage.setItem(TASKS_KEY, JSON.stringify(tasks));
+}
+function addTask() {
+  const title = document.getElementById('taskTitle').value.trim();
+  if (!title) { alert('Please enter a task title'); return; }
+  const priority = document.getElementById('taskPriority').value;
+  const assign = document.getElementById('taskAssign').value;
+  const date = document.getElementById('taskDate').value;
+  const tasks = getTasks();
+  tasks.push({
+    id: Date.now(),
+    title: title,
+    priority: priority,
+    assign: assign,
+    date: date,
+    completed: false,
+    createdAt: new Date().toISOString()
+  });
+  saveTasks(tasks);
+  document.getElementById('taskTitle').value = '';
+  document.getElementById('taskDate').value = '';
+  renderTasks();
+}
+function toggleTask(id) {
+  const tasks = getTasks();
+  const task = tasks.find(t => t.id === id);
+  if (task) task.completed = !task.completed;
+  saveTasks(tasks);
+  renderTasks();
+}
+function deleteTask(id) {
+  let tasks = getTasks();
+  tasks = tasks.filter(t => t.id !== id);
+  saveTasks(tasks);
+  renderTasks();
+}
+function renderTasks() {
+  const tasks = getTasks();
+  const container = document.getElementById('taskList');
+  if (!container) return;
+  if (tasks.length === 0) {
+    container.innerHTML = '<div class="zero-state" style="padding:2rem;"><i data-feather="check-square" style="width:48px;height:48px;color:var(--lux-primary);margin-bottom:0.5rem;"></i><h3 style="font-size:1.1rem;">No tasks yet</h3><p>Add your first task to stay organized.</p></div>';
+    feather.replace();
+    return;
+  }
+  const pending = tasks.filter(t => !t.completed);
+  const done = tasks.filter(t => t.completed);
+  let html = '';
+  [...pending, ...done].forEach(t => {
+    html += `<div class="task-item ${t.completed ? 'completed' : ''}">
+      <input type="checkbox" ${t.completed ? 'checked' : ''} onchange="toggleTask(${t.id})" style="accent-color:var(--lux-primary);width:18px;height:18px;cursor:pointer;">
+      <span class="task-title">${t.title}</span>
+      <span class="task-priority ${t.priority}">${t.priority}</span>
+      ${t.date ? `<span class="task-date">${t.date}</span>` : ''}
+      <button class="task-delete" onclick="deleteTask(${t.id})"><i data-feather="x" style="width:14px;height:14px;"></i></button>
+    </div>`;
+  });
+  container.innerHTML = html;
+  feather.replace();
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+  feather.replace();
+  renderTasks();
+});
 </script>
 {% endblock %}

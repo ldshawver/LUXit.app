@@ -3,242 +3,375 @@
 {% block title %}LUX CRM Hub - All Features{% endblock %}
 
 {% block content %}
-<div class="container-fluid mt-5">
-    <h1 style="text-align: center; color: #bc00ed; margin-bottom: 2rem;">
-        <i class="fas fa-cube"></i> LUX CRM - Complete Feature Suite
-    </h1>
-    
-    <div class="row g-4">
-        <!-- Feature 1 -->
-        <div class="col-md-6 col-lg-4">
-            <div class="card h-100" style="background: linear-gradient(135deg, #1a0033 0%, #2d004d 100%); border: 2px solid #bc00ed;">
-                <div class="card-header" style="background: #bc00ed; color: white;">
-                    <h5 class="mb-0"><i class="fas fa-address-book"></i> 1. Contact & Lead Management</h5>
-                </div>
-                <div class="card-body" style="color: #00ffb4;">
-                    <p>✅ Unified database for contacts, leads, customers</p>
-                    <p>✅ Custom fields, tags, notes, activity logs</p>
-                    <p>✅ Full CRUD API endpoints</p>
-                    <a href="{{ url_for('main.contacts') }}" class="btn btn-sm" style="background: #bc00ed; color: white;">View Contacts</a>
-                </div>
-            </div>
+<style>
+  .crm-features-container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 2rem 1rem;
+  }
+
+  .crm-features-header {
+    text-align: center;
+    margin-bottom: 2.5rem;
+  }
+
+  .crm-features-header h1 {
+    color: var(--lux-primary, #bc00ed);
+    font-size: 1.8rem;
+    font-weight: 700;
+    margin-bottom: 0.5rem;
+  }
+
+  .crm-features-header p {
+    color: rgba(255,255,255,0.5);
+    font-size: 0.95rem;
+  }
+
+  .features-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1.25rem;
+  }
+
+  .feature-card {
+    background: rgba(10, 10, 10, 0.9);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 14px;
+    overflow: hidden;
+    transition: all 0.3s ease;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .feature-card:hover {
+    border-color: var(--lux-primary-25, rgba(188,0,237,0.25));
+    transform: translateY(-3px);
+    box-shadow: 0 8px 30px rgba(0,0,0,0.4);
+  }
+
+  .feature-card-header {
+    background: linear-gradient(135deg, var(--lux-primary, #bc00ed), color-mix(in srgb, var(--lux-primary, #bc00ed), #000 30%));
+    color: #fff;
+    padding: 0.85rem 1.25rem;
+    font-weight: 600;
+    font-size: 0.9rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .feature-card-body {
+    padding: 1.25rem;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .feature-card-body .feature-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.5rem;
+    font-size: 0.85rem;
+    color: rgba(255,255,255,0.7);
+    margin-bottom: 0.5rem;
+    line-height: 1.4;
+  }
+
+  .feature-card-body .feature-item .check {
+    color: var(--lux-secondary, #00ffb4);
+    flex-shrink: 0;
+    margin-top: 2px;
+  }
+
+  .feature-card-action {
+    margin-top: auto;
+    padding-top: 0.75rem;
+  }
+
+  .feature-card-action .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    background: var(--lux-primary, #bc00ed);
+    color: #fff;
+    border: none;
+    padding: 0.4rem 1rem;
+    border-radius: 6px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    text-decoration: none;
+    transition: all 0.2s;
+  }
+
+  .feature-card-action .btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px var(--lux-primary-glow, rgba(188,0,237,0.4));
+    color: #fff;
+  }
+
+  .crm-summary {
+    margin-top: 2rem;
+    background: rgba(10, 10, 10, 0.9);
+    border: 1px solid var(--lux-secondary-25, rgba(0,255,180,0.25));
+    border-radius: 14px;
+    padding: 1.5rem;
+    text-align: center;
+  }
+
+  .crm-summary h4 {
+    color: var(--lux-primary, #bc00ed);
+    font-size: 1.1rem;
+    margin-bottom: 0.5rem;
+  }
+
+  .crm-summary p {
+    color: rgba(255,255,255,0.6);
+    font-size: 0.9rem;
+    margin: 0;
+    max-width: 700px;
+    margin: 0 auto;
+  }
+
+  @media (max-width: 991px) {
+    .features-grid {
+      grid-template-columns: repeat(2, 1fr);
+    }
+  }
+
+  @media (max-width: 575px) {
+    .features-grid {
+      grid-template-columns: 1fr;
+    }
+
+    .crm-features-header h1 {
+      font-size: 1.4rem;
+    }
+  }
+</style>
+
+<div class="crm-features-container">
+  <div class="crm-features-header">
+    <h1><i data-feather="box" style="width:28px;height:28px;"></i> LUX CRM - Complete Feature Suite</h1>
+    <p>15 integrated modules powering your sales and customer relationships</p>
+  </div>
+
+  <div class="features-grid">
+    <div class="feature-card">
+      <div class="feature-card-header">
+        <i data-feather="users" style="width:16px;height:16px;"></i> 1. Contact & Lead Management
+      </div>
+      <div class="feature-card-body">
+        <div class="feature-item"><i data-feather="check" class="check" style="width:14px;height:14px;"></i> Unified database for contacts, leads, customers</div>
+        <div class="feature-item"><i data-feather="check" class="check" style="width:14px;height:14px;"></i> Custom fields, tags, notes, activity logs</div>
+        <div class="feature-item"><i data-feather="check" class="check" style="width:14px;height:14px;"></i> Full CRUD API endpoints</div>
+        <div class="feature-card-action">
+          <a href="{{ url_for('main.contacts') }}" class="btn">View Contacts <i data-feather="arrow-right" style="width:12px;height:12px;"></i></a>
         </div>
-        
-        <!-- Feature 2 -->
-        <div class="col-md-6 col-lg-4">
-            <div class="card h-100" style="background: linear-gradient(135deg, #1a0033 0%, #2d004d 100%); border: 2px solid #bc00ed;">
-                <div class="card-header" style="background: #bc00ed; color: white;">
-                    <h5 class="mb-0"><i class="fas fa-chart-bar"></i> 2. Deal Pipeline & Kanban</h5>
-                </div>
-                <div class="card-body" style="color: #00ffb4;">
-                    <p>✅ Visual Kanban pipeline tracking</p>
-                    <p>✅ Stage automation & revenue forecasting</p>
-                    <p>✅ Drag-and-drop deal management</p>
-                    <a href="{{ url_for('main.crm_dashboard') }}" class="btn btn-sm" style="background: #bc00ed; color: white;">View Pipeline</a>
-                </div>
-            </div>
-        </div>
-        
-        <!-- Feature 3 -->
-        <div class="col-md-6 col-lg-4">
-            <div class="card h-100" style="background: linear-gradient(135deg, #1a0033 0%, #2d004d 100%); border: 2px solid #bc00ed;">
-                <div class="card-header" style="background: #bc00ed; color: white;">
-                    <h5 class="mb-0"><i class="fas fa-cogs"></i> 3. Workflow Automation</h5>
-                </div>
-                <div class="card-body" style="color: #00ffb4;">
-                    <p>✅ Trigger-based automations</p>
-                    <p>✅ Multi-action workflows (email, SMS, assign)</p>
-                    <p>✅ Scheduler & cron integration</p>
-                    <a href="{{ url_for('main.automation_dashboard') }}" class="btn btn-sm" style="background: #bc00ed; color: white;">Manage Automations</a>
-                </div>
-            </div>
-        </div>
-        
-        <!-- Feature 4 -->
-        <div class="col-md-6 col-lg-4">
-            <div class="card h-100" style="background: linear-gradient(135deg, #1a0033 0%, #2d004d 100%); border: 2px solid #bc00ed;">
-                <div class="card-header" style="background: #bc00ed; color: white;">
-                    <h5 class="mb-0"><i class="fas fa-envelope"></i> 4. Email & SMS</h5>
-                </div>
-                <div class="card-body" style="color: #00ffb4;">
-                    <p>✅ Native email campaigns with tracking</p>
-                    <p>✅ SMS via Twilio integration</p>
-                    <p>✅ Open/click analytics & two-way messaging</p>
-                    <a href="{{ url_for('main.campaigns') }}" class="btn btn-sm" style="background: #bc00ed; color: white;">Email Campaigns</a>
-                </div>
-            </div>
-        </div>
-        
-        <!-- Feature 5 -->
-        <div class="col-md-6 col-lg-4">
-            <div class="card h-100" style="background: linear-gradient(135deg, #1a0033 0%, #2d004d 100%); border: 2px solid #bc00ed;">
-                <div class="card-header" style="background: #bc00ed; color: white;">
-                    <h5 class="mb-0"><i class="fas fa-wpforms"></i> 5. Forms & Lead Capture</h5>
-                </div>
-                <div class="card-body" style="color: #00ffb4;">
-                    <p>✅ Embeddable form builder</p>
-                    <p>✅ Auto-create contacts/deals on submit</p>
-                    <p>✅ UTM, IP, device tracking</p>
-                    <a href="{{ url_for('main.forms_dashboard') }}" class="btn btn-sm" style="background: #bc00ed; color: white;">Web Forms</a>
-                </div>
-            </div>
-        </div>
-        
-        <!-- Feature 6 -->
-        <div class="col-md-6 col-lg-4">
-            <div class="card h-100" style="background: linear-gradient(135deg, #1a0033 0%, #2d004d 100%); border: 2px solid #bc00ed;">
-                <div class="card-header" style="background: #bc00ed; color: white;">
-                    <h5 class="mb-0"><i class="fas fa-chart-pie"></i> 6. Analytics & Dashboards</h5>
-                </div>
-                <div class="card-body" style="color: #00ffb4;">
-                    <p>✅ Prebuilt dashboard components</p>
-                    <p>✅ Conversion rates, pipeline value metrics</p>
-                    <p>✅ Customizable widgets</p>
-                    <a href="{{ url_for('main.analytics') }}" class="btn btn-sm" style="background: #bc00ed; color: white;">Analytics</a>
-                </div>
-            </div>
-        </div>
-        
-        <!-- Feature 7 -->
-        <div class="col-md-6 col-lg-4">
-            <div class="card h-100" style="background: linear-gradient(135deg, #1a0033 0%, #2d004d 100%); border: 2px solid #bc00ed;">
-                <div class="card-header" style="background: #bc00ed; color: white;">
-                    <h5 class="mb-0"><i class="fas fa-history"></i> 7. Activity Timeline</h5>
-                </div>
-                <div class="card-body" style="color: #00ffb4;">
-                    <p>✅ Unified activity logging</p>
-                    <p>✅ Calls, emails, notes, tasks tracking</p>
-                    <p>✅ Compliance & historical audit trail</p>
-                    <a href="{{ url_for('main.dashboard') }}" class="btn btn-sm" style="background: #bc00ed; color: white;">Activity Timeline</a>
-                </div>
-            </div>
-        </div>
-        
-        <!-- Feature 8 -->
-        <div class="col-md-6 col-lg-4">
-            <div class="card h-100" style="background: linear-gradient(135deg, #1a0033 0%, #2d004d 100%); border: 2px solid #bc00ed;">
-                <div class="card-header" style="background: #bc00ed; color: white;">
-                    <h5 class="mb-0"><i class="fas fa-check-circle"></i> 8. Tasks & Reminders</h5>
-                </div>
-                <div class="card-body" style="color: #00ffb4;">
-                    <p>✅ Tasks attached to contacts/deals</p>
-                    <p>✅ Recurring reminders</p>
-                    <p>✅ Auto-trigger via workflows</p>
-                    <a href="{{ url_for('main.marketing_calendar') }}" class="btn btn-sm" style="background: #bc00ed; color: white;">Task Calendar</a>
-                </div>
-            </div>
-        </div>
-        
-        <!-- Feature 9 -->
-        <div class="col-md-6 col-lg-4">
-            <div class="card h-100" style="background: linear-gradient(135deg, #1a0033 0%, #2d004d 100%); border: 2px solid #bc00ed;">
-                <div class="card-header" style="background: #bc00ed; color: white;">
-                    <h5 class="mb-0"><i class="fas fa-calendar-alt"></i> 9. Calendar & Scheduling</h5>
-                </div>
-                <div class="card-body" style="color: #00ffb4;">
-                    <p>✅ Google/Outlook sync ready</p>
-                    <p>✅ Booking link generator</p>
-                    <p>✅ Automated reminders & confirmations</p>
-                    <a href="{{ url_for('main.marketing_calendar') }}" class="btn btn-sm" style="background: #bc00ed; color: white;">Calendar</a>
-                </div>
-            </div>
-        </div>
-        
-        <!-- Feature 10 -->
-        <div class="col-md-6 col-lg-4">
-            <div class="card h-100" style="background: linear-gradient(135deg, #1a0033 0%, #2d004d 100%); border: 2px solid #bc00ed;">
-                <div class="card-header" style="background: #bc00ed; color: white;">
-                    <h5 class="mb-0"><i class="fas fa-shield-alt"></i> 10. Permissions & Access</h5>
-                </div>
-                <div class="card-body" style="color: #00ffb4;">
-                    <p>✅ Role-based access (admin/sales/support)</p>
-                    <p>✅ Per-object visibility rules</p>
-                    <p>✅ Multi-tenant ready</p>
-                    <a href="{{ url_for('user.manage_users') }}" class="btn btn-sm" style="background: #bc00ed; color: white;">Manage Users</a>
-                </div>
-            </div>
-        </div>
-        
-        <!-- Feature 11 -->
-        <div class="col-md-6 col-lg-4">
-            <div class="card h-100" style="background: linear-gradient(135deg, #1a0033 0%, #2d004d 100%); border: 2px solid #bc00ed;">
-                <div class="card-header" style="background: #bc00ed; color: white;">
-                    <h5 class="mb-0"><i class="fas fa-credit-card"></i> 11. Billing & Invoicing</h5>
-                </div>
-                <div class="card-body" style="color: #00ffb4;">
-                    <p>✅ Stripe integration ready</p>
-                    <p>✅ Line-item invoices</p>
-                    <p>✅ Payment workflow triggers</p>
-                    <a href="{{ url_for('main.dashboard') }}" class="btn btn-sm" style="background: #bc00ed; color: white;">Payments</a>
-                </div>
-            </div>
-        </div>
-        
-        <!-- Feature 12 -->
-        <div class="col-md-6 col-lg-4">
-            <div class="card h-100" style="background: linear-gradient(135deg, #1a0033 0%, #2d004d 100%); border: 2px solid #bc00ed;">
-                <div class="card-header" style="background: #bc00ed; color: white;">
-                    <h5 class="mb-0"><i class="fas fa-code"></i> 12. API-First Architecture</h5>
-                </div>
-                <div class="card-body" style="color: #00ffb4;">
-                    <p>✅ REST API for all CRM objects</p>
-                    <p>✅ Webhook support</p>
-                    <p>✅ Extensible plugin model</p>
-                    <a href="/api/docs" class="btn btn-sm" style="background: #bc00ed; color: white;">API Docs</a>
-                </div>
-            </div>
-        </div>
-        
-        <!-- Feature 13 -->
-        <div class="col-md-6 col-lg-4">
-            <div class="card h-100" style="background: linear-gradient(135deg, #1a0033 0%, #2d004d 100%); border: 2px solid #bc00ed;">
-                <div class="card-header" style="background: #bc00ed; color: white;">
-                    <h5 class="mb-0"><i class="fas fa-mobile-alt"></i> 13. Mobile-Friendly UI</h5>
-                </div>
-                <div class="card-body" style="color: #00ffb4;">
-                    <p>✅ Fully responsive design</p>
-                    <p>✅ Mobile-optimized components</p>
-                    <p>✅ Fast data sync</p>
-                    <p><em>All pages optimized for mobile</em></p>
-                </div>
-            </div>
-        </div>
-        
-        <!-- Feature 14 -->
-        <div class="col-md-6 col-lg-4">
-            <div class="card h-100" style="background: linear-gradient(135deg, #1a0033 0%, #2d004d 100%); border: 2px solid #bc00ed;">
-                <div class="card-header" style="background: #bc00ed; color: white;">
-                    <h5 class="mb-0"><i class="fas fa-ticket-alt"></i> 14. Help Desk & Ticketing</h5>
-                </div>
-                <div class="card-body" style="color: #00ffb4;">
-                    <p>✅ Ticket management system</p>
-                    <p>✅ SLA timers & status tracking</p>
-                    <p>✅ Convert to tasks/deals</p>
-                    <a href="{{ url_for('main.events_dashboard') }}" class="btn btn-sm" style="background: #bc00ed; color: white;">Tickets</a>
-                </div>
-            </div>
-        </div>
-        
-        <!-- Feature 15 -->
-        <div class="col-md-6 col-lg-4">
-            <div class="card h-100" style="background: linear-gradient(135deg, #1a0033 0%, #2d004d 100%); border: 2px solid #bc00ed;">
-                <div class="card-header" style="background: #bc00ed; color: white;">
-                    <h5 class="mb-0"><i class="fas fa-box"></i> 15. Products & Subscriptions</h5>
-                </div>
-                <div class="card-body" style="color: #00ffb4;">
-                    <p>✅ Product/service management</p>
-                    <p>✅ Subscription lifecycle tracking</p>
-                    <p>✅ Renewal reminders</p>
-                    <a href="{{ url_for('main.dashboard') }}" class="btn btn-sm" style="background: #bc00ed; color: white;">Products</a>
-                </div>
-            </div>
-        </div>
+      </div>
     </div>
-    
-    <!-- Summary -->
-    <div class="alert alert-info mt-5" style="background: linear-gradient(135deg, #1a0033 0%, #2d004d 100%); border: 2px solid #00ffb4; color: #00ffb4;">
-        <h4 style="color: #bc00ed;"><i class="fas fa-check-circle"></i> LUX CRM - Feature Complete</h4>
-        <p style="margin-bottom: 0;">All 15 core CRM features are fully implemented and ready to use. Optional add-ons include AI assistant generation, PDF export, and webhook integrations.</p>
+
+    <div class="feature-card">
+      <div class="feature-card-header">
+        <i data-feather="git-branch" style="width:16px;height:16px;"></i> 2. Deal Pipeline & Kanban
+      </div>
+      <div class="feature-card-body">
+        <div class="feature-item"><i data-feather="check" class="check" style="width:14px;height:14px;"></i> Visual Kanban pipeline tracking</div>
+        <div class="feature-item"><i data-feather="check" class="check" style="width:14px;height:14px;"></i> Stage automation & revenue forecasting</div>
+        <div class="feature-item"><i data-feather="check" class="check" style="width:14px;height:14px;"></i> Drag-and-drop deal management</div>
+        <div class="feature-card-action">
+          <a href="{{ url_for('main.crm_dashboard') }}" class="btn">View Pipeline <i data-feather="arrow-right" style="width:12px;height:12px;"></i></a>
+        </div>
+      </div>
     </div>
+
+    <div class="feature-card">
+      <div class="feature-card-header">
+        <i data-feather="zap" style="width:16px;height:16px;"></i> 3. Workflow Automation
+      </div>
+      <div class="feature-card-body">
+        <div class="feature-item"><i data-feather="check" class="check" style="width:14px;height:14px;"></i> Trigger-based automations</div>
+        <div class="feature-item"><i data-feather="check" class="check" style="width:14px;height:14px;"></i> Multi-action workflows (email, SMS, assign)</div>
+        <div class="feature-item"><i data-feather="check" class="check" style="width:14px;height:14px;"></i> Scheduler & cron integration</div>
+        <div class="feature-card-action">
+          <a href="{{ url_for('main.automation_dashboard') }}" class="btn">Manage Automations <i data-feather="arrow-right" style="width:12px;height:12px;"></i></a>
+        </div>
+      </div>
+    </div>
+
+    <div class="feature-card">
+      <div class="feature-card-header">
+        <i data-feather="mail" style="width:16px;height:16px;"></i> 4. Email & SMS
+      </div>
+      <div class="feature-card-body">
+        <div class="feature-item"><i data-feather="check" class="check" style="width:14px;height:14px;"></i> Native email campaigns with tracking</div>
+        <div class="feature-item"><i data-feather="check" class="check" style="width:14px;height:14px;"></i> SMS via Twilio integration</div>
+        <div class="feature-item"><i data-feather="check" class="check" style="width:14px;height:14px;"></i> Open/click analytics & two-way messaging</div>
+        <div class="feature-card-action">
+          <a href="{{ url_for('main.campaigns') }}" class="btn">Email Campaigns <i data-feather="arrow-right" style="width:12px;height:12px;"></i></a>
+        </div>
+      </div>
+    </div>
+
+    <div class="feature-card">
+      <div class="feature-card-header">
+        <i data-feather="file-text" style="width:16px;height:16px;"></i> 5. Forms & Lead Capture
+      </div>
+      <div class="feature-card-body">
+        <div class="feature-item"><i data-feather="check" class="check" style="width:14px;height:14px;"></i> Embeddable form builder</div>
+        <div class="feature-item"><i data-feather="check" class="check" style="width:14px;height:14px;"></i> Auto-create contacts/deals on submit</div>
+        <div class="feature-item"><i data-feather="check" class="check" style="width:14px;height:14px;"></i> UTM, IP, device tracking</div>
+        <div class="feature-card-action">
+          <a href="{{ url_for('main.forms_dashboard') }}" class="btn">Web Forms <i data-feather="arrow-right" style="width:12px;height:12px;"></i></a>
+        </div>
+      </div>
+    </div>
+
+    <div class="feature-card">
+      <div class="feature-card-header">
+        <i data-feather="pie-chart" style="width:16px;height:16px;"></i> 6. Analytics & Dashboards
+      </div>
+      <div class="feature-card-body">
+        <div class="feature-item"><i data-feather="check" class="check" style="width:14px;height:14px;"></i> Prebuilt dashboard components</div>
+        <div class="feature-item"><i data-feather="check" class="check" style="width:14px;height:14px;"></i> Conversion rates, pipeline value metrics</div>
+        <div class="feature-item"><i data-feather="check" class="check" style="width:14px;height:14px;"></i> Customizable widgets</div>
+        <div class="feature-card-action">
+          <a href="{{ url_for('main.analytics') }}" class="btn">Analytics <i data-feather="arrow-right" style="width:12px;height:12px;"></i></a>
+        </div>
+      </div>
+    </div>
+
+    <div class="feature-card">
+      <div class="feature-card-header">
+        <i data-feather="clock" style="width:16px;height:16px;"></i> 7. Activity Timeline
+      </div>
+      <div class="feature-card-body">
+        <div class="feature-item"><i data-feather="check" class="check" style="width:14px;height:14px;"></i> Unified activity logging</div>
+        <div class="feature-item"><i data-feather="check" class="check" style="width:14px;height:14px;"></i> Calls, emails, notes, tasks tracking</div>
+        <div class="feature-item"><i data-feather="check" class="check" style="width:14px;height:14px;"></i> Compliance & historical audit trail</div>
+        <div class="feature-card-action">
+          <a href="{{ url_for('main.dashboard') }}" class="btn">Activity Timeline <i data-feather="arrow-right" style="width:12px;height:12px;"></i></a>
+        </div>
+      </div>
+    </div>
+
+    <div class="feature-card">
+      <div class="feature-card-header">
+        <i data-feather="check-square" style="width:16px;height:16px;"></i> 8. Tasks & Reminders
+      </div>
+      <div class="feature-card-body">
+        <div class="feature-item"><i data-feather="check" class="check" style="width:14px;height:14px;"></i> Tasks attached to contacts/deals</div>
+        <div class="feature-item"><i data-feather="check" class="check" style="width:14px;height:14px;"></i> Recurring reminders</div>
+        <div class="feature-item"><i data-feather="check" class="check" style="width:14px;height:14px;"></i> Auto-trigger via workflows</div>
+        <div class="feature-card-action">
+          <a href="{{ url_for('main.marketing_calendar') }}" class="btn">Task Calendar <i data-feather="arrow-right" style="width:12px;height:12px;"></i></a>
+        </div>
+      </div>
+    </div>
+
+    <div class="feature-card">
+      <div class="feature-card-header">
+        <i data-feather="calendar" style="width:16px;height:16px;"></i> 9. Calendar & Scheduling
+      </div>
+      <div class="feature-card-body">
+        <div class="feature-item"><i data-feather="check" class="check" style="width:14px;height:14px;"></i> Google/Outlook sync ready</div>
+        <div class="feature-item"><i data-feather="check" class="check" style="width:14px;height:14px;"></i> Booking link generator</div>
+        <div class="feature-item"><i data-feather="check" class="check" style="width:14px;height:14px;"></i> Automated reminders & confirmations</div>
+        <div class="feature-card-action">
+          <a href="{{ url_for('main.marketing_calendar') }}" class="btn">Calendar <i data-feather="arrow-right" style="width:12px;height:12px;"></i></a>
+        </div>
+      </div>
+    </div>
+
+    <div class="feature-card">
+      <div class="feature-card-header">
+        <i data-feather="shield" style="width:16px;height:16px;"></i> 10. Permissions & Access
+      </div>
+      <div class="feature-card-body">
+        <div class="feature-item"><i data-feather="check" class="check" style="width:14px;height:14px;"></i> Role-based access (admin/sales/support)</div>
+        <div class="feature-item"><i data-feather="check" class="check" style="width:14px;height:14px;"></i> Per-object visibility rules</div>
+        <div class="feature-item"><i data-feather="check" class="check" style="width:14px;height:14px;"></i> Multi-tenant ready</div>
+        <div class="feature-card-action">
+          <a href="{{ url_for('user.manage_users') }}" class="btn">Manage Users <i data-feather="arrow-right" style="width:12px;height:12px;"></i></a>
+        </div>
+      </div>
+    </div>
+
+    <div class="feature-card">
+      <div class="feature-card-header">
+        <i data-feather="credit-card" style="width:16px;height:16px;"></i> 11. Billing & Invoicing
+      </div>
+      <div class="feature-card-body">
+        <div class="feature-item"><i data-feather="check" class="check" style="width:14px;height:14px;"></i> Stripe integration ready</div>
+        <div class="feature-item"><i data-feather="check" class="check" style="width:14px;height:14px;"></i> Line-item invoices</div>
+        <div class="feature-item"><i data-feather="check" class="check" style="width:14px;height:14px;"></i> Payment workflow triggers</div>
+        <div class="feature-card-action">
+          <a href="{{ url_for('main.dashboard') }}" class="btn">Payments <i data-feather="arrow-right" style="width:12px;height:12px;"></i></a>
+        </div>
+      </div>
+    </div>
+
+    <div class="feature-card">
+      <div class="feature-card-header">
+        <i data-feather="code" style="width:16px;height:16px;"></i> 12. API-First Architecture
+      </div>
+      <div class="feature-card-body">
+        <div class="feature-item"><i data-feather="check" class="check" style="width:14px;height:14px;"></i> REST API for all CRM objects</div>
+        <div class="feature-item"><i data-feather="check" class="check" style="width:14px;height:14px;"></i> Webhook support</div>
+        <div class="feature-item"><i data-feather="check" class="check" style="width:14px;height:14px;"></i> Extensible plugin model</div>
+        <div class="feature-card-action">
+          <a href="/api/docs" class="btn">API Docs <i data-feather="arrow-right" style="width:12px;height:12px;"></i></a>
+        </div>
+      </div>
+    </div>
+
+    <div class="feature-card">
+      <div class="feature-card-header">
+        <i data-feather="smartphone" style="width:16px;height:16px;"></i> 13. Mobile-Friendly UI
+      </div>
+      <div class="feature-card-body">
+        <div class="feature-item"><i data-feather="check" class="check" style="width:14px;height:14px;"></i> Fully responsive design</div>
+        <div class="feature-item"><i data-feather="check" class="check" style="width:14px;height:14px;"></i> Mobile-optimized components</div>
+        <div class="feature-item"><i data-feather="check" class="check" style="width:14px;height:14px;"></i> Fast data sync</div>
+        <div class="feature-card-action">
+          <a href="{{ url_for('main.dashboard') }}" class="btn">Dashboard <i data-feather="arrow-right" style="width:12px;height:12px;"></i></a>
+        </div>
+      </div>
+    </div>
+
+    <div class="feature-card">
+      <div class="feature-card-header">
+        <i data-feather="help-circle" style="width:16px;height:16px;"></i> 14. Help Desk & Ticketing
+      </div>
+      <div class="feature-card-body">
+        <div class="feature-item"><i data-feather="check" class="check" style="width:14px;height:14px;"></i> Ticket management system</div>
+        <div class="feature-item"><i data-feather="check" class="check" style="width:14px;height:14px;"></i> SLA timers & status tracking</div>
+        <div class="feature-item"><i data-feather="check" class="check" style="width:14px;height:14px;"></i> Convert to tasks/deals</div>
+        <div class="feature-card-action">
+          <a href="{{ url_for('main.events_dashboard') }}" class="btn">Tickets <i data-feather="arrow-right" style="width:12px;height:12px;"></i></a>
+        </div>
+      </div>
+    </div>
+
+    <div class="feature-card">
+      <div class="feature-card-header">
+        <i data-feather="package" style="width:16px;height:16px;"></i> 15. Products & Subscriptions
+      </div>
+      <div class="feature-card-body">
+        <div class="feature-item"><i data-feather="check" class="check" style="width:14px;height:14px;"></i> Product/service management</div>
+        <div class="feature-item"><i data-feather="check" class="check" style="width:14px;height:14px;"></i> Subscription lifecycle tracking</div>
+        <div class="feature-item"><i data-feather="check" class="check" style="width:14px;height:14px;"></i> Renewal reminders</div>
+        <div class="feature-card-action">
+          <a href="{{ url_for('main.dashboard') }}" class="btn">Products <i data-feather="arrow-right" style="width:12px;height:12px;"></i></a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="crm-summary">
+    <h4><i data-feather="check-circle" style="width:20px;height:20px;"></i> LUX CRM - Feature Complete</h4>
+    <p>All 15 core CRM features are fully implemented and ready to use. Optional add-ons include AI assistant generation, PDF export, and webhook integrations.</p>
+  </div>
 </div>
+
+<script>feather.replace();</script>
 {% endblock %}
