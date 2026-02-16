@@ -125,6 +125,19 @@
         color: var(--lux-accent);
         transform: rotate(90deg);
       }
+
+      .company-nav-logo {
+        height: 32px;
+        width: 32px;
+        object-fit: cover;
+        border-radius: 6px;
+        border: 1.5px solid rgba(255,255,255,0.15);
+        transition: border-color 0.3s ease;
+      }
+
+      .company-nav-logo:hover {
+        border-color: var(--lux-secondary, #00ffb4);
+      }
     </style>
 </head>
 <body>
@@ -158,6 +171,13 @@
 
       {% if current_user.is_authenticated %}
       <div class="header-right">
+        {% set current_company = current_user.get_default_company() %}
+        {% if current_company and current_company.logo_path %}
+        <img src="{{ url_for('static', filename=current_company.logo_path) }}" alt="{{ current_company.name }}" class="company-nav-logo" title="{{ current_company.name }}">
+        {% elif current_company %}
+        <img src="{{ url_for('static', filename='lux_logo.png') }}" alt="{{ current_company.name }}" class="company-nav-logo" title="{{ current_company.name }}">
+        {% endif %}
+
         <div class="dropdown">
           <button class="btn btn-link settings-btn" type="button" id="settingsDropdown" data-bs-toggle="dropdown" aria-expanded="false">
             <i data-feather="settings" class="settings-icon"></i>
@@ -188,13 +208,6 @@
             <li><a class="dropdown-item text-danger" href="{{ url_for('auth.logout') }}"><i data-feather="log-out"></i> Sign Out</a></li>
           </ul>
         </div>
-
-        {% set current_company = current_user.get_default_company() %}
-        {% if current_company and current_company.logo_path %}
-        <img src="{{ url_for('static', filename=current_company.logo_path) }}" alt="{{ current_company.name }}" class="company-logo" style="height: 40px; width: auto; border-radius: 8px;">
-        {% elif current_company %}
-        <img src="{{ url_for('static', filename='lux_logo.png') }}" alt="{{ current_company.name }}" class="company-logo" style="height: 40px; width: auto; border-radius: 8px;">
-        {% endif %}
       </div>
       {% endif %}
       </div>
