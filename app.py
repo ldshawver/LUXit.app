@@ -162,9 +162,10 @@ app.config["WTF_CSRF_SSL_STRICT"] = False
 
 csrf = CSRFProtect(app)
 
-# Session cookies (iframe + OAuth safe)
-app.config["SESSION_COOKIE_SAMESITE"] = "None"
-app.config["SESSION_COOKIE_SECURE"] = True
+# Session cookies
+app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+app.config["SESSION_COOKIE_SECURE"] = False
+app.config["SESSION_COOKIE_HTTPONLY"] = True
 
 
 # ============================================================
@@ -383,7 +384,7 @@ def create_app(testing: bool = False):
     # --------------------------------------------------
     app.config.update(
         SECRET_KEY=app.secret_key,
-        SESSION_COOKIE_SECURE=True,      # HTTPS only
+        SESSION_COOKIE_SECURE=False,
         SESSION_COOKIE_HTTPONLY=True,
         SESSION_COOKIE_SAMESITE="Lax",
         WTF_CSRF_TIME_LIMIT=3600,
