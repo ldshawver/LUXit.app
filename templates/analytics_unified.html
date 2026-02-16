@@ -1,27 +1,129 @@
 {% extends "base.html" %}
 
-{% block title %}Marketing Analytics - LUX Marketing{% endblock %}
+{% block title %}Marketing Analytics - LUX IT{% endblock %}
 
 {% block content %}
 <div class="container-fluid mt-4">
+    <style>
+        .metric-card {
+            background: rgba(12, 14, 20, 0.95);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 16px;
+            transition: all 0.3s ease;
+        }
+        .metric-card:hover {
+            border-color: rgba(0, 229, 255, 0.3);
+            box-shadow: 0 8px 32px rgba(0, 229, 255, 0.1);
+            transform: translateY(-2px);
+        }
+        .metric-icon {
+            width: 56px;
+            height: 56px;
+            border-radius: 14px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 1rem;
+        }
+        .metric-icon.cyan { background: rgba(0, 229, 255, 0.15); }
+        .metric-icon.purple { background: rgba(168, 85, 247, 0.15); }
+        .metric-icon.pink { background: rgba(236, 72, 153, 0.15); }
+        .metric-icon.amber { background: rgba(245, 158, 11, 0.15); }
+        .metric-value {
+            font-size: 2.5rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, #00e5ff, #a855f7);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        .metric-label {
+            color: rgba(255, 255, 255, 0.6);
+            font-size: 0.9rem;
+            margin-bottom: 0.5rem;
+        }
+        .metric-trend {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.25rem;
+            padding: 0.25rem 0.5rem;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            font-weight: 500;
+        }
+        .metric-trend.positive { background: rgba(34, 197, 94, 0.15); color: #22c55e; }
+        .metric-trend.negative { background: rgba(239, 68, 68, 0.15); color: #ef4444; }
+        .chart-card {
+            background: rgba(12, 14, 20, 0.95);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 16px;
+            padding: 1.5rem;
+        }
+        .chart-card .card-header {
+            background: transparent;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+            padding-bottom: 1rem;
+            margin-bottom: 1rem;
+        }
+        .chart-card .card-header h5 {
+            color: #fff;
+            font-weight: 600;
+            margin: 0;
+        }
+        .nav-tabs .nav-link {
+            color: rgba(255, 255, 255, 0.6);
+            border: none;
+            background: transparent;
+            padding: 0.75rem 1.25rem;
+            border-radius: 8px;
+            transition: all 0.2s ease;
+        }
+        .nav-tabs .nav-link:hover {
+            color: #00e5ff;
+            background: rgba(0, 229, 255, 0.1);
+        }
+        .nav-tabs .nav-link.active {
+            color: #fff;
+            background: linear-gradient(135deg, rgba(0, 229, 255, 0.2), rgba(168, 85, 247, 0.2));
+            border: 1px solid rgba(0, 229, 255, 0.3);
+        }
+        .period-select {
+            background: rgba(12, 14, 20, 0.9);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            color: #fff;
+            border-radius: 8px;
+            padding: 0.5rem 1rem;
+        }
+        .period-select:focus {
+            border-color: #00e5ff;
+            box-shadow: 0 0 0 2px rgba(0, 229, 255, 0.2);
+        }
+        .btn-refresh {
+            background: rgba(0, 229, 255, 0.1);
+            border: 1px solid rgba(0, 229, 255, 0.3);
+            color: #00e5ff;
+        }
+        .btn-refresh:hover {
+            background: rgba(0, 229, 255, 0.2);
+            color: #fff;
+        }
+    </style>
+    
     <!-- Page Header -->
     <div class="d-flex justify-content-between align-items-center mb-4">
         <div>
-            <h2><i data-feather="bar-chart-2"></i> Marketing Analytics Hub</h2>
+            <h2 style="color: #fff;"><i data-feather="bar-chart-2" style="color: #00e5ff;"></i> Marketing Analytics Hub</h2>
             <p class="text-muted mb-0">Comprehensive performance metrics across all marketing channels</p>
         </div>
         <div class="d-flex gap-2">
-            <select class="form-select" id="periodSelector" onchange="changePeriod(this.value)" style="width: auto;">
+            <select class="form-select period-select" id="periodSelector" onchange="changePeriod(this.value)" style="width: auto;">
                 <option value="7">Last 7 Days</option>
                 <option value="30" selected>Last 30 Days</option>
                 <option value="60">Last 60 Days</option>
                 <option value="90">Last 90 Days</option>
             </select>
-            <button class="btn btn-outline-primary" onclick="refreshAnalytics()">
+            <button class="btn btn-refresh" onclick="refreshAnalytics()">
                 <i data-feather="refresh-cw"></i> Refresh
-            </button>
-            <button class="btn btn-primary" onclick="exportReport()">
-                <i data-feather="download"></i> Export
             </button>
         </div>
     </div>
@@ -70,45 +172,45 @@
         <!-- Overview Tab -->
         <div class="tab-pane fade show active" id="overview" role="tabpanel">
             <div class="row g-4">
-                <!-- Key Metrics Overview -->
+                <!-- Key Metrics Overview with Brand Colors -->
                 <div class="col-md-3">
-                    <div class="card">
-                        <div class="card-body text-center">
-                            <i data-feather="eye" class="mb-2" style="width: 48px; height: 48px; color: #013220;"></i>
-                            <h3 class="mb-0">{{ "{:,}".format(total_impressions|default(0)) }}</h3>
-                            <p class="text-muted mb-0">Total Impressions</p>
-                            <small class="text-success"><i data-feather="trending-up"></i> +12% vs last period</small>
+                    <div class="metric-card p-4">
+                        <div class="metric-icon cyan">
+                            <i data-feather="eye" style="width: 28px; height: 28px; color: #00e5ff;"></i>
                         </div>
+                        <div class="metric-value">{{ "{:,}".format(total_impressions|default(0)) }}</div>
+                        <p class="metric-label">Total Impressions</p>
+                        <span class="metric-trend positive"><i data-feather="trending-up" style="width: 14px; height: 14px;"></i> +12%</span>
                     </div>
                 </div>
                 <div class="col-md-3">
-                    <div class="card">
-                        <div class="card-body text-center">
-                            <i data-feather="users" class="mb-2" style="width: 48px; height: 48px; color: #301934;"></i>
-                            <h3 class="mb-0">{{ "{:,}".format(total_contacts|default(0)) }}</h3>
-                            <p class="text-muted mb-0">Total Contacts</p>
-                            <small class="text-success"><i data-feather="trending-up"></i> +8% vs last period</small>
+                    <div class="metric-card p-4">
+                        <div class="metric-icon purple">
+                            <i data-feather="users" style="width: 28px; height: 28px; color: #a855f7;"></i>
                         </div>
+                        <div class="metric-value">{{ "{:,}".format(total_contacts|default(0)) }}</div>
+                        <p class="metric-label">Total Contacts</p>
+                        <span class="metric-trend positive"><i data-feather="trending-up" style="width: 14px; height: 14px;"></i> +8%</span>
                     </div>
                 </div>
                 <div class="col-md-3">
-                    <div class="card">
-                        <div class="card-body text-center">
-                            <i data-feather="mail-open" class="mb-2" style="width: 48px; height: 48px; color: #C0C0C0;"></i>
-                            <h3 class="mb-0">{{ open_rate|default(0)|round(2) }}%</h3>
-                            <p class="text-muted mb-0">Avg Open Rate</p>
-                            <small class="text-success"><i data-feather="trending-up"></i> +3% vs last period</small>
+                    <div class="metric-card p-4">
+                        <div class="metric-icon pink">
+                            <i data-feather="mail" style="width: 28px; height: 28px; color: #ec4899;"></i>
                         </div>
+                        <div class="metric-value">{{ open_rate|default(0)|round(1) }}%</div>
+                        <p class="metric-label">Avg Open Rate</p>
+                        <span class="metric-trend positive"><i data-feather="trending-up" style="width: 14px; height: 14px;"></i> +3%</span>
                     </div>
                 </div>
                 <div class="col-md-3">
-                    <div class="card">
-                        <div class="card-body text-center">
-                            <i data-feather="dollar-sign" class="mb-2" style="width: 48px; height: 48px; color: #013220;"></i>
-                            <h3 class="mb-0">${{ "{:,.2f}".format(total_revenue|default(0)) }}</h3>
-                            <p class="text-muted mb-0">Total Revenue</p>
-                            <small class="text-success"><i data-feather="trending-up"></i> +15% vs last period</small>
+                    <div class="metric-card p-4">
+                        <div class="metric-icon amber">
+                            <i data-feather="dollar-sign" style="width: 28px; height: 28px; color: #f59e0b;"></i>
                         </div>
+                        <div class="metric-value">${{ "{:,.0f}".format(total_revenue|default(0)) }}</div>
+                        <p class="metric-label">Total Revenue</p>
+                        <span class="metric-trend positive"><i data-feather="trending-up" style="width: 14px; height: 14px;"></i> +15%</span>
                     </div>
                 </div>
             </div>
@@ -165,7 +267,7 @@
                 <div class="col-md-3">
                     <div class="card">
                         <div class="card-body text-center">
-                            <i data-feather="mail-open" class="mb-2" style="width: 40px; height: 40px;"></i>
+                            <i data-feather="mail" class="mb-2" style="width: 40px; height: 40px;"></i>
                             <h4 class="mb-0">{{ open_rate|default(0)|round(2) }}%</h4>
                             <p class="text-muted mb-0 small">Open Rate</p>
                         </div>
@@ -473,6 +575,31 @@
             </div>
         </div>
     </div>
+    
+    <!-- Export Section at Bottom -->
+    <div class="row mt-5 mb-4">
+        <div class="col-12">
+            <div class="chart-card">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <h5 style="color: #fff; margin: 0;"><i data-feather="download" style="color: #00e5ff;"></i> Export Analytics Report</h5>
+                        <p class="text-muted mb-0 mt-1">Download comprehensive analytics data in various formats</p>
+                    </div>
+                    <div class="d-flex gap-2">
+                        <button class="btn btn-refresh" onclick="exportReport('pdf')">
+                            <i data-feather="file-text"></i> PDF Report
+                        </button>
+                        <button class="btn btn-refresh" onclick="exportReport('csv')">
+                            <i data-feather="file"></i> CSV Data
+                        </button>
+                        <button class="btn" style="background: linear-gradient(135deg, #a855f7, #ec4899); color: #fff; border: none;" onclick="exportReport('excel')">
+                            <i data-feather="download"></i> Excel Export
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
 </div>
 
 <script>
@@ -486,13 +613,28 @@ function refreshAnalytics() {
     location.reload();
 }
 
-function exportReport() {
-    alert('Export functionality will be implemented');
+function exportReport(format) {
+    alert(`Exporting ${format.toUpperCase()} report... This feature will download your analytics data.`);
 }
 
-// Initialize charts
+// Initialize charts with brand colors
 document.addEventListener('DOMContentLoaded', function() {
-    // Performance Chart (placeholder - will use real data)
+    // Brand color palette
+    const brandColors = {
+        cyan: '#00e5ff',
+        purple: '#a855f7',
+        pink: '#ec4899',
+        amber: '#f59e0b',
+        green: '#22c55e',
+        cyanLight: 'rgba(0, 229, 255, 0.2)',
+        purpleLight: 'rgba(168, 85, 247, 0.2)'
+    };
+    
+    // Chart.js global defaults for dark theme
+    Chart.defaults.color = 'rgba(255, 255, 255, 0.6)';
+    Chart.defaults.borderColor = 'rgba(255, 255, 255, 0.1)';
+    
+    // Performance Chart with brand colors
     const perfCtx = document.getElementById('performanceChart');
     if (perfCtx) {
         new Chart(perfCtx, {
@@ -502,23 +644,38 @@ document.addEventListener('DOMContentLoaded', function() {
                 datasets: [{
                     label: 'Email Opens',
                     data: [1200, 1900, 1500, 2100],
-                    borderColor: '#013220',
-                    tension: 0.1
+                    borderColor: brandColors.cyan,
+                    backgroundColor: brandColors.cyanLight,
+                    fill: true,
+                    tension: 0.4,
+                    borderWidth: 3
                 }, {
                     label: 'Clicks',
                     data: [450, 680, 520, 750],
-                    borderColor: '#301934',
-                    tension: 0.1
+                    borderColor: brandColors.purple,
+                    backgroundColor: brandColors.purpleLight,
+                    fill: true,
+                    tension: 0.4,
+                    borderWidth: 3
                 }]
             },
             options: {
                 responsive: true,
-                maintainAspectRatio: true
+                maintainAspectRatio: true,
+                plugins: {
+                    legend: {
+                        labels: { color: '#fff', font: { size: 12 } }
+                    }
+                },
+                scales: {
+                    x: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: 'rgba(255,255,255,0.6)' } },
+                    y: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: 'rgba(255,255,255,0.6)' } }
+                }
             }
         });
     }
 
-    // Channel Chart (placeholder)
+    // Channel Chart with brand colors
     const channelCtx = document.getElementById('channelChart');
     if (channelCtx) {
         new Chart(channelCtx, {
@@ -527,8 +684,18 @@ document.addEventListener('DOMContentLoaded', function() {
                 labels: ['Email', 'SMS', 'Social', 'SEO'],
                 datasets: [{
                     data: [45, 25, 20, 10],
-                    backgroundColor: ['#013220', '#301934', '#C0C0C0', '#666']
+                    backgroundColor: [brandColors.cyan, brandColors.purple, brandColors.pink, brandColors.amber],
+                    borderColor: 'rgba(12, 14, 20, 1)',
+                    borderWidth: 3
                 }]
+            },
+            options: {
+                plugins: {
+                    legend: {
+                        labels: { color: '#fff', font: { size: 12 }, padding: 16 }
+                    }
+                },
+                cutout: '60%'
             }
         });
     }

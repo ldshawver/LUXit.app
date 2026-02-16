@@ -4,23 +4,14 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="csrf-token" content="{{ csrf_token() }}">
-    <title>{% block title %}LUX Marketing{% endblock %}</title>
+    <title>{% block title %}LUX IT{% endblock %}</title>
 
-    <!-- Favicon -->
     <link rel="icon" type="image/png" href="{{ url_for('static', filename='favicon.png') }}">
-
-    <!-- Bootstrap CSS -->
     <link href="https://cdn.replit.com/agent/bootstrap-agent-dark-theme.min.css" rel="stylesheet">
-
-    <!-- Feather Icons -->
     <script src="https://unpkg.com/feather-icons"></script>
-
-    <!-- Chart.js for Analytics -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-
-    <!-- Custom CSS -->
     <link rel="stylesheet" href="{{ url_for('static', filename='css/custom.css') }}">
-
+    {% if current_company and current_company.apply_brand_colors %}
     <style>
       :root {
         {% if current_user is defined and current_user.is_authenticated %}
@@ -87,30 +78,28 @@
         align-items: center;
         justify-content: center;
         cursor: pointer;
+        --lux-cyan: {{ current_company.secondary_color or '#00ffb4' }} !important;
+        --lux-magenta: {{ current_company.primary_color or '#bc00ed' }} !important;
+        --lux-glow-cyan: 0 0 22px {{ current_company.secondary_color or '#00ffb4' }}59 !important;
+        --lux-glow-magenta: 0 0 28px {{ current_company.primary_color or '#bc00ed' }}59 !important;
       }
-
-      .lux-logo {
-        height: 40px;
-        width: auto;
-        cursor: pointer;
+      html[data-bs-theme="dark"] {
+        --bs-primary: {{ current_company.secondary_color or '#00ffb4' }} !important;
+        --bs-secondary: {{ current_company.primary_color or '#bc00ed' }} !important;
+        --bs-link-color: {{ current_company.secondary_color or '#00ffb4' }} !important;
+        --bs-link-hover-color: {{ current_company.secondary_color or '#00ffb4' }}cc !important;
       }
-
-      .header-center {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        gap: 0.25rem;
+      .btn-primary, .btn-lux-primary {
+        background: linear-gradient(135deg, {{ current_company.primary_color or '#bc00ed' }}, {{ current_company.secondary_color or '#00ffb4' }}) !important;
+        border-color: {{ current_company.primary_color or '#bc00ed' }} !important;
       }
-
-      .header-right {
-        display: flex;
-        align-items: center;
-        gap: 1rem;
+      .btn-outline-primary {
+        color: {{ current_company.secondary_color or '#00ffb4' }} !important;
+        border-color: {{ current_company.secondary_color or '#00ffb4' }} !important;
       }
-
-      .settings-btn {
-        padding: 0;
-        border: none;
+      .btn-outline-primary:hover {
+        background: {{ current_company.secondary_color or '#00ffb4' }} !important;
+        color: #000 !important;
       }
 
       .settings-icon {
@@ -291,293 +280,207 @@
         z-index: 9998;
         transition: all 0.3s ease;
         animation: pulse 2s infinite;
+      .app-header {
+        border-bottom-color: {{ current_company.primary_color or '#bc00ed' }} !important;
       }
-
-      @keyframes pulse {
-        0%, 100% {
-          box-shadow: 0 4px 20px rgba(188, 0, 237, 0.6);
-        }
-        50% {
-          box-shadow: 0 6px 30px rgba(188, 0, 237, 0.9);
-        }
+      .tile-icon, .stat-badge, .quick-action-btn i {
+        background: linear-gradient(135deg, {{ current_company.primary_color or '#bc00ed' }}, {{ current_company.secondary_color or '#00ffb4' }}) !important;
+        -webkit-background-clip: text !important;
+        -webkit-text-fill-color: transparent !important;
       }
-
-      .chatbot-float-button:hover {
-        transform: scale(1.1);
-        box-shadow: 0 8px 40px rgba(188, 0, 237, 1);
+      .metric-value {
+        background: linear-gradient(135deg, {{ current_company.secondary_color or '#00ffb4' }}, {{ current_company.primary_color or '#bc00ed' }}) !important;
+        -webkit-background-clip: text !important;
+        -webkit-text-fill-color: transparent !important;
       }
-
-      .chatbot-float-button img {
-        width: 100%;
-        height: 100%;
-        object-fit: cover;
+      .nav-link.active, .nav-link:hover {
+        color: {{ current_company.secondary_color or '#00ffb4' }} !important;
       }
-
-      .chatbot-container {
-        position: fixed;
-        bottom: 120px;
-        right: calc(16.666% + 30px);
-        width: 400px;
-        height: 600px;
-        display: none;
-        flex-direction: column;
-        background: #000000;
-        border: 2px solid #bc00ed;
-        border-radius: 12px;
-        box-shadow: 0 8px 40px rgba(0, 0, 0, 0.8);
-        z-index: 9999;
-        overflow: hidden;
+      .sidebar-item.active {
+        border-left-color: {{ current_company.secondary_color or '#00ffb4' }} !important;
       }
-
-      .chatbot-container.active {
-        display: flex;
-        animation: slideUp 0.3s ease;
+      .text-success, .text-primary {
+        color: {{ current_company.secondary_color or '#00ffb4' }} !important;
       }
-
-      @keyframes slideUp {
-        from {
-          opacity: 0;
-          transform: translateY(20px);
-        }
-        to {
-          opacity: 1;
-          transform: translateY(0);
-        }
+      .badge.bg-primary {
+        background: {{ current_company.primary_color or '#bc00ed' }} !important;
       }
-
-      .chatbot-header {
-        padding: 1.5rem 1rem;
-        background: transparent;
-        border-bottom: 2px solid #00ffb4;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        text-align: center;
-        position: relative;
+      a:not(.btn):not(.nav-link):not(.brand-link) {
+        color: {{ current_company.secondary_color or '#00ffb4' }};
       }
-
-      .chatbot-close {
-        position: absolute;
-        top: 10px;
-        right: 10px;
-        background: none;
-        border: none;
-        color: #c0c0c0;
-        font-size: 1.5rem;
-        cursor: pointer;
-        padding: 5px;
-        line-height: 1;
+      .action-card:hover {
+        border-color: {{ current_company.secondary_color or '#00ffb4' }}66 !important;
+        box-shadow: 0 8px 32px {{ current_company.secondary_color or '#00ffb4' }}26 !important;
       }
-
-      .chatbot-close:hover {
-        color: #00ffb4;
+      .hub-btn.active {
+        background: linear-gradient(135deg, {{ current_company.secondary_color or '#00ffb4' }}, {{ current_company.primary_color or '#bc00ed' }}) !important;
       }
-
-      .chatbot-header-gif {
-        width: 120px;
-        height: auto;
-        margin-bottom: 1rem;
+      .progress-bar, .bg-success {
+        background-color: {{ current_company.secondary_color or '#00ffb4' }} !important;
       }
-
-      .chatbot-header-text {
-        text-align: center;
+      .form-check-input:checked {
+        background-color: {{ current_company.primary_color or '#bc00ed' }} !important;
+        border-color: {{ current_company.primary_color or '#bc00ed' }} !important;
       }
-
-      .chatbot-header h1 {
-        color: #00ffb4;
-        font-size: 1.5rem;
-        margin: 0;
-        font-weight: 600;
+      body {
+        background: radial-gradient(circle at top, {{ current_company.secondary_color or '#00ffb4' }}14, transparent 45%),
+          radial-gradient(circle at 20% 20%, {{ current_company.primary_color or '#bc00ed' }}14, transparent 40%),
+          radial-gradient(circle at bottom right, {{ current_company.accent_color or '#e4055c' }}1a, transparent 45%),
+          var(--lux-bg) !important;
       }
-
-      .chatbot-header h2 {
-        color: #bc00ed;
-        font-size: 0.9rem;
-        margin: 0.3rem 0 0;
-        font-weight: 400;
+      .brand-it { color: {{ current_company.secondary_color or '#00ffb4' }} !important; }
+      .brand-app { color: {{ current_company.secondary_color or '#00ffb4' }} !important; }
+      .company-initial {
+        background: linear-gradient(135deg, {{ current_company.primary_color or '#bc00ed' }}, {{ current_company.secondary_color or '#00ffb4' }}) !important;
       }
-
-      .chat-messages {
-        flex: 1;
-        overflow-y: auto;
-        padding: 1rem;
-        background: #000000;
+      .sidebar-item:hover, .sidebar-item.active {
+        background: {{ current_company.secondary_color or '#00ffb4' }}26 !important;
+        border-color: {{ current_company.secondary_color or '#00ffb4' }}59 !important;
       }
-
-      .message {
-        margin-bottom: 1rem;
-        display: flex;
-        gap: 0.75rem;
+      .tile:hover {
+        border-color: {{ current_company.secondary_color or '#00ffb4' }}66 !important;
+        box-shadow: var(--lux-shadow), 0 0 28px {{ current_company.secondary_color or '#00ffb4' }}47 !important;
       }
-
-      .message.user {
-        flex-direction: row-reverse;
+      .tile .tile-icon svg {
+        stroke: {{ current_company.secondary_color or '#00ffb4' }} !important;
       }
-
-      .message-content {
-        max-width: 75%;
-        padding: 0.75rem 1rem;
-        border-radius: 12px;
-        line-height: 1.5;
+      .form-control:focus, .form-select:focus {
+        border-color: {{ current_company.secondary_color or '#00ffb4' }}59 !important;
+        box-shadow: 0 0 0 0.25rem {{ current_company.secondary_color or '#00ffb4' }}26 !important;
       }
-
-      .message.user .message-content {
-        background: linear-gradient(135deg, #00ffb4, #004845);
-        color: #000;
+      .quick-action-btn {
+        background: linear-gradient(135deg, {{ current_company.secondary_color or '#00ffb4' }}26, {{ current_company.primary_color or '#bc00ed' }}1a) !important;
+        border-color: {{ current_company.secondary_color or '#00ffb4' }}4d !important;
       }
-
-      .message.bot .message-content {
-        background: linear-gradient(135deg, #480749, #bc00ed);
-        color: #fff;
-        border: 1px solid #bc00ed;
+      .quick-action-btn:hover {
+        background: linear-gradient(135deg, {{ current_company.secondary_color or '#00ffb4' }}4d, {{ current_company.primary_color or '#bc00ed' }}33) !important;
+        border-color: {{ current_company.secondary_color or '#00ffb4' }} !important;
       }
-
-      .chat-input-container {
-        padding: 1rem;
-        background: #000000;
-        border-top: 2px solid #bc00ed;
+      .quick-action-btn i, .channel-card:hover { color: {{ current_company.secondary_color or '#00ffb4' }} !important; }
+      .ai-badge {
+        background: linear-gradient(135deg, {{ current_company.secondary_color or '#00ffb4' }}, {{ current_company.primary_color or '#bc00ed' }}) !important;
       }
-
-      .chat-input-wrapper {
-        display: flex;
-        gap: 0.5rem;
-      }
-
-      .chat-input {
-        flex: 1;
-        padding: 0.75rem 1rem;
-        background: #0a0a0a;
-        border: 1px solid #bc00ed;
-        border-radius: 20px;
-        color: #fff;
-        outline: none;
-      }
-
-      .chat-input:focus {
-        border-color: #00ffb4;
-        box-shadow: 0 0 10px rgba(0, 255, 180, 0.3);
-      }
-
-      .chat-send-btn {
-        padding: 0.75rem 1.5rem;
-        background: linear-gradient(135deg, #bc00ed, #0044ff);
-        border: none;
-        border-radius: 20px;
-        color: #fff;
-        cursor: pointer;
-        transition: all 0.3s ease;
-      }
-
-      .chat-send-btn:hover {
-        transform: scale(1.05);
-      }
+      {% if current_company.font_family %}
+      body { font-family: {{ current_company.font_family }} !important; }
+      {% endif %}
     </style>
-
-    <!-- Floating Chat Button -->
-    <div class="chatbot-float-button" onclick="toggleChatbot()">
-      <img src="{{ url_for('static', filename='lux-ai-assistant.gif') }}" alt="LUX AI">
-    </div>
-
-    <!-- Floating Chat Window -->
-    <div class="chatbot-container" id="chatbotContainer">
-      <div class="chatbot-header">
-        <button class="chatbot-close" onclick="toggleChatbot()">&times;</button>
-        <img src="{{ url_for('static', filename='lux-ai-assistant.gif') }}" alt="LUX AI" class="chatbot-header-gif">
-        <div class="chatbot-header-text">
-          <h2>Your <span style="color: #00ffb4;">AI</span> assistant</h2>
-        </div>
-      </div>
-
-      <div class="chat-messages" id="chatMessages">
-        <div class="message bot">
-          <div class="message-content">
-            👋 Hello! I'm your LUX AI Assistant. I can help you with marketing campaigns, content creation, analytics, and more. What can I help you with today?
-          </div>
-        </div>
-      </div>
-
-      <div class="chat-input-container">
-        <div class="chat-input-wrapper">
-          <input 
-            type="text" 
-            class="chat-input" 
-            id="chatInput" 
-            placeholder="Type your message..."
-            onkeypress="if(event.key==='Enter') sendChatMessage()"
-          >
-          <button class="chat-send-btn" onclick="sendChatMessage()">
-            <i data-feather="send"></i>
-          </button>
-        </div>
-      </div>
-    </div>
-
-    <script>
-      function toggleChatbot() {
-        const container = document.getElementById('chatbotContainer');
-        container.classList.toggle('active');
-        if (container.classList.contains('active')) {
-          document.getElementById('chatInput').focus();
-        }
-        feather.replace();
-      }
-
-      function addChatMessage(content, isUser) {
-        const messagesDiv = document.getElementById('chatMessages');
-        const messageDiv = document.createElement('div');
-        messageDiv.className = `message ${isUser ? 'user' : 'bot'}`;
-
-        const contentDiv = document.createElement('div');
-        contentDiv.className = 'message-content';
-        contentDiv.textContent = content;
-
-        messageDiv.appendChild(contentDiv);
-        messagesDiv.appendChild(messageDiv);
-        messagesDiv.scrollTop = messagesDiv.scrollHeight;
-      }
-
-      async function sendChatMessage() {
-        const input = document.getElementById('chatInput');
-        const message = input.value.trim();
-
-        if (!message) return;
-
-        addChatMessage(message, true);
-        input.value = '';
-
-        try {
-          const response = await fetch('/chatbot/send', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ message: message })
-          });
-
-          const data = await response.json();
-
-          if (response.ok) {
-            addChatMessage(data.response, false);
-          } else {
-            addChatMessage('Sorry, I encountered an error. Please try again.', false);
-          }
-        } catch (error) {
-          addChatMessage('Sorry, I could not connect to the server. Please try again.', false);
-        }
-      }
-    </script>
-
-    <!-- TikTok Pixel -->
-    {% if tiktok_pixel_id %}
-    <script>
-      !function (w, d, t) {
-        w.TiktokAnalyticsObject=t;var ttq=w[t]=w[t]||[];ttq.methods=["page","track","identify","instances","debug","on","off","once","ready","alias","group","enableCookie","disableCookie"],ttq.setAndDefer=function(t,e){t[e]=function(){t.push([e].concat(Array.prototype.slice.call(arguments,0)))}};for(var i=0;i<ttq.methods.length;i++)ttq.setAndDefer(ttq,ttq.methods[i]);ttq.instance=function(t){for(var e=ttq._i[t]||[],n=0;n<ttq.methods.length;n++)ttq.setAndDefer(e,ttq.methods[n]);return e},ttq.load=function(e,n){var i="https://analytics.tiktok.com/i18n/pixel/events.js";ttq._i=ttq._i||{},ttq._i[e]=[],ttq._i[e]._u=i,ttq._t=ttq._t||{},ttq._t[e]=+new Date,ttq._o=ttq._o||{},ttq._o[e]=n||{};var o=document.createElement("script");o.type="text/javascript",o.async=!0,o.src=i+"?sdkid="+e+"&lib="+t;var a=document.getElementsByTagName("script")[0];a.parentNode.insertBefore(o,a)};
-        ttq.load('{{ tiktok_pixel_id }}');
-        ttq.page();
-        console.log('TikTok Pixel initialized: {{ tiktok_pixel_id }}');
-      }(window, document, 'ttq');
-    </script>
     {% endif %}
+</head>
+<body>
+    <div class="app-shell">
+        <header class="app-header">
+            <div class="app-header-inner">
+                <div class="brand">
+                    <span class="back-arrow-glow" onclick="history.back();" title="Go back"><i data-feather="chevron-left"></i></span>
+                    <a href="{{ url_for('main.dashboard') }}" aria-label="Dashboard" class="brand-link">
+                        <span class="brand-logo">
+                            <img src="{{ url_for('static', filename='images/lux-chrome.png') }}" alt="LUX" class="brand-lux-img"><span class="brand-stack"><span class="brand-it">IT</span><span class="brand-app">.app</span></span>
+                        </span>
+                    </a>
+                </div>
+
+                <div class="header-title">
+                    <h1>{% block page_title %}{% endblock %}</h1>
+                </div>
+
+                {% if current_user.is_authenticated %}
+                <div class="header-actions">
+                    <div class="user-greeting">
+                        <span class="greeting-text">Hello, <strong>{{ current_user.first_name or current_user.username }}</strong></span>
+                        {% if current_company %}
+                        <span class="working-on">working on <strong>{{ current_company.name }}</strong></span>
+                        {% endif %}
+                    </div>
+                    
+                    {% if current_company %}
+                    <div class="company-icon">
+                        {% if current_company.logo_path %}
+                        <img src="{{ url_for('static', filename=current_company.logo_path) }}" alt="{{ current_company.name }}">
+                        {% else %}
+                        <div class="company-initial">{{ current_company.name[0]|upper }}</div>
+                        {% endif %}
+                    </div>
+                    {% endif %}
+                    
+                    <div class="dropdown">
+                        <button class="gear-btn" type="button" id="settingsDropdown" data-bs-toggle="dropdown" aria-expanded="false">
+                            <i data-feather="settings"></i>
+                        </button>
+                        <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="settingsDropdown" style="min-width: 280px;">
+                            <li><h6 class="dropdown-header">Account</h6></li>
+                            <li><a class="dropdown-item" href="{{ url_for('main.user_profile') }}"><i data-feather="user"></i> My Profile</a></li>
+                            <li><a class="dropdown-item" href="{{ url_for('main.change_password') }}"><i data-feather="lock"></i> Change Password</a></li>
+                            <li><a class="dropdown-item" href="{{ url_for('main.manage_users') }}"><i data-feather="users"></i> Manage Users</a></li>
+                            <li><hr class="dropdown-divider"></li>
+                            <li><h6 class="dropdown-header">Company Settings</h6></li>
+                            <li><a class="dropdown-item" href="{{ url_for('main.settings_integrations') }}"><i data-feather="sliders"></i> Connections & API Keys</a></li>
+                            {% if current_company %}
+                            <li><a class="dropdown-item" href="{{ url_for('main.edit_company', company_id=current_company.id) }}"><i data-feather="droplet"></i> Brand Kit & Colors</a></li>
+                            {% endif %}
+                            <li><a class="dropdown-item" href="{{ url_for('main.companies_list') }}"><i data-feather="briefcase"></i> Manage Companies</a></li>
+                            <li><hr class="dropdown-divider"></li>
+                            <li><h6 class="dropdown-header">Switch Company</h6></li>
+                            {% for company in user_companies %}
+                            <li><a class="dropdown-item d-flex align-items-center justify-content-between" href="#" onclick="switchToCompany({{ company.id }}); return false;">
+                                <span><i data-feather="briefcase"></i> {{ company.name }}</span>
+                                {% if current_company and company.id == current_company.id %}
+                                <span class="badge bg-success">Active</span>
+                                {% endif %}
+                            </a></li>
+                            {% endfor %}
+                            <li><hr class="dropdown-divider"></li>
+                            <li><a class="dropdown-item text-danger" href="{{ url_for('auth.logout') }}"><i data-feather="log-out"></i> Sign Out</a></li>
+                        </ul>
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+        </header>
+
+        <main class="container py-4">
+            {% with messages = get_flashed_messages(with_categories=true) %}
+                {% if messages %}
+                    {% for category, message in messages %}
+                        <div class="alert alert-{{ 'danger' if category == 'error' else category }} alert-dismissible fade show" role="alert">
+                            {{ message }}
+                            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                        </div>
+                    {% endfor %}
+                {% endif %}
+            {% endwith %}
+
+            {% block content %}{% endblock %}
+        </main>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="{{ url_for('static', filename='js/ui.js') }}"></script>
+    {% if current_user.is_authenticated and current_company is defined %}
+    <script>
+      window.LUX_COMPANY_ID = {{ current_company.id if current_company else 'null' }};
+      
+      function switchToCompany(companyId) {
+        fetch('/api/user/set-default-company', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': document.querySelector('meta[name="csrf-token"]').content
+          },
+          body: JSON.stringify({ company_id: companyId })
+        })
+        .then(r => r.json())
+        .then(data => {
+          if (data.success) {
+            window.location.reload();
+          } else {
+            alert('Failed to switch company: ' + (data.error || 'Unknown error'));
+          }
+        })
+        .catch(err => alert('Error: ' + err));
+      }
+    </script>
+    <script src="{{ url_for('static', filename='js/analytics.js') }}"></script>
+    {% endif %}
+    <script>feather.replace();</script>
 </body>
 </html>

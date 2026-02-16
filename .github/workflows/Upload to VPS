@@ -1,0 +1,48 @@
+name: Deploy to VPS
+
+on:
+  push:
+    branches:
+      - main  # Deploy whenever you push to the main branch
+  workflow_dispatch:  # Optional: Allow manual deployment from GitHub's Actions tab
+
+jobs:
+  deploy:
+    name: Deploy Code to VPS
+    runs-on: ubuntu-latest
+
+    steps:
+      # Step 1: Check out the repository
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      # Step 2: Set up SSH
+      - name: Set up SSH Agent
+        uses: webfactory/ssh-agent@v0.5.4
+        with:
+          ssh-private-key: ${{ secrets.VPS_SSH_KEY }}
+
+      # Step 3: Deploy to VPS
+      - name: Deploy to VPS
+        run: |
+          echo "Connecting to VPS and deploying code..."
+          ssh -o StrictHostKeyChecking=no ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} << 'EOF'
+            set -e
+            echo "Navigating to the project directory..."
+            cd /var/www/luxit
+
+            echo "Pulling the latest changes from the repository..."
+            git fetch origin main
+            git reset --hard origin/main
+
+            echo "Activating the Python virtual environment..."
+            source venv/bin/activate
+
+            echo "Installing/upgrading dependencies from requirements.txt..."
+            pip install -r requirements.txt --upgrade
+
+            echo "Restarting the application using systemd..."
+            sudo systemctl restart luxit
+
+            echo "Deployment process completed successfully!"
+          EOF

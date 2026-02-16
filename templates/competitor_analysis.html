@@ -1,9 +1,21 @@
 {% extends "base.html" %}
-{% block title %}Competitor Intelligence - LUX Marketing{% endblock %}
+{% block title %}Competitor Intelligence - LUX IT{% endblock %}
+{% block page_title %}Competitor Intelligence{% endblock %}
 {% block content %}
+<style>
+.intel-card { background: rgba(10,10,15,0.9); border: 1px solid rgba(188,0,237,0.3); border-radius: 12px; transition: all 0.3s ease; }
+.intel-card:hover { border-color: rgba(0,255,180,0.5); box-shadow: 0 8px 24px rgba(0,255,180,0.15); }
+.intel-icon { width: 48px; height: 48px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 1.5rem; }
+.intel-status { font-size: 0.75rem; padding: 4px 8px; border-radius: 20px; }
+.intel-status.active { background: rgba(0,255,180,0.2); color: #00ffb4; }
+.intel-status.pending { background: rgba(255,193,7,0.2); color: #ffc107; }
+.intel-status.inactive { background: rgba(239,68,68,0.2); color: #ef4444; }
+.data-source-badge { font-size: 0.7rem; background: rgba(188,0,237,0.2); color: #bc00ed; padding: 2px 6px; border-radius: 4px; }
+</style>
+
 <div class="container-fluid">
     <div class="d-flex justify-content-between align-items-center mb-4">
-        <h1><i data-feather="target"></i> Competitor Intelligence</h1>
+        <h1 style="background: linear-gradient(135deg, #bc00ed, #00ffb4); -webkit-background-clip: text; -webkit-text-fill-color: transparent;"><i data-feather="target" style="stroke: #bc00ed;"></i> Competitor Intelligence</h1>
         <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addCompetitorModal">
             <i data-feather="plus"></i> Add Competitor
         </button>
@@ -31,6 +43,73 @@
                 <div class="card-body text-center">
                     <h3 class="text-warning">{{ competitors|selectattr('opportunities')|list|length }}</h3>
                     <small>With Opportunities</small>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Intelligence Data Sources -->
+    <div class="mb-4">
+        <h5 class="mb-3" style="color: #00ffb4;"><i data-feather="database" style="width:18px;height:18px;"></i> Intelligence Sources</h5>
+        <div class="row g-3">
+            <div class="col-md-4 col-lg-2">
+                <div class="intel-card p-3 text-center">
+                    <div class="intel-icon mx-auto mb-2" style="background: linear-gradient(135deg, #667eea, #764ba2);">
+                        <i data-feather="code" style="width:24px;height:24px;color:#fff;"></i>
+                    </div>
+                    <h6 class="mb-1" style="color:#fff;font-size:0.9rem;">Wappalyzer</h6>
+                    <span class="intel-status active">Connected</span>
+                    <p class="mt-2 mb-0" style="font-size:0.75rem;color:#888;">Tech stack detection</p>
+                </div>
+            </div>
+            <div class="col-md-4 col-lg-2">
+                <div class="intel-card p-3 text-center">
+                    <div class="intel-icon mx-auto mb-2" style="background: linear-gradient(135deg, #00a8ff, #0052cc);">
+                        <i data-feather="search" style="width:24px;height:24px;color:#fff;"></i>
+                    </div>
+                    <h6 class="mb-1" style="color:#fff;font-size:0.9rem;">Bing Search</h6>
+                    <span class="intel-status pending">API Key Needed</span>
+                    <p class="mt-2 mb-0" style="font-size:0.75rem;color:#888;">SERP visibility</p>
+                </div>
+            </div>
+            <div class="col-md-4 col-lg-2">
+                <div class="intel-card p-3 text-center">
+                    <div class="intel-icon mx-auto mb-2" style="background: linear-gradient(135deg, #1877f2, #0a5dc2);">
+                        <i data-feather="facebook" style="width:24px;height:24px;color:#fff;"></i>
+                    </div>
+                    <h6 class="mb-1" style="color:#fff;font-size:0.9rem;">Meta Ads Library</h6>
+                    <span class="intel-status active">Public API</span>
+                    <p class="mt-2 mb-0" style="font-size:0.75rem;color:#888;">Ad creatives</p>
+                </div>
+            </div>
+            <div class="col-md-4 col-lg-2">
+                <div class="intel-card p-3 text-center">
+                    <div class="intel-icon mx-auto mb-2" style="background: linear-gradient(135deg, #f48120, #ff6b35);">
+                        <i data-feather="bar-chart-2" style="width:24px;height:24px;color:#fff;"></i>
+                    </div>
+                    <h6 class="mb-1" style="color:#fff;font-size:0.9rem;">Cloudflare Radar</h6>
+                    <span class="intel-status active">Free API</span>
+                    <p class="mt-2 mb-0" style="font-size:0.75rem;color:#888;">Traffic trends</p>
+                </div>
+            </div>
+            <div class="col-md-4 col-lg-2">
+                <div class="intel-card p-3 text-center">
+                    <div class="intel-icon mx-auto mb-2" style="background: linear-gradient(135deg, #ff4500, #cc3700);">
+                        <i data-feather="rss" style="width:24px;height:24px;color:#fff;"></i>
+                    </div>
+                    <h6 class="mb-1" style="color:#fff;font-size:0.9rem;">RSS Feeds</h6>
+                    <span class="intel-status active">Configured</span>
+                    <p class="mt-2 mb-0" style="font-size:0.75rem;color:#888;">Activity feed</p>
+                </div>
+            </div>
+            <div class="col-md-4 col-lg-2">
+                <div class="intel-card p-3 text-center">
+                    <div class="intel-icon mx-auto mb-2" style="background: linear-gradient(135deg, #bc00ed, #00ffb4);">
+                        <i data-feather="cpu" style="width:24px;height:24px;color:#fff;"></i>
+                    </div>
+                    <h6 class="mb-1" style="color:#fff;font-size:0.9rem;">AI Summary</h6>
+                    <span class="intel-status active">GPT-4o</span>
+                    <p class="mt-2 mb-0" style="font-size:0.75rem;color:#888;">Insights engine</p>
                 </div>
             </div>
         </div>

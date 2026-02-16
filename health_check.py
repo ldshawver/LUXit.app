@@ -19,7 +19,7 @@ def health_check():
     """
     try:
         # Check database connection
-        from app import db
+        from extensions import db
         db.session.execute('SELECT 1')
         db_status = "healthy"
     except Exception as e:

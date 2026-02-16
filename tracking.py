@@ -16,7 +16,7 @@ def generate_tracking_pixel(campaign_id, contact_id):
     tracking_data = f"{campaign_id}:{contact_id}"
     encoded_data = base64.urlsafe_b64encode(tracking_data.encode()).decode()
     
-    return url_for('main.track_open', tracking_id=encoded_data, _external=True)
+    return url_for('main.track_open', tracking_id=encoded_data)
 
 def generate_tracking_link(original_url, campaign_id, contact_id):
     """Generate a tracking link for email clicks"""
@@ -29,7 +29,7 @@ def generate_tracking_link(original_url, campaign_id, contact_id):
         'url': original_url
     }
     
-    return url_for('main.track_click', **params, _external=True)
+    return url_for('main.track_click', **params)
 
 def decode_tracking_data(tracking_id):
     """Decode tracking data from tracking ID"""

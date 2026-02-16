@@ -4,21 +4,12 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="csrf-token" content="{{ csrf_token() }}">
-    <title>{% block title %}LUX Marketing{% endblock %}</title>
-    
-    <!-- Favicon -->
-    <link rel="icon" type="image/png" href="{{ url_for('static', filename='lux_logo.png') }}">
-    
-    <!-- Bootstrap CSS -->
+    <title>{% block title %}LUX IT{% endblock %}</title>
+
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='favicon.png') }}">
     <link href="https://cdn.replit.com/agent/bootstrap-agent-dark-theme.min.css" rel="stylesheet">
-    
-    <!-- Feather Icons -->
     <script src="https://unpkg.com/feather-icons"></script>
-    
-    <!-- Chart.js -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-    
-    <!-- Custom CSS -->
     <link rel="stylesheet" href="{{ url_for('static', filename='css/custom.css') }}">
     
     <style>
@@ -142,124 +133,56 @@
     </style>
 </head>
 <body>
-    <div class="lux-header">
-      <div class="nav-arrows">
-        <button class="nav-arrow" onclick="goBack()">
-          <i data-feather="arrow-left"></i>
-        </button>
-        <a href="{{ url_for('main.dashboard') }}">
-          <img src="{{ url_for('static', filename='lux_logo.png') }}" alt="LUX Marketing" class="lux-logo" style="height: 40px; margin: 0 1rem;">
-        </a>
-        <button class="nav-arrow" onclick="goForward()">
-          <i data-feather="arrow-right"></i>
-        </button>
-      </div>
-      
-      <div class="header-center">
-        <h1 style="font-size: 1.1rem; font-weight: 500; margin: 0;">
-          {% block page_header %}
-            {% if current_user.is_authenticated %}
-              {% set header_company = current_user.get_default_company() %}
-              {% set user_name = (current_user.first_name or current_user.username) %}
-              <span style="color: #00ffb4;">{{ user_name[0]|upper }}{{ user_name[1:] }}</span>
-              <span style="color: #bc00ed;"> Marketing Wizard of </span>
-              <span style="color: #00ffb4;">{{ header_company.name if header_company else 'Your Company' }}</span>
-            {% endif %}
-          {% endblock %}
-        </h1>
-      </div>
-      
-      {% if current_user.is_authenticated %}
-      <div class="header-right">
-        <div class="dropdown">
-          <button class="btn btn-link settings-btn" type="button" id="settingsDropdown" data-bs-toggle="dropdown" aria-expanded="false">
-            <i data-feather="settings" class="settings-icon"></i>
-          </button>
-          <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="settingsDropdown">
-            <li><a class="dropdown-item" href="{{ url_for('user.profile') }}"><i data-feather="user"></i> Profile</a></li>
-            <li><a class="dropdown-item" href="{{ url_for('advanced_config.integrations_list') }}"><i data-feather="sliders"></i> Advanced Configuration</a></li>
-            <li><hr class="dropdown-divider"></li>
-            <li><h6 class="dropdown-header">Companies</h6></li>
-            {% for company in current_user.companies %}
-            <li><a class="dropdown-item" href="#" onclick="selectCompany({{ company.id }})">
-              <i data-feather="briefcase"></i> {{ company.name }}
-              {% if current_user.get_default_company() and company.id == current_user.get_default_company().id %}
-              <span class="badge bg-success">Current</span>
-              {% endif %}
-            </a></li>
-            {% endfor %}
-            <li><hr class="dropdown-divider"></li>
-            <li><a class="dropdown-item" href="{{ url_for('main.companies_list') }}"><i data-feather="edit"></i> Manage Companies</a></li>
-            <li><a class="dropdown-item" href="{{ url_for('main.add_company') }}"><i data-feather="plus"></i> Add Company</a></li>
-          </ul>
-        </div>
-        {% set current_company = current_user.get_default_company() %}
-        {% if current_company and current_company.logo_path %}
-          <img src="{{ url_for('static', filename=current_company.logo_path) }}" alt="{{ current_company.name }}" class="company-logo" style="height: 40px; width: auto; border-radius: 8px;">
-        {% elif current_company %}
-          <img src="{{ url_for('static', filename='lux_logo.png') }}" alt="{{ current_company.name }}" class="company-logo" style="height: 40px; width: auto; border-radius: 8px;">
-        {% endif %}
-      </div>
-      {% endif %}
+    <div class="app-shell">
+        <header class="app-header">
+            <div class="app-header-inner">
+                <div class="brand">
+                    <span class="back-arrow-glow" onclick="history.back();" title="Go back"><i data-feather="chevron-left"></i></span>
+                    <a href="{{ url_for('main.dashboard') }}" aria-label="Dashboard" class="brand-link">
+                        <span class="brand-logo">
+                            <img src="{{ url_for('static', filename='images/lux-chrome.png') }}" alt="LUX" class="brand-lux-img"><span class="brand-stack"><span class="brand-it">IT</span><span class="brand-app">.app</span></span>
+                        </span>
+                    </a>
+                </div>
+
+                <div class="header-title">
+                    <h1>{% block page_header %}{% endblock %}</h1>
+                    <p>Workspace navigation</p>
+                </div>
+
+                <div class="header-actions">
+                    <a href="{{ url_for('main.dashboard') }}" class="btn btn-lux btn-lux-primary">
+                        <i data-feather="home"></i> Dashboard
+                    </a>
+                </div>
+            </div>
+        </header>
+
+        <main class="container py-4">
+            {% with messages = get_flashed_messages(with_categories=true) %}
+                {% if messages %}
+                    {% for category, message in messages %}
+                        <div class="alert alert-{{ 'danger' if category == 'error' else category }} alert-dismissible fade show" role="alert">
+                            {{ message }}
+                            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                        </div>
+                    {% endfor %}
+                {% endif %}
+            {% endwith %}
+
+            {% block content %}{% endblock %}
+        </main>
     </div>
 
-    {% with messages = get_flashed_messages(with_categories=true) %}
-        {% if messages %}
-            <div class="container mt-3">
-                {% for category, message in messages %}
-                <div class="alert alert-{{ 'danger' if category == 'error' else category }} alert-dismissible fade show" role="alert">
-                    {{ message }}
-                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-                </div>
-                {% endfor %}
-            </div>
-        {% endif %}
-    {% endwith %}
-    
-    {% block content %}{% endblock %}
-    
-    <!-- Bootstrap Bundle with Popper -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-    
-    <!-- Main JavaScript -->
-    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
-    
+    <script src="{{ url_for('static', filename='js/ui.js') }}"></script>
     <script>
       feather.replace();
-      
-      function goBack() {
-        window.history.back();
-      }
-      
-      function goForward() {
-        window.history.forward();
-      }
-      
-      function selectCompany(companyId) {
-        fetch(`/companies/switch/${companyId}`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json'
-          }
-        })
-        .then(response => response.json())
-        .then(data => {
-          if (data.success) {
-            location.reload();
-          } else {
-            alert('Failed to switch company');
-          }
-        })
-        .catch(error => {
-          console.error('Error:', error);
-          alert('An error occurred while switching companies');
-        });
-      }
+
     </script>
-    
+
     {% block scripts %}{% endblock %}
-    
-    <!-- LUX AI Chatbot Floating Widget -->
+
     {% include 'chatbot_widget.html' %}
 </body>
 </html>

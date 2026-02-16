@@ -1,0 +1,286 @@
+{% extends "base.html" %}
+
+{% block title %}Deal Pipeline - LUX IT{% endblock %}
+{% block page_title %}Deal Pipeline{% endblock %}
+
+{% block content %}
+<style>
+  .pipeline-container {
+    display: flex;
+    gap: 1rem;
+    overflow-x: auto;
+    padding: 1rem 0;
+    min-height: 70vh;
+  }
+  
+  .pipeline-column {
+    min-width: 280px;
+    max-width: 320px;
+    flex-shrink: 0;
+    background: rgba(12, 14, 20, 0.9);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 12px;
+    display: flex;
+    flex-direction: column;
+  }
+  
+  .column-header {
+    padding: 1rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  
+  .column-header h3 {
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: #fff;
+    margin: 0;
+  }
+  
+  .column-count {
+    background: rgba(0, 229, 255, 0.1);
+    color: #00e5ff;
+    padding: 0.25rem 0.5rem;
+    border-radius: 999px;
+    font-size: 0.75rem;
+    font-weight: 600;
+  }
+  
+  .column-body {
+    padding: 0.75rem;
+    flex-grow: 1;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+  
+  .deal-card {
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 8px;
+    padding: 1rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+  
+  .deal-card:hover {
+    border-color: rgba(0, 229, 255, 0.3);
+    transform: translateY(-2px);
+  }
+  
+  .deal-card h4 {
+    font-size: 0.9rem;
+    color: #fff;
+    margin: 0 0 0.5rem 0;
+  }
+  
+  .deal-value {
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: #22c55e;
+    margin-bottom: 0.5rem;
+  }
+  
+  .deal-meta {
+    font-size: 0.8rem;
+    color: rgba(255, 255, 255, 0.5);
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  
+  .deal-probability {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+  }
+  
+  .prob-bar {
+    width: 40px;
+    height: 4px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 2px;
+    overflow: hidden;
+  }
+  
+  .prob-fill {
+    height: 100%;
+    background: #00e5ff;
+    border-radius: 2px;
+  }
+  
+  .empty-column {
+    text-align: center;
+    color: rgba(255, 255, 255, 0.3);
+    padding: 2rem 1rem;
+    font-size: 0.85rem;
+  }
+  
+  .section-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 1.5rem;
+  }
+  
+  .section-header h2 {
+    font-size: 1.5rem;
+    color: #fff;
+    margin: 0;
+  }
+  
+  .btn-add-deal {
+    background: linear-gradient(135deg, #a855f7, #00e5ff);
+    color: #000;
+    border: none;
+    padding: 0.5rem 1rem;
+    border-radius: 8px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    cursor: pointer;
+    transition: transform 0.2s ease;
+  }
+  
+  .btn-add-deal:hover {
+    transform: scale(1.02);
+  }
+  
+  .pipeline-stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+  }
+  
+  .stat-card {
+    background: rgba(12, 14, 20, 0.9);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 12px;
+    padding: 1.25rem;
+  }
+  
+  .stat-label {
+    font-size: 0.8rem;
+    color: rgba(255, 255, 255, 0.5);
+    margin-bottom: 0.25rem;
+  }
+  
+  .stat-value {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: #fff;
+  }
+  
+  .stat-value.green { color: #22c55e; }
+  .stat-value.cyan { color: #00e5ff; }
+  .stat-value.purple { color: #a855f7; }
+</style>
+
+<div class="section-header">
+  <h2>Deal Pipeline</h2>
+  <button class="btn-add-deal" data-bs-toggle="modal" data-bs-target="#addDealModal">
+    <i data-feather="plus"></i> Add Deal
+  </button>
+</div>
+
+<div class="pipeline-stats">
+  <div class="stat-card">
+    <div class="stat-label">Total Pipeline Value</div>
+    <div class="stat-value green">${{ "%.2f"|format(deals|sum(attribute='value') or 0) }}</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Active Deals</div>
+    <div class="stat-value cyan">{{ deals|length }}</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Avg. Win Probability</div>
+    <div class="stat-value purple">{{ "%.0f"|format((deals|sum(attribute='probability') / deals|length * 100) if deals|length > 0 else 0) }}%</div>
+  </div>
+</div>
+
+<div class="pipeline-container">
+  {% for stage in stages %}
+  <div class="pipeline-column" data-stage="{{ stage }}">
+    <div class="column-header">
+      <h3>{{ stage }}</h3>
+      <span class="column-count">{{ deals_by_stage[stage]|length }}</span>
+    </div>
+    <div class="column-body">
+      {% if deals_by_stage[stage] %}
+        {% for deal in deals_by_stage[stage] %}
+        <div class="deal-card" data-deal-id="{{ deal.id }}">
+          <h4>{{ deal.name or 'Untitled Deal' }}</h4>
+          <div class="deal-value">${{ "%.2f"|format(deal.value or 0) }}</div>
+          <div class="deal-meta">
+            <div class="deal-probability">
+              <div class="prob-bar">
+                <div class="prob-fill" style="width: {{ (deal.probability or 0) * 100 }}%;"></div>
+              </div>
+              <span>{{ "%.0f"|format((deal.probability or 0) * 100) }}%</span>
+            </div>
+            {% if deal.expected_close_date %}
+            <span>{{ deal.expected_close_date.strftime('%b %d') }}</span>
+            {% endif %}
+          </div>
+        </div>
+        {% endfor %}
+      {% else %}
+        <div class="empty-column">No deals in this stage</div>
+      {% endif %}
+    </div>
+  </div>
+  {% endfor %}
+</div>
+
+<div class="modal fade" id="addDealModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content" style="background: rgba(12, 14, 20, 0.98); border: 1px solid rgba(255,255,255,0.1);">
+      <div class="modal-header" style="border-bottom: 1px solid rgba(255,255,255,0.1);">
+        <h5 class="modal-title">Add New Deal</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <form action="{{ url_for('main.add_deal') }}" method="POST">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined else '' }}">
+        <div class="modal-body">
+          <div class="mb-3">
+            <label class="form-label">Deal Name</label>
+            <input type="text" class="form-control" name="name" required style="background: rgba(255,255,255,0.05); border-color: rgba(255,255,255,0.1); color: #fff;">
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Value ($)</label>
+            <input type="number" step="0.01" class="form-control" name="value" required style="background: rgba(255,255,255,0.05); border-color: rgba(255,255,255,0.1); color: #fff;">
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Stage</label>
+            <select class="form-select" name="stage" style="background: rgba(255,255,255,0.05); border-color: rgba(255,255,255,0.1); color: #fff;">
+              <option value="Lead">Lead</option>
+              <option value="Qualified">Qualified</option>
+              <option value="Proposal">Proposal</option>
+              <option value="Negotiation">Negotiation</option>
+            </select>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Expected Close Date</label>
+            <input type="date" class="form-control" name="expected_close_date" style="background: rgba(255,255,255,0.05); border-color: rgba(255,255,255,0.1); color: #fff;">
+          </div>
+        </div>
+        <div class="modal-footer" style="border-top: 1px solid rgba(255,255,255,0.1);">
+          <button type="button" class="btn" style="background: rgba(255,255,255,0.1); color: #fff;" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn" style="background: linear-gradient(135deg, #a855f7, #00e5ff); color: #000;">Create Deal</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  feather.replace();
+});
+</script>
+{% endblock %}

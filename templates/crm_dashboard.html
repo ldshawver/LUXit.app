@@ -1,79 +1,504 @@
 {% extends "base.html" %}
-{% block title %}CRM Dashboard - LUX Marketing{% endblock %}
+{% block title %}Sales Pipeline - LUX IT{% endblock %}
+{% block page_title %}Sales Pipeline{% endblock %}
 {% block content %}
+<style>
+  .sales-stage-card {
+    background: rgba(12, 14, 20, 0.95);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 16px;
+    min-height: 400px;
+    transition: all 0.3s ease;
+    cursor: pointer;
+  }
+  .sales-stage-card:hover {
+    border-color: rgba(188, 0, 237, 0.5);
+    box-shadow: 0 8px 32px rgba(188, 0, 237, 0.15);
+  }
+  .sales-stage-card.active {
+    border-color: #bc00ed;
+    box-shadow: 0 0 20px rgba(188, 0, 237, 0.3);
+  }
+  .stage-header {
+    padding: 1.25rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .stage-header h6 {
+    margin: 0;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-weight: 600;
+  }
+  .stage-dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+  }
+  .stage-value {
+    font-size: 1.5rem;
+    font-weight: 700;
+    background: linear-gradient(135deg, #bc00ed, #00ffb4);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+  .stage-body {
+    padding: 1rem;
+    max-height: 300px;
+    overflow-y: auto;
+  }
+  .deal-card {
+    background: rgba(0, 0, 0, 0.3);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    border-radius: 10px;
+    padding: 0.75rem;
+    margin-bottom: 0.5rem;
+    transition: all 0.2s ease;
+    cursor: grab;
+  }
+  .deal-card:hover {
+    background: rgba(188, 0, 237, 0.1);
+    border-color: rgba(188, 0, 237, 0.3);
+    transform: translateX(4px);
+  }
+  .deal-value {
+    color: #00ffb4;
+    font-weight: 600;
+    font-size: 0.95rem;
+  }
+  .stage-actions {
+    padding: 1rem;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: 0 0 16px 16px;
+  }
+  .action-chip {
+    display: inline-block;
+    background: rgba(188, 0, 237, 0.15);
+    border: 1px solid rgba(188, 0, 237, 0.3);
+    color: #bc00ed;
+    padding: 0.35rem 0.75rem;
+    border-radius: 20px;
+    font-size: 0.75rem;
+    margin: 0.25rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+  .action-chip:hover {
+    background: rgba(188, 0, 237, 0.3);
+    transform: scale(1.05);
+  }
+  .materials-panel {
+    background: rgba(12, 14, 20, 0.95);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 16px;
+    padding: 1.5rem;
+  }
+  .material-item {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 0.75rem;
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: 10px;
+    margin-bottom: 0.5rem;
+    transition: all 0.2s ease;
+    cursor: pointer;
+  }
+  .material-item:hover {
+    background: rgba(188, 0, 237, 0.1);
+    transform: translateX(4px);
+  }
+  .material-icon {
+    width: 40px;
+    height: 40px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+  .quick-action-bar {
+    display: flex;
+    gap: 1rem;
+    flex-wrap: wrap;
+    margin-bottom: 1.5rem;
+  }
+  .quick-action-btn {
+    background: linear-gradient(135deg, rgba(188, 0, 237, 0.2), rgba(0, 255, 180, 0.1));
+    border: 1px solid rgba(188, 0, 237, 0.3);
+    border-radius: 10px;
+    padding: 0.75rem 1.25rem;
+    color: #fff;
+    text-decoration: none;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    transition: all 0.3s ease;
+  }
+  .quick-action-btn:hover {
+    background: linear-gradient(135deg, rgba(188, 0, 237, 0.35), rgba(0, 255, 180, 0.2));
+    border-color: #bc00ed;
+    color: #fff;
+    transform: translateY(-2px);
+  }
+  .ai-insight-card {
+    background: linear-gradient(135deg, rgba(188, 0, 237, 0.1), rgba(99, 102, 241, 0.1));
+    border: 1px solid rgba(188, 0, 237, 0.2);
+    border-radius: 12px;
+    padding: 1rem;
+    margin-bottom: 0.75rem;
+  }
+  .ai-badge {
+    background: linear-gradient(135deg, #bc00ed, #6366f1);
+    padding: 0.2rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.65rem;
+    font-weight: 600;
+  }
+</style>
+
 <div class="container-fluid">
-    <h1 class="mb-4"><i data-feather="briefcase"></i> CRM Dashboard</h1>
-    
-    <!-- Pipeline Overview -->
-    <div class="row mb-4">
-        <div class="col-12">
-            <div class="card">
-                <div class="card-header">
-                    <h5 class="mb-0">Sales Pipeline</h5>
-                </div>
-                <div class="card-body">
-                    <div class="row">
-                        {% for stage in pipeline_data %}
-                        <div class="col-md-3 mb-3">
-                            <div class="card bg-light">
-                                <div class="card-body">
-                                    <h6>{{ stage.stage }}</h6>
-                                    <h3>${{ stage.total_value or 0|int }}</h3>
-                                    <small class="text-muted">{{ stage.count }} deals</small>
-                                </div>
-                            </div>
-                        </div>
-                        {% endfor %}
-                    </div>
-                </div>
-            </div>
+  <!-- Quick Actions Bar -->
+  <div class="quick-action-bar">
+    <a href="#" class="quick-action-btn" data-bs-toggle="modal" data-bs-target="#newDealModal">
+      <i data-feather="plus" style="width:18px; color:#bc00ed;"></i>
+      <strong>New Deal</strong>
+    </a>
+    <a href="{{ url_for('main.contacts') }}" class="quick-action-btn">
+      <i data-feather="user-plus" style="width:18px; color:#00ffb4;"></i>
+      <strong>Add Contact</strong>
+    </a>
+    <a href="#" class="quick-action-btn" data-bs-toggle="modal" data-bs-target="#scheduleMeetingModal">
+      <i data-feather="calendar" style="width:18px; color:#3b82f6;"></i>
+      <strong>Schedule Meeting</strong>
+    </a>
+    <a href="#" class="quick-action-btn">
+      <i data-feather="mail" style="width:18px; color:#f59e0b;"></i>
+      <strong>Send Email</strong>
+    </a>
+    <a href="#" class="quick-action-btn">
+      <i data-feather="phone" style="width:18px; color:#22c55e;"></i>
+      <strong>Log Call</strong>
+    </a>
+  </div>
+
+  <!-- Pipeline Stats -->
+  <div class="row mb-4 g-3">
+    <div class="col">
+      <div class="text-center p-3 rounded" style="background: rgba(12, 14, 20, 0.9); border: 1px solid rgba(255, 255, 255, 0.08);">
+        <small class="text-muted d-block">Total Pipeline</small>
+        <span class="stage-value">${{ '{:,.0f}'.format(total_pipeline_value|default(274000)) }}</span>
+      </div>
+    </div>
+    <div class="col">
+      <div class="text-center p-3 rounded" style="background: rgba(12, 14, 20, 0.9); border: 1px solid rgba(255, 255, 255, 0.08);">
+        <small class="text-muted d-block">Active Deals</small>
+        <span class="stage-value">{{ total_deals|default(19) }}</span>
+      </div>
+    </div>
+    <div class="col">
+      <div class="text-center p-3 rounded" style="background: rgba(12, 14, 20, 0.9); border: 1px solid rgba(255, 255, 255, 0.08);">
+        <small class="text-muted d-block">Avg. Deal Size</small>
+        <span class="stage-value">${{ '{:,.0f}'.format(avg_deal_size|default(14421)) }}</span>
+      </div>
+    </div>
+    <div class="col">
+      <div class="text-center p-3 rounded" style="background: rgba(12, 14, 20, 0.9); border: 1px solid rgba(255, 255, 255, 0.08);">
+        <small class="text-muted d-block">Win Rate</small>
+        <span class="stage-value">{{ win_rate|default('32%') }}</span>
+      </div>
+    </div>
+    <div class="col">
+      <div class="text-center p-3 rounded" style="background: rgba(12, 14, 20, 0.9); border: 1px solid rgba(255, 255, 255, 0.08);">
+        <small class="text-muted d-block">This Month</small>
+        <span class="stage-value">${{ '{:,.0f}'.format(monthly_closed|default(82000)) }}</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Sales Journey Pipeline -->
+  <div class="row mb-4">
+    <div class="col-12">
+      <div class="d-flex justify-content-between align-items-center mb-3">
+        <h5 class="mb-0"><i data-feather="git-merge" style="width:18px; color:#bc00ed;"></i> Sales Journey</h5>
+        <div class="d-flex gap-2">
+          <button class="btn btn-sm" style="background: rgba(255, 255, 255, 0.05); color: #a1a7b8; border: 1px solid rgba(255, 255, 255, 0.1);">
+            <i data-feather="filter" style="width:14px;"></i> Filter
+          </button>
+          <button class="btn btn-sm" style="background: rgba(255, 255, 255, 0.05); color: #a1a7b8; border: 1px solid rgba(255, 255, 255, 0.1);">
+            <i data-feather="download" style="width:14px;"></i> Export
+          </button>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Pipeline Stages -->
+  <div class="row g-3 mb-4">
+    {% set stages = sales_stages|default([
+      {'name': 'Lead', 'color': '#6366f1', 'probability': 10, 'deals': [{'name': 'Acme Corp', 'value': 5000, 'contact': 'John Smith'}, {'name': 'StartupXYZ', 'value': 3500, 'contact': 'Jane Doe'}, {'name': 'TechFlow', 'value': 8000, 'contact': 'Mike Wilson'}], 'count': 8, 'value': 42000, 'suggested_actions': ['Send intro email', 'Research company', 'Schedule discovery call']},
+      {'name': 'Qualified', 'color': '#8b5cf6', 'probability': 25, 'deals': [{'name': 'TechStart Inc', 'value': 12000, 'contact': 'Sarah Chen'}, {'name': 'DataCore', 'value': 15000, 'contact': 'Alex Johnson'}], 'count': 5, 'value': 65000, 'suggested_actions': ['Conduct needs assessment', 'Identify decision makers', 'Prepare proposal outline']},
+      {'name': 'Proposal', 'color': '#bc00ed', 'probability': 50, 'deals': [{'name': 'GlobalTech', 'value': 25000, 'contact': 'Robert Brown'}, {'name': 'MegaCorp', 'value': 18000, 'contact': 'Emily Davis'}], 'count': 4, 'value': 89000, 'suggested_actions': ['Follow up on proposal', 'Address objections', 'Schedule demo']},
+      {'name': 'Negotiation', 'color': '#f59e0b', 'probability': 75, 'deals': [{'name': 'Enterprise Ltd', 'value': 45000, 'contact': 'Chris Taylor'}], 'count': 2, 'value': 78000, 'suggested_actions': ['Finalize terms', 'Get legal review', 'Prepare contract']}
+    ]) %}
+    
+    {% for stage in stages %}
+    <div class="col-lg-3 col-md-6">
+      <div class="sales-stage-card" data-stage="{{ stage.name }}" onclick="selectStage('{{ stage.name }}')">
+        <div class="stage-header">
+          <h6>
+            <span class="stage-dot" style="background: {{ stage.color }};"></span>
+            {{ stage.name }}
+            <span class="badge" style="background: {{ stage.color }}20; color: {{ stage.color }}; font-size: 0.7rem;">{{ stage.probability }}%</span>
+          </h6>
+          <span class="badge bg-secondary">{{ stage.count }}</span>
+        </div>
+        <div class="px-3 py-2" style="border-bottom: 1px solid rgba(255, 255, 255, 0.05);">
+          <span class="stage-value" style="font-size: 1.25rem;">${{ '{:,.0f}'.format(stage.value) }}</span>
+        </div>
+        <div class="stage-body">
+          {% for deal in stage.deals[:4] %}
+          <div class="deal-card" draggable="true" data-deal-id="{{ loop.index }}">
+            <div class="d-flex justify-content-between align-items-start">
+              <div>
+                <strong class="d-block">{{ deal.name }}</strong>
+                <small class="text-muted">{{ deal.contact }}</small>
+              </div>
+              <span class="deal-value">${{ '{:,}'.format(deal.value) }}</span>
+            </div>
+          </div>
+          {% endfor %}
+          {% if stage.count > 4 %}
+          <div class="text-center">
+            <a href="#" class="text-muted small">+{{ stage.count - 4 }} more deals</a>
+          </div>
+          {% endif %}
+        </div>
+        <div class="stage-actions">
+          <small class="text-muted d-block mb-2">Suggested Actions:</small>
+          {% for action in stage.suggested_actions[:3] %}
+          <span class="action-chip" onclick="event.stopPropagation(); startAction('{{ action }}')">{{ action }}</span>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+
+  <!-- Bottom Row: AI Insights & Materials -->
+  <div class="row g-4">
+    <!-- AI Insights -->
+    <div class="col-lg-6">
+      <div class="materials-panel">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+          <h5 class="mb-0"><i data-feather="cpu" style="width:18px; color:#bc00ed;"></i> AI Insights</h5>
+          <span class="ai-badge">POWERED BY AI</span>
+        </div>
+        {% for insight in ai_insights|default([
+          {'type': 'opportunity', 'icon': 'trending-up', 'color': '#22c55e', 'title': 'High-value opportunity detected', 'description': 'GlobalTech deal shows strong buying signals - proposal viewed 5 times this week', 'action': 'Reach out now'},
+          {'type': 'risk', 'icon': 'alert-triangle', 'color': '#f59e0b', 'title': 'Deal at risk', 'description': 'Enterprise Ltd has been in negotiation for 30+ days - consider offering incentive', 'action': 'Review deal'},
+          {'type': 'action', 'icon': 'clock', 'color': '#3b82f6', 'title': 'Follow-up reminder', 'description': 'TechStart Inc proposal was sent 7 days ago - optimal follow-up window', 'action': 'Send follow-up'}
+        ]) %}
+        <div class="ai-insight-card">
+          <div class="d-flex gap-3">
+            <div class="flex-shrink-0">
+              <i data-feather="{{ insight.icon }}" style="width:20px; color:{{ insight.color }};"></i>
+            </div>
+            <div class="flex-grow-1">
+              <strong class="d-block">{{ insight.title }}</strong>
+              <small class="text-muted d-block mb-2">{{ insight.description }}</small>
+              <button class="btn btn-sm" style="background: rgba(188, 0, 237, 0.2); color: #bc00ed; border: 1px solid rgba(188, 0, 237, 0.3);">
+                {{ insight.action }} <i data-feather="arrow-right" style="width:14px;"></i>
+              </button>
+            </div>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
     </div>
 
-    <!-- Deals Table -->
-    <div class="row">
-        <div class="col-12">
-            <div class="card">
-                <div class="card-header d-flex justify-content-between align-items-center">
-                    <h5 class="mb-0">Active Deals</h5>
-                    <button class="btn btn-sm btn-primary"><i data-feather="plus"></i> New Deal</button>
-                </div>
-                <div class="card-body">
-                    {% if deals %}
-                    <div class="table-responsive">
-                        <table class="table table-hover">
-                            <thead>
-                                <tr>
-                                    <th>Deal</th>
-                                    <th>Contact</th>
-                                    <th>Stage</th>
-                                    <th>Value</th>
-                                    <th>Probability</th>
-                                    <th>Expected Close</th>
-                                    <th></th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {% for deal in deals %}
-                                <tr>
-                                    <td><strong>{{ deal.title }}</strong></td>
-                                    <td>{{ deal.contact.email if deal.contact else '-' }}</td>
-                                    <td><span class="badge bg-info">{{ deal.stage }}</span></td>
-                                    <td>${{ deal.value|int }}</td>
-                                    <td>{{ (deal.probability * 100)|int }}%</td>
-                                    <td>{{ deal.expected_close_date.strftime('%Y-%m-%d') if deal.expected_close_date else '-' }}</td>
-                                    <td><a href="{{ url_for('main.deal_detail', deal_id=deal.id) }}" class="btn btn-sm btn-outline-primary">View</a></td>
-                                </tr>
-                                {% endfor %}
-                            </tbody>
-                        </table>
-                    </div>
-                    {% else %}
-                    <p class="text-muted">No deals yet</p>
-                    {% endif %}
-                </div>
-            </div>
+    <!-- Sales Materials -->
+    <div class="col-lg-6">
+      <div class="materials-panel">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+          <h5 class="mb-0"><i data-feather="folder" style="width:18px; color:#bc00ed;"></i> Sales Materials</h5>
+          <a href="#" class="text-muted small">View all</a>
         </div>
+        {% for material in materials|default([
+          {'name': 'Product Overview Deck', 'type': 'presentation', 'icon': 'file-text', 'color': '#3b82f6', 'views': 24, 'stage': 'Qualified'},
+          {'name': 'Pricing Calculator', 'type': 'spreadsheet', 'icon': 'grid', 'color': '#22c55e', 'views': 18, 'stage': 'Proposal'},
+          {'name': 'Case Study - Enterprise', 'type': 'document', 'icon': 'file', 'color': '#f59e0b', 'views': 32, 'stage': 'Negotiation'},
+          {'name': 'Competitor Comparison', 'type': 'document', 'icon': 'layers', 'color': '#bc00ed', 'views': 15, 'stage': 'Qualified'}
+        ]) %}
+        <div class="material-item" onclick="openMaterial('{{ material.name }}')">
+          <div class="material-icon" style="background: {{ material.color }}20; color: {{ material.color }};">
+            <i data-feather="{{ material.icon }}" style="width:20px;"></i>
+          </div>
+          <div class="flex-grow-1">
+            <strong class="d-block">{{ material.name }}</strong>
+            <small class="text-muted">Best for: {{ material.stage }}</small>
+          </div>
+          <div class="text-end">
+            <small class="text-muted d-block">{{ material.views }} views</small>
+            <button class="btn btn-sm p-1" style="background: rgba(0, 255, 180, 0.1); color: #00ffb4; border: none;">
+              <i data-feather="share-2" style="width:14px;"></i>
+            </button>
+          </div>
+        </div>
+        {% endfor %}
+        <div class="text-center mt-3">
+          <button class="btn btn-sm" style="background: rgba(188, 0, 237, 0.2); color: #bc00ed; border: 1px solid rgba(188, 0, 237, 0.3);">
+            <i data-feather="upload" style="width:14px;"></i> Upload New Material
+          </button>
+        </div>
+      </div>
     </div>
+  </div>
 </div>
+
+<!-- New Deal Modal -->
+<div class="modal fade" id="newDealModal" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content" style="background: #0c0e14; border: 1px solid rgba(188, 0, 237, 0.3);">
+      <div class="modal-header border-0">
+        <h5 class="modal-title"><i data-feather="dollar-sign" style="width:18px;"></i> Create New Deal</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <form>
+          <div class="row">
+            <div class="col-md-6 mb-3">
+              <label class="form-label small text-muted">Deal Name</label>
+              <input type="text" class="form-control bg-dark text-white border-secondary" placeholder="e.g., Enterprise Package - Acme Corp">
+            </div>
+            <div class="col-md-6 mb-3">
+              <label class="form-label small text-muted">Deal Value</label>
+              <div class="input-group">
+                <span class="input-group-text bg-dark border-secondary">$</span>
+                <input type="number" class="form-control bg-dark text-white border-secondary" placeholder="25000">
+              </div>
+            </div>
+          </div>
+          <div class="row">
+            <div class="col-md-6 mb-3">
+              <label class="form-label small text-muted">Contact</label>
+              <select class="form-select bg-dark text-white border-secondary">
+                <option>Select a contact...</option>
+                {% for contact in contacts|default([]) %}
+                <option value="{{ contact.id }}">{{ contact.first_name }} {{ contact.last_name }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-md-6 mb-3">
+              <label class="form-label small text-muted">Stage</label>
+              <select class="form-select bg-dark text-white border-secondary">
+                <option value="Lead">Lead</option>
+                <option value="Qualified">Qualified</option>
+                <option value="Proposal">Proposal</option>
+                <option value="Negotiation">Negotiation</option>
+              </select>
+            </div>
+          </div>
+          <div class="row">
+            <div class="col-md-6 mb-3">
+              <label class="form-label small text-muted">Expected Close Date</label>
+              <input type="date" class="form-control bg-dark text-white border-secondary">
+            </div>
+            <div class="col-md-6 mb-3">
+              <label class="form-label small text-muted">Probability</label>
+              <select class="form-select bg-dark text-white border-secondary">
+                <option value="0.1">10% - Lead</option>
+                <option value="0.25">25% - Qualified</option>
+                <option value="0.5">50% - Proposal</option>
+                <option value="0.75">75% - Negotiation</option>
+                <option value="0.9">90% - Verbal Commit</option>
+              </select>
+            </div>
+          </div>
+          <div class="mb-3">
+            <label class="form-label small text-muted">Notes</label>
+            <textarea class="form-control bg-dark text-white border-secondary" rows="3" placeholder="Deal notes..."></textarea>
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer border-0">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn" style="background: linear-gradient(135deg, #bc00ed, #6366f1); color: #fff;">
+          Create Deal
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Schedule Meeting Modal -->
+<div class="modal fade" id="scheduleMeetingModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content" style="background: #0c0e14; border: 1px solid rgba(188, 0, 237, 0.3);">
+      <div class="modal-header border-0">
+        <h5 class="modal-title"><i data-feather="calendar" style="width:18px;"></i> Schedule Meeting</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <form>
+          <div class="mb-3">
+            <label class="form-label small text-muted">Meeting Title</label>
+            <input type="text" class="form-control bg-dark text-white border-secondary" placeholder="e.g., Discovery Call">
+          </div>
+          <div class="mb-3">
+            <label class="form-label small text-muted">Contact</label>
+            <select class="form-select bg-dark text-white border-secondary">
+              <option>Select a contact...</option>
+            </select>
+          </div>
+          <div class="row">
+            <div class="col-6 mb-3">
+              <label class="form-label small text-muted">Date</label>
+              <input type="date" class="form-control bg-dark text-white border-secondary">
+            </div>
+            <div class="col-6 mb-3">
+              <label class="form-label small text-muted">Time</label>
+              <input type="time" class="form-control bg-dark text-white border-secondary">
+            </div>
+          </div>
+          <div class="form-check mb-3">
+            <input type="checkbox" class="form-check-input" id="aiPrepNotes" checked>
+            <label class="form-check-label small" for="aiPrepNotes">
+              <span class="ai-badge me-1">AI</span> Generate meeting prep notes
+            </label>
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer border-0">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn" style="background: linear-gradient(135deg, #bc00ed, #6366f1); color: #fff;">
+          Schedule Meeting
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  feather.replace();
+  
+  function selectStage(stageName) {
+    document.querySelectorAll('.sales-stage-card').forEach(card => {
+      card.classList.remove('active');
+    });
+    document.querySelector(`[data-stage="${stageName}"]`).classList.add('active');
+  }
+  
+  function startAction(action) {
+    console.log('Starting action:', action);
+  }
+  
+  function openMaterial(name) {
+    console.log('Opening material:', name);
+  }
+</script>
 {% endblock %}

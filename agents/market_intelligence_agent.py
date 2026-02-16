@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 import logging
 from typing import Dict, Any
 
-from app import db
+from extensions import db
 from models import Company, Competitor, MarketSignal, StrategyRecommendation, AgentReport
 
 logger = logging.getLogger(__name__)

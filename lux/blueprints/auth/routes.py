@@ -1,6 +1,7 @@
 """Authentication blueprint routes."""
 from flask import Blueprint, render_template, request, flash, redirect, url_for
 from flask_login import login_user, logout_user, login_required, current_user
+from sqlalchemy import func, or_
 from werkzeug.security import check_password_hash, generate_password_hash
 from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
 import os
@@ -21,7 +22,7 @@ def get_serializer():
 def login():
     """User login."""
     if current_user.is_authenticated:
-        return redirect(url_for('main.dashboard'))
+        return redirect(url_for('main.dashboard', _external=False))
     
     if request.method == 'POST':
         username = request.form.get('username', '').strip()
@@ -30,18 +31,23 @@ def login():
         
         if not username or not password:
             flash('Username and password are required', 'error')
-            return render_template('login.html')
+            return render_template('auth/login.html')
         
-        user = User.query.filter_by(username=username).first()
+        normalized_login = username.lower()
+        user = User.query.filter(
+            or_(
+                User.username == username,
+                func.lower(User.email) == normalized_login,
+            )
+        ).first()
         
         if user and check_password_hash(user.password_hash, password):
             login_user(user, remember=remember)
-            next_page = request.args.get('next')
-            return redirect(next_page) if next_page else redirect(url_for('main.dashboard'))
+            return redirect(url_for('main.dashboard', _external=False))
         else:
             flash('Invalid username or password', 'error')
     
-    return render_template('login.html')
+    return render_template('auth/login.html')
 
 
 @auth_bp.route('/logout')
@@ -107,6 +113,6 @@ def register():
         
         login_user(user)
         flash('Admin account created successfully! Welcome to LUX Marketing.', 'success')
-        return redirect(url_for('main.dashboard'))
+        return redirect(url_for('main.dashboard', _external=False))
     
     return render_template('register.html', is_admin_registration=True)

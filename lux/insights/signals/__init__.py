@@ -1,0 +1,1 @@
+"""External signals ingestion."""

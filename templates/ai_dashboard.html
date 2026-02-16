@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 
-{% block title %}LUX AI Dashboard - Agent Control Center{% endblock %}
+{% block title %}AI Agents - LUX IT{% endblock %}
+{% block page_title %}AI Agents{% endblock %}
 
 {% block content %}
 <div class="container-fluid">
@@ -9,14 +10,14 @@
         <div class="col-12">
             <div class="d-flex justify-content-between align-items-center">
                 <div>
-                    <h1 class="display-6 fw-bold">
-                        <i data-feather="cpu" class="text-primary"></i> LUX AI Dashboard
+                    <h1 class="display-6 fw-bold" style="background: linear-gradient(135deg, #bc00ed, #00ffb4); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">
+                        <i data-feather="cpu" style="stroke: #bc00ed;"></i> AI Agent Control Center
                     </h1>
-                    <p class="text-muted">Autonomous AI Agent Control Center</p>
+                    <p class="text-muted">{{ agents|length }} autonomous agents ready to execute</p>
                 </div>
                 <div>
-                    <span class="badge bg-success fs-6">
-                        <i data-feather="zap"></i> {{ agents|length }} Agents Active
+                    <span class="badge fs-6" style="background: linear-gradient(135deg, #00ffb4, #bc00ed); color: #000;">
+                        <i data-feather="zap"></i> All Systems Online
                     </span>
                 </div>
             </div>

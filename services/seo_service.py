@@ -4,7 +4,7 @@ Handles keyword tracking, backlink monitoring, competitor analysis, and site aud
 """
 
 from datetime import datetime
-from app import db
+from extensions import db
 from models import (SEOKeyword, KeywordRanking, SEOBacklink, SEOCompetitor, 
                     CompetitorSnapshot, SEOAudit, SEOPage)
 import logging

@@ -1,0 +1,123 @@
+name: VPS Mode B Validation
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+
+jobs:
+  vps-validate:
+    runs-on: [self-hosted, linux]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Prepare SSH key
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/.ssh"
+          printf '%s\n' "${{ secrets.VPS_SSH_KEY }}" > "$HOME/.ssh/vps_key"
+          chmod 600 "$HOME/.ssh/vps_key"
+          ssh-keyscan -H "${{ secrets.VPS_HOST }}" >> "$HOME/.ssh/known_hosts"
+
+      - name: VPS Live Validation
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          LUXIT_TEST_EMAIL: ${{ secrets.LUXIT_TEST_EMAIL }}
+          LUXIT_TEST_PASSWORD: ${{ secrets.LUXIT_TEST_PASSWORD }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$GITHUB_WORKSPACE/artifacts"
+
+          ssh -i "$HOME/.ssh/vps_key" -o StrictHostKeyChecking=yes \
+            "${VPS_USER}@${VPS_HOST}" bash <<'EOF' \
+            | tee "$GITHUB_WORKSPACE/artifacts/vps_validation.log"
+
+          set -eEuo pipefail
+
+          dump_logs() {
+            echo "=== LOG DUMP ==="
+            sudo journalctl -u lux.service -n 300 --no-pager || true
+            sudo tail -n 200 /var/log/nginx/error.log || true
+          }
+
+          trap dump_logs ERR
+
+          echo "=== SERVICE RESTART ==="
+          sudo systemctl daemon-reload
+          sudo systemctl restart lux.service
+          sleep 5
+          sudo systemctl --no-pager status lux.service
+
+          echo "=== GUNICORN MUST BE LISTENING ==="
+          sudo ss -lntp | grep -E 'gunicorn|:5000' || {
+            echo "❌ Gunicorn not listening"
+            exit 1
+          }
+
+          echo "=== VERIFY APP DIRECTORY ==="
+          cd /app
+          test -d venv || { echo "❌ Missing /app/venv"; exit 1; }
+          source venv/bin/activate
+
+          echo "=== PYTHON COMPILE CHECK ==="
+          python - <<'PY'
+          import compileall, sys
+          if not compileall.compile_dir(".", quiet=1):
+              sys.exit("❌ Python compile failed")
+          print("✅ Python compile OK")
+          PY
+
+          echo "=== FLASK IMPORT & MODEL API CHECK ==="
+          python - <<'PY'
+          from app import create_app
+          from models import User
+          assert hasattr(User, "get_default_company"), "❌ User.get_default_company missing"
+          print("✅ App imports + model API OK")
+          PY
+
+          echo "=== HEALTH CHECKS ==="
+          curl -fsS http://127.0.0.1:5000/health -H "Host: luxit.app" > /dev/null
+          curl -fsS https://luxit.app/health > /dev/null
+
+          echo "=== LOGIN PAGE ==="
+          LOGIN_PAGE=$(curl -fsS https://luxit.app/auth/login)
+          CSRF_TOKEN=$(echo "$LOGIN_PAGE" | python - <<'PY'
+          import re, sys
+          m = re.search(r'name="csrf_token" value="([^"]+)"', sys.stdin.read())
+          if not m:
+              sys.exit("❌ Missing CSRF token")
+          print(m.group(1))
+          PY
+          )
+
+          echo "=== LOGIN POST ==="
+          curl -fsS -c /tmp/cookies.txt -b /tmp/cookies.txt \
+            -d "email=${LUXIT_TEST_EMAIL}&password=${LUXIT_TEST_PASSWORD}&csrf_token=${CSRF_TOKEN}" \
+            https://luxit.app/auth/login > /dev/null
+
+          echo "=== DASHBOARD MUST LOAD ==="
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            -b /tmp/cookies.txt https://luxit.app/dashboard)
+
+          if [ "$STATUS" != "200" ]; then
+            echo "❌ Dashboard HTTP $STATUS"
+            exit 1
+          fi
+          echo "✅ Dashboard loaded"
+
+          echo "=== PUBLIC SITE MUST LOAD ==="
+          curl -fsS https://luxit.app/ > /dev/null
+          echo "✅ Public site OK"
+
+          echo "=== VALIDATION COMPLETE ==="
+          EOF
+
+      - name: Upload validation artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: vps-validation-artifacts
+          path: ${{ github.workspace }}/artifacts

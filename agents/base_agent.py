@@ -28,16 +28,33 @@ class BaseAgent:
         self.agent_type = agent_type
         self.description = description
         
-        api_key = os.environ.get("OPENAI_API_KEY")
-        if not api_key:
-            raise ValueError(f"{agent_name}: OPENAI_API_KEY environment variable is required")
-        
-        self.client = OpenAI(api_key=api_key)
+        self._api_key = os.getenv("OPENAI_API_KEY")
+        self._client = None
+        if not self._api_key:
+            logger.warning(
+                "%s: OPENAI_API_KEY missing; AI features will remain disabled until configured.",
+                agent_name,
+            )
         self.model = "gpt-4o"
         
         self.personality = self._define_personality()
         
         logger.info(f"{self.agent_name} initialized successfully")
+
+    def _get_client(self):
+        if self._client:
+            return self._client
+        if not self._api_key:
+            self._api_key = os.getenv("OPENAI_API_KEY")
+        if not self._api_key:
+            logger.warning("%s: OpenAI client unavailable; missing OPENAI_API_KEY.", self.agent_name)
+            return None
+        try:
+            self._client = OpenAI(api_key=self._api_key)
+        except Exception as e:
+            logger.error("%s: Failed to initialize OpenAI client: %s", self.agent_name, e)
+            self._client = None
+        return self._client
     
     def _define_personality(self) -> str:
         """Define the agent's personality and expertise. Override in subclasses."""
@@ -62,6 +79,9 @@ class BaseAgent:
             Generated content as dict or None on error
         """
         try:
+            client = self._get_client()
+            if not client:
+                return None
             messages = [
                 {"role": "system", "content": system_prompt or self.personality},
                 {"role": "user", "content": prompt}
@@ -76,7 +96,7 @@ class BaseAgent:
             if response_format:
                 kwargs["response_format"] = response_format
             
-            response = self.client.chat.completions.create(**kwargs)
+            response = client.chat.completions.create(**kwargs)
             
             content = response.choices[0].message.content
             if not content:
@@ -130,7 +150,10 @@ class BaseAgent:
             - Modern, clean aesthetic
             """
             
-            response = self.client.images.generate(
+            client = self._get_client()
+            if not client:
+                return None
+            response = client.images.generate(
                 model="dall-e-3",
                 prompt=prompt,
                 size="1024x1024",

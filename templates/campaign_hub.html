@@ -1,84 +1,229 @@
-{% extends "base_simple.html" %}
+{% extends "base.html" %}
 
-{% block title %}Campaign Hub - LUX Marketing{% endblock %}
-
-{% block page_header %}
-<span style="color: #c0c0c0;">Campaign Hub</span>
-{% endblock %}
+{% block title %}Campaign Hub - LUX IT{% endblock %}
+{% block page_title %}Campaign Hub{% endblock %}
 
 {% block content %}
-<div class="container-fluid" style="background: #000000; min-height: 100vh; padding: 2rem;">
-  <div class="row mb-4">
-    <div class="col-12">
-      <h1 class="display-4">Campaign Hub</h1>
-      <p class="lead">Manage campaigns across email, social media, and SEO with AI-powered assistance</p>
+<style>
+  .hub-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    gap: 1.5rem;
+    padding: 1rem 0;
+  }
+  
+  .hub-card {
+    background: rgba(12, 14, 20, 0.9);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 12px;
+    padding: 1.5rem;
+    transition: all 0.3s ease;
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+  }
+  
+  .hub-card:hover {
+    transform: translateY(-4px);
+    border-color: rgba(0, 229, 255, 0.3);
+    box-shadow: 0 8px 32px rgba(0, 229, 255, 0.1);
+  }
+  
+  .hub-card-icon {
+    width: 48px;
+    height: 48px;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 1rem;
+  }
+  
+  .hub-card-icon.cyan { background: rgba(0, 229, 255, 0.15); color: #00e5ff; }
+  .hub-card-icon.purple { background: rgba(168, 85, 247, 0.15); color: #a855f7; }
+  .hub-card-icon.pink { background: rgba(236, 72, 153, 0.15); color: #ec4899; }
+  .hub-card-icon.amber { background: rgba(245, 158, 11, 0.15); color: #f59e0b; }
+  .hub-card-icon.green { background: rgba(34, 197, 94, 0.15); color: #22c55e; }
+  .hub-card-icon.blue { background: rgba(59, 130, 246, 0.15); color: #3b82f6; }
+  
+  .hub-card-icon svg {
+    width: 24px;
+    height: 24px;
+  }
+  
+  .hub-card h3 {
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: #fff;
+    margin-bottom: 0.5rem;
+  }
+  
+  .hub-card p {
+    color: rgba(255, 255, 255, 0.6);
+    font-size: 0.9rem;
+    margin-bottom: 1rem;
+    flex-grow: 1;
+  }
+  
+  .hub-card .btn-hub {
+    background: rgba(0, 229, 255, 0.1);
+    border: 1px solid rgba(0, 229, 255, 0.3);
+    color: #00e5ff;
+    padding: 0.5rem 1rem;
+    border-radius: 8px;
+    font-size: 0.85rem;
+    transition: all 0.2s ease;
+    text-decoration: none;
+    display: inline-block;
+    text-align: center;
+  }
+  
+  .hub-card .btn-hub:hover {
+    background: rgba(0, 229, 255, 0.2);
+    border-color: #00e5ff;
+  }
+  
+  .section-header {
+    margin-bottom: 1.5rem;
+  }
+  
+  .section-header h2 {
+    font-size: 1.5rem;
+    color: #fff;
+    margin-bottom: 0.25rem;
+  }
+  
+  .section-header p {
+    color: rgba(255, 255, 255, 0.5);
+    font-size: 0.9rem;
+  }
+  
+  .ai-highlight {
+    background: linear-gradient(135deg, rgba(168, 85, 247, 0.15), rgba(0, 229, 255, 0.15));
+    border-color: rgba(168, 85, 247, 0.3);
+  }
+  
+  .ai-highlight:hover {
+    border-color: rgba(168, 85, 247, 0.5);
+    box-shadow: 0 8px 32px rgba(168, 85, 247, 0.15);
+  }
+</style>
+
+<div class="section-header">
+  <h2>Campaign Hub</h2>
+  <p>Manage campaigns across email, social media, and SEO with AI-powered assistance</p>
+</div>
+
+<div class="hub-grid">
+  <div class="hub-card ai-highlight">
+    <div class="hub-card-icon purple">
+      <i data-feather="zap"></i>
     </div>
+    <h3>AI Campaign Generator</h3>
+    <p>Let AI create comprehensive multi-channel campaigns tailored to your goals and audience.</p>
+    <a href="#" class="btn-hub" data-bs-toggle="modal" data-bs-target="#aiCampaignModal">Generate Campaign</a>
   </div>
 
-  <div class="row g-4">
-    <div class="col-md-6 col-lg-4">
-      <div class="card bg-dark border-primary h-100">
-        <div class="card-body">
-          <h5 class="card-title"><i data-feather="zap" style="color: gold;"></i> AI Campaign Generator</h5>
-          <p class="card-text">Let AI create comprehensive multi-channel campaigns for you</p>
-          <a href="{{ url_for('main.create_campaign') }}" class="btn btn-primary">Generate Campaign</a>
+  <div class="hub-card">
+    <div class="hub-card-icon cyan">
+      <i data-feather="mail"></i>
+    </div>
+    <h3>Email Campaigns</h3>
+    <p>Create and manage email marketing campaigns with tracking and automation.</p>
+    <a href="{{ url_for('main.campaigns') }}" class="btn-hub">View Email Campaigns</a>
+  </div>
+
+  <div class="hub-card">
+    <div class="hub-card-icon pink">
+      <i data-feather="share-2"></i>
+    </div>
+    <h3>Social Campaigns</h3>
+    <p>Schedule and manage social media posts across all your connected platforms.</p>
+    <a href="{{ url_for('main.social_media') }}" class="btn-hub">Manage Social</a>
+  </div>
+
+  <div class="hub-card">
+    <div class="hub-card-icon amber">
+      <i data-feather="search"></i>
+    </div>
+    <h3>SEO Dashboard</h3>
+    <p>Monitor and optimize your search presence with keyword tracking and audits.</p>
+    <a href="{{ url_for('main.seo_dashboard') }}" class="btn-hub">View SEO Dashboard</a>
+  </div>
+
+  <div class="hub-card">
+    <div class="hub-card-icon green">
+      <i data-feather="target"></i>
+    </div>
+    <h3>Keywords</h3>
+    <p>Track and optimize your keyword rankings with competitive analysis.</p>
+    <a href="{{ url_for('main.seo_keywords') }}" class="btn-hub">Manage Keywords</a>
+  </div>
+
+  <div class="hub-card">
+    <div class="hub-card-icon blue">
+      <i data-feather="eye"></i>
+    </div>
+    <h3>Competitor Intelligence</h3>
+    <p>Track competitor positioning, channels, and find market opportunities.</p>
+    <a href="{{ url_for('main.competitor_analysis') }}" class="btn-hub">Track Competitors</a>
+  </div>
+</div>
+
+<div class="modal fade" id="aiCampaignModal" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content" style="background: rgba(12, 14, 20, 0.98); border: 1px solid rgba(255,255,255,0.1);">
+      <div class="modal-header" style="border-bottom: 1px solid rgba(255,255,255,0.1);">
+        <h5 class="modal-title"><i data-feather="zap" style="color: #a855f7;"></i> AI Campaign Generator</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="mb-3">
+          <label class="form-label">Campaign Goal</label>
+          <select class="form-select" style="background: rgba(255,255,255,0.05); border-color: rgba(255,255,255,0.1); color: #fff;" id="campaignGoal">
+            <option value="awareness">Brand Awareness</option>
+            <option value="leads">Lead Generation</option>
+            <option value="sales">Drive Sales</option>
+            <option value="engagement">Boost Engagement</option>
+            <option value="retention">Customer Retention</option>
+          </select>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Target Audience</label>
+          <input type="text" class="form-control" style="background: rgba(255,255,255,0.05); border-color: rgba(255,255,255,0.1); color: #fff;" id="targetAudience" placeholder="e.g., Small business owners, aged 25-45">
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Campaign Theme/Topic</label>
+          <input type="text" class="form-control" style="background: rgba(255,255,255,0.05); border-color: rgba(255,255,255,0.1); color: #fff;" id="campaignTheme" placeholder="e.g., Summer sale, Product launch">
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Channels</label>
+          <div class="d-flex flex-wrap gap-2">
+            <label class="form-check-label" style="background: rgba(0,229,255,0.1); padding: 0.5rem 1rem; border-radius: 8px; cursor: pointer;">
+              <input type="checkbox" class="form-check-input me-2" value="email" checked> Email
+            </label>
+            <label class="form-check-label" style="background: rgba(168,85,247,0.1); padding: 0.5rem 1rem; border-radius: 8px; cursor: pointer;">
+              <input type="checkbox" class="form-check-input me-2" value="social" checked> Social
+            </label>
+            <label class="form-check-label" style="background: rgba(236,72,153,0.1); padding: 0.5rem 1rem; border-radius: 8px; cursor: pointer;">
+              <input type="checkbox" class="form-check-input me-2" value="sms"> SMS
+            </label>
+          </div>
         </div>
       </div>
-    </div>
-
-    <div class="col-md-6 col-lg-4">
-      <div class="card bg-dark border-success h-100">
-        <div class="card-body">
-          <h5 class="card-title"><i data-feather="mail"></i> Email Campaigns</h5>
-          <p class="card-text">Create and manage email marketing campaigns</p>
-          <a href="{{ url_for('main.campaigns') }}" class="btn btn-success">View Email Campaigns</a>
-        </div>
-      </div>
-    </div>
-
-    <div class="col-md-6 col-lg-4">
-      <div class="card bg-dark border-info h-100">
-        <div class="card-body">
-          <h5 class="card-title"><i data-feather="share-2"></i> Social Campaigns</h5>
-          <p class="card-text">Schedule and manage social media posts</p>
-          <a href="{{ url_for('main.social_media') }}" class="btn btn-info">Manage Social</a>
-        </div>
-      </div>
-    </div>
-
-    <div class="col-md-6 col-lg-4">
-      <div class="card bg-dark border-warning h-100">
-        <div class="card-body">
-          <h5 class="card-title"><i data-feather="search"></i> SEO Dashboard</h5>
-          <p class="card-text">Monitor and optimize your search presence</p>
-          <a href="{{ url_for('main.seo_dashboard') }}" class="btn btn-warning">View SEO Dashboard</a>
-        </div>
-      </div>
-    </div>
-
-    <div class="col-md-6 col-lg-4">
-      <div class="card bg-dark border-danger h-100">
-        <div class="card-body">
-          <h5 class="card-title"><i data-feather="target"></i> Keywords</h5>
-          <p class="card-text">Track and optimize your keyword rankings</p>
-          <a href="{{ url_for('main.seo_keywords') }}" class="btn btn-danger">Manage Keywords</a>
-        </div>
-      </div>
-    </div>
-
-    <div class="col-md-6 col-lg-4">
-      <div class="card bg-dark border-secondary h-100">
-        <div class="card-body">
-          <h5 class="card-title"><i data-feather="target"></i> Competitor Intelligence</h5>
-          <p class="card-text">Track competitor positioning, channels, and find opportunities</p>
-          <a href="{{ url_for('main.competitor_analysis') }}" class="btn btn-secondary">Track Competitors</a>
-        </div>
+      <div class="modal-footer" style="border-top: 1px solid rgba(255,255,255,0.1);">
+        <button type="button" class="btn" style="background: rgba(255,255,255,0.1); color: #fff;" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn" style="background: linear-gradient(135deg, #a855f7, #00e5ff); color: #000;" id="generateCampaignBtn">
+          <i data-feather="zap"></i> Generate Campaign
+        </button>
       </div>
     </div>
   </div>
 </div>
 
 <script>
+document.addEventListener('DOMContentLoaded', function() {
   feather.replace();
+});
 </script>
 {% endblock %}

@@ -1,13 +1,10 @@
 {% extends "base.html" %}
-{% block title %}Social Media Marketing - LUX Marketing{% endblock %}
-
-{% block page_header %}
-<span style="color: #c0c0c0;">Social Media Marketing</span>
-{% endblock %}
+{% block title %}Social Media Management - LUX IT{% endblock %}
+{% block page_title %}Social Media Management{% endblock %}
 
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-4">
-    <h1><i data-feather="share-2"></i> Social Media Marketing</h1>
+    <h1 style="background: linear-gradient(135deg, #bc00ed, #00ffb4); -webkit-background-clip: text; -webkit-text-fill-color: transparent;"><i data-feather="share-2" style="stroke: #bc00ed;"></i> Social Media Management</h1>
     <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#connectAccountModal">
         <i data-feather="link"></i> Connect Account
     </button>
@@ -116,8 +113,8 @@
                     <div class="card-body">
                         <div class="d-flex justify-content-between align-items-start mb-2">
                             <div class="d-flex align-items-center gap-1">
-                                {% if post.platforms %}
-                                    {% for platform in post.platforms %}
+                                {% if post.platform %}
+                                    {% set platform = post.platform %}
                                         {% if platform == 'facebook' %}
                                         <i data-feather="facebook" style="width: 16px; height: 16px;" class="text-primary" title="Facebook"></i>
                                         {% elif platform == 'instagram' %}
@@ -137,14 +134,13 @@
                                         {% else %}
                                         <i data-feather="share-2" style="width: 16px; height: 16px;" class="text-success" title="{{ platform }}"></i>
                                         {% endif %}
-                                    {% endfor %}
                                 {% endif %}
                             </div>
                             <span class="badge bg-{{ 'success' if post.status == 'published' else ('warning' if post.status == 'scheduled' else 'secondary') }}">
                                 {{ post.status }}
                             </span>
                         </div>
-                        <p class="card-text">{{ post.content[:150] }}{% if post.content|length > 150 %}...{% endif %}</p>
+                        <p class="card-text">{{ (post.content or '')[:150] }}{% if (post.content or '')|length > 150 %}...{% endif %}</p>
                         <div class="d-flex justify-content-between align-items-center">
                             <small class="text-muted">
                                 {% if post.scheduled_at %}
@@ -159,11 +155,11 @@
                             <div class="btn-group btn-group-sm">
                                 <button type="button" class="btn btn-outline-primary edit-post-btn" 
                                     data-post-id="{{ post.id }}"
-                                    data-content="{{ post.content|replace('"', '&quot;')|replace('\n', '&#10;') }}"
-                                    data-platforms='{{ post.platforms|tojson }}'
+                                    data-content="{{ (post.content or '')|replace('"', '&quot;')|replace('\n', '&#10;') }}"
+                                    data-platforms='{{ [post.platform]|tojson if post.platform else "[]" }}'
                                     data-scheduled="{{ post.scheduled_at.strftime('%Y-%m-%dT%H:%M') if post.scheduled_at else '' }}"
-                                    data-image="{{ (post.media_urls.get('primary_image', '') if post.media_urls else '')|e }}"
-                                    data-link="{{ (post.media_urls.get('link', {}).get('original', '') if post.media_urls and post.media_urls.get('link') else '')|e }}"
+                                    data-image="{{ post.image_url|default('', true)|e }}"
+                                    data-link=""
                                     title="Edit">
                                     <i data-feather="edit-2" style="width:14px;height:14px;"></i>
                                 </button>

@@ -6,7 +6,7 @@ Handles ticketing, check-ins, and attendee management
 from datetime import datetime
 import random
 import string
-from app import db
+from extensions import db
 from models import Event, EventTicket, TicketPurchase, EventCheckIn
 import logging
 

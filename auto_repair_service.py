@@ -5,7 +5,7 @@ Finds errors, fixes them, tests resolution, and clears error logs
 import logging
 import json
 from datetime import datetime
-from app import db
+from extensions import db
 from error_logger import ErrorLog, ApplicationDiagnostics
 import requests
 import subprocess

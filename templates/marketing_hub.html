@@ -1,0 +1,701 @@
+{% extends "base.html" %}
+
+{% block title %}Marketing Hub - LUX IT{% endblock %}
+{% block page_title %}Marketing Hub{% endblock %}
+
+{% block content %}
+<style>
+  .action-card {
+    background: rgba(12, 14, 20, 0.95);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 16px;
+    padding: 1.5rem;
+    transition: all 0.3s ease;
+    height: 100%;
+  }
+  .action-card:hover {
+    border-color: rgba(0, 255, 180, 0.4);
+    box-shadow: 0 8px 32px rgba(0, 255, 180, 0.15);
+  }
+  .metric-value {
+    font-size: 2rem;
+    font-weight: 700;
+    background: linear-gradient(135deg, #00ffb4, #bc00ed);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+  .quick-action-btn {
+    background: linear-gradient(135deg, rgba(0, 255, 180, 0.15), rgba(188, 0, 237, 0.1));
+    border: 1px solid rgba(0, 255, 180, 0.3);
+    border-radius: 12px;
+    padding: 1rem 1.5rem;
+    color: #fff;
+    text-decoration: none;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    transition: all 0.3s ease;
+    width: 100%;
+  }
+  .quick-action-btn:hover {
+    background: linear-gradient(135deg, rgba(0, 255, 180, 0.3), rgba(188, 0, 237, 0.2));
+    border-color: #00ffb4;
+    color: #fff;
+  }
+  .quick-action-btn i { color: #00ffb4; }
+  .channel-card {
+    background: rgba(0, 0, 0, 0.3);
+    border-radius: 12px;
+    padding: 1rem;
+    text-align: center;
+    transition: all 0.3s ease;
+    cursor: pointer;
+  }
+  .channel-card:hover {
+    background: rgba(0, 255, 180, 0.15);
+  }
+  .channel-icon {
+    width: 48px;
+    height: 48px;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto 0.75rem;
+    font-size: 1.25rem;
+  }
+  .channel-count {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: #fff;
+  }
+  .campaign-item {
+    background: rgba(12, 14, 20, 0.8);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 10px;
+    padding: 1rem;
+    margin-bottom: 0.75rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+  .campaign-item:hover {
+    border-color: rgba(0, 255, 180, 0.5);
+  }
+  .campaign-status-active { color: #00ffb4; }
+  .campaign-status-scheduled { color: #f59e0b; }
+  .campaign-status-draft { color: #6b7280; }
+  .ai-suggestion {
+    background: linear-gradient(135deg, rgba(0, 255, 180, 0.1), rgba(188, 0, 237, 0.1));
+    border: 1px solid rgba(0, 255, 180, 0.2);
+    border-radius: 10px;
+    padding: 1rem;
+    margin-bottom: 0.75rem;
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+  }
+  .ai-suggestion:hover {
+    border-color: rgba(0, 255, 180, 0.4);
+  }
+  .ai-badge {
+    background: linear-gradient(135deg, #00ffb4, #bc00ed);
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    color: #000;
+  }
+  .section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+  }
+  .section-header h5 {
+    margin: 0;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  .hub-switcher {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 1.5rem;
+  }
+  .hub-btn {
+    padding: 0.5rem 1.25rem;
+    border-radius: 25px;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    background: transparent;
+    color: #aaa;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    text-decoration: none;
+  }
+  .hub-btn:hover {
+    border-color: rgba(255, 255, 255, 0.3);
+    color: #fff;
+  }
+  .hub-btn.active {
+    background: linear-gradient(135deg, #00ffb4, #bc00ed);
+    border-color: transparent;
+    color: #000;
+    font-weight: 600;
+  }
+  .content-preview {
+    background: rgba(0, 0, 0, 0.3);
+    border-radius: 8px;
+    padding: 0.75rem;
+    margin-bottom: 0.5rem;
+    border-left: 3px solid #00ffb4;
+  }
+</style>
+
+<!-- Hub Switcher -->
+<div class="hub-switcher">
+  <a href="{{ url_for('main.dashboard') }}" class="hub-btn">
+    <i data-feather="briefcase" style="width:16px;height:16px;margin-right:4px;"></i> Sales Hub
+  </a>
+  <a href="{{ url_for('main.marketing_hub') }}" class="hub-btn active">
+    <i data-feather="radio" style="width:16px;height:16px;margin-right:4px;"></i> Marketing Hub
+  </a>
+  <button class="hub-btn" onclick="setDefaultHub('marketing')" title="Set as default">
+    <i data-feather="star" style="width:14px;height:14px;"></i>
+  </button>
+</div>
+
+<!-- Quick Metrics Row -->
+<div class="row g-3 mb-4">
+  <div class="col-lg-2 col-md-4 col-6">
+    <div class="action-card text-center">
+      <small class="text-muted text-uppercase d-block mb-1">Campaigns</small>
+      <div class="metric-value">{{ stats.active_campaigns|default(8) }}</div>
+      <small class="text-success"><i data-feather="activity" style="width:12px;"></i> Active</small>
+    </div>
+  </div>
+  <div class="col-lg-2 col-md-4 col-6">
+    <div class="action-card text-center">
+      <small class="text-muted text-uppercase d-block mb-1">Subscribers</small>
+      <div class="metric-value">{{ stats.total_subscribers|default('2.4K') }}</div>
+      <small class="text-success"><i data-feather="trending-up" style="width:12px;"></i> +128 this week</small>
+    </div>
+  </div>
+  <div class="col-lg-2 col-md-4 col-6">
+    <div class="action-card text-center">
+      <small class="text-muted text-uppercase d-block mb-1">Email Open Rate</small>
+      <div class="metric-value">{{ stats.open_rate|default('24%') }}</div>
+      <small class="text-muted">Industry avg: 21%</small>
+    </div>
+  </div>
+  <div class="col-lg-2 col-md-4 col-6">
+    <div class="action-card text-center">
+      <small class="text-muted text-uppercase d-block mb-1">Click Rate</small>
+      <div class="metric-value">{{ stats.click_rate|default('4.2%') }}</div>
+      <small class="text-success"><i data-feather="arrow-up" style="width:12px;"></i> +0.8%</small>
+    </div>
+  </div>
+  <div class="col-lg-2 col-md-4 col-6">
+    <div class="action-card text-center">
+      <small class="text-muted text-uppercase d-block mb-1">Social Reach</small>
+      <div class="metric-value">{{ stats.social_reach|default('15K') }}</div>
+      <small class="text-muted">This month</small>
+    </div>
+  </div>
+  <div class="col-lg-2 col-md-4 col-6">
+    <div class="action-card text-center">
+      <small class="text-muted text-uppercase d-block mb-1">Conversions</small>
+      <div class="metric-value">{{ stats.conversions|default(156) }}</div>
+      <small class="text-success"><i data-feather="check-circle" style="width:12px;"></i> Goal: 200</small>
+    </div>
+  </div>
+</div>
+
+<!-- Quick Actions Row -->
+<div class="row g-3 mb-4">
+  <div class="col-lg-3 col-md-6">
+    <a href="{{ url_for('main.campaign_hub') }}?action=new" class="quick-action-btn">
+      <i data-feather="mail" style="width:20px;"></i>
+      <div>
+        <strong>Create Campaign</strong>
+        <small class="d-block text-muted">Email or SMS outreach</small>
+      </div>
+    </a>
+  </div>
+  <div class="col-lg-3 col-md-6">
+    <a href="{{ url_for('main.social_media') }}?action=new" class="quick-action-btn">
+      <i data-feather="share-2" style="width:20px;"></i>
+      <div>
+        <strong>Schedule Post</strong>
+        <small class="d-block text-muted">Social media content</small>
+      </div>
+    </a>
+  </div>
+  <div class="col-lg-3 col-md-6">
+    <a href="{{ url_for('main.automations') }}" class="quick-action-btn">
+      <i data-feather="zap" style="width:20px;"></i>
+      <div>
+        <strong>New Automation</strong>
+        <small class="d-block text-muted">Build workflow</small>
+      </div>
+    </a>
+  </div>
+  <div class="col-lg-3 col-md-6">
+    <a href="{{ url_for('main.ab_tests') }}" class="quick-action-btn">
+      <i data-feather="git-branch" style="width:20px;"></i>
+      <div>
+        <strong>A/B Test</strong>
+        <small class="d-block text-muted">Optimize performance</small>
+      </div>
+    </a>
+  </div>
+</div>
+
+<!-- Main Content -->
+<div class="row g-4 mb-4">
+  <!-- Left Column: Channels & Content Calendar -->
+  <div class="col-lg-4">
+    <!-- Marketing Channels -->
+    <div class="action-card mb-4">
+      <div class="section-header">
+        <h5><i data-feather="radio" style="width:18px;color:#00ffb4;"></i> Channels</h5>
+        <a href="{{ url_for('main.settings_integrations') }}" class="text-muted small">Connect</a>
+      </div>
+      <div class="row g-2">
+        <div class="col-4">
+          <a href="{{ url_for('main.social_media') }}?platform=instagram" class="channel-card text-decoration-none">
+            <div class="channel-icon" style="background:linear-gradient(45deg,#833ab4,#fd1d1d,#fcb045);">
+              <i data-feather="instagram" style="width:20px;color:#fff;"></i>
+            </div>
+            <div class="channel-count">{{ channels.instagram|default(0) }}</div>
+            <small class="text-muted">Instagram</small>
+          </a>
+        </div>
+        <div class="col-4">
+          <a href="{{ url_for('main.social_media') }}?platform=facebook" class="channel-card text-decoration-none">
+            <div class="channel-icon" style="background:#1877f2;">
+              <i data-feather="facebook" style="width:20px;color:#fff;"></i>
+            </div>
+            <div class="channel-count">{{ channels.facebook|default(0) }}</div>
+            <small class="text-muted">Facebook</small>
+          </a>
+        </div>
+        <div class="col-4">
+          <a href="{{ url_for('main.social_media') }}?platform=twitter" class="channel-card text-decoration-none">
+            <div class="channel-icon" style="background:#000;">
+              <i data-feather="twitter" style="width:20px;color:#fff;"></i>
+            </div>
+            <div class="channel-count">{{ channels.twitter|default(0) }}</div>
+            <small class="text-muted">X/Twitter</small>
+          </a>
+        </div>
+        <div class="col-4">
+          <a href="{{ url_for('main.social_media') }}?platform=linkedin" class="channel-card text-decoration-none">
+            <div class="channel-icon" style="background:#0a66c2;">
+              <i data-feather="linkedin" style="width:20px;color:#fff;"></i>
+            </div>
+            <div class="channel-count">{{ channels.linkedin|default(0) }}</div>
+            <small class="text-muted">LinkedIn</small>
+          </a>
+        </div>
+        <div class="col-4">
+          <a href="{{ url_for('main.social_media') }}?platform=youtube" class="channel-card text-decoration-none">
+            <div class="channel-icon" style="background:#ff0000;">
+              <i data-feather="youtube" style="width:20px;color:#fff;"></i>
+            </div>
+            <div class="channel-count">{{ channels.youtube|default(0) }}</div>
+            <small class="text-muted">YouTube</small>
+          </a>
+        </div>
+        <div class="col-4">
+          <a href="{{ url_for('main.campaign_hub') }}" class="channel-card text-decoration-none">
+            <div class="channel-icon" style="background:linear-gradient(135deg,#bc00ed,#00ffb4);">
+              <i data-feather="mail" style="width:20px;color:#fff;"></i>
+            </div>
+            <div class="channel-count">{{ channels.email|default(0) }}</div>
+            <small class="text-muted">Email</small>
+          </a>
+        </div>
+      </div>
+    </div>
+
+    <!-- Content Calendar Preview -->
+    <div class="action-card">
+      <div class="section-header">
+        <h5><i data-feather="calendar" style="width:18px;color:#00ffb4;"></i> Upcoming</h5>
+        <a href="{{ url_for('main.marketing_calendar') }}" class="text-muted small">Full Calendar</a>
+      </div>
+      {% if upcoming_content %}
+        {% for item in upcoming_content[:4] %}
+        <div class="content-preview">
+          <div class="d-flex justify-content-between align-items-start">
+            <div>
+              <strong class="small">{{ item.title }}</strong>
+              <small class="d-block text-muted">{{ item.platform }} • {{ item.scheduled_for }}</small>
+            </div>
+            <span class="badge" style="background:rgba(0,255,180,0.2);color:#00ffb4;">{{ item.type }}</span>
+          </div>
+        </div>
+        {% endfor %}
+      {% else %}
+        <div class="content-preview">
+          <div class="d-flex justify-content-between align-items-start">
+            <div>
+              <strong class="small">New Product Launch</strong>
+              <small class="d-block text-muted">Email • Tomorrow 9:00 AM</small>
+            </div>
+            <span class="badge" style="background:rgba(0,255,180,0.2);color:#00ffb4;">Email</span>
+          </div>
+        </div>
+        <div class="content-preview">
+          <div class="d-flex justify-content-between align-items-start">
+            <div>
+              <strong class="small">Weekly Tips #42</strong>
+              <small class="d-block text-muted">Instagram • Wed 2:00 PM</small>
+            </div>
+            <span class="badge" style="background:rgba(131,58,180,0.3);color:#bc00ed;">Social</span>
+          </div>
+        </div>
+        <div class="content-preview">
+          <div class="d-flex justify-content-between align-items-start">
+            <div>
+              <strong class="small">Customer Success Story</strong>
+              <small class="d-block text-muted">LinkedIn • Thu 11:00 AM</small>
+            </div>
+            <span class="badge" style="background:rgba(10,102,194,0.3);color:#0a66c2;">Social</span>
+          </div>
+        </div>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- Middle Column: Campaigns & Performance -->
+  <div class="col-lg-5">
+    <!-- Active Campaigns -->
+    <div class="action-card mb-4">
+      <div class="section-header">
+        <h5><i data-feather="send" style="width:18px;color:#00ffb4;"></i> Active Campaigns</h5>
+        <a href="{{ url_for('main.campaign_hub') }}" class="text-muted small">View All</a>
+      </div>
+      {% if campaigns %}
+        {% for campaign in campaigns[:4] %}
+        <div class="campaign-item" onclick="window.location='{{ url_for('main.campaign_hub') }}'">
+          <div class="d-flex justify-content-between align-items-start">
+            <div>
+              <strong>{{ campaign.name|default('Untitled Campaign') }}</strong>
+              <small class="d-block text-muted">{{ campaign.status|default('draft')|capitalize }}</small>
+            </div>
+            <span class="campaign-status-{{ (campaign.status|default('draft'))|lower }}">
+              <i data-feather="{% if campaign.status == 'active' %}activity{% elif campaign.status == 'scheduled' %}clock{% else %}edit{% endif %}" style="width:14px;"></i>
+              {{ campaign.status|default('draft')|capitalize }}
+            </span>
+          </div>
+          <div class="d-flex gap-3 mt-2">
+            <small class="text-muted">Created: {{ campaign.created_at.strftime('%m/%d/%Y') if campaign.created_at else 'N/A' }}</small>
+          </div>
+        </div>
+        {% endfor %}
+      {% else %}
+        <div class="campaign-item">
+          <div class="d-flex justify-content-between align-items-start">
+            <div>
+              <strong>Spring Sale Announcement</strong>
+              <small class="d-block text-muted">Email • 1,245 recipients</small>
+            </div>
+            <span class="campaign-status-active">
+              <i data-feather="activity" style="width:14px;"></i> Active
+            </span>
+          </div>
+          <div class="d-flex gap-3 mt-2">
+            <small><span class="text-muted">Opens:</span> <strong>28%</strong></small>
+            <small><span class="text-muted">Clicks:</span> <strong>4.5%</strong></small>
+            <small><span class="text-muted">Conv:</span> <strong>2.1%</strong></small>
+          </div>
+        </div>
+        <div class="campaign-item">
+          <div class="d-flex justify-content-between align-items-start">
+            <div>
+              <strong>Newsletter Week 6</strong>
+              <small class="d-block text-muted">Email • 3,820 recipients</small>
+            </div>
+            <span class="campaign-status-scheduled">
+              <i data-feather="clock" style="width:14px;"></i> Scheduled
+            </span>
+          </div>
+          <div class="d-flex gap-3 mt-2">
+            <small class="text-muted">Sending in 2 days</small>
+          </div>
+        </div>
+        <div class="campaign-item">
+          <div class="d-flex justify-content-between align-items-start">
+            <div>
+              <strong>Re-engagement Series</strong>
+              <small class="d-block text-muted">Automation • 892 in queue</small>
+            </div>
+            <span class="campaign-status-active">
+              <i data-feather="zap" style="width:14px;"></i> Running
+            </span>
+          </div>
+          <div class="d-flex gap-3 mt-2">
+            <small><span class="text-muted">Converted:</span> <strong>12</strong></small>
+            <small><span class="text-muted">Unsubscribed:</span> <strong>3</strong></small>
+          </div>
+        </div>
+      {% endif %}
+    </div>
+
+    <!-- Performance Chart -->
+    <div class="action-card">
+      <div class="section-header">
+        <h5><i data-feather="bar-chart-2" style="width:18px;color:#00ffb4;"></i> Performance</h5>
+        <a href="{{ url_for('main.analytics_hub') }}" class="text-muted small">Full Analytics</a>
+      </div>
+      <canvas id="performanceChart" height="180"></canvas>
+    </div>
+  </div>
+
+  <!-- Right Column: AI & Insights -->
+  <div class="col-lg-3">
+    <!-- AI Content Suggestions -->
+    <div class="action-card mb-4">
+      <div class="section-header">
+        <h5><i data-feather="cpu" style="width:18px;color:#00ffb4;"></i> AI Suggestions</h5>
+      </div>
+      <div class="ai-suggestion">
+        <div>
+          <span class="ai-badge">AI</span>
+        </div>
+        <div>
+          <strong class="small d-block">Best Send Time</strong>
+          <small class="text-muted">Your audience engages most on Tuesdays at 10 AM. Schedule your next campaign then.</small>
+          <a href="#" class="small d-block mt-1" style="color:#00ffb4;">Apply to drafts →</a>
+        </div>
+      </div>
+      <div class="ai-suggestion">
+        <div>
+          <span class="ai-badge">AI</span>
+        </div>
+        <div>
+          <strong class="small d-block">Subject Line Ideas</strong>
+          <small class="text-muted">Questions in subject lines increased your opens by 15%.</small>
+          <a href="#" class="small d-block mt-1" style="color:#00ffb4;">Generate ideas →</a>
+        </div>
+      </div>
+      <div class="ai-suggestion">
+        <div>
+          <span class="ai-badge">AI</span>
+        </div>
+        <div>
+          <strong class="small d-block">Segment Alert</strong>
+          <small class="text-muted">42 contacts haven't engaged in 30+ days. Create a win-back campaign?</small>
+          <a href="{{ url_for('main.campaign_hub') }}?template=winback" class="small d-block mt-1" style="color:#00ffb4;">Create campaign →</a>
+        </div>
+      </div>
+    </div>
+
+    <!-- Quick Stats -->
+    <div class="action-card">
+      <div class="section-header">
+        <h5><i data-feather="trending-up" style="width:18px;color:#00ffb4;"></i> This Week</h5>
+      </div>
+      <div class="d-flex justify-content-between align-items-center py-2 border-bottom" style="border-color:rgba(255,255,255,0.1)!important;">
+        <span class="text-muted">Emails Sent</span>
+        <strong>{{ stats.emails_sent|default(1247) }}</strong>
+      </div>
+      <div class="d-flex justify-content-between align-items-center py-2 border-bottom" style="border-color:rgba(255,255,255,0.1)!important;">
+        <span class="text-muted">Social Posts</span>
+        <strong>{{ stats.social_posts|default(12) }}</strong>
+      </div>
+      <div class="d-flex justify-content-between align-items-center py-2 border-bottom" style="border-color:rgba(255,255,255,0.1)!important;">
+        <span class="text-muted">New Subscribers</span>
+        <strong class="text-success">+{{ stats.new_subs|default(128) }}</strong>
+      </div>
+      <div class="d-flex justify-content-between align-items-center py-2 border-bottom" style="border-color:rgba(255,255,255,0.1)!important;">
+        <span class="text-muted">Unsubscribes</span>
+        <strong class="text-danger">-{{ stats.unsubs|default(7) }}</strong>
+      </div>
+      <div class="d-flex justify-content-between align-items-center py-2">
+        <span class="text-muted">Landing Page Views</span>
+        <strong>{{ stats.landing_views|default(892) }}</strong>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Analytics Quick Access -->
+<div class="row g-3 mb-4">
+  <div class="col-12">
+    <a href="{{ url_for('main.analytics_hub') }}" class="action-card d-block text-decoration-none" style="background:linear-gradient(135deg, rgba(188,0,237,0.15), rgba(0,255,180,0.1)); border-color:rgba(188,0,237,0.3);">
+      <div class="d-flex align-items-center justify-content-between">
+        <div class="d-flex align-items-center gap-3">
+          <i data-feather="pie-chart" style="width:28px;height:28px;color:#bc00ed;"></i>
+          <div>
+            <h5 class="mb-0" style="color:#fff;">Analytics Dashboard</h5>
+            <small class="text-muted">View campaign performance, engagement metrics, ROI reports & conversion tracking</small>
+          </div>
+        </div>
+        <i data-feather="arrow-right" style="width:20px;color:#bc00ed;"></i>
+      </div>
+    </a>
+  </div>
+</div>
+
+<!-- Marketing Tools Grid -->
+<div class="row g-3 mb-4">
+  <div class="col-12">
+    <div class="action-card">
+      <div class="section-header">
+        <h5><i data-feather="grid" style="width:18px;color:#00ffb4;"></i> Marketing Tools</h5>
+      </div>
+      <div class="row g-3">
+        <div class="col-lg-2 col-md-4 col-6">
+          <a href="{{ url_for('main.newsletters') }}" class="channel-card text-decoration-none d-block">
+            <i data-feather="file-text" style="width:24px;color:#00ffb4;margin-bottom:0.5rem;"></i>
+            <div class="small"><strong>Newsletters</strong></div>
+            <small class="text-muted">Email templates</small>
+          </a>
+        </div>
+        <div class="col-lg-2 col-md-4 col-6">
+          <a href="{{ url_for('main.automations') }}" class="channel-card text-decoration-none d-block">
+            <i data-feather="zap" style="width:24px;color:#f59e0b;margin-bottom:0.5rem;"></i>
+            <div class="small"><strong>Automations</strong></div>
+            <small class="text-muted">Triggers & workflows</small>
+          </a>
+        </div>
+        <div class="col-lg-2 col-md-4 col-6">
+          <a href="{{ url_for('main.sms_campaigns') }}" class="channel-card text-decoration-none d-block">
+            <i data-feather="smartphone" style="width:24px;color:#10b981;margin-bottom:0.5rem;"></i>
+            <div class="small"><strong>Text Campaigns</strong></div>
+            <small class="text-muted">SMS marketing</small>
+          </a>
+        </div>
+        <div class="col-lg-2 col-md-4 col-6">
+          <a href="{{ url_for('main.landing_pages') }}" class="channel-card text-decoration-none d-block">
+            <i data-feather="layout" style="width:24px;color:#3b82f6;margin-bottom:0.5rem;"></i>
+            <div class="small"><strong>Landing Pages</strong></div>
+            <small class="text-muted">Page builder</small>
+          </a>
+        </div>
+        <div class="col-lg-2 col-md-4 col-6">
+          <a href="{{ url_for('main.events_dashboard') }}" class="channel-card text-decoration-none d-block">
+            <i data-feather="map-pin" style="width:24px;color:#ef4444;margin-bottom:0.5rem;"></i>
+            <div class="small"><strong>Events</strong></div>
+            <small class="text-muted">Event management</small>
+          </a>
+        </div>
+        <div class="col-lg-2 col-md-4 col-6">
+          <a href="{{ url_for('main.surveys') }}" class="channel-card text-decoration-none d-block">
+            <i data-feather="clipboard" style="width:24px;color:#8b5cf6;margin-bottom:0.5rem;"></i>
+            <div class="small"><strong>Surveys</strong></div>
+            <small class="text-muted">Customer feedback</small>
+          </a>
+        </div>
+        <div class="col-lg-2 col-md-4 col-6">
+          <a href="{{ url_for('main.polls_management') }}" class="channel-card text-decoration-none d-block">
+            <i data-feather="bar-chart" style="width:24px;color:#f97316;margin-bottom:0.5rem;"></i>
+            <div class="small"><strong>Polls</strong></div>
+            <small class="text-muted">Quick polls</small>
+          </a>
+        </div>
+        <div class="col-lg-2 col-md-4 col-6">
+          <a href="{{ url_for('main.ab_tests') }}" class="channel-card text-decoration-none d-block">
+            <i data-feather="git-branch" style="width:24px;color:#06b6d4;margin-bottom:0.5rem;"></i>
+            <div class="small"><strong>A/B Tests</strong></div>
+            <small class="text-muted">Experiments</small>
+          </a>
+        </div>
+        <div class="col-lg-2 col-md-4 col-6">
+          <a href="{{ url_for('main.contacts') }}" class="channel-card text-decoration-none d-block">
+            <i data-feather="users" style="width:24px;color:#e4055c;margin-bottom:0.5rem;"></i>
+            <div class="small"><strong>Audiences</strong></div>
+            <small class="text-muted">Segments</small>
+          </a>
+        </div>
+        <div class="col-lg-2 col-md-4 col-6">
+          <a href="{{ url_for('main.marketing_calendar') }}" class="channel-card text-decoration-none d-block">
+            <i data-feather="calendar" style="width:24px;color:#00ffb4;margin-bottom:0.5rem;"></i>
+            <div class="small"><strong>Calendar</strong></div>
+            <small class="text-muted">Schedule</small>
+          </a>
+        </div>
+        <div class="col-lg-2 col-md-4 col-6">
+          <a href="{{ url_for('main.blog_list') }}" class="channel-card text-decoration-none d-block">
+            <i data-feather="edit-3" style="width:24px;color:#ec4899;margin-bottom:0.5rem;"></i>
+            <div class="small"><strong>Blog</strong></div>
+            <small class="text-muted">Content posts</small>
+          </a>
+        </div>
+        <div class="col-lg-2 col-md-4 col-6">
+          <a href="{{ url_for('main.analytics_hub') }}" class="channel-card text-decoration-none d-block">
+            <i data-feather="pie-chart" style="width:24px;color:#bc00ed;margin-bottom:0.5rem;"></i>
+            <div class="small"><strong>Analytics</strong></div>
+            <small class="text-muted">Reports & ROI</small>
+          </a>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  const ctx = document.getElementById('performanceChart');
+  if (ctx) {
+    new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
+        datasets: [{
+          label: 'Opens',
+          data: [320, 450, 380, 520, 490, 210, 180],
+          borderColor: '#00ffb4',
+          backgroundColor: 'rgba(0, 255, 180, 0.1)',
+          tension: 0.4,
+          fill: true
+        }, {
+          label: 'Clicks',
+          data: [45, 82, 55, 95, 78, 32, 28],
+          borderColor: '#bc00ed',
+          backgroundColor: 'rgba(188, 0, 237, 0.1)',
+          tension: 0.4,
+          fill: true
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: {
+            position: 'bottom',
+            labels: { color: '#aaa', usePointStyle: true, padding: 20 }
+          }
+        },
+        scales: {
+          x: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#666' } },
+          y: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#666' } }
+        }
+      }
+    });
+  }
+});
+
+function setDefaultHub(hub) {
+  fetch('/api/user/set-default-hub', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-CSRFToken': document.querySelector('meta[name="csrf-token"]').content
+    },
+    body: JSON.stringify({ hub: hub })
+  })
+  .then(r => r.json())
+  .then(data => {
+    if (data.success) {
+      alert('Marketing Hub set as your default!');
+    } else {
+      alert('Failed to set default hub');
+    }
+  });
+}
+</script>
+{% endblock %}

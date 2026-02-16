@@ -37,33 +37,118 @@ Key technical implementations and features include:
 - **Configuration Status Service**: Enhanced service to check and differentiate between missing API credentials and disconnected OAuth sessions for various integrations.
 
 ## External Dependencies
-- **OpenAI API**: For AI-powered campaign generation, AI chatbot capabilities, error diagnosis, and auto-repair plan generation.
-- **Zapier**: For contact capture and automation via webhooks.
-- **Replit Auth (OpenID Connect)**: For secure OAuth authentication (Google, GitHub, Apple, email).
-- **Instagram Graph API**: For Instagram OAuth 2.0 integration, content publishing, and insights.
-- **TikTok API**: For TikTok OAuth 2.0 integration, user info, video listing, upload, and publishing.
-- **Facebook API**: For Facebook Page integration.
-- **Reddit API**: For Reddit integration.
-- **YouTube Data API**: For YouTube integration.
-- **LinkedIn API**: For LinkedIn integration.
-- **Snapchat API**: For Snapchat integration.
-- **X (formerly Twitter) API**: For Twitter integration.
-- **DataForSEO API**: For keyword research data.
-- **SEMrush API**: For premium keyword and competitor data.
-- **Moz API**: For domain authority and keyword difficulty.
-- **Eventbrite API**: For local events, ticketing, and categories.
-- **Ticketmaster Discovery API**: For concerts, sports, theater, and attractions.
-- **Twilio API**: For SMS service integration.
-- **Unsplash API**: For stock image search and integration.
-- **Pexels API**: For alternative stock image search.
-- **TinyURL/Bitly API**: For URL shortening.
-- **PostgreSQL**: Primary database for application data, error logs, and contact information.
+### Core Integrations
+- **OpenAI API**: AI-powered campaign generation, content optimization, and diagnostics.
+- **Microsoft Graph API**: Microsoft 365 email delivery service (OAuth 2.0).
+- **Zapier**: Contact capture and automation via webhooks.
+- **Replit Auth (OpenID Connect)**: OAuth authentication (Google, GitHub, Apple, email).
+- **Instagram Graph API**: OAuth integration, content publishing, insights.
+- **TikTok API**: OAuth integration, user info, video listing, upload, publishing.
+- **Facebook API**: Facebook Page integration.
+- **Reddit API**: Reddit integration.
+- **YouTube Data API**: YouTube integration.
+- **LinkedIn API**: LinkedIn integration.
+- **Snapchat API**: Snapchat integration.
+- **X (formerly Twitter) API**: Twitter integration.
+- **DataForSEO API**: Keyword research data.
+- **SEMrush API**: Premium keyword and competitor data.
+- **Moz API**: Domain authority and keyword difficulty.
+- **Eventbrite API**: Local events, ticketing, categories.
+- **Ticketmaster Discovery API**: Concerts, sports, theater, attractions.
+- **Twilio API**: SMS service integration.
+- **Unsplash API**: Stock image search.
+- **Pexels API**: Alternative stock image search.
+- **TinyURL/Bitly API**: URL shortening.
 
-## Marketing Pages (Public-Facing)
-External marketing pages at `/m/` prefix, accessible without login:
-- `/m/` - Home: Hero, problem/solution, AI agents, capabilities, multi-channel, CTA
-- `/m/features` - Detailed feature breakdowns: Automation, AI Intelligence, Sales CRM, Competitor Intel, Multi-Channel, Analytics, Security
-- `/m/solutions` - Role-based pain points and solutions for CMO, CTO, CEO + industry use cases
-- `/m/security` - Enterprise security architecture, encrypted vault, approval workflows, compliance
-- Uses standalone `base_marketing.html` template (separate from app `base.html`)
-- Routes defined in `marketing_routes.py` via `marketing_bp` Blueprint
+### Framework & Data Layer
+- **Flask**: Web framework with SQLAlchemy, Login, and other extensions.
+- **APScheduler**: Background task scheduling for automated campaigns.
+- **SQLAlchemy**: ORM supporting multiple database backends.
+- **Database**: SQLite for development; PostgreSQL/MySQL in production.
+
+### Frontend Dependencies
+- **Bootstrap 5**: Dark theme UI framework.
+- **Feather Icons**: Lightweight icon set.
+- **Custom CSS/JS**: Glassmorphism UI and interaction helpers.
+
+## Deployment
+
+### Replit Deployment
+- Configured for Autoscale deployment with gunicorn
+- Run command: `gunicorn --bind=0.0.0.0:5000 --workers=4 --reuse-port wsgi:app`
+- Click the "Publish" button in Replit to deploy
+
+### VPS Deployment
+See `deploy/README_VPS.md` for complete VPS deployment instructions including:
+- Systemd service configuration
+- Nginx reverse proxy setup
+- SSL certificate setup with Certbot
+- PostgreSQL database setup
+
+### Docker Deployment
+```bash
+cd deploy
+docker-compose up -d
+```
+
+### Admin Credentials
+- **Username:** admin
+- **Password:** admin123 (change immediately after first login)
+
+## Recent Changes (February 2026)
+- **Multi-Hub Architecture**: Implemented dual-hub system with user-selectable defaults
+  - Sales Hub (/dashboard) - Focus on deals, pipeline, customer relationships
+  - Marketing Hub (/marketing-hub) - Focus on campaigns, content, audience growth
+  - Hub switcher in both dashboards for quick navigation
+  - User default_hub preference stored in User model
+  - Hub preference settings in user profile page
+  - API endpoint: POST /api/user/set-default-hub
+- **CRM Platform Transformation**: Converted marketing dashboard into action-driven CRM/Sales Hub
+  - New data models: SalesStage, CRMTask, Meeting, Playbook, Document, TouchpointEvent
+  - Enhanced ContactActivity with touchpoint tracking (website, social, forms, email, calls, referral)
+  - Enhanced LeadScore with engagement scoring and activity tracking
+- **Sales Hub Dashboard**: Complete redesign with action-oriented UI
+  - Quick metrics: Open Deals, Hot Leads, Tasks Due, Meetings Today
+  - Lead sources touchpoint counters with clickable icons
+  - AI Recommendations panel with guided selling suggestions
+  - Visual pipeline stage summary with deal counts and values
+  - Sales tools section with quick action buttons
+- **CRM Pipeline Dashboard**: Enhanced sales journey visualization
+  - Clickable pipeline stages with deal cards and drag support
+  - Suggested actions per stage (e.g., "Send intro email", "Conduct needs assessment")
+  - AI Insights panel with opportunity detection and risk alerts
+  - Sales materials library with usage tracking
+  - Modal dialogs for new deal creation and meeting scheduling
+  - AI-powered meeting prep notes option
+- Fixed database schema: Added deal.created_at, deal.updated_at, instagram_oauth.company_id columns
+- Updated Contact model with source, segment, is_subscribed fields
+- Added ab_tests and connectors routes to fix 500 errors
+- Fixed invalid Feather icons throughout templates (palette→droplet, building→briefcase, mail-open→mail)
+- Redesigned main dashboard with task-focused UI featuring quick stats, to-do list, and activity notifications
+- Updated logo CSS: 'IT' larger than '.app', both matching LUX height
+- Moved analytics export section to bottom of page for better UX
+- Fixed Settings page: Added gear icon dropdown in header with user profile, change password, manage users, connections & API keys, and company switcher
+- Added company badge display in header showing current company name with logo/initials
+- Updated Company model with branding columns: logo_path, website_url, primary_color, secondary_color, accent_color, font_family, industry, description
+- User management routes: /user/profile, /user/change-password, /user/manage-users, /companies
+
+## File Structure
+```
+/
+├── app.py              # Flask app factory
+├── wsgi.py             # WSGI entry point
+├── extensions.py       # Flask extensions (db, login manager)
+├── models.py           # SQLAlchemy models
+├── auth.py             # Authentication routes
+├── marketing.py        # Marketing page routes
+├── templates/          # Jinja2 templates
+│   ├── marketing/      # Marketing site templates
+│   └── auth/           # Authentication templates
+├── static/             # Static assets (CSS, JS, images)
+├── deploy/             # VPS deployment files
+│   ├── README_VPS.md   # Deployment guide
+│   ├── Dockerfile      # Docker configuration
+│   ├── docker-compose.yml
+│   └── gunicorn.conf.py
+└── requirements.txt    # Python dependencies
+```

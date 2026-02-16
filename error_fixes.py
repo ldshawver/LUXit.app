@@ -6,7 +6,7 @@ import logging
 import os
 import requests
 from datetime import datetime
-from app import db
+from extensions import db
 from error_logger import ErrorLog
 
 logger = logging.getLogger(__name__)
