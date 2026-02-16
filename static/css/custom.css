@@ -1,34 +1,46 @@
-/* LUX Marketing - Production UI */
+/* LUX Marketing - Brand Color Palette */
+/* Dynamic brand colors (--lux-primary, --lux-secondary, --lux-accent, --lux-font)
+   are set per-company in base.html <style> block via Jinja2 */
 :root {
-  --lux-bg: #0b0c0f;
-  --lux-bg-alt: #101218;
-  --lux-surface: rgba(20, 22, 30, 0.75);
-  --lux-glass: rgba(18, 20, 28, 0.65);
-  --lux-border: rgba(255, 255, 255, 0.08);
-  --lux-border-strong: rgba(255, 255, 255, 0.18);
-  --lux-text: #f5f7ff;
-  --lux-muted: #a1a7b8;
-  --lux-cyan: #47f5ff;
-  --lux-magenta: #ff4fd8;
-  --lux-amber: #ffc857;
-  --lux-shadow: 0 18px 45px rgba(0, 0, 0, 0.45);
-  --lux-glow-cyan: 0 0 22px rgba(71, 245, 255, 0.35);
-  --lux-glow-magenta: 0 0 28px rgba(255, 79, 216, 0.35);
-  --lux-glow-amber: 0 0 24px rgba(255, 200, 87, 0.28);
-  --lux-radius: 18px;
+  --lux-pure-black: #000000;
+  --lux-polished-silver: #c0c0c0;
+  --lux-cyan-bright: var(--lux-secondary, #00ffb4);
+  --lux-cyan-dark: #004845;
+  --lux-purple-bright: var(--lux-primary, #bc00ed);
+  --lux-purple-dark: #480749;
+  --lux-blue-bright: #0044ff;
+  --lux-blue-light: #808fff;
+  --lux-pink-magenta: var(--lux-accent, #e4055c);
+  --lux-pearl-white: #F5F5F5;
+
+  --lux-dark-bg: #000000;
+  --lux-card-bg: #0a0a0a;
+
+  --lux-primary-glow: color-mix(in srgb, var(--lux-primary, #bc00ed), transparent 60%);
+  --lux-secondary-glow: color-mix(in srgb, var(--lux-secondary, #00ffb4), transparent 60%);
+  --lux-accent-glow: color-mix(in srgb, var(--lux-accent, #e4055c), transparent 60%);
+  --lux-primary-15: color-mix(in srgb, var(--lux-primary, #bc00ed), transparent 85%);
+  --lux-secondary-15: color-mix(in srgb, var(--lux-secondary, #00ffb4), transparent 85%);
+  --lux-primary-25: color-mix(in srgb, var(--lux-primary, #bc00ed), transparent 75%);
+  --lux-secondary-25: color-mix(in srgb, var(--lux-secondary, #00ffb4), transparent 75%);
 }
 
+/* Override Bootstrap dark theme with company brand colors */
 html[data-bs-theme="dark"] {
-  --bs-body-bg: var(--lux-bg);
-  --bs-body-color: var(--lux-text);
-  --bs-border-color: var(--lux-border);
-  --bs-primary: var(--lux-cyan);
-  --bs-secondary: var(--lux-magenta);
-  --bs-warning: var(--lux-amber);
-  --bs-link-color: var(--lux-cyan);
-  --bs-link-hover-color: #8df8ff;
+  --bs-body-bg: var(--lux-dark-bg);
+  --bs-body-color: var(--lux-pearl-white);
+  --bs-primary: var(--lux-secondary, #00ffb4);
+  --bs-primary-rgb: 0, 255, 180;
+  --bs-secondary: var(--lux-primary, #bc00ed);
+  --bs-light: var(--lux-polished-silver);
+  --bs-dark: var(--lux-pure-black);
+  --bs-border-color: color-mix(in srgb, var(--lux-primary, #bc00ed), transparent 70%);
+  --bs-tertiary-bg: var(--lux-primary-15);
+  --bs-link-color: var(--lux-secondary, #00ffb4);
+  --bs-link-hover-color: var(--lux-primary, #bc00ed);
 }
 
+/* Ensure body styling is properly applied */
 body {
   background: radial-gradient(circle at top, rgba(71, 245, 255, 0.08), transparent 45%),
     radial-gradient(circle at 20% 20%, rgba(255, 79, 216, 0.08), transparent 40%),
@@ -43,6 +55,14 @@ main.container {
   max-width: 1200px;
 }
 
+/* Navigation Bar - Brand-aware */
+.navbar {
+  background: rgba(0, 0, 0, 0.75);
+  border-bottom: 1px solid var(--lux-primary-25);
+  backdrop-filter: blur(12px);
+  box-shadow: 0 2px 20px rgba(0, 0, 0, 0.5);
+  position: relative;
+  z-index: 1030;
 a {
   color: var(--lux-cyan);
   text-decoration: none;
@@ -76,6 +96,20 @@ a:hover {
   gap: 1.5rem;
 }
 
+.navbar-brand i {
+  margin-right: 0.75rem;
+  color: var(--lux-secondary, #00ffb4);
+  filter: drop-shadow(0 0 4px var(--lux-secondary-glow));
+}
+
+.navbar-brand:hover {
+  color: var(--lux-pearl-white) !important;
+  text-shadow: 0 0 8px var(--lux-primary-glow);
+}
+
+.nav-link {
+  color: var(--lux-secondary, #00ffb4) !important;
+  font-weight: 500;
 .brand {
   display: flex;
   align-items: center;
@@ -98,6 +132,10 @@ a:hover {
   transition: transform 0.2s ease;
 }
 
+.nav-link:hover {
+  color: var(--lux-primary, #bc00ed) !important;
+  background: var(--lux-primary-15);
+  border-radius: 6px;
 .back-arrow-glow svg {
   width: 20px;
   height: 20px;
@@ -109,6 +147,36 @@ a:hover {
   transform: translateX(-2px);
 }
 
+/* Cards - Brand-aware Glass */
+.card {
+  background: linear-gradient(145deg, #1a1a1a 0%, #0d0d0d 50%, #000000 100%);
+  border: 1px solid rgba(80, 80, 80, 0.4);
+  border-radius: 12px;
+  box-shadow: 
+    0 8px 32px rgba(0, 0, 0, 0.6),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.3);
+  backdrop-filter: blur(10px);
+  transition: all 0.3s ease;
+  position: relative;
+  z-index: 1;
+}
+
+.card:hover {
+  transform: translateY(-2px);
+  box-shadow: 
+    0 12px 48px rgba(0, 0, 0, 0.7),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  border-color: var(--lux-primary-25);
+}
+
+.card-header {
+  background: linear-gradient(135deg, #1f1f1f 0%, #0a0a0a 100%);
+  border-bottom: 1px solid var(--lux-primary-25);
+  border-radius: 12px 12px 0 0;
+  color: var(--lux-pearl-white);
+  font-weight: 600;
+  padding: 1rem 1.5rem;
 .back-arrow-glow:hover svg {
   stroke: var(--lux-cyan);
 }
@@ -174,6 +242,81 @@ a:hover {
   text-shadow: 0 0 10px rgba(0, 229, 255, 0.4);
 }
 
+/* Buttons - Brand Color Gradients */
+.btn-primary {
+  background: linear-gradient(135deg, var(--lux-primary, #bc00ed), color-mix(in srgb, var(--lux-primary, #bc00ed), #000 30%));
+  border: 1px solid var(--lux-primary, #bc00ed);
+  color: #fff;
+  font-weight: 600;
+  padding: 0.75rem 1.5rem;
+  border-radius: 8px;
+  transition: all 0.3s ease;
+  box-shadow: 0 4px 16px var(--lux-primary-25);
+}
+
+.btn-primary:hover {
+  background: linear-gradient(135deg, color-mix(in srgb, var(--lux-primary, #bc00ed), #fff 15%), var(--lux-primary, #bc00ed));
+  transform: translateY(-1px);
+  box-shadow: 0 8px 24px var(--lux-primary-glow);
+  border-color: var(--lux-primary, #bc00ed);
+  color: #fff;
+}
+
+.btn-secondary {
+  background: linear-gradient(135deg, var(--lux-secondary, #00ffb4), color-mix(in srgb, var(--lux-secondary, #00ffb4), #000 40%));
+  border: 1px solid var(--lux-secondary, #00ffb4);
+  color: #000;
+  font-weight: 600;
+}
+
+.btn-secondary:hover {
+  background: linear-gradient(135deg, color-mix(in srgb, var(--lux-secondary, #00ffb4), #fff 15%), var(--lux-secondary, #00ffb4));
+  color: #000;
+  box-shadow: 0 8px 24px var(--lux-secondary-glow);
+}
+
+.btn-outline-primary {
+  border: 2px solid var(--lux-primary, #bc00ed);
+  color: var(--lux-primary, #bc00ed);
+  background: transparent;
+}
+
+.btn-outline-primary:hover {
+  background: var(--lux-primary, #bc00ed);
+  color: #fff;
+  border-color: var(--lux-primary, #bc00ed);
+  box-shadow: 0 4px 16px var(--lux-primary-glow);
+}
+
+.btn-outline-secondary {
+  border: 2px solid var(--lux-secondary, #00ffb4);
+  color: var(--lux-secondary, #00ffb4);
+  background: transparent;
+}
+
+.btn-outline-secondary:hover {
+  background: var(--lux-secondary, #00ffb4);
+  color: #000;
+  box-shadow: 0 4px 16px var(--lux-secondary-glow);
+}
+
+.btn-success {
+  background: linear-gradient(135deg, var(--lux-secondary, #00ffb4), color-mix(in srgb, var(--lux-secondary, #00ffb4), #000 30%));
+  border-color: var(--lux-secondary, #00ffb4);
+  color: #000;
+}
+
+.btn-danger {
+  background: linear-gradient(135deg, var(--lux-accent, #e4055c), color-mix(in srgb, var(--lux-accent, #e4055c), #000 30%));
+  border-color: var(--lux-accent, #e4055c);
+  color: #fff;
+}
+
+/* Form Controls - Brand Focus States */
+.form-control {
+  background-color: rgba(42, 42, 42, 0.8);
+  border: 2px solid rgba(192, 192, 192, 0.15);
+  color: var(--lux-pearl-white);
 .brand-app {
   font-size: 0.55rem;
   font-weight: 600;
@@ -213,6 +356,11 @@ a:hover {
   border: 1px solid rgba(188, 0, 237, 0.4);
 }
 
+.form-control:focus {
+  background-color: rgba(42, 42, 42, 1);
+  border-color: var(--lux-primary, #bc00ed);
+  box-shadow: 0 0 0 0.25rem var(--lux-primary-25);
+  color: var(--lux-pearl-white);
 .company-icon img {
   width: 100%;
   height: 100%;
@@ -243,6 +391,10 @@ a:hover {
   transition: all 0.2s ease;
 }
 
+.form-select:focus {
+  border-color: var(--lux-primary, #bc00ed);
+  box-shadow: 0 0 0 0.25rem var(--lux-primary-25);
+  color: var(--lux-pearl-white);
 .gear-btn svg {
   width: 18px;
   height: 18px;
@@ -254,6 +406,32 @@ a:hover {
   border-color: rgba(71, 245, 255, 0.3);
 }
 
+.form-check-input:checked {
+  background-color: var(--lux-primary, #bc00ed);
+  border-color: var(--lux-primary, #bc00ed);
+}
+
+/* Input Groups */
+.input-group-text {
+  background: var(--lux-primary-15);
+  border: 2px solid rgba(192, 192, 192, 0.15);
+  color: var(--lux-polished-silver);
+  border-radius: 8px 0 0 8px;
+}
+
+/* Tables - Brand Accented */
+.table {
+  color: var(--lux-pearl-white);
+  background-color: transparent;
+}
+
+.table thead th {
+  background: var(--lux-primary-15);
+  color: var(--lux-secondary, #00ffb4);
+  border-color: rgba(192, 192, 192, 0.1);
+  font-weight: 600;
+  padding: 1rem;
+  border-bottom: 2px solid var(--lux-primary-25);
 .gear-btn:hover svg {
   stroke: var(--lux-cyan);
   transform: rotate(90deg);
@@ -279,6 +457,13 @@ a:hover {
   gap: 0.25rem;
 }
 
+.table-hover tbody tr:hover {
+  background-color: var(--lux-primary-15);
+}
+
+/* Badges - Brand Status */
+.badge {
+  font-size: 0.8em;
 .header-title h1 {
   font-size: 1.15rem;
   margin: 0;
@@ -313,6 +498,25 @@ a:hover {
   transition: all 0.25s ease;
 }
 
+.badge.bg-secondary {
+  background: var(--lux-primary-25) !important;
+  color: var(--lux-pearl-white);
+}
+
+.badge.bg-success {
+  background: var(--lux-secondary-25) !important;
+  color: #fff;
+}
+
+.badge.bg-primary {
+  background: var(--lux-primary-25) !important;
+  color: #fff;
+}
+
+/* Login Page Specific */
+.login-container {
+  min-height: 100vh;
+  background: radial-gradient(ellipse at center, var(--lux-primary-25) 0%, var(--lux-dark-bg) 70%);
 .btn-lux-primary {
   background: rgba(71, 245, 255, 0.15);
   color: var(--lux-cyan);
@@ -396,6 +600,12 @@ a:hover {
   gap: 1.5rem;
 }
 
+/* Dashboard Statistics Cards */
+.stats-card {
+  background: linear-gradient(135deg, var(--lux-secondary-15) 0%, var(--lux-primary-15) 100%);
+  border: 2px solid rgba(192, 192, 192, 0.1);
+  border-radius: 12px;
+  padding: 2rem;
 .report-header {
   display: flex;
   flex-direction: column;
@@ -435,6 +645,18 @@ a:hover {
   text-align: center;
 }
 
+.stats-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.3);
+  border-color: var(--lux-primary, #bc00ed);
+}
+
+.stats-card h3 {
+  color: var(--lux-secondary, #00ffb4);
+  font-size: 2.5rem;
+  font-weight: 700;
+  margin-bottom: 0.5rem;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
 .report-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
@@ -477,6 +699,32 @@ a:hover {
   font-size: 0.9rem;
 }
 
+/* Progress Bars - Brand Gradient */
+.progress {
+  background-color: var(--lux-primary-15);
+  height: 1.5rem;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.progress-bar {
+  background: linear-gradient(135deg, var(--lux-primary, #bc00ed), var(--lux-secondary, #00ffb4));
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #fff;
+}
+
+/* Modals - Brand Borders */
+.modal-content {
+  background: linear-gradient(145deg, var(--lux-card-bg) 0%, var(--lux-dark-bg) 100%);
+  border: 2px solid var(--lux-primary-25);
+  border-radius: 12px;
+  box-shadow: 0 16px 64px rgba(0, 0, 0, 0.4);
+}
+
+.modal-header {
+  border-bottom: 2px solid var(--lux-primary-25);
+  background: linear-gradient(135deg, var(--lux-primary-15) 0%, var(--lux-secondary-15) 100%);
 .section-title {
   display: flex;
   align-items: center;
@@ -527,6 +775,75 @@ a:hover {
   color: var(--lux-muted);
 }
 
+.modal-footer {
+  border-top: 1px solid var(--lux-primary-25);
+}
+
+/* Alerts - Brand Styled */
+.alert {
+  border: 2px solid;
+  border-radius: 8px;
+  backdrop-filter: blur(10px);
+  color: var(--lux-pearl-white);
+}
+
+.alert-info {
+  background: var(--lux-secondary-15);
+  border-color: var(--lux-secondary, #00ffb4);
+}
+
+.alert-warning {
+  background: linear-gradient(135deg, rgba(255, 193, 7, 0.2) 0%, var(--lux-primary-15) 100%);
+  border-color: #ffc107;
+}
+
+.alert-success {
+  background: var(--lux-secondary-15);
+  border-color: var(--lux-secondary, #00ffb4);
+}
+
+.alert-danger {
+  background: color-mix(in srgb, var(--lux-accent, #e4055c), transparent 85%);
+  border-color: var(--lux-accent, #e4055c);
+}
+
+/* Campaign Status Colors */
+.campaign-status-draft { color: var(--lux-polished-silver); }
+.campaign-status-scheduled { color: #ffc107; }
+.campaign-status-sending { color: var(--lux-secondary, #00ffb4); }
+.campaign-status-sent { color: var(--lux-secondary, #00ffb4); }
+.campaign-status-failed { color: var(--lux-accent, #e4055c); }
+
+/* Pagination - Brand Colors */
+.pagination .page-link {
+  background-color: rgba(42, 42, 42, 0.8);
+  border-color: rgba(192, 192, 192, 0.15);
+  color: var(--lux-polished-silver);
+  padding: 0.75rem 1rem;
+  border-radius: 6px;
+  margin: 0 0.25rem;
+}
+
+.pagination .page-link:hover {
+  background-color: var(--lux-primary, #bc00ed);
+  border-color: var(--lux-primary, #bc00ed);
+  color: #fff;
+}
+
+.pagination .page-item.active .page-link {
+  background-color: var(--lux-primary, #bc00ed);
+  border-color: var(--lux-primary, #bc00ed);
+  color: #fff;
+}
+
+/* Dropdown Menus */
+.dropdown-menu {
+  background: linear-gradient(145deg, var(--lux-card-bg) 0%, var(--lux-dark-bg) 100%);
+  border: 2px solid var(--lux-primary-25);
+  border-radius: 8px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+  z-index: 1050;
+  position: absolute;
 .glow-orb {
   position: absolute;
   width: 220px;
@@ -602,6 +919,92 @@ a:hover {
   box-shadow: 0 0 0 0.25rem rgba(71, 245, 255, 0.15);
 }
 
+.dropdown-item:hover {
+  background-color: var(--lux-primary-15);
+  color: var(--lux-secondary, #00ffb4);
+}
+
+.dropdown-item.active, .dropdown-item:active {
+  background-color: var(--lux-primary-25);
+  color: var(--lux-secondary, #00ffb4);
+}
+
+/* Tabs - Brand Accent */
+.nav-tabs {
+  border-bottom: 2px solid var(--lux-primary-25);
+}
+
+.nav-tabs .nav-link {
+  color: rgba(255,255,255,0.6) !important;
+  border: none;
+  border-bottom: 2px solid transparent;
+  padding: 0.75rem 1.25rem;
+}
+
+.nav-tabs .nav-link:hover {
+  color: var(--lux-secondary, #00ffb4) !important;
+  border-bottom-color: var(--lux-primary-glow);
+  background: transparent;
+}
+
+.nav-tabs .nav-link.active {
+  color: var(--lux-secondary, #00ffb4) !important;
+  background: transparent;
+  border-bottom: 2px solid var(--lux-primary, #bc00ed);
+}
+
+.nav-pills .nav-link {
+  color: rgba(255,255,255,0.6) !important;
+  border-radius: 8px;
+}
+
+.nav-pills .nav-link.active {
+  background: var(--lux-primary, #bc00ed) !important;
+  color: #fff !important;
+}
+
+/* List Groups */
+.list-group-item {
+  background: rgba(10, 10, 10, 0.8);
+  border-color: var(--lux-primary-25);
+  color: var(--lux-pearl-white);
+}
+
+.list-group-item:hover {
+  background: var(--lux-primary-15);
+}
+
+.list-group-item.active {
+  background: var(--lux-primary, #bc00ed);
+  border-color: var(--lux-primary, #bc00ed);
+}
+
+/* Accordion */
+.accordion-item {
+  background: rgba(10, 10, 10, 0.8);
+  border-color: var(--lux-primary-25);
+}
+
+.accordion-button {
+  background: var(--lux-primary-15);
+  color: var(--lux-pearl-white);
+}
+
+.accordion-button:not(.collapsed) {
+  background: var(--lux-primary-25);
+  color: var(--lux-secondary, #00ffb4);
+  box-shadow: inset 0 -1px 0 var(--lux-primary-25);
+}
+
+/* Tooltips & Popovers */
+.tooltip-inner {
+  background: var(--lux-primary, #bc00ed);
+}
+
+/* Custom Scrollbar - Brand Colors */
+::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
 .table {
   color: var(--lux-text);
 }
@@ -645,6 +1048,39 @@ a:hover {
   box-shadow: var(--lux-shadow);
 }
 
+::-webkit-scrollbar-thumb {
+  background: linear-gradient(135deg, var(--lux-primary, #bc00ed) 0%, var(--lux-secondary, #00ffb4) 100%);
+  border-radius: 6px;
+  border: 2px solid var(--lux-dark-bg);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(135deg, var(--lux-secondary, #00ffb4) 0%, var(--lux-primary, #bc00ed) 100%);
+}
+
+/* Text and Typography */
+h1, h2, h3, h4, h5, h6 {
+  color: var(--lux-polished-silver);
+}
+
+p, span, div {
+  color: var(--lux-pearl-white);
+}
+
+.text-muted {
+  color: rgba(192, 192, 192, 0.7) !important;
+}
+
+/* Selection Color */
+::selection {
+  background: var(--lux-primary, #bc00ed);
+  color: #fff;
+}
+
+/* Focus Ring */
+*:focus-visible {
+  outline: 2px solid var(--lux-primary, #bc00ed);
+  outline-offset: 2px;
 .dropdown-item {
   color: var(--lux-text);
 }

@@ -2,51 +2,141 @@
 
 {% block title %}Manage Companies - LUX IT{% endblock %}
 
-{% block content %}
-<div class="container">
-  <div class="row mb-4">
-    <div class="col-md-8">
-      <h2>Manage Companies</h2>
-      <p class="text-muted">Manage your company profiles and configurations</p>
-    </div>
-    <div class="col-md-4 text-end">
-      <a href="{{ url_for('main.add_company') }}" class="btn btn-primary">
-        <i data-feather="plus"></i> Add Company
-      </a>
-    </div>
-  </div>
+{% block page_header %}
+<span style="color: var(--lux-primary, #bc00ed);"><i data-feather="briefcase" style="width:18px;height:18px;vertical-align:middle;margin-right:4px;"></i> Manage Companies</span>
+{% endblock %}
 
-  <div class="row">
-    {% for company in companies %}
-    <div class="col-md-6 mb-4">
-      <div class="card bg-dark" style="border: 2px solid {{ company.primary_color or '#bc00ed' }}; font-family: {{ company.font_family or 'Inter, sans-serif' }};">
-        <div class="card-body">
-          <div class="d-flex align-items-center mb-3">
-            {% if company.icon_path %}
-            <img src="{{ url_for('static', filename=company.icon_path) }}" alt="{{ company.name }} Icon" style="width: 40px; height: 40px; object-fit: contain; margin-right: 12px; border-radius: 8px;">
-            {% elif company.logo_path %}
-            <img src="{{ url_for('static', filename=company.logo_path) }}" alt="{{ company.name }} Logo" style="max-width: 40px; max-height: 40px; object-fit: contain; margin-right: 12px;">
-            {% endif %}
-            <div class="flex-grow-1">
-              <h5 class="card-title mb-0" style="color: {{ company.primary_color or '#bc00ed' }};">
-                {{ company.name }}
-                {% if current_company and company.id == current_company.id %}
-                <span class="badge" style="background: {{ company.secondary_color or '#00ffb4' }}; color: #000;">Current</span>
+{% block content %}
+<style>
+    .company-card {
+        background: rgba(10,10,10,0.8);
+        border: 2px solid rgba(255,255,255,0.06);
+        border-radius: 14px;
+        padding: 1.5rem;
+        transition: all 0.3s ease;
+        margin-bottom: 1.25rem;
+    }
+    .company-card:hover {
+        border-color: rgba(188,0,237,0.3);
+        transform: translateY(-2px);
+    }
+    .company-card.is-current {
+        border-color: var(--lux-secondary, #00ffb4);
+    }
+    .company-logo-area {
+        width: 56px;
+        height: 56px;
+        border-radius: 12px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.5rem;
+        font-weight: 800;
+        flex-shrink: 0;
+    }
+    .color-dot {
+        display: inline-block;
+        width: 18px;
+        height: 18px;
+        border-radius: 50%;
+        border: 2px solid rgba(255,255,255,0.1);
+    }
+    .action-btn {
+        background: rgba(255,255,255,0.04);
+        border: 1px solid rgba(255,255,255,0.08);
+        color: rgba(255,255,255,0.7);
+        padding: 0.5rem 1rem;
+        border-radius: 8px;
+        font-size: 0.8rem;
+        font-weight: 500;
+        cursor: pointer;
+        transition: all 0.2s;
+        text-decoration: none;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35rem;
+    }
+    .action-btn:hover {
+        background: rgba(255,255,255,0.08);
+        color: #fff;
+        border-color: rgba(255,255,255,0.15);
+    }
+    .action-btn.primary { border-color: var(--lux-primary, #bc00ed); color: var(--lux-primary, #bc00ed); }
+    .action-btn.primary:hover { background: rgba(188,0,237,0.1); }
+    .action-btn.secondary { border-color: var(--lux-secondary, #00ffb4); color: var(--lux-secondary, #00ffb4); }
+    .action-btn.secondary:hover { background: rgba(0,255,180,0.1); }
+    .action-btn.accent { border-color: var(--lux-accent, #e4055c); color: var(--lux-accent, #e4055c); }
+    .action-btn.accent:hover { background: rgba(228,5,92,0.1); }
+</style>
+
+<div style="margin-bottom: 1.5rem;">
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <div>
+            <h2 style="font-weight:800;font-size:1.5rem;margin-bottom:0.25rem;">
+                <i data-feather="briefcase" style="width:22px;height:22px;color:var(--lux-primary, #bc00ed);margin-right:0.5rem;vertical-align:middle;"></i>
+                Companies
+            </h2>
+            <p style="color:rgba(255,255,255,0.45);font-size:0.85rem;margin:0;">
+                Manage your companies, brand settings, connections, and API keys
+            </p>
+        </div>
+        <a href="{{ url_for('main.add_company') }}" class="action-btn primary" style="font-size:0.85rem;padding:0.6rem 1.25rem;">
+            <i data-feather="plus" style="width:14px;height:14px;"></i> Add Company
+        </a>
+    </div>
+</div>
+
+{% for company in companies %}
+<div class="company-card {{ 'is-current' if current_user.get_default_company() and company.id == current_user.get_default_company().id }}">
+    <div class="d-flex align-items-start gap-3">
+        {% if company.icon_path or company.logo_path %}
+        <div class="company-logo-area" style="background: rgba(255,255,255,0.05);">
+            <img src="{{ url_for('static', filename=company.icon_path or company.logo_path) }}" alt="{{ company.name }}" style="width:44px;height:44px;object-fit:contain;border-radius:8px;">
+        </div>
+        {% else %}
+        <div class="company-logo-area" style="background: {{ company.primary_color or '#bc00ed' }}20; color: {{ company.primary_color or '#bc00ed' }};">
+            {{ company.name[0]|upper }}
+        </div>
+        {% endif %}
+
+        <div class="flex-grow-1">
+            <div class="d-flex align-items-center gap-2 mb-1">
+                <h5 style="font-weight:700;font-size:1.1rem;margin:0;color:{{ company.primary_color or '#bc00ed' }};">
+                    {{ company.name }}
+                </h5>
+                {% if current_user.get_default_company() and company.id == current_user.get_default_company().id %}
+                <span style="background:{{ company.secondary_color or '#00ffb4' }};color:#000;padding:0.15rem 0.5rem;border-radius:4px;font-size:0.7rem;font-weight:700;">ACTIVE</span>
                 {% endif %}
-              </h5>
             </div>
-          </div>
-          
-          {% if company.website_url %}
-          <p class="text-muted mb-2"><i data-feather="globe"></i> {{ company.website_url }}</p>
-          {% endif %}
-          
-          <div class="mb-3">
-            <small class="text-muted">Brand Colors: </small>
-            <div class="d-inline-flex gap-2">
-              <span style="display: inline-block; width: 20px; height: 20px; background: {{ company.primary_color or '#bc00ed' }}; border-radius: 4px; border: 1px solid #555;" title="Primary"></span>
-              <span style="display: inline-block; width: 20px; height: 20px; background: {{ company.secondary_color or '#00ffb4' }}; border-radius: 4px; border: 1px solid #555;" title="Secondary"></span>
-              <span style="display: inline-block; width: 20px; height: 20px; background: {{ company.accent_color or '#e4055c' }}; border-radius: 4px; border: 1px solid #555;" title="Accent"></span>
+
+            {% if company.website_url %}
+            <p style="color:rgba(255,255,255,0.35);font-size:0.8rem;margin-bottom:0.5rem;">
+                <i data-feather="globe" style="width:12px;height:12px;margin-right:0.25rem;"></i>{{ company.website_url }}
+            </p>
+            {% endif %}
+
+            <div class="d-flex align-items-center gap-2 mb-3">
+                <span class="color-dot" style="background:{{ company.primary_color or '#bc00ed' }};" title="Primary"></span>
+                <span class="color-dot" style="background:{{ company.secondary_color or '#00ffb4' }};" title="Secondary"></span>
+                <span class="color-dot" style="background:{{ company.accent_color or '#e4055c' }};" title="Accent"></span>
+                <span style="font-size:0.75rem;color:rgba(255,255,255,0.25);margin-left:0.25rem;">{{ company.font_family or 'Inter' }}</span>
+            </div>
+
+            <div class="d-flex flex-wrap gap-2">
+                <a href="{{ url_for('main.edit_company', company_id=company.id) }}" class="action-btn primary">
+                    <i data-feather="edit-2" style="width:13px;height:13px;"></i> Edit Brand
+                </a>
+                <a href="{{ url_for('main.company_settings', company_id=company.id) }}" class="action-btn accent">
+                    <i data-feather="key" style="width:13px;height:13px;"></i> API Keys & Secrets
+                </a>
+                <button onclick="switchAndConfigure({{ company.id }})" class="action-btn" style="border-color:#0044ff;color:#4d8bff;">
+                    <i data-feather="link" style="width:13px;height:13px;"></i> Connections
+                </button>
+                {% if not (current_user.get_default_company() and company.id == current_user.get_default_company().id) %}
+                <button onclick="switchCompany({{ company.id }})" class="action-btn secondary">
+                    <i data-feather="check-circle" style="width:13px;height:13px;"></i> Make Active
+                </button>
+                {% endif %}
             </div>
           </div>
           
@@ -66,17 +156,17 @@
             </button>
           </div>
         </div>
-      </div>
     </div>
-    {% else %}
-    <div class="col-12">
-      <div class="alert alert-info">
-        <p class="mb-0">You don't have any companies yet. <a href="{{ url_for('main.add_company') }}">Add your first company</a></p>
-      </div>
-    </div>
-    {% endfor %}
-  </div>
 </div>
+{% else %}
+<div style="text-align:center;padding:3rem 1rem;color:rgba(255,255,255,0.4);">
+    <i data-feather="briefcase" style="width:48px;height:48px;margin-bottom:1rem;opacity:0.3;"></i>
+    <p style="font-size:1rem;margin-bottom:1rem;">No companies yet</p>
+    <a href="{{ url_for('main.add_company') }}" class="action-btn primary" style="font-size:0.9rem;padding:0.6rem 1.5rem;">
+        <i data-feather="plus" style="width:14px;height:14px;"></i> Add Your First Company
+    </a>
+</div>
+{% endfor %}
 
 <script>
   feather.replace();

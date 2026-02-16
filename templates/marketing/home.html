@@ -1,0 +1,581 @@
+{% extends "marketing/base_marketing.html" %}
+{% block title %}AI-Powered Marketing Automation & CRM{% endblock %}
+{% block meta_description %}LUX combines 11 AI agents, visual CRM, competitor intelligence, and multi-channel automation into one platform. Built for marketing leaders and executives who demand results.{% endblock %}
+
+{% block extra_css %}
+.hero-section {
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    padding: 8rem 0 6rem;
+    overflow: hidden;
+}
+
+.hero-section::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background:
+        radial-gradient(ellipse 90% 60% at 50% -10%, rgba(0, 255, 180, 0.1), transparent),
+        radial-gradient(ellipse 70% 50% at 80% 70%, rgba(188, 0, 237, 0.07), transparent),
+        radial-gradient(ellipse 60% 40% at 15% 80%, rgba(0, 68, 255, 0.06), transparent);
+    pointer-events: none;
+}
+
+.hero-content {
+    text-align: center;
+    position: relative;
+    z-index: 2;
+}
+
+.hero-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    background: rgba(0, 255, 180, 0.06);
+    border: 1px solid rgba(0, 255, 180, 0.15);
+    color: var(--lux-cyan);
+    padding: 0.5rem 1.25rem;
+    border-radius: 50px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    margin-bottom: 2.5rem;
+}
+
+.hero-subtitle {
+    font-size: clamp(1.1rem, 2vw, 1.35rem);
+    color: rgba(255, 255, 255, 0.45);
+    line-height: 1.8;
+    max-width: 620px;
+    margin: 2rem auto 3rem;
+}
+
+.hero-ctas {
+    display: flex;
+    justify-content: center;
+    gap: 1.25rem;
+    flex-wrap: wrap;
+    margin-bottom: 5rem;
+}
+
+.trust-bar {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 3.5rem;
+    flex-wrap: wrap;
+    padding-top: 3rem;
+    border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.trust-item {
+    text-align: center;
+}
+
+.trust-item .num {
+    font-size: 1.6rem;
+    font-weight: 800;
+    color: var(--lux-cyan);
+    letter-spacing: -0.02em;
+}
+
+.trust-item .lbl {
+    font-size: 0.72rem;
+    color: rgba(255, 255, 255, 0.35);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-top: 0.25rem;
+}
+
+.orb-1 {
+    width: 500px;
+    height: 500px;
+    background: rgba(0, 255, 180, 0.12);
+    top: -15%;
+    left: -10%;
+}
+
+.orb-2 {
+    width: 400px;
+    height: 400px;
+    background: rgba(188, 0, 237, 0.1);
+    bottom: -10%;
+    right: -8%;
+}
+
+.orb-3 {
+    width: 300px;
+    height: 300px;
+    background: rgba(0, 68, 255, 0.08);
+    top: 30%;
+    right: 5%;
+}
+
+.problem-solution {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0;
+    border-radius: 20px;
+    overflow: hidden;
+    border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.problem-side {
+    background: rgba(228, 5, 92, 0.03);
+    padding: 3.5rem;
+    border-right: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.solution-side {
+    background: rgba(0, 255, 180, 0.025);
+    padding: 3.5rem;
+}
+
+.ps-item {
+    display: flex;
+    gap: 0.75rem;
+    color: rgba(255, 255, 255, 0.6);
+    font-size: 0.95rem;
+    line-height: 1.6;
+}
+
+.ps-item i {
+    flex-shrink: 0;
+    margin-top: 3px;
+}
+
+.agent-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+    gap: 0.75rem;
+    max-width: 900px;
+    margin: 0 auto;
+}
+
+.agent-pill {
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 12px;
+    padding: 0.85rem 1.1rem;
+    font-size: 0.82rem;
+    font-weight: 500;
+    color: rgba(255, 255, 255, 0.7);
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+    cursor: default;
+}
+
+.agent-pill:hover {
+    border-color: var(--lux-cyan);
+    color: var(--lux-cyan);
+    background: rgba(0, 255, 180, 0.05);
+    transform: translateY(-3px);
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.3);
+}
+
+.agent-pill .dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    animation: pulse-dot 2.5s ease-in-out infinite;
+}
+
+@keyframes pulse-dot {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.6; transform: scale(0.85); }
+}
+
+.capabilities-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 1.5rem;
+}
+
+.stat-block {
+    text-align: center;
+    padding: 3rem 1.5rem;
+}
+
+.stat-desc {
+    font-size: 1rem;
+    color: rgba(255, 255, 255, 0.5);
+    font-weight: 500;
+    margin-top: 0.75rem;
+    letter-spacing: 0.01em;
+}
+
+.channel-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: 1rem;
+    max-width: 800px;
+    margin: 0 auto;
+}
+
+.channel-card {
+    padding: 2rem 1.5rem;
+    text-align: center;
+    cursor: default;
+}
+
+.channel-card i {
+    margin-bottom: 0.85rem;
+}
+
+.channel-card .ch-name {
+    font-weight: 600;
+    font-size: 0.82rem;
+    color: rgba(255, 255, 255, 0.7);
+}
+
+.cta-final {
+    position: relative;
+    text-align: center;
+    padding: 10rem 0;
+    overflow: hidden;
+}
+
+.cta-final::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(ellipse 80% 60% at 50% 50%, rgba(188, 0, 237, 0.1), transparent 70%);
+    pointer-events: none;
+}
+
+.cta-final::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(ellipse 60% 40% at 50% 80%, rgba(0, 255, 180, 0.06), transparent 60%);
+    pointer-events: none;
+}
+
+@media (max-width: 991px) {
+    .problem-solution { grid-template-columns: 1fr; }
+    .problem-side { border-right: none; border-bottom: 1px solid rgba(255, 255, 255, 0.06); }
+    .capabilities-grid { grid-template-columns: 1fr; }
+    .trust-bar { gap: 2rem; }
+    .hero-section { padding: 6rem 0 4rem; }
+    .cta-final { padding: 6rem 0; }
+}
+
+@media (max-width: 575px) {
+    .channel-grid { grid-template-columns: repeat(2, 1fr); }
+    .agent-grid { grid-template-columns: repeat(2, 1fr); }
+}
+{% endblock %}
+
+{% block content %}
+
+<!-- ═══════════════════════════ HERO ═══════════════════════════ -->
+<section class="hero-section fullscreen-section">
+    <div class="glow-orb orb-1 parallax-bg" data-speed="0.15"></div>
+    <div class="glow-orb orb-2 parallax-bg" data-speed="0.2"></div>
+    <div class="glow-orb orb-3 parallax-bg" data-speed="0.1"></div>
+
+    <div class="container-lux">
+        <div class="hero-content">
+            <div class="hero-badge reveal stagger-1">
+                <i data-feather="zap" style="width:14px;height:14px;"></i>
+                11 AI Agents Working 24/7
+            </div>
+
+            <h1 class="cinematic-title reveal stagger-2">
+                Marketing<br>
+                <span class="gradient-text">runs itself.</span>
+            </h1>
+
+            <p class="hero-subtitle cinematic-sub reveal stagger-3">
+                LUX deploys 11 specialized AI agents that automate campaigns, monitor competitors, score leads, and close deals &mdash; while you focus on strategy.
+            </p>
+
+            <div class="hero-ctas reveal stagger-4">
+                <a href="{{ url_for('marketing.book_demo', from='home_hero') }}" class="btn-lux-primary btn-lux-large">
+                    Book a Demo <i data-feather="calendar" style="width:18px;height:18px;"></i>
+                </a>
+                <a href="{{ url_for('marketing.features') }}" class="btn-lux-outline btn-lux-large">
+                    See All Features <i data-feather="arrow-right" style="width:18px;height:18px;"></i>
+                </a>
+            </div>
+
+            <div class="trust-bar reveal stagger-5">
+                <div class="trust-item">
+                    <div class="num">11</div>
+                    <div class="lbl">AI Agents</div>
+                </div>
+                <div class="trust-item">
+                    <div class="num">25+</div>
+                    <div class="lbl">Automations</div>
+                </div>
+                <div class="trust-item">
+                    <div class="num">10+</div>
+                    <div class="lbl">Channels</div>
+                </div>
+                <div class="trust-item">
+                    <div class="num">360&deg;</div>
+                    <div class="lbl">Customer View</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<hr class="divider-glow">
+
+<!-- ═══════════════════════════ PROBLEM / SOLUTION ═══════════════════════════ -->
+<section class="section" style="padding: 8rem 0;">
+    <div class="container-lux">
+        <div class="text-center mb-5">
+            <div class="section-label mx-auto reveal">
+                <i data-feather="alert-circle" style="width:14px;height:14px;"></i>
+                The Problem
+            </div>
+            <h2 class="section-title reveal stagger-1">Marketing teams are <span class="gradient-text-warm">drowning</span> in tools</h2>
+            <p class="section-subtitle mx-auto reveal stagger-2">
+                Your team toggles between 8+ platforms, wastes hours on manual tasks, and still can't tell what's actually driving revenue.
+            </p>
+        </div>
+
+        <div class="problem-solution">
+            <div class="problem-side reveal-left">
+                <h4 style="color: var(--lux-pink); font-weight: 700; margin-bottom: 1.75rem; font-size: 1.15rem;">
+                    <i data-feather="x-circle" style="width:20px;height:20px;margin-right:0.5rem;"></i>
+                    Without LUX
+                </h4>
+                <div class="d-flex flex-column gap-3">
+                    <div class="ps-item"><i data-feather="minus" style="width:16px;height:16px;color:var(--lux-pink);"></i> Separate tools for email, social, CRM, ads, and analytics</div>
+                    <div class="ps-item"><i data-feather="minus" style="width:16px;height:16px;color:var(--lux-pink);"></i> Manual campaign creation and scheduling across every channel</div>
+                    <div class="ps-item"><i data-feather="minus" style="width:16px;height:16px;color:var(--lux-pink);"></i> No visibility into what competitors are doing right now</div>
+                    <div class="ps-item"><i data-feather="minus" style="width:16px;height:16px;color:var(--lux-pink);"></i> Lead scoring requires spreadsheets and guesswork</div>
+                    <div class="ps-item"><i data-feather="minus" style="width:16px;height:16px;color:var(--lux-pink);"></i> Security risks from scattered API keys and logins</div>
+                </div>
+            </div>
+            <div class="solution-side reveal-right">
+                <h4 style="color: var(--lux-cyan); font-weight: 700; margin-bottom: 1.75rem; font-size: 1.15rem;">
+                    <i data-feather="check-circle" style="width:20px;height:20px;margin-right:0.5rem;"></i>
+                    With LUX
+                </h4>
+                <div class="d-flex flex-column gap-3">
+                    <div class="ps-item"><i data-feather="check" style="width:16px;height:16px;color:var(--lux-cyan);"></i> One platform: email, social, CRM, ads, SEO, and analytics</div>
+                    <div class="ps-item"><i data-feather="check" style="width:16px;height:16px;color:var(--lux-cyan);"></i> AI agents generate, schedule, and optimize campaigns automatically</div>
+                    <div class="ps-item"><i data-feather="check" style="width:16px;height:16px;color:var(--lux-cyan);"></i> Real-time competitor monitoring and strategic intelligence</div>
+                    <div class="ps-item"><i data-feather="check" style="width:16px;height:16px;color:var(--lux-cyan);"></i> AI-driven lead scoring with automatic deal stage progression</div>
+                    <div class="ps-item"><i data-feather="check" style="width:16px;height:16px;color:var(--lux-cyan);"></i> Centralized secrets vault with encrypted key management</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<hr class="divider-glow">
+
+<!-- ═══════════════════════════ AI AGENTS ═══════════════════════════ -->
+<section class="section" style="padding: 8rem 0; background: rgba(0,255,180,0.01);">
+    <div class="container-lux">
+        <div class="text-center mb-5">
+            <div class="section-label mx-auto reveal">
+                <i data-feather="cpu" style="width:14px;height:14px;"></i>
+                AI Agent Workforce
+            </div>
+            <h2 class="cinematic-title reveal stagger-1" style="font-size: clamp(2.2rem, 5vw, 4rem); margin-bottom: 1.5rem;">
+                11 specialized agents.<br><span class="gradient-text">Zero busywork.</span>
+            </h2>
+            <p class="section-subtitle mx-auto reveal stagger-2">
+                Each agent is a domain expert that operates autonomously &mdash; planning, executing, and optimizing across every marketing function.
+            </p>
+        </div>
+
+        <div class="agent-grid">
+            <div class="agent-pill reveal stagger-1"><span class="dot" style="background:var(--lux-cyan);"></span> Brand & Strategy</div>
+            <div class="agent-pill reveal stagger-1"><span class="dot" style="background:var(--lux-purple);"></span> Content & SEO</div>
+            <div class="agent-pill reveal stagger-2"><span class="dot" style="background:var(--lux-pink);"></span> Analytics</div>
+            <div class="agent-pill reveal stagger-2"><span class="dot" style="background:var(--lux-blue);"></span> Creative Design</div>
+            <div class="agent-pill reveal stagger-3"><span class="dot" style="background:var(--lux-cyan);"></span> Advertising</div>
+            <div class="agent-pill reveal stagger-3"><span class="dot" style="background:var(--lux-purple);"></span> Social Media</div>
+            <div class="agent-pill reveal stagger-4"><span class="dot" style="background:var(--lux-pink);"></span> Email & CRM</div>
+            <div class="agent-pill reveal stagger-4"><span class="dot" style="background:var(--lux-blue);"></span> Sales Enablement</div>
+            <div class="agent-pill reveal stagger-5"><span class="dot" style="background:var(--lux-cyan);"></span> Retention</div>
+            <div class="agent-pill reveal stagger-5"><span class="dot" style="background:var(--lux-purple);"></span> Operations</div>
+            <div class="agent-pill reveal stagger-6"><span class="dot" style="background:var(--lux-pink);"></span> App Intelligence</div>
+        </div>
+    </div>
+</section>
+
+<hr class="divider-glow">
+
+<!-- ═══════════════════════════ CORE CAPABILITIES ═══════════════════════════ -->
+<section class="section" style="padding: 8rem 0;">
+    <div class="container-lux">
+        <div class="text-center mb-5">
+            <div class="section-label mx-auto reveal">
+                <i data-feather="trending-up" style="width:14px;height:14px;"></i>
+                Core Capabilities
+            </div>
+            <h2 class="section-title reveal stagger-1">Everything you need to <span class="gradient-text">dominate your market</span></h2>
+            <p class="section-subtitle mx-auto reveal stagger-2">
+                From first touch to closed deal, LUX automates every step of the customer journey with intelligence that gets smarter over time.
+            </p>
+        </div>
+
+        <div class="capabilities-grid">
+            <div class="glass-card reveal stagger-1">
+                <div class="icon-box cyan"><i data-feather="repeat"></i></div>
+                <h5 style="font-weight:700;font-size:1.1rem;margin-bottom:0.65rem;">Marketing Automation</h5>
+                <p style="color:rgba(255,255,255,0.5);font-size:0.9rem;line-height:1.7;margin:0;">25+ pre-built automation workflows. Trigger campaigns across email, SMS, social, and ads based on real-time customer behavior.</p>
+            </div>
+            <div class="glass-card reveal stagger-2">
+                <div class="icon-box purple"><i data-feather="eye"></i></div>
+                <h5 style="font-weight:700;font-size:1.1rem;margin-bottom:0.65rem;">Competitor Intelligence</h5>
+                <p style="color:rgba(255,255,255,0.5);font-size:0.9rem;line-height:1.7;margin:0;">Monitor competitors in real time. Track their SEO rankings, social activity, ad spend, and content strategy &mdash; then outmaneuver them.</p>
+            </div>
+            <div class="glass-card reveal stagger-3">
+                <div class="icon-box pink"><i data-feather="users"></i></div>
+                <h5 style="font-weight:700;font-size:1.1rem;margin-bottom:0.65rem;">Visual Sales CRM</h5>
+                <p style="color:rgba(255,255,255,0.5);font-size:0.9rem;line-height:1.7;margin:0;">Drag-and-drop Kanban pipeline with 360&deg; customer views, AI-powered lead scoring, and coached next-action recommendations.</p>
+            </div>
+            <div class="glass-card reveal stagger-4">
+                <div class="icon-box blue"><i data-feather="bar-chart-2"></i></div>
+                <h5 style="font-weight:700;font-size:1.1rem;margin-bottom:0.65rem;">Revenue Analytics</h5>
+                <p style="color:rgba(255,255,255,0.5);font-size:0.9rem;line-height:1.7;margin:0;">10 metric categories from acquisition to compliance. Real-time dashboards with attribution modeling and predictive insights.</p>
+            </div>
+        </div>
+    </div>
+</section>
+
+<hr class="divider-glow">
+
+<!-- ═══════════════════════════ IMPACT STATS ═══════════════════════════ -->
+<section class="section" style="padding: 8rem 0; background: rgba(188,0,237,0.02);">
+    <div class="container-lux">
+        <div class="text-center mb-5">
+            <div class="section-label mx-auto reveal">
+                <i data-feather="target" style="width:14px;height:14px;"></i>
+                Impact
+            </div>
+            <h2 class="section-title reveal stagger-1">Built for teams that measure <span class="gradient-text">results</span></h2>
+        </div>
+
+        <div class="row g-4 text-center">
+            <div class="col-md-3 col-6">
+                <div class="stat-block reveal stagger-1">
+                    <div class="number-huge gradient-text counter-value" data-target="10" data-suffix="x">0</div>
+                    <div class="stat-desc">Faster Campaign Launches</div>
+                </div>
+            </div>
+            <div class="col-md-3 col-6">
+                <div class="stat-block reveal stagger-2">
+                    <div class="number-huge text-gradient-purple counter-value" data-target="85" data-suffix="%">0</div>
+                    <div class="stat-desc">Less Manual Work</div>
+                </div>
+            </div>
+            <div class="col-md-3 col-6">
+                <div class="stat-block reveal stagger-3">
+                    <div class="number-huge text-gradient-pink counter-value" data-target="360" data-suffix="°">0</div>
+                    <div class="stat-desc">Customer Visibility</div>
+                </div>
+            </div>
+            <div class="col-md-3 col-6">
+                <div class="stat-block reveal stagger-4">
+                    <div class="number-huge text-gradient-cyan counter-value" data-target="1" data-suffix="">0</div>
+                    <div class="stat-desc">Platform, Not 8+</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<hr class="divider-glow">
+
+<!-- ═══════════════════════════ MULTI-CHANNEL ═══════════════════════════ -->
+<section class="section" style="padding: 8rem 0;">
+    <div class="container-lux">
+        <div class="text-center mb-5">
+            <div class="section-label mx-auto reveal">
+                <i data-feather="share-2" style="width:14px;height:14px;"></i>
+                Multi-Channel
+            </div>
+            <h2 class="section-title reveal stagger-1">Every channel. <span class="gradient-text">One command center.</span></h2>
+            <p class="section-subtitle mx-auto reveal stagger-2">Publish, monitor, and optimize across all major platforms from a single dashboard.</p>
+        </div>
+
+        <div class="channel-grid">
+            <div class="glass-card channel-card reveal-scale stagger-1">
+                <i data-feather="instagram" style="width:32px;height:32px;color:var(--lux-pink);"></i>
+                <div class="ch-name">Instagram</div>
+            </div>
+            <div class="glass-card channel-card reveal-scale stagger-2">
+                <i data-feather="facebook" style="width:32px;height:32px;color:var(--lux-blue);"></i>
+                <div class="ch-name">Facebook</div>
+            </div>
+            <div class="glass-card channel-card reveal-scale stagger-3">
+                <i data-feather="twitter" style="width:32px;height:32px;color:var(--lux-cyan);"></i>
+                <div class="ch-name">X / Twitter</div>
+            </div>
+            <div class="glass-card channel-card reveal-scale stagger-4">
+                <i data-feather="linkedin" style="width:32px;height:32px;color:var(--lux-blue);"></i>
+                <div class="ch-name">LinkedIn</div>
+            </div>
+            <div class="glass-card channel-card reveal-scale stagger-5">
+                <i data-feather="youtube" style="width:32px;height:32px;color:var(--lux-pink);"></i>
+                <div class="ch-name">YouTube</div>
+            </div>
+            <div class="glass-card channel-card reveal-scale stagger-6">
+                <i data-feather="mail" style="width:32px;height:32px;color:var(--lux-purple);"></i>
+                <div class="ch-name">Email</div>
+            </div>
+            <div class="glass-card channel-card reveal-scale stagger-7">
+                <i data-feather="smartphone" style="width:32px;height:32px;color:var(--lux-cyan);"></i>
+                <div class="ch-name">SMS</div>
+            </div>
+            <div class="glass-card channel-card reveal-scale stagger-8">
+                <i data-feather="globe" style="width:32px;height:32px;color:var(--lux-purple);"></i>
+                <div class="ch-name">Blog & SEO</div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<hr class="divider-glow">
+
+<!-- ═══════════════════════════ FINAL CTA ═══════════════════════════ -->
+<section class="cta-final">
+    <div class="glow-orb" style="width:400px;height:400px;background:rgba(188,0,237,0.12);top:20%;left:10%;"></div>
+    <div class="glow-orb" style="width:350px;height:350px;background:rgba(0,255,180,0.08);bottom:10%;right:15%;"></div>
+
+    <div class="container-lux" style="position:relative;z-index:2;">
+        <div class="reveal">
+            <h2 class="cinematic-title" style="font-size:clamp(2rem,5vw,3.8rem);margin-bottom:1.5rem;">
+                Ready to let AI run your<br><span class="gradient-text">marketing engine?</span>
+            </h2>
+        </div>
+        <p class="section-subtitle mx-auto reveal stagger-1" style="margin-bottom:2.5rem;">
+            Join forward-thinking teams that replaced their marketing stack with one intelligent platform.
+        </p>
+        <div class="d-flex flex-wrap justify-content-center gap-3 reveal stagger-2">
+            <a href="{{ url_for('marketing.book_demo', from='home_cta') }}" class="btn-lux-primary btn-lux-large">
+                Book a Demo <i data-feather="calendar" style="width:18px;height:18px;"></i>
+            </a>
+            <a href="tel:+19163704621" class="btn-lux-outline btn-lux-large">
+                <i data-feather="phone" style="width:18px;height:18px;"></i> Call Us
+            </a>
+        </div>
+    </div>
+</section>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    document.querySelectorAll('.counter-value').forEach(el => {
+        el.style.fontVariantNumeric = 'tabular-nums';
+    });
+</script>
+{% endblock %}

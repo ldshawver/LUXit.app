@@ -1,6 +1,498 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="{% block meta_description %}LUX - AI-Powered Marketing Automation & CRM Platform. Automate campaigns, gain competitor intelligence, and accelerate revenue growth.{% endblock %}">
+    <title>{% block title %}LUX{% endblock %} | AI-Powered Marketing & Sales Platform</title>
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='favicon.png') }}">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <script src="https://unpkg.com/feather-icons"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --lux-black: #000000;
+            --lux-cyan: #00ffb4;
+            --lux-purple: #bc00ed;
+            --lux-pink: #e4055c;
+            --lux-blue: #0044ff;
+            --lux-silver: #c0c0c0;
+            --lux-pearl: #F5F5F5;
+            --lux-card: #0a0a0a;
+            --lux-border: rgba(188, 0, 237, 0.2);
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        html {
+            scroll-behavior: smooth;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: var(--lux-black);
+            color: var(--lux-pearl);
+            overflow-x: hidden;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        .mkt-nav {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            z-index: 1000;
+            padding: 1rem 0;
+            transition: all 0.3s ease;
+            background: transparent;
+        }
+
+        .mkt-nav.scrolled {
+            background: rgba(0, 0, 0, 0.92);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border-bottom: 1px solid rgba(188, 0, 237, 0.15);
+            padding: 0.6rem 0;
+        }
+
+        .mkt-nav .nav-inner {
+            max-width: 1280px;
+            margin: 0 auto;
+            padding: 0 2rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .mkt-nav .logo {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            text-decoration: none;
+            font-weight: 800;
+            font-size: 1.5rem;
+            color: var(--lux-pearl);
+            letter-spacing: -0.02em;
+        }
+
+        .mkt-nav .logo img {
+            height: 36px;
+            width: auto;
+        }
+
+        .mkt-nav .nav-links {
+            display: flex;
+            align-items: center;
+            gap: 2rem;
+            list-style: none;
+            margin: 0;
+            padding: 0;
+        }
+
+        .mkt-nav .nav-links a {
+            color: rgba(255, 255, 255, 0.7);
+            text-decoration: none;
+            font-size: 0.9rem;
+            font-weight: 500;
+            transition: color 0.2s;
+            letter-spacing: 0.01em;
+        }
+
+        .mkt-nav .nav-links a:hover {
+            color: var(--lux-cyan);
+        }
+
+        .mkt-nav .nav-links a.active {
+            color: var(--lux-cyan);
+        }
+
+        .btn-lux-primary {
+            background: linear-gradient(135deg, var(--lux-cyan), var(--lux-blue));
+            color: #000;
+            border: none;
+            padding: 0.65rem 1.75rem;
+            border-radius: 8px;
+            font-weight: 600;
+            font-size: 0.9rem;
+            text-decoration: none;
+            transition: all 0.3s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .btn-lux-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 30px rgba(0, 255, 180, 0.3);
+            color: #000;
+        }
+
+        .btn-lux-outline {
+            background: transparent;
+            color: var(--lux-pearl);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            padding: 0.65rem 1.75rem;
+            border-radius: 8px;
+            font-weight: 500;
+            font-size: 0.9rem;
+            text-decoration: none;
+            transition: all 0.3s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .btn-lux-outline:hover {
+            border-color: var(--lux-cyan);
+            color: var(--lux-cyan);
+            background: rgba(0, 255, 180, 0.05);
+        }
+
+        .btn-lux-large {
+            padding: 1rem 2.5rem;
+            font-size: 1.05rem;
+            border-radius: 10px;
+        }
+
+        .section { padding: 6rem 0; }
+        .section-sm { padding: 4rem 0; }
+
+        .container-lux {
+            max-width: 1280px;
+            margin: 0 auto;
+            padding: 0 2rem;
+        }
+
+        .gradient-text {
+            background: linear-gradient(135deg, var(--lux-cyan), var(--lux-purple));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .gradient-text-warm {
+            background: linear-gradient(135deg, var(--lux-pink), var(--lux-purple));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .section-label {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            background: rgba(0, 255, 180, 0.08);
+            border: 1px solid rgba(0, 255, 180, 0.2);
+            color: var(--lux-cyan);
+            padding: 0.4rem 1rem;
+            border-radius: 50px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            margin-bottom: 1.5rem;
+        }
+
+        .section-title {
+            font-size: clamp(2rem, 4vw, 3.2rem);
+            font-weight: 800;
+            line-height: 1.15;
+            letter-spacing: -0.03em;
+            margin-bottom: 1.25rem;
+        }
+
+        .section-subtitle {
+            font-size: 1.15rem;
+            color: rgba(255, 255, 255, 0.6);
+            line-height: 1.7;
+            max-width: 640px;
+        }
+
+        .glass-card {
+            background: rgba(10, 10, 10, 0.8);
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            border-radius: 16px;
+            padding: 2rem;
+            transition: all 0.4s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .glass-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 1px;
+            background: linear-gradient(90deg, transparent, rgba(0, 255, 180, 0.3), transparent);
+            opacity: 0;
+            transition: opacity 0.4s ease;
+        }
+
+        .glass-card:hover {
+            border-color: rgba(188, 0, 237, 0.2);
+            transform: translateY(-4px);
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+        }
+
+        .glass-card:hover::before { opacity: 1; }
+
+        .icon-box {
+            width: 52px;
+            height: 52px;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 1.25rem;
+            font-size: 1.25rem;
+        }
+
+        .icon-box.cyan { background: rgba(0, 255, 180, 0.1); color: var(--lux-cyan); }
+        .icon-box.purple { background: rgba(188, 0, 237, 0.1); color: var(--lux-purple); }
+        .icon-box.pink { background: rgba(228, 5, 92, 0.1); color: var(--lux-pink); }
+        .icon-box.blue { background: rgba(0, 68, 255, 0.1); color: var(--lux-blue); }
+
+        .stat-number {
+            font-size: clamp(2.5rem, 5vw, 4rem);
+            font-weight: 900;
+            letter-spacing: -0.04em;
+            line-height: 1;
+        }
+
+        .stat-label {
+            font-size: 0.9rem;
+            color: rgba(255, 255, 255, 0.5);
+            margin-top: 0.5rem;
+            font-weight: 500;
+        }
+
+        .mkt-footer {
+            background: rgba(5, 5, 5, 0.95);
+            border-top: 1px solid rgba(255, 255, 255, 0.05);
+            padding: 4rem 0 2rem;
+        }
+
+        .mkt-footer a {
+            color: rgba(255, 255, 255, 0.5);
+            text-decoration: none;
+            font-size: 0.9rem;
+            transition: color 0.2s;
+        }
+
+        .mkt-footer a:hover { color: var(--lux-cyan); }
+
+        .mkt-footer h6 {
+            color: var(--lux-pearl);
+            font-weight: 700;
+            font-size: 0.85rem;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            margin-bottom: 1.25rem;
+        }
+
+        .glow-line {
+            height: 2px;
+            background: linear-gradient(90deg, transparent, var(--lux-cyan), var(--lux-purple), transparent);
+            border: none;
+            margin: 0;
+        }
+
+        .mobile-toggle {
+            display: none;
+            background: none;
+            border: none;
+            color: var(--lux-pearl);
+            font-size: 1.5rem;
+            cursor: pointer;
+        }
+
+        /* Scroll Animation Classes */
+        .reveal {
+            opacity: 0;
+            transform: translateY(60px);
+            transition: opacity 0.9s cubic-bezier(0.16, 1, 0.3, 1), transform 0.9s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        .reveal.visible {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        .reveal-left {
+            opacity: 0;
+            transform: translateX(-80px);
+            transition: opacity 0.9s cubic-bezier(0.16, 1, 0.3, 1), transform 0.9s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        .reveal-left.visible {
+            opacity: 1;
+            transform: translateX(0);
+        }
+
+        .reveal-right {
+            opacity: 0;
+            transform: translateX(80px);
+            transition: opacity 0.9s cubic-bezier(0.16, 1, 0.3, 1), transform 0.9s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        .reveal-right.visible {
+            opacity: 1;
+            transform: translateX(0);
+        }
+
+        .reveal-scale {
+            opacity: 0;
+            transform: scale(0.85);
+            transition: opacity 0.9s cubic-bezier(0.16, 1, 0.3, 1), transform 0.9s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        .reveal-scale.visible {
+            opacity: 1;
+            transform: scale(1);
+        }
+
+        .stagger-1 { transition-delay: 0.1s; }
+        .stagger-2 { transition-delay: 0.2s; }
+        .stagger-3 { transition-delay: 0.3s; }
+        .stagger-4 { transition-delay: 0.4s; }
+        .stagger-5 { transition-delay: 0.5s; }
+        .stagger-6 { transition-delay: 0.6s; }
+        .stagger-7 { transition-delay: 0.7s; }
+        .stagger-8 { transition-delay: 0.8s; }
+
+        .parallax-bg {
+            will-change: transform;
+        }
+
+        .counter-value {
+            font-variant-numeric: tabular-nums;
+        }
+
+        .cinematic-title {
+            font-size: clamp(3rem, 7vw, 6rem);
+            font-weight: 900;
+            letter-spacing: -0.04em;
+            line-height: 1.0;
+        }
+
+        .cinematic-sub {
+            font-size: clamp(1.1rem, 2vw, 1.4rem);
+            color: rgba(255, 255, 255, 0.5);
+            line-height: 1.7;
+            max-width: 600px;
+        }
+
+        .sticky-section {
+            position: sticky;
+            top: 0;
+        }
+
+        .fullscreen-section {
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            position: relative;
+        }
+
+        .glow-orb {
+            position: absolute;
+            border-radius: 50%;
+            filter: blur(120px);
+            pointer-events: none;
+            opacity: 0.4;
+        }
+
+        .text-gradient-cyan { background: linear-gradient(135deg, var(--lux-cyan), #00b4ff); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+        .text-gradient-purple { background: linear-gradient(135deg, var(--lux-purple), #ff00ff); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+        .text-gradient-pink { background: linear-gradient(135deg, var(--lux-pink), var(--lux-purple)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+
+        .feature-showcase {
+            background: rgba(10, 10, 10, 0.9);
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            border-radius: 24px;
+            padding: 3rem;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .feature-showcase::after {
+            content: '';
+            position: absolute;
+            inset: -1px;
+            border-radius: 25px;
+            background: linear-gradient(135deg, rgba(0, 255, 180, 0.15), transparent 40%, transparent 60%, rgba(188, 0, 237, 0.15));
+            z-index: -1;
+        }
+
+        .number-huge {
+            font-size: clamp(4rem, 10vw, 8rem);
+            font-weight: 900;
+            letter-spacing: -0.05em;
+            line-height: 0.9;
+        }
+
+        .divider-glow {
+            height: 1px;
+            background: linear-gradient(90deg, transparent, rgba(0, 255, 180, 0.2), rgba(188, 0, 237, 0.2), transparent);
+            border: none;
+            margin: 0;
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            .reveal, .reveal-left, .reveal-right, .reveal-scale {
+                opacity: 1;
+                transform: none;
+                transition: none;
+            }
+        }
+
+        @media (max-width: 991px) {
+            .mobile-toggle { display: block; }
+            .mkt-nav .nav-links {
+                display: none;
+                position: absolute;
+                top: 100%;
+                left: 0;
+                right: 0;
+                background: rgba(0, 0, 0, 0.97);
+                flex-direction: column;
+                padding: 1.5rem 2rem;
+                gap: 1rem;
+                border-bottom: 1px solid var(--lux-border);
+            }
+            .mkt-nav .nav-links.open { display: flex; }
+            .section { padding: 4rem 0; }
+            .section-title { font-size: 2rem; }
+            .cinematic-title { font-size: clamp(2.2rem, 5vw, 3.5rem); }
+            .fullscreen-section { min-height: auto; padding: 5rem 0; }
+            .number-huge { font-size: clamp(3rem, 8vw, 5rem); }
+        }
+
+        {% block extra_css %}{% endblock %}
+    </style>
+</head>
+<body>
+    <hr class="glow-line">
+    <nav class="mkt-nav" id="mktNav">
+        <div class="nav-inner">
+            <a href="{{ url_for('marketing.home') }}" class="logo">
+                <img src="{{ url_for('static', filename='lux_logo.png') }}" alt="LUX">
+                LUX
+            </a>
+            <button class="mobile-toggle" onclick="document.getElementById('navLinks').classList.toggle('open')">
+                <i data-feather="menu"></i>
+            </button>
+            <ul class="nav-links" id="navLinks">
+                <li><a href="{{ url_for('marketing.home') }}" class="{% if active_page == 'home' %}active{% endif %}">Home</a></li>
+                <li><a href="{{ url_for('marketing.features') }}" class="{% if active_page == 'features' %}active{% endif %}">Features</a></li>
+                <li><a href="{{ url_for('marketing.solutions') }}" class="{% if active_page == 'solutions' %}active{% endif %}">Solutions</a></li>
+                <li><a href="{{ url_for('marketing.security') }}" class="{% if active_page == 'security' %}active{% endif %}">Security</a></li>
+                <li><a href="{{ url_for('marketing.book_demo') }}" class="btn-lux-primary">Book a Demo</a></li>
+            </ul>
+        </div>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{% block title %}LUX IT{% endblock %}</title>
@@ -1014,6 +1506,21 @@
     <div class="particle" style="left: 50%; animation-delay: 8s;"></div>
     <div class="particle" style="left: 70%; animation-delay: 9s;"></div>
     <div class="particle" style="left: 90%; animation-delay: 10s;"></div>
+    <div class="particle" style="left: 10%; animation-delay: 0s;"></div>
+    <div class="particle" style="left: 20%; animation-delay: 3s;"></div>
+    <div class="particle" style="left: 30%; animation-delay: 5s;"></div>
+    <div class="particle" style="left: 40%; animation-delay: 2s;"></div>
+    <div class="particle" style="left: 50%; animation-delay: 4s;"></div>
+    <div class="particle" style="left: 60%; animation-delay: 6s;"></div>
+    <div class="particle" style="left: 70%; animation-delay: 3.5s;"></div>
+    <div class="particle" style="left: 80%; animation-delay: 5.5s;"></div>
+    <div class="particle" style="left: 90%; animation-delay: 2.5s;"></div>
+    <div class="particle" style="left: 99%; animation-delay: 4.5s;"></div>
+    <div class="particle" style="left: 12%; animation-delay: 7s;"></div>
+    <div class="particle" style="left: 32%; animation-delay: 8s;"></div>
+    <div class="particle" style="left: 57%; animation-delay: 9s;"></div>
+    <div class="particle" style="left: 78%; animation-delay: 10s;"></div>
+    <div class="particle" style="left: 94%; animation-delay: 11s;"></div>
   </div>
 
   <div class="marketing-shell">
@@ -1036,6 +1543,131 @@
 
     {% block content %}{% endblock %}
 
+    <footer class="mkt-footer">
+        <div class="container-lux">
+            <div class="row g-4">
+                <div class="col-lg-4 col-md-6">
+                    <div class="d-flex align-items-center gap-2 mb-3">
+                        <img src="{{ url_for('static', filename='lux_logo.png') }}" alt="LUX" height="32">
+                        <span style="font-weight: 800; font-size: 1.3rem;">LUX</span>
+                    </div>
+                    <p style="color: rgba(255,255,255,0.45); font-size: 0.9rem; line-height: 1.7; max-width: 300px;">
+                        The AI-powered marketing automation and CRM platform built for teams that move fast.
+                    </p>
+                </div>
+                <div class="col-lg-2 col-md-6">
+                    <h6>Platform</h6>
+                    <ul class="list-unstyled d-flex flex-column gap-2">
+                        <li><a href="{{ url_for('marketing.features') }}">Features</a></li>
+                        <li><a href="{{ url_for('marketing.solutions') }}">Solutions</a></li>
+                        <li><a href="{{ url_for('marketing.security') }}">Security</a></li>
+                    </ul>
+                </div>
+                <div class="col-lg-2 col-md-6">
+                    <h6>Capabilities</h6>
+                    <ul class="list-unstyled d-flex flex-column gap-2">
+                        <li><a href="{{ url_for('marketing.features') }}#automation">Automation</a></li>
+                        <li><a href="{{ url_for('marketing.features') }}#intelligence">AI Intelligence</a></li>
+                        <li><a href="{{ url_for('marketing.features') }}#crm">Sales CRM</a></li>
+                        <li><a href="{{ url_for('marketing.features') }}#analytics">Analytics</a></li>
+                    </ul>
+                </div>
+                <div class="col-lg-2 col-md-6">
+                    <h6>Solutions</h6>
+                    <ul class="list-unstyled d-flex flex-column gap-2">
+                        <li><a href="{{ url_for('marketing.solutions') }}#marketers">For Marketers</a></li>
+                        <li><a href="{{ url_for('marketing.solutions') }}#cto">For CTOs</a></li>
+                        <li><a href="{{ url_for('marketing.solutions') }}#ceo">For CEOs</a></li>
+                    </ul>
+                </div>
+                <div class="col-lg-2 col-md-6">
+                    <h6>Get in Touch</h6>
+                    <ul class="list-unstyled d-flex flex-column gap-2">
+                        <li><a href="{{ url_for('marketing.book_demo') }}">Book a Demo</a></li>
+                        <li><a href="tel:+19163704621">Call (916) 370-4621</a></li>
+                        <li><a href="mailto:sales@luxit.app">Email Us</a></li>
+                        <li><a href="{{ url_for('auth.login') }}">Sign In</a></li>
+                    </ul>
+                </div>
+            </div>
+            <hr style="border-color: rgba(255,255,255,0.06); margin: 3rem 0 1.5rem;">
+            <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
+                <p style="color: rgba(255,255,255,0.3); font-size: 0.8rem; margin: 0;">&copy; {{ now.year if now else '2026' }} LUX Marketing Platform. All rights reserved.</p>
+                <div class="d-flex gap-3">
+                    <a href="#" style="color: rgba(255,255,255,0.3); font-size: 0.8rem;">Privacy Policy</a>
+                    <a href="#" style="color: rgba(255,255,255,0.3); font-size: 0.8rem;">Terms of Service</a>
+                </div>
+            </div>
+        </div>
+    </footer>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        feather.replace();
+
+        window.addEventListener('scroll', () => {
+            document.getElementById('mktNav').classList.toggle('scrolled', window.scrollY > 40);
+        });
+
+        const revealObserver = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    entry.target.classList.add('visible');
+                }
+            });
+        }, { threshold: 0.1, rootMargin: '0px 0px -60px 0px' });
+
+        document.querySelectorAll('.reveal, .reveal-left, .reveal-right, .reveal-scale').forEach(el => {
+            revealObserver.observe(el);
+        });
+
+        function animateCounter(el, target, duration = 2000) {
+            const start = 0;
+            const startTime = performance.now();
+            const suffix = el.dataset.suffix || '';
+            const prefix = el.dataset.prefix || '';
+
+            function update(currentTime) {
+                const elapsed = currentTime - startTime;
+                const progress = Math.min(elapsed / duration, 1);
+                const eased = 1 - Math.pow(1 - progress, 3);
+                const current = Math.round(start + (target - start) * eased);
+                el.textContent = prefix + current.toLocaleString() + suffix;
+                if (progress < 1) requestAnimationFrame(update);
+            }
+            requestAnimationFrame(update);
+        }
+
+        const counterObserver = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting && !entry.target.dataset.counted) {
+                    entry.target.dataset.counted = 'true';
+                    animateCounter(entry.target, parseInt(entry.target.dataset.target), 2000);
+                }
+            });
+        }, { threshold: 0.5 });
+
+        document.querySelectorAll('.counter-value').forEach(el => counterObserver.observe(el));
+
+        let ticking = false;
+        window.addEventListener('scroll', () => {
+            if (!ticking) {
+                requestAnimationFrame(() => {
+                    const scrollY = window.scrollY;
+                    document.querySelectorAll('.parallax-bg').forEach(el => {
+                        const speed = parseFloat(el.dataset.speed || 0.3);
+                        const rect = el.getBoundingClientRect();
+                        if (rect.top < window.innerHeight && rect.bottom > 0) {
+                            el.style.transform = `translateY(${scrollY * speed}px)`;
+                        }
+                    });
+                    ticking = false;
+                });
+                ticking = true;
+            }
+        });
+    </script>
+    {% block extra_js %}{% endblock %}
     <footer>
       <p>&copy; 2026 LUX IT. The licensable revenue operating system for modern growth teams.</p>
     </footer>

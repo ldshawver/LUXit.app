@@ -108,8 +108,9 @@ class User(UserMixin, db.Model):
     custom_fields = db.Column(JSON)
     engagement_score = db.Column(db.Float, default=0.0)
     last_activity = db.Column(db.DateTime)
-    bio = db.Column(Text)
-
+    bio = db.Column(db.Text)  # User bio/description
+    preferred_hub = db.Column(db.String(20), default='marketing')  # 'marketing' or 'sales'
+    
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(
         db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
@@ -1019,14 +1020,17 @@ class AgentSchedule(db.Model):
     __tablename__ = "agent_schedule"
 
     id = db.Column(db.Integer, primary_key=True)
-    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=False, index=True)
-    agent_type = db.Column(db.String(100), nullable=False)
-    schedule_type = db.Column(db.String(50))
-    frequency = db.Column(db.String(50))
-    cron_expression = db.Column(db.String(100))
-    is_active = db.Column(db.Boolean, default=True)
-    last_run = db.Column(db.DateTime)
-    next_run = db.Column(db.DateTime)
+    company_id = db.Column(db.Integer, db.ForeignKey('company.id'), nullable=False)
+    contact_id = db.Column(db.Integer, db.ForeignKey('contact.id'), nullable=True)
+    title = db.Column(db.String(255), nullable=False)
+    description = db.Column(db.Text)
+    value = db.Column(db.Float)  # Deal value
+    currency = db.Column(db.String(3), default='USD')
+    stage = db.Column(db.String(50), default='prospecting')  # prospecting, qualification, proposal, negotiation, won, lost
+    probability = db.Column(db.Float, default=0.0)  # 0-1.0
+    expected_close_date = db.Column(db.DateTime)
+    closed_at = db.Column(db.DateTime)
+    owner_id = db.Column(db.Integer, db.ForeignKey('user.id'))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     
     company = db.relationship("Company", backref="agent_schedules")
@@ -1332,26 +1336,77 @@ class ApprovalAuditLog(db.Model):
         }
 
 
-class FeatureToggle(db.Model):
-    __tablename__ = "feature_toggle"
+# ============= DEFAULT FEATURE TOGGLES =============
+DEFAULT_FEATURE_TOGGLES = [
+    # AI Agent Toggles (ALL OFF by default)
+    {'feature_key': 'agent_brand_strategy', 'feature_name': 'Brand Strategy Agent', 'feature_category': 'ai_agents', 'agent_type': 'brand_strategy', 'is_enabled': False, 'require_approval': True},
+    {'feature_key': 'agent_content_seo', 'feature_name': 'Content & SEO Agent', 'feature_category': 'ai_agents', 'agent_type': 'content_seo', 'is_enabled': False, 'require_approval': True},
+    {'feature_key': 'agent_analytics', 'feature_name': 'Analytics Agent', 'feature_category': 'ai_agents', 'agent_type': 'analytics', 'is_enabled': False, 'require_approval': True},
+    {'feature_key': 'agent_creative_design', 'feature_name': 'Creative & Design Agent', 'feature_category': 'ai_agents', 'agent_type': 'creative_design', 'is_enabled': False, 'require_approval': True},
+    {'feature_key': 'agent_advertising', 'feature_name': 'Advertising Agent', 'feature_category': 'ai_agents', 'agent_type': 'advertising', 'is_enabled': False, 'require_approval': True},
+    {'feature_key': 'agent_social_media', 'feature_name': 'Social Media Agent', 'feature_category': 'ai_agents', 'agent_type': 'social_media', 'is_enabled': False, 'require_approval': True},
+    {'feature_key': 'agent_email_crm', 'feature_name': 'Email & CRM Agent', 'feature_category': 'ai_agents', 'agent_type': 'email_crm', 'is_enabled': False, 'require_approval': True},
+    {'feature_key': 'agent_sales_enablement', 'feature_name': 'Sales Enablement Agent', 'feature_category': 'ai_agents', 'agent_type': 'sales_enablement', 'is_enabled': False, 'require_approval': True},
+    {'feature_key': 'agent_retention', 'feature_name': 'Retention Agent', 'feature_category': 'ai_agents', 'agent_type': 'retention', 'is_enabled': False, 'require_approval': True},
+    {'feature_key': 'agent_operations', 'feature_name': 'Operations Agent', 'feature_category': 'ai_agents', 'agent_type': 'operations', 'is_enabled': False, 'require_approval': True},
+    {'feature_key': 'agent_app_intelligence', 'feature_name': 'APP Agent', 'feature_category': 'ai_agents', 'agent_type': 'app_intelligence', 'is_enabled': False, 'require_approval': True},
+    
+    # Channel Toggles (ALL OFF by default)
+    {'feature_key': 'channel_instagram', 'feature_name': 'Instagram Publishing', 'feature_category': 'channels', 'is_enabled': False, 'require_approval': True},
+    {'feature_key': 'channel_facebook', 'feature_name': 'Facebook Publishing', 'feature_category': 'channels', 'is_enabled': False, 'require_approval': True},
+    {'feature_key': 'channel_tiktok', 'feature_name': 'TikTok Publishing', 'feature_category': 'channels', 'is_enabled': False, 'require_approval': True},
+    {'feature_key': 'channel_twitter', 'feature_name': 'X/Twitter Publishing', 'feature_category': 'channels', 'is_enabled': False, 'require_approval': True},
+    {'feature_key': 'channel_linkedin', 'feature_name': 'LinkedIn Publishing', 'feature_category': 'channels', 'is_enabled': False, 'require_approval': True},
+    {'feature_key': 'channel_email', 'feature_name': 'Email Campaigns', 'feature_category': 'channels', 'is_enabled': False, 'require_approval': True},
+    {'feature_key': 'channel_sms', 'feature_name': 'SMS Campaigns', 'feature_category': 'channels', 'is_enabled': False, 'require_approval': True},
+    {'feature_key': 'channel_blog', 'feature_name': 'Blog Publishing', 'feature_category': 'channels', 'is_enabled': False, 'require_approval': True},
+    
+    # Automation Toggles (ALL OFF by default)
+    {'feature_key': 'automation_scheduled_posts', 'feature_name': 'Scheduled Post Publishing', 'feature_category': 'automation', 'is_enabled': False, 'require_approval': True},
+    {'feature_key': 'automation_ai_content', 'feature_name': 'AI Content Generation', 'feature_category': 'automation', 'is_enabled': False, 'require_approval': True},
+    {'feature_key': 'automation_workflow_triggers', 'feature_name': 'Automation Workflows', 'feature_category': 'automation', 'is_enabled': False, 'require_approval': True},
+    {'feature_key': 'automation_ad_optimization', 'feature_name': 'Ad Campaign Optimization', 'feature_category': 'automation', 'is_enabled': False, 'require_approval': True},
+    
+    # Safety Toggles (ALL ON by default - these are safety features)
+    {'feature_key': 'safety_content_review', 'feature_name': 'Content Review Required', 'feature_category': 'safety', 'is_enabled': True, 'require_approval': True},
+    {'feature_key': 'safety_brand_check', 'feature_name': 'Brand Safety Check', 'feature_category': 'safety', 'is_enabled': True, 'require_approval': True},
+    {'feature_key': 'safety_compliance_scan', 'feature_name': 'Compliance Scanning', 'feature_category': 'safety', 'is_enabled': True, 'require_approval': True},
+    {'feature_key': 'safety_budget_limits', 'feature_name': 'Budget Limit Enforcement', 'feature_category': 'safety', 'is_enabled': True, 'require_approval': True},
+]
+
+
+def seed_feature_toggles(company_id):
+    """Seed default feature toggles for a company with safe defaults (OFF)"""
+    for toggle_data in DEFAULT_FEATURE_TOGGLES:
+        existing = FeatureToggle.query.filter_by(
+            company_id=company_id,
+            feature_key=toggle_data['feature_key']
+        ).first()
+        
+        if not existing:
+            toggle = FeatureToggle(
+                company_id=company_id,
+                **toggle_data
+            )
+            db.session.add(toggle)
+    
+    db.session.commit()
+
+
+class DemoRequest(db.Model):
+    __tablename__ = 'demo_request'
 
     id = db.Column(db.Integer, primary_key=True)
-    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=False, index=True)
-    feature_key = db.Column(db.String(100), nullable=False)
-    is_enabled = db.Column(db.Boolean, default=False)
-    require_approval = db.Column(db.Boolean, default=True)
-    allow_automated_creation = db.Column(db.Boolean, default=False)
-    emergency_stop = db.Column(db.Boolean, default=False)
+    first_name = db.Column(db.String(100), nullable=False)
+    last_name = db.Column(db.String(100), nullable=False)
+    email = db.Column(db.String(200), nullable=False)
+    phone = db.Column(db.String(50))
+    company_name = db.Column(db.String(200))
+    job_title = db.Column(db.String(200))
+    team_size = db.Column(db.String(50))
+    message = db.Column(db.Text)
+    preferred_contact = db.Column(db.String(20), default='email')
+    source_page = db.Column(db.String(100))
+    status = db.Column(db.String(20), default='new')
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-
-    def to_dict(self):
-        return {
-            'id': self.id,
-            'company_id': self.company_id,
-            'feature_key': self.feature_key,
-            'is_enabled': self.is_enabled,
-            'require_approval': self.require_approval,
-            'allow_automated_creation': self.allow_automated_creation,
-            'emergency_stop': self.emergency_stop,
-        }

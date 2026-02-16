@@ -11,6 +11,126 @@
     <script src="https://unpkg.com/feather-icons"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/custom.css') }}">
+    
+    <style>
+      :root {
+        {% if current_user is defined and current_user.is_authenticated %}
+          {% set brand = current_user.get_default_company() %}
+          --lux-primary: {{ brand.primary_color if brand and brand.primary_color else '#bc00ed' }};
+          --lux-secondary: {{ brand.secondary_color if brand and brand.secondary_color else '#00ffb4' }};
+          --lux-accent: {{ brand.accent_color if brand and brand.accent_color else '#e4055c' }};
+          --lux-font: {{ brand.font_family if brand and brand.font_family else 'Inter, sans-serif' }};
+        {% else %}
+          --lux-primary: #bc00ed;
+          --lux-secondary: #00ffb4;
+          --lux-accent: #e4055c;
+          --lux-font: Inter, sans-serif;
+        {% endif %}
+      }
+
+      body {
+        background: #000000 !important;
+        color: #ffffff;
+        font-family: var(--lux-font);
+      }
+      
+      .lux-header {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        padding: 2rem 3rem;
+        background: #000000;
+        position: relative;
+      }
+      
+      .nav-arrows {
+        position: absolute;
+        left: 3rem;
+      }
+      
+      .nav-arrows {
+        display: flex;
+        align-items: center;
+        gap: 0;
+      }
+      
+      .nav-arrow {
+        background: transparent;
+        border: none;
+        color: var(--lux-secondary, #00ffb4);
+        width: 40px;
+        height: 40px;
+        border-radius: 8px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        transition: all 0.3s ease;
+      }
+      
+      .nav-arrow:hover {
+        background: var(--lux-primary, #bc00ed);
+        color: #fff;
+        transform: scale(1.1);
+      }
+      
+      .lux-logo {
+        height: 40px;
+        width: auto;
+        cursor: pointer;
+      }
+      
+      .header-center {
+        flex: 1;
+        text-align: center;
+        padding: 0 2rem;
+      }
+      
+      .header-center h1 {
+        color: var(--lux-secondary, #00ffb4);
+        font-size: 1.8rem;
+        margin: 0;
+        font-weight: 600;
+      }
+      
+      .header-center .tagline {
+        color: var(--lux-primary, #bc00ed);
+        font-size: 1rem;
+        margin: 0.25rem 0 0;
+      }
+      
+      .header-right {
+        position: absolute;
+        right: 3rem;
+        display: flex;
+        align-items: center;
+        gap: 1.5rem;
+      }
+      
+      .company-logo {
+        height: 40px;
+        width: auto;
+        border-radius: 4px;
+      }
+      
+      .settings-btn {
+        padding: 0;
+        border: none;
+      }
+      
+      .settings-icon {
+        color: var(--lux-secondary, #00ffb4);
+        width: 28px;
+        height: 28px;
+        cursor: pointer;
+        transition: all 0.3s ease;
+      }
+      
+      .settings-icon:hover {
+        color: var(--lux-accent, #e4055c);
+        transform: rotate(90deg);
+      }
+    </style>
 </head>
 <body>
     <div class="app-shell">
