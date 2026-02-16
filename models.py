@@ -1239,6 +1239,28 @@ class CompanyIntegrationConfig(db.Model):
     __tablename__ = "company_integration_config"
 
     id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=False, index=True)
+    service_slug = db.Column(db.String(100), nullable=False)
+    is_enabled = db.Column(db.Boolean, default=False)
+    config_json = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_by_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True)
+    updated_by_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True)
+
+
+class IntegrationAuditLog(db.Model):
+    __tablename__ = "integration_audit_log"
+
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=False, index=True)
+    config_id = db.Column(db.Integer, nullable=True)
+    service_slug = db.Column(db.String(100), nullable=False)
+    action = db.Column(db.String(50), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True)
+    changes = db.Column(db.JSON)
+    ip_address = db.Column(db.String(45))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 
 class AgentAutomation(db.Model):
