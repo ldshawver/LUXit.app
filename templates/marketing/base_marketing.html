@@ -25,6 +25,10 @@
 
         * { margin: 0; padding: 0; box-sizing: border-box; }
 
+        html {
+            scroll-behavior: smooth;
+        }
+
         body {
             font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
             background: var(--lux-black);
@@ -305,6 +309,146 @@
             cursor: pointer;
         }
 
+        /* Scroll Animation Classes */
+        .reveal {
+            opacity: 0;
+            transform: translateY(60px);
+            transition: opacity 0.9s cubic-bezier(0.16, 1, 0.3, 1), transform 0.9s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        .reveal.visible {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        .reveal-left {
+            opacity: 0;
+            transform: translateX(-80px);
+            transition: opacity 0.9s cubic-bezier(0.16, 1, 0.3, 1), transform 0.9s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        .reveal-left.visible {
+            opacity: 1;
+            transform: translateX(0);
+        }
+
+        .reveal-right {
+            opacity: 0;
+            transform: translateX(80px);
+            transition: opacity 0.9s cubic-bezier(0.16, 1, 0.3, 1), transform 0.9s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        .reveal-right.visible {
+            opacity: 1;
+            transform: translateX(0);
+        }
+
+        .reveal-scale {
+            opacity: 0;
+            transform: scale(0.85);
+            transition: opacity 0.9s cubic-bezier(0.16, 1, 0.3, 1), transform 0.9s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        .reveal-scale.visible {
+            opacity: 1;
+            transform: scale(1);
+        }
+
+        .stagger-1 { transition-delay: 0.1s; }
+        .stagger-2 { transition-delay: 0.2s; }
+        .stagger-3 { transition-delay: 0.3s; }
+        .stagger-4 { transition-delay: 0.4s; }
+        .stagger-5 { transition-delay: 0.5s; }
+        .stagger-6 { transition-delay: 0.6s; }
+        .stagger-7 { transition-delay: 0.7s; }
+        .stagger-8 { transition-delay: 0.8s; }
+
+        .parallax-bg {
+            will-change: transform;
+        }
+
+        .counter-value {
+            font-variant-numeric: tabular-nums;
+        }
+
+        .cinematic-title {
+            font-size: clamp(3rem, 7vw, 6rem);
+            font-weight: 900;
+            letter-spacing: -0.04em;
+            line-height: 1.0;
+        }
+
+        .cinematic-sub {
+            font-size: clamp(1.1rem, 2vw, 1.4rem);
+            color: rgba(255, 255, 255, 0.5);
+            line-height: 1.7;
+            max-width: 600px;
+        }
+
+        .sticky-section {
+            position: sticky;
+            top: 0;
+        }
+
+        .fullscreen-section {
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            position: relative;
+        }
+
+        .glow-orb {
+            position: absolute;
+            border-radius: 50%;
+            filter: blur(120px);
+            pointer-events: none;
+            opacity: 0.4;
+        }
+
+        .text-gradient-cyan { background: linear-gradient(135deg, var(--lux-cyan), #00b4ff); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+        .text-gradient-purple { background: linear-gradient(135deg, var(--lux-purple), #ff00ff); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+        .text-gradient-pink { background: linear-gradient(135deg, var(--lux-pink), var(--lux-purple)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+
+        .feature-showcase {
+            background: rgba(10, 10, 10, 0.9);
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            border-radius: 24px;
+            padding: 3rem;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .feature-showcase::after {
+            content: '';
+            position: absolute;
+            inset: -1px;
+            border-radius: 25px;
+            background: linear-gradient(135deg, rgba(0, 255, 180, 0.15), transparent 40%, transparent 60%, rgba(188, 0, 237, 0.15));
+            z-index: -1;
+        }
+
+        .number-huge {
+            font-size: clamp(4rem, 10vw, 8rem);
+            font-weight: 900;
+            letter-spacing: -0.05em;
+            line-height: 0.9;
+        }
+
+        .divider-glow {
+            height: 1px;
+            background: linear-gradient(90deg, transparent, rgba(0, 255, 180, 0.2), rgba(188, 0, 237, 0.2), transparent);
+            border: none;
+            margin: 0;
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            .reveal, .reveal-left, .reveal-right, .reveal-scale {
+                opacity: 1;
+                transform: none;
+                transition: none;
+            }
+        }
+
         @media (max-width: 991px) {
             .mobile-toggle { display: block; }
             .mkt-nav .nav-links {
@@ -322,6 +466,9 @@
             .mkt-nav .nav-links.open { display: flex; }
             .section { padding: 4rem 0; }
             .section-title { font-size: 2rem; }
+            .cinematic-title { font-size: clamp(2.2rem, 5vw, 3.5rem); }
+            .fullscreen-section { min-height: auto; padding: 5rem 0; }
+            .number-huge { font-size: clamp(3rem, 8vw, 5rem); }
         }
 
         {% block extra_css %}{% endblock %}
@@ -411,8 +558,67 @@
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script>
         feather.replace();
+
         window.addEventListener('scroll', () => {
             document.getElementById('mktNav').classList.toggle('scrolled', window.scrollY > 40);
+        });
+
+        const revealObserver = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    entry.target.classList.add('visible');
+                }
+            });
+        }, { threshold: 0.1, rootMargin: '0px 0px -60px 0px' });
+
+        document.querySelectorAll('.reveal, .reveal-left, .reveal-right, .reveal-scale').forEach(el => {
+            revealObserver.observe(el);
+        });
+
+        function animateCounter(el, target, duration = 2000) {
+            const start = 0;
+            const startTime = performance.now();
+            const suffix = el.dataset.suffix || '';
+            const prefix = el.dataset.prefix || '';
+
+            function update(currentTime) {
+                const elapsed = currentTime - startTime;
+                const progress = Math.min(elapsed / duration, 1);
+                const eased = 1 - Math.pow(1 - progress, 3);
+                const current = Math.round(start + (target - start) * eased);
+                el.textContent = prefix + current.toLocaleString() + suffix;
+                if (progress < 1) requestAnimationFrame(update);
+            }
+            requestAnimationFrame(update);
+        }
+
+        const counterObserver = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting && !entry.target.dataset.counted) {
+                    entry.target.dataset.counted = 'true';
+                    animateCounter(entry.target, parseInt(entry.target.dataset.target), 2000);
+                }
+            });
+        }, { threshold: 0.5 });
+
+        document.querySelectorAll('.counter-value').forEach(el => counterObserver.observe(el));
+
+        let ticking = false;
+        window.addEventListener('scroll', () => {
+            if (!ticking) {
+                requestAnimationFrame(() => {
+                    const scrollY = window.scrollY;
+                    document.querySelectorAll('.parallax-bg').forEach(el => {
+                        const speed = parseFloat(el.dataset.speed || 0.3);
+                        const rect = el.getBoundingClientRect();
+                        if (rect.top < window.innerHeight && rect.bottom > 0) {
+                            el.style.transform = `translateY(${scrollY * speed}px)`;
+                        }
+                    });
+                    ticking = false;
+                });
+                ticking = true;
+            }
         });
     </script>
     {% block extra_js %}{% endblock %}
