@@ -181,7 +181,7 @@ login_manager.login_message = "Please log in to access this page."
 @login_manager.user_loader
 def load_user(user_id):
     from models import User
-    return User.query.get(int(user_id))
+    return db.session.get(User, int(user_id))
 
 
 # ============================================================
@@ -269,7 +269,7 @@ def attach_request_id(response):
 
 
 # ============================================================
-# App initialization (before blueprint imports)
+# App initialization
 # ============================================================
 
 with app.app_context():
@@ -306,73 +306,69 @@ with app.app_context():
     except Exception as e:
         logging.error(f"Error initializing AI Agent Scheduler: {e}")
 
+    # ============================================================
+    # Blueprints (INSIDE app context - AFTER models import)
+    # ============================================================
 
-# ============================================================
-# Blueprints (MOVED TO END - After app context setup)
-# ============================================================
+    from routes import main_bp
+    from auth import auth_bp
+    from user_management import user_bp
+    from advanced_config import advanced_config_bp
 
-from routes import main_bp
-from auth import auth_bp
-from user_management import user_bp
-from advanced_config import advanced_config_bp
+    # Register blueprints
+    app.register_blueprint(main_bp)
+    app.register_blueprint(auth_bp, url_prefix="/auth")
+    app.register_blueprint(user_bp, url_prefix="/user")
+    app.register_blueprint(advanced_config_bp)
 
-# Register blueprints that don't have circular imports first
-app.register_blueprint(main_bp)
-app.register_blueprint(auth_bp, url_prefix="/auth")
-app.register_blueprint(user_bp, url_prefix="/user")
-app.register_blueprint(advanced_config_bp)
+    # Import marketing_routes AFTER models is loaded
+    try:
+        from marketing_routes import marketing_bp
+        app.register_blueprint(marketing_bp)
+        logging.info("Marketing routes blueprint registered")
+    except Exception as e:
+        logging.warning(f"Marketing routes not available: {e}")
 
-# Import marketing_routes AFTER app context is ready
-# This avoids circular import since marketing_routes imports db from app
-try:
-    from marketing_routes import marketing_bp
-    app.register_blueprint(marketing_bp)
-    logging.info("Marketing routes blueprint registered")
-except Exception as e:
-    logging.warning(f"Marketing routes not available: {e}")
+    # Optional / external integrations
+    try:
+        from replit_auth import make_replit_blueprint, is_replit_auth_enabled
+        if is_replit_auth_enabled():
+            bp = make_replit_blueprint()
+            if bp:
+                app.register_blueprint(bp, url_prefix="/replit-auth")
+                logging.info("Replit Auth blueprint registered")
+    except Exception as e:
+        logging.warning(f"Replit Auth not available: {e}")
 
+    try:
+        from tiktok_auth import tiktok_bp, tiktok_api_bp
+        app.register_blueprint(tiktok_bp)
+        app.register_blueprint(tiktok_api_bp)
+        logging.info("TikTok OAuth blueprint registered")
+    except Exception as e:
+        logging.warning(f"TikTok OAuth not available: {e}")
 
-# Optional / external integrations
+    try:
+        from facebook_auth import facebook_auth_bp
+        app.register_blueprint(facebook_auth_bp)
+        logging.info("Facebook OAuth blueprint registered")
+    except Exception as e:
+        logging.warning(f"Facebook OAuth not available: {e}")
 
-try:
-    from replit_auth import make_replit_blueprint, is_replit_auth_enabled
-    if is_replit_auth_enabled():
-        bp = make_replit_blueprint()
-        if bp:
-            app.register_blueprint(bp, url_prefix="/replit-auth")
-            logging.info("Replit Auth blueprint registered")
-except Exception as e:
-    logging.warning(f"Replit Auth not available: {e}")
+    try:
+        from instagram_auth import instagram_auth_bp
+        app.register_blueprint(instagram_auth_bp)
+        logging.info("Instagram OAuth blueprint registered")
+    except Exception as e:
+        logging.warning(f"Instagram OAuth not available: {e}")
 
-try:
-    from tiktok_auth import tiktok_bp, tiktok_api_bp
-    app.register_blueprint(tiktok_bp)
-    app.register_blueprint(tiktok_api_bp)
-    logging.info("TikTok OAuth blueprint registered")
-except Exception as e:
-    logging.warning(f"TikTok OAuth not available: {e}")
-
-try:
-    from facebook_auth import facebook_auth_bp
-    app.register_blueprint(facebook_auth_bp)
-    logging.info("Facebook OAuth blueprint registered")
-except Exception as e:
-    logging.warning(f"Facebook OAuth not available: {e}")
-
-try:
-    from instagram_auth import instagram_auth_bp
-    app.register_blueprint(instagram_auth_bp)
-    logging.info("Instagram OAuth blueprint registered")
-except Exception as e:
-    logging.warning(f"Instagram OAuth not available: {e}")
-
-try:
-    from fb_webhook import fb_webhook
-    app.register_blueprint(fb_webhook)
-    csrf.exempt(fb_webhook)
-    logging.info("Facebook webhook blueprint registered")
-except Exception as e:
-    logging.warning(f"Facebook webhook not available: {e}")
+    try:
+        from fb_webhook import fb_webhook
+        app.register_blueprint(fb_webhook)
+        csrf.exempt(fb_webhook)
+        logging.info("Facebook webhook blueprint registered")
+    except Exception as e:
+        logging.warning(f"Facebook webhook not available: {e}")
 
 
 # ============================================================
@@ -380,4 +376,5 @@ except Exception as e:
 # ============================================================
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000, debug=False)
+    port = int(os.environ.get("PORT", 8000))
+    app.run(host="0.0.0.0", port=port, debug=False)
