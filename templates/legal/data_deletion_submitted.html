@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Request Submitted | LUXit</title>
+  <style>
+    :root {
+      --lux-bg: #0b0d12;
+      --lux-surface: #101522;
+      --lux-border: #1f2633;
+      --lux-text: #f7f7fb;
+      --lux-muted: #9aa4b2;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Inter", system-ui, sans-serif;
+      background: var(--lux-bg);
+      color: var(--lux-text);
+      display: flex;
+      flex-direction: column;
+      min-height: 100vh;
+    }
+    nav {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 20px 40px;
+      border-bottom: 1px solid var(--lux-border);
+      background: rgba(11,13,18,0.95);
+    }
+    nav a { color: var(--lux-muted); text-decoration: none; font-size: 0.9rem; }
+    .nav-logo { font-weight: 700; font-size: 1rem; color: var(--lux-text); letter-spacing: 0.05em; }
+    .container {
+      max-width: 600px;
+      margin: 80px auto;
+      padding: 0 24px;
+      flex: 1;
+    }
+    .card {
+      background: var(--lux-surface);
+      border: 1px solid var(--lux-border);
+      border-radius: 16px;
+      padding: 40px;
+      text-align: center;
+    }
+    .icon {
+      font-size: 3rem;
+      margin-bottom: 20px;
+    }
+    h1 { font-size: 1.8rem; margin-bottom: 8px; }
+    p { color: var(--lux-muted); line-height: 1.6; }
+    .detail-row {
+      background: rgba(255,255,255,0.04);
+      border: 1px solid var(--lux-border);
+      border-radius: 8px;
+      padding: 12px 16px;
+      margin: 8px 0;
+      text-align: left;
+      font-size: 0.9rem;
+    }
+    .detail-row span { color: var(--lux-muted); font-size: 0.8rem; display: block; }
+    .detail-row strong { color: var(--lux-text); font-family: monospace; }
+    a.back-link {
+      display: inline-block;
+      margin-top: 28px;
+      padding: 10px 24px;
+      border: 1px solid var(--lux-border);
+      border-radius: 999px;
+      color: var(--lux-text);
+      text-decoration: none;
+      font-size: 0.9rem;
+    }
+    a.back-link:hover { border-color: #7c3aed; }
+    footer {
+      border-top: 1px solid var(--lux-border);
+      padding: 24px 40px;
+      text-align: center;
+      color: var(--lux-muted);
+      font-size: 0.85rem;
+    }
+    footer a { color: var(--lux-muted); margin: 0 8px; text-decoration: none; }
+    footer a:hover { color: var(--lux-text); }
+  </style>
+</head>
+<body>
+  <nav>
+    <a class="nav-logo" href="/">LUXit</a>
+    <a href="/privacy">Privacy Policy</a>
+  </nav>
+
+  <div class="container">
+    <div class="card">
+      <div class="icon">✅</div>
+      <h1>Request Received</h1>
+      <p>Thank you. Your data deletion request has been submitted and will be reviewed promptly.</p>
+
+      <div style="margin-top:24px;">
+        <div class="detail-row">
+          <span>Request ID</span>
+          <strong>{{ request_id }}</strong>
+        </div>
+        <div class="detail-row">
+          <span>Submitted</span>
+          <strong>{{ submitted_at }}</strong>
+        </div>
+        {% if email %}
+        <div class="detail-row">
+          <span>Email on file</span>
+          <strong>{{ email }}</strong>
+        </div>
+        {% endif %}
+      </div>
+
+      <p style="margin-top:24px;font-size:0.9rem;">
+        If we need to verify your identity, we'll reach out at the email address provided.
+        Requests are typically completed within 30 days.
+      </p>
+
+      <a class="back-link" href="/privacy">Return to Privacy Policy</a>
+    </div>
+  </div>
+
+  <footer>
+    <div>
+      <a href="/privacy">Privacy Policy</a>
+      <a href="/terms">Terms of Service</a>
+      <a href="/data-deletion">Data Deletion</a>
+    </div>
+  </footer>
+</body>
+</html>

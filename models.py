@@ -758,18 +758,41 @@ class AutomationTest(db.Model):
     __tablename__ = "automation_test"
 
     id = db.Column(db.Integer, primary_key=True)
+    automation_id = db.Column(db.Integer, db.ForeignKey("automation.id"), nullable=True)
+    test_contact_id = db.Column(db.Integer, db.ForeignKey("contact.id"), nullable=True)
+    test_data = db.Column(db.JSON)
+    status = db.Column(db.String(50), default="pending")
+    test_results = db.Column(db.JSON)
+    started_at = db.Column(db.DateTime)
+    completed_at = db.Column(db.DateTime)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 
 class AutomationTriggerLibrary(db.Model):
     __tablename__ = "automation_trigger_library"
 
     id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(200), nullable=False)
+    trigger_type = db.Column(db.String(100))
+    description = db.Column(db.Text)
+    category = db.Column(db.String(100))
+    trigger_config = db.Column(db.JSON)
+    steps_template = db.Column(db.JSON)
+    is_active = db.Column(db.Boolean, default=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 
 class AutomationABTest(db.Model):
     __tablename__ = "automation_ab_test"
 
     id = db.Column(db.Integer, primary_key=True)
+    automation_id = db.Column(db.Integer, db.ForeignKey("automation.id"), nullable=True)
+    name = db.Column(db.String(200))
+    variant_a = db.Column(db.JSON)
+    variant_b = db.Column(db.JSON)
+    status = db.Column(db.String(50), default="running")
+    winner = db.Column(db.String(10))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 
 class Deal(db.Model):
@@ -1430,5 +1453,17 @@ class DemoRequest(db.Model):
     preferred_contact = db.Column(db.String(20), default='email')
     source_page = db.Column(db.String(100))
     status = db.Column(db.String(20), default='new')
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class DeletionRequest(db.Model):
+    """Stores user data deletion requests submitted via /data-deletion."""
+    __tablename__ = 'deletion_requests'
+
+    id = db.Column(db.Integer, primary_key=True)
+    request_id = db.Column(db.String(36), unique=True, nullable=False)
+    email = db.Column(db.String(254), nullable=False)
+    details = db.Column(db.Text)
+    status = db.Column(db.String(20), default='pending')
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

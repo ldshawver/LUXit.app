@@ -1,6 +1,6 @@
 from flask import Blueprint, render_template, request, flash, redirect, url_for
 from datetime import datetime
-from app import db
+from extensions import db
 
 marketing_bp = Blueprint('marketing', __name__, url_prefix='/m')
 

@@ -11,10 +11,8 @@ from uuid import uuid4
 
 from flask import Flask, g, has_request_context, request
 from flask_login import LoginManager
-from flask_sqlalchemy import SQLAlchemy
-from flask_wtf.csrf import CSRFProtect
-from sqlalchemy.orm import DeclarativeBase
 from werkzeug.middleware.proxy_fix import ProxyFix
+from extensions import db, csrf
 
 
 # ============================================================
@@ -69,17 +67,6 @@ configure_logging()
 
 
 # ============================================================
-# Database
-# ============================================================
-
-class Base(DeclarativeBase):
-    pass
-
-
-db = SQLAlchemy(model_class=Base)
-
-
-# ============================================================
 # Application Factory
 # ============================================================
 
@@ -129,7 +116,7 @@ def create_app() -> Flask:
         PERMANENT_SESSION_LIFETIME=timedelta(minutes=30),
     )
 
-    CSRFProtect(app)
+    csrf.init_app(app)
 
     # --------------------------------------------------------
     # Flask-Login
@@ -140,6 +127,14 @@ def create_app() -> Flask:
     login_manager.login_view = "auth.login"
     login_manager.login_message = "Please log in to access this page."
     login_manager.login_message_category = "info"
+
+    @login_manager.user_loader
+    def load_user(user_id):
+        from models import User
+        try:
+            return User.query.get(int(user_id))
+        except Exception:
+            return None
 
     # --------------------------------------------------------
     # Request Lifecycle
@@ -175,9 +170,11 @@ def create_app() -> Flask:
     from user_management import user_bp
     from advanced_config import advanced_config_bp
     from marketing import marketing_bp
+    from legal import legal_bp
 
     # IMPORTANT: Marketing first if it owns "/"
     app.register_blueprint(marketing_bp)
+    app.register_blueprint(legal_bp)
     app.register_blueprint(main_bp)
     app.register_blueprint(auth_bp, url_prefix="/auth")
     app.register_blueprint(user_bp, url_prefix="/user")
@@ -191,12 +188,65 @@ def create_app() -> Flask:
 
         db.create_all()
 
+        # Apply any missing columns to existing tables (safe migrations)
+        try:
+            from sqlalchemy import inspect, text
+            inspector = inspect(db.engine)
+            migrations = {
+                "automation_trigger_library": [
+                    ("name", "VARCHAR(200)"),
+                    ("trigger_type", "VARCHAR(100)"),
+                    ("description", "TEXT"),
+                    ("category", "VARCHAR(100)"),
+                    ("trigger_config", "JSON"),
+                    ("steps_template", "JSON"),
+                    ("is_active", "BOOLEAN DEFAULT TRUE"),
+                    ("created_at", "TIMESTAMP"),
+                ],
+                "automation_test": [
+                    ("automation_id", "INTEGER"),
+                    ("test_contact_id", "INTEGER"),
+                    ("test_data", "JSON"),
+                    ("status", "VARCHAR(50) DEFAULT 'pending'"),
+                    ("test_results", "JSON"),
+                    ("started_at", "TIMESTAMP"),
+                    ("completed_at", "TIMESTAMP"),
+                    ("created_at", "TIMESTAMP"),
+                ],
+                "automation_ab_test": [
+                    ("automation_id", "INTEGER"),
+                    ("name", "VARCHAR(200)"),
+                    ("variant_a", "JSON"),
+                    ("variant_b", "JSON"),
+                    ("status", "VARCHAR(50) DEFAULT 'running'"),
+                    ("winner", "VARCHAR(10)"),
+                    ("created_at", "TIMESTAMP"),
+                ],
+            }
+            for table, columns in migrations.items():
+                if inspector.has_table(table):
+                    existing = {c["name"] for c in inspector.get_columns(table)}
+                    for col_name, col_type in columns:
+                        if col_name not in existing:
+                            try:
+                                db.session.execute(text(
+                                    f"ALTER TABLE {table} ADD COLUMN {col_name} {col_type}"
+                                ))
+                                db.session.commit()
+                                logging.info(f"Added column {col_name} to {table}")
+                            except Exception as col_err:
+                                db.session.rollback()
+                                logging.warning(f"Could not add {col_name} to {table}: {col_err}")
+        except Exception as mig_err:
+            logging.warning(f"Migration check failed: {mig_err}")
+
         try:
             from services.automation_service import AutomationService
             AutomationService.seed_trigger_library()
             logging.info("Automation library seeded")
         except Exception as e:
             logging.error(f"Automation seed failed: {e}")
+            db.session.rollback()
 
         try:
             from error_logger import setup_error_logging_handler
