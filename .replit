@@ -39,9 +39,12 @@ externalPort = 80
 
 [agent]
 expertMode = true
+integrations = ["python_log_in_with_replit:1.0.0"]
 
 [userenv]
 
 [userenv.shared]
 GIT_URL = "https://ldshawver:${GITHUB_PERSONAL_ACCESS_TOKEN}@github.com/ldshawver/LUX-Marketing.git"
 FB_VERIFY_TOKEN = "lux_fb_webhook_secret_123"
+APP_BASE_URL = "https://luxit.app"
+META_WEBHOOK_VERIFY_TOKEN = "luxit_meta_fi84qn9n_webhook"

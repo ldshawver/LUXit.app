@@ -40,10 +40,17 @@ def _is_safe_next(value: str) -> bool:
 # Routes
 # --------------------------------------------------
 
+def _hub_redirect(user):
+    """Return a redirect to the user's preferred hub after login."""
+    if getattr(user, 'default_hub', 'sales') == 'marketing':
+        return redirect("/marketing-hub")
+    return redirect("/dashboard")
+
+
 @auth_bp.route("/login", methods=["GET", "POST"])
 def login():
     if current_user.is_authenticated:
-        return redirect("/dashboard")
+        return _hub_redirect(current_user)
 
     if request.method == "POST":
         identifier = (
@@ -108,10 +115,11 @@ def login():
         login_user(user, remember=True)
 
         nxt = request.args.get("next")
-        if nxt and _is_safe_next(nxt):
+        hub_roots = {"/dashboard", "/marketing-hub"}
+        if nxt and _is_safe_next(nxt) and nxt.rstrip("/") not in {h.rstrip("/") for h in hub_roots}:
             return redirect(nxt)
 
-        return redirect("/dashboard")
+        return _hub_redirect(user)
 
     try:
         return render_template("auth/login.html")

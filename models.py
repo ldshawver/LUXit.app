@@ -207,7 +207,16 @@ class User(UserMixin, db.Model):
         db.session.commit()
 
     def get_all_companies(self):
-        return Company.query.filter_by(is_active=True).order_by(Company.name).all()
+        try:
+            return (
+                Company.query
+                .join(user_company, (user_company.c.company_id == Company.id) & (user_company.c.user_id == self.id))
+                .filter(Company.is_active == True)
+                .order_by(Company.name)
+                .all()
+            )
+        except Exception:
+            return list(self.companies)
 
     def get_companies_safe(self):
         """Get companies safely for rendering contexts."""
@@ -520,12 +529,26 @@ class Segment(db.Model):
     __tablename__ = "segment"
 
     id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(255), nullable=False)
+    description = db.Column(db.Text, nullable=True)
+    segment_type = db.Column(db.String(100), default="behavioral")
+    conditions = db.Column(db.JSON, nullable=True)
+    is_dynamic = db.Column(db.Boolean, default=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    members = db.relationship("SegmentMember", backref="segment", lazy="dynamic", cascade="all, delete-orphan")
 
 
 class SegmentMember(db.Model):
     __tablename__ = "segment_member"
 
     id = db.Column(db.Integer, primary_key=True)
+    segment_id = db.Column(db.Integer, db.ForeignKey("segment.id"), nullable=False)
+    contact_id = db.Column(db.Integer, db.ForeignKey("contact.id"), nullable=False)
+    added_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    contact = db.relationship("Contact", backref="segment_memberships")
 
 
 class WebForm(db.Model):
@@ -1190,9 +1213,62 @@ class Competitor(db.Model):
 
 
 class FacebookOAuth(db.Model):
+    """
+    Stores Facebook OAuth login records per user+company.
+    Holds the Facebook App-Scoped User ID (ASID), display identity,
+    and an encrypted long-lived user access token (~60 days).
+    Page access tokens are stored separately in CompanySecret
+    under key "facebook_page_tokens" (also encrypted).
+    """
     __tablename__ = "facebook_oauth"
 
     id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, index=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=False, index=True)
+
+    # Facebook identity fields
+    facebook_user_id = db.Column(db.String(64), nullable=True)   # App-Scoped User ID (ASID)
+    display_name = db.Column(db.String(255), nullable=True)
+    email = db.Column(db.String(254), nullable=True)
+    avatar_url = db.Column(db.Text, nullable=True)
+
+    # Encrypted long-lived user access token
+    _access_token = db.Column("access_token", db.Text, nullable=True)
+
+    # Selected Facebook Page (after page picker step)
+    page_id = db.Column(db.String(64), nullable=True)
+    page_name = db.Column(db.String(255), nullable=True)
+    page_avatar_url = db.Column(db.Text, nullable=True)
+
+    # Meta
+    status = db.Column(db.String(20), default="active")
+    expires_at = db.Column(db.DateTime, nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    user = db.relationship("User", backref="facebook_oauths")
+    company = db.relationship("Company", backref="facebook_oauths")
+
+    def set_access_token(self, token: str):
+        """Encrypt and store the access token."""
+        if not token:
+            self._access_token = None
+            return
+        try:
+            from services.secret_vault import vault
+            self._access_token = vault.encrypt(token)
+        except Exception:
+            self._access_token = token
+
+    def get_access_token(self) -> str:
+        """Decrypt and return the access token."""
+        if not self._access_token:
+            return None
+        try:
+            from services.secret_vault import vault
+            return vault.decrypt(self._access_token)
+        except Exception:
+            return self._access_token
 
 
 class InstagramOAuth(db.Model):

@@ -126,13 +126,71 @@
   }
 </style>
 
-<div class="container-fluid" style="background: #000000; min-height: 100vh; padding: 2rem;">
-  <div class="row mb-4">
-    <div class="col-12">
-      <h1 class="display-4" style="background: linear-gradient(135deg, #bc00ed, #00ffb4); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;">Analytics Hub</h1>
-      <p class="lead" style="color: #00ffb4;">Comprehensive visual insights across all marketing channels</p>
+<style>
+  .mh-hub-switch { display:flex; gap:8px; margin-bottom:1.25rem; }
+  .mh-hub-btn { display:flex; align-items:center; gap:7px; padding:7px 16px; border-radius:20px; font-size:0.8rem; font-weight:600; text-decoration:none; color:rgba(255,255,255,0.5); background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.08); transition:all .2s; }
+  .mh-hub-btn:hover { color:#fff; border-color:rgba(71,245,255,0.3); }
+  .mh-hub-btn.active { background:linear-gradient(135deg,rgba(71,245,255,0.15),rgba(188,0,237,0.15)); border-color:rgba(71,245,255,0.4); color:#fff; }
+  .mh-layout { display:flex; gap:1.5rem; min-height:calc(100vh - 100px); }
+  .mh-sidebar { width:220px; flex-shrink:0; display:flex; flex-direction:column; gap:4px; }
+  .mh-sidebar a { display:flex; align-items:center; gap:10px; padding:10px 14px; border-radius:10px; color:#ccc; text-decoration:none; font-size:0.9rem; transition:all 0.2s; }
+  .mh-sidebar a:hover { background:rgba(71,245,255,0.08); color:#fff; }
+  .mh-sidebar a svg { width:18px; height:18px; stroke:#888; flex-shrink:0; }
+  .mh-sidebar a:hover svg { stroke:#47f5ff; }
+  .mh-sidebar .new-badge { background:linear-gradient(135deg,#00ffb4,#0ea5e9); color:#000; font-size:0.6rem; font-weight:700; padding:2px 6px; border-radius:4px; margin-left:auto; }
+  .mh-main { flex:1; min-width:0; }
+  .mh-topbar { display:flex; justify-content:space-between; align-items:center; margin-bottom:0.75rem; }
+  .mh-welcome h2 { font-size:1.2rem; font-weight:700; color:#fff; margin:0; }
+  .mh-welcome p { color:#888; margin:0.15rem 0 0; font-size:0.82rem; }
+  .mh-filters { display:flex; gap:8px; align-items:center; }
+  .mh-filter-btn { background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.1); color:#ccc; padding:6px 14px; border-radius:8px; font-size:0.8rem; cursor:pointer; display:flex; align-items:center; gap:6px; text-decoration:none; }
+  .mh-filter-btn:hover { border-color:rgba(71,245,255,0.3); color:#fff; }
+  .mh-tabs { display:flex; gap:4px; margin-bottom:1rem; background:rgba(255,255,255,0.04); border-radius:10px; padding:3px; width:fit-content; }
+  .mh-tab { padding:6px 16px; border-radius:7px; color:#888; text-decoration:none; font-size:0.82rem; font-weight:500; transition:all 0.2s; }
+  .mh-tab:hover { color:#fff; background:rgba(255,255,255,0.06); }
+  .mh-tab.active { background:linear-gradient(135deg,rgba(0,229,255,0.2),rgba(188,0,237,0.15)); color:#fff; font-weight:600; }
+</style>
+
+<div class="mh-hub-switch">
+  <a href="{{ url_for('main.dashboard') }}" class="mh-hub-btn"><i data-feather="briefcase" style="width:14px;height:14px;"></i> Sales Hub</a>
+  <a href="{{ url_for('main.marketing_hub') }}" class="mh-hub-btn active"><i data-feather="radio" style="width:14px;height:14px;"></i> Marketing Hub</a>
+</div>
+
+<div class="mh-layout">
+  <nav class="mh-sidebar">
+    <a href="{{ url_for('main.agents_hub') }}"><i data-feather="cpu"></i> View AI Reports</a>
+    <a href="{{ url_for('main.campaign_hub') }}?action=new"><i data-feather="zap"></i> Generate Campaigns <span class="new-badge">NEW</span></a>
+    <a href="{{ url_for('main.contacts') }}"><i data-feather="users"></i> Audience</a>
+    <a href="{{ url_for('main.segments') }}"><i data-feather="filter"></i> Segments</a>
+    <a href="{{ url_for('main.blog_list') }}"><i data-feather="edit-3"></i> Blog Hub</a>
+    <a href="{{ url_for('main.ads_hub') }}"><i data-feather="target"></i> Ads Manager</a>
+    <a href="{{ url_for('main.newsletters') }}"><i data-feather="mail"></i> Newsletters</a>
+    <a href="{{ url_for('main.agents_hub') }}"><i data-feather="aperture"></i> AI Hub</a>
+    <a href="{{ url_for('main.automations') }}"><i data-feather="repeat"></i> Automations & Triggers</a>
+    <a href="{{ url_for('main.events_dashboard') }}"><i data-feather="calendar"></i> Events</a>
+  </nav>
+
+  <div class="mh-main">
+    <div class="mh-topbar">
+      <div class="mh-welcome">
+        <h2>Analytics Hub</h2>
+        <p>Comprehensive insights across all your marketing channels.</p>
+      </div>
+      <div class="mh-filters">
+        <span class="mh-filter-btn"><i data-feather="calendar" style="width:14px;height:14px;"></i> Last 30 Days</span>
+        <a href="{{ url_for('main.marketing_hub') }}" class="mh-filter-btn">← Back to Hub</a>
+      </div>
     </div>
-  </div>
+
+    <div class="mh-tabs">
+      <a href="{{ url_for('main.newsletters') }}" class="mh-tab">Email</a>
+      <a href="{{ url_for('main.sms_dashboard') }}" class="mh-tab">SMS</a>
+      <a href="{{ url_for('main.social_media') }}" class="mh-tab">Social Media</a>
+      <a href="{{ url_for('main.blog_list') }}" class="mh-tab">Blog</a>
+      <a href="/press-releases/create" class="mh-tab">Press Release</a>
+    </div>
+
+  <div>
 
   <!-- Date Filter & Comparison Controls -->
   <div class="row mb-4">
@@ -1538,4 +1596,6 @@
   startDateEl.setDate(startDateEl.getDate() - 30);
   document.getElementById('startDate').valueAsDate = startDateEl;
 </script>
+  </div>
+</div>
 {% endblock %}

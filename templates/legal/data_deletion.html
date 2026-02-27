@@ -141,6 +141,7 @@
 
     <div class="form-card">
       <form method="POST" action="/data-deletion">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <div class="form-group">
           <label for="email">Email associated with your account *</label>
           <input type="email" id="email" name="email" required placeholder="you@example.com">

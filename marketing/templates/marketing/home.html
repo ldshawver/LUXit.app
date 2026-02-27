@@ -1,581 +1,566 @@
-{% extends "marketing/base_marketing.html" %}
-{% block title %}AI-Powered Marketing Automation & CRM{% endblock %}
-{% block meta_description %}LUX combines 11 AI agents, visual CRM, competitor intelligence, and multi-channel automation into one platform. Built for marketing leaders and executives who demand results.{% endblock %}
+{% extends "marketing/base.html" %}
 
-{% block extra_css %}
-.hero-section {
-    min-height: 100vh;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    position: relative;
-    padding: 8rem 0 6rem;
-    overflow: hidden;
-}
-
-.hero-section::before {
-    content: '';
-    position: absolute;
-    inset: 0;
-    background:
-        radial-gradient(ellipse 90% 60% at 50% -10%, rgba(0, 255, 180, 0.1), transparent),
-        radial-gradient(ellipse 70% 50% at 80% 70%, rgba(188, 0, 237, 0.07), transparent),
-        radial-gradient(ellipse 60% 40% at 15% 80%, rgba(0, 68, 255, 0.06), transparent);
-    pointer-events: none;
-}
-
-.hero-content {
-    text-align: center;
-    position: relative;
-    z-index: 2;
-}
-
-.hero-badge {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.5rem;
-    background: rgba(0, 255, 180, 0.06);
-    border: 1px solid rgba(0, 255, 180, 0.15);
-    color: var(--lux-cyan);
-    padding: 0.5rem 1.25rem;
-    border-radius: 50px;
-    font-size: 0.8rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.1em;
-    margin-bottom: 2.5rem;
-}
-
-.hero-subtitle {
-    font-size: clamp(1.1rem, 2vw, 1.35rem);
-    color: rgba(255, 255, 255, 0.45);
-    line-height: 1.8;
-    max-width: 620px;
-    margin: 2rem auto 3rem;
-}
-
-.hero-ctas {
-    display: flex;
-    justify-content: center;
-    gap: 1.25rem;
-    flex-wrap: wrap;
-    margin-bottom: 5rem;
-}
-
-.trust-bar {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 3.5rem;
-    flex-wrap: wrap;
-    padding-top: 3rem;
-    border-top: 1px solid rgba(255, 255, 255, 0.06);
-}
-
-.trust-item {
-    text-align: center;
-}
-
-.trust-item .num {
-    font-size: 1.6rem;
-    font-weight: 800;
-    color: var(--lux-cyan);
-    letter-spacing: -0.02em;
-}
-
-.trust-item .lbl {
-    font-size: 0.72rem;
-    color: rgba(255, 255, 255, 0.35);
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    margin-top: 0.25rem;
-}
-
-.orb-1 {
-    width: 500px;
-    height: 500px;
-    background: rgba(0, 255, 180, 0.12);
-    top: -15%;
-    left: -10%;
-}
-
-.orb-2 {
-    width: 400px;
-    height: 400px;
-    background: rgba(188, 0, 237, 0.1);
-    bottom: -10%;
-    right: -8%;
-}
-
-.orb-3 {
-    width: 300px;
-    height: 300px;
-    background: rgba(0, 68, 255, 0.08);
-    top: 30%;
-    right: 5%;
-}
-
-.problem-solution {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 0;
-    border-radius: 20px;
-    overflow: hidden;
-    border: 1px solid rgba(255, 255, 255, 0.06);
-}
-
-.problem-side {
-    background: rgba(228, 5, 92, 0.03);
-    padding: 3.5rem;
-    border-right: 1px solid rgba(255, 255, 255, 0.06);
-}
-
-.solution-side {
-    background: rgba(0, 255, 180, 0.025);
-    padding: 3.5rem;
-}
-
-.ps-item {
-    display: flex;
-    gap: 0.75rem;
-    color: rgba(255, 255, 255, 0.6);
-    font-size: 0.95rem;
-    line-height: 1.6;
-}
-
-.ps-item i {
-    flex-shrink: 0;
-    margin-top: 3px;
-}
-
-.agent-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
-    gap: 0.75rem;
-    max-width: 900px;
-    margin: 0 auto;
-}
-
-.agent-pill {
-    background: rgba(255, 255, 255, 0.03);
-    border: 1px solid rgba(255, 255, 255, 0.06);
-    border-radius: 12px;
-    padding: 0.85rem 1.1rem;
-    font-size: 0.82rem;
-    font-weight: 500;
-    color: rgba(255, 255, 255, 0.7);
-    display: flex;
-    align-items: center;
-    gap: 0.6rem;
-    transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
-    cursor: default;
-}
-
-.agent-pill:hover {
-    border-color: var(--lux-cyan);
-    color: var(--lux-cyan);
-    background: rgba(0, 255, 180, 0.05);
-    transform: translateY(-3px);
-    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.3);
-}
-
-.agent-pill .dot {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    flex-shrink: 0;
-    animation: pulse-dot 2.5s ease-in-out infinite;
-}
-
-@keyframes pulse-dot {
-    0%, 100% { opacity: 1; transform: scale(1); }
-    50% { opacity: 0.6; transform: scale(0.85); }
-}
-
-.capabilities-grid {
-    display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: 1.5rem;
-}
-
-.stat-block {
-    text-align: center;
-    padding: 3rem 1.5rem;
-}
-
-.stat-desc {
-    font-size: 1rem;
-    color: rgba(255, 255, 255, 0.5);
-    font-weight: 500;
-    margin-top: 0.75rem;
-    letter-spacing: 0.01em;
-}
-
-.channel-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
-    gap: 1rem;
-    max-width: 800px;
-    margin: 0 auto;
-}
-
-.channel-card {
-    padding: 2rem 1.5rem;
-    text-align: center;
-    cursor: default;
-}
-
-.channel-card i {
-    margin-bottom: 0.85rem;
-}
-
-.channel-card .ch-name {
-    font-weight: 600;
-    font-size: 0.82rem;
-    color: rgba(255, 255, 255, 0.7);
-}
-
-.cta-final {
-    position: relative;
-    text-align: center;
-    padding: 10rem 0;
-    overflow: hidden;
-}
-
-.cta-final::before {
-    content: '';
-    position: absolute;
-    inset: 0;
-    background: radial-gradient(ellipse 80% 60% at 50% 50%, rgba(188, 0, 237, 0.1), transparent 70%);
-    pointer-events: none;
-}
-
-.cta-final::after {
-    content: '';
-    position: absolute;
-    inset: 0;
-    background: radial-gradient(ellipse 60% 40% at 50% 80%, rgba(0, 255, 180, 0.06), transparent 60%);
-    pointer-events: none;
-}
-
-@media (max-width: 991px) {
-    .problem-solution { grid-template-columns: 1fr; }
-    .problem-side { border-right: none; border-bottom: 1px solid rgba(255, 255, 255, 0.06); }
-    .capabilities-grid { grid-template-columns: 1fr; }
-    .trust-bar { gap: 2rem; }
-    .hero-section { padding: 6rem 0 4rem; }
-    .cta-final { padding: 6rem 0; }
-}
-
-@media (max-width: 575px) {
-    .channel-grid { grid-template-columns: repeat(2, 1fr); }
-    .agent-grid { grid-template-columns: repeat(2, 1fr); }
-}
-{% endblock %}
+{% block title %}LUX IT — Revenue Operations Reimagined with AI{% endblock %}
 
 {% block content %}
-
-<!-- ═══════════════════════════ HERO ═══════════════════════════ -->
-<section class="hero-section fullscreen-section">
-    <div class="glow-orb orb-1 parallax-bg" data-speed="0.15"></div>
-    <div class="glow-orb orb-2 parallax-bg" data-speed="0.2"></div>
-    <div class="glow-orb orb-3 parallax-bg" data-speed="0.1"></div>
-
-    <div class="container-lux">
-        <div class="hero-content">
-            <div class="hero-badge reveal stagger-1">
-                <i data-feather="zap" style="width:14px;height:14px;"></i>
-                11 AI Agents Working 24/7
-            </div>
-
-            <h1 class="cinematic-title reveal stagger-2">
-                Marketing<br>
-                <span class="gradient-text">runs itself.</span>
-            </h1>
-
-            <p class="hero-subtitle cinematic-sub reveal stagger-3">
-                LUX deploys 11 specialized AI agents that automate campaigns, monitor competitors, score leads, and close deals &mdash; while you focus on strategy.
-            </p>
-
-            <div class="hero-ctas reveal stagger-4">
-                <a href="{{ url_for('marketing.book_demo', from='home_hero') }}" class="btn-lux-primary btn-lux-large">
-                    Book a Demo <i data-feather="calendar" style="width:18px;height:18px;"></i>
-                </a>
-                <a href="{{ url_for('marketing.features') }}" class="btn-lux-outline btn-lux-large">
-                    See All Features <i data-feather="arrow-right" style="width:18px;height:18px;"></i>
-                </a>
-            </div>
-
-            <div class="trust-bar reveal stagger-5">
-                <div class="trust-item">
-                    <div class="num">11</div>
-                    <div class="lbl">AI Agents</div>
-                </div>
-                <div class="trust-item">
-                    <div class="num">25+</div>
-                    <div class="lbl">Automations</div>
-                </div>
-                <div class="trust-item">
-                    <div class="num">10+</div>
-                    <div class="lbl">Channels</div>
-                </div>
-                <div class="trust-item">
-                    <div class="num">360&deg;</div>
-                    <div class="lbl">Customer View</div>
-                </div>
-            </div>
-        </div>
+<!-- Hero -->
+<section class="hero">
+  <div class="hero-content">
+    <div class="hero-badge">Introducing LUX IT 3.0</div>
+    <h1 class="hero-title">
+      <span class="line"><span class="gradient-text"><span id="typewriter"></span></span></span>
+      <span class="line"><img src="{{ url_for('static', filename='images/reimagined-ai.png') }}" alt="Reimagined with AI" class="reimagined-img"></span>
+    </h1>
+    <p class="hero-subtitle">
+      The licensable revenue operating system that unifies AI agents, CRM, and automated outreach into one compliant command center.
+    </p>
+    <div class="hero-buttons">
+      <a class="btn-primary" href="/auth/login">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+        Start Free
+      </a>
+      <a class="btn-secondary" href="/book-demo">Request Demo</a>
     </div>
+  </div>
 </section>
 
-<hr class="divider-glow">
+<!-- Stats -->
+<div class="stats-row">
+  <div class="stat scroll-reveal-drop delay-1"><div class="stat-number">11</div><div class="stat-label">AI Agents</div></div>
+  <div class="stat scroll-reveal-drop delay-2"><div class="stat-number">3x</div><div class="stat-label">Productivity</div></div>
+  <div class="stat scroll-reveal-drop delay-3"><div class="stat-number">60%</div><div class="stat-label">Cost Savings</div></div>
+  <div class="stat scroll-reveal-drop delay-4"><div class="stat-number">50+</div><div class="stat-label">Integrations</div></div>
+</div>
 
-<!-- ═══════════════════════════ PROBLEM / SOLUTION ═══════════════════════════ -->
-<section class="section" style="padding: 8rem 0;">
-    <div class="container-lux">
-        <div class="text-center mb-5">
-            <div class="section-label mx-auto reveal">
-                <i data-feather="alert-circle" style="width:14px;height:14px;"></i>
-                The Problem
-            </div>
-            <h2 class="section-title reveal stagger-1">Marketing teams are <span class="gradient-text-warm">drowning</span> in tools</h2>
-            <p class="section-subtitle mx-auto reveal stagger-2">
-                Your team toggles between 8+ platforms, wastes hours on manual tasks, and still can't tell what's actually driving revenue.
-            </p>
-        </div>
-
-        <div class="problem-solution">
-            <div class="problem-side reveal-left">
-                <h4 style="color: var(--lux-pink); font-weight: 700; margin-bottom: 1.75rem; font-size: 1.15rem;">
-                    <i data-feather="x-circle" style="width:20px;height:20px;margin-right:0.5rem;"></i>
-                    Without LUX
-                </h4>
-                <div class="d-flex flex-column gap-3">
-                    <div class="ps-item"><i data-feather="minus" style="width:16px;height:16px;color:var(--lux-pink);"></i> Separate tools for email, social, CRM, ads, and analytics</div>
-                    <div class="ps-item"><i data-feather="minus" style="width:16px;height:16px;color:var(--lux-pink);"></i> Manual campaign creation and scheduling across every channel</div>
-                    <div class="ps-item"><i data-feather="minus" style="width:16px;height:16px;color:var(--lux-pink);"></i> No visibility into what competitors are doing right now</div>
-                    <div class="ps-item"><i data-feather="minus" style="width:16px;height:16px;color:var(--lux-pink);"></i> Lead scoring requires spreadsheets and guesswork</div>
-                    <div class="ps-item"><i data-feather="minus" style="width:16px;height:16px;color:var(--lux-pink);"></i> Security risks from scattered API keys and logins</div>
-                </div>
-            </div>
-            <div class="solution-side reveal-right">
-                <h4 style="color: var(--lux-cyan); font-weight: 700; margin-bottom: 1.75rem; font-size: 1.15rem;">
-                    <i data-feather="check-circle" style="width:20px;height:20px;margin-right:0.5rem;"></i>
-                    With LUX
-                </h4>
-                <div class="d-flex flex-column gap-3">
-                    <div class="ps-item"><i data-feather="check" style="width:16px;height:16px;color:var(--lux-cyan);"></i> One platform: email, social, CRM, ads, SEO, and analytics</div>
-                    <div class="ps-item"><i data-feather="check" style="width:16px;height:16px;color:var(--lux-cyan);"></i> AI agents generate, schedule, and optimize campaigns automatically</div>
-                    <div class="ps-item"><i data-feather="check" style="width:16px;height:16px;color:var(--lux-cyan);"></i> Real-time competitor monitoring and strategic intelligence</div>
-                    <div class="ps-item"><i data-feather="check" style="width:16px;height:16px;color:var(--lux-cyan);"></i> AI-driven lead scoring with automatic deal stage progression</div>
-                    <div class="ps-item"><i data-feather="check" style="width:16px;height:16px;color:var(--lux-cyan);"></i> Centralized secrets vault with encrypted key management</div>
-                </div>
-            </div>
-        </div>
-    </div>
+<!-- Social Proof -->
+<section class="social-proof-bar">
+  <div class="proof-label">Trusted by growth teams at</div>
+  <div class="proof-logos">
+    <span class="proof-logo">Agencies</span>
+    <span class="proof-divider">·</span>
+    <span class="proof-logo">eCommerce Brands</span>
+    <span class="proof-divider">·</span>
+    <span class="proof-logo">SaaS Companies</span>
+    <span class="proof-divider">·</span>
+    <span class="proof-logo">B2B Teams</span>
+    <span class="proof-divider">·</span>
+    <span class="proof-logo">Media Businesses</span>
+  </div>
+  <div class="proof-testimonial">
+    <blockquote>"We replaced 6 tools with LUX IT and cut our marketing spend by 40% — while closing 2x more deals."</blockquote>
+    <cite>— Director of Marketing, Agency Partner</cite>
+  </div>
 </section>
 
-<hr class="divider-glow">
+<!-- Features -->
 
-<!-- ═══════════════════════════ AI AGENTS ═══════════════════════════ -->
-<section class="section" style="padding: 8rem 0; background: rgba(0,255,180,0.01);">
-    <div class="container-lux">
-        <div class="text-center mb-5">
-            <div class="section-label mx-auto reveal">
-                <i data-feather="cpu" style="width:14px;height:14px;"></i>
-                AI Agent Workforce
-            </div>
-            <h2 class="cinematic-title reveal stagger-1" style="font-size: clamp(2.2rem, 5vw, 4rem); margin-bottom: 1.5rem;">
-                11 specialized agents.<br><span class="gradient-text">Zero busywork.</span>
-            </h2>
-            <p class="section-subtitle mx-auto reveal stagger-2">
-                Each agent is a domain expert that operates autonomously &mdash; planning, executing, and optimizing across every marketing function.
-            </p>
+<section class="section" id="features">
+  <div class="section-header">
+    <div class="section-label">Platform</div>
+    <h2 class="section-title">Everything You Need to Scale</h2>
+    <p class="section-subtitle">A complete revenue operating system for modern agencies and enterprises.</p>
+  </div>
+  <svg style="position:absolute;width:0;height:0;">
+    <defs>
+      <linearGradient id="iconGrad" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#00e5ff"/><stop offset="100%" stop-color="#a855f7"/></linearGradient>
+    </defs>
+  </svg>
+  <div class="feature-grid">
+    <div class="feature-card scroll-reveal-left delay-1">
+      <div class="feature-summary">
+        <div class="feature-card-icon">
+          <svg viewBox="0 0 48 48" fill="none" stroke="url(#iconGrad)" stroke-width="1.5">
+            <rect x="8" y="6" width="32" height="24" rx="4" fill="none"/>
+            <circle cx="18" cy="16" r="3" fill="#00e5ff" stroke="none"/>
+            <circle cx="30" cy="16" r="3" fill="#00e5ff" stroke="none"/>
+            <path d="M16 24c0 0 3 4 8 4s8-4 8-4" stroke-linecap="round"/>
+            <rect x="20" y="30" width="8" height="4" rx="1"/>
+            <rect x="14" y="34" width="20" height="3" rx="1.5"/>
+            <path d="M6 14l-3-2M6 20l-3 2M42 14l3-2M42 20l3 2" stroke-linecap="round" opacity="0.6"/>
+            <circle cx="24" cy="3" r="2" fill="#a855f7" stroke="none"/>
+            <line x1="24" y1="5" x2="24" y2="6" stroke-width="2"/>
+          </svg>
         </div>
-
-        <div class="agent-grid">
-            <div class="agent-pill reveal stagger-1"><span class="dot" style="background:var(--lux-cyan);"></span> Brand & Strategy</div>
-            <div class="agent-pill reveal stagger-1"><span class="dot" style="background:var(--lux-purple);"></span> Content & SEO</div>
-            <div class="agent-pill reveal stagger-2"><span class="dot" style="background:var(--lux-pink);"></span> Analytics</div>
-            <div class="agent-pill reveal stagger-2"><span class="dot" style="background:var(--lux-blue);"></span> Creative Design</div>
-            <div class="agent-pill reveal stagger-3"><span class="dot" style="background:var(--lux-cyan);"></span> Advertising</div>
-            <div class="agent-pill reveal stagger-3"><span class="dot" style="background:var(--lux-purple);"></span> Social Media</div>
-            <div class="agent-pill reveal stagger-4"><span class="dot" style="background:var(--lux-pink);"></span> Email & CRM</div>
-            <div class="agent-pill reveal stagger-4"><span class="dot" style="background:var(--lux-blue);"></span> Sales Enablement</div>
-            <div class="agent-pill reveal stagger-5"><span class="dot" style="background:var(--lux-cyan);"></span> Retention</div>
-            <div class="agent-pill reveal stagger-5"><span class="dot" style="background:var(--lux-purple);"></span> Operations</div>
-            <div class="agent-pill reveal stagger-6"><span class="dot" style="background:var(--lux-pink);"></span> App Intelligence</div>
+        <div class="feature-content">
+          <h3>11 Autonomous AI Agents</h3>
+          <p>Research, outreach, follow-ups, and optimization running 24/7 without manual intervention.</p>
         </div>
+        <div class="expand-indicator"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg></div>
+      </div>
+      <div class="feature-details">
+        <ul>
+          <li>Lead Research Agent - Finds and qualifies prospects automatically</li>
+          <li>Content Writer Agent - Generates blog posts, emails, and social content</li>
+          <li>Email CRM Agent - Manages campaigns and follow-up sequences</li>
+          <li>Social Media Agent - Schedules and publishes across all platforms</li>
+          <li>Analytics Agent - Tracks KPIs and generates performance reports</li>
+          <li>SEO Agent - Optimizes content and tracks keyword rankings</li>
+        </ul>
+      </div>
     </div>
+    <div class="feature-card scroll-reveal-right delay-2">
+      <div class="feature-summary">
+        <div class="feature-card-icon">
+          <svg viewBox="0 0 48 48" fill="none" stroke="url(#iconGrad)" stroke-width="1.5">
+            <ellipse cx="24" cy="24" rx="20" ry="8" fill="none"/>
+            <ellipse cx="24" cy="24" rx="8" ry="20" fill="none" transform="rotate(60 24 24)"/>
+            <ellipse cx="24" cy="24" rx="8" ry="20" fill="none" transform="rotate(-60 24 24)"/>
+            <circle cx="24" cy="24" r="4" fill="#00e5ff" stroke="none"/>
+            <circle cx="24" cy="4" r="2" fill="#a855f7" stroke="none"/>
+            <circle cx="41" cy="34" r="2" fill="#ec4899" stroke="none"/>
+            <circle cx="7" cy="34" r="2" fill="#00e5ff" stroke="none"/>
+            <path d="M24 28v8M20 36h8" stroke-linecap="round" opacity="0.5"/>
+          </svg>
+        </div>
+        <div class="feature-content">
+          <h3>Multi-Channel Outreach</h3>
+          <p>Email, SMS, social media orchestrated from one dashboard with compliance built in.</p>
+        </div>
+        <div class="expand-indicator"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg></div>
+      </div>
+      <div class="feature-details">
+        <ul>
+          <li>Email campaigns with A/B testing and smart scheduling</li>
+          <li>SMS marketing with Twilio integration</li>
+          <li>Social publishing to Instagram, TikTok, Facebook, LinkedIn, X</li>
+          <li>Unified inbox for all channel responses</li>
+          <li>Automated drip sequences and nurture campaigns</li>
+        </ul>
+      </div>
+    </div>
+    <div class="feature-card scroll-reveal-left delay-3">
+      <div class="feature-summary">
+        <div class="feature-card-icon">
+          <svg viewBox="0 0 48 48" fill="none" stroke="url(#iconGrad)" stroke-width="1.5">
+            <path d="M24 4L6 14v16c0 8 8 14 18 14s18-6 18-14V14L24 4z" fill="none"/>
+            <path d="M24 8L10 16v12c0 6 6 10 14 10s14-4 14-10V16L24 8z" fill="rgba(0,229,255,0.1)" stroke="none"/>
+            <path d="M16 24l6 6 12-12" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+            <circle cx="24" cy="42" r="2" fill="#00e5ff" stroke="none"/>
+            <path d="M6 14l4 2M42 14l-4 2" stroke-linecap="round" opacity="0.5"/>
+          </svg>
+        </div>
+        <div class="feature-content">
+          <h3>Enterprise Security</h3>
+          <p>Approval workflows, audit logs, emergency stops, and role-based permissions.</p>
+        </div>
+        <div class="expand-indicator"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg></div>
+      </div>
+      <div class="feature-details">
+        <ul>
+          <li>Content approval queue before publishing</li>
+          <li>Full audit trail of all actions</li>
+          <li>Emergency stop to halt all automation instantly</li>
+          <li>Role-based access control (Admin, Manager, User)</li>
+          <li>GDPR and CAN-SPAM compliance tools</li>
+        </ul>
+      </div>
+    </div>
+    <div class="feature-card scroll-reveal-right delay-4">
+      <div class="feature-summary">
+        <div class="feature-card-icon">
+          <svg viewBox="0 0 48 48" fill="none" stroke="url(#iconGrad)" stroke-width="1.5">
+            <rect x="4" y="8" width="40" height="32" rx="3" fill="none"/>
+            <line x1="4" y1="16" x2="44" y2="16"/>
+            <circle cx="10" cy="12" r="1.5" fill="#ec4899" stroke="none"/>
+            <circle cx="16" cy="12" r="1.5" fill="#f59e0b" stroke="none"/>
+            <circle cx="22" cy="12" r="1.5" fill="#00e5ff" stroke="none"/>
+            <rect x="10" y="22" width="6" height="14" rx="1" fill="rgba(0,229,255,0.3)" stroke="none"/>
+            <rect x="21" y="26" width="6" height="10" rx="1" fill="rgba(168,85,247,0.3)" stroke="none"/>
+            <rect x="32" y="20" width="6" height="16" rx="1" fill="rgba(236,72,153,0.3)" stroke="none"/>
+            <path d="M8 32l8-6 8 4 8-10 8 6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            <circle cx="40" cy="26" r="2" fill="#00e5ff" stroke="none"/>
+          </svg>
+        </div>
+        <div class="feature-content">
+          <h3>Analytics & Intelligence</h3>
+          <p>Real-time dashboards with CAC, LTV, attribution, and campaign performance metrics.</p>
+        </div>
+        <div class="expand-indicator"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg></div>
+      </div>
+      <div class="feature-details">
+        <ul>
+          <li>Customer Acquisition Cost (CAC) tracking</li>
+          <li>Lifetime Value (LTV) calculations</li>
+          <li>Multi-touch attribution modeling</li>
+          <li>Campaign ROI and conversion analytics</li>
+          <li>Cohort analysis and retention metrics</li>
+          <li>Custom report builder with export options</li>
+        </ul>
+      </div>
+
+  </div>
 </section>
 
-<hr class="divider-glow">
 
-<!-- ═══════════════════════════ CORE CAPABILITIES ═══════════════════════════ -->
-<section class="section" style="padding: 8rem 0;">
-    <div class="container-lux">
-        <div class="text-center mb-5">
-            <div class="section-label mx-auto reveal">
-                <i data-feather="trending-up" style="width:14px;height:14px;"></i>
-                Core Capabilities
-            </div>
-            <h2 class="section-title reveal stagger-1">Everything you need to <span class="gradient-text">dominate your market</span></h2>
-            <p class="section-subtitle mx-auto reveal stagger-2">
-                From first touch to closed deal, LUX automates every step of the customer journey with intelligence that gets smarter over time.
-            </p>
-        </div>
-
-        <div class="capabilities-grid">
-            <div class="glass-card reveal stagger-1">
-                <div class="icon-box cyan"><i data-feather="repeat"></i></div>
-                <h5 style="font-weight:700;font-size:1.1rem;margin-bottom:0.65rem;">Marketing Automation</h5>
-                <p style="color:rgba(255,255,255,0.5);font-size:0.9rem;line-height:1.7;margin:0;">25+ pre-built automation workflows. Trigger campaigns across email, SMS, social, and ads based on real-time customer behavior.</p>
-            </div>
-            <div class="glass-card reveal stagger-2">
-                <div class="icon-box purple"><i data-feather="eye"></i></div>
-                <h5 style="font-weight:700;font-size:1.1rem;margin-bottom:0.65rem;">Competitor Intelligence</h5>
-                <p style="color:rgba(255,255,255,0.5);font-size:0.9rem;line-height:1.7;margin:0;">Monitor competitors in real time. Track their SEO rankings, social activity, ad spend, and content strategy &mdash; then outmaneuver them.</p>
-            </div>
-            <div class="glass-card reveal stagger-3">
-                <div class="icon-box pink"><i data-feather="users"></i></div>
-                <h5 style="font-weight:700;font-size:1.1rem;margin-bottom:0.65rem;">Visual Sales CRM</h5>
-                <p style="color:rgba(255,255,255,0.5);font-size:0.9rem;line-height:1.7;margin:0;">Drag-and-drop Kanban pipeline with 360&deg; customer views, AI-powered lead scoring, and coached next-action recommendations.</p>
-            </div>
-            <div class="glass-card reveal stagger-4">
-                <div class="icon-box blue"><i data-feather="bar-chart-2"></i></div>
-                <h5 style="font-weight:700;font-size:1.1rem;margin-bottom:0.65rem;">Revenue Analytics</h5>
-                <p style="color:rgba(255,255,255,0.5);font-size:0.9rem;line-height:1.7;margin:0;">10 metric categories from acquisition to compliance. Real-time dashboards with attribution modeling and predictive insights.</p>
-            </div>
-        </div>
-    </div>
+<!-- Comparison -->
+<section class="comparison-section" id="compare">
+  <div class="section-header">
+    <div class="section-label">Comparison</div>
+    <h2 class="section-title">Replace Your Entire Stack</h2>
+    <p class="section-subtitle">Stop paying for 10 different tools. LUX IT consolidates everything.</p>
+  </div>
+  <table class="comparison-table">
+    <thead>
+      <tr>
+        <th>Feature</th>
+        <th class="highlight">LUX IT</th>
+        <th>HubSpot</th>
+        <th>Salesforce</th>
+        <th>ActiveCampaign</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>AI Agents (Autonomous)</td>
+        <td class="highlight"><span class="check">✓ 11 Agents</span></td>
+        <td><span class="cross">✗</span></td>
+        <td><span class="partial">Limited</span></td>
+        <td><span class="cross">✗</span></td>
+        <td><button class="details-btn" onclick="showDetails('ai-agents')">Details</button></td>
+      </tr>
+      <tr>
+        <td>Multi-Channel Outreach</td>
+        <td class="highlight"><span class="check">✓ All Channels</span></td>
+        <td><span class="check">✓</span></td>
+        <td><span class="check">✓</span></td>
+        <td><span class="partial">Email Only</span></td>
+        <td><button class="details-btn" onclick="showDetails('multi-channel')">Details</button></td>
+      </tr>
+      <tr>
+        <td>White-Label / Licensable</td>
+        <td class="highlight"><span class="check">✓ Full</span></td>
+        <td><span class="cross">✗</span></td>
+        <td><span class="cross">✗</span></td>
+        <td><span class="cross">✗</span></td>
+        <td><button class="details-btn" onclick="showDetails('white-label')">Details</button></td>
+      </tr>
+      <tr>
+        <td>Approval Workflows</td>
+        <td class="highlight"><span class="check">✓ Built-in</span></td>
+        <td><span class="partial">Add-on</span></td>
+        <td><span class="check">✓</span></td>
+        <td><span class="cross">✗</span></td>
+        <td><button class="details-btn" onclick="showDetails('approval')">Details</button></td>
+      </tr>
+      <tr>
+        <td>Social Media Publishing</td>
+        <td class="highlight"><span class="check">✓ All Platforms</span></td>
+        <td><span class="partial">Limited</span></td>
+        <td><span class="cross">✗</span></td>
+        <td><span class="cross">✗</span></td>
+        <td><button class="details-btn" onclick="showDetails('social')">Details</button></td>
+      </tr>
+      <tr>
+        <td>Analytics & Reporting</td>
+        <td class="highlight"><span class="check">✓ 10 Categories</span></td>
+        <td><span class="check">✓</span></td>
+        <td><span class="check">✓</span></td>
+        <td><span class="partial">Basic</span></td>
+        <td><button class="details-btn" onclick="showDetails('analytics')">Details</button></td>
+      </tr>
+      <tr>
+        <td>CRM & Pipeline</td>
+        <td class="highlight"><span class="check">✓ Full CRM</span></td>
+        <td><span class="check">✓</span></td>
+        <td><span class="check">✓</span></td>
+        <td><span class="partial">Basic</span></td>
+        <td><button class="details-btn" onclick="showDetails('crm')">Details</button></td>
+      </tr>
+      <tr>
+        <td>Landing Page Builder</td>
+        <td class="highlight"><span class="check">✓ Drag & Drop</span></td>
+        <td><span class="check">✓</span></td>
+        <td><span class="cross">✗</span></td>
+        <td><span class="check">✓</span></td>
+        <td><button class="details-btn" onclick="showDetails('landing')">Details</button></td>
+      </tr>
+      <tr>
+        <td>Starting Price</td>
+        <td class="highlight"><span class="check">$199/mo</span></td>
+        <td>$800/mo</td>
+        <td>$1,250/mo</td>
+        <td>$149/mo</td>
+        <td></td>
+      </tr>
+    </tbody>
+  </table>
 </section>
 
-<hr class="divider-glow">
+<!-- Feature Details Modal -->
+<div id="featureModal" class="feature-modal" onclick="if(event.target===this)closeDetails()">
+  <div class="feature-modal-content">
+    <button class="modal-close" onclick="closeDetails()">&times;</button>
+    <h3 id="modalTitle"></h3>
+    <div id="modalBody"></div>
+  </div>
+</div>
 
-<!-- ═══════════════════════════ IMPACT STATS ═══════════════════════════ -->
-<section class="section" style="padding: 8rem 0; background: rgba(188,0,237,0.02);">
-    <div class="container-lux">
-        <div class="text-center mb-5">
-            <div class="section-label mx-auto reveal">
-                <i data-feather="target" style="width:14px;height:14px;"></i>
-                Impact
-            </div>
-            <h2 class="section-title reveal stagger-1">Built for teams that measure <span class="gradient-text">results</span></h2>
-        </div>
-
-        <div class="row g-4 text-center">
-            <div class="col-md-3 col-6">
-                <div class="stat-block reveal stagger-1">
-                    <div class="number-huge gradient-text counter-value" data-target="10" data-suffix="x">0</div>
-                    <div class="stat-desc">Faster Campaign Launches</div>
-                </div>
-            </div>
-            <div class="col-md-3 col-6">
-                <div class="stat-block reveal stagger-2">
-                    <div class="number-huge text-gradient-purple counter-value" data-target="85" data-suffix="%">0</div>
-                    <div class="stat-desc">Less Manual Work</div>
-                </div>
-            </div>
-            <div class="col-md-3 col-6">
-                <div class="stat-block reveal stagger-3">
-                    <div class="number-huge text-gradient-pink counter-value" data-target="360" data-suffix="°">0</div>
-                    <div class="stat-desc">Customer Visibility</div>
-                </div>
-            </div>
-            <div class="col-md-3 col-6">
-                <div class="stat-block reveal stagger-4">
-                    <div class="number-huge text-gradient-cyan counter-value" data-target="1" data-suffix="">0</div>
-                    <div class="stat-desc">Platform, Not 8+</div>
-                </div>
-            </div>
-        </div>
+<!-- Pricing -->
+<section class="pricing-section" id="pricing">
+  <div class="section-header">
+    <div class="section-label">Pricing</div>
+    <h2 class="section-title">Plans That Scale With You</h2>
+    <p class="section-subtitle">From startups to enterprise. No hidden fees.</p>
+  </div>
+  <div class="pricing-grid">
+    <div class="pricing-card scroll-reveal-flip delay-1" data-delay="0">
+      <div class="pricing-tier">Starter</div>
+      <div class="pricing-name">Small Business</div>
+      <div class="pricing-price">$199<span>/mo</span></div>
+      <div class="pricing-desc">Perfect for growing teams</div>
+      <ul class="pricing-features">
+        <li>3 AI Agents</li>
+        <li>2,500 Contacts</li>
+        <li>Email & SMS Outreach</li>
+        <li>Basic Analytics</li>
+        <li>5 Team Members</li>
+      </ul>
+      <a href="/auth/login" class="pricing-btn secondary">Get Started</a>
     </div>
+    <div class="pricing-card featured scroll-reveal-flip delay-2" data-delay="1">
+      <span class="popular-badge">Most Popular</span>
+      <div class="pricing-tier">Professional</div>
+      <div class="pricing-name">Agencies & Teams</div>
+      <div class="pricing-price">$499<span>/mo</span></div>
+      <div class="pricing-desc">Manage multiple companies</div>
+      <ul class="pricing-features">
+        <li>All 11 AI Agents</li>
+        <li>50,000 Contacts</li>
+        <li>Multi-Company Dashboard</li>
+        <li>All Channels + Social</li>
+        <li>Advanced Analytics</li>
+        <li>Unlimited Team</li>
+        <li>Priority Support</li>
+      </ul>
+      <a href="/auth/login" class="pricing-btn primary">Start Free Trial</a>
+    </div>
+    <div class="pricing-card scroll-reveal-flip delay-3" data-delay="2">
+      <div class="pricing-tier">Enterprise</div>
+      <div class="pricing-name">White Label</div>
+      <div class="pricing-price">Custom</div>
+      <div class="pricing-desc">Your brand, your platform</div>
+      <ul class="pricing-features">
+        <li>Full White-Label</li>
+        <li>Unlimited Everything</li>
+        <li>Custom Integrations</li>
+        <li>Dedicated Support</li>
+        <li>On-Premise Option</li>
+        <li>SLA Guarantee</li>
+      </ul>
+      <a href="/auth/login" class="pricing-btn secondary">Contact Sales</a>
+    </div>
+  </div>
 </section>
 
-<hr class="divider-glow">
-
-<!-- ═══════════════════════════ MULTI-CHANNEL ═══════════════════════════ -->
-<section class="section" style="padding: 8rem 0;">
-    <div class="container-lux">
-        <div class="text-center mb-5">
-            <div class="section-label mx-auto reveal">
-                <i data-feather="share-2" style="width:14px;height:14px;"></i>
-                Multi-Channel
-            </div>
-            <h2 class="section-title reveal stagger-1">Every channel. <span class="gradient-text">One command center.</span></h2>
-            <p class="section-subtitle mx-auto reveal stagger-2">Publish, monitor, and optimize across all major platforms from a single dashboard.</p>
-        </div>
-
-        <div class="channel-grid">
-            <div class="glass-card channel-card reveal-scale stagger-1">
-                <i data-feather="instagram" style="width:32px;height:32px;color:var(--lux-pink);"></i>
-                <div class="ch-name">Instagram</div>
-            </div>
-            <div class="glass-card channel-card reveal-scale stagger-2">
-                <i data-feather="facebook" style="width:32px;height:32px;color:var(--lux-blue);"></i>
-                <div class="ch-name">Facebook</div>
-            </div>
-            <div class="glass-card channel-card reveal-scale stagger-3">
-                <i data-feather="twitter" style="width:32px;height:32px;color:var(--lux-cyan);"></i>
-                <div class="ch-name">X / Twitter</div>
-            </div>
-            <div class="glass-card channel-card reveal-scale stagger-4">
-                <i data-feather="linkedin" style="width:32px;height:32px;color:var(--lux-blue);"></i>
-                <div class="ch-name">LinkedIn</div>
-            </div>
-            <div class="glass-card channel-card reveal-scale stagger-5">
-                <i data-feather="youtube" style="width:32px;height:32px;color:var(--lux-pink);"></i>
-                <div class="ch-name">YouTube</div>
-            </div>
-            <div class="glass-card channel-card reveal-scale stagger-6">
-                <i data-feather="mail" style="width:32px;height:32px;color:var(--lux-purple);"></i>
-                <div class="ch-name">Email</div>
-            </div>
-            <div class="glass-card channel-card reveal-scale stagger-7">
-                <i data-feather="smartphone" style="width:32px;height:32px;color:var(--lux-cyan);"></i>
-                <div class="ch-name">SMS</div>
-            </div>
-            <div class="glass-card channel-card reveal-scale stagger-8">
-                <i data-feather="globe" style="width:32px;height:32px;color:var(--lux-purple);"></i>
-                <div class="ch-name">Blog & SEO</div>
-            </div>
-        </div>
+<!-- FAQ -->
+<section class="section" id="faq">
+  <div class="section-header">
+    <div class="section-label">FAQ</div>
+    <h2 class="section-title">Common Questions</h2>
+    <p class="section-subtitle">Everything you need to know before you start.</p>
+  </div>
+  <div class="faq-list">
+    <div class="faq-item">
+      <button class="faq-q" onclick="this.parentElement.classList.toggle('open')">
+        How long does it take to get up and running?
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+      </button>
+      <div class="faq-a">Most teams are live within 15 minutes. Connect your email, import your contacts, and your first AI-assisted campaign is ready to launch.</div>
     </div>
+    <div class="faq-item">
+      <button class="faq-q" onclick="this.parentElement.classList.toggle('open')">
+        Do I need technical skills to use LUX IT?
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+      </button>
+      <div class="faq-a">No. LUX IT is built for marketers and operators, not developers. Everything is point-and-click, and the AI agents handle the complex work automatically.</div>
+    </div>
+    <div class="faq-item">
+      <button class="faq-q" onclick="this.parentElement.classList.toggle('open')">
+        Can I replace HubSpot or Salesforce with LUX IT?
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+      </button>
+      <div class="faq-a">Yes. LUX IT includes full CRM, email marketing, social publishing, analytics, and 11 AI agents — everything you currently pay for separately, in one platform at a fraction of the cost.</div>
+    </div>
+    <div class="faq-item">
+      <button class="faq-q" onclick="this.parentElement.classList.toggle('open')">
+        Is there a free trial?
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+      </button>
+      <div class="faq-a">Yes. Start free and explore the platform with no credit card required. Upgrade when you're ready to scale.</div>
+    </div>
+    <div class="faq-item">
+      <button class="faq-q" onclick="this.parentElement.classList.toggle('open')">
+        Can agencies white-label and resell LUX IT?
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+      </button>
+      <div class="faq-a">Absolutely. Our Enterprise plan includes full white-label rights — your logo, your domain, your pricing. Many agencies use LUX IT as a revenue-generating service they offer to clients.</div>
+    </div>
+  </div>
 </section>
 
-<hr class="divider-glow">
-
-<!-- ═══════════════════════════ FINAL CTA ═══════════════════════════ -->
-<section class="cta-final">
-    <div class="glow-orb" style="width:400px;height:400px;background:rgba(188,0,237,0.12);top:20%;left:10%;"></div>
-    <div class="glow-orb" style="width:350px;height:350px;background:rgba(0,255,180,0.08);bottom:10%;right:15%;"></div>
-
-    <div class="container-lux" style="position:relative;z-index:2;">
-        <div class="reveal">
-            <h2 class="cinematic-title" style="font-size:clamp(2rem,5vw,3.8rem);margin-bottom:1.5rem;">
-                Ready to let AI run your<br><span class="gradient-text">marketing engine?</span>
-            </h2>
-        </div>
-        <p class="section-subtitle mx-auto reveal stagger-1" style="margin-bottom:2.5rem;">
-            Join forward-thinking teams that replaced their marketing stack with one intelligent platform.
-        </p>
-        <div class="d-flex flex-wrap justify-content-center gap-3 reveal stagger-2">
-            <a href="{{ url_for('marketing.book_demo', from='home_cta') }}" class="btn-lux-primary btn-lux-large">
-                Book a Demo <i data-feather="calendar" style="width:18px;height:18px;"></i>
-            </a>
-            <a href="tel:+19163704621" class="btn-lux-outline btn-lux-large">
-                <i data-feather="phone" style="width:18px;height:18px;"></i> Call Us
-            </a>
-        </div>
+<!-- Bottom CTA -->
+<section class="section bottom-cta-section" id="demo">
+  <div class="bottom-cta-box">
+    <div class="section-label">Launch Today</div>
+    <h2 class="section-title" style="font-size:2.4rem;">Get live in 15 minutes.</h2>
+    <p class="section-subtitle" style="margin-bottom:36px;">Launch your first campaign today. No setup fees, no contracts — just results.</p>
+    <div class="hero-buttons" style="justify-content:center;">
+      <a class="btn-primary" href="/auth/login" style="font-size:1.05rem; padding:16px 36px;">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+        Start Free
+      </a>
+      <a class="btn-secondary" href="/book-demo" style="font-size:1.05rem; padding:16px 36px;">Request Demo</a>
     </div>
+    <p style="margin-top:20px; color: var(--text-secondary); font-size:0.85rem;">No credit card required &nbsp;·&nbsp; Cancel anytime &nbsp;·&nbsp; Live in minutes</p>
+  </div>
 </section>
 
-{% endblock %}
-
-{% block extra_js %}
 <script>
-    document.querySelectorAll('.counter-value').forEach(el => {
-        el.style.fontVariantNumeric = 'tabular-nums';
-    });
+const featureDetails = {
+  'ai-agents': {
+    title: '11 Autonomous AI Agents',
+    content: `<p><strong>LUX IT</strong> includes 11 specialized AI agents that work 24/7:</p>
+    <ul>
+      <li><strong>Lead Research Agent</strong> - Finds and qualifies prospects automatically</li>
+      <li><strong>Content Writer Agent</strong> - Generates blog posts, emails, social content</li>
+      <li><strong>Email CRM Agent</strong> - Manages campaigns and follow-up sequences</li>
+      <li><strong>Social Media Agent</strong> - Schedules and publishes across all platforms</li>
+      <li><strong>Analytics Agent</strong> - Tracks KPIs and generates reports</li>
+      <li><strong>SEO Agent</strong> - Optimizes content and tracks rankings</li>
+      <li><strong>Competitor Intelligence Agent</strong> - Monitors competitor activity</li>
+      <li><strong>Advertising Agent</strong> - Manages ad campaigns across networks</li>
+      <li><strong>Customer Support Agent</strong> - Handles inquiries and tickets</li>
+      <li><strong>Sync Agent</strong> - Keeps data synchronized across systems</li>
+      <li><strong>Compliance Agent</strong> - Ensures GDPR/CAN-SPAM compliance</li>
+    </ul>
+    <p><strong>Competitors:</strong> HubSpot and ActiveCampaign have no autonomous AI agents. Salesforce offers limited Einstein AI but requires additional licensing.</p>`
+  },
+  'multi-channel': {
+    title: 'Multi-Channel Outreach',
+    content: `<p><strong>LUX IT</strong> provides unified outreach across all channels:</p>
+    <ul>
+      <li><strong>Email</strong> - Campaigns with A/B testing, scheduling, templates</li>
+      <li><strong>SMS</strong> - Twilio-powered text messaging with compliance</li>
+      <li><strong>Social Media</strong> - Instagram, TikTok, Facebook, LinkedIn, X, YouTube</li>
+      <li><strong>Unified Inbox</strong> - All responses in one place</li>
+      <li><strong>Drip Sequences</strong> - Automated nurture campaigns</li>
+    </ul>
+    <p><strong>Competitors:</strong> HubSpot and Salesforce offer similar capabilities but at 4-6x the price. ActiveCampaign focuses primarily on email only.</p>`
+  },
+  'white-label': {
+    title: 'White-Label / Licensable',
+    content: `<p><strong>LUX IT</strong> is fully licensable and white-labelable:</p>
+    <ul>
+      <li><strong>Custom Branding</strong> - Your logo, colors, domain</li>
+      <li><strong>Resell Rights</strong> - License to your own clients</li>
+      <li><strong>Multi-Tenant</strong> - Manage multiple companies from one instance</li>
+      <li><strong>API Access</strong> - Full API for custom integrations</li>
+      <li><strong>On-Premise Option</strong> - Deploy on your own infrastructure</li>
+    </ul>
+    <p><strong>Competitors:</strong> HubSpot, Salesforce, and ActiveCampaign do not offer white-label or licensing options.</p>`
+  },
+  'approval': {
+    title: 'Approval Workflows',
+    content: `<p><strong>LUX IT</strong> includes enterprise-grade content approval:</p>
+    <ul>
+      <li><strong>Approval Queue</strong> - All content routed through approval before publishing</li>
+      <li><strong>Role-Based Permissions</strong> - Admin, Manager, User access levels</li>
+      <li><strong>Audit Logs</strong> - Complete history of all actions</li>
+      <li><strong>Emergency Stop</strong> - Halt all automation instantly</li>
+      <li><strong>Feature Toggles</strong> - 27 safe-off defaults for compliance</li>
+    </ul>
+    <p><strong>Competitors:</strong> HubSpot requires add-on pricing. Salesforce includes but is expensive. ActiveCampaign lacks this feature entirely.</p>`
+  },
+  'social': {
+    title: 'Social Media Publishing',
+    content: `<p><strong>LUX IT</strong> publishes to all major platforms:</p>
+    <ul>
+      <li><strong>Instagram</strong> - Posts, Stories, Reels with insights</li>
+      <li><strong>TikTok</strong> - Video publishing with analytics</li>
+      <li><strong>Facebook</strong> - Pages, Groups, Ads integration</li>
+      <li><strong>LinkedIn</strong> - Personal and Company pages</li>
+      <li><strong>X (Twitter)</strong> - Tweets and threads</li>
+      <li><strong>YouTube</strong> - Video uploads with SEO</li>
+    </ul>
+    <p><strong>Competitors:</strong> HubSpot has limited social. Salesforce and ActiveCampaign do not include social publishing.</p>`
+  },
+  'analytics': {
+    title: 'Analytics & Reporting',
+    content: `<p><strong>LUX IT</strong> provides 10 metric categories:</p>
+    <ul>
+      <li><strong>Acquisition</strong> - Traffic sources, channels, campaigns</li>
+      <li><strong>Conversion</strong> - Funnel analytics, goal tracking</li>
+      <li><strong>Revenue</strong> - Sales tracking, deal values</li>
+      <li><strong>CAC</strong> - Customer acquisition cost analysis</li>
+      <li><strong>Retention</strong> - Churn rates, cohort analysis</li>
+      <li><strong>Engagement</strong> - Email opens, clicks, social engagement</li>
+      <li><strong>Attribution</strong> - Multi-touch attribution modeling</li>
+      <li><strong>Segments</strong> - Customer segmentation analytics</li>
+      <li><strong>Campaigns</strong> - Campaign performance tracking</li>
+      <li><strong>Compliance</strong> - GDPR/CAN-SPAM compliance metrics</li>
+    </ul>
+    <p><strong>Competitors:</strong> All offer analytics but LUX IT includes real-time dashboards and period-over-period comparison at no extra cost.</p>`
+  },
+  'crm': {
+    title: 'CRM & Pipeline',
+    content: `<p><strong>LUX IT</strong> includes a complete CRM system:</p>
+    <ul>
+      <li><strong>Contact Management</strong> - Full customer profiles with activity timeline</li>
+      <li><strong>Lead Scoring</strong> - AI-powered lead qualification</li>
+      <li><strong>Pipeline Stages</strong> - Customizable deal stages</li>
+      <li><strong>Next Actions</strong> - Coaching widgets for sales teams</li>
+      <li><strong>Activity Tracking</strong> - Calls, emails, meetings logged automatically</li>
+      <li><strong>Deal Management</strong> - Track deals from lead to close</li>
+    </ul>
+    <p><strong>Competitors:</strong> HubSpot and Salesforce have full CRM but at much higher prices. ActiveCampaign has basic CRM only.</p>`
+  },
+  'landing': {
+    title: 'Landing Page Builder',
+    content: `<p><strong>LUX IT</strong> includes a powerful landing page builder:</p>
+    <ul>
+      <li><strong>Drag & Drop</strong> - Visual editor with no coding required</li>
+      <li><strong>Templates</strong> - Pre-built templates for different industries</li>
+      <li><strong>Forms</strong> - Contact forms, surveys, quizzes</li>
+      <li><strong>Polls & Ratings</strong> - Interactive engagement components</li>
+      <li><strong>A/B Testing</strong> - Test different versions</li>
+      <li><strong>WordPress Integration</strong> - Export to WordPress sites</li>
+      <li><strong>UTM Tracking</strong> - Built-in campaign tracking</li>
+    </ul>
+    <p><strong>Competitors:</strong> HubSpot and ActiveCampaign include builders. Salesforce does not.</p>`
+  }
+};
+
+function showDetails(feature) {
+  const modal = document.getElementById('featureModal');
+  const title = document.getElementById('modalTitle');
+  const body = document.getElementById('modalBody');
+  const data = featureDetails[feature];
+  if (data) {
+    title.innerHTML = data.title;
+    body.innerHTML = data.content;
+    modal.classList.add('show');
+  }
+}
+
+function closeDetails() {
+  document.getElementById('featureModal').classList.remove('show');
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+  const cards = document.querySelectorAll('.chrome-border');
+  let currentCard = 0;
+  
+  function animateChrome() {
+    cards.forEach(card => card.classList.remove('chrome-active'));
+    if (cards[currentCard]) {
+      cards[currentCard].classList.add('chrome-active');
+    }
+    currentCard = (currentCard + 1) % cards.length;
+  }
+  
+  setInterval(animateChrome, 2000);
+  setTimeout(animateChrome, 500);
+});
 </script>
 {% endblock %}

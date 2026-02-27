@@ -135,9 +135,75 @@
       {% endif %}
     </style>
     {% endif %}
+    <style>
+      /* ── Hub Switcher ── */
+      .hub-switcher {
+        display: flex;
+        align-items: center;
+        gap: 3px;
+        background: rgba(255,255,255,0.05);
+        border: 1px solid rgba(255,255,255,0.1);
+        border-radius: 10px;
+        padding: 3px;
+        flex-shrink: 0;
+      }
+      .hub-pill {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 6px 14px;
+        border-radius: 7px;
+        font-size: 0.78rem;
+        font-weight: 600;
+        color: rgba(255,255,255,0.4);
+        text-decoration: none;
+        letter-spacing: 0.01em;
+        transition: all 0.18s ease;
+        white-space: nowrap;
+      }
+      .hub-pill svg { flex-shrink: 0; stroke: currentColor; }
+      .hub-pill:hover {
+        color: rgba(255,255,255,0.8);
+        background: rgba(255,255,255,0.06);
+        text-decoration: none;
+      }
+      .hub-pill--active {
+        color: #fff !important;
+      }
+      .hub-pill--sales.hub-pill--active {
+        background: linear-gradient(135deg, rgba(79,142,247,0.25), rgba(59,111,212,0.2));
+        box-shadow: 0 0 0 1px rgba(79,142,247,0.3) inset;
+      }
+      .hub-pill--sales.hub-pill--active svg { stroke: #4f8ef7; }
+      .hub-pill--mkt.hub-pill--active {
+        background: linear-gradient(135deg, rgba(0,229,255,0.18), rgba(168,85,247,0.15));
+        box-shadow: 0 0 0 1px rgba(0,229,255,0.25) inset;
+      }
+      .hub-pill--mkt.hub-pill--active svg { stroke: #00e5ff; }
+
+      /* Ensure header-inner lays out correctly with the switcher */
+      .app-header-inner {
+        display: flex !important;
+        align-items: center !important;
+        gap: 16px !important;
+      }
+      .header-title { flex: 1; min-width: 0; }
+      .header-title h1 {
+        font-size: 0.9rem !important;
+        font-weight: 500 !important;
+        color: rgba(255,255,255,0.45) !important;
+        margin: 0 !important;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+    </style>
 </head>
 <body>
     <div class="app-shell">
+        {% set _mkt_paths = ['/marketing-hub', '/campaigns', '/newsletters', '/sms', '/social-media', '/blog', '/segments', '/agents-hub', '/automations', '/press-releases', '/analytics', '/web-forms', '/landing-pages', '/approval-queue'] %}
+        {% set _is_mkt = request.path == '/marketing-hub' or request.path.startswith('/marketing-hub') or request.path.split('?')[0] in _mkt_paths or (request.path.startswith('/newsletters') or request.path.startswith('/campaigns') or request.path.startswith('/blog') or request.path.startswith('/social') or request.path.startswith('/agents-hub') or request.path.startswith('/automations') or request.path.startswith('/analytics') or request.path.startswith('/press-release') or request.path.startswith('/segments') or request.path.startswith('/approval')) %}
+
         <header class="app-header">
             <div class="app-header-inner">
                 <div class="brand">
@@ -148,6 +214,24 @@
                         </span>
                     </a>
                 </div>
+
+                <!-- Hub Switcher -->
+                {% if current_user.is_authenticated %}
+                <div class="hub-switcher">
+                    <a href="{{ url_for('main.dashboard') }}"
+                       class="hub-pill {% if not _is_mkt %}hub-pill--sales hub-pill--active{% endif %}"
+                       title="Sales Hub — CRM, leads, pipeline">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+                        Sales Hub
+                    </a>
+                    <a href="{{ url_for('main.marketing_hub') }}"
+                       class="hub-pill {% if _is_mkt %}hub-pill--mkt hub-pill--active{% endif %}"
+                       title="Marketing Hub — campaigns, content, AI agents">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+                        Marketing Hub
+                    </a>
+                </div>
+                {% endif %}
 
                 <div class="header-title">
                     <h1>{% block page_title %}{% endblock %}</h1>

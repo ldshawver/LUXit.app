@@ -180,6 +180,9 @@ def create_app() -> Flask:
     app.register_blueprint(user_bp, url_prefix="/user")
     app.register_blueprint(advanced_config_bp)
 
+    from utils import get_campaign_status_color
+    app.jinja_env.filters['campaign_status_color'] = get_campaign_status_color
+
     # --------------------------------------------------------
     # App Context Initialization
     # --------------------------------------------------------

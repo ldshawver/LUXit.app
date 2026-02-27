@@ -58,18 +58,18 @@
   .mh-tabs {
     display: flex;
     gap: 4px;
-    margin-bottom: 1.5rem;
+    margin-bottom: 1rem;
     background: rgba(255,255,255,0.04);
-    border-radius: 12px;
-    padding: 4px;
+    border-radius: 10px;
+    padding: 3px;
     width: fit-content;
   }
   .mh-tab {
-    padding: 8px 20px;
-    border-radius: 8px;
+    padding: 6px 16px;
+    border-radius: 7px;
     color: #888;
     text-decoration: none;
-    font-size: 0.85rem;
+    font-size: 0.82rem;
     font-weight: 500;
     transition: all 0.2s;
   }
@@ -80,24 +80,24 @@
     font-weight: 600;
   }
   .mh-welcome {
-    margin-bottom: 1.5rem;
+    margin-bottom: 0;
   }
   .mh-welcome h2 {
-    font-size: 1.5rem;
+    font-size: 1.2rem;
     font-weight: 700;
     color: #fff;
     margin: 0;
   }
   .mh-welcome p {
     color: #888;
-    margin: 0.25rem 0 0;
-    font-size: 0.9rem;
+    margin: 0.15rem 0 0;
+    font-size: 0.82rem;
   }
   .mh-topbar {
     display: flex;
     justify-content: space-between;
-    align-items: flex-start;
-    margin-bottom: 1.5rem;
+    align-items: center;
+    margin-bottom: 0.75rem;
   }
   .mh-filters {
     display: flex;
@@ -441,13 +441,15 @@
 
 <div class="mh-layout">
   <nav class="mh-sidebar">
-    <a href="{{ url_for('main.agents_hub') }}"><i data-feather="cpu"></i> View AI Reports</a>
     <a href="{{ url_for('main.campaign_hub') }}?action=new"><i data-feather="zap"></i> Generate Campaigns <span class="new-badge">NEW</span></a>
+    <a href="{{ url_for('main.contacts') }}"><i data-feather="users"></i> Audience</a>
+    <a href="{{ url_for('main.segments') }}"><i data-feather="filter"></i> Segments</a>
+    <a href="{{ url_for('main.newsletters') }}"><i data-feather="mail"></i> Newsletters</a>
     <a href="{{ url_for('main.blog_list') }}"><i data-feather="edit-3"></i> Blog Hub</a>
     <a href="{{ url_for('main.ads_hub') }}"><i data-feather="target"></i> Ads Manager</a>
-    <a href="{{ url_for('main.newsletters') }}"><i data-feather="mail"></i> Newsletters</a>
-    <a href="{{ url_for('main.agents_hub') }}"><i data-feather="aperture"></i> AI Hub</a>
+    <a href="{{ url_for('main.agents_hub') }}"><i data-feather="cpu"></i> AI Hub</a>
     <a href="{{ url_for('main.automations') }}"><i data-feather="repeat"></i> Automations & Triggers</a>
+    <a href="{{ url_for('main.analytics_hub') }}"><i data-feather="bar-chart-2"></i> Analytics Hub</a>
     <a href="{{ url_for('main.events_dashboard') }}"><i data-feather="calendar"></i> Events</a>
   </nav>
 
@@ -471,11 +473,12 @@
     </div>
 
     <div class="mh-tabs">
-      <a href="{{ url_for('main.marketing_hub') }}" class="mh-tab active">Dashboard</a>
-      <a href="{{ url_for('main.campaign_hub') }}" class="mh-tab">Campaigns</a>
-      <a href="{{ url_for('main.analytics_hub') }}" class="mh-tab">Analytics</a>
-      <a href="{{ url_for('main.contacts') }}" class="mh-tab">Audience</a>
-      <a href="{{ url_for('main.social_media') }}" class="mh-tab">Content</a>
+      <a href="{{ url_for('main.newsletters') }}" class="mh-tab">Email</a>
+      <a href="{{ url_for('main.sms_dashboard') }}" class="mh-tab">SMS</a>
+      <a href="{{ url_for('main.social_media') }}" class="mh-tab">Social Media</a>
+      <a href="{{ url_for('main.blog_list') }}" class="mh-tab">Blog</a>
+      <a href="{{ url_for('main.automations') }}" class="mh-tab">Automations & Triggers</a>
+      <a href="/press-releases/create" class="mh-tab">Press Release</a>
     </div>
 
     <div class="mh-kpi-row">

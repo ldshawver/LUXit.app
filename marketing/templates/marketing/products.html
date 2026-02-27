@@ -1,0 +1,65 @@
+{% extends "marketing/base.html" %}
+{% block title %}Products — LUX IT{% endblock %}
+{% block meta_description %}Explore LUX IT's suite of AI-powered modules: CRM, campaigns, analytics, social media, and more. Everything you need to acquire, convert, and retain customers.{% endblock %}
+
+{% block content %}
+<div class="sell-hero">
+  <div class="section-label">Products</div>
+  <h1>Built to close deals.<br>Built to keep them.</h1>
+  <p>Every module in LUX IT works together — CRM, campaigns, analytics, and 11 AI agents — so you stop stitching tools together and start growing.</p>
+  <ul class="sell-benefits">
+    <li>Replace 6+ tools with one platform — save $800/mo on average</li>
+    <li>AI agents do the repetitive work so your team focuses on strategy</li>
+    <li>Every module shares data — no more syncing between apps</li>
+    <li>Goes live in under 15 minutes, no IT team required</li>
+    <li>White-label ready — sell it as your own product</li>
+  </ul>
+  <div class="sell-cta-row">
+    <a class="btn-primary" href="/auth/login">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+      Start Free
+    </a>
+    <a class="btn-secondary" href="/book-demo">Request Demo</a>
+  </div>
+</div>
+
+<section class="section">
+  <div class="sell-grid">
+    {% for p in items %}
+    <a class="sell-card" href="/products/{{ p.slug }}">
+      <div class="section-label" style="margin-bottom:12px;">{{ p.category }}</div>
+      <h3>{{ p.name }}</h3>
+      <p>{{ p.tagline }}</p>
+      <ul>
+        {% for b in p.bullets %}
+        <li>{{ b }}</li>
+        {% endfor %}
+      </ul>
+      <span class="sell-card-link">Explore {{ p.name }} →</span>
+    </a>
+    {% endfor %}
+  </div>
+</section>
+
+<!-- Social Proof -->
+<section class="social-proof-bar">
+  <div class="proof-label">Trusted by growth teams worldwide</div>
+  <div class="proof-testimonial">
+    <blockquote>"We shut down HubSpot after week one. LUX IT does everything it does — plus the AI actually works."</blockquote>
+    <cite>— Head of RevOps, B2B SaaS Company</cite>
+  </div>
+</section>
+
+<!-- Bottom CTA -->
+<section class="section bottom-cta-section">
+  <div class="bottom-cta-box">
+    <div class="section-label">Launch Today</div>
+    <h2 class="section-title" style="font-size:2.2rem;">Start using every product free.</h2>
+    <p class="section-subtitle" style="margin-bottom:32px;">No credit card. No contracts. Get live in 15 minutes.</p>
+    <div class="sell-cta-row">
+      <a class="btn-primary" href="/auth/login" style="font-size:1rem; padding:15px 32px;">Start Free</a>
+      <a class="btn-secondary" href="/book-demo" style="font-size:1rem; padding:15px 32px;">Request Demo</a>
+    </div>
+  </div>
+</section>
+{% endblock %}
