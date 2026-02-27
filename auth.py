@@ -40,10 +40,17 @@ def _is_safe_next(value: str) -> bool:
 # Routes
 # --------------------------------------------------
 
+def _hub_redirect(user):
+    """Return a redirect to the user's preferred hub after login."""
+    if getattr(user, 'default_hub', 'sales') == 'marketing':
+        return redirect("/marketing-hub")
+    return redirect("/dashboard")
+
+
 @auth_bp.route("/login", methods=["GET", "POST"])
 def login():
     if current_user.is_authenticated:
-        return redirect(url_for("main.dashboard", _external=False))
+        return _hub_redirect(current_user)
 
     if request.method == "POST":
         identifier = (
@@ -61,15 +68,27 @@ def login():
                 logger.warning("Auth login template missing: %s", exc)
                 return render_template("login.html")
 
-        try:
-            user = User.query.filter(
-                or_(
-                    User.username == identifier,
-                    User.email == identifier.lower(),
-                )
-            ).first()
-        except SQLAlchemyError:
-            logger.exception("Login query failed")
+        user = None
+        for _attempt in range(3):
+            try:
+                from extensions import db as _db
+                user = User.query.filter(
+                    or_(
+                        User.username == identifier,
+                        User.email == identifier.lower(),
+                    )
+                ).first()
+                break
+            except SQLAlchemyError:
+                logger.warning("Login query attempt %d failed, retrying...", _attempt + 1)
+                try:
+                    from extensions import db as _db
+                    _db.session.rollback()
+                    _db.session.remove()
+                except Exception:
+                    pass
+        else:
+            logger.exception("Login query failed after retries")
             flash("Login temporarily unavailable.", "error")
             try:
                 return render_template("auth/login.html")
@@ -93,13 +112,14 @@ def login():
                 logger.warning("Auth login template missing: %s", exc)
                 return render_template("login.html")
 
-        login_user(user)
+        login_user(user, remember=True)
 
         nxt = request.args.get("next")
-        if nxt and _is_safe_next(nxt):
+        hub_roots = {"/dashboard", "/marketing-hub"}
+        if nxt and _is_safe_next(nxt) and nxt.rstrip("/") not in {h.rstrip("/") for h in hub_roots}:
             return redirect(nxt)
 
-        return redirect(url_for("main.dashboard", _external=False))
+        return _hub_redirect(user)
 
     try:
         return render_template("auth/login.html")

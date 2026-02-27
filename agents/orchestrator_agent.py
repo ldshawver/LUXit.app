@@ -54,7 +54,7 @@ class OrchestratorAgent:
     def get_system_health(self) -> Dict[str, Any]:
         """Aggregate system health from all sources"""
         try:
-            from app import db
+            from extensions import db
             health = {
                 'database': self._check_db(),
                 'error_summary': self._get_error_summary(),
@@ -93,7 +93,7 @@ class OrchestratorAgent:
 
     def _check_db(self) -> Dict:
         try:
-            from app import db
+            from extensions import db
             db.session.execute(db.text('SELECT 1'))
             from models import User, Contact, Campaign, Company
             company_id = self._get_current_company_id()

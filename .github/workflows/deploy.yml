@@ -30,6 +30,9 @@ jobs:
 
             cd /root/lux-email-bot
 
+            # 🔥 Fix Git safe directory issue
+            git config --global --add safe.directory /root/lux-email-bot
+
             echo "=== Pulling latest code ==="
             git fetch origin main
             git reset --hard origin/main

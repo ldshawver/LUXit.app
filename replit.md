@@ -1,7 +1,7 @@
 # LUX Marketing Platform - Project Documentation
 
 ## Overview
-LUX Marketing is a multi-channel marketing automation platform designed to streamline marketing efforts. It features a tile-based dashboard with 11 AI agents, AI-powered campaign generation using GPT-4o, and seamless contact capture via Zapier webhooks. The platform integrates an advanced error logging and diagnostics system and an AI chatbot with auto-repair capabilities. Its core ambition is to provide a launch-ready, automated marketing solution with centralized management for all integrations and API keys, alongside robust social media publishing and management.
+LUX Marketing is a multi-channel marketing automation platform designed to streamline marketing efforts. It features a tile-based dashboard with 11 AI agents and AI-powered campaign generation using GPT-4o. The platform aims to be a launch-ready, automated marketing solution offering centralized management for all integrations and API keys, robust social media publishing, and comprehensive contact capture. It includes advanced error logging, diagnostics, and an AI chatbot with auto-repair capabilities to ensure seamless operation.
 
 ## User Preferences
 - Black background with purple, cyan, pink branding
@@ -12,143 +12,51 @@ LUX Marketing is a multi-channel marketing automation platform designed to strea
 - All social media platforms available in Settings → Integrations for all companies
 
 ## System Architecture
-The platform is built around a tile-based dashboard with 11 AI agents and leverages GPT-4o for AI-powered campaign generation. The UI/UX features a pure black background accented with brand colors (purple, cyan, pink). Authentication is handled via Replit Auth OAuth, supporting Google, GitHub, Apple, and email sign-in, with JWKS-based JWT signature verification.
+The platform is built around a tile-based dashboard with 11 AI agents, leveraging GPT-4o for AI-powered campaign generation. The UI/UX features a pure black background accented with brand colors (purple, cyan, pink). Authentication is handled via Replit Auth OAuth, supporting Google, GitHub, Apple, and email sign-in, with JWKS-based JWT signature verification.
 
-Key technical implementations and features include:
-- **Admin Approval Queue System**: Mandatory approval workflow for ALL marketing content (AI-generated and manual). Features ApprovalQueue model with status workflow (pending→approved/rejected→published), FeatureToggle model with 27 safe-off defaults, ApprovalService for submit/approve/reject/edit/cancel operations, and ApprovalAuditLog for immutable action tracking. AI agents (SocialMediaAgent, EmailCRMAgent) route content through submit_for_approval() instead of direct execution. Publishing routes verify approved queue items before dispatching. Includes emergency stop capability to halt all automation.
-- **Social Media Integrations**: Full OAuth 2.0 implementations for platforms like Instagram and TikTok, supporting content publishing, media listing, and insights, including secure token management. Integrations also exist for Facebook, Reddit, YouTube, LinkedIn, Snapchat, and X/Twitter.
-- **Centralized API Keys & Secrets Management**: A dedicated section in Settings → Integrations for secure, encrypted storage and management of API keys and secrets per company.
-- **Zapier Webhook Integration**: An authenticated endpoint (`/api/webhook/zapier-contact`) for contact capture and auto-segmentation.
-- **Error Logging & Diagnostics**: A robust system logs all application errors to a `error_log` database table, providing detailed diagnostics and system health information.
-- **AI Chatbot with Auto-Repair**: Functions as a marketing assistant and troubleshooter, capable of analyzing server logs and triggering an automated error repair system using ChatGPT to generate and test fix plans.
-- **Keyword Research Integrations**: Multi-provider keyword research supporting DataForSEO, SEMrush, and Moz, with dedicated API endpoints.
-- **Event Integrations**: Multi-provider event search supporting Eventbrite and Ticketmaster, with dedicated API endpoints.
-- **Customer Profile & Engagement Tracking**: Comprehensive customer management with editable profiles, lead scoring, activity timelines, and quick-action buttons for logging interactions.
-- **CRM Hub Transformation**: An action-oriented coaching system with pipeline stages, "Next Actions" coaching widgets, and activity-based metrics. Features a unified Sales Hub (/crm-unified) with visual Kanban pipeline, drag-and-drop deal stage management, slide-out 360° deal detail panel with activity timeline, 5 tabs (Pipeline, Deal List, Customers, Lead Scoring, Analytics with Chart.js), and full CRUD API for deals (create/update/delete/stage-change/activity-log). CSRF-protected JSON endpoints. /crm redirects to unified Sales Hub.
-- **Autonomous Systems Governor (Orchestrator Agent)**: Master oversight agent at `/orchestrator` with 6-tab dashboard: System Health (DB/endpoints/errors scoring), Agent Orchestration (11 agents status/tasks/success rates), UX Optimization (recommendations with priority/impact), Feature Governance (toggle status/rules), Competitive Intelligence (vs HubSpot/Salesforce/Klaviyo/etc with LUX advantages), Executive Report (platform metrics/AI performance). Does not use OpenAI - aggregates internal data only. Accessible via Settings dropdown.
-- **Comprehensive Analytics Hub**: An analytics system providing 10 metric categories (Acquisition, Conversion, Revenue, CAC, Retention, Engagement, Attribution, Segments, Campaigns, Compliance) with Chart.js visualizations and a dark theme UI.
-- **Contact-Subscriber Sync**: Bidirectional synchronization between contacts and newsletter subscribers, including automatic daily sync via an AI agent.
-- **Automation Trigger Library**: An expanded library of 25+ automation templates across various marketing categories (Ecommerce, Engagement, Nurture, Retention, SMS, Social) with full CRUD API support.
+Key architectural decisions and features include:
+- **Admin Approval Queue System**: Implements a mandatory approval workflow for all marketing content with status tracking, feature toggles for safe-off defaults, and an immutable audit log. AI agents route content through this system before execution.
+- **Social Media Integrations**: Full OAuth 2.0 implementations for various platforms (Instagram, TikTok, Facebook, Reddit, YouTube, LinkedIn, Snapchat, X/Twitter) supporting content publishing, media listing, insights, and secure token management.
+- **Centralized API Keys & Secrets Management**: A dedicated section for secure, encrypted storage and management of API keys and secrets per company.
+- **Contact Management**: Features Zapier webhook integration for authenticated contact capture and auto-segmentation, comprehensive customer profiles with lead scoring, activity timelines, and quick actions. Bidirectional synchronization between contacts and newsletter subscribers is included.
+- **Error Logging & Diagnostics**: A robust system logs application errors to a database, providing detailed diagnostics.
+- **AI Chatbot with Auto-Repair**: Functions as a marketing assistant and troubleshooter, capable of analyzing server logs and triggering an automated error repair system using ChatGPT.
+- **Multi-Hub Architecture**: Supports a dual-hub system (Sales Hub and Marketing Hub) with user-selectable defaults and a hub switcher for navigation.
+- **CRM Hub Transformation**: An action-oriented coaching system with pipeline stages, "Next Actions" widgets, and activity-based metrics, featuring a unified Sales Hub with a visual Kanban pipeline and comprehensive deal management.
+- **Autonomous Systems Governor (Orchestrator Agent)**: A master oversight agent providing a 6-tab dashboard for system health, agent orchestration, UX optimization, feature governance, competitive intelligence, and executive reporting.
+- **Comprehensive Analytics Hub**: An analytics system providing 10 metric categories with Chart.js visualizations and a dark theme UI.
+- **Automation Trigger Library**: An expanded library of 25+ automation templates across various marketing categories with full CRUD API support.
 - **SMS Service Integration**: Full Twilio integration for SMS campaign creation, bulk sending, AI-powered content generation, and compliance checking.
-- **Marketing Calendar**: Full FullCalendar.js integration with drag-and-drop rescheduling, click-to-edit events, type filtering, and an upcoming 30-day view.
-- **AI Auto-Generate for Campaigns**: AI-powered subject line generation for campaigns with CSRF protection and graceful fallback.
-- **Social Media Post Creation**: Enhanced features including advanced image handling (stock search via Unsplash/Pexels, upload, URL import, AI generation), AI-powered hashtag generation, and URL shortening.
-- **TikTok Pixel Integration**: Automatic injection of TikTok Pixel into all pages for tracking.
-- **Configuration Status Service**: Enhanced service to check and differentiate between missing API credentials and disconnected OAuth sessions for various integrations.
+- **Marketing Calendar**: Full FullCalendar.js integration with drag-and-drop rescheduling and event management.
+- **AI Auto-Generate for Campaigns**: AI-powered subject line generation for campaigns and advanced social media post creation features (image handling, hashtag generation, URL shortening).
+- **TikTok Pixel Integration**: Automatic injection of TikTok Pixel for tracking.
+- **Email Campaign Builder**: A drag-and-drop email builder with content blocks, a visual canvas, template picker, and A/B testing capabilities.
+- **User and Company Management**: Includes user profiles, password management, user management, and company-specific branding settings.
 
 ## External Dependencies
-### Core Integrations
 - **OpenAI API**: AI-powered campaign generation, content optimization, and diagnostics.
-- **Microsoft Graph API**: Microsoft 365 email delivery service (OAuth 2.0).
-- **Zapier**: Contact capture and automation via webhooks.
+- **Microsoft Graph API**: Microsoft 365 email delivery.
+- **Zapier**: Contact capture via webhooks.
 - **Replit Auth (OpenID Connect)**: OAuth authentication (Google, GitHub, Apple, email).
-- **Instagram Graph API**: OAuth integration, content publishing, insights.
-- **TikTok API**: OAuth integration, user info, video listing, upload, publishing.
+- **Instagram Graph API**: Instagram integration.
+- **TikTok API**: TikTok integration.
 - **Facebook API**: Facebook Page integration.
 - **Reddit API**: Reddit integration.
 - **YouTube Data API**: YouTube integration.
 - **LinkedIn API**: LinkedIn integration.
 - **Snapchat API**: Snapchat integration.
 - **X (formerly Twitter) API**: Twitter integration.
-- **DataForSEO API**: Keyword research data.
-- **SEMrush API**: Premium keyword and competitor data.
+- **DataForSEO API**: Keyword research.
+- **SEMrush API**: Keyword and competitor data.
 - **Moz API**: Domain authority and keyword difficulty.
-- **Eventbrite API**: Local events, ticketing, categories.
-- **Ticketmaster Discovery API**: Concerts, sports, theater, attractions.
-- **Twilio API**: SMS service integration.
+- **Eventbrite API**: Event search.
+- **Ticketmaster Discovery API**: Event search.
+- **Twilio API**: SMS service.
 - **Unsplash API**: Stock image search.
-- **Pexels API**: Alternative stock image search.
+- **Pexels API**: Stock image search.
 - **TinyURL/Bitly API**: URL shortening.
-
-### Framework & Data Layer
-- **Flask**: Web framework with SQLAlchemy, Login, and other extensions.
-- **APScheduler**: Background task scheduling for automated campaigns.
-- **SQLAlchemy**: ORM supporting multiple database backends.
-- **Database**: SQLite for development; PostgreSQL/MySQL in production.
-
-### Frontend Dependencies
-- **Bootstrap 5**: Dark theme UI framework.
-- **Feather Icons**: Lightweight icon set.
-- **Custom CSS/JS**: Glassmorphism UI and interaction helpers.
-
-## Deployment
-
-### Replit Deployment
-- Configured for Autoscale deployment with gunicorn
-- Run command: `gunicorn --bind=0.0.0.0:5000 --workers=4 --reuse-port wsgi:app`
-- Click the "Publish" button in Replit to deploy
-
-### VPS Deployment
-See `deploy/README_VPS.md` for complete VPS deployment instructions including:
-- Systemd service configuration
-- Nginx reverse proxy setup
-- SSL certificate setup with Certbot
-- PostgreSQL database setup
-
-### Docker Deployment
-```bash
-cd deploy
-docker-compose up -d
-```
-
-### Admin Credentials
-- **Username:** admin
-- **Password:** admin123 (change immediately after first login)
-
-## Recent Changes (February 2026)
-- **Multi-Hub Architecture**: Implemented dual-hub system with user-selectable defaults
-  - Sales Hub (/dashboard) - Focus on deals, pipeline, customer relationships
-  - Marketing Hub (/marketing-hub) - Focus on campaigns, content, audience growth
-  - Hub switcher in both dashboards for quick navigation
-  - User default_hub preference stored in User model
-  - Hub preference settings in user profile page
-  - API endpoint: POST /api/user/set-default-hub
-- **CRM Platform Transformation**: Converted marketing dashboard into action-driven CRM/Sales Hub
-  - New data models: SalesStage, CRMTask, Meeting, Playbook, Document, TouchpointEvent
-  - Enhanced ContactActivity with touchpoint tracking (website, social, forms, email, calls, referral)
-  - Enhanced LeadScore with engagement scoring and activity tracking
-- **Sales Hub Dashboard**: Complete redesign with action-oriented UI
-  - Quick metrics: Open Deals, Hot Leads, Tasks Due, Meetings Today
-  - Lead sources touchpoint counters with clickable icons
-  - AI Recommendations panel with guided selling suggestions
-  - Visual pipeline stage summary with deal counts and values
-  - Sales tools section with quick action buttons
-- **CRM Pipeline Dashboard**: Enhanced sales journey visualization
-  - Clickable pipeline stages with deal cards and drag support
-  - Suggested actions per stage (e.g., "Send intro email", "Conduct needs assessment")
-  - AI Insights panel with opportunity detection and risk alerts
-  - Sales materials library with usage tracking
-  - Modal dialogs for new deal creation and meeting scheduling
-  - AI-powered meeting prep notes option
-- Fixed database schema: Added deal.created_at, deal.updated_at, instagram_oauth.company_id columns
-- Updated Contact model with source, segment, is_subscribed fields
-- Added ab_tests and connectors routes to fix 500 errors
-- Fixed invalid Feather icons throughout templates (palette→droplet, building→briefcase, mail-open→mail)
-- Redesigned main dashboard with task-focused UI featuring quick stats, to-do list, and activity notifications
-- Updated logo CSS: 'IT' larger than '.app', both matching LUX height
-- Moved analytics export section to bottom of page for better UX
-- Fixed Settings page: Added gear icon dropdown in header with user profile, change password, manage users, connections & API keys, and company switcher
-- Added company badge display in header showing current company name with logo/initials
-- Updated Company model with branding columns: logo_path, website_url, primary_color, secondary_color, accent_color, font_family, industry, description
-- User management routes: /user/profile, /user/change-password, /user/manage-users, /companies
-
-## File Structure
-```
-/
-├── app.py              # Flask app factory
-├── wsgi.py             # WSGI entry point
-├── extensions.py       # Flask extensions (db, login manager)
-├── models.py           # SQLAlchemy models
-├── auth.py             # Authentication routes
-├── marketing.py        # Marketing page routes
-├── templates/          # Jinja2 templates
-│   ├── marketing/      # Marketing site templates
-│   └── auth/           # Authentication templates
-├── static/             # Static assets (CSS, JS, images)
-├── deploy/             # VPS deployment files
-│   ├── README_VPS.md   # Deployment guide
-│   ├── Dockerfile      # Docker configuration
-│   ├── docker-compose.yml
-│   └── gunicorn.conf.py
-└── requirements.txt    # Python dependencies
-```
+- **Flask**: Web framework.
+- **APScheduler**: Background task scheduling.
+- **SQLAlchemy**: ORM.
+- **Bootstrap 5**: UI framework.
+- **Feather Icons**: Icon set.

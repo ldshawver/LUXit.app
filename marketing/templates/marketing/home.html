@@ -17,9 +17,9 @@
     <div class="hero-buttons">
       <a class="btn-primary" href="/auth/login">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
-        Start Free Trial
+        Start Free
       </a>
-      <a class="btn-secondary" href="/auth/login">Sign In to Dashboard</a>
+      <a class="btn-secondary" href="/book-demo">Request Demo</a>
     </div>
   </div>
 </section>
@@ -31,6 +31,26 @@
   <div class="stat scroll-reveal-drop delay-3"><div class="stat-number">60%</div><div class="stat-label">Cost Savings</div></div>
   <div class="stat scroll-reveal-drop delay-4"><div class="stat-number">50+</div><div class="stat-label">Integrations</div></div>
 </div>
+
+<!-- Social Proof -->
+<section class="social-proof-bar">
+  <div class="proof-label">Trusted by growth teams at</div>
+  <div class="proof-logos">
+    <span class="proof-logo">Agencies</span>
+    <span class="proof-divider">·</span>
+    <span class="proof-logo">eCommerce Brands</span>
+    <span class="proof-divider">·</span>
+    <span class="proof-logo">SaaS Companies</span>
+    <span class="proof-divider">·</span>
+    <span class="proof-logo">B2B Teams</span>
+    <span class="proof-divider">·</span>
+    <span class="proof-logo">Media Businesses</span>
+  </div>
+  <div class="proof-testimonial">
+    <blockquote>"We replaced 6 tools with LUX IT and cut our marketing spend by 40% — while closing 2x more deals."</blockquote>
+    <cite>— Director of Marketing, Agency Partner</cite>
+  </div>
+</section>
 
 <!-- Features -->
 
@@ -333,19 +353,66 @@
   </div>
 </section>
 
-<section class="section" id="demo">
+<!-- FAQ -->
+<section class="section" id="faq">
   <div class="section-header">
-    <div class="section-label">Get Started</div>
-    <h2 class="section-title">Ready to Transform Your Operations?</h2>
-    <p class="section-subtitle">Join hundreds of agencies using LUX IT to scale their revenue operations.</p>
+    <div class="section-label">FAQ</div>
+    <h2 class="section-title">Common Questions</h2>
+    <p class="section-subtitle">Everything you need to know before you start.</p>
   </div>
-  <div style="text-align: center;">
-    <a class="btn-primary cta-chrome-glow text-shine" href="/auth/login" style="font-size: 1.1rem; padding: 18px 40px;">
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>
-      </svg>
-      Start Your Free Trial
-    </a>
+  <div class="faq-list">
+    <div class="faq-item">
+      <button class="faq-q" onclick="this.parentElement.classList.toggle('open')">
+        How long does it take to get up and running?
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+      </button>
+      <div class="faq-a">Most teams are live within 15 minutes. Connect your email, import your contacts, and your first AI-assisted campaign is ready to launch.</div>
+    </div>
+    <div class="faq-item">
+      <button class="faq-q" onclick="this.parentElement.classList.toggle('open')">
+        Do I need technical skills to use LUX IT?
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+      </button>
+      <div class="faq-a">No. LUX IT is built for marketers and operators, not developers. Everything is point-and-click, and the AI agents handle the complex work automatically.</div>
+    </div>
+    <div class="faq-item">
+      <button class="faq-q" onclick="this.parentElement.classList.toggle('open')">
+        Can I replace HubSpot or Salesforce with LUX IT?
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+      </button>
+      <div class="faq-a">Yes. LUX IT includes full CRM, email marketing, social publishing, analytics, and 11 AI agents — everything you currently pay for separately, in one platform at a fraction of the cost.</div>
+    </div>
+    <div class="faq-item">
+      <button class="faq-q" onclick="this.parentElement.classList.toggle('open')">
+        Is there a free trial?
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+      </button>
+      <div class="faq-a">Yes. Start free and explore the platform with no credit card required. Upgrade when you're ready to scale.</div>
+    </div>
+    <div class="faq-item">
+      <button class="faq-q" onclick="this.parentElement.classList.toggle('open')">
+        Can agencies white-label and resell LUX IT?
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+      </button>
+      <div class="faq-a">Absolutely. Our Enterprise plan includes full white-label rights — your logo, your domain, your pricing. Many agencies use LUX IT as a revenue-generating service they offer to clients.</div>
+    </div>
+  </div>
+</section>
+
+<!-- Bottom CTA -->
+<section class="section bottom-cta-section" id="demo">
+  <div class="bottom-cta-box">
+    <div class="section-label">Launch Today</div>
+    <h2 class="section-title" style="font-size:2.4rem;">Get live in 15 minutes.</h2>
+    <p class="section-subtitle" style="margin-bottom:36px;">Launch your first campaign today. No setup fees, no contracts — just results.</p>
+    <div class="hero-buttons" style="justify-content:center;">
+      <a class="btn-primary" href="/auth/login" style="font-size:1.05rem; padding:16px 36px;">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+        Start Free
+      </a>
+      <a class="btn-secondary" href="/book-demo" style="font-size:1.05rem; padding:16px 36px;">Request Demo</a>
+    </div>
+    <p style="margin-top:20px; color: var(--text-secondary); font-size:0.85rem;">No credit card required &nbsp;·&nbsp; Cancel anytime &nbsp;·&nbsp; Live in minutes</p>
   </div>
 </section>
 

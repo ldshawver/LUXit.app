@@ -1,0 +1,548 @@
+{% extends "marketing/base.html" %}
+{% block title %}Industries — LUX IT{% endblock %}
+{% block meta_description %}LUX IT is purpose-built for every industry — from automotive to healthcare. Find your vertical playbook and launch in minutes.{% endblock %}
+
+{% block content %}
+
+<!-- Hero -->
+<div class="sell-hero" style="padding-bottom: 40px;">
+  <div class="section-label">Industries</div>
+  <h1>Your industry.<br>Your playbook.</h1>
+  <p>LUX IT ships with pre-built AI agent configurations, campaign templates, and automation sequences for every vertical. Pick your industry and go live today.</p>
+</div>
+
+<!-- Split Panel -->
+<section class="section" style="padding-top: 0;">
+  <div class="industries-section">
+
+    <div class="industries-list">
+      <button class="industry-btn active" data-industry="automotive">Automotive</button>
+      <button class="industry-btn" data-industry="communications">Communications</button>
+      <button class="industry-btn" data-industry="construction">Construction &amp; Real Estate</button>
+      <button class="industry-btn" data-industry="consumer">Consumer Goods</button>
+      <button class="industry-btn" data-industry="education">Education</button>
+      <button class="industry-btn" data-industry="energy">Energy &amp; Utilities</button>
+      <button class="industry-btn" data-industry="financial">Financial Services</button>
+      <button class="industry-btn" data-industry="healthcare">Healthcare</button>
+      <button class="industry-btn" data-industry="life">Life Sciences</button>
+      <button class="industry-btn" data-industry="manufacturing">Manufacturing</button>
+      <button class="industry-btn" data-industry="media">Media &amp; Publishing</button>
+      <button class="industry-btn" data-industry="nonprofit">Nonprofit</button>
+      <button class="industry-btn" data-industry="professional">Professional Services</button>
+    </div>
+
+    <div class="industry-content" id="industryContent"></div>
+
+  </div>
+</section>
+
+<!-- Social Proof -->
+<section class="social-proof-bar">
+  <div class="proof-label">Trusted across every industry</div>
+  <div class="proof-testimonial">
+    <blockquote>"LUX IT was configured for our vertical out of the box. We were running campaigns the same day we signed up."</blockquote>
+    <cite>— Operations Lead, Industry Customer</cite>
+  </div>
+</section>
+
+<!-- Bottom CTA -->
+<section class="section bottom-cta-section">
+  <div class="bottom-cta-box">
+    <div class="section-label">Find your playbook</div>
+    <h2 class="section-title" style="font-size:2.2rem;">Launch your first campaign today.</h2>
+    <p class="section-subtitle" style="margin-bottom:32px;">Industry-specific setup. Live in 15 minutes. No credit card required.</p>
+    <div class="sell-cta-row">
+      <a class="btn-primary" href="/auth/login" style="font-size:1rem; padding:15px 32px;">Start Free</a>
+      <a class="btn-secondary" href="/book-demo" style="font-size:1rem; padding:15px 32px;">Request Demo</a>
+    </div>
+  </div>
+</section>
+
+<style>
+  .industries-section {
+    display: grid;
+    grid-template-columns: 260px 1fr;
+    gap: 40px;
+    align-items: start;
+  }
+  .industries-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    position: sticky;
+    top: 100px;
+  }
+  .industry-btn {
+    background: transparent;
+    border: 1px solid rgba(255,255,255,0.07);
+    color: rgba(255,255,255,0.6);
+    padding: 13px 18px;
+    text-align: left;
+    border-radius: 10px;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 0.92rem;
+    font-weight: 500;
+    transition: all 0.2s ease;
+    letter-spacing: -0.01em;
+  }
+  .industry-btn:hover {
+    border-color: rgba(0,229,255,0.35);
+    color: #fff;
+    background: rgba(0,229,255,0.04);
+  }
+  .industry-btn.active {
+    background: rgba(0,229,255,0.08);
+    border-color: rgba(0,229,255,0.5);
+    color: #fff;
+    font-weight: 600;
+  }
+
+  /* Content Panel */
+  .industry-content {
+    min-height: 500px;
+  }
+  .ind-panel {
+    opacity: 0;
+    transform: translateY(12px);
+    animation: indFadeIn 0.35s ease forwards;
+  }
+  @keyframes indFadeIn {
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .ind-label {
+    display: inline-block;
+    color: var(--accent-cyan);
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    margin-bottom: 16px;
+  }
+  .ind-title {
+    font-size: 2.4rem;
+    font-weight: 800;
+    margin-bottom: 16px;
+    letter-spacing: -0.03em;
+    line-height: 1.15;
+  }
+  .ind-desc {
+    font-size: 1.05rem;
+    color: rgba(255,255,255,0.65);
+    line-height: 1.7;
+    margin-bottom: 36px;
+    max-width: 640px;
+  }
+  .ind-bullets {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-bottom: 40px;
+    list-style: none;
+  }
+  .ind-bullets li {
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.07);
+    border-radius: 10px;
+    padding: 14px 18px;
+    font-size: 0.9rem;
+    color: rgba(255,255,255,0.8);
+    padding-left: 38px;
+    position: relative;
+    opacity: 0;
+    transform: translateX(-8px);
+    animation: bulletSlide 0.3s ease forwards;
+  }
+  .ind-bullets li::before {
+    content: '→';
+    position: absolute;
+    left: 16px;
+    color: var(--accent-cyan);
+    font-size: 0.85rem;
+  }
+  .ind-bullets li:nth-child(1) { animation-delay: 0.05s; }
+  .ind-bullets li:nth-child(2) { animation-delay: 0.1s; }
+  .ind-bullets li:nth-child(3) { animation-delay: 0.15s; }
+  .ind-bullets li:nth-child(4) { animation-delay: 0.2s; }
+  .ind-bullets li:nth-child(5) { animation-delay: 0.25s; }
+  .ind-bullets li:nth-child(6) { animation-delay: 0.3s; }
+  .ind-bullets li:nth-child(7) { animation-delay: 0.35s; }
+  .ind-bullets li:nth-child(8) { animation-delay: 0.4s; }
+  @keyframes bulletSlide {
+    to { opacity: 1; transform: translateX(0); }
+  }
+  .ind-stat-row {
+    display: flex;
+    gap: 24px;
+    margin-bottom: 36px;
+    flex-wrap: wrap;
+  }
+  .ind-stat {
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 12px;
+    padding: 18px 24px;
+    text-align: center;
+    min-width: 100px;
+  }
+  .ind-stat-num {
+    font-size: 1.8rem;
+    font-weight: 800;
+    background: linear-gradient(135deg, var(--accent-cyan), var(--accent-purple));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .ind-stat-lbl {
+    font-size: 0.78rem;
+    color: rgba(255,255,255,0.5);
+    margin-top: 4px;
+  }
+  .ind-cta-row {
+    display: flex;
+    gap: 14px;
+    flex-wrap: wrap;
+  }
+
+  @media (max-width: 768px) {
+    .industries-section {
+      grid-template-columns: 1fr;
+    }
+    .industries-list {
+      flex-direction: row;
+      flex-wrap: wrap;
+      position: static;
+    }
+    .industry-btn {
+      flex: 0 0 auto;
+    }
+    .ind-bullets {
+      grid-template-columns: 1fr;
+    }
+    .ind-title { font-size: 1.8rem; }
+  }
+</style>
+
+<script>
+const industries = {
+  automotive: {
+    label: "Automotive",
+    title: "Drive more deals from every lot.",
+    description: "Automate dealer lead routing, service follow-ups, and inventory performance — so your team focuses on closing, not chasing.",
+    stats: [
+      { num: "40%", lbl: "More service appointments booked" },
+      { num: "3x", lbl: "Lead response speed" },
+      { num: "60%", lbl: "Less manual follow-up" }
+    ],
+    bullets: [
+      "Dealer lead routing by region, model, and availability",
+      "Service reminder automation via email and SMS",
+      "Inventory performance tracking per location",
+      "Regional analytics dashboards for GM review",
+      "Trade-in and test-drive follow-up sequences",
+      "Compliance-safe financing campaign templates",
+      "Seasonal promotion automation (end of quarter, model year)",
+      "Multi-location reporting consolidated in one view"
+    ]
+  },
+  communications: {
+    label: "Communications",
+    title: "Reduce churn. Grow subscriber revenue.",
+    description: "Lifecycle marketing automation for telecom and media companies — from trial activation to renewal and upsell.",
+    stats: [
+      { num: "35%", lbl: "Reduction in churn" },
+      { num: "2x", lbl: "Trial-to-paid conversion" },
+      { num: "50%", lbl: "Faster campaign launch" }
+    ],
+    bullets: [
+      "Subscriber segmentation by plan, usage, and tenure",
+      "Automated retention flows triggered by disengagement",
+      "Usage-based upsell campaigns at the right moment",
+      "Win-back sequences for cancelled subscribers",
+      "Renewal reminder automation with incentive logic",
+      "Net Promoter Score (NPS) collection and follow-up",
+      "Multi-channel outreach: email, SMS, and push",
+      "Performance analytics by plan tier and region"
+    ]
+  },
+  construction: {
+    label: "Construction & Real Estate",
+    title: "From lead to close — without the chaos.",
+    description: "Pipeline management, investor communications, and compliance documentation for construction and real estate teams.",
+    stats: [
+      { num: "2x", lbl: "Faster lead-to-quote cycle" },
+      { num: "100%", lbl: "Pipeline visibility" },
+      { num: "80%", lbl: "Less manual reporting" }
+    ],
+    bullets: [
+      "Lead-to-project tracking with stage automation",
+      "Permit and documentation workflow management",
+      "Investor reporting dashboards with one-click export",
+      "Multi-site and multi-project pipeline management",
+      "Subcontractor communication and follow-up automation",
+      "Open house and listing promotion campaigns",
+      "Post-close referral and review request sequences",
+      "Compliance audit trail for regulated projects"
+    ]
+  },
+  consumer: {
+    label: "Consumer Goods",
+    title: "Build loyalty. Drive repeat revenue.",
+    description: "AI-powered campaigns that turn first-time buyers into loyal customers — across every channel they use.",
+    stats: [
+      { num: "45%", lbl: "Higher repeat purchase rate" },
+      { num: "3x", lbl: "Email open rates with AI copy" },
+      { num: "60%", lbl: "Time saved on campaign creation" }
+    ],
+    bullets: [
+      "Post-purchase sequences that drive repeat orders",
+      "Loyalty and rewards program automation",
+      "Seasonal and promotional campaign templates",
+      "Product launch email and SMS campaigns",
+      "Abandoned cart recovery with personalized messaging",
+      "Referral program tracking and incentive delivery",
+      "Amazon and DTC channel segmentation",
+      "Customer lifetime value (LTV) dashboards"
+    ]
+  },
+  education: {
+    label: "Education",
+    title: "Enrollment marketing on autopilot.",
+    description: "From prospect to enrolled student — automated nurture sequences that guide every decision point in the enrollment journey.",
+    stats: [
+      { num: "60%", lbl: "More enrollment inquiries converted" },
+      { num: "4x", lbl: "Faster application follow-up" },
+      { num: "90%", lbl: "Less manual outreach" }
+    ],
+    bullets: [
+      "Prospective student nurture sequences by program",
+      "Open day and event promotion automation",
+      "Application deadline reminder campaigns",
+      "Accepted student onboarding and pre-enrollment flows",
+      "Financial aid and scholarship campaign automation",
+      "Alumni engagement and giving campaigns",
+      "Faculty and staff internal communications",
+      "Enrollment funnel analytics with conversion tracking"
+    ]
+  },
+  energy: {
+    label: "Energy & Utilities",
+    title: "Customer engagement built for long cycles.",
+    description: "Acquire, onboard, and retain energy customers with automated campaigns that comply with regulatory requirements.",
+    stats: [
+      { num: "50%", lbl: "Faster customer onboarding" },
+      { num: "30%", lbl: "Reduction in customer churn" },
+      { num: "100%", lbl: "Audit trail on every action" }
+    ],
+    bullets: [
+      "New customer onboarding sequences with regulatory compliance",
+      "Rate change and outage communications automation",
+      "Energy efficiency campaign workflows",
+      "Renewal and contract expiration sequences",
+      "Field service appointment reminders and confirmations",
+      "Customer satisfaction (CSAT) collection and follow-up",
+      "Government incentive and rebate campaign templates",
+      "Multi-region segmentation and reporting"
+    ]
+  },
+  financial: {
+    label: "Financial Services",
+    title: "Secure client lifecycle management.",
+    description: "Compliance-aware marketing automation for banks, wealth managers, insurance firms, and fintech companies.",
+    stats: [
+      { num: "70%", lbl: "Faster client onboarding" },
+      { num: "100%", lbl: "Audit trail on every campaign" },
+      { num: "40%", lbl: "More referrals from existing clients" }
+    ],
+    bullets: [
+      "Client onboarding workflows with document tracking",
+      "Compliance-first content approval before every send",
+      "Full audit trail logging for regulatory review",
+      "AUM growth campaigns segmented by client tier",
+      "Annual review and renewal reminder automation",
+      "Referral program tracking and incentive automation",
+      "Secure client portal communication sequences",
+      "Executive performance reporting dashboards"
+    ]
+  },
+  healthcare: {
+    label: "Healthcare",
+    title: "Patient engagement with compliance guardrails.",
+    description: "Appointment-driven marketing, patient education, and wellness campaigns — all with the compliance controls healthcare requires.",
+    stats: [
+      { num: "35%", lbl: "Fewer no-shows with reminders" },
+      { num: "50%", lbl: "More patients re-engaged" },
+      { num: "100%", lbl: "HIPAA-aware workflow controls" }
+    ],
+    bullets: [
+      "Appointment reminder sequences via email and SMS",
+      "Post-visit follow-up and review request automation",
+      "Patient re-engagement campaigns for inactive records",
+      "Wellness and preventive care education drips",
+      "Insurance renewal and eligibility campaign automation",
+      "Content approval workflows for regulatory compliance",
+      "Referral program tracking for physician networks",
+      "Practice performance analytics and patient retention metrics"
+    ]
+  },
+  life: {
+    label: "Life Sciences",
+    title: "Accelerate the path from discovery to adoption.",
+    description: "HCP engagement, clinical trial recruitment, and patient support programs — with full audit trails and compliance controls.",
+    stats: [
+      { num: "3x", lbl: "Faster HCP outreach campaigns" },
+      { num: "60%", lbl: "More clinical trial inquiries" },
+      { num: "100%", lbl: "Content audit trail for compliance" }
+    ],
+    bullets: [
+      "Healthcare professional (HCP) engagement automation",
+      "Clinical trial recruitment campaign workflows",
+      "Patient support program onboarding sequences",
+      "KOL relationship management and outreach tracking",
+      "Congress and event promotion automation",
+      "Medical affairs content approval workflows",
+      "Patient adherence and medication reminder campaigns",
+      "Regional sales team analytics dashboards"
+    ]
+  },
+  manufacturing: {
+    label: "Manufacturing",
+    title: "Shorten sales cycles. Grow distributor revenue.",
+    description: "B2B marketing automation for manufacturers — from distributor onboarding to product launch campaigns and reorder sequences.",
+    stats: [
+      { num: "40%", lbl: "Shorter distributor onboarding" },
+      { num: "2x", lbl: "Faster product launch campaigns" },
+      { num: "55%", lbl: "More reorder revenue from automation" }
+    ],
+    bullets: [
+      "Distributor onboarding and training sequence automation",
+      "Product launch campaigns for new SKUs and lines",
+      "Reorder and replenishment reminder sequences",
+      "Trade show follow-up and lead nurture automation",
+      "B2B account-based marketing (ABM) campaigns",
+      "Field sales enablement content distribution",
+      "Supply chain and lead time communication workflows",
+      "Regional dealer and partner performance dashboards"
+    ]
+  },
+  media: {
+    label: "Media & Publishing",
+    title: "Grow your audience. Monetize your content.",
+    description: "Newsletter growth, subscriber monetization, and audience re-engagement — with AI generating the content your readers want.",
+    stats: [
+      { num: "80%", lbl: "Subscriber growth in 6 months" },
+      { num: "15hrs", lbl: "Saved per week with AI content" },
+      { num: "4x", lbl: "Engagement vs industry average" }
+    ],
+    bullets: [
+      "Newsletter subscription growth and management",
+      "Subscriber segmentation by interest and engagement tier",
+      "AI-generated content drafts for editorial teams",
+      "Automated content distribution across email and social",
+      "Sponsorship and premium tier campaign automation",
+      "Inactive subscriber re-engagement sequences",
+      "Content performance analytics and editorial recommendations",
+      "Paywall conversion and subscription upgrade campaigns"
+    ]
+  },
+  nonprofit: {
+    label: "Nonprofit",
+    title: "Raise more. Spend less. Impact more.",
+    description: "Donor acquisition, retention, and campaign automation — so your team can focus on the mission, not the marketing.",
+    stats: [
+      { num: "2x", lbl: "More recurring donors with automation" },
+      { num: "60%", lbl: "Less time on donor communications" },
+      { num: "45%", lbl: "Higher campaign response rates" }
+    ],
+    bullets: [
+      "Donor acquisition and first-gift conversion sequences",
+      "Recurring giving upgrade and renewal automation",
+      "Fundraising campaign email and SMS workflows",
+      "Grant deadline reminder and reporting automation",
+      "Volunteer recruitment and engagement campaigns",
+      "Event promotion and post-event follow-up sequences",
+      "End-of-year giving and tax receipt automation",
+      "Donor retention dashboards with lapsed donor alerts"
+    ]
+  },
+  professional: {
+    label: "Professional Services",
+    title: "Build authority. Fill your pipeline.",
+    description: "Thought leadership content, referral programs, and long-cycle nurture automation for consultancies, law firms, and agencies.",
+    stats: [
+      { num: "2x", lbl: "More inbound leads in 90 days" },
+      { num: "40%", lbl: "More referrals from existing clients" },
+      { num: "6mo", lbl: "Average deal cycle — fully automated" }
+    ],
+    bullets: [
+      "Thought leadership content generation on autopilot",
+      "Long-cycle nurture sequences for 6-18 month deals",
+      "Referral program automation and incentive tracking",
+      "Client anniversary and milestone campaign automation",
+      "Event promotion and webinar follow-up sequences",
+      "Proposal and contract milestone communication workflows",
+      "SEO-optimized content publishing on a consistent cadence",
+      "Pipeline management with deal value and stage analytics"
+    ]
+  }
+};
+
+const buttons = document.querySelectorAll('.industry-btn');
+const content = document.getElementById('industryContent');
+
+function renderIndustry(key) {
+  const d = industries[key];
+  if (!d) return;
+
+  const statsHtml = d.stats.map(s => `
+    <div class="ind-stat">
+      <div class="ind-stat-num">${s.num}</div>
+      <div class="ind-stat-lbl">${s.lbl}</div>
+    </div>
+  `).join('');
+
+  const bulletsHtml = d.bullets.map(b => `<li>${b}</li>`).join('');
+
+  content.innerHTML = `
+    <div class="ind-panel">
+      <div class="ind-label">${d.label}</div>
+      <h2 class="ind-title">${d.title}</h2>
+      <p class="ind-desc">${d.description}</p>
+      <div class="ind-stat-row">${statsHtml}</div>
+      <ul class="ind-bullets">${bulletsHtml}</ul>
+      <div class="ind-cta-row">
+        <a class="btn-primary" href="/auth/login" style="font-size:0.95rem; padding:14px 28px;">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+          Start Free
+        </a>
+        <a class="btn-secondary" href="/book-demo" style="font-size:0.95rem; padding:14px 28px;">Request Demo</a>
+      </div>
+    </div>
+  `;
+
+  window.location.hash = key;
+}
+
+buttons.forEach(btn => {
+  btn.addEventListener('click', () => {
+    buttons.forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    renderIndustry(btn.dataset.industry);
+  });
+});
+
+const hashKey = window.location.hash.replace('#', '');
+const defaultKey = (hashKey && industries[hashKey]) ? hashKey : 'automotive';
+
+if (hashKey && industries[hashKey]) {
+  const matchBtn = document.querySelector(`[data-industry="${hashKey}"]`);
+  if (matchBtn) {
+    buttons.forEach(b => b.classList.remove('active'));
+    matchBtn.classList.add('active');
+  }
+}
+
+renderIndustry(defaultKey);
+</script>
+
+{% endblock %}

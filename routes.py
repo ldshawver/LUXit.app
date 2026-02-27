@@ -123,6 +123,24 @@ from extensions import db
 
 main_bp = Blueprint('main', __name__)
 
+
+@main_bp.context_processor
+def inject_company_context():
+    """Inject current_company and user_companies into every template rendered by main_bp."""
+    from flask_login import current_user
+    if current_user.is_authenticated:
+        try:
+            user_companies = current_user.get_all_companies()
+            current_company = current_user.get_default_company()
+        except Exception:
+            user_companies = []
+            current_company = None
+    else:
+        user_companies = []
+        current_company = None
+    return dict(user_companies=user_companies, current_company=current_company)
+
+
 def get_app_version() -> str:
     version_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "VERSION")
     try:
@@ -156,16 +174,10 @@ def set_hub_preference():
         logger.error(f"Set hub preference error: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
-@main_bp.route('/')
+@main_bp.route('/dashboard')
 @login_required
 def dashboard():
-    """Dashboard - redirects to preferred hub or shows tile dashboard"""
-    hub = getattr(current_user, 'preferred_hub', None)
-    from_hub = request.args.get('from_hub')
-    if hub == 'sales' and not from_hub:
-        return redirect(url_for('main.lux_crm'))
-    elif hub == 'marketing' and not from_hub:
-        pass
+    """Sales Hub Dashboard - shows deals, pipeline, and CRM metrics"""
     total_contacts = safe_count(
         Contact.query.filter_by(is_active=True),
         context="active contacts"
@@ -182,35 +194,62 @@ def dashboard():
         recent_campaigns = Campaign.query.order_by(Campaign.created_at.desc()).limit(5).all()
     except Exception as exc:
         logger.warning("Dashboard recent campaigns query failed: %s", exc)
+        try:
+            db.session.rollback()
+        except Exception:
+            pass
         recent_campaigns = []
     
     ai_status = "enabled" if os.getenv("OPENAI_API_KEY") else "disabled"
     scheduler_status = "running" if _scheduler_status() == "running" else "disabled"
     
-    company_id = getattr(current_user, 'default_company_id', None)
+    try:
+        company_id = getattr(current_user, 'default_company_id', None)
+    except Exception:
+        company_id = None
     today = datetime.utcnow().date()
     week_ago = today - timedelta(days=7)
     
-    open_deals = Deal.query.filter(Deal.company_id == company_id, Deal.stage.notin_(['Closed Won', 'Closed Lost'])).all() if company_id else []
+    try:
+        open_deals = Deal.query.filter(Deal.company_id == company_id, Deal.stage.notin_(['Closed Won', 'Closed Lost'])).all() if company_id else []
+    except Exception:
+        db.session.rollback()
+        open_deals = []
     pipeline_value = sum(d.value or 0 for d in open_deals)
     
-    new_leads_count = Contact.query.filter(
-        Contact.company_id == company_id,
-        Contact.created_at >= week_ago
-    ).count() if company_id else 0
+    try:
+        new_leads_count = Contact.query.filter(
+            Contact.company_id == company_id,
+            Contact.created_at >= week_ago
+        ).count() if company_id else 0
+    except Exception:
+        db.session.rollback()
+        new_leads_count = 0
     
-    tasks_due = CRMTask.query.filter(
-        CRMTask.company_id == company_id,
-        CRMTask.status == 'pending',
-        func.date(CRMTask.due_date) == today
-    ).count() if company_id else 0
+    try:
+        tasks_due = CRMTask.query.filter(
+            CRMTask.company_id == company_id,
+            CRMTask.status == 'pending',
+            func.date(CRMTask.due_date) == today
+        ).count() if company_id else 0
+    except Exception:
+        db.session.rollback()
+        tasks_due = 0
     
-    meetings_today = Meeting.query.filter(
-        Meeting.company_id == company_id,
-        func.date(Meeting.start_time) == today
-    ).count() if company_id else 0
+    try:
+        meetings_today = Meeting.query.filter(
+            Meeting.company_id == company_id,
+            func.date(Meeting.start_time) == today
+        ).count() if company_id else 0
+    except Exception:
+        db.session.rollback()
+        meetings_today = 0
     
-    stages = SalesStage.query.filter_by(company_id=company_id, is_active=True).order_by(SalesStage.order).all() if company_id else []
+    try:
+        stages = SalesStage.query.filter_by(company_id=company_id, is_active=True).order_by(SalesStage.order).all() if company_id else []
+    except Exception:
+        db.session.rollback()
+        stages = []
     pipeline_stages = []
     for stage in stages[:4]:
         stage_deals = [d for d in open_deals if d.stage == stage.name]
@@ -230,17 +269,25 @@ def dashboard():
             {'name': 'Negotiation', 'color': '#f59e0b', 'deals': [], 'count': len([d for d in open_deals if d.stage == 'Negotiation']), 'value': 0}
         ]
     
-    pending_tasks = CRMTask.query.filter(
-        CRMTask.company_id == company_id,
-        CRMTask.status == 'pending'
-    ).order_by(CRMTask.due_date).limit(5).all() if company_id else []
+    try:
+        pending_tasks = CRMTask.query.filter(
+            CRMTask.company_id == company_id,
+            CRMTask.status == 'pending'
+        ).order_by(CRMTask.due_date).limit(5).all() if company_id else []
+    except Exception:
+        db.session.rollback()
+        pending_tasks = []
     
     tasks = [{'title': t.title, 'time': t.due_date.strftime('%I:%M %p') if t.due_date else 'No time', 'priority': t.priority or 'medium'} for t in pending_tasks]
     
-    upcoming_meetings = Meeting.query.filter(
-        Meeting.company_id == company_id,
-        func.date(Meeting.start_time) >= today
-    ).order_by(Meeting.start_time).limit(5).all() if company_id else []
+    try:
+        upcoming_meetings = Meeting.query.filter(
+            Meeting.company_id == company_id,
+            func.date(Meeting.start_time) >= today
+        ).order_by(Meeting.start_time).limit(5).all() if company_id else []
+    except Exception:
+        db.session.rollback()
+        upcoming_meetings = []
     
     meetings = [{'title': m.title, 'time': m.start_time.strftime('%I:%M %p') if m.start_time else 'TBD', 'type': m.meeting_type or 'video'} for m in upcoming_meetings]
     
@@ -254,15 +301,46 @@ def dashboard():
         'revenue': '82K'
     }
     
-    touchpoints = {
-        'website': TouchpointEvent.query.filter_by(company_id=company_id, touchpoint_type='website').count() if company_id else 142,
-        'social': TouchpointEvent.query.filter_by(company_id=company_id, touchpoint_type='social').count() if company_id else 89,
-        'forms': TouchpointEvent.query.filter_by(company_id=company_id, touchpoint_type='form').count() if company_id else 67,
-        'email': TouchpointEvent.query.filter_by(company_id=company_id, touchpoint_type='email').count() if company_id else 234,
-        'calls': TouchpointEvent.query.filter_by(company_id=company_id, touchpoint_type='call').count() if company_id else 45,
-        'referral': TouchpointEvent.query.filter_by(company_id=company_id, touchpoint_type='referral').count() if company_id else 28
-    }
+    try:
+        touchpoints = {
+            'website': TouchpointEvent.query.filter_by(company_id=company_id, touchpoint_type='website').count() if company_id else 142,
+            'social': TouchpointEvent.query.filter_by(company_id=company_id, touchpoint_type='social').count() if company_id else 89,
+            'forms': TouchpointEvent.query.filter_by(company_id=company_id, touchpoint_type='form').count() if company_id else 67,
+            'email': TouchpointEvent.query.filter_by(company_id=company_id, touchpoint_type='email').count() if company_id else 234,
+            'calls': TouchpointEvent.query.filter_by(company_id=company_id, touchpoint_type='call').count() if company_id else 45,
+            'referral': TouchpointEvent.query.filter_by(company_id=company_id, touchpoint_type='referral').count() if company_id else 28
+        }
+    except Exception:
+        db.session.rollback()
+        touchpoints = {'website': 142, 'social': 89, 'forms': 67, 'email': 234, 'calls': 45, 'referral': 28}
     
+    pipeline_deals = []
+    for d in open_deals[:10]:
+        contact = d.contact
+        name = (contact.first_name + ' ' + (contact.last_name or '')).strip() if contact else d.name or 'Unknown'
+        org = getattr(contact, 'company', None) or ''
+        initials = ''.join(p[0].upper() for p in name.split()[:2]) if name else '?'
+        pipeline_deals.append({
+            'id': d.id,
+            'name': d.name or 'Untitled Deal',
+            'contact_name': name,
+            'initials': initials,
+            'org': org,
+            'stage': d.stage or 'Lead',
+            'value': d.value or 0,
+            'close_date': d.expected_close_date.strftime('%b %d') if d.expected_close_date else None,
+        })
+
+    top_prospects = sorted(open_deals, key=lambda d: d.value or 0, reverse=True)[:5]
+    top_prospect_list = []
+    for d in top_prospects:
+        contact = d.contact
+        name = (contact.first_name + ' ' + (contact.last_name or '')).strip() if contact else d.name or 'Unknown'
+        org = getattr(contact, 'company', None) or ''
+        top_prospect_list.append({'name': name, 'org': org, 'stage': d.stage or 'Lead', 'value': d.value or 0})
+
+    total_leads = safe_count(Contact.query.filter_by(company_id=company_id) if company_id else Contact.query, context="total leads")
+
     return render_template(
         'dashboard.html',
         user=current_user,
@@ -272,6 +350,9 @@ def dashboard():
         scheduler_status=scheduler_status,
         stats=stats,
         pipeline_stages=pipeline_stages,
+        pipeline_deals=pipeline_deals,
+        top_prospects=top_prospect_list,
+        total_leads=total_leads,
         tasks=tasks or [],
         meetings=meetings or [],
         touchpoints=touchpoints
@@ -371,7 +452,62 @@ def connectors():
 @login_required
 def campaign_hub():
     """Campaign Hub with SEO, Competitors, and AI Campaign Generator"""
-    return render_template('campaign_hub.html')
+    from models import Campaign, SocialPost, Company, user_company
+    from datetime import datetime, timedelta
+    
+    company = db.session.query(Company).join(
+        user_company, Company.id == user_company.c.company_id
+    ).filter(user_company.c.user_id == current_user.id).first()
+    company_id = company.id if company else None
+    
+    days = request.args.get('days', 30, type=int)
+    campaign_type = request.args.get('type', 'all')
+    cutoff = datetime.utcnow() - timedelta(days=days)
+    
+    email_campaigns = Campaign.query.filter(
+        Campaign.company_id == company_id,
+        Campaign.created_at >= cutoff
+    ).all() if company_id else []
+    
+    social_posts = SocialPost.query.filter(
+        SocialPost.company_id == company_id,
+        SocialPost.created_at >= cutoff
+    ).all() if company_id else []
+    
+    total_email = len(email_campaigns)
+    total_social = len(social_posts)
+    sent_email = len([c for c in email_campaigns if c.status in ('sent', 'active')])
+    published_social = len([p for p in social_posts if p.status == 'published'])
+    
+    if campaign_type == 'email':
+        filtered_total = total_email
+        filtered_active = len([c for c in email_campaigns if c.status == 'active'])
+        filtered_draft = len([c for c in email_campaigns if c.status == 'draft'])
+    elif campaign_type == 'social':
+        filtered_total = total_social
+        filtered_active = len([p for p in social_posts if p.status == 'scheduled'])
+        filtered_draft = len([p for p in social_posts if p.status == 'draft'])
+    elif campaign_type == 'sms':
+        filtered_total = 0
+        filtered_active = 0
+        filtered_draft = 0
+    else:
+        filtered_total = total_email + total_social
+        filtered_active = len([c for c in email_campaigns if c.status == 'active']) + len([p for p in social_posts if p.status == 'scheduled'])
+        filtered_draft = len([c for c in email_campaigns if c.status == 'draft']) + len([p for p in social_posts if p.status == 'draft'])
+    
+    stats = {
+        'total_campaigns': filtered_total,
+        'email_count': total_email if campaign_type in ('all', 'email') else 0,
+        'social_count': total_social if campaign_type in ('all', 'social') else 0,
+        'sms_count': 0,
+        'sent_email': sent_email if campaign_type in ('all', 'email') else 0,
+        'published_social': published_social if campaign_type in ('all', 'social') else 0,
+        'active_count': filtered_active,
+        'draft_count': filtered_draft,
+    }
+    
+    return render_template('campaign_hub.html', stats=stats, days=days, campaign_type=campaign_type)
 
 @main_bp.route('/competitor-analysis')
 @login_required
@@ -463,6 +599,15 @@ def campaigns():
     campaigns = query.order_by(Campaign.created_at.desc()).paginate(page=page, per_page=20)
     
     return render_template('campaigns.html', campaigns=campaigns, status_filter=status_filter)
+
+@main_bp.route('/email-builder')
+@main_bp.route('/email-builder/<int:campaign_id>')
+@login_required
+def email_builder(campaign_id=None):
+    from models import Campaign, EmailTemplate
+    templates = EmailTemplate.query.all()
+    campaign = Campaign.query.get(campaign_id) if campaign_id else None
+    return render_template('email_builder.html', campaign=campaign, templates=templates)
 
 @main_bp.route('/analytics')
 @login_required
@@ -1063,8 +1208,8 @@ def agents_hub():
         'brand_strategy': {
             'name': 'Brand & Strategy Agent',
             'role': 'Brand Strategist',
-            'icon': '🎯',
-            'color': '#8b5cf6',
+            'feather_icon': 'target',
+            'color': '#a855f7',
             'description': 'I develop and maintain your brand identity, positioning, and long-term marketing strategy.',
             'expertise': ['Brand Identity', 'Market Research', 'Competitive Analysis'],
             'welcome_message': "Hello! I'm your Brand Strategist. I can help you with brand positioning, market research, and developing your marketing strategy. What would you like to work on?"
@@ -1072,8 +1217,8 @@ def agents_hub():
         'content_seo': {
             'name': 'Content & SEO Agent',
             'role': 'Content Strategist',
-            'icon': '📝',
-            'color': '#06b6d4',
+            'feather_icon': 'file-text',
+            'color': '#00e5ff',
             'description': 'I create compelling content and optimize it for search engines to drive organic traffic.',
             'expertise': ['Blog Writing', 'SEO Optimization', 'Content Calendars'],
             'welcome_message': "Hi there! I specialize in content creation and SEO. Need help with blog posts, keywords, or content strategy? Just ask!"
@@ -1081,8 +1226,8 @@ def agents_hub():
         'analytics': {
             'name': 'Analytics Agent',
             'role': 'Data Analyst',
-            'icon': '📊',
-            'color': '#10b981',
+            'feather_icon': 'bar-chart-2',
+            'color': '#00ffb4',
             'description': 'I analyze your marketing data to provide insights and recommendations for improvement.',
             'expertise': ['Performance Tracking', 'ROI Analysis', 'Trend Identification'],
             'welcome_message': "Welcome! I'm your Analytics expert. I can help you understand your marketing performance and identify opportunities for growth."
@@ -1090,7 +1235,7 @@ def agents_hub():
         'creative_design': {
             'name': 'Creative & Design Agent',
             'role': 'Creative Director',
-            'icon': '🎨',
+            'feather_icon': 'layers',
             'color': '#f43f5e',
             'description': 'I help with visual branding, campaign creatives, and design direction for all marketing materials.',
             'expertise': ['Visual Design', 'Ad Creatives', 'Brand Guidelines'],
@@ -1099,7 +1244,7 @@ def agents_hub():
         'advertising': {
             'name': 'Advertising Agent',
             'role': 'Ads Specialist',
-            'icon': '📢',
+            'feather_icon': 'radio',
             'color': '#f59e0b',
             'description': 'I manage and optimize your paid advertising campaigns across all platforms.',
             'expertise': ['PPC Campaigns', 'Ad Optimization', 'Budget Management'],
@@ -1108,7 +1253,7 @@ def agents_hub():
         'social_media': {
             'name': 'Social Media Agent',
             'role': 'Social Media Manager',
-            'icon': '📱',
+            'feather_icon': 'share-2',
             'color': '#ec4899',
             'description': 'I create engaging social content and manage your presence across all social platforms.',
             'expertise': ['Social Posts', 'Engagement', 'Community Building'],
@@ -1117,8 +1262,8 @@ def agents_hub():
         'email_crm': {
             'name': 'Email & CRM Agent',
             'role': 'Email Marketing Specialist',
-            'icon': '📧',
-            'color': '#3b82f6',
+            'feather_icon': 'mail',
+            'color': '#4f8ef7',
             'description': 'I design and execute email campaigns while managing customer relationships.',
             'expertise': ['Email Campaigns', 'Automation', 'Lead Nurturing'],
             'welcome_message': "Hello! I specialize in email marketing and CRM. Let me help you create effective email campaigns and nurture your leads."
@@ -1126,7 +1271,7 @@ def agents_hub():
         'sales_enablement': {
             'name': 'Sales Enablement Agent',
             'role': 'Sales Support Specialist',
-            'icon': '💼',
+            'feather_icon': 'briefcase',
             'color': '#14b8a6',
             'description': 'I provide sales teams with the content, tools, and insights they need to close deals.',
             'expertise': ['Lead Scoring', 'Sales Content', 'Pipeline Support'],
@@ -1135,8 +1280,8 @@ def agents_hub():
         'retention': {
             'name': 'Customer Retention Agent',
             'role': 'Retention Specialist',
-            'icon': '🔄',
-            'color': '#84cc16',
+            'feather_icon': 'heart',
+            'color': '#00ffb4',
             'description': 'I focus on keeping customers engaged, reducing churn, and increasing lifetime value.',
             'expertise': ['Churn Prevention', 'Loyalty Programs', 'Customer Feedback'],
             'welcome_message': "Hello! I'm focused on customer retention. Let me help you keep customers happy and reduce churn."
@@ -1144,8 +1289,8 @@ def agents_hub():
         'operations': {
             'name': 'Operations Agent',
             'role': 'Marketing Operations',
-            'icon': '⚙️',
-            'color': '#64748b',
+            'feather_icon': 'settings',
+            'color': '#94a3b8',
             'description': 'I manage marketing technology, integrations, and operational efficiency.',
             'expertise': ['Tech Stack', 'Integrations', 'Process Optimization'],
             'welcome_message': "Hi! I handle marketing operations and technology. Need help with integrations, workflows, or process improvements?"
@@ -1153,8 +1298,8 @@ def agents_hub():
         'app_intelligence': {
             'name': 'APP Intelligence Agent',
             'role': 'Platform Monitor',
-            'icon': '🤖',
-            'color': '#a855f7',
+            'feather_icon': 'cpu',
+            'color': '#bc00ed',
             'description': 'I monitor the LUX platform health, analyze usage, and suggest improvements.',
             'expertise': ['System Health', 'Usage Analytics', 'Feature Suggestions'],
             'welcome_message': "Hello! I monitor the LUX platform and can provide insights on system health and feature recommendations."
@@ -1208,17 +1353,39 @@ def add_company():
         
         db.session.add(company)
         db.session.flush()
-        
+
+        existing_count = len(current_user.get_all_companies())
+        is_first = existing_count == 0
+
         current_user.companies.append(company)
-        
-        is_default = len(current_user.companies) == 1
-        db.session.execute(
-            user_company.update().where(
-                (user_company.c.user_id == current_user.id) &
-                (user_company.c.company_id == company.id)
-            ).values(is_default=is_default)
-        )
-        
+        db.session.flush()
+
+        try:
+            db.session.execute(
+                user_company.update().where(
+                    (user_company.c.user_id == current_user.id) &
+                    (user_company.c.company_id == company.id)
+                ).values(is_default=is_first)
+            )
+        except Exception:
+            pass
+
+        from models import UserCompanyAccess
+        existing_access = UserCompanyAccess.query.filter_by(
+            user_id=current_user.id, company_id=company.id
+        ).first()
+        if not existing_access:
+            access = UserCompanyAccess(
+                user_id=current_user.id,
+                company_id=company.id,
+                role='admin',
+                is_default=is_first,
+            )
+            db.session.add(access)
+
+        if is_first or not current_user.default_company_id:
+            current_user.default_company_id = company.id
+
         db.session.commit()
         flash(f'Company "{name}" added successfully', 'success')
         return redirect(url_for('main.companies_list'))
@@ -1273,6 +1440,43 @@ def edit_company(company_id):
         return redirect(url_for('main.edit_company', company_id=company.id))
     
     return render_template('company_edit.html', company=company)
+
+@main_bp.route('/companies/delete/<int:company_id>', methods=['POST'])
+@csrf.exempt
+@login_required
+def delete_company(company_id):
+    """Remove a company from the user's account (soft-delete if only owner)."""
+    try:
+        company = Company.query.get_or_404(company_id)
+
+        if company not in current_user.companies:
+            return jsonify({'success': False, 'error': 'No access to this company'}), 403
+
+        is_default = (current_user.default_company_id == company_id)
+
+        current_user.companies.remove(company)
+
+        from models import UserCompanyAccess
+        UserCompanyAccess.query.filter_by(
+            user_id=current_user.id, company_id=company_id
+        ).delete()
+
+        other_owners = db.session.execute(
+            user_company.select().where(user_company.c.company_id == company_id)
+        ).fetchall()
+        if not other_owners:
+            company.is_active = False
+
+        if is_default:
+            remaining = current_user.get_all_companies()
+            current_user.default_company_id = remaining[0].id if remaining else None
+
+        db.session.commit()
+        return jsonify({'success': True})
+    except Exception as e:
+        db.session.rollback()
+        logger.error(f"Delete company error: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 @main_bp.route('/companies/switch/<int:company_id>', methods=['POST'])
 @csrf.exempt
@@ -2359,10 +2563,204 @@ def automation_templates():
     """Automation template library"""
     predefined = AutomationTemplate.query.filter_by(is_predefined=True).all()
     custom = AutomationTemplate.query.filter_by(is_predefined=False).all()
-    
+
+    builtin_templates = [
+        {
+            'cat': 'ecommerce', 'icon': 'shopping-cart', 'icon_color': '#fbbf24',
+            'icon_bg': 'rgba(251,191,36,0.1)', 'icon_border': 'rgba(251,191,36,0.2)',
+            'accent': 'linear-gradient(90deg,#fbbf24,#f59e0b)',
+            'title': 'Abandoned Cart Recovery',
+            'trigger': 'Cart abandoned > 1 hour',
+            'desc': 'Win back shoppers who left without buying. Sends 3 timed emails with a final discount nudge.',
+            'steps': ['Wait 1 hour after cart abandonment', 'Send reminder email with cart contents', 'Wait 24 hours — if no purchase', 'Send email with 10% discount code', 'Wait 48 hours — if still no purchase', 'Send final "last chance" email'],
+            'slug': 'ec-abandoned-cart'
+        },
+        {
+            'cat': 'ecommerce', 'icon': 'package', 'icon_color': '#00e5ff',
+            'icon_bg': 'rgba(0,229,255,0.08)', 'icon_border': 'rgba(0,229,255,0.2)',
+            'accent': 'linear-gradient(90deg,#00e5ff,#a855f7)',
+            'title': 'Post-Purchase Upsell Sequence',
+            'trigger': 'Order placed',
+            'desc': 'Delight new buyers and grow order value with a structured post-purchase nurture and upsell flow.',
+            'steps': ['Send order confirmation + what\'s next', 'Day 3: Shipping update + product tips', 'Day 7: Review request + related products', 'Day 14: Loyalty reward offer', 'Day 30: Re-engagement with new arrivals'],
+            'slug': 'ec-post-purchase'
+        },
+        {
+            'cat': 'ecommerce', 'icon': 'star', 'icon_color': '#f59e0b',
+            'icon_bg': 'rgba(245,158,11,0.08)', 'icon_border': 'rgba(245,158,11,0.2)',
+            'accent': 'linear-gradient(90deg,#f59e0b,#fbbf24)',
+            'title': 'VIP Loyalty Program',
+            'trigger': 'Customer hits spend threshold',
+            'desc': 'Automatically recognize top customers, grant VIP status, and deliver exclusive perks.',
+            'steps': ['Detect $500+ lifetime spend', 'Tag contact as VIP', 'Send VIP welcome email with perks', 'Add to VIP SMS list', 'Send exclusive early-access offer monthly'],
+            'slug': 'ec-vip'
+        },
+        {
+            'cat': 'ecommerce', 'icon': 'refresh-cw', 'icon_color': '#00ffb4',
+            'icon_bg': 'rgba(0,255,180,0.08)', 'icon_border': 'rgba(0,255,180,0.2)',
+            'accent': 'linear-gradient(90deg,#00ffb4,#00e5ff)',
+            'title': 'Win-Back Campaign',
+            'trigger': 'No purchase in 90 days',
+            'desc': 'Re-engage lapsed customers with a personalized sequence before removing them from active lists.',
+            'steps': ['Identify no-purchase in 90 days', 'Send "We miss you" email', 'Wait 7 days — if no open', 'Send SMS with exclusive comeback offer', 'Wait 7 days — if no response', 'Move to cold list / suppression'],
+            'slug': 'ec-winback'
+        },
+        {
+            'cat': 'saas', 'icon': 'user-check', 'icon_color': '#00e5ff',
+            'icon_bg': 'rgba(0,229,255,0.08)', 'icon_border': 'rgba(0,229,255,0.2)',
+            'accent': 'linear-gradient(90deg,#00e5ff,#a855f7)',
+            'title': 'Trial-to-Paid Conversion',
+            'trigger': 'Trial signup',
+            'desc': 'Guide free trial users through activation milestones and convert them before expiry.',
+            'steps': ['Day 0: Welcome + onboarding checklist', 'Day 2: Check feature adoption — send tips if low', 'Day 5: Case study / social proof email', 'Day 10: You\'re halfway through your trial', 'Day 13: Upgrade offer + FAQ', 'Day 14: Trial expiry warning + last offer'],
+            'slug': 'saas-trial'
+        },
+        {
+            'cat': 'saas', 'icon': 'alert-triangle', 'icon_color': '#f43f5e',
+            'icon_bg': 'rgba(244,63,94,0.08)', 'icon_border': 'rgba(244,63,94,0.2)',
+            'accent': 'linear-gradient(90deg,#f43f5e,#f59e0b)',
+            'title': 'Churn Prevention',
+            'trigger': 'Low product usage detected',
+            'desc': 'Proactively reach at-risk accounts before they cancel with personalized outreach.',
+            'steps': ['Detect fewer than 2 logins in 14 days', 'Send check-in email from account manager', 'Wait 3 days — if no response', 'Trigger in-app message + resource link', 'Alert sales team for manual outreach', 'Offer downgrade or pause option if needed'],
+            'slug': 'saas-churn'
+        },
+        {
+            'cat': 'saas', 'icon': 'award', 'icon_color': '#a855f7',
+            'icon_bg': 'rgba(168,85,247,0.08)', 'icon_border': 'rgba(168,85,247,0.2)',
+            'accent': 'linear-gradient(90deg,#a855f7,#00e5ff)',
+            'title': 'Power User Upsell',
+            'trigger': 'Feature limit reached',
+            'desc': 'Identify power users hitting plan limits and route them to upgrade at the perfect moment.',
+            'steps': ['Detect 80% usage of plan limit', 'Send usage report + upgrade benefits', 'Offer 1-click upgrade with promo code', 'If no upgrade in 7 days — sales call request', 'Post-upgrade: send onboarding for new features'],
+            'slug': 'saas-upsell'
+        },
+        {
+            'cat': 'b2b', 'icon': 'briefcase', 'icon_color': '#4f8ef7',
+            'icon_bg': 'rgba(79,142,247,0.08)', 'icon_border': 'rgba(79,142,247,0.2)',
+            'accent': 'linear-gradient(90deg,#4f8ef7,#00e5ff)',
+            'title': 'Lead Nurture Sequence',
+            'trigger': 'Form submission / MQL created',
+            'desc': 'Move marketing-qualified leads through education and into sales-ready conversations.',
+            'steps': ['Instant: Send relevant case study', 'Day 2: Industry-specific insight email', 'Day 5: Invite to webinar or demo', 'Day 8: ROI calculator / comparison guide', 'Day 12: Personal outreach from sales rep', 'Day 16: Final call-to-action offer'],
+            'slug': 'b2b-nurture'
+        },
+        {
+            'cat': 'b2b', 'icon': 'calendar', 'icon_color': '#14b8a6',
+            'icon_bg': 'rgba(20,184,166,0.08)', 'icon_border': 'rgba(20,184,166,0.2)',
+            'accent': 'linear-gradient(90deg,#14b8a6,#4f8ef7)',
+            'title': 'Demo Request Follow-Up',
+            'trigger': 'Demo request form submitted',
+            'desc': 'Keep momentum high after a demo request with immediate confirmation and value-building content.',
+            'steps': ['Instant: Confirmation email + calendar link', '1 hour: Send prep resources', '24 hours pre-demo: Reminder + agenda', 'Post-demo: Thank you + next steps', '7 days: Follow-up if no response', '14 days: Re-engagement offer'],
+            'slug': 'b2b-demo'
+        },
+        {
+            'cat': 'retail', 'icon': 'tag', 'icon_color': '#ec4899',
+            'icon_bg': 'rgba(236,72,153,0.08)', 'icon_border': 'rgba(236,72,153,0.2)',
+            'accent': 'linear-gradient(90deg,#ec4899,#f59e0b)',
+            'title': 'Seasonal Sale Launch',
+            'trigger': 'Scheduled date trigger',
+            'desc': 'Build anticipation, launch a sale, and close urgency windows with a 5-touch sequence.',
+            'steps': ['T-7 days: Teaser email + SMS signup push', 'T-3 days: Preview for VIPs / early access', 'T-0: Sale launch blast (email + SMS)', 'T+2 days: Mid-sale social proof push', 'T+1 day to end: Last chance urgency email + SMS'],
+            'slug': 'retail-seasonal'
+        },
+        {
+            'cat': 'retail', 'icon': 'gift', 'icon_color': '#f59e0b',
+            'icon_bg': 'rgba(245,158,11,0.08)', 'icon_border': 'rgba(245,158,11,0.2)',
+            'accent': 'linear-gradient(90deg,#f59e0b,#ec4899)',
+            'title': 'Birthday Reward',
+            'trigger': 'Contact birthday (7 days before)',
+            'desc': 'Surprise customers on their birthday with a personalized offer that drives a high-intent visit.',
+            'steps': ['7 days before: Birthday teaser email', 'Day of: Birthday email with exclusive discount', '+3 days: Reminder if not redeemed', 'After redemption: Thank you + loyalty update'],
+            'slug': 'retail-birthday'
+        },
+        {
+            'cat': 'healthcare', 'icon': 'heart', 'icon_color': '#00ffb4',
+            'icon_bg': 'rgba(0,255,180,0.06)', 'icon_border': 'rgba(0,255,180,0.2)',
+            'accent': 'linear-gradient(90deg,#00ffb4,#14b8a6)',
+            'title': 'Appointment Reminder Sequence',
+            'trigger': 'Appointment booked',
+            'desc': 'Reduce no-shows with a multi-step reminder flow via email and SMS.',
+            'steps': ['Instant: Booking confirmation + add-to-calendar', '48 hours before: Email reminder', '24 hours before: SMS reminder', '2 hours before: Final SMS nudge', 'Post-visit: Satisfaction survey + rebooking offer'],
+            'slug': 'health-appt'
+        },
+        {
+            'cat': 'healthcare', 'icon': 'activity', 'icon_color': '#a855f7',
+            'icon_bg': 'rgba(168,85,247,0.08)', 'icon_border': 'rgba(168,85,247,0.2)',
+            'accent': 'linear-gradient(90deg,#a855f7,#00ffb4)',
+            'title': 'Patient Re-Engagement',
+            'trigger': 'No visit in 6 months',
+            'desc': 'Reconnect with patients who have not been in for a check-up or follow-up.',
+            'steps': ['Identify patients: 6+ months since last visit', 'Send personalized recall email', 'Wait 14 days — if no response', 'Send SMS with easy rebooking link', 'Offer new patient special if lapsed over 12 months'],
+            'slug': 'health-recall'
+        },
+        {
+            'cat': 'realestate', 'icon': 'home', 'icon_color': '#a855f7',
+            'icon_bg': 'rgba(168,85,247,0.08)', 'icon_border': 'rgba(168,85,247,0.2)',
+            'accent': 'linear-gradient(90deg,#a855f7,#4f8ef7)',
+            'title': 'New Listing Alert',
+            'trigger': 'New listing matches saved search',
+            'desc': 'Alert buyers instantly when a matching property hits the market before they see it elsewhere.',
+            'steps': ['Instant: Email with listing photos + details', '30 min: SMS alert with direct link', '24 hours: Market comparison email', '3 days: Still interested? follow-up', '7 days: Similar listings if no showing booked'],
+            'slug': 're-listing'
+        },
+        {
+            'cat': 'realestate', 'icon': 'key', 'icon_color': '#fbbf24',
+            'icon_bg': 'rgba(251,191,36,0.08)', 'icon_border': 'rgba(251,191,36,0.2)',
+            'accent': 'linear-gradient(90deg,#fbbf24,#a855f7)',
+            'title': 'First-Time Buyer Nurture',
+            'trigger': 'Contact tagged "first time buyer"',
+            'desc': 'Build trust with first-time buyers through education, market insights, and gentle guidance.',
+            'steps': ['Week 1: Home buying guide email series', 'Week 2: Mortgage pre-approval resources', 'Week 3: Neighborhood spotlight', 'Week 4: Invite to first-time buyer webinar', 'Week 5: Personal agent introduction + call offer'],
+            'slug': 're-ftb'
+        },
+        {
+            'cat': 'restaurant', 'icon': 'coffee', 'icon_color': '#f59e0b',
+            'icon_bg': 'rgba(245,158,11,0.08)', 'icon_border': 'rgba(245,158,11,0.2)',
+            'accent': 'linear-gradient(90deg,#f59e0b,#f43f5e)',
+            'title': 'Reservation Confirmation and Upsell',
+            'trigger': 'Reservation booked',
+            'desc': 'Confirm bookings and increase per-visit spend with pre-visit upsell offers.',
+            'steps': ['Instant: Confirmation email + directions', '24 hours before: Reminder + pre-order menu link', '4 hours before: SMS reminder', 'Post-visit: Review request', '7 days: Return visit incentive offer'],
+            'slug': 'rest-reservation'
+        },
+        {
+            'cat': 'restaurant', 'icon': 'star', 'icon_color': '#ec4899',
+            'icon_bg': 'rgba(236,72,153,0.08)', 'icon_border': 'rgba(236,72,153,0.2)',
+            'accent': 'linear-gradient(90deg,#ec4899,#f59e0b)',
+            'title': 'Loyalty Points Milestone',
+            'trigger': 'Loyalty points threshold reached',
+            'desc': 'Celebrate customer loyalty milestones and drive redemption with timely reward notifications.',
+            'steps': ['Detect milestone reached (e.g. 500 points)', 'Send celebratory email with reward summary', 'SMS with redemption reminder', '14 days: Points expiry warning if not redeemed', 'Post-redemption: Survey + next milestone teaser'],
+            'slug': 'rest-loyalty'
+        },
+        {
+            'cat': 'finance', 'icon': 'trending-up', 'icon_color': '#14b8a6',
+            'icon_bg': 'rgba(20,184,166,0.08)', 'icon_border': 'rgba(20,184,166,0.2)',
+            'accent': 'linear-gradient(90deg,#14b8a6,#4f8ef7)',
+            'title': 'New Client Onboarding',
+            'trigger': 'Account opened',
+            'desc': 'Build trust with new clients from day one through a structured onboarding communication plan.',
+            'steps': ['Day 0: Welcome + account access email', 'Day 1: Intro to services + advisor contact', 'Day 3: Educational resources relevant to goal', 'Day 7: Check-in call invitation', 'Day 14: First statement + portfolio overview', 'Day 30: Review meeting invitation'],
+            'slug': 'fin-onboarding'
+        },
+        {
+            'cat': 'finance', 'icon': 'bell', 'icon_color': '#f59e0b',
+            'icon_bg': 'rgba(245,158,11,0.08)', 'icon_border': 'rgba(245,158,11,0.2)',
+            'accent': 'linear-gradient(90deg,#f59e0b,#14b8a6)',
+            'title': 'Annual Review Reminder',
+            'trigger': '11 months since last review',
+            'desc': 'Proactively schedule annual reviews before clients feel neglected or overlooked.',
+            'steps': ['Email: Time for your annual review', '7 days: Follow-up + calendar booking link', 'SMS: Quick reminder if no booking', 'Post-booking: Prep materials + agenda email', 'Post-meeting: Action items + next steps summary'],
+            'slug': 'fin-review'
+        }
+    ]
+
     return render_template('automation_templates.html', 
                          predefined_templates=predefined,
-                         custom_templates=custom)
+                         custom_templates=custom,
+                         builtin_templates=builtin_templates)
 
 @main_bp.route('/automation-templates/create-from-template/<int:template_id>')
 @login_required

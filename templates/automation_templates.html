@@ -1,52 +1,479 @@
 {% extends "base.html" %}
-
 {% block title %}Automation Templates - LUX IT{% endblock %}
+{% block page_title %}Automations & Triggers{% endblock %}
 
 {% block content %}
-<div class="container mt-4">
-  <div class="row mb-4">
-    <div class="col-md-8">
-      <h2>Automation Templates</h2>
-      <p class="text-muted">Pre-built automation workflows ready to use</p>
-    </div>
-    <div class="col-md-4 text-end">
-      <a href="{{ url_for('main.create_automation') }}" class="btn btn-primary">
-        <i data-feather="plus"></i> Create Custom
-      </a>
-    </div>
-  </div>
+<style>
+  body { background: #030014 !important; }
 
-  <div class="row">
-    {% for template in templates %}
-    <div class="col-md-6 mb-4">
-      <div class="card bg-dark h-100">
-        <div class="card-body">
-          <h5 class="card-title">{{ template.name }}</h5>
-          <p class="card-text text-muted">{{ template.description }}</p>
-          <div class="d-flex justify-content-between align-items-center">
-            <span class="badge bg-primary">{{ template.category }}</span>
-            <button class="btn btn-sm btn-success" onclick="useTemplate({{ template.id }})">
-              <i data-feather="download"></i> Use Template
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-    {% else %}
-    <div class="col-12">
-      <div class="alert alert-info">
-        <p class="mb-0">No templates available yet. <a href="{{ url_for('main.create_automation') }}">Create your first automation</a></p>
-      </div>
-    </div>
-    {% endfor %}
+  .at-layout { display: flex; gap: 1.25rem; }
+
+  /* ── Sidebar ── */
+  .at-sidebar {
+    width: 200px;
+    flex-shrink: 0;
+  }
+  .at-sidebar-section {
+    margin-bottom: 1.5rem;
+  }
+  .at-sidebar-label {
+    font-size: 0.65rem;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: #444;
+    padding: 0 10px;
+    margin-bottom: 6px;
+  }
+  .at-nav-link {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 8px 10px;
+    border-radius: 8px;
+    font-size: 0.82rem;
+    color: #888;
+    text-decoration: none;
+    transition: all 0.15s;
+    margin-bottom: 2px;
+  }
+  .at-nav-link svg { width: 15px; height: 15px; flex-shrink: 0; }
+  .at-nav-link:hover { color: #fff; background: rgba(255,255,255,0.05); text-decoration: none; }
+  .at-nav-link.active { color: #fff; background: rgba(0,229,255,0.08); border: 1px solid rgba(0,229,255,0.15); }
+  .at-nav-link.active svg { stroke: #00e5ff; }
+
+  .at-count-badge {
+    margin-left: auto;
+    font-size: 0.65rem;
+    font-weight: 700;
+    padding: 1px 6px;
+    border-radius: 8px;
+    background: rgba(255,255,255,0.08);
+    color: #666;
+  }
+
+  /* ── Main ── */
+  .at-main { flex: 1; min-width: 0; }
+
+  /* ── Page header ── */
+  .at-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 1.5rem;
+  }
+  .at-header-left h4 {
+    font-size: 1.15rem;
+    font-weight: 700;
+    color: #fff;
+    margin: 0 0 3px;
+    letter-spacing: -0.01em;
+  }
+  .at-header-left p { font-size: 0.82rem; color: #555; margin: 0; }
+
+  /* ── Category filter ── */
+  .at-filters {
+    display: flex;
+    gap: 6px;
+    margin-bottom: 1.5rem;
+    flex-wrap: wrap;
+  }
+  .at-filter {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 14px;
+    border-radius: 20px;
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: #666;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.08);
+    cursor: pointer;
+    text-decoration: none;
+    transition: all 0.15s;
+    letter-spacing: 0.02em;
+  }
+  .at-filter svg { width: 13px; height: 13px; }
+  .at-filter:hover { color: #ccc; border-color: rgba(255,255,255,0.15); text-decoration: none; }
+  .at-filter.active {
+    color: #fff;
+    background: rgba(0,229,255,0.1);
+    border-color: rgba(0,229,255,0.3);
+  }
+  .at-filter.active svg { stroke: #00e5ff; }
+
+  /* ── Template grid ── */
+  .at-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(310px, 1fr));
+    gap: 14px;
+  }
+
+  /* ── Template card ── */
+  .at-card {
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.07);
+    border-radius: 14px;
+    padding: 18px 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    transition: all 0.2s;
+    cursor: default;
+    position: relative;
+    overflow: hidden;
+  }
+  .at-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 2px;
+    background: var(--card-accent, linear-gradient(90deg, #00e5ff, #a855f7));
+    opacity: 0.6;
+  }
+  .at-card:hover {
+    border-color: rgba(255,255,255,0.13);
+    background: rgba(255,255,255,0.05);
+    transform: translateY(-2px);
+    box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+  }
+
+  .at-card-top {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+  }
+  .at-card-icon {
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    background: var(--icon-bg, rgba(0,229,255,0.1));
+    border: 1px solid var(--icon-border, rgba(0,229,255,0.2));
+  }
+  .at-card-icon svg { width: 18px; height: 18px; stroke: var(--icon-color, #00e5ff); }
+  .at-card-meta { flex: 1; min-width: 0; }
+  .at-card-title {
+    font-size: 0.9rem;
+    font-weight: 700;
+    color: #fff;
+    margin: 0 0 3px;
+    line-height: 1.3;
+  }
+  .at-card-trigger {
+    font-size: 0.72rem;
+    color: #555;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .at-card-trigger svg { width: 11px; height: 11px; }
+
+  .at-card-desc {
+    font-size: 0.8rem;
+    color: #777;
+    line-height: 1.5;
+    margin: 0;
+  }
+
+  /* ── Steps preview ── */
+  .at-steps {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .at-step {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.74rem;
+    color: #555;
+  }
+  .at-step-num {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.1);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.6rem;
+    font-weight: 700;
+    color: #666;
+    flex-shrink: 0;
+  }
+  .at-step-connector {
+    width: 1px;
+    height: 6px;
+    background: rgba(255,255,255,0.08);
+    margin-left: 8px;
+  }
+
+  /* ── Tags + footer ── */
+  .at-card-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: auto;
+    padding-top: 10px;
+    border-top: 1px solid rgba(255,255,255,0.06);
+  }
+  .at-tags { display: flex; gap: 5px; flex-wrap: wrap; }
+  .at-tag {
+    font-size: 0.65rem;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 20px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.08);
+    color: #666;
+  }
+  .at-tag.ecommerce { background: rgba(251,191,36,0.1); color: #fbbf24; border-color: rgba(251,191,36,0.2); }
+  .at-tag.saas      { background: rgba(0,229,255,0.08); color: #00e5ff; border-color: rgba(0,229,255,0.2); }
+  .at-tag.b2b       { background: rgba(79,142,247,0.1); color: #4f8ef7; border-color: rgba(79,142,247,0.2); }
+  .at-tag.retail    { background: rgba(236,72,153,0.1); color: #ec4899; border-color: rgba(236,72,153,0.2); }
+  .at-tag.healthcare{ background: rgba(0,255,180,0.08); color: #00ffb4; border-color: rgba(0,255,180,0.2); }
+  .at-tag.realestate{ background: rgba(168,85,247,0.1); color: #a855f7; border-color: rgba(168,85,247,0.2); }
+  .at-tag.restaurant{ background: rgba(245,158,11,0.1); color: #f59e0b; border-color: rgba(245,158,11,0.2); }
+  .at-tag.finance   { background: rgba(20,184,166,0.1); color: #14b8a6; border-color: rgba(20,184,166,0.2); }
+
+  .at-use-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 6px 14px;
+    border-radius: 7px;
+    font-size: 0.74rem;
+    font-weight: 600;
+    color: #00e5ff;
+    border: 1px solid rgba(0,229,255,0.25);
+    background: rgba(0,229,255,0.07);
+    cursor: pointer;
+    transition: all 0.15s;
+    text-decoration: none;
+    white-space: nowrap;
+  }
+  .at-use-btn svg { width: 12px; height: 12px; }
+  .at-use-btn:hover { background: rgba(0,229,255,0.15); border-color: rgba(0,229,255,0.4); color: #00e5ff; text-decoration: none; }
+
+  /* ── Section headings ── */
+  .at-section-title {
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: #444;
+    margin: 1.75rem 0 0.75rem;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .at-section-title::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: rgba(255,255,255,0.06);
+  }
+
+  /* ── Custom automation CTA ── */
+  .at-custom-cta {
+    background: linear-gradient(135deg, rgba(0,229,255,0.06), rgba(168,85,247,0.06));
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 14px;
+    padding: 20px 24px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin-bottom: 1rem;
+  }
+  .at-custom-cta-icon {
+    width: 44px; height: 44px;
+    border-radius: 12px;
+    background: linear-gradient(135deg, rgba(0,229,255,0.15), rgba(168,85,247,0.15));
+    border: 1px solid rgba(0,229,255,0.2);
+    display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+  }
+  .at-custom-cta-icon svg { width: 20px; height: 20px; stroke: #00e5ff; }
+  .at-custom-cta-body { flex: 1; }
+  .at-custom-cta-body h6 { font-size: 0.9rem; font-weight: 700; color: #fff; margin: 0 0 3px; }
+  .at-custom-cta-body p { font-size: 0.8rem; color: #666; margin: 0; }
+
+  /* filter JS hide */
+  .at-card[data-hidden="true"] { display: none; }
+</style>
+
+<!-- page header -->
+<div class="at-header">
+  <div class="at-header-left">
+    <h4>Automation Templates</h4>
+    <p>Pre-built workflows organized by industry — activate in one click</p>
+  </div>
+  <div class="d-flex gap-2">
+    <a href="{{ url_for('main.automation_triggers') }}" class="at-use-btn" style="border-color:rgba(168,85,247,0.3);background:rgba(168,85,247,0.08);color:#a855f7;">
+      <svg data-feather="zap"></svg> Trigger Library
+    </a>
+    <a href="{{ url_for('main.create_automation') }}" class="at-use-btn">
+      <svg data-feather="plus"></svg> Build Custom
+    </a>
   </div>
 </div>
 
+<!-- custom automation CTA -->
+<div class="at-custom-cta">
+  <div class="at-custom-cta-icon"><svg data-feather="cpu"></svg></div>
+  <div class="at-custom-cta-body">
+    <h6>Have your AI team build an automation for you</h6>
+    <p>Describe what you need and the AI Marketing Team will configure triggers, steps, and timing automatically.</p>
+  </div>
+  <a href="{{ url_for('main.agents_hub') }}" class="at-use-btn">
+    <svg data-feather="arrow-right"></svg> Open AI Hub
+  </a>
+</div>
+
+<!-- category filter pills -->
+<div class="at-filters" id="filterBar">
+  <a class="at-filter active" data-cat="all" onclick="filterCat('all',this)">
+    <svg data-feather="layers"></svg> All Templates
+  </a>
+  <a class="at-filter" data-cat="ecommerce" onclick="filterCat('ecommerce',this)">
+    <svg data-feather="shopping-cart"></svg> Ecommerce
+  </a>
+  <a class="at-filter" data-cat="saas" onclick="filterCat('saas',this)">
+    <svg data-feather="monitor"></svg> SaaS
+  </a>
+  <a class="at-filter" data-cat="b2b" onclick="filterCat('b2b',this)">
+    <svg data-feather="briefcase"></svg> B2B
+  </a>
+  <a class="at-filter" data-cat="retail" onclick="filterCat('retail',this)">
+    <svg data-feather="tag"></svg> Retail
+  </a>
+  <a class="at-filter" data-cat="healthcare" onclick="filterCat('healthcare',this)">
+    <svg data-feather="heart"></svg> Healthcare
+  </a>
+  <a class="at-filter" data-cat="realestate" onclick="filterCat('realestate',this)">
+    <svg data-feather="home"></svg> Real Estate
+  </a>
+  <a class="at-filter" data-cat="restaurant" onclick="filterCat('restaurant',this)">
+    <svg data-feather="coffee"></svg> Restaurant
+  </a>
+  <a class="at-filter" data-cat="finance" onclick="filterCat('finance',this)">
+    <svg data-feather="trending-up"></svg> Finance
+  </a>
+</div>
+
+<!-- ═══════ ECOMMERCE ═══════ -->
+<div class="at-section-title">Ecommerce</div>
+<div class="at-grid" id="templateGrid">
+
+  {% set tpls = builtin_templates %}
+
+  {% for t in tpls %}
+  <div class="at-card" data-cat="{{ t.cat }}"
+       style="--card-accent: {{ t.accent }};
+              --icon-color: {{ t.icon_color }};
+              --icon-bg: {{ t.icon_bg }};
+              --icon-border: {{ t.icon_border }};">
+    <div class="at-card-top">
+      <div class="at-card-icon">
+        <svg data-feather="{{ t.icon }}"></svg>
+      </div>
+      <div class="at-card-meta">
+        <div class="at-card-title">{{ t.title }}</div>
+        <div class="at-card-trigger">
+          <svg data-feather="zap"></svg>
+          Trigger: {{ t.trigger }}
+        </div>
+      </div>
+    </div>
+
+    <p class="at-card-desc">{{ t.desc }}</p>
+
+    <div class="at-steps">
+      {% for step in t.steps[:4] %}
+      <div class="at-step">
+        <div class="at-step-num">{{ loop.index }}</div>
+        <span>{{ step }}</span>
+      </div>
+      {% if not loop.last %}<div class="at-step-connector"></div>{% endif %}
+      {% endfor %}
+      {% if t.steps|length > 4 %}
+      <div class="at-step" style="color:#444;font-style:italic;">
+        <div class="at-step-num" style="opacity:.4;">+</div>
+        <span>{{ t.steps|length - 4 }} more steps…</span>
+      </div>
+      {% endif %}
+    </div>
+
+    <div class="at-card-footer">
+      <div class="at-tags">
+        <span class="at-tag {{ t.cat }}">{{ t.cat }}</span>
+      </div>
+      <a href="/automations/create?template={{ t.slug }}" class="at-use-btn">
+        <svg data-feather="copy"></svg> Use Template
+      </a>
+    </div>
+  </div>
+  {% endfor %}
+
+  <!-- DB predefined templates -->
+  {% for t in predefined_templates %}
+  <div class="at-card" data-cat="{{ t.category|lower|replace(' ','') }}"
+       style="--card-accent: linear-gradient(90deg,#00e5ff,#a855f7);">
+    <div class="at-card-top">
+      <div class="at-card-icon" style="--icon-color:#00e5ff;--icon-bg:rgba(0,229,255,0.08);--icon-border:rgba(0,229,255,0.2);">
+        <svg data-feather="zap"></svg>
+      </div>
+      <div class="at-card-meta">
+        <div class="at-card-title">{{ t.name }}</div>
+        <div class="at-card-trigger">
+          <svg data-feather="zap"></svg>
+          Trigger: {{ t.trigger_type or 'Custom' }}
+        </div>
+      </div>
+    </div>
+    <p class="at-card-desc">{{ t.description }}</p>
+    <div class="at-card-footer">
+      <div class="at-tags">
+        <span class="at-tag">{{ t.category }}</span>
+      </div>
+      <a href="{{ url_for('main.create_from_template', template_id=t.id) }}" class="at-use-btn">
+        <svg data-feather="copy"></svg> Use Template
+      </a>
+    </div>
+  </div>
+  {% endfor %}
+
+</div><!-- /at-grid -->
+{% endblock %}
+
+{% block scripts %}
 <script>
-  feather.replace();
-  
-  function useTemplate(templateId) {
-    window.location.href = `/automation-templates/${templateId}/use`;
-  }
+function filterCat(cat, el) {
+  document.querySelectorAll('.at-filter').forEach(f => f.classList.remove('active'));
+  el.classList.add('active');
+
+  document.querySelectorAll('.at-card').forEach(card => {
+    if (cat === 'all' || card.dataset.cat === cat) {
+      card.removeAttribute('data-hidden');
+      card.style.display = '';
+    } else {
+      card.setAttribute('data-hidden', 'true');
+      card.style.display = 'none';
+    }
+  });
+
+  if (typeof feather !== 'undefined') feather.replace();
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  if (typeof feather !== 'undefined') feather.replace();
+});
 </script>
 {% endblock %}

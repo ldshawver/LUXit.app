@@ -5,168 +5,545 @@
 
 {% block content %}
 <style>
-  .hub-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-    gap: 1.5rem;
-    padding: 1rem 0;
+  body {
+    background: #030014 !important;
+    background-image:
+      radial-gradient(ellipse 80% 50% at 50% -20%, rgba(139, 92, 246, 0.3), transparent),
+      radial-gradient(ellipse 60% 40% at 100% 0%, rgba(0, 245, 255, 0.15), transparent),
+      radial-gradient(ellipse 50% 30% at 0% 100%, rgba(255, 0, 255, 0.2), transparent),
+      radial-gradient(ellipse 40% 30% at 10% 20%, rgba(71, 245, 255, 0.06), transparent) !important;
   }
-  
-  .hub-card {
-    background: rgba(12, 14, 20, 0.9);
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    border-radius: 12px;
-    padding: 1.5rem;
-    transition: all 0.3s ease;
+  .ch-layout {
+    display: flex;
+    gap: 1.5rem;
+    min-height: calc(100vh - 100px);
+  }
+  .ch-sidebar {
+    width: 220px;
+    flex-shrink: 0;
     display: flex;
     flex-direction: column;
-    height: 100%;
+    gap: 4px;
   }
-  
-  .hub-card:hover {
+  .ch-sidebar a {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px;
+    border-radius: 10px;
+    color: #ccc;
+    text-decoration: none;
+    font-size: 0.9rem;
+    transition: all 0.2s;
+  }
+  .ch-sidebar a:hover { background: rgba(71, 245, 255, 0.08); color: #fff; }
+  .ch-sidebar a.active { background: rgba(71, 245, 255, 0.12); color: #fff; font-weight: 600; }
+  .ch-sidebar a svg { width: 18px; height: 18px; stroke: #888; flex-shrink: 0; }
+  .ch-sidebar a:hover svg, .ch-sidebar a.active svg { stroke: var(--lux-cyan, #47f5ff); }
+  .ch-main { flex: 1; min-width: 0; }
+  .ch-tabs {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 1.5rem;
+    background: rgba(255,255,255,0.04);
+    border-radius: 12px;
+    padding: 4px;
+    width: fit-content;
+  }
+  .ch-tab {
+    padding: 8px 20px;
+    border-radius: 8px;
+    color: #888;
+    text-decoration: none;
+    font-size: 0.85rem;
+    font-weight: 500;
+    transition: all 0.2s;
+  }
+  .ch-tab:hover { color: #fff; background: rgba(255,255,255,0.06); }
+  .ch-tab.active {
+    background: linear-gradient(135deg, rgba(0,229,255,0.2), rgba(188,0,237,0.15));
+    color: #fff;
+    font-weight: 600;
+  }
+  .ch-topbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 1.5rem;
+  }
+  .ch-welcome h2 {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: #fff;
+    margin: 0;
+  }
+  .ch-welcome p { color: #888; margin: 0.25rem 0 0; font-size: 0.9rem; }
+  .ch-filters { display: flex; gap: 8px; align-items: center; }
+  .ch-filter-btn {
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.1);
+    color: #ccc;
+    padding: 6px 14px;
+    border-radius: 8px;
+    font-size: 0.8rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    text-decoration: none;
+  }
+  .ch-filter-btn:hover { border-color: rgba(71,245,255,0.3); color: #fff; }
+  .ch-filter-btn.primary {
+    background: linear-gradient(135deg, rgba(0,229,255,0.2), rgba(188,0,237,0.2));
+    border-color: rgba(71,245,255,0.4);
+    color: #47f5ff;
+    font-weight: 600;
+  }
+  .ch-kpi-bar {
+    display: flex;
+    gap: 2rem;
+    align-items: center;
+    padding: 0.75rem 1.25rem;
+    background: rgba(12,14,20,0.7);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 12px;
+    margin-bottom: 1.5rem;
+    flex-wrap: wrap;
+    backdrop-filter: blur(12px);
+  }
+  .ch-kpi-item { display: flex; align-items: baseline; gap: 6px; }
+  .ch-kpi-label { font-size: 0.78rem; color: #888; font-weight: 500; }
+  .ch-kpi-val { font-size: 1.1rem; font-weight: 800; color: #fff; }
+  .ch-kpi-change { font-size: 0.72rem; font-weight: 600; }
+  .ch-kpi-change.up { color: #00ffb4; }
+  .ch-kpi-change.down { color: #ef4444; }
+  .ch-kpi-change.neutral { color: #f59e0b; }
+  .ch-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1.25rem;
+    margin-bottom: 1.5rem;
+  }
+  .ch-card {
+    border-radius: 16px;
+    padding: 1.5rem;
+    position: relative;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    min-height: 180px;
+    border: 1px solid rgba(255,255,255,0.12);
+    backdrop-filter: blur(16px);
+    transition: all 0.3s ease;
+  }
+  .ch-card:hover {
     transform: translateY(-4px);
-    border-color: rgba(0, 229, 255, 0.3);
-    box-shadow: 0 8px 32px rgba(0, 229, 255, 0.1);
+    box-shadow: 0 12px 40px rgba(0,0,0,0.4);
   }
-  
-  .hub-card-icon {
+  .ch-card.purple-glass {
+    background: linear-gradient(135deg, rgba(139,92,246,0.25), rgba(88,28,235,0.15), rgba(12,14,20,0.6));
+    border-color: rgba(139,92,246,0.25);
+  }
+  .ch-card.cyan-glass {
+    background: linear-gradient(135deg, rgba(0,245,255,0.2), rgba(59,130,246,0.15), rgba(12,14,20,0.6));
+    border-color: rgba(0,245,255,0.2);
+  }
+  .ch-card.pink-glass {
+    background: linear-gradient(135deg, rgba(236,72,153,0.25), rgba(255,0,128,0.12), rgba(12,14,20,0.6));
+    border-color: rgba(236,72,153,0.2);
+  }
+  .ch-card.green-glass {
+    background: linear-gradient(135deg, rgba(0,255,180,0.2), rgba(34,197,94,0.12), rgba(12,14,20,0.6));
+    border-color: rgba(0,255,180,0.15);
+  }
+  .ch-card.amber-glass {
+    background: linear-gradient(135deg, rgba(245,158,11,0.2), rgba(251,191,36,0.12), rgba(12,14,20,0.6));
+    border-color: rgba(245,158,11,0.15);
+  }
+  .ch-card.blue-glass {
+    background: linear-gradient(135deg, rgba(59,130,246,0.25), rgba(37,99,235,0.12), rgba(12,14,20,0.6));
+    border-color: rgba(59,130,246,0.2);
+  }
+  .ch-card.teal-glass {
+    background: linear-gradient(135deg, rgba(20,184,166,0.25), rgba(6,182,212,0.12), rgba(12,14,20,0.6));
+    border-color: rgba(20,184,166,0.2);
+  }
+  .ch-card.rose-glass {
+    background: linear-gradient(135deg, rgba(244,63,94,0.2), rgba(225,29,72,0.12), rgba(12,14,20,0.6));
+    border-color: rgba(244,63,94,0.15);
+  }
+  .ch-card-icon {
     width: 48px;
     height: 48px;
-    border-radius: 12px;
+    border-radius: 14px;
     display: flex;
     align-items: center;
     justify-content: center;
-    margin-bottom: 1rem;
+    margin-bottom: 0.75rem;
+    background: rgba(255,255,255,0.1);
+    backdrop-filter: blur(8px);
   }
-  
-  .hub-card-icon.cyan { background: rgba(0, 229, 255, 0.15); color: #00e5ff; }
-  .hub-card-icon.purple { background: rgba(168, 85, 247, 0.15); color: #a855f7; }
-  .hub-card-icon.pink { background: rgba(236, 72, 153, 0.15); color: #ec4899; }
-  .hub-card-icon.amber { background: rgba(245, 158, 11, 0.15); color: #f59e0b; }
-  .hub-card-icon.green { background: rgba(34, 197, 94, 0.15); color: #22c55e; }
-  .hub-card-icon.blue { background: rgba(59, 130, 246, 0.15); color: #3b82f6; }
-  
-  .hub-card-icon svg {
-    width: 24px;
-    height: 24px;
+  .ch-card-icon svg { width: 24px; height: 24px; }
+  .ch-card h3 {
+    font-size: 1.05rem;
+    font-weight: 700;
+    color: #fff;
+    margin: 0 0 0.35rem;
   }
-  
-  .hub-card h3 {
-    font-size: 1.1rem;
+  .ch-card p {
+    font-size: 0.82rem;
+    color: rgba(255,255,255,0.65);
+    margin: 0 0 auto;
+    line-height: 1.4;
+  }
+  .ch-card-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 18px;
+    border-radius: 10px;
+    font-size: 0.82rem;
     font-weight: 600;
-    color: #fff;
-    margin-bottom: 0.5rem;
-  }
-  
-  .hub-card p {
-    color: rgba(255, 255, 255, 0.6);
-    font-size: 0.9rem;
-    margin-bottom: 1rem;
-    flex-grow: 1;
-  }
-  
-  .hub-card .btn-hub {
-    background: rgba(0, 229, 255, 0.1);
-    border: 1px solid rgba(0, 229, 255, 0.3);
-    color: #00e5ff;
-    padding: 0.5rem 1rem;
-    border-radius: 8px;
-    font-size: 0.85rem;
-    transition: all 0.2s ease;
     text-decoration: none;
-    display: inline-block;
-    text-align: center;
+    margin-top: 1rem;
+    width: fit-content;
+    transition: all 0.2s;
   }
-  
-  .hub-card .btn-hub:hover {
-    background: rgba(0, 229, 255, 0.2);
-    border-color: #00e5ff;
+  .ch-card-btn.purple-btn {
+    background: rgba(139,92,246,0.3);
+    color: #c4b5fd;
+    border: 1px solid rgba(139,92,246,0.4);
   }
-  
-  .section-header {
-    margin-bottom: 1.5rem;
+  .ch-card-btn.purple-btn:hover { background: rgba(139,92,246,0.45); color: #fff; }
+  .ch-card-btn.cyan-btn {
+    background: rgba(0,245,255,0.2);
+    color: #67e8f9;
+    border: 1px solid rgba(0,245,255,0.3);
   }
-  
-  .section-header h2 {
-    font-size: 1.5rem;
+  .ch-card-btn.cyan-btn:hover { background: rgba(0,245,255,0.35); color: #fff; }
+  .ch-card-btn.pink-btn {
+    background: rgba(236,72,153,0.3);
+    color: #f9a8d4;
+    border: 1px solid rgba(236,72,153,0.35);
+  }
+  .ch-card-btn.pink-btn:hover { background: rgba(236,72,153,0.45); color: #fff; }
+  .ch-card-btn.green-btn {
+    background: rgba(0,255,180,0.2);
+    color: #6ee7b7;
+    border: 1px solid rgba(0,255,180,0.3);
+  }
+  .ch-card-btn.green-btn:hover { background: rgba(0,255,180,0.35); color: #fff; }
+  .ch-card-btn.amber-btn {
+    background: rgba(245,158,11,0.25);
+    color: #fcd34d;
+    border: 1px solid rgba(245,158,11,0.35);
+  }
+  .ch-card-btn.amber-btn:hover { background: rgba(245,158,11,0.4); color: #fff; }
+  .ch-card-btn.blue-btn {
+    background: rgba(59,130,246,0.25);
+    color: #93c5fd;
+    border: 1px solid rgba(59,130,246,0.35);
+  }
+  .ch-card-btn.blue-btn:hover { background: rgba(59,130,246,0.4); color: #fff; }
+  .ch-card-btn.teal-btn {
+    background: rgba(20,184,166,0.25);
+    color: #5eead4;
+    border: 1px solid rgba(20,184,166,0.35);
+  }
+  .ch-card-btn.teal-btn:hover { background: rgba(20,184,166,0.4); color: #fff; }
+  .ch-card-btn.rose-btn {
+    background: rgba(244,63,94,0.25);
+    color: #fda4af;
+    border: 1px solid rgba(244,63,94,0.35);
+  }
+  .ch-card-btn.rose-btn:hover { background: rgba(244,63,94,0.4); color: #fff; }
+  .ch-bottom-row {
+    display: grid;
+    grid-template-columns: 1fr 2fr;
+    gap: 1.25rem;
+  }
+  .ch-sticky {
+    background: linear-gradient(135deg, rgba(245,158,11,0.12), rgba(12,14,20,0.85));
+    border: 1px solid rgba(245,158,11,0.15);
+    border-radius: 16px;
+    padding: 1.25rem;
+    backdrop-filter: blur(12px);
+  }
+  .ch-sticky-inner {
+    background: rgba(245,158,11,0.08);
+    border-radius: 10px;
+    padding: 1rem;
+    border-left: 3px solid #f59e0b;
+  }
+  .ch-quick-section {
+    background: rgba(12,14,20,0.7);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 16px;
+    padding: 1.25rem;
+    backdrop-filter: blur(12px);
+  }
+  .ch-quick-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+  }
+  .ch-quick-header h6 { margin: 0; font-weight: 600; color: #fff; font-size: 0.95rem; }
+  .ch-quick-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.75rem;
+  }
+  .ch-quick-card {
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 12px;
+    padding: 1rem;
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    text-decoration: none;
+    transition: all 0.2s;
+  }
+  .ch-quick-card:hover {
+    background: rgba(255,255,255,0.08);
+    border-color: rgba(71,245,255,0.2);
+    transform: translateY(-2px);
+  }
+  .ch-quick-icon {
+    width: 36px;
+    height: 36px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+  .ch-quick-card h5 { font-size: 0.85rem; font-weight: 600; color: #fff; margin: 0 0 2px; }
+  .ch-quick-card p { font-size: 0.72rem; color: #888; margin: 0; }
+  .ch-hub-switch {
+    display: flex;
+    gap: 6px;
+    margin-bottom: 1rem;
+  }
+  .ch-hub-btn {
+    padding: 6px 16px;
+    border-radius: 20px;
+    border: 1px solid rgba(255,255,255,0.12);
+    background: transparent;
+    color: #aaa;
+    font-size: 0.8rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+    text-decoration: none;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .ch-hub-btn:hover { border-color: rgba(255,255,255,0.3); color: #fff; }
+  .ch-hub-btn.active {
+    background: linear-gradient(135deg, rgba(0,229,255,0.15), rgba(188,0,237,0.15));
+    border-color: rgba(71,245,255,0.3);
     color: #fff;
-    margin-bottom: 0.25rem;
+    font-weight: 600;
   }
-  
-  .section-header p {
-    color: rgba(255, 255, 255, 0.5);
-    font-size: 0.9rem;
+  @media (max-width: 992px) {
+    .ch-layout { flex-direction: column; }
+    .ch-sidebar { width: 100%; flex-direction: row; flex-wrap: wrap; gap: 4px; }
+    .ch-grid { grid-template-columns: 1fr 1fr; }
+    .ch-bottom-row { grid-template-columns: 1fr; }
   }
-  
-  .ai-highlight {
-    background: linear-gradient(135deg, rgba(168, 85, 247, 0.15), rgba(0, 229, 255, 0.15));
-    border-color: rgba(168, 85, 247, 0.3);
-  }
-  
-  .ai-highlight:hover {
-    border-color: rgba(168, 85, 247, 0.5);
-    box-shadow: 0 8px 32px rgba(168, 85, 247, 0.15);
+  @media (max-width: 576px) {
+    .ch-grid { grid-template-columns: 1fr; }
+    .ch-quick-grid { grid-template-columns: 1fr; }
   }
 </style>
 
-<div class="section-header">
-  <h2>Campaign Hub</h2>
-  <p>Manage campaigns across email, social media, and SEO with AI-powered assistance</p>
+<div class="ch-hub-switch">
+  <a href="{{ url_for('main.marketing_hub') }}" class="ch-hub-btn">
+    <i data-feather="radio" style="width:14px;height:14px;"></i> Marketing Hub
+  </a>
+  <a href="{{ url_for('main.campaign_hub') }}" class="ch-hub-btn active">
+    <i data-feather="layers" style="width:14px;height:14px;"></i> Campaign Hub
+  </a>
 </div>
 
-<div class="hub-grid">
-  <div class="hub-card ai-highlight">
-    <div class="hub-card-icon purple">
-      <i data-feather="zap"></i>
-    </div>
-    <h3>AI Campaign Generator</h3>
-    <p>Let AI create comprehensive multi-channel campaigns tailored to your goals and audience.</p>
-    <a href="#" class="btn-hub" data-bs-toggle="modal" data-bs-target="#aiCampaignModal">Generate Campaign</a>
-  </div>
+<div class="ch-layout">
+  <nav class="ch-sidebar">
+    <a href="{{ url_for('main.campaign_hub') }}" class="active"><i data-feather="grid"></i> Dashboard</a>
+    <a href="{{ url_for('main.campaign_hub') }}?action=new"><i data-feather="zap"></i> AI Campaign Generator</a>
+    <a href="{{ url_for('main.campaigns') }}"><i data-feather="mail"></i> Email Campaigns</a>
+    <a href="{{ url_for('main.social_media') }}"><i data-feather="share-2"></i> Social Campaigns</a>
+    <a href="{{ url_for('main.seo_dashboard') }}"><i data-feather="search"></i> SEO Dashboard</a>
+    <a href="{{ url_for('main.competitor_analysis') }}"><i data-feather="crosshair"></i> Competitor Intelligence</a>
+    <a href="{{ url_for('main.sms_campaigns') }}"><i data-feather="smartphone"></i> SMS Campaigns</a>
+    <a href="{{ url_for('main.user_profile') }}"><i data-feather="settings"></i> Settings</a>
+  </nav>
 
-  <div class="hub-card">
-    <div class="hub-card-icon cyan">
-      <i data-feather="mail"></i>
+  <div class="ch-main">
+    <div class="ch-topbar">
+      <div class="ch-welcome">
+        <h2>Your Campaign Dashboard</h2>
+      </div>
+      <div class="ch-filters">
+        <div class="dropdown">
+          <button class="ch-filter-btn dropdown-toggle" type="button" data-bs-toggle="dropdown">
+            <i data-feather="sliders" style="width:14px;height:14px;"></i>
+            {% if campaign_type == 'email' %}Email{% elif campaign_type == 'social' %}Social{% elif campaign_type == 'sms' %}SMS{% else %}All Types{% endif %}
+          </button>
+          <ul class="dropdown-menu dropdown-menu-dark">
+            <li><a class="dropdown-item{% if campaign_type == 'all' %} active{% endif %}" href="{{ url_for('main.campaign_hub', days=days, type='all') }}">All Types</a></li>
+            <li><a class="dropdown-item{% if campaign_type == 'email' %} active{% endif %}" href="{{ url_for('main.campaign_hub', days=days, type='email') }}">Email</a></li>
+            <li><a class="dropdown-item{% if campaign_type == 'social' %} active{% endif %}" href="{{ url_for('main.campaign_hub', days=days, type='social') }}">Social</a></li>
+            <li><a class="dropdown-item{% if campaign_type == 'sms' %} active{% endif %}" href="{{ url_for('main.campaign_hub', days=days, type='sms') }}">SMS</a></li>
+          </ul>
+        </div>
+        <div class="dropdown">
+          <button class="ch-filter-btn dropdown-toggle" type="button" data-bs-toggle="dropdown">
+            <i data-feather="calendar" style="width:14px;height:14px;"></i> Past {{ days }} Days
+          </button>
+          <ul class="dropdown-menu dropdown-menu-dark">
+            <li><a class="dropdown-item{% if days == 30 %} active{% endif %}" href="{{ url_for('main.campaign_hub', days=30, type=campaign_type) }}">Past 30 Days</a></li>
+            <li><a class="dropdown-item{% if days == 60 %} active{% endif %}" href="{{ url_for('main.campaign_hub', days=60, type=campaign_type) }}">Past 60 Days</a></li>
+            <li><a class="dropdown-item{% if days == 90 %} active{% endif %}" href="{{ url_for('main.campaign_hub', days=90, type=campaign_type) }}">Past 90 Days</a></li>
+          </ul>
+        </div>
+        <a href="{{ url_for('main.analytics_hub') }}" class="ch-filter-btn primary">Campaign Insights &rsaquo;</a>
+      </div>
     </div>
-    <h3>Email Campaigns</h3>
-    <p>Create and manage email marketing campaigns with tracking and automation.</p>
-    <a href="{{ url_for('main.campaigns') }}" class="btn-hub">View Email Campaigns</a>
-  </div>
 
-  <div class="hub-card">
-    <div class="hub-card-icon pink">
-      <i data-feather="share-2"></i>
+    <div class="ch-tabs">
+      <a href="{{ url_for('main.marketing_hub') }}" class="ch-tab">Dashboard</a>
+      <a href="{{ url_for('main.campaign_hub') }}" class="ch-tab active">Campaigns</a>
+      <a href="{{ url_for('main.analytics_hub') }}" class="ch-tab">Analytics</a>
+      <a href="{{ url_for('main.contacts') }}" class="ch-tab">Audience</a>
+      <a href="{{ url_for('main.social_media') }}" class="ch-tab">Content</a>
     </div>
-    <h3>Social Campaigns</h3>
-    <p>Schedule and manage social media posts across all your connected platforms.</p>
-    <a href="{{ url_for('main.social_media') }}" class="btn-hub">Manage Social</a>
-  </div>
 
-  <div class="hub-card">
-    <div class="hub-card-icon amber">
-      <i data-feather="search"></i>
+    <div class="ch-kpi-bar">
+      <div class="ch-kpi-item">
+        <span class="ch-kpi-label">Total Campaigns</span>
+        <span class="ch-kpi-val">{{ stats.total_campaigns }}</span>
+        <span class="ch-kpi-change up">past {{ days }}d</span>
+      </div>
+      <div class="ch-kpi-item">
+        <span class="ch-kpi-label">Email</span>
+        <span class="ch-kpi-val">{{ stats.email_count }}</span>
+        <span class="ch-kpi-change up">{{ stats.sent_email }} sent</span>
+      </div>
+      <div class="ch-kpi-item">
+        <span class="ch-kpi-label">Social</span>
+        <span class="ch-kpi-val">{{ stats.social_count }}</span>
+        <span class="ch-kpi-change up">{{ stats.published_social }} published</span>
+      </div>
+      <div class="ch-kpi-item">
+        <span class="ch-kpi-label">Active</span>
+        <span class="ch-kpi-val">{{ stats.active_count }}</span>
+        <span class="ch-kpi-change neutral">{{ stats.draft_count }} drafts</span>
+      </div>
     </div>
-    <h3>SEO Dashboard</h3>
-    <p>Monitor and optimize your search presence with keyword tracking and audits.</p>
-    <a href="{{ url_for('main.seo_dashboard') }}" class="btn-hub">View SEO Dashboard</a>
-  </div>
 
-  <div class="hub-card">
-    <div class="hub-card-icon green">
-      <i data-feather="target"></i>
-    </div>
-    <h3>Keywords</h3>
-    <p>Track and optimize your keyword rankings with competitive analysis.</p>
-    <a href="{{ url_for('main.seo_keywords') }}" class="btn-hub">Manage Keywords</a>
-  </div>
+    <div class="ch-grid">
+      <div class="ch-card purple-glass">
+        <div class="ch-card-icon" style="color:#c4b5fd;">
+          <i data-feather="zap"></i>
+        </div>
+        <h3>AI Campaign Generator</h3>
+        <p>Generate high-converting campaigns in seconds.</p>
+        <a href="#" class="ch-card-btn purple-btn" data-bs-toggle="modal" data-bs-target="#aiCampaignModal">
+          <i data-feather="zap" style="width:14px;height:14px;"></i> Launch Tool &rsaquo;
+        </a>
+      </div>
 
-  <div class="hub-card">
-    <div class="hub-card-icon blue">
-      <i data-feather="eye"></i>
+      <div class="ch-card cyan-glass">
+        <div class="ch-card-icon" style="color:#67e8f9;">
+          <i data-feather="mail"></i>
+        </div>
+        <h3>Email Campaigns</h3>
+        <p>Build, send, and optimize email campaigns.</p>
+        <a href="{{ url_for('main.email_builder') }}" class="ch-card-btn cyan-btn">Open Builder &rsaquo;</a>
+      </div>
+
+      <div class="ch-card pink-glass">
+        <div class="ch-card-icon" style="color:#f9a8d4;">
+          <i data-feather="share-2"></i>
+        </div>
+        <h3>Social Campaigns</h3>
+        <p>Schedule, post, and track social media campaigns.</p>
+        <a href="{{ url_for('main.social_media') }}" class="ch-card-btn pink-btn">View Dashboard &rsaquo;</a>
+      </div>
+
+      <div class="ch-card green-glass">
+        <div class="ch-card-icon" style="color:#6ee7b7;">
+          <i data-feather="search"></i>
+        </div>
+        <h3>SEO Dashboard</h3>
+        <p>Track website SEO performance and keywords.</p>
+        <a href="{{ url_for('main.seo_dashboard') }}" class="ch-card-btn green-btn">View Dashboard &rsaquo;</a>
+      </div>
+
+      <div class="ch-card rose-glass">
+        <div class="ch-card-icon" style="color:#fda4af;">
+          <i data-feather="crosshair"></i>
+        </div>
+        <h3>Competitor Intelligence</h3>
+        <p>Analyze competitor campaigns and strategies.</p>
+        <a href="{{ url_for('main.competitor_analysis') }}" class="ch-card-btn rose-btn">Launch Tool &rsaquo;</a>
+      </div>
+
+      <div class="ch-card amber-glass">
+        <div class="ch-card-icon" style="color:#fcd34d;">
+          <i data-feather="smartphone"></i>
+        </div>
+        <h3>SMS Campaigns</h3>
+        <p>Create and manage your SMS marketing campaigns.</p>
+        <a href="{{ url_for('main.sms_campaigns') }}" class="ch-card-btn amber-btn">View Dashboard &rsaquo;</a>
+      </div>
+
     </div>
-    <h3>Competitor Intelligence</h3>
-    <p>Track competitor positioning, channels, and find market opportunities.</p>
-    <a href="{{ url_for('main.competitor_analysis') }}" class="btn-hub">Track Competitors</a>
+
+    <div class="ch-bottom-row">
+      <div class="ch-sticky">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.75rem;">
+          <h6 style="margin:0;font-weight:700;color:#fff;font-size:0.95rem;">
+            <i data-feather="edit" style="width:16px;height:16px;color:#f59e0b;"></i> Sticky Note
+          </h6>
+        </div>
+        <div class="ch-sticky-inner">
+          <div style="font-size:0.85rem;font-weight:600;color:#f59e0b;margin-bottom:6px;">To-Do Later:</div>
+          <div style="font-size:0.82rem;color:#ccc;line-height:1.5;">
+            Organize client testimonials<br>and update case studies!
+          </div>
+        </div>
+      </div>
+
+      <div class="ch-quick-section">
+        <div class="ch-quick-header">
+          <h6><i data-feather="compass" style="width:16px;height:16px;color:#47f5ff;"></i> Quick Launch</h6>
+        </div>
+        <div class="ch-quick-grid">
+          <a href="{{ url_for('main.marketing_calendar') }}" class="ch-quick-card">
+            <div class="ch-quick-icon" style="background:rgba(0,255,180,0.12);">
+              <i data-feather="calendar" style="width:18px;height:18px;color:#00ffb4;"></i>
+            </div>
+            <div>
+              <h5>Marketing Calendar</h5>
+              <p>View and manage your marketing schedule.</p>
+            </div>
+          </a>
+          <a href="{{ url_for('main.analytics_hub') }}" class="ch-quick-card">
+            <div class="ch-quick-icon" style="background:rgba(236,72,153,0.12);">
+              <i data-feather="bar-chart-2" style="width:18px;height:18px;color:#ec4899;"></i>
+            </div>
+            <div>
+              <h5>Analytics Hub</h5>
+              <p>Track performance across all campaigns.</p>
+            </div>
+          </a>
+        </div>
+      </div>
+    </div>
   </div>
 </div>
 
