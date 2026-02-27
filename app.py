@@ -18,14 +18,15 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 
 
 # ============================================================
-# Logging
+# Logging (FIXED PRODUCTION CONFIG)
 # ============================================================
 
 class RequestIdFilter(logging.Filter):
     def filter(self, record: logging.LogRecord) -> bool:
-        record.request_id = (
-            getattr(g, "request_id", "-") if has_request_context() else "-"
-        )
+        if has_request_context():
+            record.request_id = getattr(g, "request_id", "-")
+        else:
+            record.request_id = "-"
         return True
 
 
@@ -41,15 +42,30 @@ class RedactionFilter(logging.Filter):
         return True
 
 
-log_format = (
-    "%(asctime)s %(levelname)s [%(name)s] "
-    "[request_id=%(request_id)s] %(message)s"
-)
+def configure_logging():
+    log_format = (
+        "%(asctime)s %(levelname)s [%(name)s] "
+        "[request_id=%(request_id)s] %(message)s"
+    )
 
-logging.basicConfig(level=logging.INFO, format=log_format)
-root_logger = logging.getLogger()
-root_logger.addFilter(RequestIdFilter())
-root_logger.addFilter(RedactionFilter())
+    formatter = logging.Formatter(log_format)
+
+    handler = logging.StreamHandler()
+    handler.setFormatter(formatter)
+    handler.addFilter(RequestIdFilter())
+    handler.addFilter(RedactionFilter())
+
+    root_logger = logging.getLogger()
+    root_logger.setLevel(logging.INFO)
+
+    # Remove default handlers (important for Gunicorn)
+    if root_logger.handlers:
+        root_logger.handlers.clear()
+
+    root_logger.addHandler(handler)
+
+
+configure_logging()
 
 
 # ============================================================
@@ -81,7 +97,6 @@ def create_app() -> Flask:
 
     app.secret_key = session_secret
 
-    # Required when behind Nginx / reverse proxy
     app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
 
     # --------------------------------------------------------
@@ -161,11 +176,12 @@ def create_app() -> Flask:
     from advanced_config import advanced_config_bp
     from marketing import marketing_bp
 
+    # IMPORTANT: Marketing first if it owns "/"
+    app.register_blueprint(marketing_bp)
     app.register_blueprint(main_bp)
     app.register_blueprint(auth_bp, url_prefix="/auth")
     app.register_blueprint(user_bp, url_prefix="/user")
     app.register_blueprint(advanced_config_bp)
-    app.register_blueprint(marketing_bp)
 
     # --------------------------------------------------------
     # App Context Initialization
