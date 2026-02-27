@@ -5,697 +5,878 @@
 
 {% block content %}
 <style>
-  .action-card {
-    background: rgba(12, 14, 20, 0.95);
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    border-radius: 16px;
-    padding: 1.5rem;
-    transition: all 0.3s ease;
-    height: 100%;
+  body {
+    background: #030014 !important;
+    background-image:
+      radial-gradient(ellipse 80% 50% at 50% -20%, rgba(139, 92, 246, 0.3), transparent),
+      radial-gradient(ellipse 60% 40% at 100% 0%, rgba(0, 245, 255, 0.15), transparent),
+      radial-gradient(ellipse 50% 30% at 0% 100%, rgba(255, 0, 255, 0.2), transparent),
+      radial-gradient(ellipse 40% 30% at 10% 20%, rgba(71, 245, 255, 0.06), transparent) !important;
   }
-  .action-card:hover {
-    border-color: rgba(0, 255, 180, 0.4);
-    box-shadow: 0 8px 32px rgba(0, 255, 180, 0.15);
+  .mh-layout {
+    display: flex;
+    gap: 1.5rem;
+    min-height: calc(100vh - 100px);
   }
-  .metric-value {
-    font-size: 2rem;
-    font-weight: 700;
-    background: linear-gradient(135deg, #00ffb4, #bc00ed);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
+  .mh-sidebar {
+    width: 220px;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
   }
-  .quick-action-btn {
-    background: linear-gradient(135deg, rgba(0, 255, 180, 0.15), rgba(188, 0, 237, 0.1));
-    border: 1px solid rgba(0, 255, 180, 0.3);
-    border-radius: 12px;
-    padding: 1rem 1.5rem;
-    color: #fff;
+  .mh-sidebar a {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px;
+    border-radius: 10px;
+    color: #ccc;
     text-decoration: none;
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    transition: all 0.3s ease;
-    width: 100%;
+    font-size: 0.9rem;
+    transition: all 0.2s;
   }
-  .quick-action-btn:hover {
-    background: linear-gradient(135deg, rgba(0, 255, 180, 0.3), rgba(188, 0, 237, 0.2));
-    border-color: #00ffb4;
+  .mh-sidebar a:hover {
+    background: rgba(71, 245, 255, 0.08);
     color: #fff;
   }
-  .quick-action-btn i { color: #00ffb4; }
-  .channel-card {
-    background: rgba(0, 0, 0, 0.3);
-    border-radius: 12px;
-    padding: 1rem;
-    text-align: center;
-    transition: all 0.3s ease;
-    cursor: pointer;
+  .mh-sidebar a svg { width: 18px; height: 18px; stroke: #888; flex-shrink: 0; }
+  .mh-sidebar a:hover svg { stroke: var(--lux-cyan, #47f5ff); }
+  .mh-sidebar .new-badge {
+    background: linear-gradient(135deg, #00ffb4, #0ea5e9);
+    color: #000;
+    font-size: 0.6rem;
+    font-weight: 700;
+    padding: 2px 6px;
+    border-radius: 4px;
+    margin-left: auto;
   }
-  .channel-card:hover {
-    background: rgba(0, 255, 180, 0.15);
+  .mh-main {
+    flex: 1;
+    min-width: 0;
   }
-  .channel-icon {
-    width: 48px;
-    height: 48px;
-    border-radius: 12px;
+  .mh-tabs {
     display: flex;
-    align-items: center;
-    justify-content: center;
-    margin: 0 auto 0.75rem;
-    font-size: 1.25rem;
+    gap: 4px;
+    margin-bottom: 1.5rem;
+    background: rgba(255,255,255,0.04);
+    border-radius: 12px;
+    padding: 4px;
+    width: fit-content;
   }
-  .channel-count {
-    font-size: 1.25rem;
+  .mh-tab {
+    padding: 8px 20px;
+    border-radius: 8px;
+    color: #888;
+    text-decoration: none;
+    font-size: 0.85rem;
+    font-weight: 500;
+    transition: all 0.2s;
+  }
+  .mh-tab:hover { color: #fff; background: rgba(255,255,255,0.06); }
+  .mh-tab.active {
+    background: linear-gradient(135deg, rgba(0,229,255,0.2), rgba(188,0,237,0.15));
+    color: #fff;
+    font-weight: 600;
+  }
+  .mh-welcome {
+    margin-bottom: 1.5rem;
+  }
+  .mh-welcome h2 {
+    font-size: 1.5rem;
     font-weight: 700;
     color: #fff;
+    margin: 0;
   }
-  .campaign-item {
-    background: rgba(12, 14, 20, 0.8);
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    border-radius: 10px;
-    padding: 1rem;
-    margin-bottom: 0.75rem;
-    cursor: pointer;
-    transition: all 0.2s ease;
+  .mh-welcome p {
+    color: #888;
+    margin: 0.25rem 0 0;
+    font-size: 0.9rem;
   }
-  .campaign-item:hover {
-    border-color: rgba(0, 255, 180, 0.5);
-  }
-  .campaign-status-active { color: #00ffb4; }
-  .campaign-status-scheduled { color: #f59e0b; }
-  .campaign-status-draft { color: #6b7280; }
-  .ai-suggestion {
-    background: linear-gradient(135deg, rgba(0, 255, 180, 0.1), rgba(188, 0, 237, 0.1));
-    border: 1px solid rgba(0, 255, 180, 0.2);
-    border-radius: 10px;
-    padding: 1rem;
-    margin-bottom: 0.75rem;
+  .mh-topbar {
     display: flex;
+    justify-content: space-between;
     align-items: flex-start;
-    gap: 0.75rem;
+    margin-bottom: 1.5rem;
   }
-  .ai-suggestion:hover {
-    border-color: rgba(0, 255, 180, 0.4);
+  .mh-filters {
+    display: flex;
+    gap: 8px;
+    align-items: center;
   }
-  .ai-badge {
-    background: linear-gradient(135deg, #00ffb4, #bc00ed);
-    padding: 0.25rem 0.5rem;
-    border-radius: 4px;
-    font-size: 0.7rem;
-    font-weight: 600;
-    color: #000;
+  .mh-filter-btn {
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.1);
+    color: #ccc;
+    padding: 6px 14px;
+    border-radius: 8px;
+    font-size: 0.8rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 6px;
   }
-  .section-header {
+  .mh-filter-btn:hover { border-color: rgba(71,245,255,0.3); color: #fff; }
+  .mh-kpi-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+  }
+  .mh-kpi {
+    background: rgba(12, 14, 20, 0.85);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 14px;
+    padding: 1.25rem 1.5rem;
+    position: relative;
+    overflow: hidden;
+    backdrop-filter: blur(12px);
+  }
+  .mh-kpi::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 2px;
+    background: linear-gradient(90deg, var(--lux-cyan, #47f5ff), var(--lux-primary, #bc00ed));
+    opacity: 0.6;
+  }
+  .mh-kpi-label {
+    font-size: 0.8rem;
+    color: #888;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin-bottom: 0.5rem;
+  }
+  .mh-kpi-value {
+    font-size: 2rem;
+    font-weight: 800;
+    color: #fff;
+    line-height: 1;
+    margin-bottom: 0.35rem;
+  }
+  .mh-kpi-change {
+    font-size: 0.78rem;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .mh-kpi-change.up { color: #00ffb4; }
+  .mh-kpi-change.down { color: #ef4444; }
+  .mh-kpi-icon {
+    position: absolute;
+    right: 1.25rem;
+    top: 50%;
+    transform: translateY(-50%);
+    opacity: 0.12;
+  }
+  .mh-kpi-icon svg { width: 48px; height: 48px; stroke: var(--lux-cyan, #47f5ff); }
+  .mh-card {
+    background: rgba(12, 14, 20, 0.85);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 14px;
+    padding: 1.25rem;
+    height: 100%;
+    backdrop-filter: blur(12px);
+  }
+  .mh-card-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
     margin-bottom: 1rem;
   }
-  .section-header h5 {
+  .mh-card-header h6 {
     margin: 0;
+    font-weight: 600;
+    color: #fff;
+    font-size: 0.95rem;
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: 8px;
   }
-  .hub-switcher {
-    display: flex;
-    gap: 0.5rem;
-    margin-bottom: 1.5rem;
-  }
-  .hub-btn {
-    padding: 0.5rem 1.25rem;
-    border-radius: 25px;
-    border: 1px solid rgba(255, 255, 255, 0.15);
-    background: transparent;
-    color: #aaa;
-    font-weight: 500;
-    cursor: pointer;
-    transition: all 0.3s ease;
+  .mh-card-header a {
+    color: var(--lux-cyan, #47f5ff);
+    font-size: 0.78rem;
     text-decoration: none;
   }
-  .hub-btn:hover {
-    border-color: rgba(255, 255, 255, 0.3);
-    color: #fff;
+  .mh-card-header a:hover { text-decoration: underline; }
+  .mh-chart-area {
+    background: rgba(12, 14, 20, 0.85);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 14px;
+    padding: 1.25rem;
+    margin-bottom: 1.5rem;
+    backdrop-filter: blur(12px);
   }
-  .hub-btn.active {
-    background: linear-gradient(135deg, #00ffb4, #bc00ed);
-    border-color: transparent;
-    color: #000;
+  .mh-chart-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+  }
+  .mh-chart-header h6 {
+    margin: 0;
+    font-weight: 600;
+    color: #fff;
+    font-size: 0.95rem;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .mh-legend { display: flex; gap: 16px; align-items: center; }
+  .mh-legend-item { display: flex; align-items: center; gap: 6px; font-size: 0.78rem; color: #888; }
+  .mh-legend-dot { width: 8px; height: 8px; border-radius: 50%; }
+  .mh-task-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 8px 0;
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+  }
+  .mh-task-item:last-child { border-bottom: none; }
+  .mh-task-check {
+    width: 18px;
+    height: 18px;
+    border: 2px solid rgba(255,255,255,0.2);
+    border-radius: 4px;
+    flex-shrink: 0;
+    margin-top: 2px;
+    cursor: pointer;
+    transition: border-color 0.2s;
+  }
+  .mh-task-check:hover { border-color: var(--lux-cyan, #47f5ff); }
+  .mh-task-text { font-size: 0.85rem; color: #ddd; }
+  .mh-task-due { font-size: 0.7rem; color: #f59e0b; }
+  .mh-approval-item {
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+    padding: 10px;
+    background: rgba(0,0,0,0.2);
+    border-radius: 8px;
+    margin-bottom: 8px;
+  }
+  .mh-approval-item:last-child { margin-bottom: 0; }
+  .mh-approval-icon {
+    width: 36px;
+    height: 36px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+  .mh-approval-status {
+    font-size: 0.7rem;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 4px;
+  }
+  .mh-hub-switch {
+    display: flex;
+    gap: 6px;
+    margin-bottom: 1rem;
+  }
+  .mh-hub-btn {
+    padding: 6px 16px;
+    border-radius: 20px;
+    border: 1px solid rgba(255,255,255,0.12);
+    background: transparent;
+    color: #aaa;
+    font-size: 0.8rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+    text-decoration: none;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .mh-hub-btn:hover { border-color: rgba(255,255,255,0.3); color: #fff; }
+  .mh-hub-btn.active {
+    background: linear-gradient(135deg, rgba(0,229,255,0.15), rgba(188,0,237,0.15));
+    border-color: rgba(71,245,255,0.3);
+    color: #fff;
     font-weight: 600;
   }
-  .content-preview {
-    background: rgba(0, 0, 0, 0.3);
-    border-radius: 8px;
-    padding: 0.75rem;
-    margin-bottom: 0.5rem;
-    border-left: 3px solid #00ffb4;
+  .mh-cal-mini {
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 10px;
+    overflow: hidden;
+  }
+  .mh-cal-grid {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 0;
+  }
+  .mh-cal-dayname {
+    text-align: center;
+    font-size: 0.65rem;
+    color: #666;
+    text-transform: uppercase;
+    padding: 6px 0;
+    font-weight: 600;
+  }
+  .mh-cal-dayname.weekend { color: #f59e0b; }
+  .mh-cal-day {
+    text-align: center;
+    padding: 4px 2px;
+    font-size: 0.72rem;
+    color: #888;
+    cursor: pointer;
+    border-radius: 6px;
+    position: relative;
+    min-height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .mh-cal-day:hover { background: rgba(255,255,255,0.06); color: #fff; }
+  .mh-cal-day.today { background: rgba(0,229,255,0.15); color: #47f5ff; font-weight: 700; }
+  .mh-cal-day.has-event::after {
+    content: '';
+    position: absolute;
+    bottom: 2px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+  }
+  .mh-cal-event-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 8px;
+    border-bottom: 1px solid rgba(255,255,255,0.04);
+    font-size: 0.8rem;
+    color: #ccc;
+    cursor: pointer;
+    transition: background 0.2s;
+  }
+  .mh-cal-event-row:hover { background: rgba(255,255,255,0.04); }
+  .mh-cal-event-row:last-child { border-bottom: none; }
+  .mh-cal-event-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .mh-cal-event-time { color: #888; margin-left: auto; font-size: 0.72rem; white-space: nowrap; }
+  .mh-cal-legend { display: flex; gap: 12px; flex-wrap: wrap; padding: 8px 0 0; }
+  .mh-cal-legend-item { display: flex; align-items: center; gap: 4px; font-size: 0.68rem; color: #888; }
+  .mh-cal-legend-dot { width: 6px; height: 6px; border-radius: 50%; }
+  .mh-cal-nav {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .mh-cal-nav-btn {
+    background: none;
+    border: none;
+    color: #888;
+    cursor: pointer;
+    padding: 4px;
+    border-radius: 6px;
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+  }
+  .mh-cal-nav-btn:hover { background: rgba(255,255,255,0.08); color: #fff; }
+  .mh-cal-month { font-size: 0.85rem; font-weight: 600; color: #fff; }
+  .ai-agent-insight {
+    padding: 10px 0;
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+  }
+  .ai-agent-insight:last-child { border-bottom: none; }
+  .ai-agent-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    background: linear-gradient(135deg, #00ffb4, #bc00ed);
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 0.6rem;
+    font-weight: 700;
+    color: #000;
+  }
+  .ai-agent-title {
+    font-size: 0.82rem;
+    color: #ddd;
+    margin-top: 5px;
+    font-weight: 500;
+  }
+  .ai-agent-detail {
+    font-size: 0.72rem;
+    color: #888;
+    margin-top: 2px;
+  }
+  .sticky-note {
+    background: linear-gradient(135deg, rgba(245,158,11,0.08), rgba(12,14,20,0.85));
+    border: 1px solid rgba(245,158,11,0.15);
+  }
+  .sticky-inner {
+    background: rgba(245,158,11,0.08);
+    border-radius: 10px;
+    padding: 1rem;
+    border-left: 3px solid #f59e0b;
+  }
+  @media (max-width: 992px) {
+    .mh-layout { flex-direction: column; }
+    .mh-sidebar { width: 100%; flex-direction: row; flex-wrap: wrap; gap: 4px; }
+    .mh-sidebar a { padding: 8px 12px; font-size: 0.82rem; }
+    .mh-kpi-row { grid-template-columns: 1fr 1fr; }
+  }
+  @media (max-width: 576px) {
+    .mh-kpi-row { grid-template-columns: 1fr; }
+    .mh-tabs { flex-wrap: wrap; }
   }
 </style>
 
-<!-- Hub Switcher -->
-<div class="hub-switcher">
-  <a href="{{ url_for('main.dashboard') }}" class="hub-btn">
-    <i data-feather="briefcase" style="width:16px;height:16px;margin-right:4px;"></i> Sales Hub
+<div class="mh-hub-switch">
+  <a href="{{ url_for('main.dashboard') }}" class="mh-hub-btn">
+    <i data-feather="briefcase" style="width:14px;height:14px;"></i> Sales Hub
   </a>
-  <a href="{{ url_for('main.marketing_hub') }}" class="hub-btn active">
-    <i data-feather="radio" style="width:16px;height:16px;margin-right:4px;"></i> Marketing Hub
+  <a href="{{ url_for('main.marketing_hub') }}" class="mh-hub-btn active">
+    <i data-feather="radio" style="width:14px;height:14px;"></i> Marketing Hub
   </a>
-  <button class="hub-btn" onclick="setDefaultHub('marketing')" title="Set as default">
-    <i data-feather="star" style="width:14px;height:14px;"></i>
-  </button>
 </div>
 
-<!-- Quick Metrics Row -->
-<div class="row g-3 mb-4">
-  <div class="col-lg-2 col-md-4 col-6">
-    <div class="action-card text-center">
-      <small class="text-muted text-uppercase d-block mb-1">Campaigns</small>
-      <div class="metric-value">{{ stats.active_campaigns|default(8) }}</div>
-      <small class="text-success"><i data-feather="activity" style="width:12px;"></i> Active</small>
-    </div>
-  </div>
-  <div class="col-lg-2 col-md-4 col-6">
-    <div class="action-card text-center">
-      <small class="text-muted text-uppercase d-block mb-1">Subscribers</small>
-      <div class="metric-value">{{ stats.total_subscribers|default('2.4K') }}</div>
-      <small class="text-success"><i data-feather="trending-up" style="width:12px;"></i> +128 this week</small>
-    </div>
-  </div>
-  <div class="col-lg-2 col-md-4 col-6">
-    <div class="action-card text-center">
-      <small class="text-muted text-uppercase d-block mb-1">Email Open Rate</small>
-      <div class="metric-value">{{ stats.open_rate|default('24%') }}</div>
-      <small class="text-muted">Industry avg: 21%</small>
-    </div>
-  </div>
-  <div class="col-lg-2 col-md-4 col-6">
-    <div class="action-card text-center">
-      <small class="text-muted text-uppercase d-block mb-1">Click Rate</small>
-      <div class="metric-value">{{ stats.click_rate|default('4.2%') }}</div>
-      <small class="text-success"><i data-feather="arrow-up" style="width:12px;"></i> +0.8%</small>
-    </div>
-  </div>
-  <div class="col-lg-2 col-md-4 col-6">
-    <div class="action-card text-center">
-      <small class="text-muted text-uppercase d-block mb-1">Social Reach</small>
-      <div class="metric-value">{{ stats.social_reach|default('15K') }}</div>
-      <small class="text-muted">This month</small>
-    </div>
-  </div>
-  <div class="col-lg-2 col-md-4 col-6">
-    <div class="action-card text-center">
-      <small class="text-muted text-uppercase d-block mb-1">Conversions</small>
-      <div class="metric-value">{{ stats.conversions|default(156) }}</div>
-      <small class="text-success"><i data-feather="check-circle" style="width:12px;"></i> Goal: 200</small>
-    </div>
-  </div>
-</div>
+<div class="mh-layout">
+  <nav class="mh-sidebar">
+    <a href="{{ url_for('main.agents_hub') }}"><i data-feather="cpu"></i> View AI Reports</a>
+    <a href="{{ url_for('main.campaign_hub') }}?action=new"><i data-feather="zap"></i> Generate Campaigns <span class="new-badge">NEW</span></a>
+    <a href="{{ url_for('main.blog_list') }}"><i data-feather="edit-3"></i> Blog Hub</a>
+    <a href="{{ url_for('main.ads_hub') }}"><i data-feather="target"></i> Ads Manager</a>
+    <a href="{{ url_for('main.newsletters') }}"><i data-feather="mail"></i> Newsletters</a>
+    <a href="{{ url_for('main.agents_hub') }}"><i data-feather="aperture"></i> AI Hub</a>
+    <a href="{{ url_for('main.automations') }}"><i data-feather="repeat"></i> Automations & Triggers</a>
+    <a href="{{ url_for('main.events_dashboard') }}"><i data-feather="calendar"></i> Events</a>
+  </nav>
 
-<!-- Quick Actions Row -->
-<div class="row g-3 mb-4">
-  <div class="col-lg-3 col-md-6">
-    <a href="{{ url_for('main.campaign_hub') }}?action=new" class="quick-action-btn">
-      <i data-feather="mail" style="width:20px;"></i>
-      <div>
-        <strong>Create Campaign</strong>
-        <small class="d-block text-muted">Email or SMS outreach</small>
+  <div class="mh-main">
+    <div class="mh-topbar">
+      <div class="mh-welcome">
+        <h2>Welcome back, {{ current_user.first_name or current_user.username }}!</h2>
+        <p>Here's your marketing overview for the past 30 days.</p>
       </div>
-    </a>
-  </div>
-  <div class="col-lg-3 col-md-6">
-    <a href="{{ url_for('main.social_media') }}?action=new" class="quick-action-btn">
-      <i data-feather="share-2" style="width:20px;"></i>
-      <div>
-        <strong>Schedule Post</strong>
-        <small class="d-block text-muted">Social media content</small>
+      <div class="mh-filters">
+        <a href="{{ url_for('main.newsletters') }}" class="mh-filter-btn" title="Messages" style="position:relative;">
+          <i data-feather="mail" style="width:16px;height:16px;"></i>
+          <span style="position:absolute;top:-4px;right:-4px;background:#ef4444;color:#fff;font-size:0.55rem;font-weight:700;width:15px;height:15px;border-radius:50%;display:flex;align-items:center;justify-content:center;">3</span>
+        </a>
+        <a href="#" class="mh-filter-btn" title="Notifications" style="position:relative;">
+          <i data-feather="bell" style="width:16px;height:16px;"></i>
+          <span style="position:absolute;top:-4px;right:-4px;background:#f59e0b;color:#000;font-size:0.55rem;font-weight:700;width:15px;height:15px;border-radius:50%;display:flex;align-items:center;justify-content:center;">5</span>
+        </a>
+        <span class="mh-filter-btn"><i data-feather="calendar" style="width:14px;height:14px;"></i> Last 30 Days</span>
       </div>
-    </a>
-  </div>
-  <div class="col-lg-3 col-md-6">
-    <a href="{{ url_for('main.automations') }}" class="quick-action-btn">
-      <i data-feather="zap" style="width:20px;"></i>
-      <div>
-        <strong>New Automation</strong>
-        <small class="d-block text-muted">Build workflow</small>
-      </div>
-    </a>
-  </div>
-  <div class="col-lg-3 col-md-6">
-    <a href="{{ url_for('main.ab_tests') }}" class="quick-action-btn">
-      <i data-feather="git-branch" style="width:20px;"></i>
-      <div>
-        <strong>A/B Test</strong>
-        <small class="d-block text-muted">Optimize performance</small>
-      </div>
-    </a>
-  </div>
-</div>
+    </div>
 
-<!-- Main Content -->
-<div class="row g-4 mb-4">
-  <!-- Left Column: Channels & Content Calendar -->
-  <div class="col-lg-4">
-    <!-- Marketing Channels -->
-    <div class="action-card mb-4">
-      <div class="section-header">
-        <h5><i data-feather="radio" style="width:18px;color:#00ffb4;"></i> Channels</h5>
-        <a href="{{ url_for('main.settings_integrations') }}" class="text-muted small">Connect</a>
+    <div class="mh-tabs">
+      <a href="{{ url_for('main.marketing_hub') }}" class="mh-tab active">Dashboard</a>
+      <a href="{{ url_for('main.campaign_hub') }}" class="mh-tab">Campaigns</a>
+      <a href="{{ url_for('main.analytics_hub') }}" class="mh-tab">Analytics</a>
+      <a href="{{ url_for('main.contacts') }}" class="mh-tab">Audience</a>
+      <a href="{{ url_for('main.social_media') }}" class="mh-tab">Content</a>
+    </div>
+
+    <div class="mh-kpi-row">
+      <div class="mh-kpi">
+        <div class="mh-kpi-label">Revenue</div>
+        <div class="mh-kpi-value">${{ stats.revenue|default('82,450') }}</div>
+        <div class="mh-kpi-change up">
+          <i data-feather="trending-up" style="width:14px;height:14px;"></i> 15.6% vs last month
+        </div>
+        <div class="mh-kpi-icon"><i data-feather="dollar-sign"></i></div>
       </div>
-      <div class="row g-2">
-        <div class="col-4">
-          <a href="{{ url_for('main.social_media') }}?platform=instagram" class="channel-card text-decoration-none">
-            <div class="channel-icon" style="background:linear-gradient(45deg,#833ab4,#fd1d1d,#fcb045);">
-              <i data-feather="instagram" style="width:20px;color:#fff;"></i>
-            </div>
-            <div class="channel-count">{{ channels.instagram|default(0) }}</div>
-            <small class="text-muted">Instagram</small>
-          </a>
+      <div class="mh-kpi">
+        <div class="mh-kpi-label">Leads</div>
+        <div class="mh-kpi-value">{{ stats.total_subscribers|default('1,230') }}</div>
+        <div class="mh-kpi-change up">
+          <i data-feather="trending-up" style="width:14px;height:14px;"></i> 9.8% vs last month
         </div>
-        <div class="col-4">
-          <a href="{{ url_for('main.social_media') }}?platform=facebook" class="channel-card text-decoration-none">
-            <div class="channel-icon" style="background:#1877f2;">
-              <i data-feather="facebook" style="width:20px;color:#fff;"></i>
-            </div>
-            <div class="channel-count">{{ channels.facebook|default(0) }}</div>
-            <small class="text-muted">Facebook</small>
-          </a>
+        <div class="mh-kpi-icon"><i data-feather="users"></i></div>
+      </div>
+      <div class="mh-kpi">
+        <div class="mh-kpi-label">Conversion Rate</div>
+        <div class="mh-kpi-value">{{ stats.click_rate|default('4.6%') }}</div>
+        <div class="mh-kpi-change up">
+          <i data-feather="trending-up" style="width:14px;height:14px;"></i> 1.2% vs last month
         </div>
-        <div class="col-4">
-          <a href="{{ url_for('main.social_media') }}?platform=twitter" class="channel-card text-decoration-none">
-            <div class="channel-icon" style="background:#000;">
-              <i data-feather="twitter" style="width:20px;color:#fff;"></i>
-            </div>
-            <div class="channel-count">{{ channels.twitter|default(0) }}</div>
-            <small class="text-muted">X/Twitter</small>
-          </a>
+        <div class="mh-kpi-icon"><i data-feather="percent"></i></div>
+      </div>
+    </div>
+
+    <div class="row g-3 mb-3">
+      <div class="col-lg-4">
+        <div class="mh-card" style="padding:1rem;height:100%;">
+          <div class="mh-card-header" style="margin-bottom:0.5rem;">
+            <h6 style="font-size:0.85rem;"><i data-feather="cpu" style="width:14px;height:14px;color:#bc00ed;"></i> AI Agent Insights</h6>
+            <a href="{{ url_for('main.agents_hub') }}" style="font-size:0.72rem;color:#47f5ff;text-decoration:none;">View All</a>
+          </div>
+          <div class="ai-agent-insight">
+            <span class="ai-agent-badge"><i data-feather="mail" style="width:10px;height:10px;"></i> Email Agent</span>
+            <div class="ai-agent-title">Best Send Time</div>
+            <div class="ai-agent-detail">Tuesdays at 10 AM get 28% more opens based on last 90 days</div>
+          </div>
+          <div class="ai-agent-insight">
+            <span class="ai-agent-badge"><i data-feather="share-2" style="width:10px;height:10px;"></i> Social Agent</span>
+            <div class="ai-agent-title">Engagement Opportunity</div>
+            <div class="ai-agent-detail">Video content outperforms images by 3.2x this month</div>
+          </div>
+          <div class="ai-agent-insight">
+            <span class="ai-agent-badge"><i data-feather="heart" style="width:10px;height:10px;"></i> Retention Agent</span>
+            <div class="ai-agent-title">Win-Back Alert</div>
+            <div class="ai-agent-detail">42 contacts inactive 30+ days - send re-engagement</div>
+          </div>
         </div>
-        <div class="col-4">
-          <a href="{{ url_for('main.social_media') }}?platform=linkedin" class="channel-card text-decoration-none">
-            <div class="channel-icon" style="background:#0a66c2;">
-              <i data-feather="linkedin" style="width:20px;color:#fff;"></i>
+      </div>
+      <div class="col-lg-8">
+        <div class="mh-chart-area" style="height:100%;">
+          <div class="mh-chart-header">
+            <h6><i data-feather="bar-chart-2" style="width:16px;height:16px;color:var(--lux-cyan,#47f5ff);"></i> Customizable Analytics</h6>
+            <div class="mh-legend">
+              <span class="mh-legend-item"><span class="mh-legend-dot" style="background:#00ffb4;"></span> Email</span>
+              <span class="mh-legend-item"><span class="mh-legend-dot" style="background:#bc00ed;"></span> Social</span>
+              <span class="mh-legend-item"><span class="mh-legend-dot" style="background:#f59e0b;"></span> SEO</span>
             </div>
-            <div class="channel-count">{{ channels.linkedin|default(0) }}</div>
-            <small class="text-muted">LinkedIn</small>
-          </a>
-        </div>
-        <div class="col-4">
-          <a href="{{ url_for('main.social_media') }}?platform=youtube" class="channel-card text-decoration-none">
-            <div class="channel-icon" style="background:#ff0000;">
-              <i data-feather="youtube" style="width:20px;color:#fff;"></i>
-            </div>
-            <div class="channel-count">{{ channels.youtube|default(0) }}</div>
-            <small class="text-muted">YouTube</small>
-          </a>
-        </div>
-        <div class="col-4">
-          <a href="{{ url_for('main.campaign_hub') }}" class="channel-card text-decoration-none">
-            <div class="channel-icon" style="background:linear-gradient(135deg,#bc00ed,#00ffb4);">
-              <i data-feather="mail" style="width:20px;color:#fff;"></i>
-            </div>
-            <div class="channel-count">{{ channels.email|default(0) }}</div>
-            <small class="text-muted">Email</small>
-          </a>
+            <a href="{{ url_for('main.analytics_hub') }}" class="mh-filter-btn" style="font-size:0.75rem;">Customize Analytics</a>
+          </div>
+          <div style="position:relative;height:220px;">
+            <canvas id="analyticsChart"></canvas>
+          </div>
         </div>
       </div>
     </div>
 
-    <!-- Content Calendar Preview -->
-    <div class="action-card">
-      <div class="section-header">
-        <h5><i data-feather="calendar" style="width:18px;color:#00ffb4;"></i> Upcoming</h5>
-        <a href="{{ url_for('main.marketing_calendar') }}" class="text-muted small">Full Calendar</a>
-      </div>
-      {% if upcoming_content %}
-        {% for item in upcoming_content[:4] %}
-        <div class="content-preview">
-          <div class="d-flex justify-content-between align-items-start">
+    <div class="row g-3 mb-3">
+      <div class="col-lg-3">
+        <div class="mh-card">
+          <div class="mh-card-header">
+            <h6><i data-feather="check-square" style="width:16px;height:16px;color:var(--lux-cyan,#47f5ff);"></i> My Tasks</h6>
+          </div>
+          <div class="mh-task-item">
+            <div class="mh-task-check"></div>
             <div>
-              <strong class="small">{{ item.title }}</strong>
-              <small class="d-block text-muted">{{ item.platform }} • {{ item.scheduled_for }}</small>
+              <div class="mh-task-text">Call leads from webinar</div>
             </div>
-            <span class="badge" style="background:rgba(0,255,180,0.2);color:#00ffb4;">{{ item.type }}</span>
           </div>
-        </div>
-        {% endfor %}
-      {% else %}
-        <div class="content-preview">
-          <div class="d-flex justify-content-between align-items-start">
+          <div class="mh-task-item">
+            <div class="mh-task-check"></div>
             <div>
-              <strong class="small">New Product Launch</strong>
-              <small class="d-block text-muted">Email • Tomorrow 9:00 AM</small>
+              <div class="mh-task-text">Schedule Spring Sale email series</div>
+              <div class="mh-task-due">Due today</div>
             </div>
-            <span class="badge" style="background:rgba(0,255,180,0.2);color:#00ffb4;">Email</span>
           </div>
-        </div>
-        <div class="content-preview">
-          <div class="d-flex justify-content-between align-items-start">
+          <div class="mh-task-item">
+            <div class="mh-task-check"></div>
             <div>
-              <strong class="small">Weekly Tips #42</strong>
-              <small class="d-block text-muted">Instagram • Wed 2:00 PM</small>
+              <div class="mh-task-text">Optimize ad targeting</div>
             </div>
-            <span class="badge" style="background:rgba(131,58,180,0.3);color:#bc00ed;">Social</span>
           </div>
-        </div>
-        <div class="content-preview">
-          <div class="d-flex justify-content-between align-items-start">
+          <div class="mh-task-item">
+            <div class="mh-task-check"></div>
             <div>
-              <strong class="small">Customer Success Story</strong>
-              <small class="d-block text-muted">LinkedIn • Thu 11:00 AM</small>
+              <div class="mh-task-text">Create new blog topic ideas</div>
             </div>
-            <span class="badge" style="background:rgba(10,102,194,0.3);color:#0a66c2;">Social</span>
           </div>
         </div>
-      {% endif %}
-    </div>
-  </div>
+      </div>
 
-  <!-- Middle Column: Campaigns & Performance -->
-  <div class="col-lg-5">
-    <!-- Active Campaigns -->
-    <div class="action-card mb-4">
-      <div class="section-header">
-        <h5><i data-feather="send" style="width:18px;color:#00ffb4;"></i> Active Campaigns</h5>
-        <a href="{{ url_for('main.campaign_hub') }}" class="text-muted small">View All</a>
+      <div class="col-lg-3">
+        <div class="mh-card">
+          <div class="mh-card-header">
+            <h6><i data-feather="shield" style="width:16px;height:16px;color:#bc00ed;"></i> Content Approval</h6>
+          </div>
+          <div class="mh-approval-item">
+            <div class="mh-approval-icon" style="background:rgba(0,229,255,0.15);">
+              <i data-feather="file-text" style="width:18px;height:18px;color:#47f5ff;"></i>
+            </div>
+            <div style="flex:1;min-width:0;">
+              <div style="font-size:0.82rem;color:#fff;font-weight:500;">SEO Guide for Beginners</div>
+              <div style="font-size:0.7rem;color:#888;">Blog &bull; Pending</div>
+            </div>
+            <span class="mh-approval-status" style="background:rgba(245,158,11,0.2);color:#f59e0b;">Pending</span>
+          </div>
+          <div class="mh-approval-item">
+            <div class="mh-approval-icon" style="background:rgba(0,255,180,0.15);">
+              <i data-feather="mail" style="width:18px;height:18px;color:#00ffb4;"></i>
+            </div>
+            <div style="flex:1;min-width:0;">
+              <div style="font-size:0.82rem;color:#fff;font-weight:500;">Spring Sale Newsletter</div>
+              <div style="font-size:0.7rem;color:#888;">Email &bull; Approved</div>
+            </div>
+            <span class="mh-approval-status" style="background:rgba(0,255,180,0.2);color:#00ffb4;">Approved</span>
+          </div>
+          <div class="mh-approval-item">
+            <div class="mh-approval-icon" style="background:rgba(239,68,68,0.15);">
+              <i data-feather="share-2" style="width:18px;height:18px;color:#ef4444;"></i>
+            </div>
+            <div style="flex:1;min-width:0;">
+              <div style="font-size:0.82rem;color:#fff;font-weight:500;">New Product Launch Ad</div>
+              <div style="font-size:0.7rem;color:#888;">Social Ad &bull; Rejected</div>
+            </div>
+            <span class="mh-approval-status" style="background:rgba(239,68,68,0.2);color:#ef4444;">Rejected</span>
+          </div>
+        </div>
       </div>
-      {% if campaigns %}
-        {% for campaign in campaigns[:4] %}
-        <div class="campaign-item" onclick="window.location='{{ url_for('main.campaign_hub') }}'">
-          <div class="d-flex justify-content-between align-items-start">
-            <div>
-              <strong>{{ campaign.name|default('Untitled Campaign') }}</strong>
-              <small class="d-block text-muted">{{ campaign.status|default('draft')|capitalize }}</small>
-            </div>
-            <span class="campaign-status-{{ (campaign.status|default('draft'))|lower }}">
-              <i data-feather="{% if campaign.status == 'active' %}activity{% elif campaign.status == 'scheduled' %}clock{% else %}edit{% endif %}" style="width:14px;"></i>
-              {{ campaign.status|default('draft')|capitalize }}
-            </span>
-          </div>
-          <div class="d-flex gap-3 mt-2">
-            <small class="text-muted">Created: {{ campaign.created_at.strftime('%m/%d/%Y') if campaign.created_at else 'N/A' }}</small>
-          </div>
-        </div>
-        {% endfor %}
-      {% else %}
-        <div class="campaign-item">
-          <div class="d-flex justify-content-between align-items-start">
-            <div>
-              <strong>Spring Sale Announcement</strong>
-              <small class="d-block text-muted">Email • 1,245 recipients</small>
-            </div>
-            <span class="campaign-status-active">
-              <i data-feather="activity" style="width:14px;"></i> Active
-            </span>
-          </div>
-          <div class="d-flex gap-3 mt-2">
-            <small><span class="text-muted">Opens:</span> <strong>28%</strong></small>
-            <small><span class="text-muted">Clicks:</span> <strong>4.5%</strong></small>
-            <small><span class="text-muted">Conv:</span> <strong>2.1%</strong></small>
-          </div>
-        </div>
-        <div class="campaign-item">
-          <div class="d-flex justify-content-between align-items-start">
-            <div>
-              <strong>Newsletter Week 6</strong>
-              <small class="d-block text-muted">Email • 3,820 recipients</small>
-            </div>
-            <span class="campaign-status-scheduled">
-              <i data-feather="clock" style="width:14px;"></i> Scheduled
-            </span>
-          </div>
-          <div class="d-flex gap-3 mt-2">
-            <small class="text-muted">Sending in 2 days</small>
-          </div>
-        </div>
-        <div class="campaign-item">
-          <div class="d-flex justify-content-between align-items-start">
-            <div>
-              <strong>Re-engagement Series</strong>
-              <small class="d-block text-muted">Automation • 892 in queue</small>
-            </div>
-            <span class="campaign-status-active">
-              <i data-feather="zap" style="width:14px;"></i> Running
-            </span>
-          </div>
-          <div class="d-flex gap-3 mt-2">
-            <small><span class="text-muted">Converted:</span> <strong>12</strong></small>
-            <small><span class="text-muted">Unsubscribed:</span> <strong>3</strong></small>
-          </div>
-        </div>
-      {% endif %}
-    </div>
 
-    <!-- Performance Chart -->
-    <div class="action-card">
-      <div class="section-header">
-        <h5><i data-feather="bar-chart-2" style="width:18px;color:#00ffb4;"></i> Performance</h5>
-        <a href="{{ url_for('main.analytics_hub') }}" class="text-muted small">Full Analytics</a>
-      </div>
-      <canvas id="performanceChart" height="180"></canvas>
-    </div>
-  </div>
-
-  <!-- Right Column: AI & Insights -->
-  <div class="col-lg-3">
-    <!-- AI Content Suggestions -->
-    <div class="action-card mb-4">
-      <div class="section-header">
-        <h5><i data-feather="cpu" style="width:18px;color:#00ffb4;"></i> AI Suggestions</h5>
-      </div>
-      <div class="ai-suggestion">
-        <div>
-          <span class="ai-badge">AI</span>
-        </div>
-        <div>
-          <strong class="small d-block">Best Send Time</strong>
-          <small class="text-muted">Your audience engages most on Tuesdays at 10 AM. Schedule your next campaign then.</small>
-          <a href="#" class="small d-block mt-1" style="color:#00ffb4;">Apply to drafts →</a>
-        </div>
-      </div>
-      <div class="ai-suggestion">
-        <div>
-          <span class="ai-badge">AI</span>
-        </div>
-        <div>
-          <strong class="small d-block">Subject Line Ideas</strong>
-          <small class="text-muted">Questions in subject lines increased your opens by 15%.</small>
-          <a href="#" class="small d-block mt-1" style="color:#00ffb4;">Generate ideas →</a>
-        </div>
-      </div>
-      <div class="ai-suggestion">
-        <div>
-          <span class="ai-badge">AI</span>
-        </div>
-        <div>
-          <strong class="small d-block">Segment Alert</strong>
-          <small class="text-muted">42 contacts haven't engaged in 30+ days. Create a win-back campaign?</small>
-          <a href="{{ url_for('main.campaign_hub') }}?template=winback" class="small d-block mt-1" style="color:#00ffb4;">Create campaign →</a>
+      <div class="col-lg-6">
+        <div class="mh-card">
+          <div class="mh-card-header">
+            <h6><i data-feather="calendar" style="width:16px;height:16px;color:#00ffb4;"></i> Marketing Calendar</h6>
+            <div class="mh-cal-nav">
+              <button class="mh-cal-nav-btn" onclick="changeCalMonth(-1)"><i data-feather="chevron-left" style="width:14px;height:14px;"></i></button>
+              <span class="mh-cal-month" id="calMonthLabel">February 2026</span>
+              <button class="mh-cal-nav-btn" onclick="changeCalMonth(1)"><i data-feather="chevron-right" style="width:14px;height:14px;"></i></button>
+              <a href="{{ url_for('main.marketing_calendar') }}" style="font-size:0.72rem;color:#47f5ff;margin-left:8px;">View All</a>
+            </div>
+          </div>
+          <div class="mh-cal-mini">
+            <div class="mh-cal-grid" style="background:rgba(0,0,0,0.2);padding:4px 0;">
+              <div class="mh-cal-dayname">Sun</div>
+              <div class="mh-cal-dayname">Mon</div>
+              <div class="mh-cal-dayname">Tue</div>
+              <div class="mh-cal-dayname">Wed</div>
+              <div class="mh-cal-dayname">Thu</div>
+              <div class="mh-cal-dayname">Fri</div>
+              <div class="mh-cal-dayname weekend">Sat</div>
+            </div>
+            <div class="mh-cal-grid" id="calGrid" style="padding:4px;">
+            </div>
+          </div>
+          <div style="margin-top:10px;">
+            <div class="mh-cal-event-row">
+              <span class="mh-cal-event-dot" style="background:#3b82f6;"></span>
+              <strong style="font-size:0.8rem;color:#fff;">Blog Post</strong>
+              <span class="mh-cal-event-time">Feb 22</span>
+            </div>
+            <div class="mh-cal-event-row">
+              <span class="mh-cal-event-dot" style="background:#00ffb4;"></span>
+              <strong style="font-size:0.8rem;color:#fff;">Newsletter</strong>
+              <span class="mh-cal-event-time">Feb 23</span>
+            </div>
+            <div class="mh-cal-event-row">
+              <span class="mh-cal-event-dot" style="background:#bc00ed;"></span>
+              <strong style="font-size:0.8rem;color:#fff;">Social Post</strong>
+              <span class="mh-cal-event-time">Feb 25</span>
+            </div>
+            <div class="mh-cal-event-row">
+              <span class="mh-cal-event-dot" style="background:#f59e0b;"></span>
+              <strong style="font-size:0.8rem;color:#fff;">Newsletter Launch</strong>
+              <span class="mh-cal-event-time">6PM Feb 26</span>
+            </div>
+            <div class="mh-cal-event-row">
+              <span class="mh-cal-event-dot" style="background:#ef4444;"></span>
+              <strong style="font-size:0.8rem;color:#fff;">Social Campaign</strong>
+              <span class="mh-cal-event-time">4PM Feb 28</span>
+            </div>
+          </div>
+          <div class="mh-cal-legend">
+            <span class="mh-cal-legend-item"><span class="mh-cal-legend-dot" style="background:#3b82f6;"></span> Blog Post</span>
+            <span class="mh-cal-legend-item"><span class="mh-cal-legend-dot" style="background:#00ffb4;"></span> Newsletter</span>
+            <span class="mh-cal-legend-item"><span class="mh-cal-legend-dot" style="background:#bc00ed;"></span> Social</span>
+            <span class="mh-cal-legend-item"><span class="mh-cal-legend-dot" style="background:#f59e0b;"></span> Email</span>
+          </div>
+          <a href="{{ url_for('main.marketing_calendar') }}" class="mh-filter-btn d-flex justify-content-center mt-3" style="text-decoration:none;color:#00ffb4;font-size:0.8rem;width:100%;">
+            + View More
+          </a>
         </div>
       </div>
     </div>
 
-    <!-- Quick Stats -->
-    <div class="action-card">
-      <div class="section-header">
-        <h5><i data-feather="trending-up" style="width:18px;color:#00ffb4;"></i> This Week</h5>
-      </div>
-      <div class="d-flex justify-content-between align-items-center py-2 border-bottom" style="border-color:rgba(255,255,255,0.1)!important;">
-        <span class="text-muted">Emails Sent</span>
-        <strong>{{ stats.emails_sent|default(1247) }}</strong>
-      </div>
-      <div class="d-flex justify-content-between align-items-center py-2 border-bottom" style="border-color:rgba(255,255,255,0.1)!important;">
-        <span class="text-muted">Social Posts</span>
-        <strong>{{ stats.social_posts|default(12) }}</strong>
-      </div>
-      <div class="d-flex justify-content-between align-items-center py-2 border-bottom" style="border-color:rgba(255,255,255,0.1)!important;">
-        <span class="text-muted">New Subscribers</span>
-        <strong class="text-success">+{{ stats.new_subs|default(128) }}</strong>
-      </div>
-      <div class="d-flex justify-content-between align-items-center py-2 border-bottom" style="border-color:rgba(255,255,255,0.1)!important;">
-        <span class="text-muted">Unsubscribes</span>
-        <strong class="text-danger">-{{ stats.unsubs|default(7) }}</strong>
-      </div>
-      <div class="d-flex justify-content-between align-items-center py-2">
-        <span class="text-muted">Landing Page Views</span>
-        <strong>{{ stats.landing_views|default(892) }}</strong>
-      </div>
-    </div>
-  </div>
-</div>
-
-<!-- Analytics Quick Access -->
-<div class="row g-3 mb-4">
-  <div class="col-12">
-    <a href="{{ url_for('main.analytics_hub') }}" class="action-card d-block text-decoration-none" style="background:linear-gradient(135deg, rgba(188,0,237,0.15), rgba(0,255,180,0.1)); border-color:rgba(188,0,237,0.3);">
-      <div class="d-flex align-items-center justify-content-between">
-        <div class="d-flex align-items-center gap-3">
-          <i data-feather="pie-chart" style="width:28px;height:28px;color:#bc00ed;"></i>
-          <div>
-            <h5 class="mb-0" style="color:#fff;">Analytics Dashboard</h5>
-            <small class="text-muted">View campaign performance, engagement metrics, ROI reports & conversion tracking</small>
+    <div class="row g-3 mb-3">
+      <div class="col-lg-4">
+        <div class="mh-card sticky-note">
+          <div class="mh-card-header">
+            <h6><i data-feather="edit" style="width:16px;height:16px;color:#f59e0b;"></i> Sticky Note</h6>
+          </div>
+          <div class="sticky-inner">
+            <div style="font-size:0.85rem;font-weight:600;color:#f59e0b;margin-bottom:6px;">To-Do Later:</div>
+            <div style="font-size:0.82rem;color:#ccc;line-height:1.5;">
+              Organize client testimonials<br>and update case studies!
+            </div>
           </div>
         </div>
-        <i data-feather="arrow-right" style="width:20px;color:#bc00ed;"></i>
       </div>
-    </a>
-  </div>
-</div>
-
-<!-- Marketing Tools Grid -->
-<div class="row g-3 mb-4">
-  <div class="col-12">
-    <div class="action-card">
-      <div class="section-header">
-        <h5><i data-feather="grid" style="width:18px;color:#00ffb4;"></i> Marketing Tools</h5>
-      </div>
-      <div class="row g-3">
-        <div class="col-lg-2 col-md-4 col-6">
-          <a href="{{ url_for('main.newsletters') }}" class="channel-card text-decoration-none d-block">
-            <i data-feather="file-text" style="width:24px;color:#00ffb4;margin-bottom:0.5rem;"></i>
-            <div class="small"><strong>Newsletters</strong></div>
-            <small class="text-muted">Email templates</small>
-          </a>
-        </div>
-        <div class="col-lg-2 col-md-4 col-6">
-          <a href="{{ url_for('main.automations') }}" class="channel-card text-decoration-none d-block">
-            <i data-feather="zap" style="width:24px;color:#f59e0b;margin-bottom:0.5rem;"></i>
-            <div class="small"><strong>Automations</strong></div>
-            <small class="text-muted">Triggers & workflows</small>
-          </a>
-        </div>
-        <div class="col-lg-2 col-md-4 col-6">
-          <a href="{{ url_for('main.sms_campaigns') }}" class="channel-card text-decoration-none d-block">
-            <i data-feather="smartphone" style="width:24px;color:#10b981;margin-bottom:0.5rem;"></i>
-            <div class="small"><strong>Text Campaigns</strong></div>
-            <small class="text-muted">SMS marketing</small>
-          </a>
-        </div>
-        <div class="col-lg-2 col-md-4 col-6">
-          <a href="{{ url_for('main.landing_pages') }}" class="channel-card text-decoration-none d-block">
-            <i data-feather="layout" style="width:24px;color:#3b82f6;margin-bottom:0.5rem;"></i>
-            <div class="small"><strong>Landing Pages</strong></div>
-            <small class="text-muted">Page builder</small>
-          </a>
-        </div>
-        <div class="col-lg-2 col-md-4 col-6">
-          <a href="{{ url_for('main.events_dashboard') }}" class="channel-card text-decoration-none d-block">
-            <i data-feather="map-pin" style="width:24px;color:#ef4444;margin-bottom:0.5rem;"></i>
-            <div class="small"><strong>Events</strong></div>
-            <small class="text-muted">Event management</small>
-          </a>
-        </div>
-        <div class="col-lg-2 col-md-4 col-6">
-          <a href="{{ url_for('main.surveys') }}" class="channel-card text-decoration-none d-block">
-            <i data-feather="clipboard" style="width:24px;color:#8b5cf6;margin-bottom:0.5rem;"></i>
-            <div class="small"><strong>Surveys</strong></div>
-            <small class="text-muted">Customer feedback</small>
-          </a>
-        </div>
-        <div class="col-lg-2 col-md-4 col-6">
-          <a href="{{ url_for('main.polls_management') }}" class="channel-card text-decoration-none d-block">
-            <i data-feather="bar-chart" style="width:24px;color:#f97316;margin-bottom:0.5rem;"></i>
-            <div class="small"><strong>Polls</strong></div>
-            <small class="text-muted">Quick polls</small>
-          </a>
-        </div>
-        <div class="col-lg-2 col-md-4 col-6">
-          <a href="{{ url_for('main.ab_tests') }}" class="channel-card text-decoration-none d-block">
-            <i data-feather="git-branch" style="width:24px;color:#06b6d4;margin-bottom:0.5rem;"></i>
-            <div class="small"><strong>A/B Tests</strong></div>
-            <small class="text-muted">Experiments</small>
-          </a>
-        </div>
-        <div class="col-lg-2 col-md-4 col-6">
-          <a href="{{ url_for('main.contacts') }}" class="channel-card text-decoration-none d-block">
-            <i data-feather="users" style="width:24px;color:#e4055c;margin-bottom:0.5rem;"></i>
-            <div class="small"><strong>Audiences</strong></div>
-            <small class="text-muted">Segments</small>
-          </a>
-        </div>
-        <div class="col-lg-2 col-md-4 col-6">
-          <a href="{{ url_for('main.marketing_calendar') }}" class="channel-card text-decoration-none d-block">
-            <i data-feather="calendar" style="width:24px;color:#00ffb4;margin-bottom:0.5rem;"></i>
-            <div class="small"><strong>Calendar</strong></div>
-            <small class="text-muted">Schedule</small>
-          </a>
-        </div>
-        <div class="col-lg-2 col-md-4 col-6">
-          <a href="{{ url_for('main.blog_list') }}" class="channel-card text-decoration-none d-block">
-            <i data-feather="edit-3" style="width:24px;color:#ec4899;margin-bottom:0.5rem;"></i>
-            <div class="small"><strong>Blog</strong></div>
-            <small class="text-muted">Content posts</small>
-          </a>
-        </div>
-        <div class="col-lg-2 col-md-4 col-6">
-          <a href="{{ url_for('main.analytics_hub') }}" class="channel-card text-decoration-none d-block">
-            <i data-feather="pie-chart" style="width:24px;color:#bc00ed;margin-bottom:0.5rem;"></i>
-            <div class="small"><strong>Analytics</strong></div>
-            <small class="text-muted">Reports & ROI</small>
-          </a>
+      <div class="col-lg-8">
+        <div class="mh-card">
+          <div class="mh-card-header">
+            <h6><i data-feather="calendar" style="width:16px;height:16px;color:var(--lux-cyan,#47f5ff);"></i> Upcoming Schedule</h6>
+            <a href="{{ url_for('main.marketing_calendar') }}">View All</a>
+          </div>
+          <div class="row">
+            <div class="col-md-6">
+              <div class="mh-cal-event-row">
+                <span class="mh-cal-event-dot" style="background:#3b82f6;"></span>
+                <strong style="font-size:0.8rem;color:#fff;">Blog Post</strong>
+                <span class="mh-cal-event-time">Feb 22</span>
+              </div>
+              <div class="mh-cal-event-row">
+                <span class="mh-cal-event-dot" style="background:#00ffb4;"></span>
+                <strong style="font-size:0.8rem;color:#fff;">Newsletter</strong>
+                <span class="mh-cal-event-time">Feb 23</span>
+              </div>
+              <div class="mh-cal-event-row">
+                <span class="mh-cal-event-dot" style="background:#bc00ed;"></span>
+                <strong style="font-size:0.8rem;color:#fff;">Social Post</strong>
+                <span class="mh-cal-event-time">Feb 25</span>
+              </div>
+            </div>
+            <div class="col-md-6">
+              <div class="mh-cal-event-row">
+                <span class="mh-cal-event-dot" style="background:#f59e0b;"></span>
+                <strong style="font-size:0.8rem;color:#fff;">Newsletter Launch</strong>
+                <span class="mh-cal-event-time">6PM</span>
+              </div>
+              <div class="mh-cal-event-row">
+                <span class="mh-cal-event-dot" style="background:#ef4444;"></span>
+                <strong style="font-size:0.8rem;color:#fff;">Social Post</strong>
+                <span class="mh-cal-event-time">4PM</span>
+              </div>
+              <div class="mh-cal-event-row">
+                <span class="mh-cal-event-dot" style="background:#00ffb4;"></span>
+                <strong style="font-size:0.8rem;color:#fff;">Newsletter Launch</strong>
+                <span class="mh-cal-event-time">6PM</span>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
+
   </div>
 </div>
 
 <script>
 document.addEventListener('DOMContentLoaded', function() {
-  const ctx = document.getElementById('performanceChart');
+  var ctx = document.getElementById('analyticsChart');
   if (ctx) {
     new Chart(ctx, {
       type: 'line',
       data: {
-        labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
+        labels: ['Jan', 'Feb', 'Mar', 'Apr'],
         datasets: [{
-          label: 'Opens',
-          data: [320, 450, 380, 520, 490, 210, 180],
+          label: 'Email',
+          data: [42, 55, 48, 65],
           borderColor: '#00ffb4',
-          backgroundColor: 'rgba(0, 255, 180, 0.1)',
+          backgroundColor: 'rgba(0, 255, 180, 0.08)',
           tension: 0.4,
-          fill: true
+          fill: true,
+          pointRadius: 3,
+          pointBackgroundColor: '#00ffb4'
         }, {
-          label: 'Clicks',
-          data: [45, 82, 55, 95, 78, 32, 28],
+          label: 'Social',
+          data: [28, 35, 45, 52],
           borderColor: '#bc00ed',
-          backgroundColor: 'rgba(188, 0, 237, 0.1)',
+          backgroundColor: 'rgba(188, 0, 237, 0.08)',
           tension: 0.4,
-          fill: true
+          fill: true,
+          pointRadius: 3,
+          pointBackgroundColor: '#bc00ed'
+        }, {
+          label: 'SEO',
+          data: [15, 22, 30, 38],
+          borderColor: '#f59e0b',
+          backgroundColor: 'rgba(245, 158, 11, 0.08)',
+          tension: 0.4,
+          fill: true,
+          pointRadius: 3,
+          pointBackgroundColor: '#f59e0b'
         }]
       },
       options: {
         responsive: true,
         maintainAspectRatio: false,
+        animation: { duration: 800 },
+        resizeDelay: 200,
+        interaction: { intersect: false, mode: 'index' },
         plugins: {
-          legend: {
-            position: 'bottom',
-            labels: { color: '#aaa', usePointStyle: true, padding: 20 }
+          legend: { display: false },
+          tooltip: {
+            backgroundColor: 'rgba(12,14,20,0.95)',
+            borderColor: 'rgba(255,255,255,0.1)',
+            borderWidth: 1,
+            titleColor: '#fff',
+            bodyColor: '#ccc',
+            padding: 12,
+            cornerRadius: 8
           }
         },
         scales: {
-          x: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#666' } },
-          y: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#666' } }
+          x: {
+            grid: { color: 'rgba(255,255,255,0.04)' },
+            ticks: { color: '#666', font: { size: 11 } }
+          },
+          y: {
+            grid: { color: 'rgba(255,255,255,0.04)' },
+            ticks: { color: '#666', font: { size: 11 } }
+          }
         }
       }
     });
   }
+
+  var calEvents = {
+    5: '#3b82f6', 8: '#ef4444', 12: '#00ffb4', 15: '#bc00ed',
+    18: '#f59e0b', 22: '#3b82f6', 23: '#00ffb4', 25: '#bc00ed',
+    26: '#f59e0b', 28: '#ef4444'
+  };
+
+  var calDate = new Date(2026, 1, 1);
+  window._calDate = calDate;
+  window._calEvents = calEvents;
+  renderCalendar(calDate, calEvents);
 });
 
-function setDefaultHub(hub) {
-  fetch('/api/user/set-default-hub', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'X-CSRFToken': document.querySelector('meta[name="csrf-token"]').content
-    },
-    body: JSON.stringify({ hub: hub })
-  })
-  .then(r => r.json())
-  .then(data => {
-    if (data.success) {
-      alert('Marketing Hub set as your default!');
-    } else {
-      alert('Failed to set default hub');
+function renderCalendar(date, events) {
+  var grid = document.getElementById('calGrid');
+  if (!grid) return;
+  grid.innerHTML = '';
+
+  var year = date.getFullYear();
+  var month = date.getMonth();
+  var firstDay = new Date(year, month, 1).getDay();
+  var daysInMonth = new Date(year, month + 1, 0).getDate();
+  var today = new Date();
+
+  var monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  var label = document.getElementById('calMonthLabel');
+  if (label) label.textContent = monthNames[month] + ' ' + year;
+
+  for (var i = 0; i < firstDay; i++) {
+    var empty = document.createElement('div');
+    empty.className = 'mh-cal-day';
+    empty.style.visibility = 'hidden';
+    grid.appendChild(empty);
+  }
+
+  for (var d = 1; d <= daysInMonth; d++) {
+    var cell = document.createElement('div');
+    cell.className = 'mh-cal-day';
+    cell.textContent = d;
+
+    if (d === today.getDate() && month === today.getMonth() && year === today.getFullYear()) {
+      cell.classList.add('today');
     }
-  });
+
+    if (events[d]) {
+      cell.classList.add('has-event');
+      cell.style.setProperty('--event-color', events[d]);
+      var dot = document.createElement('span');
+      dot.style.cssText = 'position:absolute;bottom:2px;left:50%;transform:translateX(-50%);width:4px;height:4px;border-radius:50%;background:' + events[d];
+      cell.style.position = 'relative';
+      cell.appendChild(dot);
+    }
+
+    grid.appendChild(cell);
+  }
+
+  feather.replace();
+}
+
+function changeCalMonth(dir) {
+  var d = window._calDate;
+  d.setMonth(d.getMonth() + dir);
+  renderCalendar(d, window._calEvents);
 }
 </script>
 {% endblock %}

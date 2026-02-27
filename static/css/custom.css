@@ -15,6 +15,12 @@
 
   --lux-dark-bg: #000000;
   --lux-card-bg: #0a0a0a;
+  --lux-muted: #94a3b8;
+  --lux-bg: #000000;
+  --lux-text: #f5f5f5;
+  --lux-border: rgba(255, 255, 255, 0.08);
+  --lux-shadow: 0 4px 24px rgba(0, 0, 0, 0.4);
+  --lux-cyan: #47f5ff;
 
   --lux-primary-glow: color-mix(in srgb, var(--lux-primary, #bc00ed), transparent 60%);
   --lux-secondary-glow: color-mix(in srgb, var(--lux-secondary, #00ffb4), transparent 60%);
@@ -63,6 +69,8 @@ main.container {
   box-shadow: 0 2px 20px rgba(0, 0, 0, 0.5);
   position: relative;
   z-index: 1030;
+}
+
 a {
   color: var(--lux-cyan);
   text-decoration: none;
@@ -110,6 +118,14 @@ a:hover {
 .nav-link {
   color: var(--lux-secondary, #00ffb4) !important;
   font-weight: 500;
+}
+
+.nav-link:hover {
+  color: var(--lux-primary, #bc00ed) !important;
+  background: var(--lux-primary-15);
+  border-radius: 6px;
+}
+
 .brand {
   display: flex;
   align-items: center;
@@ -132,10 +148,6 @@ a:hover {
   transition: transform 0.2s ease;
 }
 
-.nav-link:hover {
-  color: var(--lux-primary, #bc00ed) !important;
-  background: var(--lux-primary-15);
-  border-radius: 6px;
 .back-arrow-glow svg {
   width: 20px;
   height: 20px;
@@ -177,6 +189,8 @@ a:hover {
   color: var(--lux-pearl-white);
   font-weight: 600;
   padding: 1rem 1.5rem;
+}
+
 .back-arrow-glow:hover svg {
   stroke: var(--lux-cyan);
 }
@@ -208,17 +222,10 @@ a:hover {
   background-clip: text;
 }
 
-.brand-stack {
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  line-height: 1;
-  margin-left: 2px;
-}
-
 .brand-lux-img {
-  height: 32px;
-  width: auto;
+  height: 38px !important;
+  max-height: 38px !important;
+  width: auto !important;
   mix-blend-mode: screen;
   vertical-align: middle;
 }
@@ -226,20 +233,25 @@ a:hover {
 .brand-stack {
   display: flex;
   flex-direction: column;
+  align-items: flex-start;
   justify-content: center;
-  height: 32px;
+  height: 38px;
   line-height: 1;
   margin-left: 2px;
 }
 
 .brand-it {
-  font-size: 1.1rem;
-  font-weight: 900;
-  font-style: italic;
+  font-size: 1.2rem;
+  font-weight: 800;
   color: #00e5ff;
-  letter-spacing: 0.02em;
   line-height: 1;
-  text-shadow: 0 0 10px rgba(0, 229, 255, 0.4);
+}
+
+.brand-app {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #a855f7;
+  line-height: 1;
 }
 
 /* Buttons - Brand Color Gradients */
@@ -317,13 +329,6 @@ a:hover {
   background-color: rgba(42, 42, 42, 0.8);
   border: 2px solid rgba(192, 192, 192, 0.15);
   color: var(--lux-pearl-white);
-.brand-app {
-  font-size: 0.55rem;
-  font-weight: 600;
-  color: #a855f7;
-  letter-spacing: 0.02em;
-  line-height: 1;
-  margin-top: 1px;
 }
 
 .user-greeting {
@@ -361,6 +366,8 @@ a:hover {
   border-color: var(--lux-primary, #bc00ed);
   box-shadow: 0 0 0 0.25rem var(--lux-primary-25);
   color: var(--lux-pearl-white);
+}
+
 .company-icon img {
   width: 100%;
   height: 100%;
@@ -395,6 +402,8 @@ a:hover {
   border-color: var(--lux-primary, #bc00ed);
   box-shadow: 0 0 0 0.25rem var(--lux-primary-25);
   color: var(--lux-pearl-white);
+}
+
 .gear-btn svg {
   width: 18px;
   height: 18px;
@@ -432,23 +441,18 @@ a:hover {
   font-weight: 600;
   padding: 1rem;
   border-bottom: 2px solid var(--lux-primary-25);
+}
+
 .gear-btn:hover svg {
   stroke: var(--lux-cyan);
   transform: rotate(90deg);
 }
 
 .brand img {
-  height: 42px;
-  width: auto;
-  filter: drop-shadow(0 6px 16px rgba(71, 245, 255, 0.25));
-}
-
-.brand span {
-  font-size: 1.1rem;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--lux-text);
+  height: 38px !important;
+  max-height: 38px !important;
+  width: auto !important;
+  mix-blend-mode: screen;
 }
 
 .header-title {
@@ -464,6 +468,8 @@ a:hover {
 /* Badges - Brand Status */
 .badge {
   font-size: 0.8em;
+}
+
 .header-title h1 {
   font-size: 1.15rem;
   margin: 0;
@@ -517,6 +523,8 @@ a:hover {
 .login-container {
   min-height: 100vh;
   background: radial-gradient(ellipse at center, var(--lux-primary-25) 0%, var(--lux-dark-bg) 70%);
+}
+
 .btn-lux-primary {
   background: rgba(71, 245, 255, 0.15);
   color: var(--lux-cyan);
@@ -606,6 +614,8 @@ a:hover {
   border: 2px solid rgba(192, 192, 192, 0.1);
   border-radius: 12px;
   padding: 2rem;
+}
+
 .report-header {
   display: flex;
   flex-direction: column;
@@ -657,6 +667,8 @@ a:hover {
   font-weight: 700;
   margin-bottom: 0.5rem;
   text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+}
+
 .report-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
@@ -725,6 +737,8 @@ a:hover {
 .modal-header {
   border-bottom: 2px solid var(--lux-primary-25);
   background: linear-gradient(135deg, var(--lux-primary-15) 0%, var(--lux-secondary-15) 100%);
+}
+
 .section-title {
   display: flex;
   align-items: center;
@@ -844,6 +858,8 @@ a:hover {
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
   z-index: 1050;
   position: absolute;
+}
+
 .glow-orb {
   position: absolute;
   width: 220px;
@@ -1005,6 +1021,8 @@ a:hover {
 ::-webkit-scrollbar {
   width: 12px;
   height: 12px;
+}
+
 .table {
   color: var(--lux-text);
 }
@@ -1081,6 +1099,8 @@ p, span, div {
 *:focus-visible {
   outline: 2px solid var(--lux-primary, #bc00ed);
   outline-offset: 2px;
+}
+
 .dropdown-item {
   color: var(--lux-text);
 }

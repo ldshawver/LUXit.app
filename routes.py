@@ -156,16 +156,10 @@ def set_hub_preference():
         logger.error(f"Set hub preference error: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
-@main_bp.route('/')
+@main_bp.route('/dashboard')
 @login_required
 def dashboard():
-    """Dashboard - redirects to preferred hub or shows tile dashboard"""
-    hub = getattr(current_user, 'preferred_hub', None)
-    from_hub = request.args.get('from_hub')
-    if hub == 'sales' and not from_hub:
-        return redirect(url_for('main.lux_crm'))
-    elif hub == 'marketing' and not from_hub:
-        pass
+    """Sales Hub Dashboard - shows deals, pipeline, and CRM metrics"""
     total_contacts = safe_count(
         Contact.query.filter_by(is_active=True),
         context="active contacts"
@@ -182,35 +176,62 @@ def dashboard():
         recent_campaigns = Campaign.query.order_by(Campaign.created_at.desc()).limit(5).all()
     except Exception as exc:
         logger.warning("Dashboard recent campaigns query failed: %s", exc)
+        try:
+            db.session.rollback()
+        except Exception:
+            pass
         recent_campaigns = []
     
     ai_status = "enabled" if os.getenv("OPENAI_API_KEY") else "disabled"
     scheduler_status = "running" if _scheduler_status() == "running" else "disabled"
     
-    company_id = getattr(current_user, 'default_company_id', None)
+    try:
+        company_id = getattr(current_user, 'default_company_id', None)
+    except Exception:
+        company_id = None
     today = datetime.utcnow().date()
     week_ago = today - timedelta(days=7)
     
-    open_deals = Deal.query.filter(Deal.company_id == company_id, Deal.stage.notin_(['Closed Won', 'Closed Lost'])).all() if company_id else []
+    try:
+        open_deals = Deal.query.filter(Deal.company_id == company_id, Deal.stage.notin_(['Closed Won', 'Closed Lost'])).all() if company_id else []
+    except Exception:
+        db.session.rollback()
+        open_deals = []
     pipeline_value = sum(d.value or 0 for d in open_deals)
     
-    new_leads_count = Contact.query.filter(
-        Contact.company_id == company_id,
-        Contact.created_at >= week_ago
-    ).count() if company_id else 0
+    try:
+        new_leads_count = Contact.query.filter(
+            Contact.company_id == company_id,
+            Contact.created_at >= week_ago
+        ).count() if company_id else 0
+    except Exception:
+        db.session.rollback()
+        new_leads_count = 0
     
-    tasks_due = CRMTask.query.filter(
-        CRMTask.company_id == company_id,
-        CRMTask.status == 'pending',
-        func.date(CRMTask.due_date) == today
-    ).count() if company_id else 0
+    try:
+        tasks_due = CRMTask.query.filter(
+            CRMTask.company_id == company_id,
+            CRMTask.status == 'pending',
+            func.date(CRMTask.due_date) == today
+        ).count() if company_id else 0
+    except Exception:
+        db.session.rollback()
+        tasks_due = 0
     
-    meetings_today = Meeting.query.filter(
-        Meeting.company_id == company_id,
-        func.date(Meeting.start_time) == today
-    ).count() if company_id else 0
+    try:
+        meetings_today = Meeting.query.filter(
+            Meeting.company_id == company_id,
+            func.date(Meeting.start_time) == today
+        ).count() if company_id else 0
+    except Exception:
+        db.session.rollback()
+        meetings_today = 0
     
-    stages = SalesStage.query.filter_by(company_id=company_id, is_active=True).order_by(SalesStage.order).all() if company_id else []
+    try:
+        stages = SalesStage.query.filter_by(company_id=company_id, is_active=True).order_by(SalesStage.order).all() if company_id else []
+    except Exception:
+        db.session.rollback()
+        stages = []
     pipeline_stages = []
     for stage in stages[:4]:
         stage_deals = [d for d in open_deals if d.stage == stage.name]
@@ -230,17 +251,25 @@ def dashboard():
             {'name': 'Negotiation', 'color': '#f59e0b', 'deals': [], 'count': len([d for d in open_deals if d.stage == 'Negotiation']), 'value': 0}
         ]
     
-    pending_tasks = CRMTask.query.filter(
-        CRMTask.company_id == company_id,
-        CRMTask.status == 'pending'
-    ).order_by(CRMTask.due_date).limit(5).all() if company_id else []
+    try:
+        pending_tasks = CRMTask.query.filter(
+            CRMTask.company_id == company_id,
+            CRMTask.status == 'pending'
+        ).order_by(CRMTask.due_date).limit(5).all() if company_id else []
+    except Exception:
+        db.session.rollback()
+        pending_tasks = []
     
     tasks = [{'title': t.title, 'time': t.due_date.strftime('%I:%M %p') if t.due_date else 'No time', 'priority': t.priority or 'medium'} for t in pending_tasks]
     
-    upcoming_meetings = Meeting.query.filter(
-        Meeting.company_id == company_id,
-        func.date(Meeting.start_time) >= today
-    ).order_by(Meeting.start_time).limit(5).all() if company_id else []
+    try:
+        upcoming_meetings = Meeting.query.filter(
+            Meeting.company_id == company_id,
+            func.date(Meeting.start_time) >= today
+        ).order_by(Meeting.start_time).limit(5).all() if company_id else []
+    except Exception:
+        db.session.rollback()
+        upcoming_meetings = []
     
     meetings = [{'title': m.title, 'time': m.start_time.strftime('%I:%M %p') if m.start_time else 'TBD', 'type': m.meeting_type or 'video'} for m in upcoming_meetings]
     
@@ -254,14 +283,18 @@ def dashboard():
         'revenue': '82K'
     }
     
-    touchpoints = {
-        'website': TouchpointEvent.query.filter_by(company_id=company_id, touchpoint_type='website').count() if company_id else 142,
-        'social': TouchpointEvent.query.filter_by(company_id=company_id, touchpoint_type='social').count() if company_id else 89,
-        'forms': TouchpointEvent.query.filter_by(company_id=company_id, touchpoint_type='form').count() if company_id else 67,
-        'email': TouchpointEvent.query.filter_by(company_id=company_id, touchpoint_type='email').count() if company_id else 234,
-        'calls': TouchpointEvent.query.filter_by(company_id=company_id, touchpoint_type='call').count() if company_id else 45,
-        'referral': TouchpointEvent.query.filter_by(company_id=company_id, touchpoint_type='referral').count() if company_id else 28
-    }
+    try:
+        touchpoints = {
+            'website': TouchpointEvent.query.filter_by(company_id=company_id, touchpoint_type='website').count() if company_id else 142,
+            'social': TouchpointEvent.query.filter_by(company_id=company_id, touchpoint_type='social').count() if company_id else 89,
+            'forms': TouchpointEvent.query.filter_by(company_id=company_id, touchpoint_type='form').count() if company_id else 67,
+            'email': TouchpointEvent.query.filter_by(company_id=company_id, touchpoint_type='email').count() if company_id else 234,
+            'calls': TouchpointEvent.query.filter_by(company_id=company_id, touchpoint_type='call').count() if company_id else 45,
+            'referral': TouchpointEvent.query.filter_by(company_id=company_id, touchpoint_type='referral').count() if company_id else 28
+        }
+    except Exception:
+        db.session.rollback()
+        touchpoints = {'website': 142, 'social': 89, 'forms': 67, 'email': 234, 'calls': 45, 'referral': 28}
     
     return render_template(
         'dashboard.html',
@@ -371,7 +404,62 @@ def connectors():
 @login_required
 def campaign_hub():
     """Campaign Hub with SEO, Competitors, and AI Campaign Generator"""
-    return render_template('campaign_hub.html')
+    from models import Campaign, SocialPost, Company, user_company
+    from datetime import datetime, timedelta
+    
+    company = db.session.query(Company).join(
+        user_company, Company.id == user_company.c.company_id
+    ).filter(user_company.c.user_id == current_user.id).first()
+    company_id = company.id if company else None
+    
+    days = request.args.get('days', 30, type=int)
+    campaign_type = request.args.get('type', 'all')
+    cutoff = datetime.utcnow() - timedelta(days=days)
+    
+    email_campaigns = Campaign.query.filter(
+        Campaign.company_id == company_id,
+        Campaign.created_at >= cutoff
+    ).all() if company_id else []
+    
+    social_posts = SocialPost.query.filter(
+        SocialPost.company_id == company_id,
+        SocialPost.created_at >= cutoff
+    ).all() if company_id else []
+    
+    total_email = len(email_campaigns)
+    total_social = len(social_posts)
+    sent_email = len([c for c in email_campaigns if c.status in ('sent', 'active')])
+    published_social = len([p for p in social_posts if p.status == 'published'])
+    
+    if campaign_type == 'email':
+        filtered_total = total_email
+        filtered_active = len([c for c in email_campaigns if c.status == 'active'])
+        filtered_draft = len([c for c in email_campaigns if c.status == 'draft'])
+    elif campaign_type == 'social':
+        filtered_total = total_social
+        filtered_active = len([p for p in social_posts if p.status == 'scheduled'])
+        filtered_draft = len([p for p in social_posts if p.status == 'draft'])
+    elif campaign_type == 'sms':
+        filtered_total = 0
+        filtered_active = 0
+        filtered_draft = 0
+    else:
+        filtered_total = total_email + total_social
+        filtered_active = len([c for c in email_campaigns if c.status == 'active']) + len([p for p in social_posts if p.status == 'scheduled'])
+        filtered_draft = len([c for c in email_campaigns if c.status == 'draft']) + len([p for p in social_posts if p.status == 'draft'])
+    
+    stats = {
+        'total_campaigns': filtered_total,
+        'email_count': total_email if campaign_type in ('all', 'email') else 0,
+        'social_count': total_social if campaign_type in ('all', 'social') else 0,
+        'sms_count': 0,
+        'sent_email': sent_email if campaign_type in ('all', 'email') else 0,
+        'published_social': published_social if campaign_type in ('all', 'social') else 0,
+        'active_count': filtered_active,
+        'draft_count': filtered_draft,
+    }
+    
+    return render_template('campaign_hub.html', stats=stats, days=days, campaign_type=campaign_type)
 
 @main_bp.route('/competitor-analysis')
 @login_required
@@ -463,6 +551,15 @@ def campaigns():
     campaigns = query.order_by(Campaign.created_at.desc()).paginate(page=page, per_page=20)
     
     return render_template('campaigns.html', campaigns=campaigns, status_filter=status_filter)
+
+@main_bp.route('/email-builder')
+@main_bp.route('/email-builder/<int:campaign_id>')
+@login_required
+def email_builder(campaign_id=None):
+    from models import Campaign, EmailTemplate
+    templates = EmailTemplate.query.all()
+    campaign = Campaign.query.get(campaign_id) if campaign_id else None
+    return render_template('email_builder.html', campaign=campaign, templates=templates)
 
 @main_bp.route('/analytics')
 @login_required

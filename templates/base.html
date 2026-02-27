@@ -10,7 +10,7 @@
     <link href="https://cdn.replit.com/agent/bootstrap-agent-dark-theme.min.css" rel="stylesheet">
     <script src="https://unpkg.com/feather-icons"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/custom.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/custom.css') }}?v={{ range(10000,99999)|random }}">
     {% if current_company and current_company.apply_brand_colors %}
     <style>
       :root {
@@ -30,64 +30,19 @@
         --lux-secondary-10: color-mix(in srgb, var(--lux-secondary), transparent 90%);
         --lux-accent-10: color-mix(in srgb, var(--lux-accent), transparent 90%);
       }
-
-      body {
-        background: #000000 !important;
-        color: #ffffff;
-        font-family: var(--lux-font);
-      }
-
-      .lux-header {
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        padding: 0;
-        background: rgba(0, 0, 0, 0.6);
-        backdrop-filter: blur(8px);
-        -webkit-backdrop-filter: blur(8px);
-        position: relative;
-        z-index: 10;
-      }
-
-      .lux-header-inner {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        width: 100%;
-        max-width: 66.666%;
-        margin: 0 auto;
-        padding: 1rem;
-        background: transparent;
-        position: relative;
-      }
-
-      .nav-arrows {
-        display: flex;
-        gap: 0.5rem;
-        align-items: center;
-      }
-
-      .nav-arrow {
-        background: transparent;
-        border: none;
-        color: var(--lux-secondary);
-        width: 40px;
-        height: 40px;
-        border-radius: 8px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        cursor: pointer;
-        --lux-cyan: {{ current_company.secondary_color or '#00ffb4' }} !important;
-        --lux-magenta: {{ current_company.primary_color or '#bc00ed' }} !important;
-        --lux-glow-cyan: 0 0 22px {{ current_company.secondary_color or '#00ffb4' }}59 !important;
-        --lux-glow-magenta: 0 0 28px {{ current_company.primary_color or '#bc00ed' }}59 !important;
-      }
       html[data-bs-theme="dark"] {
         --bs-primary: {{ current_company.secondary_color or '#00ffb4' }} !important;
         --bs-secondary: {{ current_company.primary_color or '#bc00ed' }} !important;
         --bs-link-color: {{ current_company.secondary_color or '#00ffb4' }} !important;
         --bs-link-hover-color: {{ current_company.secondary_color or '#00ffb4' }}cc !important;
+      }
+      body {
+        background: radial-gradient(circle at top, {{ current_company.secondary_color or '#00ffb4' }}14, transparent 45%),
+          radial-gradient(circle at 20% 20%, {{ current_company.primary_color or '#bc00ed' }}14, transparent 40%),
+          radial-gradient(circle at bottom right, {{ current_company.accent_color or '#e4055c' }}1a, transparent 45%),
+          var(--lux-bg) !important;
+        color: #ffffff;
+        font-family: var(--lux-font);
       }
       .btn-primary, .btn-lux-primary {
         background: linear-gradient(135deg, {{ current_company.primary_color or '#bc00ed' }}, {{ current_company.secondary_color or '#00ffb4' }}) !important;
@@ -101,185 +56,6 @@
         background: {{ current_company.secondary_color or '#00ffb4' }} !important;
         color: #000 !important;
       }
-
-      .settings-icon {
-        color: var(--lux-secondary);
-        width: 28px;
-        height: 28px;
-        cursor: pointer;
-        transition: all 0.3s ease;
-      }
-
-      .settings-icon:hover {
-        color: var(--lux-accent);
-        transform: rotate(90deg);
-      }
-
-      .company-nav-logo {
-        height: 32px;
-        width: 32px;
-        object-fit: cover;
-        border-radius: 6px;
-        border: 1.5px solid rgba(255,255,255,0.15);
-        transition: border-color 0.3s ease;
-      }
-
-      .company-nav-logo:hover {
-        border-color: var(--lux-secondary, #00ffb4);
-      }
-    </style>
-</head>
-<body>
-    <div class="lux-header">
-      <div class="lux-header-inner">
-        <div class="nav-arrows">
-          <button class="nav-arrow" onclick="goBack()">
-            <i data-feather="arrow-left"></i>
-          </button>
-          <a href="{{ url_for('main.dashboard') }}">
-            <img src="{{ url_for('static', filename='lux_logo.png') }}" alt="LUX Marketing" class="lux-logo" style="height: 40px; margin: 0 0.5rem;">
-          </a>
-          <button class="nav-arrow" onclick="goForward()">
-            <i data-feather="arrow-right"></i>
-          </button>
-        </div>
-
-        <div class="header-center">
-        <h1 style="font-size: 1.1rem; font-weight: 500; margin: 0;">
-          {% block page_header %}
-            {% if current_user.is_authenticated %}
-              {% set header_company = current_user.get_default_company() %}
-              {% set user_name = (current_user.first_name or current_user.username) %}
-              <span style="color: var(--lux-secondary);">{{ user_name[0]|upper }}{{ user_name[1:] }}</span>
-              <span style="color: var(--lux-primary);"> Marketing Wizard of </span>
-              <span style="color: var(--lux-secondary);">{{ header_company.name if header_company else 'Your Company' }}</span>
-            {% endif %}
-          {% endblock %}
-        </h1>
-      </div>
-
-      {% if current_user.is_authenticated %}
-      <div class="header-right">
-        {% set current_company = current_user.get_default_company() %}
-        {% if current_company and current_company.logo_path %}
-        <img src="{{ url_for('static', filename=current_company.logo_path) }}" alt="{{ current_company.name }}" class="company-nav-logo" title="{{ current_company.name }}">
-        {% elif current_company %}
-        <img src="{{ url_for('static', filename='lux_logo.png') }}" alt="{{ current_company.name }}" class="company-nav-logo" title="{{ current_company.name }}">
-        {% endif %}
-
-        <div class="dropdown">
-          <button class="btn btn-link settings-btn" type="button" id="settingsDropdown" data-bs-toggle="dropdown" aria-expanded="false">
-            <i data-feather="settings" class="settings-icon"></i>
-          </button>
-          <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="settingsDropdown">
-            <li><a class="dropdown-item" href="{{ url_for('user.profile') }}"><i data-feather="user"></i> Profile</a></li>
-            <li><a class="dropdown-item" href="{{ url_for('user.change_password') }}"><i data-feather="lock"></i> Change Password</a></li>
-            <li><hr class="dropdown-divider"></li>
-            <li><h6 class="dropdown-header">AI & Tools</h6></li>
-            <li><a class="dropdown-item" href="{{ url_for('main.orchestrator_dashboard') }}"><i data-feather="shield"></i> Systems Governor</a></li>
-            <li><a class="dropdown-item" href="{{ url_for('main.ai_dashboard') }}"><i data-feather="cpu"></i> LUX AI Dashboard</a></li>
-            <li><a class="dropdown-item" href="{{ url_for('main.agents_hub') }}"><i data-feather="users"></i> AI Agents Hub</a></li>
-            <li><a class="dropdown-item" href="{{ url_for('main.analytics_hub') }}"><i data-feather="bar-chart-2"></i> Analytics Hub</a></li>
-            <li><hr class="dropdown-divider"></li>
-            <li><h6 class="dropdown-header">Companies</h6></li>
-            {% for company in current_user.companies %}
-            <li><a class="dropdown-item" href="#" onclick="selectCompany({{ company.id }})">
-              <i data-feather="briefcase"></i> {{ company.name }}
-              {% if current_user.get_default_company() and company.id == current_user.get_default_company().id %}
-              <span class="badge bg-success">Current</span>
-              {% endif %}
-            </a></li>
-            {% endfor %}
-            <li><hr class="dropdown-divider"></li>
-            <li><a class="dropdown-item" href="{{ url_for('main.companies_list') }}"><i data-feather="edit"></i> Manage Companies</a></li>
-            <li><a class="dropdown-item" href="{{ url_for('main.add_company') }}"><i data-feather="plus"></i> Add Company</a></li>
-            <li><hr class="dropdown-divider"></li>
-            <li><a class="dropdown-item text-danger" href="{{ url_for('auth.logout') }}"><i data-feather="log-out"></i> Sign Out</a></li>
-          </ul>
-        </div>
-      </div>
-      {% endif %}
-      </div>
-    </div>
-
-    <main class="container mt-4" style="background: transparent; min-height: calc(100vh - 160px); max-width: 66.666%; margin-left: auto; margin-right: auto;">
-        {% with messages = get_flashed_messages(with_categories=true) %}
-            {% if messages %}
-                {% for category, message in messages %}
-                    <div class="alert alert-{{ 'danger' if category == 'error' else category }} alert-dismissible fade show" role="alert">
-                        {{ message }}
-                        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-                    </div>
-                {% endfor %}
-            {% endif %}
-        {% endwith %}
-
-        {% block content %}{% endblock %}
-    </main>
-
-    <!-- Bootstrap JS -->
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-
-    <!-- Custom JS -->
-    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
-
-    <script>
-        // Initialize Feather icons
-        feather.replace();
-
-        // Navigation functions
-        function goBack() {
-          window.history.back();
-        }
-
-        function goForward() {
-          window.history.forward();
-        }
-
-        // Company switching
-        function selectCompany(companyId) {
-          fetch(`/companies/switch/${companyId}`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json'
-            }
-          })
-          .then(response => response.json())
-          .then(data => {
-            if (data.success) {
-              location.reload();
-            } else {
-              alert('Failed to switch company');
-            }
-          })
-          .catch(error => {
-            console.error('Error:', error);
-            alert('An error occurred while switching companies');
-          });
-        }
-    </script>
-
-    {% block scripts %}{% endblock %}
-
-    <!-- AI Chatbot Floating Widget -->
-    <style>
-      .chatbot-float-button {
-        position: fixed;
-        bottom: 30px;
-        right: calc(16.666% + 30px);
-        width: 70px;
-        height: 70px;
-        border-radius: 50%;
-        background: transparent;
-        border: none;
-        cursor: pointer;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        box-shadow: 0 4px 20px rgba(188, 0, 237, 0.6);
-        z-index: 9998;
-        transition: all 0.3s ease;
-        animation: pulse 2s infinite;
       .app-header {
         border-bottom-color: {{ current_company.primary_color or '#bc00ed' }} !important;
       }
@@ -321,12 +97,6 @@
       .form-check-input:checked {
         background-color: {{ current_company.primary_color or '#bc00ed' }} !important;
         border-color: {{ current_company.primary_color or '#bc00ed' }} !important;
-      }
-      body {
-        background: radial-gradient(circle at top, {{ current_company.secondary_color or '#00ffb4' }}14, transparent 45%),
-          radial-gradient(circle at 20% 20%, {{ current_company.primary_color or '#bc00ed' }}14, transparent 40%),
-          radial-gradient(circle at bottom right, {{ current_company.accent_color or '#e4055c' }}1a, transparent 45%),
-          var(--lux-bg) !important;
       }
       .brand-it { color: {{ current_company.secondary_color or '#00ffb4' }} !important; }
       .brand-app { color: {{ current_company.secondary_color or '#00ffb4' }} !important; }
@@ -374,7 +144,7 @@
                     <span class="back-arrow-glow" onclick="history.back();" title="Go back"><i data-feather="chevron-left"></i></span>
                     <a href="{{ url_for('main.dashboard') }}" aria-label="Dashboard" class="brand-link">
                         <span class="brand-logo">
-                            <img src="{{ url_for('static', filename='images/lux-chrome.png') }}" alt="LUX" class="brand-lux-img"><span class="brand-stack"><span class="brand-it">IT</span><span class="brand-app">.app</span></span>
+                            <img src="{{ url_for('static', filename='images/lux-chrome.png') }}" alt="LUX" class="brand-lux-img" style="height:38px!important;max-height:38px!important;width:auto!important;"><span class="brand-stack"><span class="brand-it">IT</span><span class="brand-app">.app</span></span>
                         </span>
                     </a>
                 </div>
@@ -386,7 +156,14 @@
                 {% if current_user.is_authenticated %}
                 <div class="header-actions">
                     <div class="user-greeting">
-                        <span class="greeting-text">Hello, <strong>{{ current_user.first_name or current_user.username }}</strong></span>
+                        {% set hour = now().hour if now is defined else 12 %}
+                        {% if hour < 12 %}
+                        <span class="greeting-text">Good morning, <strong>{{ current_user.first_name or current_user.username }}</strong></span>
+                        {% elif hour < 17 %}
+                        <span class="greeting-text">Good afternoon, <strong>{{ current_user.first_name or current_user.username }}</strong></span>
+                        {% else %}
+                        <span class="greeting-text">Good evening, <strong>{{ current_user.first_name or current_user.username }}</strong></span>
+                        {% endif %}
                         {% if current_company %}
                         <span class="working-on">working on <strong>{{ current_company.name }}</strong></span>
                         {% endif %}
@@ -481,6 +258,7 @@
     </script>
     <script src="{{ url_for('static', filename='js/analytics.js') }}"></script>
     {% endif %}
+    {% block scripts %}{% endblock %}
     <script>feather.replace();</script>
 </body>
 </html>

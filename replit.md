@@ -131,6 +131,16 @@ docker-compose up -d
 - Added company badge display in header showing current company name with logo/initials
 - Updated Company model with branding columns: logo_path, website_url, primary_color, secondary_color, accent_color, font_family, industry, description
 - User management routes: /user/profile, /user/change-password, /user/manage-users, /companies
+- **Marketing Hub Enhancements**: Added message/notification icons with badge counters above filter bar, reduced AI Agent Insights to top 3, rebalanced layout (AI Insights col-lg-4, Analytics col-lg-8), background matched to marketing website gradient
+- **Campaign Hub Redesign**: Full redesign with glassmorphic gradient cards (6 cards: AI Campaign Generator, Email, Social, SEO, Competitor Intelligence, SMS), left sidebar navigation, functional KPI metrics bar with real data, tab navigation, sticky note, Quick Launch section, space-themed animated gradient background
+- **Campaign Hub Filters**: Functional Campaign Type filter (All/Email/Social/SMS) and date range filter (30/60/90 days) that dynamically update top statistics from database
+- **Session Persistence**: Added 30-minute permanent session lifetime, 7-day remember cookie, `remember=True` on login to prevent re-login when navigating between pages
+- **Social Media Fix**: Added missing database columns (company_id, user_id, platform, image_url) to social_post table, fixing 500 error
+- **CSS Variable Fix**: Added missing --lux-muted, --lux-bg, --lux-text, --lux-border, --lux-shadow, --lux-cyan CSS variables to :root, fixing invisible gear icon and other UI elements
+- **Demo Account**: Added Demo Account company (id=4) with Technology industry, seeded with 10 contacts, 8 campaigns, 7 social posts, 5 deals for full platform demonstration
+- **Company Updates**: Updated Lucifer Cruz (Fashion & Luxury) and Refined Mind (Health & Wellness) with industry and description
+- **Email Campaign Builder**: New drag-and-drop email builder at /email-builder with draggable content blocks, visual canvas, properties panel, template picker (6 templates), A/B testing, Campaign Hub email card links to builder
+- **Session Secret Fix**: app.secret_key now uses resolved session_secret value instead of potentially-None env var
 
 ## File Structure
 ```

@@ -7,7 +7,7 @@ import os
 import re
 from uuid import uuid4
 
-from flask import Flask, g, has_request_context, request, redirect, url_for
+from flask import Flask, g, has_request_context, request, redirect, url_for, render_template
 from flask_login import LoginManager, current_user
 from flask_sqlalchemy import SQLAlchemy
 from flask_wtf.csrf import CSRFProtect
@@ -166,6 +166,10 @@ csrf = CSRFProtect(app)
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 app.config["SESSION_COOKIE_SECURE"] = False
 app.config["SESSION_COOKIE_HTTPONLY"] = True
+from datetime import timedelta
+app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(minutes=30)
+app.config["REMEMBER_COOKIE_DURATION"] = timedelta(days=7)
+app.config["REMEMBER_COOKIE_HTTPONLY"] = True
 
 
 # ============================================================
@@ -187,6 +191,11 @@ def load_user(user_id):
 # ============================================================
 # Context processors / template helpers
 # ============================================================
+
+@app.context_processor
+def inject_datetime():
+    from datetime import datetime
+    return dict(now=datetime.now)
 
 @app.context_processor
 def inject_tracking_pixels():
@@ -246,7 +255,7 @@ from routes import main_bp
 from auth import auth_bp
 from user_management import user_bp
 from advanced_config import advanced_config_bp
-from marketing_routes import marketing_bp
+from marketing import marketing_bp
 
 app.register_blueprint(main_bp)
 app.register_blueprint(auth_bp, url_prefix="/auth")
@@ -302,15 +311,16 @@ except Exception as e:
 # Request lifecycle helpers
 # ============================================================
 
-@app.route("/")
-def index():
-    return redirect(url_for("auth.login"))
 
 
 @app.before_request
 def assign_request_id():
     g.request_id = request.headers.get("X-Request-ID") or str(uuid4())
 
+@app.before_request
+def make_session_permanent():
+    from flask import session
+    session.permanent = True
 
 @app.after_request
 def attach_request_id(response):
