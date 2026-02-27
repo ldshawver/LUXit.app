@@ -128,6 +128,34 @@ def login():
         return render_template("login.html")
 
 
+@auth_bp.route("/forgot-username", methods=["GET", "POST"])
+def forgot_username():
+    ADMIN_EMAIL = "luke@adiken.com"
+    found_username = None
+    not_found = False
+
+    if request.method == "POST":
+        email = (request.form.get("email") or "").strip().lower()
+        if email:
+            from extensions import db as _db
+            try:
+                user = User.query.filter(User.email == email).first()
+                if user:
+                    found_username = user.username
+                else:
+                    not_found = True
+            except SQLAlchemyError:
+                _db.session.rollback()
+                not_found = True
+
+    return render_template(
+        "auth/forgot_username.html",
+        found_username=found_username,
+        not_found=not_found,
+        admin_email="luke@adiken.com",
+    )
+
+
 @auth_bp.route("/logout")
 @login_required
 def logout():

@@ -429,36 +429,6 @@
     .mh-tabs { flex-wrap: wrap; }
   }
 </style>
-
-<div class="mh-hub-switch">
-  <a href="{{ url_for('main.dashboard') }}" class="mh-hub-btn">
-    <i data-feather="briefcase" style="width:14px;height:14px;"></i> Sales Hub
-  </a>
-  <a href="{{ url_for('main.marketing_hub') }}" class="mh-hub-btn active">
-    <i data-feather="radio" style="width:14px;height:14px;"></i> Marketing Hub
-  </a>
-</div>
-
-<div class="mh-layout">
-  <nav class="mh-sidebar">
-    <a href="{{ url_for('main.campaign_hub') }}?action=new"><i data-feather="zap"></i> Generate Campaigns <span class="new-badge">NEW</span></a>
-    <a href="{{ url_for('main.contacts') }}"><i data-feather="users"></i> Audience</a>
-    <a href="{{ url_for('main.segments') }}"><i data-feather="filter"></i> Segments</a>
-    <a href="{{ url_for('main.newsletters') }}"><i data-feather="mail"></i> Newsletters</a>
-    <a href="{{ url_for('main.blog_list') }}"><i data-feather="edit-3"></i> Blog Hub</a>
-    <a href="{{ url_for('main.ads_hub') }}"><i data-feather="target"></i> Ads Manager</a>
-    <a href="{{ url_for('main.agents_hub') }}"><i data-feather="cpu"></i> AI Hub</a>
-    <a href="{{ url_for('main.automations') }}"><i data-feather="repeat"></i> Automations & Triggers</a>
-    <a href="{{ url_for('main.analytics_hub') }}"><i data-feather="bar-chart-2"></i> Analytics Hub</a>
-    <a href="{{ url_for('main.events_dashboard') }}"><i data-feather="calendar"></i> Events</a>
-  </nav>
-
-  <div class="mh-main">
-    <div class="mh-topbar">
-      <div class="mh-welcome">
-        <h2>Welcome back, {{ current_user.first_name or current_user.username }}!</h2>
-        <p>Here's your marketing overview for the past 30 days.</p>
-      </div>
       <div class="mh-filters">
         <a href="{{ url_for('main.newsletters') }}" class="mh-filter-btn" title="Messages" style="position:relative;">
           <i data-feather="mail" style="width:16px;height:16px;"></i>
@@ -471,16 +441,6 @@
         <span class="mh-filter-btn"><i data-feather="calendar" style="width:14px;height:14px;"></i> Last 30 Days</span>
       </div>
     </div>
-
-    <div class="mh-tabs">
-      <a href="{{ url_for('main.newsletters') }}" class="mh-tab">Email</a>
-      <a href="{{ url_for('main.sms_dashboard') }}" class="mh-tab">SMS</a>
-      <a href="{{ url_for('main.social_media') }}" class="mh-tab">Social Media</a>
-      <a href="{{ url_for('main.blog_list') }}" class="mh-tab">Blog</a>
-      <a href="{{ url_for('main.automations') }}" class="mh-tab">Automations & Triggers</a>
-      <a href="/press-releases/create" class="mh-tab">Press Release</a>
-    </div>
-
     <div class="mh-kpi-row">
       <div class="mh-kpi">
         <div class="mh-kpi-label">Revenue</div>
@@ -746,8 +706,8 @@
       </div>
     </div>
 
-  </div>
-</div>
+  
+
 
 <script>
 document.addEventListener('DOMContentLoaded', function() {

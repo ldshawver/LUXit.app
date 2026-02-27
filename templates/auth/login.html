@@ -131,6 +131,11 @@
 
         <button type="submit">Sign in</button>
       </form>
+      <div style="text-align:center;margin-top:18px;">
+        <a href="{{ url_for('auth.forgot_username') }}" style="font-size:0.83rem;color:#6b7280;text-decoration:none;transition:color 0.15s;" onmouseover="this.style.color='#00e5ff'" onmouseout="this.style.color='#6b7280'">Forgot username?</a>
+        <span style="color:#374151;margin:0 8px;">·</span>
+        <a href="mailto:luke@adiken.com" style="font-size:0.83rem;color:#6b7280;text-decoration:none;" onmouseover="this.style.color='#00e5ff'" onmouseout="this.style.color='#6b7280'">Contact admin</a>
+      </div>
     </div>
   </body>
 </html>
