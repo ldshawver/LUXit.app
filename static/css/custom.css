@@ -1,6 +1,17 @@
 /* LUX Marketing - Brand Color Palette */
 /* Dynamic brand colors (--lux-primary, --lux-secondary, --lux-accent, --lux-font)
    are set per-company in base.html <style> block via Jinja2 */
+
+.glass-card {
+  background: rgba(12, 14, 30, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 14px;
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+.glass-card:hover {
+  border-color: rgba(255, 255, 255, 0.12);
+}
 :root {
   --lux-pure-black: #000000;
   --lux-polished-silver: #c0c0c0;

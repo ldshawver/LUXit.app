@@ -236,18 +236,46 @@
       .app-sidebar::-webkit-scrollbar-track { background: transparent; }
       .app-sidebar::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 2px; }
 
-      /* Section headers */
-      .nav-section {
-        font-size: 0.6rem;
-        font-weight: 700;
-        letter-spacing: 0.14em;
-        text-transform: uppercase;
-        color: rgba(255,255,255,0.22);
-        padding: 10px 10px 4px;
-        margin-top: 6px;
-        user-select: none;
+      .nav-switcher {
+        display: flex;
+        gap: 4px;
+        padding: 4px;
+        background: rgba(255,255,255,0.04);
+        border: 1px solid rgba(255,255,255,0.06);
+        border-radius: 10px;
+        margin-bottom: 8px;
       }
-      .nav-section:first-child { margin-top: 0; }
+      .nav-switch {
+        flex: 1;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        padding: 7px 6px;
+        border-radius: 7px;
+        font-size: 0.76rem;
+        font-weight: 600;
+        color: rgba(255,255,255,0.4);
+        text-decoration: none;
+        transition: all 0.2s ease;
+        white-space: nowrap;
+      }
+      .nav-switch svg {
+        width: 14px; height: 14px;
+        stroke: rgba(255,255,255,0.3);
+        flex-shrink: 0;
+      }
+      .nav-switch:hover {
+        color: rgba(255,255,255,0.7);
+        background: rgba(255,255,255,0.05);
+        text-decoration: none;
+      }
+      .nav-switch.active {
+        color: #00e5ff;
+        background: rgba(0,229,255,0.1);
+        border: 1px solid rgba(0,229,255,0.18);
+      }
+      .nav-switch.active svg { stroke: #00e5ff; }
 
       /* Nav items */
       .nav-item {
@@ -530,15 +558,22 @@
             {# ── LEFT SIDEBAR ── #}
             <nav class="app-sidebar">
 
-                {# GENERATE #}
+                {# MARKETING / SALES quick-switch #}
+                <div class="nav-switcher">
+                    <a href="{{ url_for('main.campaign_hub') }}" class="nav-switch{% if _sec_campaigns or _p == '/marketing-hub' or _p.startswith('/campaign-hub') or _p.startswith('/newsletters') or _p.startswith('/email') or _p.startswith('/sms') or _p.startswith('/social') or _p.startswith('/blog') or _p.startswith('/ads') or _p.startswith('/press') or _p.startswith('/seo') or _p.startswith('/marketing-calendar') or _p.startswith('/automations') or _p.startswith('/automation-t') or _p.startswith('/agents') or _p.startswith('/approval') or _p.startswith('/analytics') or _p.startswith('/competitor') or _p.startswith('/events') or _p.startswith('/contacts') or _p.startswith('/segments') %} active{% endif %}">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+                        Marketing
+                    </a>
+                    <a href="{{ url_for('main.crm_hub') }}" class="nav-switch{% if _p.startswith('/crm') or _p.startswith('/leads') or _p.startswith('/deals') or _p.startswith('/pipeline') %} active{% endif %}">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
+                        Sales
+                    </a>
+                </div>
+
                 <a href="{{ url_for('main.campaign_hub') }}" class="nav-item nav-item-featured{% if _p.startswith('/campaign-hub') %} active{% endif %}">
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
                     Generate Campaigns
-                    <span class="nav-badge-new">NEW</span>
                 </a>
-
-                {# CHANNELS #}
-                <div class="nav-section">Channels</div>
                 <a href="{{ url_for('main.newsletters') }}" class="nav-item{% if _p.startswith('/newsletters') or _p.startswith('/email') %} active{% endif %}">
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
                     Email
@@ -555,7 +590,7 @@
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
                     Blog Hub
                 </a>
-                <a href="{{ url_for('main.ads_hub') }}" class="nav-item{% if _p.startswith('/ads-hub') %} active{% endif %}">
+                <a href="{{ url_for('main.ads_hub') }}" class="nav-item{% if _p.startswith('/ads') %} active{% endif %}">
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="22" y1="12" x2="18" y2="12"/><line x1="6" y1="12" x2="2" y2="12"/><line x1="12" y1="6" x2="12" y2="2"/><line x1="12" y1="22" x2="12" y2="18"/></svg>
                     Ads Manager
                 </a>
@@ -563,9 +598,6 @@
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
                     Press Release
                 </a>
-
-                {# AUDIENCE #}
-                <div class="nav-section">Audience</div>
                 <a href="{{ url_for('main.contacts') }}" class="nav-item{% if _p.startswith('/contacts') %} active{% endif %}">
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
                     Audience
@@ -574,9 +606,6 @@
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
                     Segments
                 </a>
-
-                {# AI #}
-                <div class="nav-section">AI</div>
                 <a href="{{ url_for('main.agents_hub') }}" class="nav-item{% if _p == '/agents-hub' or _p.startswith('/agents-hub') and not _p.startswith('/agents/reports') %} active{% endif %}">
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="8" rx="2" ry="2"/><rect x="2" y="14" width="20" height="8" rx="2" ry="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>
                     AI Hub
@@ -585,31 +614,25 @@
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
                     AI Reports
                 </a>
-
-                {# AUTOMATION #}
-                <div class="nav-section">Automation</div>
                 <a href="{{ url_for('main.automation_dashboard') }}" class="nav-item{% if _p.startswith('/automations') or _p.startswith('/automation-t') %} active{% endif %}">
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
-                    Automations & Triggers
+                    Automations
                 </a>
                 <a href="{{ url_for('main.marketing_calendar') }}" class="nav-item{% if _p.startswith('/marketing-calendar') %} active{% endif %}">
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
-                    Marketing Calendar
+                    Calendar
                 </a>
-
-                {# INTELLIGENCE #}
-                <div class="nav-section">Intelligence</div>
                 <a href="{{ url_for('main.analytics_hub') }}" class="nav-item{% if _p.startswith('/analytics') %} active{% endif %}">
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
-                    Analytics Hub
+                    Analytics
                 </a>
                 <a href="{{ url_for('main.seo_dashboard') }}" class="nav-item{% if _p.startswith('/seo') %} active{% endif %}">
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-                    SEO Dashboard
+                    SEO
                 </a>
                 <a href="{{ url_for('main.competitor_analysis') }}" class="nav-item{% if _p.startswith('/competitor') %} active{% endif %}">
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="6"/><path d="M15.477 12.89L17 22l-5-3-5 3 1.523-9.11"/></svg>
-                    Competitor Intelligence
+                    Competitors
                 </a>
                 <a href="{{ url_for('main.events_dashboard') }}" class="nav-item{% if _p.startswith('/events') %} active{% endif %}">
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>

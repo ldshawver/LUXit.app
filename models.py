@@ -359,10 +359,18 @@ class Campaign(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=True)
     name = db.Column(db.String(255))
+    subject = db.Column(db.String(500))
+    template_id = db.Column(db.Integer, db.ForeignKey("email_template.id"), nullable=True)
+    automation_id = db.Column(db.Integer, db.ForeignKey("automation.id"), nullable=True)
+    ab_test_id = db.Column(db.Integer, nullable=True)
     status = db.Column(db.String(50))
     scheduled_at = db.Column(db.DateTime)
     sent_at = db.Column(db.DateTime)
+    revenue_generated = db.Column(db.Float, default=0.0)
+    utm_keyword = db.Column(db.String(255))
+    ai_generated = db.Column(db.Boolean, default=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
 class CampaignRecipient(db.Model):
@@ -492,22 +500,42 @@ class SMSCampaign(db.Model):
     __tablename__ = "sms_campaign"
 
     id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(255))
+    message = db.Column(db.String(1000))
     status = db.Column(db.String(50))
     scheduled_at = db.Column(db.DateTime)
+    sent_at = db.Column(db.DateTime)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    recipients = db.relationship('SMSRecipient', backref='campaign', lazy='dynamic', foreign_keys='SMSRecipient.campaign_id')
 
 
 class SMSRecipient(db.Model):
     __tablename__ = "sms_recipient"
 
     id = db.Column(db.Integer, primary_key=True)
+    campaign_id = db.Column(db.Integer, db.ForeignKey("sms_campaign.id"), nullable=True)
+    contact_id = db.Column(db.Integer, db.ForeignKey("contact.id"), nullable=True)
+    status = db.Column(db.String(50))
+    sent_at = db.Column(db.DateTime)
+    delivered_at = db.Column(db.DateTime)
+    error_message = db.Column(db.Text)
 
 
 class SMSTemplate(db.Model):
     __tablename__ = "sms_template"
 
     id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(255))
+    message = db.Column(db.Text)
+    category = db.Column(db.String(100))
+    tone = db.Column(db.String(50))
+    has_opt_out = db.Column(db.Boolean, default=True)
+    is_compliant = db.Column(db.Boolean, default=True)
+    usage_count = db.Column(db.Integer, default=0)
+    is_active = db.Column(db.Boolean, default=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
 class SocialPost(db.Model):
@@ -518,10 +546,13 @@ class SocialPost(db.Model):
     user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True)
     platform = db.Column(db.String(50))
     content = db.Column(db.Text)
+    platforms = db.Column(db.JSON)
+    media_urls = db.Column(db.JSON)
     image_url = db.Column(db.String(500))
     status = db.Column(db.String(50))
     scheduled_at = db.Column(db.DateTime)
     published_at = db.Column(db.DateTime)
+    engagement_data = db.Column(db.JSON)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 
@@ -567,13 +598,29 @@ class Event(db.Model):
     __tablename__ = "event"
 
     id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(255))
+    description = db.Column(db.Text)
     start_date = db.Column(db.DateTime)
+    end_date = db.Column(db.DateTime)
+    location = db.Column(db.String(255))
+    max_attendees = db.Column(db.Integer)
+    price = db.Column(db.Float, default=0.0)
+    is_active = db.Column(db.Boolean, default=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    registrations = db.relationship('EventRegistration', backref='event', lazy='dynamic')
+    tickets = db.relationship('EventTicket', backref='event', lazy='dynamic')
 
 
 class EventRegistration(db.Model):
     __tablename__ = "event_registration"
 
     id = db.Column(db.Integer, primary_key=True)
+    event_id = db.Column(db.Integer, db.ForeignKey("event.id"), nullable=True)
+    contact_id = db.Column(db.Integer, db.ForeignKey("contact.id"), nullable=True)
+    status = db.Column(db.String(50), default='registered')
+    payment_status = db.Column(db.String(50), default='pending')
+    registered_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 
 class EventTicket(db.Model):
@@ -764,10 +811,12 @@ class SocialMediaAccount(db.Model):
     refresh_token = db.Column(db.Text)
     token_expires_at = db.Column(db.DateTime)
     is_active = db.Column(db.Boolean, default=True)
-    followers_count = db.Column(db.Integer, default=0)
-    last_sync_at = db.Column(db.DateTime)
+    is_verified = db.Column(db.Boolean, default=False)
+    follower_count = db.Column(db.Integer, default=0)
+    last_synced = db.Column(db.DateTime)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
     company = db.relationship("Company", backref="social_media_accounts")
 
 
@@ -1024,42 +1073,27 @@ class AgentLog(db.Model):
     __tablename__ = "agent_log"
 
     id = db.Column(db.Integer, primary_key=True)
-    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=False, index=True)
     agent_type = db.Column(db.String(100), nullable=False)
     agent_name = db.Column(db.String(200))
     activity_type = db.Column(db.String(100))
     details = db.Column(db.Text)
     status = db.Column(db.String(50))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    
-    company = db.relationship("Company", backref="agent_logs")
 
 
 class AgentReport(db.Model):
     __tablename__ = "agent_report"
 
     id = db.Column(db.Integer, primary_key=True)
-    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=False, index=True)
     agent_type = db.Column(db.String(100), nullable=False, index=True)
     agent_name = db.Column(db.String(200))
     report_type = db.Column(db.String(50), nullable=False)
-    report_frequency = db.Column(db.String(50))
-    title = db.Column(db.String(500))
-    summary = db.Column(db.Text)
+    report_title = db.Column(db.String(500))
     report_data = db.Column(db.Text)
     insights = db.Column(db.Text)
-    recommendations = db.Column(db.Text)
-    external_factors = db.Column(db.Text)
-    report_period_start = db.Column(db.DateTime)
-    report_period_end = db.Column(db.DateTime)
-    status = db.Column(db.String(50), default='generated')
+    period_start = db.Column(db.DateTime)
+    period_end = db.Column(db.DateTime)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    
-    company = db.relationship("Company", backref="agent_reports")
-    
-    __table_args__ = (
-        db.Index("ix_agent_report_company_agent", "company_id", "agent_type"),
-    )
 
 
 class AgentSchedule(db.Model):
@@ -1086,29 +1120,24 @@ class AgentDeliverable(db.Model):
     __tablename__ = "agent_deliverable"
 
     id = db.Column(db.Integer, primary_key=True)
-    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=False, index=True)
-    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True)
     agent_type = db.Column(db.String(100), nullable=False, index=True)
+    agent_name = db.Column(db.String(200))
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=True, index=True)
     deliverable_type = db.Column(db.String(100))
     title = db.Column(db.String(500))
     description = db.Column(db.Text)
-    request_data = db.Column(db.Text)
-    output_data = db.Column(db.Text)
+    content = db.Column(db.Text)
+    content_format = db.Column(db.String(50))
     file_path = db.Column(db.String(500))
+    extra_data = db.Column(db.Text)
+    prompt_used = db.Column(db.Text)
     status = db.Column(db.String(50), default='requested')
-    priority = db.Column(db.Integer, default=5)
-    due_date = db.Column(db.DateTime)
-    completed_at = db.Column(db.DateTime)
-    feedback = db.Column(db.Text)
-    rating = db.Column(db.Integer)
+    is_starred = db.Column(db.Boolean, default=False)
+    view_count = db.Column(db.Integer, default=0)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
     company = db.relationship("Company", backref="agent_deliverables")
-    user = db.relationship("User", backref="agent_deliverables")
-    
-    __table_args__ = (
-        db.Index("ix_agent_deliverable_company_status", "company_id", "status"),
-    )
 
 
 class AgentPerformance(db.Model):
@@ -1366,7 +1395,14 @@ class AgentAutomation(db.Model):
     __tablename__ = "agent_automation"
 
     id = db.Column(db.Integer, primary_key=True)
+    agent_type = db.Column(db.String(100))
+    name = db.Column(db.String(255))
+    description = db.Column(db.Text)
+    schedule = db.Column(db.String(100))
+    enabled = db.Column(db.Boolean, default=True)
+    last_run = db.Column(db.DateTime)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
 class ApprovalQueue(db.Model):
@@ -1395,9 +1431,10 @@ class ApprovalQueue(db.Model):
     published_at = db.Column(db.DateTime)
     edit_history = db.Column(db.Text)
     version = db.Column(db.Integer, default=1)
-    last_modified_by = db.Column(db.Integer)
+    previous_version_id = db.Column(db.Integer)
     compliance_flags = db.Column(db.Text)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     company = db.relationship("Company", backref="approval_queue_items")
 
@@ -1454,6 +1491,63 @@ class ApprovalAuditLog(db.Model):
             'action_by_agent': self.action_by_agent,
             'notes': self.notes,
             'created_at': self.created_at.isoformat() if self.created_at else None,
+        }
+
+
+class FeatureToggle(db.Model):
+    __tablename__ = "feature_toggle"
+
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=True, index=True)
+    feature_key = db.Column(db.String(255))
+    feature_name = db.Column(db.String(255))
+    feature_category = db.Column(db.String(100))
+    description = db.Column(db.Text)
+    is_enabled = db.Column(db.Boolean, default=False)
+    agent_type = db.Column(db.String(100))
+    allow_automated_creation = db.Column(db.Boolean, default=False)
+    require_approval = db.Column(db.Boolean, default=True)
+    confidence_threshold = db.Column(db.Float)
+    daily_limit = db.Column(db.Integer)
+    budget_ceiling = db.Column(db.Float)
+    risk_tolerance = db.Column(db.String(50))
+    content_aggressiveness = db.Column(db.String(50))
+    brand_strictness = db.Column(db.String(50))
+    platform_rules = db.Column(db.JSON)
+    schedule_frequency = db.Column(db.String(50))
+    active_hours_start = db.Column(db.Integer)
+    active_hours_end = db.Column(db.Integer)
+    emergency_stop = db.Column(db.Boolean, default=False)
+    last_modified_by = db.Column(db.Integer)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    company = db.relationship("Company", backref="feature_toggles")
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'company_id': self.company_id,
+            'feature_key': self.feature_key,
+            'feature_name': self.feature_name,
+            'feature_category': self.feature_category,
+            'description': self.description,
+            'is_enabled': self.is_enabled,
+            'agent_type': self.agent_type,
+            'allow_automated_creation': self.allow_automated_creation,
+            'require_approval': self.require_approval,
+            'confidence_threshold': self.confidence_threshold,
+            'daily_limit': self.daily_limit,
+            'budget_ceiling': self.budget_ceiling,
+            'risk_tolerance': self.risk_tolerance,
+            'content_aggressiveness': self.content_aggressiveness,
+            'brand_strictness': self.brand_strictness,
+            'schedule_frequency': self.schedule_frequency,
+            'active_hours_start': self.active_hours_start,
+            'active_hours_end': self.active_hours_end,
+            'emergency_stop': self.emergency_stop,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None,
         }
 
 

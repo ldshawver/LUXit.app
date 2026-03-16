@@ -432,7 +432,29 @@ def set_default_hub():
 @login_required
 def email_hub():
     """Email Marketing Hub with A/B testing, templates, automations"""
-    return render_template('email_hub.html')
+    recent_campaigns = []
+    past_emails = []
+    recent_newsletters = []
+    ab_tests_list = []
+    total_sent = 0
+    active_count = 0
+    try:
+        from models import Campaign, NewsletterArchive
+        recent_campaigns = Campaign.query.order_by(Campaign.created_at.desc()).limit(5).all()
+        past_emails = Campaign.query.filter(Campaign.status == 'sent').order_by(Campaign.created_at.desc()).limit(4).all()
+        recent_newsletters = NewsletterArchive.query.order_by(NewsletterArchive.created_at.desc()).limit(4).all()
+        total_sent = Campaign.query.filter(Campaign.status == 'sent').count()
+        active_count = Campaign.query.filter(Campaign.status.in_(['active', 'sending', 'scheduled'])).count()
+    except Exception as e:
+        logger.warning(f"Email hub data load: {e}")
+    return render_template('email_hub.html',
+        recent_campaigns=recent_campaigns,
+        past_emails=past_emails,
+        recent_newsletters=recent_newsletters,
+        ab_tests=ab_tests_list,
+        total_sent=total_sent,
+        active_campaigns=active_count
+    )
 
 @main_bp.route('/ab-tests')
 @login_required
@@ -1309,6 +1331,7 @@ def agents_hub():
     return render_template('agents_hub.html', agents=agents, agents_json=json.dumps(agents))
 
 @main_bp.route('/ads')
+@main_bp.route('/ads-hub')
 @login_required
 def ads_hub():
     """Ads Hub with Display/Search/Shopping ads and Google Ads integration"""
@@ -8680,11 +8703,10 @@ def get_agent_report_detail(agent_type, report_id):
         'report': {
             'id': report.id,
             'report_type': report.report_type,
-            'title': report.title,
-            'content': report.content,
+            'title': report.report_title,
+            'content': report.report_data,
             'period_start': report.period_start.strftime('%Y-%m-%d') if report.period_start else None,
             'period_end': report.period_end.strftime('%Y-%m-%d') if report.period_end else None,
-            'status': report.status,
             'created_at': report.created_at.isoformat() if report.created_at else None
         }
     })
@@ -8781,7 +8803,6 @@ def get_agent_deliverable_detail(agent_type, deliverable_id):
             'title': deliverable.title,
             'description': deliverable.description,
             'content': deliverable.content,
-            'priority': deliverable.priority,
             'status': deliverable.status,
             'created_at': deliverable.created_at.isoformat() if deliverable.created_at else None
         }
