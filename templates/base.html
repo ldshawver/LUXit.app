@@ -136,7 +136,6 @@
     </style>
     {% endif %}
     <style>
-      /* ── Global App Layout ── */
       *, *::before, *::after { box-sizing: border-box; }
       body { margin: 0; background: #030014; }
 
@@ -148,33 +147,21 @@
         background: rgba(3,0,20,0.95);
         border-bottom: 1px solid rgba(255,255,255,0.07);
         backdrop-filter: blur(20px);
-        position: sticky;
-        top: 0;
-        z-index: 100;
+        position: sticky; top: 0; z-index: 100;
         flex-shrink: 0;
       }
       .app-header-inner {
-        display: flex;
-        align-items: center;
-        gap: 12px;
-        height: 100%;
-        padding: 0 18px;
+        display: flex; align-items: center; gap: 12px;
+        height: 100%; padding: 0 18px;
       }
       .brand { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
       .back-arrow-glow {
-        cursor: pointer;
-        width: 28px; height: 28px;
+        cursor: pointer; width: 28px; height: 28px;
         display: flex; align-items: center; justify-content: center;
-        border-radius: 7px;
-        color: rgba(255,255,255,0.3);
-        transition: all 0.15s;
-        border: 1px solid transparent;
+        border-radius: 7px; color: rgba(255,255,255,0.3);
+        transition: all 0.15s; border: 1px solid transparent;
       }
-      .back-arrow-glow:hover {
-        color: #00e5ff;
-        border-color: rgba(0,229,255,0.2);
-        background: rgba(0,229,255,0.07);
-      }
+      .back-arrow-glow:hover { color: #00e5ff; border-color: rgba(0,229,255,0.2); background: rgba(0,229,255,0.07); }
       .back-arrow-glow svg { width: 16px; height: 16px; }
       .brand-link { text-decoration: none; display: flex; align-items: center; gap: 4px; }
       .brand-logo { display: flex; align-items: center; gap: 4px; }
@@ -203,6 +190,116 @@
       .dropdown-item:hover { background: rgba(255,255,255,0.07); color: #fff; }
       .dropdown-item svg { width: 14px; height: 14px; margin-right: 8px; }
 
+      /* ── Category Tab Bar (below header) ── */
+      .app-category-bar {
+        display: flex;
+        align-items: center;
+        gap: 0;
+        height: 38px;
+        background: rgba(6,8,20,0.88);
+        border-bottom: 1px solid rgba(255,255,255,0.06);
+        backdrop-filter: blur(24px);
+        -webkit-backdrop-filter: blur(24px);
+        flex-shrink: 0;
+        padding: 0 14px;
+        position: sticky;
+        top: 52px;
+        z-index: 95;
+      }
+      .catbar-switcher {
+        display: flex; gap: 2px; padding: 2px;
+        background: linear-gradient(270deg, #bc00ed, #00e5ff, #00ffb4, #a855f7, #bc00ed);
+        background-size: 400% 400%;
+        animation: switcher-glow 6s ease infinite;
+        border-radius: 7px; flex-shrink: 0;
+        margin-right: 10px;
+        box-shadow: 0 0 8px rgba(188,0,237,0.15), 0 0 12px rgba(0,229,255,0.08);
+      }
+      .catbar-sw {
+        display: flex; align-items: center; justify-content: center;
+        gap: 4px; padding: 4px 12px;
+        border-radius: 5px; font-size: 0.7rem; font-weight: 700;
+        color: rgba(255,255,255,0.6); text-decoration: none;
+        transition: all 0.2s ease; white-space: nowrap;
+        background: rgba(3,0,20,0.85); letter-spacing: 0.02em;
+      }
+      .catbar-sw svg { width: 12px; height: 12px; stroke: rgba(255,255,255,0.4); flex-shrink: 0; }
+      .catbar-sw:hover { color: #fff; background: rgba(3,0,20,0.7); text-decoration: none; }
+      .catbar-sw:hover svg { stroke: #fff; }
+      .catbar-sw.active { color: #fff; background: rgba(0,0,0,0.7); text-shadow: 0 0 10px rgba(255,255,255,0.3); }
+      .catbar-sw.active svg { stroke: #fff; }
+      .cat-tabs {
+        display: flex;
+        align-items: center;
+        gap: 0;
+        height: 100%;
+        overflow-x: auto;
+        scrollbar-width: none;
+        flex: 1;
+        justify-content: flex-end;
+      }
+      .cat-tabs::-webkit-scrollbar { display: none; }
+      .cat-tab {
+        display: flex;
+        align-items: center;
+        height: 38px;
+        padding: 0 16px;
+        font-size: 0.76rem;
+        font-weight: 500;
+        color: rgba(255,255,255,0.4);
+        text-decoration: none;
+        border-bottom: 2px solid transparent;
+        white-space: nowrap;
+        transition: all 0.15s;
+        letter-spacing: 0.01em;
+      }
+      .cat-tab:hover { color: rgba(255,255,255,0.85); text-decoration: none; }
+      .cat-tab.active {
+        color: #00e5ff;
+        border-bottom-color: #00e5ff;
+        font-weight: 600;
+      }
+      .cat-right {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        flex-shrink: 0;
+        margin-left: 8px;
+      }
+      .app-topbar-icon {
+        position: relative;
+        width: 30px; height: 30px;
+        display: flex; align-items: center; justify-content: center;
+        border-radius: 7px;
+        background: rgba(255,255,255,0.05);
+        border: 1px solid rgba(255,255,255,0.08);
+        color: rgba(255,255,255,0.5);
+        text-decoration: none;
+        transition: all 0.15s;
+        flex-shrink: 0;
+      }
+      .app-topbar-icon:hover { background: rgba(255,255,255,0.09); border-color: rgba(255,255,255,0.15); color: #fff; text-decoration: none; }
+      .app-topbar-icon svg { width: 14px; height: 14px; stroke: currentColor; }
+      .app-topbar-badge {
+        position: absolute; top: -4px; right: -4px;
+        min-width: 15px; height: 15px; border-radius: 8px;
+        font-size: 0.55rem; font-weight: 700;
+        display: flex; align-items: center; justify-content: center;
+        padding: 0 3px; line-height: 1;
+      }
+      .badge-red { background: #ef4444; color: #fff; }
+      .badge-amber { background: #f59e0b; color: #000; }
+      .topnav-ai-btn {
+        display: flex; align-items: center; gap: 5px;
+        padding: 4px 10px; border-radius: 7px;
+        background: linear-gradient(135deg, rgba(168,85,247,0.12), rgba(0,229,255,0.08));
+        border: 1px solid rgba(168,85,247,0.22);
+        color: #d8b4fe; font-size: 0.73rem; font-weight: 600;
+        cursor: pointer; transition: all 0.2s; text-decoration: none;
+        white-space: nowrap; flex-shrink: 0;
+      }
+      .topnav-ai-btn:hover { background: linear-gradient(135deg, rgba(168,85,247,0.22), rgba(0,229,255,0.15)); border-color: rgba(168,85,247,0.4); color: #fff; text-decoration: none; }
+
       /* ── App body = sidebar + content ── */
       .app-body {
         display: flex;
@@ -210,248 +307,64 @@
         overflow: hidden;
       }
 
-      /* ══════════════════════════════════
-         GLOBAL SIDEBAR
-      ══════════════════════════════════ */
+      /* ── LEFT SIDEBAR ── */
       .app-sidebar {
         width: 224px;
         flex-shrink: 0;
-        background: rgba(6,8,20,0.88);
-        border-right: 1px solid rgba(255,255,255,0.07);
-        backdrop-filter: blur(24px);
-        -webkit-backdrop-filter: blur(24px);
+        background: rgba(6,8,20,0.7);
+        border-right: 1px solid rgba(255,255,255,0.06);
+        backdrop-filter: blur(20px);
+        display: flex;
+        flex-direction: column;
         overflow-y: auto;
         overflow-x: hidden;
         scrollbar-width: thin;
-        scrollbar-color: rgba(255,255,255,0.1) transparent;
-        padding: 12px 10px 24px;
-        display: flex;
-        flex-direction: column;
-        gap: 2px;
-        position: sticky;
-        top: 52px;
-        height: calc(100vh - 52px);
+        scrollbar-color: rgba(255,255,255,0.08) transparent;
       }
       .app-sidebar::-webkit-scrollbar { width: 4px; }
-      .app-sidebar::-webkit-scrollbar-track { background: transparent; }
-      .app-sidebar::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 2px; }
+      .app-sidebar::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 2px; }
 
-      .nav-switcher {
-        display: flex;
-        gap: 4px;
-        padding: 4px;
-        background: rgba(255,255,255,0.04);
+      @keyframes switcher-glow {
+        0%   { background-position: 0% 50%; }
+        50%  { background-position: 100% 50%; }
+        100% { background-position: 0% 50%; }
+      }
+      .sidebar-section { padding: 6px 10px; }
+      .sidebar-section-label {
+        font-size: 0.6rem; font-weight: 700; letter-spacing: 0.08em;
+        text-transform: uppercase; color: rgba(255,255,255,0.22);
+        padding: 8px 8px 4px; margin: 0;
+      }
+      .sidebar-nav-item {
+        display: flex; align-items: center; gap: 8px;
+        padding: 7px 12px; border-radius: 8px;
+        color: rgba(255,255,255,0.6); text-decoration: none;
+        font-size: 0.8rem; font-weight: 500;
+        transition: all 0.15s; margin: 2px 0;
+        background: rgba(255,255,255,0.03);
         border: 1px solid rgba(255,255,255,0.06);
-        border-radius: 10px;
-        margin-bottom: 8px;
       }
-      .nav-switch {
-        flex: 1;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        gap: 6px;
-        padding: 7px 6px;
-        border-radius: 7px;
-        font-size: 0.76rem;
-        font-weight: 600;
-        color: rgba(255,255,255,0.4);
-        text-decoration: none;
-        transition: all 0.2s ease;
-        white-space: nowrap;
-      }
-      .nav-switch svg {
-        width: 14px; height: 14px;
-        stroke: rgba(255,255,255,0.3);
-        flex-shrink: 0;
-      }
-      .nav-switch:hover {
-        color: rgba(255,255,255,0.7);
-        background: rgba(255,255,255,0.05);
-        text-decoration: none;
-      }
-      .nav-switch.active {
-        color: #00e5ff;
-        background: rgba(0,229,255,0.1);
-        border: 1px solid rgba(0,229,255,0.18);
-      }
-      .nav-switch.active svg { stroke: #00e5ff; }
+      .sidebar-nav-item svg, .sidebar-nav-item i { width: 15px; height: 15px; flex-shrink: 0; }
+      .sidebar-nav-item:hover { color: #fff; background: rgba(255,255,255,0.08); border-color: rgba(255,255,255,0.12); text-decoration: none; }
+      .sidebar-nav-item.active { color: #00e5ff; background: rgba(0,229,255,0.1); border-color: rgba(0,229,255,0.25); font-weight: 600; }
+      .sidebar-nav-item.active svg, .sidebar-nav-item.active i { color: #00e5ff; }
+      .sidebar-spacer { flex: 1; }
 
-      /* Nav items */
-      .nav-item {
-        display: flex;
-        align-items: center;
-        gap: 9px;
-        padding: 9px 12px;
-        border-radius: 9px;
-        color: rgba(255,255,255,0.52);
-        text-decoration: none;
-        font-size: 0.84rem;
-        font-weight: 500;
-        transition: all 0.15s ease;
-        background: rgba(255,255,255,0.028);
-        border: 1px solid rgba(255,255,255,0.045);
-        margin-bottom: 2px;
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        letter-spacing: 0.005em;
-      }
-      .nav-item svg {
-        width: 15px; height: 15px;
-        stroke: rgba(255,255,255,0.3);
-        flex-shrink: 0;
-        transition: stroke 0.15s;
-      }
-      .nav-item:hover {
-        color: rgba(255,255,255,0.9);
-        background: rgba(255,255,255,0.06);
-        border-color: rgba(255,255,255,0.1);
-        text-decoration: none;
-      }
-      .nav-item:hover svg { stroke: rgba(255,255,255,0.7); }
-      .nav-item.active {
-        color: #00e5ff;
-        background: rgba(0,229,255,0.09);
-        border-color: rgba(0,229,255,0.22);
-        font-weight: 600;
-      }
-      .nav-item.active svg { stroke: #00e5ff; }
-
-      /* Featured nav item */
-      .nav-item-featured {
-        background: linear-gradient(135deg, rgba(0,229,255,0.1), rgba(168,85,247,0.08));
-        border-color: rgba(0,229,255,0.18);
-        color: rgba(255,255,255,0.85);
-        font-weight: 600;
-      }
-      .nav-item-featured svg { stroke: #00e5ff; }
-      .nav-item-featured:hover {
-        background: linear-gradient(135deg, rgba(0,229,255,0.16), rgba(168,85,247,0.12));
-        border-color: rgba(0,229,255,0.3);
-        color: #fff;
-      }
-      .nav-item-featured.active {
-        background: linear-gradient(135deg, rgba(0,229,255,0.18), rgba(168,85,247,0.14));
-        border-color: rgba(0,229,255,0.35);
-      }
-
-      .nav-badge-new {
-        margin-left: auto;
-        font-size: 0.58rem;
-        font-weight: 700;
-        padding: 2px 6px;
-        border-radius: 5px;
-        background: linear-gradient(135deg, #00ffb4, #0ea5e9);
-        color: #000;
-        letter-spacing: 0.04em;
-        flex-shrink: 0;
-      }
-
-      /* ══════════════════════════════════
-         APP CONTENT AREA
-      ══════════════════════════════════ */
+      /* ── Content area ── */
       .app-content {
-        flex: 1;
-        min-width: 0;
-        display: flex;
-        flex-direction: column;
+        flex: 1; min-width: 0;
+        display: flex; flex-direction: column;
         overflow: hidden;
       }
-
-      /* ── Top Tab Bar ── */
-      .app-topbar {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 12px;
-        padding: 0 20px;
-        height: 44px;
-        background: rgba(6,8,20,0.6);
-        border-bottom: 1px solid rgba(255,255,255,0.06);
-        backdrop-filter: blur(12px);
-        flex-shrink: 0;
-        position: sticky;
-        top: 0;
-        z-index: 90;
-      }
-      .app-tabs {
-        display: flex;
-        align-items: center;
-        gap: 2px;
-        height: 100%;
-        overflow-x: auto;
-        scrollbar-width: none;
-      }
-      .app-tabs::-webkit-scrollbar { display: none; }
-      .app-tab {
-        display: flex;
-        align-items: center;
-        height: 44px;
-        padding: 0 15px;
-        font-size: 0.81rem;
-        font-weight: 500;
-        color: rgba(255,255,255,0.45);
-        text-decoration: none;
-        border-bottom: 2px solid transparent;
-        white-space: nowrap;
-        transition: all 0.15s;
-        letter-spacing: 0.01em;
-      }
-      .app-tab:hover { color: rgba(255,255,255,0.85); text-decoration: none; }
-      .app-tab.active {
-        color: #00e5ff;
-        border-bottom-color: #00e5ff;
-        font-weight: 600;
-      }
-      .app-topbar-actions {
-        display: flex;
-        align-items: center;
-        gap: 6px;
-        flex-shrink: 0;
-      }
-      .app-topbar-icon {
-        position: relative;
-        width: 32px; height: 32px;
-        display: flex; align-items: center; justify-content: center;
-        border-radius: 8px;
-        background: rgba(255,255,255,0.05);
-        border: 1px solid rgba(255,255,255,0.08);
-        color: rgba(255,255,255,0.5);
-        text-decoration: none;
-        transition: all 0.15s;
-      }
-      .app-topbar-icon:hover {
-        background: rgba(255,255,255,0.09);
-        border-color: rgba(255,255,255,0.15);
-        color: #fff;
-        text-decoration: none;
-      }
-      .app-topbar-icon svg { width: 15px; height: 15px; stroke: currentColor; }
-      .app-topbar-badge {
-        position: absolute;
-        top: -4px; right: -4px;
-        min-width: 16px; height: 16px;
-        border-radius: 8px;
-        font-size: 0.58rem;
-        font-weight: 700;
-        display: flex; align-items: center; justify-content: center;
-        padding: 0 3px;
-        line-height: 1;
-      }
-      .badge-red { background: #ef4444; color: #fff; }
-      .badge-amber { background: #f59e0b; color: #000; }
-
-      /* ── Page content ── */
       .app-page-content {
         flex: 1;
-        padding: 20px 24px 40px;
+        padding: 20px 28px 40px;
         overflow-y: auto;
         overflow-x: hidden;
       }
 
       /* Flash messages */
-      .app-flash { padding: 0 24px; padding-top: 12px; }
+      .app-flash { padding: 0 28px; padding-top: 12px; }
       .app-flash .alert { margin-bottom: 8px; }
 
       /* No sidebar pages (login, register, etc.) */
@@ -463,13 +376,13 @@
     {% set _p = request.path %}
 
     {# ── Section detection ── #}
-    {% set _sec_campaigns = _p.startswith('/newsletters') or _p.startswith('/sms') or _p.startswith('/social') or _p.startswith('/blog') or _p.startswith('/campaigns') or _p.startswith('/press-release') or _p.startswith('/email') %}
-    {% set _sec_audience   = _p.startswith('/contacts') or _p.startswith('/segments') or _p.startswith('/audience') %}
-    {% set _sec_agents     = _p.startswith('/agents-hub') or _p.startswith('/agents/reports') %}
-    {% set _sec_automation = _p.startswith('/automations') or _p.startswith('/automation-templates') or _p.startswith('/automation-t') %}
-    {% set _sec_analytics  = _p.startswith('/analytics') %}
-    {% set _sec_seo        = _p.startswith('/seo') %}
-    {% set _sec_dashboard  = _p == '/dashboard' %}
+    {% set _sec_core     = _p.startswith('/campaign-hub') or _p.startswith('/newsletters') or _p.startswith('/email') or _p.startswith('/sms') or _p.startswith('/social') or _p.startswith('/ads') or _p.startswith('/press') %}
+    {% set _sec_content  = _p.startswith('/blog') or _p.startswith('/seo') or _p.startswith('/marketing-calendar') %}
+    {% set _sec_intel    = _p.startswith('/analytics') or _p.startswith('/competitor') or _p.startswith('/agents') or _p.startswith('/chatbot') %}
+    {% set _sec_audience = _p.startswith('/contacts') or _p.startswith('/segments') or _p.startswith('/audience') %}
+    {% set _sec_auto     = _p.startswith('/automations') or _p.startswith('/automation-t') %}
+    {% set _sec_engage   = _p.startswith('/events') %}
+    {% set _sec_home     = _p == '/marketing-hub' or _p == '/crm-hub' or _p == '/dashboard' %}
 
     <div class="app-shell">
 
@@ -480,7 +393,7 @@
                     <span class="back-arrow-glow" onclick="history.back();" title="Go back">
                         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
                     </span>
-                    <a href="{{ url_for('main.dashboard') }}" aria-label="Dashboard" class="brand-link">
+                    <a href="{% if current_user.is_authenticated and current_user.preferred_hub == 'sales' %}{{ url_for('main.crm_hub') }}{% else %}{{ url_for('main.marketing_hub') }}{% endif %}" aria-label="Home" class="brand-link">
                         <span class="brand-logo">
                             <img src="{{ url_for('static', filename='images/lux-chrome.png') }}" alt="LUX" class="brand-lux-img">
                             <span class="brand-stack"><span class="brand-it">IT</span><span class="brand-app">.app</span></span>
@@ -551,165 +464,135 @@
             </div>
         </header>
 
-        {# ═══ AUTHENTICATED LAYOUT: SIDEBAR + CONTENT ═══ #}
+        {# ═══ AUTHENTICATED LAYOUT ═══ #}
         {% if current_user.is_authenticated %}
+
+        {# ── CATEGORY TAB BAR ── #}
+        <div class="app-category-bar">
+            <div class="catbar-switcher">
+                <a href="{{ url_for('main.marketing_hub') }}" class="catbar-sw{% if _sec_core or _sec_content or _sec_intel or _sec_audience or _sec_auto or _sec_engage or _p == '/marketing-hub' %} active{% endif %}">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+                    Marketing
+                </a>
+                <a href="{{ url_for('main.crm_hub') }}" class="catbar-sw{% if _p.startswith('/crm') or _p.startswith('/leads') or _p.startswith('/deals') or _p.startswith('/pipeline') or _p == '/dashboard' %} active{% endif %}">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
+                    Sales
+                </a>
+            </div>
+            <div class="cat-tabs">
+                <a href="{{ url_for('main.campaign_hub') }}" class="cat-tab{% if _sec_core %} active{% endif %}">Core Marketing</a>
+                <a href="{{ url_for('main.blog_list') }}" class="cat-tab{% if _sec_content %} active{% endif %}">Content Engine</a>
+                <a href="{{ url_for('main.analytics_hub') }}" class="cat-tab{% if _sec_intel %} active{% endif %}">Intelligence</a>
+                <a href="{{ url_for('main.contacts') }}" class="cat-tab{% if _sec_audience %} active{% endif %}">Customers</a>
+                <a href="{{ url_for('main.automation_dashboard') }}" class="cat-tab{% if _sec_auto %} active{% endif %}">Automations</a>
+                <a href="{{ url_for('main.events_dashboard') }}" class="cat-tab{% if _sec_engage %} active{% endif %}">Engagement</a>
+            </div>
+            <div class="cat-right">
+                <a href="{{ url_for('main.chatbot') }}" class="topnav-ai-btn" title="Ask AI">
+                    <i data-feather="message-circle" style="width:13px;height:13px;"></i> AI
+                </a>
+                <a href="{{ url_for('main.inbox_page') }}" class="app-topbar-icon" title="Inbox">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+                    {% if unread_inbox %}<span class="app-topbar-badge badge-red">{{ unread_inbox }}</span>{% endif %}
+                </a>
+                <a href="{{ url_for('main.notifications_page') }}" class="app-topbar-icon" title="Notifications">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+                    {% if unread_notifications %}<span class="app-topbar-badge badge-amber">{{ unread_notifications }}</span>{% endif %}
+                </a>
+            </div>
+        </div>
+
         <div class="app-body">
 
             {# ── LEFT SIDEBAR ── #}
             <nav class="app-sidebar">
 
-                {# MARKETING / SALES quick-switch #}
-                <div class="nav-switcher">
-                    <a href="{{ url_for('main.campaign_hub') }}" class="nav-switch{% if _sec_campaigns or _p == '/marketing-hub' or _p.startswith('/campaign-hub') or _p.startswith('/newsletters') or _p.startswith('/email') or _p.startswith('/sms') or _p.startswith('/social') or _p.startswith('/blog') or _p.startswith('/ads') or _p.startswith('/press') or _p.startswith('/seo') or _p.startswith('/marketing-calendar') or _p.startswith('/automations') or _p.startswith('/automation-t') or _p.startswith('/agents') or _p.startswith('/approval') or _p.startswith('/analytics') or _p.startswith('/competitor') or _p.startswith('/events') or _p.startswith('/contacts') or _p.startswith('/segments') %} active{% endif %}">
-                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
-                        Marketing
+                {# Core Marketing #}
+                <div class="sidebar-section">
+                    <p class="sidebar-section-label">Core Marketing</p>
+                    <a href="{{ url_for('main.campaign_hub') }}" class="sidebar-nav-item{% if _p.startswith('/campaign-hub') %} active{% endif %}">
+                        <i data-feather="zap"></i> Campaigns
                     </a>
-                    <a href="{{ url_for('main.crm_hub') }}" class="nav-switch{% if _p.startswith('/crm') or _p.startswith('/leads') or _p.startswith('/deals') or _p.startswith('/pipeline') %} active{% endif %}">
-                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
-                        Sales
+                    <a href="{{ url_for('main.email_hub') }}" class="sidebar-nav-item{% if _p.startswith('/email') %} active{% endif %}">
+                        <i data-feather="mail"></i> Email
+                    </a>
+                    <a href="{{ url_for('main.sms_dashboard') }}" class="sidebar-nav-item{% if _p.startswith('/sms') %} active{% endif %}">
+                        <i data-feather="smartphone"></i> SMS
+                    </a>
+                    <a href="{{ url_for('main.social_media') }}" class="sidebar-nav-item{% if _p.startswith('/social') %} active{% endif %}">
+                        <i data-feather="share-2"></i> Social
+                    </a>
+                    <a href="{{ url_for('main.ads_hub') }}" class="sidebar-nav-item{% if _p.startswith('/ads') %} active{% endif %}">
+                        <i data-feather="target"></i> Ads
                     </a>
                 </div>
 
-                <a href="{{ url_for('main.campaign_hub') }}" class="nav-item nav-item-featured{% if _p.startswith('/campaign-hub') %} active{% endif %}">
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
-                    Generate Campaigns
-                </a>
-                <a href="{{ url_for('main.newsletters') }}" class="nav-item{% if _p.startswith('/newsletters') or _p.startswith('/email') %} active{% endif %}">
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
-                    Email
-                </a>
-                <a href="{{ url_for('main.sms_dashboard') }}" class="nav-item{% if _p.startswith('/sms') %} active{% endif %}">
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>
-                    SMS
-                </a>
-                <a href="{{ url_for('main.social_media') }}" class="nav-item{% if _p.startswith('/social') %} active{% endif %}">
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
-                    Social Media
-                </a>
-                <a href="{{ url_for('main.blog_list') }}" class="nav-item{% if _p.startswith('/blog') %} active{% endif %}">
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-                    Blog Hub
-                </a>
-                <a href="{{ url_for('main.ads_hub') }}" class="nav-item{% if _p.startswith('/ads') %} active{% endif %}">
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="22" y1="12" x2="18" y2="12"/><line x1="6" y1="12" x2="2" y2="12"/><line x1="12" y1="6" x2="12" y2="2"/><line x1="12" y1="22" x2="12" y2="18"/></svg>
-                    Ads Manager
-                </a>
-                <a href="/press-releases/create" class="nav-item{% if _p.startswith('/press-release') %} active{% endif %}">
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
-                    Press Release
-                </a>
-                <a href="{{ url_for('main.contacts') }}" class="nav-item{% if _p.startswith('/contacts') %} active{% endif %}">
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-                    Audience
-                </a>
-                <a href="{{ url_for('main.segments') }}" class="nav-item{% if _p.startswith('/segments') %} active{% endif %}">
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
-                    Segments
-                </a>
-                <a href="{{ url_for('main.agents_hub') }}" class="nav-item{% if _p == '/agents-hub' or _p.startswith('/agents-hub') and not _p.startswith('/agents/reports') %} active{% endif %}">
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="8" rx="2" ry="2"/><rect x="2" y="14" width="20" height="8" rx="2" ry="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>
-                    AI Hub
-                </a>
-                <a href="{{ url_for('main.agent_reports') }}" class="nav-item{% if _p.startswith('/agents/reports') %} active{% endif %}">
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
-                    AI Reports
-                </a>
-                <a href="{{ url_for('main.automation_dashboard') }}" class="nav-item{% if _p.startswith('/automations') or _p.startswith('/automation-t') %} active{% endif %}">
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
-                    Automations
-                </a>
-                <a href="{{ url_for('main.marketing_calendar') }}" class="nav-item{% if _p.startswith('/marketing-calendar') %} active{% endif %}">
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
-                    Calendar
-                </a>
-                <a href="{{ url_for('main.analytics_hub') }}" class="nav-item{% if _p.startswith('/analytics') %} active{% endif %}">
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
-                    Analytics
-                </a>
-                <a href="{{ url_for('main.seo_dashboard') }}" class="nav-item{% if _p.startswith('/seo') %} active{% endif %}">
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-                    SEO
-                </a>
-                <a href="{{ url_for('main.competitor_analysis') }}" class="nav-item{% if _p.startswith('/competitor') %} active{% endif %}">
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="6"/><path d="M15.477 12.89L17 22l-5-3-5 3 1.523-9.11"/></svg>
-                    Competitors
-                </a>
-                <a href="{{ url_for('main.events_dashboard') }}" class="nav-item{% if _p.startswith('/events') %} active{% endif %}">
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
-                    Events
-                </a>
+                {# Content Engine #}
+                <div class="sidebar-section">
+                    <p class="sidebar-section-label">Content Engine</p>
+                    <a href="{{ url_for('main.blog_list') }}" class="sidebar-nav-item{% if _p.startswith('/blog') %} active{% endif %}">
+                        <i data-feather="edit-3"></i> Blog
+                    </a>
+                    <a href="{{ url_for('main.seo_dashboard') }}" class="sidebar-nav-item{% if _p.startswith('/seo') %} active{% endif %}">
+                        <i data-feather="search"></i> SEO
+                    </a>
+                    <a href="{{ url_for('main.marketing_calendar') }}" class="sidebar-nav-item{% if _p.startswith('/marketing-calendar') %} active{% endif %}">
+                        <i data-feather="calendar"></i> Calendar
+                    </a>
+                </div>
 
+                {# Intelligence Layer #}
+                <div class="sidebar-section">
+                    <p class="sidebar-section-label">Intelligence</p>
+                    <a href="{{ url_for('main.analytics_hub') }}" class="sidebar-nav-item{% if _p.startswith('/analytics') %} active{% endif %}">
+                        <i data-feather="bar-chart-2"></i> Analytics
+                    </a>
+                    <a href="{{ url_for('main.competitor_analysis') }}" class="sidebar-nav-item{% if _p.startswith('/competitor') %} active{% endif %}">
+                        <i data-feather="award"></i> Competitors
+                    </a>
+                    <a href="{{ url_for('main.chatbot') }}" class="sidebar-nav-item{% if _p.startswith('/chatbot') %} active{% endif %}">
+                        <i data-feather="message-circle"></i> AI
+                    </a>
+                    <a href="{{ url_for('main.agents_hub') }}" class="sidebar-nav-item{% if _p.startswith('/agents') %} active{% endif %}">
+                        <i data-feather="cpu"></i> AI Hub
+                    </a>
+                </div>
+
+                {# Customer Layer #}
+                <div class="sidebar-section">
+                    <p class="sidebar-section-label">Customers</p>
+                    <a href="{{ url_for('main.contacts') }}" class="sidebar-nav-item{% if _p.startswith('/contacts') %} active{% endif %}">
+                        <i data-feather="users"></i> Audience
+                    </a>
+                    <a href="{{ url_for('main.segments') }}" class="sidebar-nav-item{% if _p.startswith('/segments') %} active{% endif %}">
+                        <i data-feather="filter"></i> Segments
+                    </a>
+                </div>
+
+                {# Automation Layer #}
+                <div class="sidebar-section">
+                    <p class="sidebar-section-label">Automations</p>
+                    <a href="{{ url_for('main.automation_dashboard') }}" class="sidebar-nav-item{% if _p.startswith('/automations') and not _p.startswith('/automation-t') %} active{% endif %}">
+                        <i data-feather="repeat"></i> Workflows
+                    </a>
+                    <a href="{{ url_for('main.automation_templates') }}" class="sidebar-nav-item{% if _p.startswith('/automation-templates') %} active{% endif %}">
+                        <i data-feather="layout"></i> Templates
+                    </a>
+                </div>
+
+                {# Engagement #}
+                <div class="sidebar-section">
+                    <p class="sidebar-section-label">Engagement</p>
+                    <a href="{{ url_for('main.events_dashboard') }}" class="sidebar-nav-item{% if _p.startswith('/events') %} active{% endif %}">
+                        <i data-feather="map-pin"></i> Events
+                    </a>
+                </div>
+
+                <div class="sidebar-spacer"></div>
             </nav>
 
             {# ── CONTENT AREA ── #}
             <div class="app-content">
-
-                {# ── Dynamic Tab Bar ── #}
-                <div class="app-topbar">
-                    <div class="app-tabs">
-                        {# CAMPAIGNS section tabs #}
-                        {% if _sec_campaigns or _p == '/marketing-hub' %}
-                        <a href="{{ url_for('main.newsletters') }}" class="app-tab{% if _p.startswith('/newsletters') or _p.startswith('/email') %} active{% endif %}">Email</a>
-                        <a href="{{ url_for('main.sms_dashboard') }}" class="app-tab{% if _p.startswith('/sms') %} active{% endif %}">SMS</a>
-                        <a href="{{ url_for('main.social_media') }}" class="app-tab{% if _p.startswith('/social') %} active{% endif %}">Social Media</a>
-                        <a href="{{ url_for('main.blog_list') }}" class="app-tab{% if _p.startswith('/blog') %} active{% endif %}">Blog</a>
-                        <a href="/press-releases/create" class="app-tab{% if _p.startswith('/press-release') %} active{% endif %}">Press Release</a>
-
-                        {# AUDIENCE section tabs #}
-                        {% elif _sec_audience %}
-                        <a href="{{ url_for('main.contacts') }}" class="app-tab{% if _p.startswith('/contacts') %} active{% endif %}">Audience</a>
-                        <a href="{{ url_for('main.segments') }}" class="app-tab{% if _p.startswith('/segments') %} active{% endif %}">Segments</a>
-
-                        {# AI section tabs #}
-                        {% elif _sec_agents %}
-                        <a href="{{ url_for('main.agents_hub') }}" class="app-tab{% if _p == '/agents-hub' or (_p.startswith('/agents-hub') and not _p.startswith('/agents/reports')) %} active{% endif %}">Agents</a>
-                        <a href="{{ url_for('main.agent_reports') }}" class="app-tab{% if _p.startswith('/agents/reports') %} active{% endif %}">Reports</a>
-
-                        {# AUTOMATION section tabs #}
-                        {% elif _sec_automation %}
-                        <a href="{{ url_for('main.automation_dashboard') }}" class="app-tab{% if _p.startswith('/automations') and not _p.startswith('/automation-t') %} active{% endif %}">Workflows</a>
-                        <a href="{{ url_for('main.automation_templates') }}" class="app-tab{% if _p.startswith('/automation-templates') %} active{% endif %}">Templates</a>
-                        <a href="{{ url_for('main.automation_triggers') }}" class="app-tab{% if _p.startswith('/automations/triggers') %} active{% endif %}">Trigger Library</a>
-
-                        {# ANALYTICS section tabs #}
-                        {% elif _sec_analytics %}
-                        <a href="{{ url_for('main.analytics_hub') }}" class="app-tab{% if _p == '/analytics-hub' %} active{% endif %}">Overview</a>
-                        <a href="{{ url_for('main.analytics_hub') }}?tab=traffic" class="app-tab{% if request.args.get('tab') == 'traffic' %} active{% endif %}">Traffic</a>
-                        <a href="{{ url_for('main.analytics_hub') }}?tab=conversions" class="app-tab{% if request.args.get('tab') == 'conversions' %} active{% endif %}">Conversions</a>
-                        <a href="{{ url_for('main.analytics_hub') }}?tab=revenue" class="app-tab{% if request.args.get('tab') == 'revenue' %} active{% endif %}">Revenue</a>
-
-                        {# SEO section tabs #}
-                        {% elif _sec_seo %}
-                        <a href="{{ url_for('main.seo_dashboard') }}" class="app-tab{% if _p == '/seo/dashboard' %} active{% endif %}">Dashboard</a>
-                        <a href="{{ url_for('main.seo_keywords') }}" class="app-tab{% if _p.startswith('/seo/keywords') or _p.startswith('/seo-keywords') %} active{% endif %}">Keywords</a>
-                        <a href="{{ url_for('main.seo_backlinks') }}" class="app-tab{% if _p.startswith('/seo/backlinks') or _p.startswith('/seo-backlinks') %} active{% endif %}">Backlinks</a>
-                        <a href="{{ url_for('main.seo_competitors') }}" class="app-tab{% if _p.startswith('/seo/competitors') or _p.startswith('/seo-competitors') %} active{% endif %}">Competitors</a>
-
-                        {# DASHBOARD section tabs #}
-                        {% elif _sec_dashboard %}
-                        <a href="{{ url_for('main.dashboard') }}" class="app-tab active">Overview</a>
-                        <a href="{{ url_for('main.contacts') }}" class="app-tab">Audience</a>
-                        <a href="{{ url_for('main.analytics_hub') }}" class="app-tab">Analytics</a>
-                        <a href="{{ url_for('main.automation_dashboard') }}" class="app-tab">Automations</a>
-
-                        {% else %}
-                        {# Default / no section — empty tabs area #}
-                        <span style="font-size:0.78rem;color:rgba(255,255,255,0.2);padding:0 4px;">{% block page_title %}{% endblock %}</span>
-                        {% endif %}
-                    </div>
-
-                    {# Mailbox + Notification icons — always right-aligned #}
-                    <div class="app-topbar-actions">
-                        <a href="{{ url_for('main.newsletters') }}" class="app-topbar-icon" title="Messages">
-                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
-                            <span class="app-topbar-badge badge-red">3</span>
-                        </a>
-                        <a href="#" class="app-topbar-icon" title="Notifications">
-                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
-                            <span class="app-topbar-badge badge-amber">5</span>
-                        </a>
-                    </div>
-                </div>
 
                 {# Flash messages (authenticated) #}
                 {% with messages = get_flashed_messages(with_categories=true) %}
@@ -756,6 +639,31 @@
 
     </div>{# /app-shell #}
 
+    {% if current_user.is_authenticated %}
+    <div class="modal fade" id="quickLinksModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content" style="background: #0f0f1a; border: 1px solid rgba(168,85,247,0.3);">
+                <div class="modal-header" style="border-bottom: 1px solid rgba(255,255,255,0.07);">
+                    <h5 class="modal-title" style="color: #00e5ff;">Customize Quick Links</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <p style="font-size:0.82rem;color:rgba(255,255,255,0.4);margin-bottom:12px;">Add shortcuts that appear in your top tab bar. These are personal to your account.</p>
+                    <div id="ql-list"></div>
+                    <div class="d-flex gap-2 mt-3">
+                        <input type="text" id="ql-new-label" class="form-control form-control-sm" placeholder="Label (e.g. Inbox)" style="flex:1;">
+                        <input type="text" id="ql-new-url" class="form-control form-control-sm" placeholder="URL path (e.g. /email-hub)" style="flex:1.5;">
+                        <button class="btn btn-sm btn-outline-info" onclick="addQuickLink()">Add</button>
+                    </div>
+                </div>
+                <div class="modal-footer" style="border-top: 1px solid rgba(255,255,255,0.07);">
+                    <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script src="{{ url_for('static', filename='js/ui.js') }}"></script>
     {% if current_user.is_authenticated and current_company is defined %}
@@ -771,6 +679,44 @@
           else alert('Failed to switch company: ' + (data.error || 'Unknown error'));
         }).catch(err => alert('Error: ' + err));
       }
+      function loadQuickLinks() {
+        fetch('/api/user/quick-links').then(r=>r.json()).then(data => {
+          const list = document.getElementById('ql-list');
+          if (!list) return;
+          if (!data.links || data.links.length === 0) {
+            list.innerHTML = '<p style="color:rgba(255,255,255,0.3);font-size:0.8rem;">No quick links yet.</p>';
+            return;
+          }
+          list.innerHTML = data.links.map(l => `
+            <div class="d-flex align-items-center gap-2 mb-2">
+              <span style="flex:1;font-size:0.84rem;color:#ddd;">${l.label}</span>
+              <span style="flex:1.5;font-size:0.78rem;color:rgba(255,255,255,0.4);">${l.url}</span>
+              <button class="btn btn-sm btn-outline-danger" onclick="removeQuickLink(${l.id})" style="padding:2px 8px;font-size:0.7rem;">&times;</button>
+            </div>
+          `).join('');
+        });
+      }
+      function addQuickLink() {
+        const label = document.getElementById('ql-new-label').value.trim();
+        const url = document.getElementById('ql-new-url').value.trim();
+        if (!label || !url) return;
+        fetch('/api/user/quick-links', {
+          method:'POST',
+          headers:{'Content-Type':'application/json','X-CSRFToken':document.querySelector('meta[name="csrf-token"]').content},
+          body:JSON.stringify({label,url})
+        }).then(r=>r.json()).then(data => {
+          if (data.success) { loadQuickLinks(); document.getElementById('ql-new-label').value=''; document.getElementById('ql-new-url').value=''; window.location.reload(); }
+        });
+      }
+      function removeQuickLink(id) {
+        fetch('/api/user/quick-links/'+id, {
+          method:'DELETE',
+          headers:{'X-CSRFToken':document.querySelector('meta[name="csrf-token"]').content}
+        }).then(r=>r.json()).then(data => {
+          if (data.success) { loadQuickLinks(); window.location.reload(); }
+        });
+      }
+      document.getElementById('quickLinksModal')?.addEventListener('show.bs.modal', loadQuickLinks);
     </script>
     <script src="{{ url_for('static', filename='js/analytics.js') }}"></script>
     {% endif %}

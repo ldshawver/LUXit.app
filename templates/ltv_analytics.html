@@ -1,0 +1,153 @@
+{% extends "base.html" %}
+
+{% block title %}Customer LTV Analytics - LUX IT{% endblock %}
+
+{% block content %}
+<div class="container-fluid mt-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h2><i data-feather="dollar-sign"></i> Customer Lifetime Value Analytics</h2>
+            <p class="text-muted mb-0">Understand and maximize customer lifetime value</p>
+        </div>
+    </div>
+
+    <div class="row mb-4">
+        <div class="col-md-3">
+            <div class="card glassmorphism-card">
+                <div class="card-body text-center">
+                    <h5 class="text-cyan">${{ "%.2f"|format(avg_ltv|default(0)) }}</h5>
+                    <small class="text-muted">Avg Customer LTV</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card glassmorphism-card">
+                <div class="card-body text-center">
+                    <h5 class="text-success">${{ "%.2f"|format((total_revenue|default(0)) / (total_contacts if total_contacts|default(0) > 0 else 1)) }}</h5>
+                    <small class="text-muted">Avg Revenue/Customer</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card glassmorphism-card">
+                <div class="card-body text-center">
+                    <h5 class="text-warning">{{ avg_lifespan_months|default(0) }} mo</h5>
+                    <small class="text-muted">Avg Customer Lifespan</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card glassmorphism-card">
+                <div class="card-body text-center">
+                    <h5 class="text-info">{{ "%.1f"|format(ltv_cac_ratio|default(0)) }}x</h5>
+                    <small class="text-muted">LTV:CAC Ratio</small>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row mb-4">
+        <div class="col-md-4">
+            <div class="card glassmorphism-card">
+                <div class="card-body text-center">
+                    <h5 class="text-primary">{{ total_contacts|default(0) }}</h5>
+                    <small class="text-muted">Active Customers</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card glassmorphism-card">
+                <div class="card-body text-center">
+                    <h5 class="text-success">${{ "%.2f"|format(total_revenue|default(0)) }}</h5>
+                    <small class="text-muted">Total Revenue</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card glassmorphism-card">
+                <div class="card-body text-center">
+                    <h5 class="text-warning">{% if ltv_cac_ratio|default(0) >= 3 %}Healthy{% elif ltv_cac_ratio|default(0) >= 1 %}Moderate{% else %}Needs Improvement{% endif %}</h5>
+                    <small class="text-muted">LTV Health Status</small>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-md-6">
+            <div class="card glassmorphism-card">
+                <div class="card-header">
+                    <h5 class="mb-0"><i data-feather="trending-up"></i> LTV by Cohort</h5>
+                </div>
+                <div class="card-body">
+                    {% if total_contacts|default(0) > 0 %}
+                    <div class="table-responsive">
+                        <table class="table table-dark table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Segment</th>
+                                    <th>Customers</th>
+                                    <th>Avg LTV</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td>All Active</td>
+                                    <td>{{ total_contacts }}</td>
+                                    <td>${{ "%.2f"|format(avg_ltv|default(0)) }}</td>
+                                    <td><span class="badge bg-success">Active</span></td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    {% else %}
+                    <div class="text-center py-5">
+                        <i data-feather="bar-chart-2" style="width: 48px; height: 48px;" class="text-muted mb-3"></i>
+                        <p class="text-muted">Cohort analysis data will populate as customer revenue data accumulates.</p>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        <div class="col-md-6">
+            <div class="card glassmorphism-card">
+                <div class="card-header">
+                    <h5 class="mb-0"><i data-feather="target"></i> LTV Optimization Tips</h5>
+                </div>
+                <div class="card-body">
+                    <div class="list-group list-group-flush">
+                        <div class="list-group-item bg-transparent border-secondary">
+                            <div class="d-flex align-items-center">
+                                <i data-feather="mail" class="me-3 text-primary" style="width:20px;height:20px;"></i>
+                                <div>
+                                    <strong>Email Engagement</strong>
+                                    <br><small class="text-muted">Increase email open rates to boost customer retention</small>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="list-group-item bg-transparent border-secondary">
+                            <div class="d-flex align-items-center">
+                                <i data-feather="users" class="me-3 text-success" style="width:20px;height:20px;"></i>
+                                <div>
+                                    <strong>Referral Programs</strong>
+                                    <br><small class="text-muted">Launch affiliate programs to reduce CAC</small>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="list-group-item bg-transparent border-secondary">
+                            <div class="d-flex align-items-center">
+                                <i data-feather="repeat" class="me-3 text-warning" style="width:20px;height:20px;"></i>
+                                <div>
+                                    <strong>Retention Campaigns</strong>
+                                    <br><small class="text-muted">Target at-risk customers with personalized offers</small>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

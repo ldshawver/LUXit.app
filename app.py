@@ -112,7 +112,7 @@ def create_app() -> Flask:
         WTF_CSRF_TIME_LIMIT=None,
         SESSION_COOKIE_SAMESITE="Lax",
         SESSION_COOKIE_HTTPONLY=True,
-        SESSION_COOKIE_SECURE=False,
+        SESSION_COOKIE_SECURE=True,
         PERMANENT_SESSION_LIFETIME=timedelta(minutes=30),
     )
 

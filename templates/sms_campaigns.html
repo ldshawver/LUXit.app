@@ -166,6 +166,25 @@
 
 {% block scripts %}
 <script>
+function quickSMS(type) {
+    var templates = {
+        'reminder': 'Hi {name}, this is a friendly reminder about your upcoming appointment. Reply CONFIRM to confirm or call us to reschedule.',
+        'promo': 'Hey {name}! Don\'t miss our limited-time offer - get {discount}% off today! Shop now: {link}',
+        'followup': 'Hi {name}, just following up on our recent conversation. Let us know if you have any questions!',
+        'thank': 'Thank you {name} for your recent purchase! We appreciate your business. Reply HELP for support.',
+        'event': 'You\'re invited! Join us for {event_name} on {date}. RSVP here: {link}'
+    };
+    var msg = templates[type] || 'Hello! Thanks for being a valued customer.';
+    var textarea = document.createElement('textarea');
+    textarea.value = msg;
+    textarea.style.cssText = 'position:fixed;top:0;left:0;opacity:0;';
+    document.body.appendChild(textarea);
+    textarea.select();
+    document.execCommand('copy');
+    document.body.removeChild(textarea);
+    alert('SMS template "' + type + '" copied to clipboard! Paste it when creating a new campaign.');
+}
+
 function copyToClipboard(text) {
     navigator.clipboard.writeText(text).then(() => {
         alert('Message copied to clipboard!');

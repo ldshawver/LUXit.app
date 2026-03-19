@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block title %}{{ msg.subject }} — Inbox — LUX IT{% endblock %}
+
+{% block content %}
+<style>
+  .msg-back { display:inline-flex; align-items:center; gap:6px; font-size:0.82rem; color:rgba(255,255,255,0.5); text-decoration:none; margin-bottom:20px; transition:color .15s; }
+  .msg-back:hover { color:#00e5ff; }
+  .msg-card { background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:14px; padding:28px 32px; }
+  .msg-top { display:flex; align-items:flex-start; justify-content:space-between; margin-bottom:20px; gap:16px; flex-wrap:wrap; }
+  .msg-subject { font-size:1.3rem; font-weight:700; color:#fff; margin:0; }
+  .msg-actions { display:flex; gap:8px; }
+  .msg-actions form button { font-size:0.78rem; padding:6px 14px; border-radius:8px; border:1px solid rgba(255,255,255,0.1); background:rgba(255,255,255,0.04); color:rgba(255,255,255,0.7); cursor:pointer; transition:all .2s; }
+  .msg-actions form button:hover { background:rgba(255,255,255,0.08); color:#fff; }
+  .msg-actions .btn-del:hover { color:#ff5050; border-color:rgba(255,80,80,0.3); background:rgba(255,80,80,0.08); }
+  .msg-meta { display:flex; align-items:center; gap:14px; margin-bottom:24px; padding-bottom:18px; border-bottom:1px solid rgba(255,255,255,0.06); }
+  .msg-avatar { width:40px; height:40px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:0.9rem; font-weight:700; }
+  .msg-avatar.general { background:rgba(0,229,255,0.18); color:#00e5ff; }
+  .msg-avatar.campaign { background:rgba(168,85,247,0.18); color:#a855f7; }
+  .msg-avatar.system { background:rgba(0,255,180,0.18); color:#00ffb4; }
+  .msg-avatar.team { background:rgba(251,191,36,0.18); color:#fbbf24; }
+  .msg-sender-info { flex:1; }
+  .msg-sender-name { font-size:0.9rem; font-weight:600; color:#fff; }
+  .msg-sender-email { font-size:0.75rem; color:rgba(255,255,255,0.4); }
+  .msg-date { font-size:0.75rem; color:rgba(255,255,255,0.35); }
+  .msg-body { font-size:0.88rem; color:rgba(255,255,255,0.75); line-height:1.7; white-space:pre-wrap; }
+  .msg-category-tag { display:inline-block; font-size:0.7rem; padding:3px 10px; border-radius:10px; background:rgba(255,255,255,0.05); color:rgba(255,255,255,0.5); text-transform:capitalize; margin-top:20px; }
+</style>
+
+<a href="{{ url_for('main.inbox_page') }}" class="msg-back">
+  <i data-feather="arrow-left" style="width:14px;height:14px;"></i> Back to Inbox
+</a>
+
+<div class="msg-card">
+  <div class="msg-top">
+    <h1 class="msg-subject">{{ msg.subject }}</h1>
+    <div class="msg-actions">
+      <form method="post" action="{{ url_for('main.toggle_star_message') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="message_id" value="{{ msg.id }}">
+        <button type="submit" title="{% if msg.is_starred %}Unstar{% else %}Star{% endif %}">
+          <i data-feather="star" style="width:13px;height:13px;{% if msg.is_starred %}fill:#fbbf24;color:#fbbf24;{% endif %}"></i>
+          {{ 'Starred' if msg.is_starred else 'Star' }}
+        </button>
+      </form>
+      <form method="post" action="{{ url_for('main.delete_inbox_message') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="message_id" value="{{ msg.id }}">
+        <button type="submit" class="btn-del" onclick="return confirm('Delete this message?')">
+          <i data-feather="trash-2" style="width:13px;height:13px;"></i> Delete
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <div class="msg-meta">
+    <div class="msg-avatar {{ msg.category }}">{{ msg.sender_name[:2]|upper }}</div>
+    <div class="msg-sender-info">
+      <div class="msg-sender-name">{{ msg.sender_name }}</div>
+      {% if msg.sender_email %}
+        <div class="msg-sender-email">{{ msg.sender_email }}</div>
+      {% endif %}
+    </div>
+    <div class="msg-date">{{ msg.created_at.strftime('%B %d, %Y at %I:%M %p') }}</div>
+  </div>
+
+  <div class="msg-body">{{ msg.body or 'No message content.' }}</div>
+
+  <span class="msg-category-tag">{{ msg.category }}</span>
+</div>
+{% endblock %}

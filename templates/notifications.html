@@ -1,0 +1,144 @@
+{% extends "base.html" %}
+{% block title %}Notifications — LUX IT{% endblock %}
+
+{% block content %}
+<style>
+  .notif-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:24px; flex-wrap:wrap; gap:12px; }
+  .notif-header h1 { font-size:1.5rem; font-weight:700; color:#fff; margin:0; }
+  .notif-header .badge-count { background:rgba(168,85,247,0.2); color:#a855f7; padding:4px 12px; border-radius:20px; font-size:0.8rem; margin-left:10px; }
+  .notif-actions { display:flex; gap:8px; }
+  .notif-actions form button, .notif-actions a { font-size:0.78rem; padding:6px 14px; border-radius:8px; border:1px solid rgba(255,255,255,0.1); background:rgba(255,255,255,0.04); color:rgba(255,255,255,0.7); cursor:pointer; text-decoration:none; transition:all .2s; }
+  .notif-actions form button:hover, .notif-actions a:hover { background:rgba(255,255,255,0.08); color:#fff; }
+  .notif-filters { display:flex; gap:6px; margin-bottom:20px; flex-wrap:wrap; }
+  .notif-filters a { font-size:0.78rem; padding:5px 14px; border-radius:20px; border:1px solid rgba(255,255,255,0.08); background:rgba(255,255,255,0.03); color:rgba(255,255,255,0.6); text-decoration:none; transition:all .2s; }
+  .notif-filters a:hover { background:rgba(255,255,255,0.07); color:#fff; }
+  .notif-filters a.active { background:rgba(168,85,247,0.15); border-color:rgba(168,85,247,0.3); color:#a855f7; }
+  .notif-list { display:flex; flex-direction:column; gap:2px; }
+  .notif-card { display:flex; align-items:flex-start; gap:14px; padding:14px 18px; border-radius:10px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.06); transition:all .2s; position:relative; }
+  .notif-card:hover { background:rgba(255,255,255,0.06); border-color:rgba(255,255,255,0.1); }
+  .notif-card.unread { background:rgba(168,85,247,0.06); border-color:rgba(168,85,247,0.15); }
+  .notif-card.unread::before { content:''; position:absolute; left:0; top:50%; transform:translateY(-50%); width:3px; height:60%; background:#a855f7; border-radius:0 3px 3px 0; }
+  .notif-icon { width:36px; height:36px; border-radius:10px; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+  .notif-icon.system { background:rgba(0,229,255,0.12); color:#00e5ff; }
+  .notif-icon.campaign { background:rgba(168,85,247,0.12); color:#a855f7; }
+  .notif-icon.automation { background:rgba(0,255,180,0.12); color:#00ffb4; }
+  .notif-icon.contact { background:rgba(59,130,246,0.12); color:#3b82f6; }
+  .notif-icon.team { background:rgba(251,191,36,0.12); color:#fbbf24; }
+  .notif-body { flex:1; min-width:0; }
+  .notif-title { font-size:0.88rem; font-weight:600; color:#fff; margin-bottom:2px; }
+  .notif-card.unread .notif-title { color:#e2c4ff; }
+  .notif-msg { font-size:0.78rem; color:rgba(255,255,255,0.55); line-height:1.4; }
+  .notif-meta { display:flex; align-items:center; gap:8px; margin-top:6px; }
+  .notif-time { font-size:0.72rem; color:rgba(255,255,255,0.35); }
+  .notif-category-tag { font-size:0.68rem; padding:2px 8px; border-radius:10px; background:rgba(255,255,255,0.05); color:rgba(255,255,255,0.45); text-transform:capitalize; }
+  .notif-card-actions { display:flex; gap:4px; align-items:center; flex-shrink:0; }
+  .notif-card-actions form button { background:none; border:none; color:rgba(255,255,255,0.3); cursor:pointer; padding:4px; border-radius:6px; transition:all .15s; }
+  .notif-card-actions form button:hover { color:#fff; background:rgba(255,255,255,0.08); }
+  .notif-card-actions .btn-mark { font-size:0.7rem; }
+  .notif-card-actions .btn-del { color:rgba(255,80,80,0.5); }
+  .notif-card-actions .btn-del:hover { color:#ff5050; background:rgba(255,80,80,0.1); }
+  .notif-empty { text-align:center; padding:60px 20px; }
+  .notif-empty i { width:48px; height:48px; color:rgba(255,255,255,0.15); margin-bottom:16px; }
+  .notif-empty h3 { font-size:1.1rem; color:rgba(255,255,255,0.5); margin-bottom:6px; }
+  .notif-empty p { font-size:0.82rem; color:rgba(255,255,255,0.3); }
+  .notif-link { text-decoration:none; color:inherit; display:contents; }
+</style>
+
+<div class="notif-header">
+  <div style="display:flex;align-items:center;">
+    <h1>Notifications</h1>
+    {% if unread_count > 0 %}
+      <span class="badge-count">{{ unread_count }} unread</span>
+    {% endif %}
+  </div>
+  <div class="notif-actions">
+    {% if unread_count > 0 %}
+    <form method="post" action="{{ url_for('main.mark_notification_read') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="notification_id" value="all">
+      <button type="submit"><i data-feather="check-circle" style="width:12px;height:12px;"></i> Mark all read</button>
+    </form>
+    {% endif %}
+    {% if notifications.items %}
+    <form method="post" action="{{ url_for('main.delete_notification') }}" onsubmit="return confirm('Clear all notifications?')">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="notification_id" value="all">
+      <button type="submit"><i data-feather="trash-2" style="width:12px;height:12px;"></i> Clear all</button>
+    </form>
+    {% endif %}
+  </div>
+</div>
+
+<div class="notif-filters">
+  <a href="{{ url_for('main.notifications_page') }}" class="{% if filter_type == 'all' %}active{% endif %}">All</a>
+  <a href="{{ url_for('main.notifications_page', filter='unread') }}" class="{% if filter_type == 'unread' %}active{% endif %}">Unread</a>
+  <a href="{{ url_for('main.notifications_page', filter='system') }}" class="{% if filter_type == 'system' %}active{% endif %}">System</a>
+  <a href="{{ url_for('main.notifications_page', filter='campaign') }}" class="{% if filter_type == 'campaign' %}active{% endif %}">Campaigns</a>
+  <a href="{{ url_for('main.notifications_page', filter='automation') }}" class="{% if filter_type == 'automation' %}active{% endif %}">Automations</a>
+  <a href="{{ url_for('main.notifications_page', filter='contact') }}" class="{% if filter_type == 'contact' %}active{% endif %}">Contacts</a>
+  <a href="{{ url_for('main.notifications_page', filter='team') }}" class="{% if filter_type == 'team' %}active{% endif %}">Team</a>
+</div>
+
+{% if notifications.items %}
+<div class="notif-list">
+  {% for n in notifications.items %}
+  <div class="notif-card{% if not n.is_read %} unread{% endif %}">
+    <div class="notif-icon {{ n.category }}">
+      <i data-feather="{{ n.icon }}" style="width:18px;height:18px;"></i>
+    </div>
+    <div class="notif-body">
+      {% if n.link %}
+        <a href="{{ n.link }}" class="notif-link">
+          <div class="notif-title">{{ n.title }}</div>
+        </a>
+      {% else %}
+        <div class="notif-title">{{ n.title }}</div>
+      {% endif %}
+      {% if n.message %}
+        <div class="notif-msg">{{ n.message }}</div>
+      {% endif %}
+      <div class="notif-meta">
+        <span class="notif-time">{{ n.created_at.strftime('%b %d, %Y at %I:%M %p') }}</span>
+        <span class="notif-category-tag">{{ n.category }}</span>
+      </div>
+    </div>
+    <div class="notif-card-actions">
+      {% if not n.is_read %}
+      <form method="post" action="{{ url_for('main.mark_notification_read') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="notification_id" value="{{ n.id }}">
+        <button type="submit" class="btn-mark" title="Mark as read"><i data-feather="check" style="width:14px;height:14px;"></i></button>
+      </form>
+      {% endif %}
+      <form method="post" action="{{ url_for('main.delete_notification') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="notification_id" value="{{ n.id }}">
+        <button type="submit" class="btn-del" title="Delete"><i data-feather="x" style="width:14px;height:14px;"></i></button>
+      </form>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+
+{% if notifications.pages > 1 %}
+<div style="display:flex;justify-content:center;gap:6px;margin-top:24px;">
+  {% for p in notifications.iter_pages(left_edge=1, right_edge=1, left_current=2, right_current=2) %}
+    {% if p %}
+      <a href="{{ url_for('main.notifications_page', page=p, filter=filter_type) }}"
+         style="padding:6px 12px;border-radius:8px;font-size:0.78rem;text-decoration:none;
+         {% if p == notifications.page %}background:rgba(168,85,247,0.2);color:#a855f7;border:1px solid rgba(168,85,247,0.3);{% else %}background:rgba(255,255,255,0.04);color:rgba(255,255,255,0.5);border:1px solid rgba(255,255,255,0.08);{% endif %}">{{ p }}</a>
+    {% else %}
+      <span style="color:rgba(255,255,255,0.3);padding:6px 4px;">…</span>
+    {% endif %}
+  {% endfor %}
+</div>
+{% endif %}
+
+{% else %}
+<div class="notif-empty">
+  <i data-feather="bell-off"></i>
+  <h3>No notifications{% if filter_type != 'all' %} matching this filter{% endif %}</h3>
+  <p>You're all caught up! Notifications will appear here when there's activity on your account.</p>
+</div>
+{% endif %}
+{% endblock %}

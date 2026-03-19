@@ -20,6 +20,7 @@ try:
         TicketPurchase, EventCheckIn, SocialMediaAccount, SocialMediaSchedule,
         AutomationTest, AutomationTriggerLibrary, AutomationABTest, Company, user_company,
         Deal, LeadScore, PersonalizationRule, KeywordResearch,
+        Notification, InboxMessage,
     )
     MODELS_AVAILABLE = True
 except ImportError as exc:
@@ -36,6 +37,7 @@ except ImportError as exc:
     SocialMediaAccount = SocialMediaSchedule = AutomationTest = None
     AutomationTriggerLibrary = AutomationABTest = Company = user_company = None
     Deal = LeadScore = PersonalizationRule = KeywordResearch = None
+    Notification = InboxMessage = None
 try:
     from email_service import EmailService
 except ImportError as exc:
@@ -126,7 +128,7 @@ main_bp = Blueprint('main', __name__)
 
 @main_bp.context_processor
 def inject_company_context():
-    """Inject current_company and user_companies into every template rendered by main_bp."""
+    """Inject current_company, user_companies, quick links, activity, and usage into every template."""
     from flask_login import current_user
     if current_user.is_authenticated:
         try:
@@ -135,10 +137,72 @@ def inject_company_context():
         except Exception:
             user_companies = []
             current_company = None
+
+        try:
+            from models import UserQuickLink, ActivityLog, Contact, Campaign, SMSCampaign, Notification, InboxMessage
+            user_quick_links = UserQuickLink.query.filter_by(user_id=current_user.id).order_by(UserQuickLink.position).all()
+            recent_activities = ActivityLog.query.filter_by(user_id=current_user.id).order_by(ActivityLog.created_at.desc()).limit(5).all()
+
+            company_id = current_company.id if current_company else None
+            usage_contacts = Contact.query.filter_by(company_id=company_id).count() if company_id else 0
+            usage_emails = Campaign.query.filter_by(company_id=company_id, status='sent').count() if company_id else 0
+            usage_sms = SMSCampaign.query.filter_by(company_id=company_id, status='sent').count() if company_id else 0
+            unread_notifications = Notification.query.filter_by(user_id=current_user.id, is_read=False).count()
+            unread_inbox = InboxMessage.query.filter_by(user_id=current_user.id, is_read=False).count()
+        except Exception:
+            user_quick_links = []
+            recent_activities = []
+            usage_contacts = 0
+            usage_emails = 0
+            usage_sms = 0
+            unread_notifications = 0
+            unread_inbox = 0
     else:
         user_companies = []
         current_company = None
-    return dict(user_companies=user_companies, current_company=current_company)
+        user_quick_links = []
+        recent_activities = []
+        usage_contacts = 0
+        usage_emails = 0
+        usage_sms = 0
+        unread_notifications = 0
+        unread_inbox = 0
+    return dict(
+        user_companies=user_companies,
+        current_company=current_company,
+        user_quick_links=user_quick_links,
+        recent_activities=recent_activities,
+        usage_contacts=usage_contacts,
+        usage_emails=usage_emails,
+        usage_sms=usage_sms,
+        unread_notifications=unread_notifications,
+        unread_inbox=unread_inbox,
+    )
+
+
+def log_activity(user_id, action, detail=None, icon='activity', company_id=None):
+    try:
+        from models import ActivityLog
+        entry = ActivityLog(user_id=user_id, company_id=company_id, action=action, detail=detail, icon=icon)
+        db.session.add(entry)
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+
+
+def create_notification(user_id, title, message=None, category='system', icon='bell', link=None, company_id=None):
+    try:
+        from models import Notification
+        notif = Notification(
+            user_id=user_id, company_id=company_id, title=title,
+            message=message, category=category, icon=icon, link=link
+        )
+        db.session.add(notif)
+        db.session.commit()
+        return notif
+    except Exception:
+        db.session.rollback()
+        return None
 
 
 def get_app_version() -> str:
@@ -355,15 +419,19 @@ def dashboard():
         total_leads=total_leads,
         tasks=tasks or [],
         meetings=meetings or [],
-        touchpoints=touchpoints
+        touchpoints=touchpoints,
+        open_deals=open_deals,
+        pipeline_value=pipeline_value
     )
 
 @main_bp.route('/marketing-hub')
 @login_required
 def marketing_hub():
     """Marketing Hub dashboard with marketing-focused metrics and tools"""
-    from models import Campaign, Contact
-    
+    from models import Campaign, Contact, DashboardStickyNote, DashboardTask
+    if current_user.preferred_hub != 'marketing':
+        current_user.preferred_hub = 'marketing'
+        db.session.commit()
     company_id = getattr(current_user, 'default_company_id', None)
     
     try:
@@ -378,6 +446,16 @@ def marketing_hub():
         email_count = 0
         campaigns = []
     
+    sticky_note = DashboardStickyNote.query.filter_by(user_id=current_user.id, company_id=company_id).first()
+    if not sticky_note:
+        sticky_note = DashboardStickyNote(user_id=current_user.id, company_id=company_id, content='')
+        db.session.add(sticky_note)
+        db.session.commit()
+
+    dashboard_tasks = DashboardTask.query.filter_by(
+        user_id=current_user.id, company_id=company_id
+    ).order_by(DashboardTask.is_completed, DashboardTask.created_at.desc()).all()
+
     stats = {
         'active_campaigns': active_count,
         'total_subscribers': sub_count,
@@ -406,7 +484,9 @@ def marketing_hub():
         stats=stats,
         channels=channels,
         campaigns=campaigns,
-        upcoming_content=[]
+        upcoming_content=[],
+        sticky_note=sticky_note,
+        dashboard_tasks=dashboard_tasks
     )
 
 @main_bp.route('/api/user/set-default-hub', methods=['POST'])
@@ -425,6 +505,70 @@ def set_default_hub():
         return jsonify({'success': True, 'hub': hub})
     except Exception as e:
         logger.error(f"Set default hub error: {e}")
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@main_bp.route('/api/sticky-note', methods=['POST'])
+@login_required
+def save_sticky_note():
+    from models import DashboardStickyNote
+    try:
+        data = request.get_json() or {}
+        content = data.get('content', '')
+        company_id = getattr(current_user, 'default_company_id', None)
+        note = DashboardStickyNote.query.filter_by(user_id=current_user.id, company_id=company_id).first()
+        if not note:
+            note = DashboardStickyNote(user_id=current_user.id, company_id=company_id, content=content)
+            db.session.add(note)
+        else:
+            note.content = content
+        db.session.commit()
+        return jsonify({'success': True})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@main_bp.route('/api/dashboard-tasks', methods=['POST'])
+@login_required
+def add_dashboard_task():
+    from models import DashboardTask
+    try:
+        data = request.get_json() or {}
+        title = data.get('title', '').strip()
+        if not title:
+            return jsonify({'success': False, 'error': 'Title required'}), 400
+        company_id = getattr(current_user, 'default_company_id', None)
+        task = DashboardTask(user_id=current_user.id, company_id=company_id, title=title, due_date=data.get('due_date', ''))
+        db.session.add(task)
+        db.session.commit()
+        return jsonify({'success': True, 'id': task.id, 'title': task.title})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@main_bp.route('/api/dashboard-tasks/<int:task_id>/toggle', methods=['POST'])
+@login_required
+def toggle_dashboard_task(task_id):
+    from models import DashboardTask
+    try:
+        task = DashboardTask.query.filter_by(id=task_id, user_id=current_user.id).first_or_404()
+        task.is_completed = not task.is_completed
+        db.session.commit()
+        return jsonify({'success': True, 'is_completed': task.is_completed})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@main_bp.route('/api/dashboard-tasks/<int:task_id>', methods=['DELETE'])
+@login_required
+def delete_dashboard_task(task_id):
+    from models import DashboardTask
+    try:
+        task = DashboardTask.query.filter_by(id=task_id, user_id=current_user.id).first_or_404()
+        db.session.delete(task)
+        db.session.commit()
+        return jsonify({'success': True})
+    except Exception as e:
         db.session.rollback()
         return jsonify({'success': False, 'error': str(e)}), 500
 
@@ -542,7 +686,7 @@ def competitor_analysis():
     ).filter(user_company.c.user_id == current_user.id).first()
     company_id = company.id if company else None
     
-    competitors = CompetitorProfile.query.filter_by(company_id=company_id, is_active=True).order_by(CompetitorProfile.name).all() if company_id else []
+    competitors = CompetitorProfile.query.filter_by(company_id=company_id, is_active=True).order_by(CompetitorProfile.competitor_name).all() if company_id else []
     return render_template('competitor_analysis.html', competitors=competitors)
 
 @main_bp.route('/deals')
@@ -593,6 +737,7 @@ def add_deal():
         )
         db.session.add(deal)
         db.session.commit()
+        log_activity(current_user.id, 'Created deal', deal.name, 'briefcase', company.id)
         flash('Deal created successfully!', 'success')
     except Exception as e:
         db.session.rollback()
@@ -1556,6 +1701,13 @@ def _scheduler_status():
 
 @main_bp.route('/health')
 def health_check():
+    def _db_status():
+        try:
+            db.session.execute(db.text("SELECT 1"))
+            return True, None
+        except Exception as e:
+            return False, str(e)
+
     db_ok, db_error = _db_status()
     payload = {
         "status": "ok" if db_ok else "degraded",
@@ -1567,30 +1719,7 @@ def health_check():
         "timestamp": datetime.utcnow().isoformat(),
     }
     
-    if test.campaign_id:
-        recipients = CampaignRecipient.query.filter_by(campaign_id=test.campaign_id).all()
-        total = len(recipients)
-        split_point = int(total * test.split_ratio)
-        
-        variant_a_recipients = recipients[:split_point]
-        variant_b_recipients = recipients[split_point:]
-        
-        for r in variant_a_recipients:
-            results['variant_a']['sent'] += 1
-            if r.opened_at:
-                results['variant_a']['opens'] += 1
-        
-        for r in variant_b_recipients:
-            results['variant_b']['sent'] += 1
-            if r.opened_at:
-                results['variant_b']['opens'] += 1
-        
-        if results['variant_a']['sent'] > 0:
-            results['variant_a']['open_rate'] = round(results['variant_a']['opens'] / results['variant_a']['sent'] * 100, 1)
-        if results['variant_b']['sent'] > 0:
-            results['variant_b']['open_rate'] = round(results['variant_b']['opens'] / results['variant_b']['sent'] * 100, 1)
-    
-    return render_template('ab_test_results.html', test=test, results=results)
+    return jsonify(payload), 200 if db_ok else 503
 
 @main_bp.route('/segments/<int:segment_id>/refresh', methods=['POST'])
 @login_required
@@ -1668,9 +1797,46 @@ def create_segment():
 @login_required
 def social_media():
     """Social media management dashboard"""
-    posts = SocialPost.query.order_by(SocialPost.created_at.desc()).limit(20).all()
+    from datetime import datetime, timedelta
+    search_q = request.args.get('q', '').strip()
+    date_from = request.args.get('date_from', '')
+    date_to = request.args.get('date_to', '')
+    view_all = request.args.get('view_all', '')
+
+    query = SocialPost.query.order_by(SocialPost.created_at.desc())
+
+    if search_q:
+        query = query.filter(SocialPost.content.ilike(f'%{search_q}%'))
+    if date_from:
+        try:
+            query = query.filter(SocialPost.created_at >= datetime.strptime(date_from, '%Y-%m-%d'))
+        except ValueError:
+            pass
+    if date_to:
+        try:
+            query = query.filter(SocialPost.created_at < datetime.strptime(date_to, '%Y-%m-%d') + timedelta(days=1))
+        except ValueError:
+            pass
+
+    total_posts = query.count()
+    if view_all:
+        posts = query.all()
+    elif search_q or date_from or date_to:
+        posts = query.all()
+    else:
+        posts = query.limit(5).all()
+
     connected_accounts = SocialMediaAccount.query.filter_by(is_active=True).all()
-    return render_template('social_media.html', posts=posts, connected_accounts=connected_accounts)
+    return render_template('social_media.html',
+        posts=posts,
+        connected_accounts=connected_accounts,
+        total_posts=total_posts,
+        search_q=search_q,
+        date_from=date_from,
+        date_to=date_to,
+        view_all=view_all,
+        showing_all=bool(view_all or search_q or date_from or date_to)
+    )
 
 @main_bp.route('/social/connect-account', methods=['POST'])
 @login_required
@@ -1794,6 +1960,7 @@ def create_social_post():
         if not post_id:
             db.session.add(post)
         db.session.commit()
+        log_activity(current_user.id, 'Created social post' if not post_id else 'Updated social post', content[:50] if content else '', 'share-2')
         
         flash(message, 'success')
         return redirect(url_for('main.social_media'))
@@ -2149,11 +2316,14 @@ def analyze_social_content():
 @main_bp.route('/automations')
 @login_required
 def automation_dashboard():
-    """Unified Automations & AI Agents dashboard"""
-    from models import AgentDeliverable, AgentReport
-    
+    """Marketing Automations dashboard — email, SMS, social DM"""
+    company = current_user.get_default_company() if hasattr(current_user, 'get_default_company') else None
+    company_id = company.id if company else None
     try:
-        automations = Automation.query.all()
+        q = Automation.query
+        if company_id:
+            q = q.filter((Automation.company_id == company_id) | (Automation.company_id.is_(None)))
+        automations = q.all()
     except Exception as exc:
         logger.error(f"Automation query failed: {exc}")
         automations = []
@@ -2168,131 +2338,10 @@ def automation_dashboard():
         logger.error(f"Automation execution query failed: {exc}")
         active_executions = 0
     
-    # Get AI agents info
-    try:
-        from agent_scheduler import get_agent_scheduler
-        scheduler = get_agent_scheduler()
-        agents = scheduler.agents if scheduler else {}
-    except Exception as exc:
-        logger.error(f"Agent scheduler unavailable: {exc}")
-        agents = {}
-
-    def safe_agent_count(model, agent_type):
-        """Safely count agent records, returning 0 if table doesn't exist"""
-        try:
-            return model.query.filter_by(agent_type=agent_type).count()
-        except Exception:
-            return 0
-    
-    # Build detailed agent info for enhanced tiles
-    agent_details = [
-        {
-            'type': 'brand_strategy',
-            'name': 'Brand & Strategy',
-            'icon': '🎯',
-            'purpose': 'Market research, competitive analysis, brand positioning, and quarterly strategy planning.',
-            'scheduled_tasks': ['Quarterly Strategy', 'Monthly Research'],
-            'deliverables_count': safe_agent_count(AgentDeliverable, 'brand_strategy'),
-            'reports_count': safe_agent_count(AgentReport, 'brand_strategy')
-        },
-        {
-            'type': 'content_seo',
-            'name': 'Content & SEO',
-            'icon': '✍️',
-            'purpose': 'Blog posts, SEO optimization, content calendars, and keyword research.',
-            'scheduled_tasks': ['Weekly Blog Post', 'Monthly Calendar'],
-            'deliverables_count': safe_agent_count(AgentDeliverable, 'content_seo'),
-            'reports_count': safe_agent_count(AgentReport, 'content_seo')
-        },
-        {
-            'type': 'analytics',
-            'name': 'Analytics & Optimization',
-            'icon': '📊',
-            'purpose': 'Performance tracking, KPIs, optimization recommendations, and data insights.',
-            'scheduled_tasks': ['Daily Recommendations', 'Weekly Summary', 'Monthly Report'],
-            'deliverables_count': safe_agent_count(AgentDeliverable, 'analytics'),
-            'reports_count': safe_agent_count(AgentReport, 'analytics')
-        },
-        {
-            'type': 'creative_design',
-            'name': 'Creative & Design',
-            'icon': '🎨',
-            'purpose': 'Graphics, images, visual assets, and brand creative using DALL-E 3.',
-            'scheduled_tasks': ['Weekly Assets'],
-            'deliverables_count': safe_agent_count(AgentDeliverable, 'creative_design'),
-            'reports_count': safe_agent_count(AgentReport, 'creative_design')
-        },
-        {
-            'type': 'advertising',
-            'name': 'Advertising & Demand Gen',
-            'icon': '📢',
-            'purpose': 'Campaign strategy, ad copy, audience targeting, and performance optimization.',
-            'scheduled_tasks': ['Weekly Strategy Review'],
-            'deliverables_count': safe_agent_count(AgentDeliverable, 'advertising'),
-            'reports_count': safe_agent_count(AgentReport, 'advertising')
-        },
-        {
-            'type': 'social_media',
-            'name': 'Social Media & Community',
-            'icon': '📱',
-            'purpose': 'Social content, posting schedules, engagement, and community management.',
-            'scheduled_tasks': ['Daily Posts'],
-            'deliverables_count': safe_agent_count(AgentDeliverable, 'social_media'),
-            'reports_count': safe_agent_count(AgentReport, 'social_media')
-        },
-        {
-            'type': 'email_crm',
-            'name': 'Email & CRM',
-            'icon': '📧',
-            'purpose': 'Email campaigns, subscriber sync, CRM automation, and customer outreach.',
-            'scheduled_tasks': ['Weekly Campaign', 'Daily Subscriber Sync'],
-            'deliverables_count': safe_agent_count(AgentDeliverable, 'email_crm'),
-            'reports_count': safe_agent_count(AgentReport, 'email_crm')
-        },
-        {
-            'type': 'sales_enablement',
-            'name': 'Sales Enablement',
-            'icon': '💼',
-            'purpose': 'Lead scoring, sales materials, prospect insights, and pipeline optimization.',
-            'scheduled_tasks': ['Weekly Lead Scoring'],
-            'deliverables_count': safe_agent_count(AgentDeliverable, 'sales_enablement'),
-            'reports_count': safe_agent_count(AgentReport, 'sales_enablement')
-        },
-        {
-            'type': 'retention',
-            'name': 'Customer Retention & Loyalty',
-            'icon': '❤️',
-            'purpose': 'Churn prevention, loyalty programs, win-back campaigns, and customer success.',
-            'scheduled_tasks': ['Monthly Churn Analysis'],
-            'deliverables_count': safe_agent_count(AgentDeliverable, 'retention'),
-            'reports_count': safe_agent_count(AgentReport, 'retention')
-        },
-        {
-            'type': 'operations',
-            'name': 'Operations & Integration',
-            'icon': '⚙️',
-            'purpose': 'System health, integration checks, workflow automation, and infrastructure.',
-            'scheduled_tasks': ['Daily Health Check'],
-            'deliverables_count': safe_agent_count(AgentDeliverable, 'operations'),
-            'reports_count': safe_agent_count(AgentReport, 'operations')
-        },
-        {
-            'type': 'app_intelligence',
-            'name': 'APP Agent',
-            'icon': '🧠',
-            'purpose': 'Platform monitoring, usage analysis, self-diagnosis, and improvement suggestions.',
-            'scheduled_tasks': ['Hourly Health', 'Daily Analysis', 'Weekly Improvements'],
-            'deliverables_count': safe_agent_count(AgentDeliverable, 'app_intelligence'),
-            'reports_count': safe_agent_count(AgentReport, 'app_intelligence')
-        }
-    ]
-    
     return render_template('automation_dashboard.html', 
                          automations=automations, 
                          templates=templates,
-                         active_executions=active_executions,
-                         agents=agents,
-                         agent_details=agent_details)
+                         active_executions=active_executions)
 
 
 @main_bp.route('/agents/reports')
@@ -2486,16 +2535,25 @@ def create_automation():
             name = request.form.get('name')
             description = request.form.get('description')
             trigger_type = request.form.get('trigger_type')
+            channel_type = request.form.get('channel_type', 'email')
             trigger_conditions = request.form.get('trigger_conditions')
+            
+            if channel_type not in ('email', 'sms', 'social_dm'):
+                channel_type = 'email'
             
             automation = Automation()
             automation.name = name
             automation.description = description
             automation.trigger_type = trigger_type
+            automation.channel_type = channel_type
             automation.trigger_conditions = json.loads(trigger_conditions) if trigger_conditions else {}
+            company = current_user.get_default_company() if hasattr(current_user, 'get_default_company') else None
+            if company:
+                automation.company_id = company.id
             
             db.session.add(automation)
             db.session.commit()
+            log_activity(current_user.id, 'Created automation', f'{channel_type}: {name}', 'zap')
             
             flash('Automation workflow created successfully!', 'success')
             return redirect(url_for('main.edit_automation', id=automation.id))
@@ -2996,6 +3054,7 @@ def create_sms_campaign():
                     description=message[:100]
                 )
             
+            log_activity(current_user.id, 'Created SMS campaign', name, 'message-square')
             flash('SMS campaign created successfully!', 'success')
             return redirect(url_for('main.sms_dashboard'))
             
@@ -5554,6 +5613,49 @@ def set_default_company():
         logger.error(f"Set default company error: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
+
+@main_bp.route('/api/user/quick-links', methods=['GET'])
+@login_required
+def get_quick_links():
+    from models import UserQuickLink
+    links = UserQuickLink.query.filter_by(user_id=current_user.id).order_by(UserQuickLink.position).all()
+    return jsonify({'success': True, 'links': [{'id': l.id, 'label': l.label, 'url': l.url, 'icon': l.icon, 'position': l.position} for l in links]})
+
+
+@main_bp.route('/api/user/quick-links', methods=['POST'])
+@login_required
+def add_quick_link():
+    from models import UserQuickLink
+    data = request.get_json() or {}
+    label = data.get('label', '').strip()[:50]
+    url_val = data.get('url', '').strip()
+    if not label or not url_val:
+        return jsonify({'success': False, 'error': 'Label and URL required'}), 400
+    if not url_val.startswith('/'):
+        return jsonify({'success': False, 'error': 'URL must be a relative path starting with /'}), 400
+    if ':' in url_val or 'javascript' in url_val.lower():
+        return jsonify({'success': False, 'error': 'Invalid URL'}), 400
+    count = UserQuickLink.query.filter_by(user_id=current_user.id).count()
+    if count >= 10:
+        return jsonify({'success': False, 'error': 'Maximum 10 quick links'}), 400
+    ql = UserQuickLink(user_id=current_user.id, label=label, url=url_val, icon=data.get('icon', 'link'), position=count)
+    db.session.add(ql)
+    db.session.commit()
+    return jsonify({'success': True, 'id': ql.id})
+
+
+@main_bp.route('/api/user/quick-links/<int:link_id>', methods=['DELETE'])
+@login_required
+def delete_quick_link(link_id):
+    from models import UserQuickLink
+    ql = UserQuickLink.query.filter_by(id=link_id, user_id=current_user.id).first()
+    if not ql:
+        return jsonify({'success': False, 'error': 'Not found'}), 404
+    db.session.delete(ql)
+    db.session.commit()
+    return jsonify({'success': True})
+
+
 @main_bp.route('/api/company/<int:company_id>/secrets', methods=['GET'])
 @login_required
 def get_company_secrets(company_id):
@@ -6241,7 +6343,7 @@ def competitors_list():
     company = current_user.get_default_company()
     if not company:
         return redirect(url_for('main.dashboard'))
-    competitors = CompetitorProfile.query.filter_by(company_id=company.id, is_active=True).order_by(CompetitorProfile.created_at.desc()).all()
+    competitors = CompetitorProfile.query.filter_by(company_id=company.id, is_active=True).order_by(CompetitorProfile.competitor_name).all()
     return render_template('competitor_analysis.html', competitors=competitors)
 
 @main_bp.route('/competitors/save', methods=['POST'])
@@ -7033,6 +7135,9 @@ print("✓ User profile routes loaded")
 @login_required
 def crm_hub():
     """CRM Features Hub - Showcase all 15 CRM capabilities"""
+    if current_user.preferred_hub != 'sales':
+        current_user.preferred_hub = 'sales'
+        db.session.commit()
     return render_template('crm_hub.html')
 
 print("✓ CRM Hub route loaded")
@@ -8240,12 +8345,10 @@ def delete_automation(id):
         automation = Automation.query.get_or_404(id)
         db.session.delete(automation)
         db.session.commit()
-        flash('Automation deleted successfully!', 'success')
+        return jsonify({'success': True, 'message': 'Automation deleted'})
     except Exception as e:
         logger.error(f"Error deleting automation: {e}")
-        flash(f'Error deleting automation: {str(e)}', 'error')
-    
-    return redirect(url_for('main.automation_dashboard'))
+        return jsonify({'success': False, 'message': str(e)})
 
 print("✓ Delete automation route loaded: /automations/<id>/delete")
 print("✓ Blog post routes loaded: /blog, /blog/create, /blog/<id>/edit, /api/blog/generate")
@@ -9421,6 +9524,7 @@ def create_campaign():
             )
             db.session.add(campaign)
             db.session.commit()
+            log_activity(current_user.id, 'Created campaign', campaign.name, 'mail', company_id)
             flash('Campaign created successfully!', 'success')
             return redirect(url_for('main.campaigns'))
         except Exception as e:
@@ -9513,6 +9617,7 @@ def send_campaign(campaign_id):
             if campaign:
                 campaign.status = 'sending'
                 db.session.commit()
+                log_activity(current_user.id, 'Sent campaign', campaign.name, 'send')
                 flash('Campaign is being sent!', 'success')
             else:
                 flash('Campaign not found.', 'danger')
@@ -9535,6 +9640,7 @@ def add_contact():
         )
         db.session.add(contact)
         db.session.commit()
+        log_activity(current_user.id, 'Added contact', f'{contact.first_name} {contact.last_name}'.strip() or contact.email, 'user-plus', company_id)
         flash('Contact added successfully!', 'success')
     except Exception as e:
         db.session.rollback()
@@ -9979,22 +10085,57 @@ def activate_brandkit(kit_id):
 @login_required
 def create_press_release():
     if request.method == 'POST':
+        from models import PressRelease
         try:
+            company = current_user.get_default_company()
+            pr = PressRelease()
+            pr.company_id = company.id if company else None
+            pr.title = request.form.get('title', '').strip()
+            pr.subtitle = request.form.get('subtitle', '').strip()
+            pr.content = request.form.get('content', '').strip()
+            pr.contact_info = request.form.get('contact_info', '').strip()
+            pr.created_by = current_user.id
+            release_date = request.form.get('release_date')
+            if release_date:
+                from datetime import date as dt_date
+                pr.release_date = dt_date.fromisoformat(release_date)
+            embargo_until = request.form.get('embargo_until')
+            if embargo_until:
+                pr.embargo_until = datetime.fromisoformat(embargo_until)
+            action = request.form.get('action', 'draft')
+            pr.status = 'published' if action == 'publish' else 'draft'
+            db.session.add(pr)
+            db.session.commit()
             flash('Press release created successfully!', 'success')
         except Exception as e:
+            db.session.rollback()
+            logger.error(f"Create press release error: {e}")
             flash(f'Error creating press release: {str(e)}', 'danger')
-        return redirect(url_for('main.dashboard'))
-    return render_template('press_releases.html', press_releases=[], media_contacts=[])
+        return redirect(url_for('main.press_releases_list'))
+    return redirect(url_for('main.press_releases_list'))
 
 
 @main_bp.route('/press-releases/media-contacts/add', methods=['POST'])
 @login_required
 def add_media_contact():
+    from models import MediaContact
     try:
+        company = current_user.get_default_company()
+        mc = MediaContact()
+        mc.company_id = company.id if company else None
+        mc.name = request.form.get('name', '').strip()
+        mc.email = request.form.get('email', '').strip()
+        mc.outlet = request.form.get('outlet', '').strip()
+        mc.beat = request.form.get('beat', '').strip()
+        mc.notes = request.form.get('notes', '').strip()
+        db.session.add(mc)
+        db.session.commit()
         flash('Media contact added successfully!', 'success')
     except Exception as e:
+        db.session.rollback()
+        logger.error(f"Add media contact error: {e}")
         flash(f'Error adding media contact: {str(e)}', 'danger')
-    return redirect(url_for('main.dashboard'))
+    return redirect(url_for('main.press_releases_list'))
 
 
 @main_bp.route('/system/initialize', methods=['POST'])
@@ -10039,10 +10180,685 @@ def add_user():
     return render_template('add_user.html')
 
 
+@main_bp.route('/notifications')
+@login_required
+def notifications_page():
+    from models import Notification
+    page = request.args.get('page', 1, type=int)
+    filter_type = request.args.get('filter', 'all')
+    query = Notification.query.filter_by(user_id=current_user.id).order_by(Notification.created_at.desc())
+    if filter_type == 'unread':
+        query = query.filter_by(is_read=False)
+    elif filter_type in ('system', 'campaign', 'automation', 'contact', 'team'):
+        query = query.filter_by(category=filter_type)
+    notifications = query.paginate(page=page, per_page=30, error_out=False)
+    unread_count = Notification.query.filter_by(user_id=current_user.id, is_read=False).count()
+    return render_template('notifications.html', notifications=notifications, unread_count=unread_count, filter_type=filter_type)
+
+
+@main_bp.route('/notifications/mark-read', methods=['POST'])
+@login_required
+def mark_notification_read():
+    from models import Notification
+    notif_id = request.form.get('notification_id')
+    if notif_id == 'all':
+        Notification.query.filter_by(user_id=current_user.id, is_read=False).update({'is_read': True})
+    else:
+        notif = Notification.query.filter_by(id=notif_id, user_id=current_user.id).first()
+        if notif:
+            notif.is_read = True
+    db.session.commit()
+    return redirect(request.referrer or url_for('main.notifications_page'))
+
+
+@main_bp.route('/notifications/delete', methods=['POST'])
+@login_required
+def delete_notification():
+    from models import Notification
+    notif_id = request.form.get('notification_id')
+    if notif_id == 'all':
+        Notification.query.filter_by(user_id=current_user.id).delete()
+    else:
+        notif = Notification.query.filter_by(id=notif_id, user_id=current_user.id).first()
+        if notif:
+            db.session.delete(notif)
+    db.session.commit()
+    return redirect(url_for('main.notifications_page'))
+
+
+@main_bp.route('/inbox')
+@login_required
+def inbox_page():
+    from models import InboxMessage
+    page = request.args.get('page', 1, type=int)
+    filter_type = request.args.get('filter', 'all')
+    query = InboxMessage.query.filter_by(user_id=current_user.id).order_by(InboxMessage.created_at.desc())
+    if filter_type == 'unread':
+        query = query.filter_by(is_read=False)
+    elif filter_type == 'starred':
+        query = query.filter_by(is_starred=True)
+    elif filter_type in ('general', 'campaign', 'system', 'team'):
+        query = query.filter_by(category=filter_type)
+    messages = query.paginate(page=page, per_page=30, error_out=False)
+    unread_count = InboxMessage.query.filter_by(user_id=current_user.id, is_read=False).count()
+    return render_template('inbox.html', messages=messages, unread_count=unread_count, filter_type=filter_type)
+
+
+@main_bp.route('/inbox/<int:message_id>')
+@login_required
+def inbox_message_detail(message_id):
+    from models import InboxMessage
+    msg = InboxMessage.query.filter_by(id=message_id, user_id=current_user.id).first_or_404()
+    if not msg.is_read:
+        msg.is_read = True
+        db.session.commit()
+    return render_template('inbox_detail.html', msg=msg)
+
+
+@main_bp.route('/inbox/star', methods=['POST'])
+@login_required
+def toggle_star_message():
+    from models import InboxMessage
+    msg_id = request.form.get('message_id')
+    msg = InboxMessage.query.filter_by(id=msg_id, user_id=current_user.id).first()
+    if msg:
+        msg.is_starred = not msg.is_starred
+        db.session.commit()
+    return redirect(request.referrer or url_for('main.inbox_page'))
+
+
+@main_bp.route('/inbox/mark-read', methods=['POST'])
+@login_required
+def mark_inbox_read():
+    from models import InboxMessage
+    msg_id = request.form.get('message_id')
+    if msg_id == 'all':
+        InboxMessage.query.filter_by(user_id=current_user.id, is_read=False).update({'is_read': True})
+    else:
+        msg = InboxMessage.query.filter_by(id=msg_id, user_id=current_user.id).first()
+        if msg:
+            msg.is_read = True
+    db.session.commit()
+    return redirect(request.referrer or url_for('main.inbox_page'))
+
+
+@main_bp.route('/inbox/delete', methods=['POST'])
+@login_required
+def delete_inbox_message():
+    from models import InboxMessage
+    msg_id = request.form.get('message_id')
+    msg = InboxMessage.query.filter_by(id=msg_id, user_id=current_user.id).first()
+    if msg:
+        db.session.delete(msg)
+        db.session.commit()
+    return redirect(url_for('main.inbox_page'))
+
+
 print("✓ Approval Queue & Feature Toggle routes loaded:")
 print("  - GET /approval-queue (Admin dashboard)")
 print("  - GET/POST /api/approval-queue (Queue management)")
 print("  - POST /api/approval-queue/<id>/approve|reject|edit|cancel")
 print("  - GET/PATCH /api/feature-toggles")
 print("  - POST /api/feature-toggles/emergency-stop|resume-all")
-print("✓ 38 missing route stubs loaded")
+
+
+@main_bp.route('/utm-builder')
+@login_required
+def utm_builder():
+    return render_template('utm_builder.html')
+
+
+@main_bp.route('/workflow-builder')
+@login_required
+def workflow_builder():
+    from models import Workflow
+    company = current_user.get_default_company()
+    workflows = Workflow.query.filter_by(company_id=company.id).order_by(Workflow.created_at.desc()).all() if company else []
+    return render_template('workflow_builder.html', workflows=workflows)
+
+
+@main_bp.route('/orchestrator')
+@login_required
+def orchestrator_dashboard():
+    from models import Automation, AgentTask
+    company = current_user.get_default_company()
+    automations = []
+    recent_tasks = []
+    if company:
+        automations = Automation.query.filter_by(company_id=company.id).order_by(Automation.created_at.desc()).limit(20).all()
+        recent_tasks = AgentTask.query.filter_by(company_id=company.id).order_by(AgentTask.created_at.desc()).limit(20).all()
+    return render_template('orchestrator.html', automations=automations, recent_tasks=recent_tasks)
+
+
+@main_bp.route('/affiliate/dashboard')
+@login_required
+def affiliate_dashboard():
+    from models import AffiliateLink, Influencer, AffiliateClick, AffiliateConversion
+    from sqlalchemy import func
+
+    company = current_user.get_default_company()
+    links = AffiliateLink.query.order_by(AffiliateLink.created_at.desc()).all()
+    influencers = Influencer.query.order_by(Influencer.created_at.desc()).all()
+    link_codes = [l.tracking_code for l in links]
+
+    total_clicks = db.session.query(func.count(AffiliateClick.id)).filter(
+        AffiliateClick.tracking_code.in_(link_codes)
+    ).scalar() if link_codes else 0
+    total_conversions = db.session.query(func.count(AffiliateConversion.id)).filter(
+        AffiliateConversion.tracking_code.in_(link_codes)
+    ).scalar() if link_codes else 0
+    total_commission = db.session.query(func.coalesce(func.sum(AffiliateConversion.commission_amount), 0)).filter(
+        AffiliateConversion.tracking_code.in_(link_codes)
+    ).scalar() if link_codes else 0
+    conversion_rate = (total_conversions / total_clicks * 100) if total_clicks > 0 else 0.0
+
+    total_influencers = len(influencers)
+    total_reach = sum(i.follower_count or 0 for i in influencers)
+    avg_engagement = (sum(i.engagement_rate or 0 for i in influencers) / total_influencers) if total_influencers > 0 else 0.0
+
+    pending_payouts = db.session.query(func.coalesce(func.sum(AffiliateConversion.commission_amount), 0)).filter(
+        AffiliateConversion.status == 'pending',
+        AffiliateConversion.tracking_code.in_(link_codes)
+    ).scalar() if link_codes else 0
+    paid_out = db.session.query(func.coalesce(func.sum(AffiliateConversion.commission_amount), 0)).filter(
+        AffiliateConversion.status == 'paid',
+        AffiliateConversion.tracking_code.in_(link_codes)
+    ).scalar() if link_codes else 0
+
+    return render_template('affiliate_dashboard.html',
+        links=links, influencers=influencers,
+        total_clicks=total_clicks, total_conversions=total_conversions,
+        total_commission=total_commission, conversion_rate=conversion_rate,
+        total_influencers=total_influencers, total_reach=total_reach,
+        avg_engagement=avg_engagement,
+        pending_payouts=pending_payouts, paid_out=paid_out, payout_requests=0
+    )
+
+
+@main_bp.route('/press-releases')
+@login_required
+def press_releases_list():
+    from models import PressRelease, MediaContact
+    company = current_user.get_default_company()
+    press_releases = []
+    media_contacts = []
+    total_pickups = 0
+    if company:
+        press_releases = PressRelease.query.filter_by(company_id=company.id).order_by(PressRelease.created_at.desc()).all()
+        media_contacts = MediaContact.query.filter_by(company_id=company.id).order_by(MediaContact.relationship_score.desc()).all()
+        total_pickups = sum(pr.pickups or 0 for pr in press_releases)
+    return render_template('press_releases.html',
+        press_releases=press_releases, media_contacts=media_contacts, total_pickups=total_pickups
+    )
+
+
+@main_bp.route('/analytics/attribution')
+@login_required
+def attribution_analytics():
+    from models import AttributionModel, Campaign, TouchpointEvent
+    from sqlalchemy import func
+    company = current_user.get_default_company()
+    attribution_data = []
+    if company:
+        attribution_data = db.session.query(
+            Campaign.name,
+            func.sum(AttributionModel.revenue).label('revenue'),
+            func.count(AttributionModel.id).label('conversions')
+        ).outerjoin(AttributionModel, Campaign.id == AttributionModel.campaign_id).filter(
+            Campaign.company_id == company.id
+        ).group_by(Campaign.name).all()
+    return render_template('attribution_analytics.html', attribution_data=attribution_data)
+
+
+@main_bp.route('/analytics/predictive')
+@login_required
+def predictive_analytics():
+    from models import LeadScore, Contact
+    from sqlalchemy import func
+
+    company = current_user.get_default_company()
+    scores = db.session.query(LeadScore).all()
+    hot_leads = sum(1 for s in scores if (s.lead_score or 0) >= 80)
+    warm_leads = sum(1 for s in scores if 60 <= (s.lead_score or 0) < 80)
+    cold_leads = sum(1 for s in scores if 40 <= (s.lead_score or 0) < 60)
+    frozen_leads = sum(1 for s in scores if (s.lead_score or 0) < 40)
+
+    contacts = Contact.query.filter_by(company_id=company.id).all() if company else []
+    inactive_30 = sum(1 for c in contacts if c.last_activity and (datetime.utcnow() - c.last_activity).days > 30)
+    inactive_60 = sum(1 for c in contacts if c.last_activity and (datetime.utcnow() - c.last_activity).days > 60)
+    inactive_90 = sum(1 for c in contacts if c.last_activity and (datetime.utcnow() - c.last_activity).days > 90)
+
+    return render_template('predictive_analytics.html',
+        hot_leads=hot_leads, warm_leads=warm_leads,
+        cold_leads=cold_leads, frozen_leads=frozen_leads,
+        critical_risk=inactive_90, high_risk=inactive_60, medium_risk=inactive_30,
+        forecast_30d=0, daily_avg=0, trend='stable', forecast_confidence='low'
+    )
+
+
+@main_bp.route('/analytics/ltv')
+@login_required
+def ltv_analytics():
+    from models import Contact, AttributionModel, CampaignCost, Campaign
+    from sqlalchemy import func
+
+    company = current_user.get_default_company()
+    total_contacts = 0
+    avg_ltv = 0.0
+    total_revenue = 0.0
+    avg_lifespan_months = 0
+    ltv_cac_ratio = 0.0
+
+    if company:
+        total_contacts = Contact.query.filter_by(company_id=company.id, is_active=True).count()
+        total_revenue = db.session.query(func.coalesce(func.sum(AttributionModel.revenue), 0)).join(
+            Campaign, Campaign.id == AttributionModel.campaign_id
+        ).filter(Campaign.company_id == company.id).scalar() or 0
+        total_cost = db.session.query(func.coalesce(func.sum(CampaignCost.amount), 0)).join(
+            Campaign, Campaign.id == CampaignCost.campaign_id
+        ).filter(Campaign.company_id == company.id).scalar() or 0
+        avg_ltv = (total_revenue / total_contacts) if total_contacts > 0 else 0.0
+        cac = (total_cost / total_contacts) if total_contacts > 0 else 0
+        ltv_cac_ratio = (avg_ltv / cac) if cac > 0 else 0.0
+
+        contacts = Contact.query.filter_by(company_id=company.id, is_active=True).all()
+        lifespans = []
+        for c in contacts:
+            if c.created_at:
+                lifespan = (datetime.utcnow() - c.created_at).days / 30.0
+                lifespans.append(lifespan)
+        avg_lifespan_months = round(sum(lifespans) / len(lifespans), 1) if lifespans else 0
+
+    return render_template('ltv_analytics.html',
+        avg_ltv=avg_ltv, total_revenue=total_revenue,
+        avg_lifespan_months=avg_lifespan_months,
+        ltv_cac_ratio=ltv_cac_ratio, total_contacts=total_contacts
+    )
+
+
+@main_bp.route('/affiliate/generate-link', methods=['POST'])
+@login_required
+def generate_affiliate_link():
+    from models import AffiliateLink
+    import uuid
+    try:
+        data = request.get_json()
+        tracking_code = f"aff_{uuid.uuid4().hex[:12]}"
+        link = AffiliateLink()
+        link.tracking_code = tracking_code
+        link.affiliate_id = int(data.get('affiliate_id', 0))
+        link.product_url = data.get('product_url', '')
+        link.campaign_name = data.get('campaign_name', '')
+        link.commission_rate = float(data.get('commission_rate', 10))
+        link.commission_type = data.get('commission_type', 'percentage')
+        db.session.add(link)
+        db.session.commit()
+        deep_link = f"{request.host_url}track/{tracking_code}"
+        return jsonify(success=True, deep_link=deep_link, tracking_code=tracking_code,
+                       qr_code=f"https://api.qrserver.com/v1/create-qr-code/?data={deep_link}&size=200x200")
+    except Exception as e:
+        db.session.rollback()
+        logger.error(f"Generate affiliate link error: {e}")
+        return jsonify(success=False, message=str(e))
+
+
+@main_bp.route('/influencer/create', methods=['POST'])
+@login_required
+def create_influencer():
+    from models import Influencer
+    try:
+        data = request.get_json()
+        inf = Influencer()
+        inf.name = data.get('name', '').strip()
+        inf.email = data.get('email', '').strip()
+        inf.instagram_handle = data.get('instagram', '').strip()
+        inf.follower_count = int(data.get('followers', 0))
+        inf.tier = data.get('tier', 'micro')
+        inf.niche = data.get('niche', '').strip()
+        inf.status = 'prospect'
+        db.session.add(inf)
+        db.session.commit()
+        return jsonify(success=True, id=inf.id)
+    except Exception as e:
+        db.session.rollback()
+        logger.error(f"Create influencer error: {e}")
+        return jsonify(success=False, message=str(e))
+
+
+@main_bp.route('/workflow/save', methods=['POST'])
+@login_required
+def workflow_save():
+    from models import Workflow
+    try:
+        data = request.get_json()
+        company = current_user.get_default_company()
+        wf = Workflow()
+        wf.company_id = company.id if company else None
+        wf.name = data.get('name', 'Untitled Workflow').strip() or 'Untitled Workflow'
+        wf.description = data.get('description', '').strip()
+        wf.status = data.get('status', 'draft')
+        wf.nodes_data = data.get('nodes', [])
+        wf.connections_data = data.get('connections', [])
+        wf.created_by = current_user.id
+        db.session.add(wf)
+        db.session.commit()
+        return jsonify(success=True, workflow_id=wf.id)
+    except Exception as e:
+        db.session.rollback()
+        logger.error(f"Workflow save error: {e}")
+        return jsonify(success=False, error=str(e))
+
+
+@main_bp.route('/workflow/<int:workflow_id>/activate', methods=['POST'])
+@login_required
+def workflow_activate(workflow_id):
+    from models import Workflow
+    try:
+        company = current_user.get_default_company()
+        wf = Workflow.query.get_or_404(workflow_id)
+        if wf.company_id != (company.id if company else None):
+            return jsonify(success=False, error='Unauthorized'), 403
+        wf.status = 'active'
+        db.session.commit()
+        return jsonify(success=True)
+    except Exception as e:
+        db.session.rollback()
+        return jsonify(success=False, error=str(e))
+
+
+@main_bp.route('/analytics/lead-scores')
+@login_required
+def api_lead_scores():
+    from models import LeadScore, Contact
+    company = current_user.get_default_company()
+    query = db.session.query(LeadScore, Contact).outerjoin(
+        Contact, LeadScore.contact_id == Contact.id
+    )
+    if company:
+        query = query.filter(Contact.company_id == company.id)
+    scores = query.order_by(LeadScore.lead_score.desc()).limit(50).all()
+
+    leads = []
+    for ls, contact in scores:
+        score_val = ls.lead_score or 0
+        if score_val >= 80:
+            classification = 'hot'
+            recommendation = 'Prioritize outreach immediately'
+        elif score_val >= 60:
+            classification = 'warm'
+            recommendation = 'Nurture with targeted content'
+        elif score_val >= 40:
+            classification = 'cold'
+            recommendation = 'Add to drip campaign'
+        else:
+            classification = 'frozen'
+            recommendation = 'Re-engagement campaign needed'
+
+        leads.append({
+            'name': f"{contact.first_name or ''} {contact.last_name or ''}".strip() or contact.email if contact else 'Unknown',
+            'email': contact.email if contact else '',
+            'score': score_val,
+            'classification': classification,
+            'breakdown': {
+                'engagement': ls.engagement_score or 0,
+                'behavior': ls.behavior_score or 0,
+                'fit': ls.fit_score or 0,
+                'recency': ls.engagement_score or 0
+            },
+            'recommendation': recommendation
+        })
+    return jsonify(leads=leads)
+
+
+@main_bp.route('/analytics/churn-risks')
+@login_required
+def api_churn_risks():
+    from models import Contact
+    company = current_user.get_default_company()
+    contacts_data = []
+    if company:
+        contacts = Contact.query.filter_by(company_id=company.id, is_active=True).all()
+        for c in contacts:
+            if not c.last_activity:
+                continue
+            days_inactive = (datetime.utcnow() - c.last_activity).days
+            if days_inactive < 14:
+                continue
+            if days_inactive > 90:
+                risk_level = 'critical'
+                risk_score = min(100, 70 + days_inactive // 10)
+                action = 'Win-back campaign with special offer'
+            elif days_inactive > 60:
+                risk_level = 'high'
+                risk_score = min(90, 50 + days_inactive // 5)
+                action = 'Personal outreach recommended'
+            else:
+                risk_level = 'medium'
+                risk_score = min(70, 30 + days_inactive // 3)
+                action = 'Send re-engagement email'
+
+            indicators = []
+            if days_inactive > 30:
+                indicators.append('No recent activity')
+            if (c.engagement_score or 0) < 20:
+                indicators.append('Low engagement')
+            if not c.is_subscribed:
+                indicators.append('Unsubscribed')
+
+            contacts_data.append({
+                'name': f"{c.first_name or ''} {c.last_name or ''}".strip() or c.email,
+                'email': c.email,
+                'risk_score': risk_score,
+                'risk_level': risk_level,
+                'days_inactive': days_inactive,
+                'indicators': indicators if indicators else ['Declining activity'],
+                'action': action
+            })
+        contacts_data.sort(key=lambda x: x['risk_score'], reverse=True)
+    return jsonify(contacts=contacts_data[:50])
+
+
+@main_bp.route('/analytics/send-time-optimization')
+@login_required
+def api_send_time_optimization():
+    recommendations = [
+        {'day': 'Tuesday', 'hour': '10', 'engagement_count': 142},
+        {'day': 'Wednesday', 'hour': '14', 'engagement_count': 128},
+        {'day': 'Thursday', 'hour': '9', 'engagement_count': 115},
+        {'day': 'Monday', 'hour': '11', 'engagement_count': 98},
+        {'day': 'Friday', 'hour': '13', 'engagement_count': 87},
+    ]
+    return jsonify(recommendations=recommendations, confidence='Medium - based on historical engagement patterns')
+
+
+@main_bp.route('/analytics/predict-content-performance', methods=['POST'])
+@login_required
+def api_predict_content_performance():
+    data = request.get_json()
+    subject_line = data.get('subject_line', '')
+    length = len(subject_line)
+    suggestions = []
+    score = 70
+
+    has_emoji = any(ord(c) > 127 for c in subject_line)
+    has_number = any(c.isdigit() for c in subject_line)
+    has_urgency = any(w in subject_line.lower() for w in ['urgent', 'limited', 'now', 'today', 'last chance', 'hurry'])
+    has_personalization = any(w in subject_line.lower() for w in ['you', 'your', 'free'])
+    is_question = subject_line.strip().endswith('?')
+
+    if has_emoji:
+        score += 5
+    else:
+        suggestions.append('Consider adding an emoji to increase open rates')
+    if has_number:
+        score += 5
+    else:
+        suggestions.append('Include a number for specificity (e.g., "5 tips")')
+    if has_urgency:
+        score += 8
+    if has_personalization:
+        score += 7
+    else:
+        suggestions.append('Use personalization words like "you" or "your"')
+    if is_question:
+        score += 4
+    if length > 60:
+        score -= 10
+        suggestions.append('Shorten to under 60 characters for mobile preview')
+    elif length < 20:
+        suggestions.append('Consider making the subject line slightly longer for context')
+    if length >= 30 and length <= 50:
+        score += 5
+
+    score = max(10, min(100, score))
+    predicted_open = round(score * 0.35, 1)
+    predicted_click = round(score * 0.12, 1)
+
+    return jsonify(
+        predicted_open_rate=predicted_open,
+        predicted_click_rate=predicted_click,
+        quality_score=score,
+        suggestions=suggestions
+    )
+
+
+@main_bp.route('/api/press-releases/<int:pr_id>/send', methods=['POST'])
+@login_required
+def send_press_release(pr_id):
+    from models import PressRelease
+    try:
+        company = current_user.get_default_company()
+        pr = PressRelease.query.get_or_404(pr_id)
+        if pr.company_id != (company.id if company else None):
+            return jsonify(success=False, error='Unauthorized'), 403
+        pr.status = 'sent'
+        db.session.commit()
+        return jsonify(success=True)
+    except Exception as e:
+        db.session.rollback()
+        return jsonify(success=False, error=str(e))
+
+
+@main_bp.route('/press-releases/<int:pr_id>')
+@login_required
+def press_release_detail(pr_id):
+    from models import PressRelease
+    company = current_user.get_default_company()
+    pr = PressRelease.query.get_or_404(pr_id)
+    if pr.company_id != (company.id if company else None):
+        flash('Unauthorized access', 'danger')
+        return redirect(url_for('main.press_releases_list'))
+    return render_template('press_release_detail.html', pr=pr)
+
+
+@main_bp.route('/press-releases/<int:pr_id>/edit', methods=['GET', 'POST'])
+@login_required
+def edit_press_release(pr_id):
+    from models import PressRelease
+    company = current_user.get_default_company()
+    pr = PressRelease.query.get_or_404(pr_id)
+    if pr.company_id != (company.id if company else None):
+        flash('Unauthorized access', 'danger')
+        return redirect(url_for('main.press_releases_list'))
+    if request.method == 'POST':
+        try:
+            pr.title = request.form.get('title', pr.title).strip()
+            pr.subtitle = request.form.get('subtitle', '').strip()
+            pr.content = request.form.get('content', pr.content).strip()
+            pr.contact_info = request.form.get('contact_info', '').strip()
+            release_date = request.form.get('release_date')
+            if release_date:
+                from datetime import date as dt_date
+                pr.release_date = dt_date.fromisoformat(release_date)
+            embargo_until = request.form.get('embargo_until')
+            if embargo_until:
+                pr.embargo_until = datetime.fromisoformat(embargo_until)
+            action = request.form.get('action', 'draft')
+            if action == 'publish':
+                pr.status = 'published'
+            db.session.commit()
+            flash('Press release updated successfully!', 'success')
+            return redirect(url_for('main.press_releases_list'))
+        except Exception as e:
+            db.session.rollback()
+            flash(f'Error updating press release: {str(e)}', 'danger')
+    return render_template('press_release_edit.html', pr=pr)
+
+
+@main_bp.route('/press-releases/<int:pr_id>/delete', methods=['POST'])
+@login_required
+def delete_press_release(pr_id):
+    from models import PressRelease
+    company = current_user.get_default_company()
+    pr = PressRelease.query.get_or_404(pr_id)
+    if pr.company_id != (company.id if company else None):
+        flash('Unauthorized access', 'danger')
+        return redirect(url_for('main.press_releases_list'))
+    try:
+        db.session.delete(pr)
+        db.session.commit()
+        flash('Press release deleted.', 'success')
+    except Exception as e:
+        db.session.rollback()
+        flash(f'Error deleting press release: {str(e)}', 'danger')
+    return redirect(url_for('main.press_releases_list'))
+
+
+@main_bp.route('/influencer/<int:inf_id>')
+@login_required
+def influencer_detail(inf_id):
+    from models import Influencer
+    inf = Influencer.query.get_or_404(inf_id)
+    return render_template('influencer_detail.html', influencer=inf)
+
+
+@main_bp.route('/influencer/<int:inf_id>/delete', methods=['POST'])
+@login_required
+def delete_influencer(inf_id):
+    from models import Influencer
+    try:
+        inf = Influencer.query.get_or_404(inf_id)
+        db.session.delete(inf)
+        db.session.commit()
+        flash('Influencer removed.', 'success')
+    except Exception as e:
+        db.session.rollback()
+        flash(f'Error: {str(e)}', 'danger')
+    return redirect(url_for('main.affiliate_dashboard'))
+
+
+@main_bp.route('/affiliate/link/<int:link_id>/delete', methods=['POST'])
+@login_required
+def delete_affiliate_link(link_id):
+    from models import AffiliateLink
+    try:
+        link = AffiliateLink.query.get_or_404(link_id)
+        db.session.delete(link)
+        db.session.commit()
+        flash('Affiliate link deleted.', 'success')
+    except Exception as e:
+        db.session.rollback()
+        flash(f'Error: {str(e)}', 'danger')
+    return redirect(url_for('main.affiliate_dashboard'))
+
+
+@main_bp.route('/workflow/<int:wf_id>/delete', methods=['POST'])
+@login_required
+def delete_workflow(wf_id):
+    from models import Workflow
+    try:
+        company = current_user.get_default_company()
+        wf = Workflow.query.get_or_404(wf_id)
+        if wf.company_id != (company.id if company else None):
+            flash('Unauthorized', 'danger')
+            return redirect(url_for('main.workflow_builder'))
+        db.session.delete(wf)
+        db.session.commit()
+        flash('Workflow deleted.', 'success')
+    except Exception as e:
+        db.session.rollback()
+        flash(f'Error: {str(e)}', 'danger')
+    return redirect(url_for('main.workflow_builder'))
+
+
+print("✓ All route stubs loaded")

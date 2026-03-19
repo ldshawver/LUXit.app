@@ -1,0 +1,101 @@
+{% extends "base.html" %}
+{% block title %}{{ influencer.name }} - Influencer - LUX IT{% endblock %}
+{% block content %}
+<div class="container mt-4">
+    <a href="{{ url_for('main.affiliate_dashboard') }}" class="text-muted text-decoration-none mb-3 d-inline-block">
+        <i data-feather="arrow-left" style="width:16px;height:16px;"></i> Back to Affiliate Dashboard
+    </a>
+
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h2>{{ influencer.name }}</h2>
+            <p class="text-muted mb-0">{{ influencer.email or 'No email' }}</p>
+        </div>
+        <div class="d-flex gap-2">
+            <span class="badge bg-{{ 'success' if influencer.status == 'active' else 'warning' if influencer.status == 'prospect' else 'secondary' }} fs-6">
+                {{ influencer.status|title }}
+            </span>
+            <span class="badge bg-info fs-6">{{ influencer.tier|title }}</span>
+            <form method="POST" action="{{ url_for('main.delete_influencer', inf_id=influencer.id) }}" onsubmit="return confirm('Remove this influencer?');">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" class="btn btn-outline-danger btn-sm"><i data-feather="trash-2"></i> Remove</button>
+            </form>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-md-4">
+            <div class="card bg-dark border-secondary mb-3">
+                <div class="card-body text-center">
+                    <h3>{{ "{:,}".format(influencer.follower_count or 0) }}</h3>
+                    <small class="text-muted">Followers</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card bg-dark border-secondary mb-3">
+                <div class="card-body text-center">
+                    <h3>{{ "%.1f"|format(influencer.engagement_rate or 0) }}%</h3>
+                    <small class="text-muted">Engagement Rate</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card bg-dark border-secondary mb-3">
+                <div class="card-body text-center">
+                    <h3>{{ influencer.niche|title if influencer.niche else 'N/A' }}</h3>
+                    <small class="text-muted">Niche</small>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card bg-dark border-secondary">
+        <div class="card-header bg-transparent border-secondary">
+            <h5 class="mb-0">Social Profiles</h5>
+        </div>
+        <div class="card-body">
+            <div class="row">
+                {% if influencer.instagram_handle %}
+                <div class="col-md-3 mb-3">
+                    <small class="text-muted">Instagram</small><br>
+                    <strong>{{ influencer.instagram_handle }}</strong>
+                </div>
+                {% endif %}
+                {% if influencer.tiktok_handle %}
+                <div class="col-md-3 mb-3">
+                    <small class="text-muted">TikTok</small><br>
+                    <strong>{{ influencer.tiktok_handle }}</strong>
+                </div>
+                {% endif %}
+                {% if influencer.youtube_channel %}
+                <div class="col-md-3 mb-3">
+                    <small class="text-muted">YouTube</small><br>
+                    <strong>{{ influencer.youtube_channel }}</strong>
+                </div>
+                {% endif %}
+                {% if influencer.twitter_handle %}
+                <div class="col-md-3 mb-3">
+                    <small class="text-muted">Twitter</small><br>
+                    <strong>{{ influencer.twitter_handle }}</strong>
+                </div>
+                {% endif %}
+                {% if not influencer.instagram_handle and not influencer.tiktok_handle and not influencer.youtube_channel and not influencer.twitter_handle %}
+                <div class="col-12"><p class="text-muted">No social profiles added yet.</p></div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    {% if influencer.notes %}
+    <div class="card bg-dark border-secondary mt-3">
+        <div class="card-header bg-transparent border-secondary">
+            <h5 class="mb-0">Notes</h5>
+        </div>
+        <div class="card-body">
+            <div style="white-space: pre-wrap;">{{ influencer.notes }}</div>
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

@@ -4,7 +4,7 @@ from urllib.parse import urlparse
 from flask import Blueprint, flash, redirect, render_template, request, url_for
 from flask_login import current_user, login_required, login_user, logout_user
 from jinja2 import TemplateNotFound
-from sqlalchemy import or_
+from sqlalchemy import or_, text as db_text
 from sqlalchemy.exc import SQLAlchemyError
 from werkzeug.security import check_password_hash
 
@@ -113,6 +113,15 @@ def login():
                 return render_template("login.html")
 
         login_user(user, remember=True)
+
+        try:
+            from models import ActivityLog
+            from app import db as _db
+            entry = ActivityLog(user_id=user.id, action='Logged in', detail='Session started', icon='log-in')
+            _db.session.add(entry)
+            _db.session.commit()
+        except Exception:
+            pass
 
         nxt = request.args.get("next")
         hub_roots = {"/dashboard", "/marketing-hub"}
@@ -244,6 +253,81 @@ def forgot_username():
         not_found=not_found,
         admin_email="luke@adiken.com",
     )
+
+
+@auth_bp.route("/register", methods=["GET", "POST"])
+def register():
+    from extensions import db as _db
+
+    admin_exists = False
+    try:
+        row = _db.session.execute(
+            db_text("SELECT 1 FROM \"user\" WHERE is_admin = TRUE LIMIT 1")
+        ).fetchone()
+        admin_exists = row is not None
+    except SQLAlchemyError:
+        _db.session.rollback()
+
+    if admin_exists:
+        flash("Admin registration is closed — an admin already exists.", "error")
+        return redirect(url_for("auth.login"))
+
+    if request.method == "POST":
+        from werkzeug.security import generate_password_hash
+
+        username = (request.form.get("username") or "").strip()
+        email = (request.form.get("email") or "").strip().lower()
+        company_name = (request.form.get("company_name") or "").strip()
+        password = request.form.get("password") or ""
+        confirm = request.form.get("confirm_password") or ""
+
+        if not all([username, email, password, confirm]):
+            flash("All fields are required.", "error")
+            return render_template("register.html", is_admin_registration=True)
+        if password != confirm:
+            flash("Passwords do not match.", "error")
+            return render_template("register.html", is_admin_registration=True)
+        if len(password) < 8:
+            flash("Password must be at least 8 characters.", "error")
+            return render_template("register.html", is_admin_registration=True)
+
+        try:
+            existing = User.query.filter(
+                or_(User.username == username, User.email == email)
+            ).first()
+            if existing:
+                flash("Username or email already taken.", "error")
+                return render_template("register.html", is_admin_registration=True)
+
+            company_id = None
+            if company_name:
+                result = _db.session.execute(
+                    db_text("INSERT INTO company (name, is_active) VALUES (:n, TRUE) RETURNING id"),
+                    {"n": company_name},
+                )
+                company_id = result.fetchone()[0]
+
+            user = User(
+                username=username,
+                email=email,
+                password_hash=generate_password_hash(password),
+                is_admin=True,
+            )
+            if company_id is not None:
+                user.default_company_id = company_id
+            _db.session.add(user)
+            _db.session.commit()
+
+            login_user(user, remember=True)
+            flash("Admin account created successfully!", "success")
+            return redirect(url_for("auth.login"))
+        except SQLAlchemyError:
+            _db.session.rollback()
+            logger.exception("Registration failed")
+            flash("Registration failed. Please try again.", "error")
+            return render_template("register.html", is_admin_registration=True)
+
+    return render_template("register.html", is_admin_registration=True)
 
 
 @auth_bp.route("/logout")
