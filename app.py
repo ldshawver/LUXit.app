@@ -112,7 +112,7 @@ def create_app() -> Flask:
     app.config.update(
         WTF_CSRF_ENABLED=not is_replit,
         WTF_CSRF_TIME_LIMIT=None,
-        SESSION_COOKIE_SAMESITE="None" if is_replit else "Lax",
+        SESSION_COOKIE_SAMESITE="Lax",
         SESSION_COOKIE_HTTPONLY=True,
         SESSION_COOKIE_SECURE=not is_replit,
         PERMANENT_SESSION_LIFETIME=timedelta(days=7),
