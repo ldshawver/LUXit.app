@@ -109,3 +109,10 @@ Key architectural decisions and features include:
 - CompetitorProfile model: DB column is `competitor_name`, model exposes `.name` property for backward compatibility.
 - Report content rendered with `textContent` (not `innerHTML`) to prevent XSS
 - Onboarding file uploads validated for allowed image extensions and 5MB size limit
+- Session cookie uses `SameSite=Lax` with `Secure=False` on Replit dev (CSRF disabled in iframe env); production uses `Secure=True`
+- Auth blueprint responses include `Cache-Control: no-store` to prevent stale login pages
+
+### Phase 3 Continued: T003 Stub Features
+- **SEO Dashboard** (`/seo/dashboard`): Redesigned with glassmorphism cards, stat cards for keywords/rankings/backlinks/competitors, quick action buttons, top keywords table
+- **SEO Tools** (`/seo-tools`): Redesigned with design system variables, dark-themed accordion for best practices
+- **Content Generator** (`/content-generator`): Redesigned with design system CSS variables replacing inline hex colors, consistent card styling
