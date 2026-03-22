@@ -1560,6 +1560,109 @@ def add_company():
     
     return render_template('company_add.html')
 
+@main_bp.route('/onboarding')
+@login_required
+def onboarding():
+    """Customer onboarding wizard"""
+    return render_template('onboarding.html')
+
+@main_bp.route('/onboarding/submit', methods=['POST'])
+@login_required
+def onboarding_submit():
+    """Process onboarding wizard submission"""
+    from models import Company, UserCompanyAccess, CompanySecret, user_company
+    import os
+    
+    name = request.form.get('company_name', '').strip()
+    if not name:
+        flash('Company name is required', 'error')
+        return redirect(url_for('main.onboarding'))
+    
+    company = Company()
+    company.name = name
+    company.website_url = request.form.get('website_url', '').strip()
+    company.industry = request.form.get('industry', '').strip()
+    company.description = request.form.get('description', '').strip()
+    company.primary_color = request.form.get('primary_color', '#a855f7')
+    company.secondary_color = request.form.get('secondary_color', '#00e5ff')
+    company.accent_color = request.form.get('accent_color', '#e4055c')
+    company.font_family = request.form.get('font_family', 'Inter, sans-serif')
+    company.apply_brand_colors = True
+    company.env_config = {}
+    company.social_accounts = {}
+    company.email_config = {}
+    company.api_keys = {}
+    
+    ALLOWED_IMAGE_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'svg', 'webp'}
+    MAX_LOGO_SIZE = 5 * 1024 * 1024
+    
+    logo_file = request.files.get('logo')
+    if logo_file and logo_file.filename:
+        from werkzeug.utils import secure_filename
+        filename = secure_filename(logo_file.filename)
+        ext = filename.rsplit('.', 1)[-1].lower() if '.' in filename else ''
+        if ext in ALLOWED_IMAGE_EXTENSIONS:
+            logo_file.seek(0, 2)
+            file_size = logo_file.tell()
+            logo_file.seek(0)
+            if file_size <= MAX_LOGO_SIZE:
+                logo_path = f'company_logos/{filename}'
+                os.makedirs('static/company_logos', exist_ok=True)
+                logo_file.save(f'static/{logo_path}')
+                company.logo_path = logo_path
+    
+    db.session.add(company)
+    db.session.flush()
+    
+    existing_count = len(current_user.get_all_companies())
+    is_first = existing_count == 0
+    
+    current_user.companies.append(company)
+    db.session.flush()
+    
+    try:
+        db.session.execute(
+            user_company.update().where(
+                (user_company.c.user_id == current_user.id) &
+                (user_company.c.company_id == company.id)
+            ).values(is_default=is_first)
+        )
+    except Exception:
+        pass
+    
+    existing_access = UserCompanyAccess.query.filter_by(
+        user_id=current_user.id, company_id=company.id
+    ).first()
+    if not existing_access:
+        access = UserCompanyAccess(
+            user_id=current_user.id,
+            company_id=company.id,
+            role='admin',
+            is_default=is_first,
+        )
+        db.session.add(access)
+    
+    if is_first or not current_user.default_company_id:
+        current_user.default_company_id = company.id
+    
+    api_keys = {}
+    for key_name in ['openai_key', 'sendgrid_key', 'ga_id', 'fb_token']:
+        val = request.form.get(key_name, '').strip()
+        if val:
+            secret = CompanySecret(
+                company_id=company.id,
+                key=key_name,
+                value=val
+            )
+            db.session.add(secret)
+            api_keys[key_name] = True
+    
+    company.api_keys = api_keys
+    
+    db.session.commit()
+    flash(f'Welcome aboard! "{name}" has been set up successfully.', 'success')
+    return redirect(url_for('main.dashboard'))
+
 @main_bp.route('/companies/edit/<int:company_id>', methods=['GET', 'POST'])
 @login_required
 def edit_company(company_id):
@@ -8659,7 +8762,7 @@ def get_agent_reports(agent_type):
     company_id = company.id if company else None
     
     reports = AgentReport.query.filter_by(
-        agent_type=agent_type, company_id=company_id
+        agent_type=agent_type
     ).order_by(AgentReport.created_at.desc()).limit(50).all()
     
     return jsonify({
@@ -8667,10 +8770,10 @@ def get_agent_reports(agent_type):
         'reports': [{
             'id': r.id,
             'report_type': r.report_type,
-            'title': r.title,
+            'title': r.report_title or f'{r.report_type} Report',
             'period_start': r.period_start.isoformat() if r.period_start else None,
             'period_end': r.period_end.isoformat() if r.period_end else None,
-            'status': r.status,
+            'status': 'completed' if r.report_data else 'generating',
             'created_at': r.created_at.isoformat() if r.created_at else None
         } for r in reports]
     })
@@ -8727,13 +8830,12 @@ def create_agent_report(agent_type):
         title = f"{agent_titles.get(agent_type, agent_type.title())} {report_type.title()} Report"
         
         report = AgentReport(
-            company_id=company_id,
             agent_type=agent_type,
+            agent_name=agent_titles.get(agent_type, agent_type),
             report_type=report_type,
-            title=title,
+            report_title=title,
             period_start=period_start,
-            period_end=period_end,
-            status='generating'
+            period_end=period_end
         )
         db.session.add(report)
         db.session.commit()
@@ -8763,22 +8865,19 @@ Format as clean, professional markdown."""
                     max_tokens=2000
                 )
                 
-                report.content = response.choices[0].message.content
-                report.status = 'completed'
+                report.report_data = response.choices[0].message.content
             except Exception as e:
                 logger.error(f"AI report generation error: {e}")
-                report.content = f"Report generation encountered an error. Please try again later."
-                report.status = 'failed'
+                report.report_data = "Report generation encountered an error. Please try again later."
         else:
-            report.content = "AI report generation is not available. Please configure the OpenAI API key."
-            report.status = 'completed'
+            report.report_data = "AI report generation is not available. Please configure the OpenAI API key."
         
         db.session.commit()
         
         return jsonify({
             'success': True,
             'report_id': report.id,
-            'status': report.status
+            'status': 'completed' if report.report_data else 'generating'
         })
         
     except Exception as e:
@@ -8798,16 +8897,21 @@ def get_agent_report_detail(agent_type, report_id):
     company_id = company.id if company else None
     
     report = AgentReport.query.get(report_id)
-    if not report or report.agent_type != agent_type or report.company_id != company_id:
+    if not report or report.agent_type != agent_type:
         return jsonify({'success': False, 'error': 'Report not found'}), 404
+    
+    import html
+    content = report.report_data or ''
+    safe_content = html.escape(content)
     
     return jsonify({
         'success': True,
         'report': {
             'id': report.id,
             'report_type': report.report_type,
-            'title': report.report_title,
-            'content': report.report_data,
+            'title': report.report_title or f'{report.report_type} Report',
+            'content': safe_content,
+            'status': 'completed' if report.report_data else 'generating',
             'period_start': report.period_start.strftime('%Y-%m-%d') if report.period_start else None,
             'period_end': report.period_end.strftime('%Y-%m-%d') if report.period_end else None,
             'created_at': report.created_at.isoformat() if report.created_at else None

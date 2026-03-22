@@ -447,6 +447,84 @@
   .priority-medium { background: rgba(245,158,11,0.15); color: #fbbf24; border: 1px solid rgba(245,158,11,0.25); }
   .priority-low { background: rgba(0,229,255,0.1); color: #00e5ff; border: 1px solid rgba(0,229,255,0.2); }
 
+  /* ── Reports ── */
+  .report-row {
+    background: rgba(168,85,247,0.04);
+    border: 1px solid rgba(168,85,247,0.12);
+    border-radius: 10px;
+    padding: 14px 16px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .report-row:hover { background: rgba(168,85,247,0.08); border-color: rgba(168,85,247,0.25); }
+  .report-icon {
+    width: 36px; height: 36px;
+    border-radius: 8px;
+    background: linear-gradient(135deg, #a855f7, #7c3aed);
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+  }
+  .report-icon svg { width: 16px; height: 16px; stroke: #fff; }
+  .report-info { flex: 1; min-width: 0; }
+  .report-title { font-size: 0.84rem; font-weight: 600; color: #ddd; margin: 0 0 3px; }
+  .report-meta { font-size: 0.72rem; color: #555; }
+  .report-status {
+    font-size: 0.65rem; font-weight: 700; padding: 2px 8px;
+    border-radius: 20px; letter-spacing: 0.05em; text-transform: uppercase;
+  }
+  .report-status.completed { background: rgba(0,255,180,0.1); color: #00ffb4; border: 1px solid rgba(0,255,180,0.2); }
+  .report-status.generating { background: rgba(0,229,255,0.1); color: #00e5ff; border: 1px solid rgba(0,229,255,0.2); }
+  .report-status.failed { background: rgba(239,68,68,0.1); color: #f87171; border: 1px solid rgba(239,68,68,0.2); }
+
+  /* ── Deliverables ── */
+  .deliverable-row {
+    background: rgba(0,229,255,0.03);
+    border: 1px solid rgba(0,229,255,0.1);
+    border-radius: 10px;
+    padding: 14px 16px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    transition: all 0.2s;
+  }
+  .deliverable-row:hover { background: rgba(0,229,255,0.06); border-color: rgba(0,229,255,0.2); }
+  .deliverable-icon {
+    width: 36px; height: 36px;
+    border-radius: 8px;
+    background: linear-gradient(135deg, #00e5ff, #0891b2);
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+  }
+  .deliverable-icon svg { width: 16px; height: 16px; stroke: #fff; }
+  .deliverable-info { flex: 1; min-width: 0; }
+  .deliverable-title { font-size: 0.84rem; font-weight: 600; color: #ddd; margin: 0 0 3px; }
+  .deliverable-meta { font-size: 0.72rem; color: #555; }
+  .deliverable-type {
+    font-size: 0.65rem; font-weight: 600; padding: 2px 8px;
+    border-radius: 20px; background: rgba(255,255,255,0.05);
+    color: #888; border: 1px solid rgba(255,255,255,0.08);
+  }
+
+  /* ── Report detail modal ── */
+  .report-detail-content {
+    max-height: 60vh;
+    overflow-y: auto;
+    padding: 16px;
+    background: rgba(255,255,255,0.02);
+    border-radius: 8px;
+    border: 1px solid rgba(255,255,255,0.06);
+    font-size: 0.85rem;
+    line-height: 1.7;
+    color: #ccc;
+  }
+  .report-detail-content h1, .report-detail-content h2, .report-detail-content h3 {
+    color: #fff; margin-top: 1em;
+  }
+  .report-detail-content strong { color: #00e5ff; }
+
   /* ── Buttons ── */
   .btn-lux-sm {
     display: inline-flex;
@@ -583,7 +661,13 @@
         <svg data-feather="message-circle"></svg> Chat
       </button>
       <button class="hub-tab-btn" id="tab-tasks" onclick="switchTab('tasks')">
-        <svg data-feather="check-square"></svg> Automated Tasks
+        <svg data-feather="check-square"></svg> Tasks
+      </button>
+      <button class="hub-tab-btn" id="tab-reports" onclick="switchTab('reports')">
+        <svg data-feather="file-text"></svg> Reports
+      </button>
+      <button class="hub-tab-btn" id="tab-deliverables" onclick="switchTab('deliverables')">
+        <svg data-feather="package"></svg> Deliverables
       </button>
       <button class="hub-tab-btn" id="tab-suggestions" onclick="switchTab('suggestions')">
         <svg data-feather="zap"></svg> Suggestions
@@ -620,6 +704,41 @@
         <div class="empty-state">
           <svg data-feather="loader" class="spinning"></svg>
           <p>Loading tasks…</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Reports panel -->
+    <div class="hub-panel" id="panel-reports">
+      <div class="tasks-toolbar">
+        <h6>Reports</h6>
+        <div class="d-flex gap-2">
+          <button class="btn-lux-sm" onclick="generateReport('monthly')" id="genMonthlyBtn">
+            <svg data-feather="calendar"></svg> Monthly Report
+          </button>
+          <button class="btn-lux-sm btn-lux-amber" onclick="generateReport('quarterly')" id="genQuarterlyBtn">
+            <svg data-feather="trending-up"></svg> Quarterly Report
+          </button>
+        </div>
+      </div>
+      <div class="tasks-body" id="reportsList" style="min-height:300px;">
+        <div class="empty-state">
+          <svg data-feather="loader" class="spinning"></svg>
+          <p>Loading reports...</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Deliverables panel -->
+    <div class="hub-panel" id="panel-deliverables">
+      <div class="tasks-toolbar">
+        <h6>Deliverables</h6>
+        <span style="font-size:0.72rem;color:#555;">Auto-generated outputs from agent tasks</span>
+      </div>
+      <div class="tasks-body" id="deliverablesList" style="min-height:300px;">
+        <div class="empty-state">
+          <svg data-feather="loader" class="spinning"></svg>
+          <p>Loading deliverables...</p>
         </div>
       </div>
     </div>
@@ -683,6 +802,27 @@
     </div>
   </div>
 </div>
+
+<!-- Report Detail Modal -->
+<div class="modal fade" id="reportDetailModal" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" style="color:#ddd;font-size:0.95rem;font-weight:700;" id="reportDetailTitle">Report</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="d-flex gap-2 mb-3" id="reportDetailMeta"></div>
+        <div class="report-detail-content" id="reportDetailBody">
+          Loading...
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn-lux-sm" style="color:#888;border-color:rgba(255,255,255,0.1);background:transparent;" data-bs-dismiss="modal">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
 {% endblock %}
 
 {% block scripts %}
@@ -711,11 +851,13 @@ let currentAgent = '{{ (agents.keys()|list)[0] if agents else "" }}';
 
 /* ─── Tab switcher ─── */
 function switchTab(tab) {
-  ['chat','tasks','suggestions'].forEach(t => {
+  ['chat','tasks','reports','deliverables','suggestions'].forEach(t => {
     document.getElementById('panel-' + t).classList.toggle('active', t === tab);
     document.getElementById('tab-' + t).classList.toggle('active', t === tab);
   });
   if (tab === 'tasks') loadTasks(currentAgent);
+  if (tab === 'reports') loadReports(currentAgent);
+  if (tab === 'deliverables') loadDeliverables(currentAgent);
   if (typeof feather !== 'undefined') feather.replace();
 }
 
@@ -903,6 +1045,139 @@ async function deleteTask(key, id) {
     });
     loadTasks(key);
   } catch { /* silent */ }
+}
+
+/* ─── Reports ─── */
+async function loadReports(key) {
+  const list = document.getElementById('reportsList');
+  list.innerHTML = `<div class="empty-state"><svg data-feather="loader" class="spinning"></svg><p>Loading reports...</p></div>`;
+  if (typeof feather !== 'undefined') feather.replace();
+
+  try {
+    const res = await fetch(`/api/agents/${key}/reports`);
+    const data = await res.json();
+    if (data.reports && data.reports.length > 0) {
+      list.innerHTML = data.reports.map(r => `
+        <div class="report-row" onclick="viewReport('${key}', ${r.id})">
+          <div class="report-icon"><svg data-feather="${r.report_type === 'quarterly' ? 'trending-up' : 'calendar'}"></svg></div>
+          <div class="report-info">
+            <div class="report-title">${r.title || r.report_type + ' Report'}</div>
+            <div class="report-meta">${r.report_type} · ${r.period_start ? r.period_start.substring(0,10) : 'N/A'} → ${r.period_end ? r.period_end.substring(0,10) : 'N/A'}</div>
+          </div>
+          <span class="report-status ${r.status || 'completed'}">${r.status || 'completed'}</span>
+        </div>`).join('');
+    } else {
+      list.innerHTML = `
+        <div class="empty-state">
+          <svg data-feather="file-text"></svg>
+          <p>No reports yet for this agent.</p>
+          <div class="d-flex gap-2 mt-2">
+            <button class="btn-lux-sm" onclick="generateReport('monthly')"><svg data-feather="calendar"></svg> Generate Monthly</button>
+            <button class="btn-lux-sm btn-lux-amber" onclick="generateReport('quarterly')"><svg data-feather="trending-up"></svg> Generate Quarterly</button>
+          </div>
+        </div>`;
+    }
+  } catch {
+    list.innerHTML = `<div class="empty-state"><svg data-feather="alert-circle"></svg><p>Error loading reports.</p></div>`;
+  }
+  if (typeof feather !== 'undefined') feather.replace();
+}
+
+async function generateReport(reportType) {
+  const btnId = reportType === 'monthly' ? 'genMonthlyBtn' : 'genQuarterlyBtn';
+  const btn = document.getElementById(btnId);
+  if (btn) { btn.disabled = true; btn.innerHTML = `<svg data-feather="loader" class="spinning"></svg> Generating...`; }
+  if (typeof feather !== 'undefined') feather.replace();
+
+  try {
+    const res = await fetch(`/api/agents/${currentAgent}/reports`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': '{{ csrf_token() }}' },
+      body: JSON.stringify({ report_type: reportType })
+    });
+    const data = await res.json();
+    if (data.success) {
+      switchTab('reports');
+      loadReports(currentAgent);
+    } else {
+      alert(data.error || 'Failed to generate report');
+    }
+  } catch {
+    alert('Error generating report. Please try again.');
+  }
+
+  if (btn) {
+    btn.disabled = false;
+    const icon = reportType === 'monthly' ? 'calendar' : 'trending-up';
+    const label = reportType === 'monthly' ? 'Monthly Report' : 'Quarterly Report';
+    btn.innerHTML = `<svg data-feather="${icon}"></svg> ${label}`;
+  }
+  if (typeof feather !== 'undefined') feather.replace();
+}
+
+async function viewReport(agentKey, reportId) {
+  const modal = new bootstrap.Modal(document.getElementById('reportDetailModal'));
+  document.getElementById('reportDetailTitle').textContent = 'Loading report...';
+  document.getElementById('reportDetailMeta').innerHTML = '';
+  document.getElementById('reportDetailBody').innerHTML = '<div class="text-center p-4"><svg data-feather="loader" class="spinning" style="width:24px;height:24px;stroke:#555;"></svg></div>';
+  modal.show();
+  if (typeof feather !== 'undefined') feather.replace();
+
+  try {
+    const res = await fetch(`/api/agents/${agentKey}/reports/${reportId}`);
+    const data = await res.json();
+    if (data.success && data.report) {
+      const r = data.report;
+      document.getElementById('reportDetailTitle').textContent = r.title || 'Report';
+      document.getElementById('reportDetailMeta').innerHTML = `
+        <span class="report-status ${r.status || 'completed'}">${r.status || 'completed'}</span>
+        <span class="deliverable-type">${r.report_type}</span>`;
+      const content = r.content || r.report_data || 'Report content not available.';
+      const body = document.getElementById('reportDetailBody');
+      body.textContent = '';
+      const pre = document.createElement('div');
+      pre.style.whiteSpace = 'pre-wrap';
+      pre.textContent = typeof content === 'string' ? content : JSON.stringify(content, null, 2);
+      body.appendChild(pre);
+    } else {
+      document.getElementById('reportDetailBody').innerHTML = '<p style="color:#f87171;">Report not found or access denied.</p>';
+    }
+  } catch {
+    document.getElementById('reportDetailBody').innerHTML = '<p style="color:#f87171;">Error loading report.</p>';
+  }
+  if (typeof feather !== 'undefined') feather.replace();
+}
+
+/* ─── Deliverables ─── */
+async function loadDeliverables(key) {
+  const list = document.getElementById('deliverablesList');
+  list.innerHTML = `<div class="empty-state"><svg data-feather="loader" class="spinning"></svg><p>Loading deliverables...</p></div>`;
+  if (typeof feather !== 'undefined') feather.replace();
+
+  try {
+    const res = await fetch(`/api/agents/${key}/deliverables`);
+    const data = await res.json();
+    if (data.deliverables && data.deliverables.length > 0) {
+      list.innerHTML = data.deliverables.map(d => `
+        <div class="deliverable-row">
+          <div class="deliverable-icon"><svg data-feather="package"></svg></div>
+          <div class="deliverable-info">
+            <div class="deliverable-title">${d.title || 'Deliverable'}</div>
+            <div class="deliverable-meta">${d.deliverable_type || 'output'} · ${d.created_at ? d.created_at.substring(0,10) : 'N/A'}</div>
+          </div>
+          <span class="deliverable-type">${d.deliverable_type || 'output'}</span>
+        </div>`).join('');
+    } else {
+      list.innerHTML = `
+        <div class="empty-state">
+          <svg data-feather="package"></svg>
+          <p>No deliverables yet. Agents will produce outputs as they complete tasks.</p>
+        </div>`;
+    }
+  } catch {
+    list.innerHTML = `<div class="empty-state"><svg data-feather="alert-circle"></svg><p>Error loading deliverables.</p></div>`;
+  }
+  if (typeof feather !== 'undefined') feather.replace();
 }
 
 /* ─── Suggestions ─── */

@@ -94,8 +94,18 @@ Key architectural decisions and features include:
 - `POST /analytics/predict-content-performance` — Subject line analysis
 - `POST /api/press-releases/<id>/send` — Send press release (with ownership check)
 
+### Phase 3: Design Overhaul & Feature Expansion (March 2026)
+- **Design System Overhaul**: Complete CSS rewrite in `static/css/custom.css` with design tokens (glass cards, stat cards, KPI cards, buttons, forms, tables, badges, modals, alerts, animations). Brand palette: bg `#030014`, cyan `#00e5ff`/`#47f5ff`, purple `#a855f7`/`#7c3aed`, teal `#00ffb4`, metallic `#c0c8d8`.
+- **Dashboard Color Fixes**: Replaced all blue `#4f8ef7` with cyan `#00e5ff` and `#3b6fd4` with `#a855f7` purple across dashboard.
+- **Ads Hub Color Fix**: Replaced all amber `#f59e0b` references with brand purple `#a855f7` and cyan `#00e5ff` throughout `ads_hub.html`.
+- **CRM Hub Color Fix**: Updated CSS variable fallbacks from `#bc00ed` to `#a855f7`.
+- **AI Hub Reports & Deliverables**: Added Reports and Deliverables tabs to the AI Hub (`agents_hub.html`). Monthly/quarterly report generation with OpenAI, report viewing in modal, deliverables listing. Fixed AgentReport model/route field mismatch (routes now use correct `report_title`/`report_data` fields). Added XSS protection with `textContent` rendering.
+- **Customer Onboarding Wizard** (`/onboarding`): Multi-step wizard for new company setup: (1) Company info, (2) Brand kit (colors, fonts), (3) API key configuration (OpenAI, SendGrid, GA, Facebook), (4) Launch checklist. File upload hardened with extension whitelist and 5MB size limit.
+
 ### Security
 - All new endpoints enforce tenant scoping (company_id checks)
 - Workflow activate and press release send have IDOR protection
 - CSRF tokens added to all JavaScript fetch calls
 - CompetitorProfile model: DB column is `competitor_name`, model exposes `.name` property for backward compatibility.
+- Report content rendered with `textContent` (not `innerHTML`) to prevent XSS
+- Onboarding file uploads validated for allowed image extensions and 5MB size limit
