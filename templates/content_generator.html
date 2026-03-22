@@ -2,24 +2,20 @@
 {% block title %}AI Content Generator - LUX IT{% endblock %}
 {% block content %}
 <div class="container-fluid py-4">
-  <div class="row mb-4">
-    <div class="col-12">
-      <h1 class="mb-2">
-        <i data-feather="edit-3"></i> AI Content Generator
-      </h1>
-      <p class="text-muted">Generate high-quality marketing content powered by GPT-4</p>
-    </div>
+  <div class="section-title mb-4">
+    <h2><i data-feather="edit-3"></i> AI Content Generator</h2>
+    <span>Generate high-quality marketing content powered by GPT-4</span>
   </div>
 
-  <div class="row">
+  <div class="row g-3">
     <div class="col-lg-4">
-      <div class="card mb-4" style="background: #0a0a0a; border: 2px solid #480749;">
+      <div class="card">
         <div class="card-body">
-          <h5 class="card-title mb-4" style="color: #00ffb4;">Content Settings</h5>
-          
+          <h5 class="mb-4" style="color:var(--lux-cyan);">Content Settings</h5>
+
           <div class="mb-3">
-            <label class="form-label" style="color: #c0c0c0;">Content Type</label>
-            <select class="form-select" id="contentType" style="background: #000; border-color: #bc00ed; color: #fff;">
+            <label class="form-label" style="color:var(--lux-muted);">Content Type</label>
+            <select class="form-select" id="contentType">
               <option value="blog_post">Blog Post</option>
               <option value="social_media">Social Media Posts</option>
               <option value="email_campaign">Email Campaign</option>
@@ -30,13 +26,13 @@
           </div>
 
           <div class="mb-3">
-            <label class="form-label" style="color: #c0c0c0;">Topic <span style="color: #e4055c;">*</span></label>
-            <input type="text" class="form-control" id="topic" placeholder="Enter your topic..." style="background: #000; border-color: #bc00ed; color: #fff;">
+            <label class="form-label" style="color:var(--lux-muted);">Topic <span style="color:var(--lux-primary);">*</span></label>
+            <input type="text" class="form-control" id="topic" placeholder="Enter your topic...">
           </div>
 
           <div class="mb-3">
-            <label class="form-label" style="color: #c0c0c0;">Tone</label>
-            <select class="form-select" id="tone" style="background: #000; border-color: #bc00ed; color: #fff;">
+            <label class="form-label" style="color:var(--lux-muted);">Tone</label>
+            <select class="form-select" id="tone">
               <option value="professional">Professional</option>
               <option value="casual">Casual</option>
               <option value="friendly">Friendly</option>
@@ -48,8 +44,8 @@
           </div>
 
           <div class="mb-3">
-            <label class="form-label" style="color: #c0c0c0;">Length</label>
-            <select class="form-select" id="length" style="background: #000; border-color: #bc00ed; color: #fff;">
+            <label class="form-label" style="color:var(--lux-muted);">Length</label>
+            <select class="form-select" id="length">
               <option value="short">Short (300-500 words)</option>
               <option value="medium" selected>Medium (500-800 words)</option>
               <option value="long">Long (800-1200 words)</option>
@@ -57,16 +53,16 @@
           </div>
 
           <div class="mb-3">
-            <label class="form-label" style="color: #c0c0c0;">Keywords (comma separated)</label>
-            <input type="text" class="form-control" id="keywords" placeholder="AI, marketing, automation" style="background: #000; border-color: #bc00ed; color: #fff;">
+            <label class="form-label" style="color:var(--lux-muted);">Keywords (comma separated)</label>
+            <input type="text" class="form-control" id="keywords" placeholder="AI, marketing, automation">
           </div>
 
           <div class="mb-4">
-            <label class="form-label" style="color: #c0c0c0;">Additional Context</label>
-            <textarea class="form-control" id="context" rows="3" placeholder="Target audience, platform, special instructions..." style="background: #000; border-color: #bc00ed; color: #fff;"></textarea>
+            <label class="form-label" style="color:var(--lux-muted);">Additional Context</label>
+            <textarea class="form-control" id="context" rows="3" placeholder="Target audience, platform, special instructions..."></textarea>
           </div>
 
-          <button class="btn w-100" id="generateBtn" onclick="generateContent()" style="background: linear-gradient(135deg, #bc00ed, #0044ff); border: none; padding: 0.75rem; font-weight: 600;">
+          <button class="btn w-100" id="generateBtn" onclick="generateContent()" style="background:linear-gradient(135deg,var(--lux-primary),var(--lux-cyan));border:none;padding:.75rem;font-weight:600;color:#fff;">
             <i data-feather="zap"></i> Generate Content
           </button>
         </div>
@@ -74,52 +70,52 @@
     </div>
 
     <div class="col-lg-8">
-      <div class="card" style="background: #0a0a0a; border: 2px solid #480749; min-height: 600px;">
+      <div class="card" style="min-height:600px;">
         <div class="card-body">
           <div class="d-flex justify-content-between align-items-center mb-3">
-            <h5 class="card-title mb-0" style="color: #00ffb4;">Generated Content</h5>
-            <div class="dropdown" id="exportDropdown" style="display: none;">
-              <button class="btn btn-sm dropdown-toggle" type="button" data-bs-toggle="dropdown" style="background: linear-gradient(135deg, #bc00ed, #0044ff); border: none; color: #fff;">
+            <h5 class="mb-0" style="color:var(--lux-cyan);">Generated Content</h5>
+            <div class="dropdown" id="exportDropdown" style="display:none;">
+              <button class="btn btn-sm dropdown-toggle" type="button" data-bs-toggle="dropdown" style="background:linear-gradient(135deg,var(--lux-primary),var(--lux-cyan));border:none;color:#fff;">
                 <i data-feather="download"></i> Export
               </button>
-              <ul class="dropdown-menu dropdown-menu-end" style="background: #0a0a0a; border: 2px solid #bc00ed;">
-                <li><a class="dropdown-item" href="#" onclick="copyContent(); return false;" style="color: #00ffb4;">
+              <ul class="dropdown-menu dropdown-menu-end" style="background:var(--lux-surface);border:1px solid var(--lux-border);">
+                <li><a class="dropdown-item" href="#" onclick="copyContent(); return false;" style="color:var(--lux-cyan);">
                   <i data-feather="copy"></i> Copy to Clipboard
                 </a></li>
-                <li><a class="dropdown-item" href="#" onclick="exportTXT(); return false;" style="color: #00ffb4;">
+                <li><a class="dropdown-item" href="#" onclick="exportTXT(); return false;" style="color:var(--lux-cyan);">
                   <i data-feather="file-text"></i> Download as TXT
                 </a></li>
-                <li><a class="dropdown-item" href="#" onclick="exportDOCX(); return false;" style="color: #00ffb4;">
+                <li><a class="dropdown-item" href="#" onclick="exportDOCX(); return false;" style="color:var(--lux-cyan);">
                   <i data-feather="file"></i> Download as DOCX
                 </a></li>
-                <li><a class="dropdown-item" href="#" onclick="exportPDF(); return false;" style="color: #00ffb4;">
+                <li><a class="dropdown-item" href="#" onclick="exportPDF(); return false;" style="color:var(--lux-cyan);">
                   <i data-feather="file-text"></i> Download as PDF
                 </a></li>
               </ul>
             </div>
           </div>
 
-          <div id="loadingIndicator" style="display: none; text-align: center; padding: 4rem;">
-            <div class="spinner-border" role="status" style="color: #bc00ed; width: 3rem; height: 3rem;">
+          <div id="loadingIndicator" style="display:none;text-align:center;padding:4rem;">
+            <div class="spinner-border" role="status" style="color:var(--lux-primary);width:3rem;height:3rem;">
               <span class="visually-hidden">Loading...</span>
             </div>
-            <p class="mt-3" style="color: #00ffb4;">Generating your content...</p>
+            <p class="mt-3" style="color:var(--lux-cyan);">Generating your content...</p>
           </div>
 
-          <div id="emptyState" style="text-align: center; padding: 4rem;">
-            <i data-feather="file-text" style="width: 64px; height: 64px; color: #480749; margin-bottom: 1rem;"></i>
-            <h4 style="color: #c0c0c0;">No content generated yet</h4>
-            <p class="text-muted">Fill in the settings and click "Generate Content" to create amazing marketing content</p>
+          <div id="emptyState" style="text-align:center;padding:4rem;">
+            <i data-feather="file-text" style="width:64px;height:64px;color:var(--lux-primary);opacity:.3;margin-bottom:1rem;"></i>
+            <h4 style="color:var(--lux-muted);">No content generated yet</h4>
+            <p style="color:var(--lux-muted);opacity:.7;">Fill in the settings and click "Generate Content" to create marketing content</p>
           </div>
 
-          <div id="contentOutput" style="display: none; padding: 1.5rem; background: #000; border: 1px solid #bc00ed; border-radius: 8px; white-space: pre-wrap; color: #fff; max-height: 500px; overflow-y: auto;">
+          <div id="contentOutput" style="display:none;padding:1.5rem;background:var(--lux-surface);border:1px solid var(--lux-border);border-radius:var(--lux-radius);white-space:pre-wrap;color:var(--lux-text);max-height:500px;overflow-y:auto;">
           </div>
 
-          <div id="metaInfo" style="display: none; margin-top: 1rem; padding: 1rem; background: #000; border: 1px solid #00ffb4; border-radius: 8px;">
-            <small style="color: #00ffb4;">
-              <strong>Type:</strong> <span id="metaType"></span> | 
-              <strong>Tone:</strong> <span id="metaTone"></span> | 
-              <strong>Length:</strong> <span id="metaLength"></span> | 
+          <div id="metaInfo" style="display:none;margin-top:1rem;padding:1rem;background:rgba(0,229,255,.05);border:1px solid rgba(0,229,255,.2);border-radius:var(--lux-radius);">
+            <small style="color:var(--lux-cyan);">
+              <strong>Type:</strong> <span id="metaType"></span> |
+              <strong>Tone:</strong> <span id="metaTone"></span> |
+              <strong>Length:</strong> <span id="metaLength"></span> |
               <strong>Tokens Used:</strong> <span id="metaTokens"></span>
             </small>
           </div>
@@ -134,7 +130,7 @@ feather.replace();
 
 async function generateContent() {
   const topic = document.getElementById('topic').value.trim();
-  
+
   if (!topic) {
     alert('Please enter a topic');
     return;
@@ -147,7 +143,6 @@ async function generateContent() {
   const keywords = keywordsInput ? keywordsInput.split(',').map(k => k.trim()) : [];
   const context = document.getElementById('context').value.trim();
 
-  // Show loading state
   document.getElementById('emptyState').style.display = 'none';
   document.getElementById('contentOutput').style.display = 'none';
   document.getElementById('metaInfo').style.display = 'none';
@@ -174,20 +169,17 @@ async function generateContent() {
     const data = await response.json();
 
     if (response.ok && data.success) {
-      // Display content
       document.getElementById('contentOutput').textContent = data.content;
       document.getElementById('contentOutput').style.display = 'block';
-      
-      // Display metadata
+
       document.getElementById('metaType').textContent = data.type;
       document.getElementById('metaTone').textContent = data.tone;
       document.getElementById('metaLength').textContent = data.length;
       document.getElementById('metaTokens').textContent = data.tokens_used;
       document.getElementById('metaInfo').style.display = 'block';
-      
-      // Show export dropdown
+
       document.getElementById('exportDropdown').style.display = 'inline-block';
-      
+
       feather.replace();
     } else {
       alert('Error: ' + (data.error || 'Failed to generate content'));
@@ -214,7 +206,7 @@ function exportTXT() {
   const content = document.getElementById('contentOutput').textContent;
   const topic = document.getElementById('topic').value.trim();
   const type = document.getElementById('contentType').value;
-  
+
   const blob = new Blob([content], { type: 'text/plain' });
   const url = window.URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -230,20 +222,14 @@ async function exportDOCX() {
   const content = document.getElementById('contentOutput').textContent;
   const topic = document.getElementById('topic').value.trim();
   const type = document.getElementById('contentType').value;
-  
+
   try {
     const response = await fetch('/api/content/export/docx', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        content: content,
-        title: topic,
-        type: type
-      })
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content: content, title: topic, type: type })
     });
-    
+
     if (response.ok) {
       const blob = await response.blob();
       const url = window.URL.createObjectURL(blob);
@@ -267,20 +253,14 @@ async function exportPDF() {
   const content = document.getElementById('contentOutput').textContent;
   const topic = document.getElementById('topic').value.trim();
   const type = document.getElementById('contentType').value;
-  
+
   try {
     const response = await fetch('/api/content/export/pdf', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        content: content,
-        title: topic,
-        type: type
-      })
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content: content, title: topic, type: type })
     });
-    
+
     if (response.ok) {
       const blob = await response.blob();
       const url = window.URL.createObjectURL(blob);
