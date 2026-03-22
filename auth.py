@@ -3,6 +3,7 @@ from urllib.parse import urlparse
 
 from flask import Blueprint, flash, redirect, render_template, request, url_for
 from flask_login import current_user, login_required, login_user, logout_user
+from extensions import csrf
 from jinja2 import TemplateNotFound
 from sqlalchemy import or_, text as db_text
 from sqlalchemy.exc import SQLAlchemyError
@@ -48,6 +49,7 @@ def _hub_redirect(user):
 
 
 @auth_bp.route("/login", methods=["GET", "POST"])
+@csrf.exempt
 def login():
     if current_user.is_authenticated:
         return _hub_redirect(current_user)
@@ -60,7 +62,10 @@ def login():
         ).strip()
         password = request.form.get("password") or ""
 
+        logger.info("LOGIN ATTEMPT: identifier=%r, has_password=%s", identifier, bool(password))
+
         if not identifier or not password:
+            logger.warning("LOGIN FAIL: empty identifier or password")
             flash("Username/email and password are required.", "error")
             try:
                 return render_template("auth/login.html")
@@ -96,7 +101,10 @@ def login():
                 logger.warning("Auth login template missing: %s", exc)
                 return render_template("login.html")
 
+        logger.info("LOGIN: user found=%s, has_hash=%s", user is not None, bool(getattr(user, 'password_hash', None)))
+
         if not user or not user.password_hash:
+            logger.warning("LOGIN FAIL: user not found or no password hash for %r", identifier)
             flash("Invalid credentials.", "error")
             try:
                 return render_template("auth/login.html")

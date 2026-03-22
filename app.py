@@ -110,13 +110,23 @@ def create_app() -> Flask:
     app.config.update(
         WTF_CSRF_ENABLED=True,
         WTF_CSRF_TIME_LIMIT=None,
-        SESSION_COOKIE_SAMESITE="Lax",
+        SESSION_COOKIE_SAMESITE="None",
         SESSION_COOKIE_HTTPONLY=True,
         SESSION_COOKIE_SECURE=True,
         PERMANENT_SESSION_LIFETIME=timedelta(minutes=30),
     )
 
     csrf.init_app(app)
+
+    from flask_wtf.csrf import CSRFError
+
+    @app.errorhandler(CSRFError)
+    def handle_csrf_error(e):
+        from flask import flash as _flash, redirect as _redirect, request as _req, url_for as _url
+        _flash("Your session expired. Please try again.", "error")
+        if _req.path.startswith("/auth/"):
+            return _redirect(_req.url)
+        return _redirect(_url("auth.login"))
 
     # --------------------------------------------------------
     # Flask-Login
