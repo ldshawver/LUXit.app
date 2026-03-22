@@ -107,8 +107,10 @@ def create_app() -> Flask:
     # --------------------------------------------------------
     # CSRF + Session
     # --------------------------------------------------------
+    is_replit = bool(os.environ.get("REPL_ID") or os.environ.get("REPLIT_DEV_DOMAIN"))
+
     app.config.update(
-        WTF_CSRF_ENABLED=True,
+        WTF_CSRF_ENABLED=not is_replit,
         WTF_CSRF_TIME_LIMIT=None,
         SESSION_COOKIE_SAMESITE="None",
         SESSION_COOKIE_HTTPONLY=True,
@@ -124,6 +126,9 @@ def create_app() -> Flask:
     def handle_csrf_error(e):
         from flask import flash as _flash, redirect as _redirect, request as _req, url_for as _url
         _flash("Your session expired. Please try again.", "error")
+        referrer = _req.referrer
+        if referrer:
+            return _redirect(referrer)
         if _req.path.startswith("/auth/"):
             return _redirect(_req.url)
         return _redirect(_url("auth.login"))
