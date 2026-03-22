@@ -48,6 +48,12 @@ def _hub_redirect(user):
     return redirect("/dashboard")
 
 
+@auth_bp.after_request
+def no_cache_auth(response):
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    response.headers["Pragma"] = "no-cache"
+    return response
+
 @auth_bp.route("/login", methods=["GET", "POST"])
 @csrf.exempt
 def login():

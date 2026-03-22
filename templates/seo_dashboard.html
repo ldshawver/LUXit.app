@@ -3,98 +3,134 @@
 {% block title %}SEO Dashboard - LUX IT{% endblock %}
 
 {% block content %}
-<div class="container mt-4">
-    <div class="row">
-        <div class="col-md-12">
-            <h2><i data-feather="search"></i> SEO Dashboard</h2>
-            <p class="text-muted">Track keywords, monitor backlinks, and analyze competitors</p>
-        </div>
-    </div>
+<div class="container-fluid py-4">
+  <div class="section-title mb-4">
+    <h2><i data-feather="search"></i> SEO Dashboard</h2>
+    <span>Track keywords, monitor backlinks, and analyze competitors</span>
+  </div>
 
-    <!-- Stats Overview -->
-    <div class="row mt-4">
-        <div class="col-md-3">
-            <div class="card">
-                <div class="card-body">
-                    <h6 class="text-muted">Total Keywords</h6>
-                    <h3>{{ stats.total_keywords or 0 }}</h3>
-                </div>
-            </div>
+  <div class="row g-3 mb-4">
+    <div class="col-md-3">
+      <div class="card text-center">
+        <div class="card-body py-4">
+          <div style="width:48px;height:48px;border-radius:12px;background:rgba(168,85,247,.15);display:inline-flex;align-items:center;justify-content:center;margin-bottom:.75rem;">
+            <i data-feather="hash" style="color:var(--lux-primary);"></i>
+          </div>
+          <h3 class="mb-1" style="color:var(--lux-cyan);">{{ stats.total_keywords or 0 }}</h3>
+          <small style="color:var(--lux-muted);">Total Keywords</small>
         </div>
-        <div class="col-md-3">
-            <div class="card">
-                <div class="card-body">
-                    <h6 class="text-muted">Top 10 Rankings</h6>
-                    <h3 class="text-success">{{ stats.top_performing or 0 }}</h3>
-                </div>
-            </div>
-        </div>
-        <div class="col-md-3">
-            <div class="card">
-                <div class="card-body">
-                    <h6 class="text-muted">Backlinks</h6>
-                    <h3>{{ stats.total_backlinks or 0 }}</h3>
-                </div>
-            </div>
-        </div>
-        <div class="col-md-3">
-            <div class="card">
-                <div class="card-body">
-                    <h6 class="text-muted">Competitors</h6>
-                    <h3>{{ stats.total_competitors or 0 }}</h3>
-                </div>
-            </div>
-        </div>
+      </div>
     </div>
+    <div class="col-md-3">
+      <div class="card text-center">
+        <div class="card-body py-4">
+          <div style="width:48px;height:48px;border-radius:12px;background:rgba(0,229,255,.12);display:inline-flex;align-items:center;justify-content:center;margin-bottom:.75rem;">
+            <i data-feather="trending-up" style="color:var(--lux-cyan);"></i>
+          </div>
+          <h3 class="mb-1" style="color:var(--lux-teal);">{{ stats.top_performing or 0 }}</h3>
+          <small style="color:var(--lux-muted);">Top 10 Rankings</small>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="card text-center">
+        <div class="card-body py-4">
+          <div style="width:48px;height:48px;border-radius:12px;background:rgba(0,255,180,.1);display:inline-flex;align-items:center;justify-content:center;margin-bottom:.75rem;">
+            <i data-feather="link" style="color:var(--lux-teal);"></i>
+          </div>
+          <h3 class="mb-1" style="color:var(--lux-primary);">{{ stats.total_backlinks or 0 }}</h3>
+          <small style="color:var(--lux-muted);">Backlinks</small>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="card text-center">
+        <div class="card-body py-4">
+          <div style="width:48px;height:48px;border-radius:12px;background:rgba(168,85,247,.15);display:inline-flex;align-items:center;justify-content:center;margin-bottom:.75rem;">
+            <i data-feather="users" style="color:var(--lux-primary);"></i>
+          </div>
+          <h3 class="mb-1" style="color:var(--lux-cyan);">{{ stats.total_competitors or 0 }}</h3>
+          <small style="color:var(--lux-muted);">Competitors</small>
+        </div>
+      </div>
+    </div>
+  </div>
 
-    <!-- Quick Actions -->
-    <div class="row mt-4">
-        <div class="col-md-12">
-            <div class="card">
-                <div class="card-body">
-                    <h5>Quick Actions</h5>
-                    <a href="{{ url_for('main.seo_keywords') }}" class="btn btn-primary">Manage Keywords</a>
-                    <a href="{{ url_for('main.seo_backlinks') }}" class="btn btn-secondary">View Backlinks</a>
-                    <a href="{{ url_for('main.seo_competitors') }}" class="btn btn-info">Track Competitors</a>
-                    <a href="{{ url_for('main.seo_audit') }}" class="btn btn-warning">Run Site Audit</a>
-                </div>
-            </div>
+  <div class="row g-3 mb-4">
+    <div class="col-12">
+      <div class="card">
+        <div class="card-body">
+          <h5 class="mb-3" style="color:var(--lux-cyan);">Quick Actions</h5>
+          <div class="d-flex flex-wrap gap-2">
+            <a href="{{ url_for('main.seo_keywords') }}" class="btn" style="background:linear-gradient(135deg,var(--lux-primary),var(--lux-primary-75));border:none;color:#fff;">
+              <i data-feather="hash" style="width:16px;height:16px;"></i> Manage Keywords
+            </a>
+            <a href="{{ url_for('main.seo_backlinks') }}" class="btn" style="background:rgba(0,229,255,.15);border:1px solid rgba(0,229,255,.3);color:var(--lux-cyan);">
+              <i data-feather="link" style="width:16px;height:16px;"></i> View Backlinks
+            </a>
+            <a href="{{ url_for('main.seo_competitors') }}" class="btn" style="background:rgba(0,255,180,.1);border:1px solid rgba(0,255,180,.25);color:var(--lux-teal);">
+              <i data-feather="eye" style="width:16px;height:16px;"></i> Track Competitors
+            </a>
+            <a href="{{ url_for('main.seo_audit') }}" class="btn" style="background:rgba(168,85,247,.15);border:1px solid rgba(168,85,247,.3);color:var(--lux-primary);">
+              <i data-feather="activity" style="width:16px;height:16px;"></i> Run Site Audit
+            </a>
+          </div>
         </div>
+      </div>
     </div>
+  </div>
 
-    <!-- Top Keywords -->
-    {% if top_keywords %}
-    <div class="row mt-4">
-        <div class="col-md-12">
-            <div class="card">
-                <div class="card-header">
-                    <h5>Top Performing Keywords</h5>
-                </div>
-                <div class="card-body">
-                    <table class="table">
-                        <thead>
-                            <tr>
-                                <th>Keyword</th>
-                                <th>Position</th>
-                                <th>Search Volume</th>
-                                <th>Last Checked</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for kw in top_keywords %}
-                            <tr>
-                                <td>{{ kw.keyword }}</td>
-                                <td><span class="badge bg-success">#{{ kw.current_position }}</span></td>
-                                <td>{{ kw.search_volume or 'N/A' }}</td>
-                                <td>{{ kw.last_checked.strftime('%Y-%m-%d %H:%M') if kw.last_checked else 'Never' }}</td>
-                            </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
-                </div>
-            </div>
+  {% if top_keywords %}
+  <div class="row g-3">
+    <div class="col-12">
+      <div class="card">
+        <div class="card-body">
+          <h5 class="mb-3" style="color:var(--lux-cyan);">Top Performing Keywords</h5>
+          <div class="table-responsive">
+            <table class="table table-dark table-hover mb-0" style="background:transparent;">
+              <thead>
+                <tr style="border-bottom:1px solid var(--lux-border);">
+                  <th style="color:var(--lux-muted);font-weight:600;font-size:.85rem;">Keyword</th>
+                  <th style="color:var(--lux-muted);font-weight:600;font-size:.85rem;">Position</th>
+                  <th style="color:var(--lux-muted);font-weight:600;font-size:.85rem;">Search Volume</th>
+                  <th style="color:var(--lux-muted);font-weight:600;font-size:.85rem;">Last Checked</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for kw in top_keywords %}
+                <tr style="border-bottom:1px solid rgba(255,255,255,.05);">
+                  <td style="color:var(--lux-text);">{{ kw.keyword }}</td>
+                  <td>
+                    <span style="background:linear-gradient(135deg,var(--lux-primary),var(--lux-cyan));padding:3px 10px;border-radius:20px;font-size:.8rem;color:#fff;font-weight:600;">
+                      #{{ kw.current_position }}
+                    </span>
+                  </td>
+                  <td style="color:var(--lux-cyan);">{{ kw.search_volume or 'N/A' }}</td>
+                  <td style="color:var(--lux-muted);font-size:.85rem;">{{ kw.last_checked.strftime('%Y-%m-%d %H:%M') if kw.last_checked else 'Never' }}</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
         </div>
+      </div>
     </div>
-    {% endif %}
+  </div>
+  {% else %}
+  <div class="row">
+    <div class="col-12">
+      <div class="card">
+        <div class="card-body text-center py-5">
+          <i data-feather="search" style="width:48px;height:48px;color:var(--lux-primary);opacity:.5;margin-bottom:1rem;"></i>
+          <h5 style="color:var(--lux-muted);">No keywords tracked yet</h5>
+          <p class="text-muted mb-3">Start by adding keywords to track their search rankings</p>
+          <a href="{{ url_for('main.seo_keywords') }}" class="btn" style="background:linear-gradient(135deg,var(--lux-primary),var(--lux-cyan));border:none;color:#fff;">
+            <i data-feather="plus" style="width:16px;height:16px;"></i> Add Keywords
+          </a>
+        </div>
+      </div>
+    </div>
+  </div>
+  {% endif %}
 </div>
 {% endblock %}
