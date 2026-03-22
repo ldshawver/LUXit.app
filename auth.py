@@ -112,7 +112,10 @@ def login():
                 logger.warning("Auth login template missing: %s", exc)
                 return render_template("login.html")
 
-        if not check_password_hash(user.password_hash, password):
+        pw_ok = check_password_hash(user.password_hash, password)
+        logger.info("LOGIN: password check for %r = %s (pw_len=%d, hash_len=%d)", 
+                     identifier, pw_ok, len(password), len(user.password_hash or ''))
+        if not pw_ok:
             flash("Invalid credentials.", "error")
             try:
                 return render_template("auth/login.html")
