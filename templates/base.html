@@ -722,5 +722,25 @@
     {% endif %}
     {% block scripts %}{% endblock %}
     <script>if (typeof feather !== 'undefined') feather.replace();</script>
+    <div class="ambient-particles" id="ambientParticles"></div>
+    <script>
+    (function(){
+      var c=document.getElementById('ambientParticles');
+      if(!c)return;
+      var colors=['#a855f7','#47f5ff','#00ffb4','#7c3aed','#c0c8d8','#e879f9','#22d3ee'];
+      var count=60;
+      for(var i=0;i<count;i++){
+        var d=document.createElement('div');
+        d.className='p';
+        var size=Math.random()*4+2;
+        var dur=Math.random()*12+8;
+        var delay=Math.random()*15;
+        var left=Math.random()*100;
+        var driftX=(Math.random()-0.5)*120;
+        d.style.cssText='width:'+size+'px;height:'+size+'px;left:'+left+'%;animation-duration:'+dur+'s;animation-delay:'+delay+'s;background:'+colors[i%colors.length]+';box-shadow:0 0 '+(size*2)+'px '+colors[i%colors.length]+';--drift:'+driftX+'px;';
+        c.appendChild(d);
+      }
+    })();
+    </script>
 </body>
 </html>

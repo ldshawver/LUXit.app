@@ -671,6 +671,29 @@ p, span, div { color: var(--lux-text); }
   50% { transform: translate3d(-30px, 20px, 0); }
 }
 
+.ambient-particles {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.ambient-particles .p {
+  position: absolute;
+  bottom: -10px;
+  border-radius: 50%;
+  opacity: 0;
+  animation: floatUp linear infinite;
+}
+
+@keyframes floatUp {
+  0%   { transform: translateY(0) translateX(0); opacity: 0; }
+  10%  { opacity: 0.8; }
+  90%  { opacity: 0.6; }
+  100% { transform: translateY(-110vh) translateX(var(--drift)); opacity: 0; }
+}
+
 /* ── Alert Panel ── */
 .alert-panel {
   padding: 1.5rem;
