@@ -1,366 +1,671 @@
 {% extends "marketing/base_marketing.html" %}
-{% block title %}Book a Demo{% endblock %}
-{% block meta_description %}Schedule a personalized demo of the LUX AI-Powered Marketing Automation & CRM Platform. See how 11 AI agents can transform your marketing.{% endblock %}
+{% block title %}Book a Demo — LUX IT{% endblock %}
+{% block meta_description %}Schedule a 45-minute personalized demo of LUX IT. Pick a date and time that works for you.{% endblock %}
 
 {% block extra_css %}
-.demo-hero {
-    min-height: 100vh;
-    display: flex;
-    align-items: center;
-    position: relative;
-    padding-top: 6rem;
-    padding-bottom: 4rem;
+.demo-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 100px 24px 60px;
 }
 
-.demo-hero::before {
-    content: '';
-    position: absolute;
-    inset: 0;
-    background:
-        radial-gradient(ellipse 80% 50% at 30% -10%, rgba(0, 255, 180, 0.06), transparent),
-        radial-gradient(ellipse 60% 40% at 70% 60%, rgba(188, 0, 237, 0.05), transparent);
-    pointer-events: none;
+.booking-card {
+  background: rgba(10, 10, 30, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  max-width: 960px;
+  width: 100%;
+  display: grid;
+  grid-template-columns: 300px 1fr;
+  overflow: hidden;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.5);
 }
 
-.demo-form-card {
-    background: rgba(10, 10, 10, 0.9);
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    border-radius: 20px;
-    padding: 2.5rem;
-    position: relative;
-    overflow: hidden;
+.booking-sidebar {
+  padding: 36px 28px;
+  border-right: 1px solid rgba(255, 255, 255, 0.06);
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
 }
 
-.demo-form-card::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    height: 2px;
-    background: linear-gradient(90deg, var(--lux-cyan), var(--lux-purple), var(--lux-pink));
+.booking-org {
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 
-.form-label-lux {
-    color: rgba(255, 255, 255, 0.7);
-    font-size: 0.85rem;
-    font-weight: 500;
-    margin-bottom: 0.4rem;
+.booking-org img {
+  height: 32px;
+  width: auto;
+  filter: drop-shadow(0 0 12px rgba(0, 245, 255, 0.3));
 }
 
-.form-control-lux {
-    background: rgba(255, 255, 255, 0.04);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    border-radius: 10px;
-    padding: 0.75rem 1rem;
-    color: var(--lux-pearl);
-    font-size: 0.95rem;
-    transition: all 0.3s ease;
-    width: 100%;
+.booking-org-name {
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.5);
+  font-weight: 500;
 }
 
-.form-control-lux:focus {
-    outline: none;
-    border-color: var(--lux-cyan);
-    background: rgba(0, 255, 180, 0.03);
-    box-shadow: 0 0 0 3px rgba(0, 255, 180, 0.08);
+.booking-title {
+  font-size: 1.35rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.3;
 }
 
-.form-control-lux::placeholder {
-    color: rgba(255, 255, 255, 0.25);
+.booking-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
 
-select.form-control-lux {
-    appearance: none;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='rgba(255,255,255,0.4)' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
-    background-repeat: no-repeat;
-    background-position: right 1rem center;
-    padding-right: 2.5rem;
+.booking-meta-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.88rem;
+  color: rgba(255, 255, 255, 0.6);
 }
 
-select.form-control-lux option {
-    background: #111;
-    color: #fff;
+.booking-meta-item svg {
+  width: 16px;
+  height: 16px;
+  color: var(--accent-cyan);
+  flex-shrink: 0;
 }
 
-.contact-method-group {
-    display: flex;
-    gap: 0.75rem;
-    flex-wrap: wrap;
+.booking-desc {
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.45);
+  line-height: 1.65;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  padding-top: 20px;
 }
 
-.contact-method-btn {
-    flex: 1;
-    min-width: 120px;
-    padding: 0.75rem 1rem;
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    border-radius: 10px;
-    background: rgba(255, 255, 255, 0.03);
-    color: rgba(255, 255, 255, 0.6);
-    font-size: 0.85rem;
-    font-weight: 500;
-    cursor: pointer;
-    transition: all 0.3s ease;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.5rem;
+.booking-main {
+  padding: 36px 32px;
+  display: flex;
+  flex-direction: column;
 }
 
-.contact-method-btn:hover {
-    border-color: var(--lux-cyan);
-    color: var(--lux-pearl);
+.booking-step-title {
+  font-size: 1rem;
+  font-weight: 600;
+  margin-bottom: 20px;
+  color: rgba(255, 255, 255, 0.9);
 }
 
-.contact-method-btn.active {
-    border-color: var(--lux-cyan);
-    background: rgba(0, 255, 180, 0.08);
-    color: var(--lux-cyan);
+.cal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
 }
 
-.contact-method-btn input[type="radio"] {
-    display: none;
+.cal-month {
+  font-size: 0.95rem;
+  font-weight: 600;
 }
 
-.btn-submit-demo {
-    background: linear-gradient(135deg, var(--lux-cyan), var(--lux-blue));
-    color: #000;
-    border: none;
-    padding: 1rem 2.5rem;
-    border-radius: 10px;
-    font-weight: 700;
-    font-size: 1.05rem;
-    width: 100%;
-    cursor: pointer;
-    transition: all 0.3s ease;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.5rem;
+.cal-nav {
+  display: flex;
+  gap: 6px;
 }
 
-.btn-submit-demo:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 8px 30px rgba(0, 255, 180, 0.3);
+.cal-nav button {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.7);
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
-.direct-contact-card {
-    background: rgba(255, 255, 255, 0.03);
-    border: 1px solid rgba(255, 255, 255, 0.06);
-    border-radius: 14px;
-    padding: 1.5rem;
-    text-align: center;
-    transition: all 0.3s ease;
+.cal-nav button:hover {
+  background: rgba(139, 92, 246, 0.15);
+  border-color: rgba(139, 92, 246, 0.4);
+  color: #fff;
 }
 
-.direct-contact-card:hover {
-    border-color: var(--lux-border);
-    background: rgba(255, 255, 255, 0.05);
+.cal-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 4px;
+  margin-bottom: 24px;
 }
 
-.direct-contact-card a {
-    color: var(--lux-cyan);
-    text-decoration: none;
-    font-weight: 600;
-    font-size: 1.1rem;
-    transition: color 0.2s;
+.cal-dow {
+  text-align: center;
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.35);
+  text-transform: uppercase;
+  padding: 6px 0;
 }
 
-.direct-contact-card a:hover {
-    color: var(--lux-purple);
+.cal-day {
+  aspect-ratio: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  font-size: 0.82rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  color: rgba(255, 255, 255, 0.8);
+  border: 1px solid transparent;
 }
 
-.why-item {
-    display: flex;
-    align-items: flex-start;
-    gap: 1rem;
-    margin-bottom: 1.5rem;
+.cal-day:hover:not(.disabled):not(.empty) {
+  background: rgba(139, 92, 246, 0.12);
+  border-color: rgba(139, 92, 246, 0.3);
 }
 
-.why-icon {
-    width: 40px;
-    height: 40px;
-    border-radius: 10px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
+.cal-day.selected {
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.4), rgba(0, 245, 255, 0.3));
+  border-color: rgba(0, 245, 255, 0.5);
+  color: #fff;
+  font-weight: 700;
+}
+
+.cal-day.today {
+  border-color: rgba(0, 245, 255, 0.3);
+  color: var(--accent-cyan);
+}
+
+.cal-day.disabled {
+  color: rgba(255, 255, 255, 0.15);
+  cursor: default;
+}
+
+.cal-day.empty {
+  cursor: default;
+}
+
+.time-slots-label {
+  font-size: 0.9rem;
+  font-weight: 600;
+  margin-bottom: 12px;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.time-slots {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-bottom: 24px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.time-slot {
+  padding: 10px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.03);
+  color: rgba(255, 255, 255, 0.75);
+  font-size: 0.82rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  text-align: center;
+}
+
+.time-slot:hover {
+  border-color: rgba(0, 245, 255, 0.4);
+  background: rgba(0, 245, 255, 0.06);
+  color: #fff;
+}
+
+.time-slot.selected {
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.35), rgba(0, 245, 255, 0.25));
+  border-color: rgba(0, 245, 255, 0.5);
+  color: #fff;
+  font-weight: 700;
+}
+
+.booking-confirm-btn {
+  background: linear-gradient(135deg, var(--accent-purple), var(--accent-cyan));
+  color: #fff;
+  border: none;
+  padding: 14px 28px;
+  border-radius: 10px;
+  font-weight: 700;
+  font-size: 0.95rem;
+  width: 100%;
+  cursor: pointer;
+  transition: all 0.3s;
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+.booking-confirm-btn.active {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.booking-confirm-btn.active:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 30px rgba(139, 92, 246, 0.4);
+}
+
+.booking-form-step {
+  display: none;
+}
+
+.booking-form-step.visible {
+  display: block;
+}
+
+.form-label-bk {
+  color: rgba(255, 255, 255, 0.65);
+  font-size: 0.82rem;
+  font-weight: 500;
+  margin-bottom: 6px;
+  display: block;
+}
+
+.form-input-bk {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  padding: 10px 14px;
+  color: #fff;
+  font-size: 0.88rem;
+  width: 100%;
+  transition: all 0.2s;
+  font-family: inherit;
+}
+
+.form-input-bk:focus {
+  outline: none;
+  border-color: rgba(0, 245, 255, 0.5);
+  background: rgba(0, 245, 255, 0.03);
+}
+
+.form-input-bk::placeholder {
+  color: rgba(255, 255, 255, 0.2);
+}
+
+.form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.form-group {
+  margin-bottom: 12px;
+}
+
+.booking-selected-info {
+  background: rgba(139, 92, 246, 0.08);
+  border: 1px solid rgba(139, 92, 246, 0.2);
+  border-radius: 10px;
+  padding: 14px 18px;
+  margin-bottom: 20px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.booking-selected-info svg {
+  color: var(--accent-cyan);
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+}
+
+.booking-selected-text {
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.booking-selected-text strong {
+  color: #fff;
+}
+
+.back-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 0.82rem;
+  cursor: pointer;
+  margin-bottom: 16px;
+  transition: color 0.2s;
+  background: none;
+  border: none;
+  font-family: inherit;
+}
+
+.back-link:hover {
+  color: var(--accent-cyan);
+}
+
+.tz-select {
+  font-size: 0.78rem;
+  color: rgba(255, 255, 255, 0.4);
+  margin-bottom: 20px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.tz-select svg {
+  width: 13px;
+  height: 13px;
 }
 
 .flash-msg {
-    background: rgba(228, 5, 92, 0.1);
-    border: 1px solid rgba(228, 5, 92, 0.3);
-    color: var(--lux-pink);
-    padding: 1rem;
-    border-radius: 10px;
-    margin-bottom: 1.5rem;
-    font-size: 0.9rem;
+  background: rgba(228, 5, 92, 0.1);
+  border: 1px solid rgba(228, 5, 92, 0.3);
+  color: #ec4899;
+  padding: 12px;
+  border-radius: 8px;
+  margin-bottom: 16px;
+  font-size: 0.85rem;
+}
+
+.success-view {
+  text-align: center;
+  padding: 60px 40px;
+}
+
+.success-icon {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.2), rgba(0, 245, 255, 0.2));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 20px;
+}
+
+.success-icon svg {
+  width: 28px;
+  height: 28px;
+  color: var(--accent-cyan);
+}
+
+@media (max-width: 768px) {
+  .booking-card {
+    grid-template-columns: 1fr;
+  }
+  .booking-sidebar {
+    border-right: none;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    padding: 24px 20px;
+  }
+  .booking-main {
+    padding: 24px 20px;
+  }
+  .time-slots {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .form-row {
+    grid-template-columns: 1fr;
+  }
 }
 {% endblock %}
 
 {% block content %}
-<section class="demo-hero">
-    <div class="container-lux" style="position:relative;">
-        <div class="row g-5 align-items-start">
-            <div class="col-lg-5">
-                <div class="section-label">
-                    <i data-feather="calendar" style="width:14px;height:14px;"></i>
-                    Book a Demo
-                </div>
-                <h1 style="font-size:clamp(2rem,4vw,3rem);font-weight:900;letter-spacing:-0.03em;line-height:1.1;margin-bottom:1.25rem;">
-                    See LUX in<br><span class="gradient-text">action.</span>
-                </h1>
-                <p style="font-size:1.1rem;color:rgba(255,255,255,0.55);line-height:1.7;margin-bottom:2.5rem;">
-                    Get a personalized walkthrough of the platform tailored to your team's goals. Our team will show you exactly how LUX can transform your marketing operations.
-                </p>
-
-                <div class="why-item">
-                    <div class="why-icon" style="background:rgba(0,255,180,0.1);">
-                        <i data-feather="clock" style="width:18px;height:18px;color:var(--lux-cyan);"></i>
-                    </div>
-                    <div>
-                        <div style="font-weight:600;font-size:0.95rem;margin-bottom:0.2rem;">30-minute personalized demo</div>
-                        <div style="color:rgba(255,255,255,0.45);font-size:0.85rem;">Tailored to your industry and use case</div>
-                    </div>
-                </div>
-                <div class="why-item">
-                    <div class="why-icon" style="background:rgba(188,0,237,0.1);">
-                        <i data-feather="users" style="width:18px;height:18px;color:var(--lux-purple);"></i>
-                    </div>
-                    <div>
-                        <div style="font-weight:600;font-size:0.95rem;margin-bottom:0.2rem;">Talk to a product specialist</div>
-                        <div style="color:rgba(255,255,255,0.45);font-size:0.85rem;">Not a sales rep &mdash; someone who knows the platform</div>
-                    </div>
-                </div>
-                <div class="why-item">
-                    <div class="why-icon" style="background:rgba(228,5,92,0.1);">
-                        <i data-feather="zap" style="width:18px;height:18px;color:var(--lux-pink);"></i>
-                    </div>
-                    <div>
-                        <div style="font-weight:600;font-size:0.95rem;margin-bottom:0.2rem;">See real results, not slides</div>
-                        <div style="color:rgba(255,255,255,0.45);font-size:0.85rem;">Live platform walkthrough with your actual scenarios</div>
-                    </div>
-                </div>
-
-                <hr style="border-color:rgba(255,255,255,0.06);margin:2rem 0;">
-                <div style="font-weight:600;font-size:0.95rem;margin-bottom:1rem;">Or reach us directly</div>
-                <div class="row g-3">
-                    <div class="col-6">
-                        <div class="direct-contact-card">
-                            <div style="margin-bottom:0.5rem;">
-                                <i data-feather="phone" style="width:22px;height:22px;color:var(--lux-cyan);"></i>
-                            </div>
-                            <div style="font-size:0.75rem;color:rgba(255,255,255,0.4);margin-bottom:0.3rem;">Call us</div>
-                            <a href="tel:+19163704621">(916) 370-4621</a>
-                        </div>
-                    </div>
-                    <div class="col-6">
-                        <div class="direct-contact-card">
-                            <div style="margin-bottom:0.5rem;">
-                                <i data-feather="mail" style="width:22px;height:22px;color:var(--lux-purple);"></i>
-                            </div>
-                            <div style="font-size:0.75rem;color:rgba(255,255,255,0.4);margin-bottom:0.3rem;">Email us</div>
-                            <a href="mailto:sales@luxit.app">sales@luxit.app</a>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <div class="col-lg-7">
-                <div class="demo-form-card">
-                    <h3 style="font-weight:700;font-size:1.3rem;margin-bottom:0.5rem;">Request your demo</h3>
-                    <p style="color:rgba(255,255,255,0.45);font-size:0.9rem;margin-bottom:1.5rem;">Fill out the form and we'll reach out within one business day.</p>
-
-                    {% with messages = get_flashed_messages(with_categories=true) %}
-                    {% if messages %}
-                    {% for category, message in messages %}
-                    <div class="flash-msg">{{ message }}</div>
-                    {% endfor %}
-                    {% endif %}
-                    {% endwith %}
-
-                    <form action="{{ url_for('marketing.book_demo') }}" method="POST">
-                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                        <div class="row g-3 mb-3">
-                            <div class="col-md-6">
-                                <label class="form-label-lux">First Name *</label>
-                                <input type="text" name="first_name" class="form-control-lux" placeholder="Jane" required>
-                            </div>
-                            <div class="col-md-6">
-                                <label class="form-label-lux">Last Name *</label>
-                                <input type="text" name="last_name" class="form-control-lux" placeholder="Smith" required>
-                            </div>
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label-lux">Work Email *</label>
-                            <input type="email" name="email" class="form-control-lux" placeholder="jane@company.com" required>
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label-lux">Phone Number</label>
-                            <input type="tel" name="phone" class="form-control-lux" placeholder="+1 (555) 000-0000">
-                        </div>
-                        <div class="row g-3 mb-3">
-                            <div class="col-md-6">
-                                <label class="form-label-lux">Company</label>
-                                <input type="text" name="company_name" class="form-control-lux" placeholder="Acme Corp">
-                            </div>
-                            <div class="col-md-6">
-                                <label class="form-label-lux">Job Title</label>
-                                <input type="text" name="job_title" class="form-control-lux" placeholder="VP of Marketing">
-                            </div>
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label-lux">Team Size</label>
-                            <select name="team_size" class="form-control-lux">
-                                <option value="">Select team size</option>
-                                <option value="1-5">1 &ndash; 5</option>
-                                <option value="6-20">6 &ndash; 20</option>
-                                <option value="21-50">21 &ndash; 50</option>
-                                <option value="51-200">51 &ndash; 200</option>
-                                <option value="200+">200+</option>
-                            </select>
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label-lux">How would you prefer we contact you?</label>
-                            <div class="contact-method-group" id="contactMethodGroup">
-                                <label class="contact-method-btn active" data-value="email">
-                                    <input type="radio" name="preferred_contact" value="email" checked>
-                                    <i data-feather="mail" style="width:16px;height:16px;"></i> Email
-                                </label>
-                                <label class="contact-method-btn" data-value="phone">
-                                    <input type="radio" name="preferred_contact" value="phone">
-                                    <i data-feather="phone" style="width:16px;height:16px;"></i> Phone Call
-                                </label>
-                                <label class="contact-method-btn" data-value="video">
-                                    <input type="radio" name="preferred_contact" value="video">
-                                    <i data-feather="video" style="width:16px;height:16px;"></i> Video Call
-                                </label>
-                            </div>
-                        </div>
-                        <div class="mb-4">
-                            <label class="form-label-lux">Anything specific you'd like to see?</label>
-                            <textarea name="message" class="form-control-lux" rows="3" placeholder="e.g. AI campaign generation, CRM pipeline, competitor monitoring..."></textarea>
-                        </div>
-                        <input type="hidden" name="source_page" value="{{ request.args.get('from', 'direct') }}">
-                        <button type="submit" class="btn-submit-demo">
-                            Book My Demo <i data-feather="arrow-right" style="width:18px;height:18px;"></i>
-                        </button>
-                        <p style="text-align:center;color:rgba(255,255,255,0.3);font-size:0.8rem;margin-top:1rem;">No commitment required. We'll never share your information.</p>
-                    </form>
-                </div>
-            </div>
+<section class="demo-page">
+  <div class="booking-card">
+    <div class="booking-sidebar">
+      <div class="booking-org">
+        <img src="{{ url_for('static', filename='lux_logo.png') }}" alt="LUX IT">
+        <span class="booking-org-name">LUX IT</span>
+      </div>
+      <div class="booking-title">Product Demo</div>
+      <div class="booking-meta">
+        <div class="booking-meta-item">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+          45 min
         </div>
+        <div class="booking-meta-item">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 10l5 5-5 5"/><path d="M4 4v7a4 4 0 004 4h12"/></svg>
+          Microsoft Teams
+        </div>
+        <div class="booking-meta-item">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/></svg>
+          Web conferencing details upon confirmation
+        </div>
+      </div>
+      <div class="booking-desc">
+        See how LUX IT's 11 AI agents, CRM, and marketing automation platform can transform your revenue operations. We'll walk through the features most relevant to your business and answer any questions.
+      </div>
     </div>
+    <div class="booking-main">
+      {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+      {% for category, message in messages %}
+      <div class="flash-msg">{{ message }}</div>
+      {% endfor %}
+      {% endif %}
+      {% endwith %}
+
+      <div id="stepCalendar" class="booking-form-step visible">
+        <div class="booking-step-title">Select a Date & Time</div>
+        <div class="tz-select">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10"/></svg>
+          <span id="tzDisplay">Pacific Time (US & Canada)</span>
+        </div>
+        <div class="cal-header">
+          <span class="cal-month" id="calMonth"></span>
+          <div class="cal-nav">
+            <button onclick="prevMonth()" aria-label="Previous month">‹</button>
+            <button onclick="nextMonth()" aria-label="Next month">›</button>
+          </div>
+        </div>
+        <div class="cal-grid" id="calGrid"></div>
+        <div id="timeSlotsContainer" style="display:none;">
+          <div class="time-slots-label" id="timeSlotsLabel"></div>
+          <div class="time-slots" id="timeSlots"></div>
+        </div>
+        <button class="booking-confirm-btn" id="btnNext" onclick="showForm()">Next</button>
+      </div>
+
+      <div id="stepForm" class="booking-form-step">
+        <button class="back-link" onclick="showCalendar()">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
+          Back
+        </button>
+        <div class="booking-selected-info">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+          <div class="booking-selected-text" id="selectedSummary"></div>
+        </div>
+        <form action="{{ url_for('marketing.book_demo') }}" method="POST">
+          <input type="hidden" name="source_page" value="{{ request.args.get('from', 'direct') }}">
+          <input type="hidden" name="preferred_contact" value="video">
+          <input type="hidden" name="demo_date" id="hiddenDate">
+          <input type="hidden" name="demo_time" id="hiddenTime">
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label-bk">First Name *</label>
+              <input type="text" name="first_name" class="form-input-bk" placeholder="Jane" required>
+            </div>
+            <div class="form-group">
+              <label class="form-label-bk">Last Name *</label>
+              <input type="text" name="last_name" class="form-input-bk" placeholder="Smith" required>
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label-bk">Work Email *</label>
+            <input type="email" name="email" class="form-input-bk" placeholder="jane@company.com" required>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label-bk">Company</label>
+              <input type="text" name="company_name" class="form-input-bk" placeholder="Acme Corp">
+            </div>
+            <div class="form-group">
+              <label class="form-label-bk">Job Title</label>
+              <input type="text" name="job_title" class="form-input-bk" placeholder="VP of Marketing">
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label-bk">Phone</label>
+              <input type="tel" name="phone" class="form-input-bk" placeholder="+1 (555) 000-0000">
+            </div>
+            <div class="form-group">
+              <label class="form-label-bk">Team Size</label>
+              <select name="team_size" class="form-input-bk">
+                <option value="">Select</option>
+                <option value="1-5">1–5</option>
+                <option value="6-20">6–20</option>
+                <option value="21-50">21–50</option>
+                <option value="51-200">51–200</option>
+                <option value="200+">200+</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label-bk">Anything specific you'd like to see?</label>
+            <textarea name="message" class="form-input-bk" rows="3" placeholder="e.g. AI campaign generation, CRM pipeline, competitor monitoring..."></textarea>
+          </div>
+          <button type="submit" class="booking-confirm-btn active" style="margin-top:8px;">
+            Schedule Demo
+          </button>
+          <p style="text-align:center;color:rgba(255,255,255,0.3);font-size:0.75rem;margin-top:12px;">
+            A calendar invite will be sent to your email upon confirmation.
+          </p>
+        </form>
+      </div>
+    </div>
+  </div>
 </section>
 {% endblock %}
 
 {% block extra_js %}
 <script>
-document.querySelectorAll('.contact-method-btn').forEach(btn => {
-    btn.addEventListener('click', function() {
-        document.querySelectorAll('.contact-method-btn').forEach(b => b.classList.remove('active'));
-        this.classList.add('active');
-    });
-});
+(function() {
+  var now = new Date();
+  var currentMonth = now.getMonth();
+  var currentYear = now.getFullYear();
+  var selectedDate = null;
+  var selectedTime = null;
+  var months = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  var dows = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  var timeSlots = [
+    '9:00 AM','9:45 AM','10:30 AM','11:15 AM',
+    '12:00 PM','12:45 PM','1:30 PM','2:15 PM',
+    '3:00 PM','3:45 PM','4:30 PM'
+  ];
+
+  var tz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'America/Los_Angeles';
+  document.getElementById('tzDisplay').textContent = tz.replace(/_/g, ' ');
+
+  function renderCalendar() {
+    var grid = document.getElementById('calGrid');
+    document.getElementById('calMonth').textContent = months[currentMonth] + ' ' + currentYear;
+    var html = '';
+    for (var i = 0; i < 7; i++) html += '<div class="cal-dow">' + dows[i] + '</div>';
+    var first = new Date(currentYear, currentMonth, 1).getDay();
+    var days = new Date(currentYear, currentMonth + 1, 0).getDate();
+    for (var i = 0; i < first; i++) html += '<div class="cal-day empty"></div>';
+    var today = new Date();
+    today.setHours(0,0,0,0);
+    for (var d = 1; d <= days; d++) {
+      var dt = new Date(currentYear, currentMonth, d);
+      var dow = dt.getDay();
+      var isPast = dt < today;
+      var isWeekend = dow === 0 || dow === 6;
+      var cls = 'cal-day';
+      if (isPast || isWeekend) cls += ' disabled';
+      if (dt.getTime() === today.getTime()) cls += ' today';
+      if (selectedDate && dt.getTime() === selectedDate.getTime()) cls += ' selected';
+      var onclick = (isPast || isWeekend) ? '' : ' onclick="selectDate(' + currentYear + ',' + currentMonth + ',' + d + ')"';
+      html += '<div class="' + cls + '"' + onclick + '>' + d + '</div>';
+    }
+    grid.innerHTML = html;
+  }
+
+  window.selectDate = function(y, m, d) {
+    selectedDate = new Date(y, m, d);
+    selectedTime = null;
+    renderCalendar();
+    renderTimeSlots();
+    updateButton();
+  };
+
+  function renderTimeSlots() {
+    if (!selectedDate) {
+      document.getElementById('timeSlotsContainer').style.display = 'none';
+      return;
+    }
+    document.getElementById('timeSlotsContainer').style.display = 'block';
+    var dayStr = dows[selectedDate.getDay()] + ', ' + months[selectedDate.getMonth()] + ' ' + selectedDate.getDate();
+    document.getElementById('timeSlotsLabel').textContent = dayStr;
+    var html = '';
+    for (var i = 0; i < timeSlots.length; i++) {
+      var cls = 'time-slot';
+      if (selectedTime === timeSlots[i]) cls += ' selected';
+      html += '<div class="' + cls + '" onclick="selectTime(\'' + timeSlots[i] + '\')">' + timeSlots[i] + '</div>';
+    }
+    document.getElementById('timeSlots').innerHTML = html;
+  }
+
+  window.selectTime = function(t) {
+    selectedTime = t;
+    renderTimeSlots();
+    updateButton();
+  };
+
+  function updateButton() {
+    var btn = document.getElementById('btnNext');
+    if (selectedDate && selectedTime) {
+      btn.classList.add('active');
+    } else {
+      btn.classList.remove('active');
+    }
+  }
+
+  window.showForm = function() {
+    if (!selectedDate || !selectedTime) return;
+    document.getElementById('stepCalendar').classList.remove('visible');
+    document.getElementById('stepForm').classList.add('visible');
+    var dateStr = months[selectedDate.getMonth()] + ' ' + selectedDate.getDate() + ', ' + selectedDate.getFullYear();
+    document.getElementById('selectedSummary').innerHTML = '<strong>' + dateStr + '</strong> at <strong>' + selectedTime + '</strong> — 45 min';
+    document.getElementById('hiddenDate').value = selectedDate.getFullYear() + '-' + String(selectedDate.getMonth()+1).padStart(2,'0') + '-' + String(selectedDate.getDate()).padStart(2,'0');
+    document.getElementById('hiddenTime').value = selectedTime;
+  };
+
+  window.showCalendar = function() {
+    document.getElementById('stepForm').classList.remove('visible');
+    document.getElementById('stepCalendar').classList.add('visible');
+  };
+
+  window.prevMonth = function() {
+    var minDate = new Date();
+    if (currentYear === minDate.getFullYear() && currentMonth <= minDate.getMonth()) return;
+    currentMonth--;
+    if (currentMonth < 0) { currentMonth = 11; currentYear--; }
+    renderCalendar();
+  };
+
+  window.nextMonth = function() {
+    var maxDate = new Date();
+    maxDate.setMonth(maxDate.getMonth() + 3);
+    if (currentYear > maxDate.getFullYear() || (currentYear === maxDate.getFullYear() && currentMonth >= maxDate.getMonth())) return;
+    currentMonth++;
+    if (currentMonth > 11) { currentMonth = 0; currentYear++; }
+    renderCalendar();
+  };
+
+  renderCalendar();
+})();
 </script>
 {% endblock %}

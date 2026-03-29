@@ -156,6 +156,78 @@
     <p>15 integrated modules powering your sales and customer relationships</p>
   </div>
 
+  <div class="row g-3 mb-4 stagger-in">
+    <div class="col-md-3 col-6">
+      <div class="stats-card text-center">
+        <div class="metric-value">{{ crm_stats.total_contacts if crm_stats else 0 }}</div>
+        <small style="color:var(--lux-muted);font-size:0.78rem;">Total Contacts</small>
+      </div>
+    </div>
+    <div class="col-md-3 col-6">
+      <div class="stats-card text-center">
+        <div class="metric-value">{{ crm_stats.active_deals if crm_stats else 0 }}</div>
+        <small style="color:var(--lux-muted);font-size:0.78rem;">Active Deals</small>
+      </div>
+    </div>
+    <div class="col-md-3 col-6">
+      <div class="stats-card text-center">
+        <div class="metric-value">${{ '{:,.0f}'.format(crm_stats.pipeline_value) if crm_stats else '0' }}</div>
+        <small style="color:var(--lux-muted);font-size:0.78rem;">Pipeline Value</small>
+      </div>
+    </div>
+    <div class="col-md-3 col-6">
+      <div class="stats-card text-center">
+        <div class="metric-value">{{ crm_stats.conversion_rate if crm_stats else 0 }}%</div>
+        <small style="color:var(--lux-muted);font-size:0.78rem;">Win Rate</small>
+      </div>
+    </div>
+  </div>
+
+  {% if crm_stats and crm_stats.pipeline_stages %}
+  <div class="card mb-4">
+    <div class="card-header d-flex align-items-center gap-2">
+      <i data-feather="git-branch" style="width:16px;height:16px;color:var(--lux-cyan);"></i>
+      Pipeline Overview
+    </div>
+    <div class="card-body">
+      <div class="pipeline-row">
+        {% for stage in crm_stats.pipeline_stages %}
+        <div class="pipeline-stage">
+          <div class="pipeline-stage-header">
+            <h6 style="color:var(--lux-pearl-white);">{{ stage.name }}</h6>
+            <span class="badge-lux badge-cyan">{{ stage.count }}</span>
+          </div>
+          <div style="font-size:0.85rem;color:var(--lux-cyan);font-weight:700;">${{ '{:,.0f}'.format(stage.value) }}</div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  {% if crm_stats and crm_stats.recent_contacts %}
+  <div class="card mb-4">
+    <div class="card-header d-flex align-items-center gap-2">
+      <i data-feather="clock" style="width:16px;height:16px;color:var(--lux-cyan);"></i>
+      Recent Contacts
+    </div>
+    <div class="card-body p-0">
+      <div class="activity-feed" style="padding:0 1.25rem;">
+        {% for c in crm_stats.recent_contacts %}
+        <div class="activity-item">
+          <div class="activity-dot" style="background:var(--lux-cyan);color:var(--lux-cyan);"></div>
+          <div class="activity-content">
+            <div class="activity-title">{{ c.first_name or '' }} {{ c.last_name or '' }} {% if c.email %}<span style="color:var(--lux-muted);">— {{ c.email }}</span>{% endif %}</div>
+            <div class="activity-meta">{{ c.segment or 'No segment' }} · Added {{ c.created_at.strftime('%b %d, %Y') if c.created_at else 'recently' }}</div>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  <h5 style="color:var(--lux-muted);font-size:0.78rem;text-transform:uppercase;letter-spacing:0.1em;margin-bottom:1rem;font-weight:700;">All CRM Modules</h5>
   <div class="features-grid">
     <div class="feature-card">
       <div class="feature-card-header">

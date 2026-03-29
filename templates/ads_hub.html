@@ -304,26 +304,26 @@
       <div class="row mb-4">
         <div class="col-md-3">
           <div class="metric-card">
-            <div class="metric-value">12</div>
+            <div class="metric-value">{{ active_count or 0 }}</div>
             <div class="metric-label">Active Campaigns</div>
           </div>
         </div>
         <div class="col-md-3">
           <div class="metric-card">
-            <div class="metric-value">$4,532</div>
-            <div class="metric-label">Monthly Spend</div>
+            <div class="metric-value">${{ "%.0f"|format(total_spend) }}</div>
+            <div class="metric-label">Total Ad Spend</div>
           </div>
         </div>
         <div class="col-md-3">
           <div class="metric-card">
-            <div class="metric-value">3.8x</div>
+            <div class="metric-value">{{ roas or 0 }}x</div>
             <div class="metric-label">Average ROAS</div>
           </div>
         </div>
         <div class="col-md-3">
           <div class="metric-card">
-            <div class="metric-value">256K</div>
-            <div class="metric-label">Total Impressions</div>
+            <div class="metric-value">${{ "%.0f"|format(total_revenue) }}</div>
+            <div class="metric-label">Revenue Generated</div>
           </div>
         </div>
       </div>
@@ -475,36 +475,36 @@
                 </tr>
               </thead>
               <tbody>
-                <tr>
-                  <td>Summer Sale 2024</td>
-                  <td><span class="badge bg-primary">Display</span></td>
-                  <td><span class="badge bg-success">Active</span></td>
-                  <td>125,430</td>
-                  <td>3,421</td>
-                  <td>$842</td>
-                  <td>4.2x</td>
-                  <td><button class="btn btn-sm btn-outline-primary">Edit</button></td>
-                </tr>
-                <tr>
-                  <td>Black Friday</td>
-                  <td><span class="badge bg-warning text-dark">Search</span></td>
-                  <td><span class="badge bg-success">Active</span></td>
-                  <td>89,234</td>
-                  <td>5,612</td>
-                  <td>$1,234</td>
-                  <td>5.1x</td>
-                  <td><button class="btn btn-sm btn-outline-primary">Edit</button></td>
-                </tr>
-                <tr>
-                  <td>New Product Launch</td>
-                  <td><span class="badge bg-success">Shopping</span></td>
-                  <td><span class="badge bg-secondary">Paused</span></td>
-                  <td>42,156</td>
-                  <td>1,823</td>
-                  <td>$623</td>
-                  <td>3.3x</td>
-                  <td><button class="btn btn-sm btn-outline-primary">Edit</button></td>
-                </tr>
+                {% if campaigns %}
+                  {% for c in campaigns %}
+                  <tr>
+                    <td>{{ c.name }}</td>
+                    <td><span class="badge bg-primary">{{ c.utm_keyword or 'Campaign' }}</span></td>
+                    <td>
+                      {% if c.status == 'active' %}
+                        <span class="badge bg-success">Active</span>
+                      {% elif c.status == 'draft' %}
+                        <span class="badge bg-secondary">Draft</span>
+                      {% elif c.status == 'sent' %}
+                        <span class="badge bg-info">Sent</span>
+                      {% else %}
+                        <span class="badge bg-secondary">{{ c.status or 'Draft' }}</span>
+                      {% endif %}
+                    </td>
+                    <td>—</td>
+                    <td>—</td>
+                    <td>${{ "%.0f"|format(campaign_costs.get(c.id, 0)) }}</td>
+                    <td>{% if campaign_costs.get(c.id, 0) > 0 %}{{ "%.1f"|format((c.revenue_generated or 0) / campaign_costs[c.id]) }}x{% else %}—{% endif %}</td>
+                    <td><a href="/campaigns/{{ c.id }}" class="btn btn-sm btn-outline-primary">View</a></td>
+                  </tr>
+                  {% endfor %}
+                {% else %}
+                  <tr>
+                    <td colspan="8" class="text-center py-4 text-muted">
+                      No campaigns yet. Use the AI Campaign Generator above to create your first campaign.
+                    </td>
+                  </tr>
+                {% endif %}
               </tbody>
             </table>
           </div>

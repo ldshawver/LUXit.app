@@ -20,7 +20,7 @@ try:
         TicketPurchase, EventCheckIn, SocialMediaAccount, SocialMediaSchedule,
         AutomationTest, AutomationTriggerLibrary, AutomationABTest, Company, user_company,
         Deal, LeadScore, PersonalizationRule, KeywordResearch,
-        Notification, InboxMessage,
+        Notification, InboxMessage, CampaignCost,
     )
     MODELS_AVAILABLE = True
 except ImportError as exc:
@@ -37,7 +37,7 @@ except ImportError as exc:
     SocialMediaAccount = SocialMediaSchedule = AutomationTest = None
     AutomationTriggerLibrary = AutomationABTest = Company = user_company = None
     Deal = LeadScore = PersonalizationRule = KeywordResearch = None
-    Notification = InboxMessage = None
+    Notification = InboxMessage = CampaignCost = None
 try:
     from email_service import EmailService
 except ImportError as exc:
@@ -1367,10 +1367,12 @@ def export_analytics():
 @main_bp.route('/agents-hub')
 @login_required
 def agents_hub():
-    """Interactive AI Marketing Team Hub"""
+    """Interactive AI Marketing Team Hub with performance data"""
     import json
+    from models import AgentTask, AgentReport, Company, user_company
+    from sqlalchemy import func, case
+    from datetime import datetime, timedelta
     
-    # Define all 11 marketing agents with their details
     agents = {
         'brand_strategy': {
             'name': 'Brand & Strategy Agent',
@@ -1473,14 +1475,107 @@ def agents_hub():
         }
     }
     
-    return render_template('agents_hub.html', agents=agents, agents_json=json.dumps(agents))
+    company = db.session.query(Company).join(
+        user_company, Company.id == user_company.c.company_id
+    ).filter(user_company.c.user_id == current_user.id).first()
+    company_id = company.id if company else None
+    
+    agent_performance = {}
+    recent_reports = []
+    recent_tasks = []
+    
+    try:
+        tq = db.session.query(
+            AgentTask.agent_type,
+            func.count(AgentTask.id).label('total'),
+            func.sum(case((AgentTask.status == 'completed', 1), else_=0)).label('completed'),
+            func.sum(case((AgentTask.status == 'failed', 1), else_=0)).label('failed'),
+            func.sum(case((AgentTask.status == 'running', 1), else_=0)).label('running'),
+        ).filter(
+            AgentTask.created_at >= datetime.now() - timedelta(days=30)
+        )
+        if company_id:
+            tq = tq.filter(AgentTask.company_id == company_id)
+        for row in tq.group_by(AgentTask.agent_type).all():
+            total = row.total or 1
+            agent_performance[row.agent_type] = {
+                'total': row.total,
+                'completed': row.completed or 0,
+                'failed': row.failed or 0,
+                'running': row.running or 0,
+                'score': round((row.completed or 0) / total * 100),
+            }
+    except Exception:
+        pass
+    
+    try:
+        rq = AgentReport.query
+        if company_id:
+            rq = rq.filter(AgentReport.company_id == company_id)
+        recent_reports = rq.order_by(AgentReport.created_at.desc()).limit(10).all()
+    except Exception:
+        pass
+    
+    try:
+        rtq = AgentTask.query
+        if company_id:
+            rtq = rtq.filter(AgentTask.company_id == company_id)
+        recent_tasks = rtq.order_by(AgentTask.created_at.desc()).limit(15).all()
+    except Exception:
+        pass
+    
+    return render_template('agents_hub.html',
+                         agents=agents,
+                         agents_json=json.dumps(agents),
+                         agent_performance=agent_performance,
+                         recent_reports=recent_reports,
+                         recent_tasks=recent_tasks)
 
 @main_bp.route('/ads')
 @main_bp.route('/ads-hub')
 @login_required
 def ads_hub():
     """Ads Hub with Display/Search/Shopping ads and Google Ads integration"""
-    return render_template('ads_hub.html')
+    campaigns = []
+    total_spend = 0
+    total_revenue = 0
+    active_count = 0
+    roas = 0
+    campaign_costs = {}
+    
+    try:
+        company = db.session.query(Company).join(
+            user_company, Company.id == user_company.c.company_id
+        ).filter(user_company.c.user_id == current_user.id).first()
+        company_id = company.id if company else None
+        
+        if company_id:
+            campaigns = Campaign.query.filter_by(company_id=company_id).order_by(Campaign.created_at.desc()).limit(20).all()
+            
+            if CampaignCost is not None:
+                cost_rows = db.session.query(
+                    CampaignCost.campaign_id,
+                    db.func.sum(CampaignCost.amount).label('total')
+                ).join(Campaign).filter(
+                    Campaign.company_id == company_id
+                ).group_by(CampaignCost.campaign_id).all()
+                campaign_costs = {row.campaign_id: row.total or 0 for row in cost_rows}
+                total_spend = sum(campaign_costs.values())
+            
+            total_revenue = sum(c.revenue_generated or 0 for c in campaigns)
+            active_count = sum(1 for c in campaigns if c.status == 'active')
+            roas = round(total_revenue / total_spend, 1) if total_spend > 0 else 0
+    except Exception as e:
+        logging.getLogger(__name__).warning("Error loading ads hub data: %s", e)
+    
+    return render_template('ads_hub.html',
+        campaigns=campaigns,
+        active_count=active_count,
+        total_spend=total_spend,
+        total_revenue=total_revenue,
+        roas=roas,
+        campaign_costs=campaign_costs
+    )
 
 @main_bp.route('/companies')
 @login_required
@@ -1658,6 +1753,38 @@ def onboarding_submit():
             api_keys[key_name] = True
     
     company.api_keys = api_keys
+    
+    try:
+        from models import SalesStage
+        default_stages = [
+            ('Lead', 1, '#a855f7'),
+            ('Qualified', 2, '#00e5ff'),
+            ('Proposal', 3, '#f59e0b'),
+            ('Negotiation', 4, '#ec4899'),
+            ('Closed Won', 5, '#00ffb4'),
+            ('Closed Lost', 6, '#ef4444'),
+        ]
+        for stage_name, order, color in default_stages:
+            existing = SalesStage.query.filter_by(company_id=company.id, name=stage_name).first()
+            if not existing:
+                stage = SalesStage(
+                    company_id=company.id,
+                    name=stage_name,
+                    order=order,
+                    color=color
+                )
+                db.session.add(stage)
+    except Exception as e:
+        logging.getLogger(__name__).warning("Failed to seed sales stages: %s", e)
+    
+    try:
+        for seg_name in ['Newsletter', 'Leads', 'Customers', 'Churned', 'VIP']:
+            existing = Segment.query.filter_by(company_id=company.id, name=seg_name).first()
+            if not existing:
+                seg = Segment(company_id=company.id, name=seg_name)
+                db.session.add(seg)
+    except Exception as e:
+        logging.getLogger(__name__).warning("Failed to seed segments: %s", e)
     
     db.session.commit()
     flash(f'Welcome aboard! "{name}" has been set up successfully.', 'success')
@@ -7237,11 +7364,73 @@ print("✓ User profile routes loaded")
 @main_bp.route('/crm-hub')
 @login_required
 def crm_hub():
-    """CRM Features Hub - Showcase all 15 CRM capabilities"""
+    """CRM Features Hub with live pipeline metrics"""
+    from models import Contact, Deal, Campaign, SalesStage, Company, user_company
+    from sqlalchemy import func
+    
     if current_user.preferred_hub != 'sales':
         current_user.preferred_hub = 'sales'
         db.session.commit()
-    return render_template('crm_hub.html')
+    
+    company = db.session.query(Company).join(
+        user_company, Company.id == user_company.c.company_id
+    ).filter(user_company.c.user_id == current_user.id).first()
+    company_id = company.id if company else None
+    
+    crm_stats = {
+        'total_contacts': 0,
+        'active_deals': 0,
+        'pipeline_value': 0,
+        'campaigns_sent': 0,
+        'conversion_rate': 0,
+        'deals_won': 0,
+        'deals_lost': 0,
+        'recent_contacts': [],
+        'pipeline_stages': [],
+    }
+    
+    try:
+        cq = Contact.query
+        if company_id:
+            cq = cq.filter(Contact.company_id == company_id)
+        crm_stats['total_contacts'] = cq.count()
+        crm_stats['recent_contacts'] = cq.order_by(Contact.created_at.desc()).limit(5).all()
+    except Exception:
+        pass
+    
+    try:
+        dq = Deal.query
+        if company_id:
+            dq = dq.filter(Deal.company_id == company_id)
+        all_deals = dq.all()
+        crm_stats['active_deals'] = len([d for d in all_deals if d.status not in ('won', 'lost', 'closed')])
+        crm_stats['pipeline_value'] = sum(d.value or 0 for d in all_deals if d.status not in ('won', 'lost', 'closed'))
+        crm_stats['deals_won'] = len([d for d in all_deals if d.status == 'won'])
+        crm_stats['deals_lost'] = len([d for d in all_deals if d.status == 'lost'])
+        total_closed = crm_stats['deals_won'] + crm_stats['deals_lost']
+        if total_closed > 0:
+            crm_stats['conversion_rate'] = round(crm_stats['deals_won'] / total_closed * 100, 1)
+        
+        stages = {}
+        for d in all_deals:
+            stage = d.stage or d.status or 'New'
+            if stage not in stages:
+                stages[stage] = {'name': stage, 'count': 0, 'value': 0}
+            stages[stage]['count'] += 1
+            stages[stage]['value'] += d.value or 0
+        crm_stats['pipeline_stages'] = list(stages.values())[:6]
+    except Exception:
+        pass
+    
+    try:
+        cmpq = Campaign.query
+        if company_id:
+            cmpq = cmpq.filter(Campaign.company_id == company_id)
+        crm_stats['campaigns_sent'] = cmpq.filter(Campaign.status == 'sent').count()
+    except Exception:
+        pass
+    
+    return render_template('crm_hub.html', crm_stats=crm_stats)
 
 print("✓ CRM Hub route loaded")
 

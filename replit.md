@@ -116,3 +116,7 @@ Key architectural decisions and features include:
 - **SEO Dashboard** (`/seo/dashboard`): Redesigned with glassmorphism cards, stat cards for keywords/rankings/backlinks/competitors, quick action buttons, top keywords table
 - **SEO Tools** (`/seo-tools`): Redesigned with design system variables, dark-themed accordion for best practices
 - **Content Generator** (`/content-generator`): Redesigned with design system CSS variables replacing inline hex colors, consistent card styling
+- **Ads Hub** (`/ads-hub`): Route now passes real campaign/cost data from DB with per-campaign spend and ROAS calculations. Template uses dynamic KPI cards (Active Campaigns, Total Ad Spend, Average ROAS, Revenue Generated) and campaign table with live data. Error handling with logging for DB query failures.
+- **Dashboard Notes Tab**: Replaced "coming soon" text with styled empty-state component linking to Contacts.
+- **V1 Dashboard**: Replaced "Coming Soon" badges with "Available" links to live feature pages (Campaigns, Analytics, Automations).
+- **Onboarding Data Seeding**: `onboarding_submit` now seeds 6 default sales pipeline stages (Lead, Qualified, Proposal, Negotiation, Closed Won, Closed Lost) and 5 default segments (Newsletter, Leads, Customers, Churned, VIP) when creating a new company. Errors are logged rather than silently ignored.

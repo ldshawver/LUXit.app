@@ -672,6 +672,9 @@
       <button class="hub-tab-btn" id="tab-suggestions" onclick="switchTab('suggestions')">
         <svg data-feather="zap"></svg> Suggestions
       </button>
+      <button class="hub-tab-btn" id="tab-performance" onclick="switchTab('performance')">
+        <svg data-feather="activity"></svg> Performance
+      </button>
     </div>
 
     <!-- Chat panel -->
@@ -756,6 +759,74 @@
           <svg data-feather="zap"></svg>
           <p>Click Generate to receive AI-powered recommendations for this agent.</p>
         </div>
+      </div>
+    </div>
+
+    <div class="hub-panel" id="panel-performance">
+      <div class="suggestions-toolbar">
+        <h6>Agent Performance (30 Days)</h6>
+      </div>
+      <div class="suggestions-body" style="gap:8px;">
+        {% for agent_key, agent_info in agents.items() %}
+        {% set perf = agent_performance.get(agent_key, {}) %}
+        <div class="deliverable-row" style="border-color:{{ agent_info.color }}22;background:{{ agent_info.color }}06;">
+          <div style="width:36px;height:36px;border-radius:8px;background:{{ agent_info.color }}20;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+            <svg data-feather="{{ agent_info.feather_icon }}" style="width:16px;height:16px;stroke:{{ agent_info.color }};"></svg>
+          </div>
+          <div style="flex:1;min-width:0;">
+            <div style="font-size:0.84rem;font-weight:600;color:#ddd;">{{ agent_info.name }}</div>
+            <div style="display:flex;gap:12px;margin-top:4px;font-size:0.72rem;color:#666;">
+              <span>{{ perf.get('total', 0) }} tasks</span>
+              <span style="color:var(--lux-green);">{{ perf.get('completed', 0) }} done</span>
+              {% if perf.get('failed', 0) > 0 %}
+              <span style="color:var(--lux-pink);">{{ perf.failed }} failed</span>
+              {% endif %}
+              {% if perf.get('running', 0) > 0 %}
+              <span style="color:var(--lux-cyan);">{{ perf.running }} running</span>
+              {% endif %}
+            </div>
+          </div>
+          <div style="text-align:center;">
+            <div style="font-size:1.1rem;font-weight:800;background:linear-gradient(135deg,{{ agent_info.color }},var(--lux-cyan));-webkit-background-clip:text;-webkit-text-fill-color:transparent;">
+              {{ perf.get('score', 0) }}%
+            </div>
+            <div style="font-size:0.65rem;color:#555;text-transform:uppercase;letter-spacing:0.05em;">Score</div>
+          </div>
+        </div>
+        {% endfor %}
+
+        {% if recent_reports %}
+        <div style="margin-top:16px;padding-top:16px;border-top:1px solid rgba(255,255,255,0.06);">
+          <h6 style="font-size:0.72rem;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:#555;margin:0 0 12px;">Recent Reports</h6>
+          {% for report in recent_reports[:5] %}
+          <div class="report-row" style="margin-bottom:6px;">
+            <div class="report-icon">
+              <svg data-feather="file-text"></svg>
+            </div>
+            <div class="report-info">
+              <div class="report-title">{{ report.title or report.report_type or 'Agent Report' }}</div>
+              <div class="report-meta">{{ report.agent_type or 'system' }} · {{ report.created_at.strftime('%b %d') if report.created_at else '' }}</div>
+            </div>
+            <span class="report-status {{ report.status or 'completed' }}">{{ report.status or 'completed' }}</span>
+          </div>
+          {% endfor %}
+        </div>
+        {% endif %}
+
+        {% if recent_tasks %}
+        <div style="margin-top:16px;padding-top:16px;border-top:1px solid rgba(255,255,255,0.06);">
+          <h6 style="font-size:0.72rem;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:#555;margin:0 0 12px;">Recent Tasks</h6>
+          {% for task in recent_tasks[:8] %}
+          <div class="activity-item" style="padding:8px 0;">
+            <div class="activity-dot" style="background:{% if task.status == 'completed' %}var(--lux-green){% elif task.status == 'failed' %}var(--lux-pink){% elif task.status == 'running' %}var(--lux-cyan){% else %}var(--lux-muted){% endif %};color:{% if task.status == 'completed' %}var(--lux-green){% elif task.status == 'failed' %}var(--lux-pink){% elif task.status == 'running' %}var(--lux-cyan){% else %}var(--lux-muted){% endif %};"></div>
+            <div class="activity-content">
+              <div class="activity-title" style="font-size:0.82rem;">{{ task.task_type or task.agent_type or 'Task' }}</div>
+              <div class="activity-meta">{{ task.agent_type or '' }} · {{ task.status or 'pending' }} · {{ task.created_at.strftime('%b %d, %H:%M') if task.created_at else '' }}</div>
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+        {% endif %}
       </div>
     </div>
 

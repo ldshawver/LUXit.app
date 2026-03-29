@@ -1143,12 +1143,16 @@
         <span id="menu-icon">☰</span>
       </button>
       <ul class="nav-links" id="nav-links">
-        <li><a href="#features" onclick="closeMobileMenu()">Features</a></li>
-        <li><a href="#comparison" onclick="closeMobileMenu()">Compare</a></li>
-        <li><a href="#pricing" onclick="closeMobileMenu()">Pricing</a></li>
-        <li><a href="/auth/login">Sign In</a></li>
+        <li><a href="/products" onclick="closeMobileMenu()">Products</a></li>
+        <li><a href="/solutions" onclick="closeMobileMenu()">Solutions</a></li>
+        <li><a href="/industries" onclick="closeMobileMenu()">Industries</a></li>
+        <li><a href="/pricing" onclick="closeMobileMenu()">Pricing</a></li>
+        <li><a href="/auth/login" onclick="closeMobileMenu()">Sign In</a></li>
       </ul>
-      <a class="lux-btn primary" href="mailto:sales@luxit.app">Get Started</a>
+      <div style="display:flex;gap:10px;align-items:center;">
+        <a class="lux-btn" href="/book-demo" style="background:transparent;border:1px solid var(--glass-border);color:var(--text-primary);padding:10px 20px;font-size:0.9rem;">Request Demo</a>
+        <a class="lux-btn primary" href="/auth/login" style="padding:10px 20px;font-size:0.9rem;">Start Free</a>
+      </div>
     </nav>
 
     {% block content %}{% endblock %}
