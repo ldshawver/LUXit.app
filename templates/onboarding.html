@@ -1,0 +1,488 @@
+{% extends "base.html" %}
+
+{% block title %}Welcome to LUX IT - Setup{% endblock %}
+
+{% block content %}
+<style>
+  .onboard-container {
+    max-width: 720px;
+    margin: 0 auto;
+    padding: 2rem 1rem;
+  }
+  .onboard-header {
+    text-align: center;
+    margin-bottom: 2rem;
+  }
+  .onboard-header h2 {
+    color: #fff;
+    font-size: 1.6rem;
+    font-weight: 700;
+    margin-bottom: 0.5rem;
+  }
+  .onboard-header p {
+    color: #666;
+    font-size: 0.9rem;
+  }
+  .step-progress {
+    display: flex;
+    justify-content: center;
+    gap: 8px;
+    margin-bottom: 2rem;
+  }
+  .step-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.1);
+    transition: all 0.3s;
+  }
+  .step-dot.active {
+    background: #a855f7;
+    box-shadow: 0 0 10px rgba(168,85,247,0.5);
+  }
+  .step-dot.done {
+    background: #00ffb4;
+    box-shadow: 0 0 8px rgba(0,255,180,0.3);
+  }
+  .step-label {
+    display: flex;
+    justify-content: center;
+    gap: 32px;
+    margin-bottom: 2rem;
+    font-size: 0.72rem;
+    color: #444;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .step-label span.active { color: #a855f7; font-weight: 700; }
+  .step-label span.done { color: #00ffb4; }
+  .onboard-card {
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 16px;
+    padding: 2rem;
+    backdrop-filter: blur(12px);
+  }
+  .onboard-card h4 {
+    color: #fff;
+    font-size: 1.1rem;
+    font-weight: 700;
+    margin-bottom: 0.3rem;
+  }
+  .onboard-card .subtitle {
+    color: #555;
+    font-size: 0.82rem;
+    margin-bottom: 1.5rem;
+  }
+  .form-group {
+    margin-bottom: 1.25rem;
+  }
+  .form-group label {
+    display: block;
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: #888;
+    margin-bottom: 6px;
+    letter-spacing: 0.02em;
+  }
+  .form-group input,
+  .form-group select,
+  .form-group textarea {
+    width: 100%;
+    padding: 10px 14px;
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 8px;
+    color: #ddd;
+    font-size: 0.88rem;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+  .form-group input:focus,
+  .form-group select:focus,
+  .form-group textarea:focus {
+    border-color: rgba(168,85,247,0.4);
+    box-shadow: 0 0 0 3px rgba(168,85,247,0.08);
+  }
+  .form-group input::placeholder { color: #444; }
+  .color-row {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+  }
+  .color-preview {
+    width: 36px;
+    height: 36px;
+    border-radius: 8px;
+    border: 2px solid rgba(255,255,255,0.15);
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+  .color-input {
+    flex: 1;
+  }
+  .api-key-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px;
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.07);
+    border-radius: 10px;
+    margin-bottom: 10px;
+  }
+  .api-key-row .key-icon {
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+  .api-key-row .key-info {
+    flex: 1;
+  }
+  .api-key-row .key-name {
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: #ccc;
+  }
+  .api-key-row .key-desc {
+    font-size: 0.72rem;
+    color: #555;
+  }
+  .api-key-row input {
+    width: 200px;
+    padding: 6px 10px;
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 6px;
+    color: #ddd;
+    font-size: 0.8rem;
+    font-family: monospace;
+  }
+  .btn-onboard {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 24px;
+    border-radius: 10px;
+    font-size: 0.88rem;
+    font-weight: 600;
+    border: none;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .btn-onboard.primary {
+    background: linear-gradient(135deg, #a855f7, #7c3aed);
+    color: #fff;
+  }
+  .btn-onboard.primary:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 6px 20px rgba(168,85,247,0.3);
+  }
+  .btn-onboard.secondary {
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.1);
+    color: #888;
+  }
+  .btn-onboard.secondary:hover {
+    color: #ddd;
+    border-color: rgba(255,255,255,0.2);
+  }
+  .onboard-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 1.5rem;
+  }
+  .checklist-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px;
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 10px;
+    margin-bottom: 8px;
+    transition: all 0.2s;
+  }
+  .checklist-item.completed {
+    border-color: rgba(0,255,180,0.15);
+    background: rgba(0,255,180,0.03);
+  }
+  .checklist-check {
+    width: 22px;
+    height: 22px;
+    border-radius: 6px;
+    border: 2px solid rgba(255,255,255,0.15);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+  .checklist-item.completed .checklist-check {
+    border-color: #00ffb4;
+    background: rgba(0,255,180,0.15);
+  }
+  .checklist-text {
+    font-size: 0.84rem;
+    color: #aaa;
+  }
+  .checklist-item.completed .checklist-text {
+    color: #00ffb4;
+  }
+</style>
+
+<div class="onboard-container">
+  <div class="onboard-header">
+    <h2>Welcome to LUX IT</h2>
+    <p>Let's set up your company in a few quick steps</p>
+  </div>
+
+  <div class="step-progress" id="stepProgress">
+    <div class="step-dot active" data-step="1"></div>
+    <div class="step-dot" data-step="2"></div>
+    <div class="step-dot" data-step="3"></div>
+    <div class="step-dot" data-step="4"></div>
+  </div>
+  <div class="step-label" id="stepLabels">
+    <span class="active">Company</span>
+    <span>Brand Kit</span>
+    <span>Integrations</span>
+    <span>Launch</span>
+  </div>
+
+  <form method="POST" action="{{ url_for('main.onboarding_submit') }}" enctype="multipart/form-data" id="onboardForm">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+    <!-- Step 1: Company Info -->
+    <div class="onboard-card step-panel" id="step-1">
+      <h4>Company Information</h4>
+      <p class="subtitle">Basic details about your business</p>
+      <div class="form-group">
+        <label>Company Name *</label>
+        <input type="text" name="company_name" id="companyName" placeholder="e.g. Acme Corp" required>
+      </div>
+      <div class="form-group">
+        <label>Website URL</label>
+        <input type="url" name="website_url" placeholder="https://example.com">
+      </div>
+      <div class="form-group">
+        <label>Industry</label>
+        <select name="industry">
+          <option value="">Select industry...</option>
+          <option value="saas">SaaS / Technology</option>
+          <option value="ecommerce">E-Commerce / Retail</option>
+          <option value="agency">Agency / Consulting</option>
+          <option value="finance">Finance / Fintech</option>
+          <option value="healthcare">Healthcare</option>
+          <option value="education">Education</option>
+          <option value="real_estate">Real Estate</option>
+          <option value="other">Other</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Company Description</label>
+        <textarea name="description" rows="3" placeholder="Brief description of what your company does..."></textarea>
+      </div>
+      <div class="form-group">
+        <label>Logo</label>
+        <input type="file" name="logo" accept="image/*" style="font-size:0.82rem;">
+      </div>
+    </div>
+
+    <!-- Step 2: Brand Kit -->
+    <div class="onboard-card step-panel" id="step-2" style="display:none;">
+      <h4>Brand Kit Setup</h4>
+      <p class="subtitle">Define your brand's visual identity</p>
+      <div class="form-group">
+        <label>Primary Color</label>
+        <div class="color-row">
+          <input type="color" class="color-preview" name="primary_color" value="#a855f7" id="primaryColor">
+          <input type="text" class="color-input" value="#a855f7" oninput="document.getElementById('primaryColor').value = this.value">
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Secondary Color</label>
+        <div class="color-row">
+          <input type="color" class="color-preview" name="secondary_color" value="#00e5ff" id="secondaryColor">
+          <input type="text" class="color-input" value="#00e5ff" oninput="document.getElementById('secondaryColor').value = this.value">
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Accent Color</label>
+        <div class="color-row">
+          <input type="color" class="color-preview" name="accent_color" value="#e4055c" id="accentColor">
+          <input type="text" class="color-input" value="#e4055c" oninput="document.getElementById('accentColor').value = this.value">
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Font Family</label>
+        <select name="font_family">
+          <option value="Inter, sans-serif">Inter (Default)</option>
+          <option value="Poppins, sans-serif">Poppins</option>
+          <option value="DM Sans, sans-serif">DM Sans</option>
+          <option value="Plus Jakarta Sans, sans-serif">Plus Jakarta Sans</option>
+          <option value="Roboto, sans-serif">Roboto</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- Step 3: Integrations / API Keys -->
+    <div class="onboard-card step-panel" id="step-3" style="display:none;">
+      <h4>Connect Your Tools</h4>
+      <p class="subtitle">Optional — you can configure these later in Settings</p>
+
+      <div class="api-key-row">
+        <div class="key-icon" style="background:rgba(0,229,255,0.1);">
+          <i data-feather="cpu" style="width:16px;height:16px;color:#00e5ff;"></i>
+        </div>
+        <div class="key-info">
+          <div class="key-name">OpenAI API Key</div>
+          <div class="key-desc">Powers AI agents, content generation, and chat</div>
+        </div>
+        <input type="password" name="openai_key" placeholder="sk-...">
+      </div>
+
+      <div class="api-key-row">
+        <div class="key-icon" style="background:rgba(168,85,247,0.1);">
+          <i data-feather="mail" style="width:16px;height:16px;color:#a855f7;"></i>
+        </div>
+        <div class="key-info">
+          <div class="key-name">SendGrid API Key</div>
+          <div class="key-desc">Email campaign delivery and transactional emails</div>
+        </div>
+        <input type="password" name="sendgrid_key" placeholder="SG.xxx">
+      </div>
+
+      <div class="api-key-row">
+        <div class="key-icon" style="background:rgba(0,255,180,0.1);">
+          <i data-feather="bar-chart-2" style="width:16px;height:16px;color:#00ffb4;"></i>
+        </div>
+        <div class="key-info">
+          <div class="key-name">Google Analytics ID</div>
+          <div class="key-desc">Track website visitors and conversions</div>
+        </div>
+        <input type="text" name="ga_id" placeholder="G-XXXXXXX">
+      </div>
+
+      <div class="api-key-row">
+        <div class="key-icon" style="background:rgba(59,130,246,0.1);">
+          <i data-feather="facebook" style="width:16px;height:16px;color:#3b82f6;"></i>
+        </div>
+        <div class="key-info">
+          <div class="key-name">Facebook Ads Token</div>
+          <div class="key-desc">Connect ad campaigns and audience data</div>
+        </div>
+        <input type="password" name="fb_token" placeholder="EAAxxxx">
+      </div>
+    </div>
+
+    <!-- Step 4: Launch Checklist -->
+    <div class="onboard-card step-panel" id="step-4" style="display:none;">
+      <h4>You're Almost Ready!</h4>
+      <p class="subtitle">Review your setup and launch</p>
+
+      <div class="checklist-item completed">
+        <div class="checklist-check"><i data-feather="check" style="width:14px;height:14px;color:#00ffb4;"></i></div>
+        <div class="checklist-text">Account created</div>
+      </div>
+      <div class="checklist-item" id="check-company">
+        <div class="checklist-check"></div>
+        <div class="checklist-text">Company profile configured</div>
+      </div>
+      <div class="checklist-item" id="check-brand">
+        <div class="checklist-check"></div>
+        <div class="checklist-text">Brand kit defined</div>
+      </div>
+      <div class="checklist-item" id="check-integrations">
+        <div class="checklist-check"></div>
+        <div class="checklist-text">At least one integration connected</div>
+      </div>
+
+      <div style="margin-top:1.5rem; padding:16px; background:rgba(168,85,247,0.06); border:1px solid rgba(168,85,247,0.15); border-radius:10px;">
+        <p style="color:#ccc; font-size:0.85rem; margin:0 0 8px;">
+          <strong style="color:#a855f7;">What happens next?</strong>
+        </p>
+        <ul style="color:#888; font-size:0.82rem; margin:0; padding-left:18px; line-height:1.8;">
+          <li>Your 11 AI marketing agents will be activated</li>
+          <li>Sample campaigns and templates will be created</li>
+          <li>Your dashboard will be populated with initial data</li>
+          <li>You'll get a guided tour of key features</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="onboard-footer">
+      <button type="button" class="btn-onboard secondary" id="prevBtn" onclick="changeStep(-1)" style="display:none;">
+        <i data-feather="arrow-left" style="width:16px;height:16px;"></i> Back
+      </button>
+      <div></div>
+      <button type="button" class="btn-onboard primary" id="nextBtn" onclick="changeStep(1)">
+        Next <i data-feather="arrow-right" style="width:16px;height:16px;"></i>
+      </button>
+      <button type="submit" class="btn-onboard primary" id="launchBtn" style="display:none;">
+        <i data-feather="rocket" style="width:16px;height:16px;"></i> Launch My Account
+      </button>
+    </div>
+  </form>
+</div>
+
+<script>
+let currentStep = 1;
+const totalSteps = 4;
+
+function changeStep(dir) {
+  const newStep = currentStep + dir;
+  if (newStep < 1 || newStep > totalSteps) return;
+
+  document.getElementById('step-' + currentStep).style.display = 'none';
+  document.getElementById('step-' + newStep).style.display = 'block';
+  currentStep = newStep;
+
+  document.getElementById('prevBtn').style.display = currentStep > 1 ? 'inline-flex' : 'none';
+  document.getElementById('nextBtn').style.display = currentStep < totalSteps ? 'inline-flex' : 'none';
+  document.getElementById('launchBtn').style.display = currentStep === totalSteps ? 'inline-flex' : 'none';
+
+  document.querySelectorAll('.step-dot').forEach((dot, i) => {
+    dot.classList.remove('active', 'done');
+    if (i + 1 < currentStep) dot.classList.add('done');
+    else if (i + 1 === currentStep) dot.classList.add('active');
+  });
+
+  const labels = document.querySelectorAll('#stepLabels span');
+  labels.forEach((label, i) => {
+    label.classList.remove('active', 'done');
+    if (i + 1 < currentStep) label.classList.add('done');
+    else if (i + 1 === currentStep) label.classList.add('active');
+  });
+
+  if (currentStep === 4) updateChecklist();
+  if (typeof feather !== 'undefined') feather.replace();
+}
+
+function updateChecklist() {
+  const name = document.getElementById('companyName').value.trim();
+  const checkCompany = document.getElementById('check-company');
+  if (name) {
+    checkCompany.classList.add('completed');
+    checkCompany.querySelector('.checklist-check').innerHTML = '<i data-feather="check" style="width:14px;height:14px;color:#00ffb4;"></i>';
+  }
+
+  const checkBrand = document.getElementById('check-brand');
+  checkBrand.classList.add('completed');
+  checkBrand.querySelector('.checklist-check').innerHTML = '<i data-feather="check" style="width:14px;height:14px;color:#00ffb4;"></i>';
+
+  const hasKey = document.querySelector('[name="openai_key"]').value || document.querySelector('[name="sendgrid_key"]').value || document.querySelector('[name="ga_id"]').value || document.querySelector('[name="fb_token"]').value;
+  const checkInt = document.getElementById('check-integrations');
+  if (hasKey) {
+    checkInt.classList.add('completed');
+    checkInt.querySelector('.checklist-check').innerHTML = '<i data-feather="check" style="width:14px;height:14px;color:#00ffb4;"></i>';
+  }
+
+  if (typeof feather !== 'undefined') feather.replace();
+}
+</script>
+{% endblock %}

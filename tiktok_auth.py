@@ -12,9 +12,14 @@ from flask_login import login_required, current_user
 
 from extensions import db
 from models import TikTokOAuth, Company
-from services.tiktok_service import TikTokService
 
 logger = logging.getLogger(__name__)
+
+try:
+    from services.tiktok_service import TikTokService
+except ImportError as exc:
+    logger.warning("TikTokService unavailable: %s", exc)
+    TikTokService = None
 
 tiktok_bp = Blueprint('tiktok', __name__, url_prefix='/auth/tiktok')
 
@@ -26,6 +31,9 @@ def get_current_company():
 
 def get_tiktok_service(company=None):
     """Get TikTok service instance with company credentials"""
+    if TikTokService is None:
+        logger.warning("TikTok integration disabled: TikTokService not available.")
+        return None
     if company:
         return TikTokService.from_company(company)
     return TikTokService()

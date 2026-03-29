@@ -1,0 +1,724 @@
+{% extends "base.html" %}
+
+{% block title %}{{ agent.agent_name }} - AI Agent Detail{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row mb-4">
+        <div class="col-12">
+            <nav aria-label="breadcrumb">
+                <ol class="breadcrumb">
+                    <li class="breadcrumb-item"><a href="{{ url_for('main.dashboard') }}">Dashboard</a></li>
+                    <li class="breadcrumb-item"><a href="{{ url_for('main.ai_dashboard') }}">AI Dashboard</a></li>
+                    <li class="breadcrumb-item active">{{ agent.agent_name }}</li>
+                </ol>
+            </nav>
+        </div>
+    </div>
+
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <h1 class="display-6 fw-bold">
+                        <i data-feather="cpu" class="text-primary"></i> {{ agent.agent_name }}
+                    </h1>
+                    <p class="text-muted">{{ agent.description }}</p>
+                </div>
+                <div class="d-flex gap-2">
+                    <span class="badge bg-success fs-6">
+                        <i data-feather="check-circle"></i> Active
+                    </span>
+                    <span class="badge bg-info fs-6">{{ agent_type }}</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <ul class="nav nav-tabs mb-4" id="agentTabs" role="tablist">
+        <li class="nav-item" role="presentation">
+            <button class="nav-link active" id="chat-tab" data-bs-toggle="tab" data-bs-target="#chat" type="button" role="tab">
+                <i data-feather="message-circle"></i> Chat
+            </button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="reports-tab" data-bs-toggle="tab" data-bs-target="#reports" type="button" role="tab">
+                <i data-feather="file-text"></i> Reports
+            </button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="deliverables-tab" data-bs-toggle="tab" data-bs-target="#deliverables" type="button" role="tab">
+                <i data-feather="package"></i> Deliverables
+            </button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="tasks-tab" data-bs-toggle="tab" data-bs-target="#tasks" type="button" role="tab">
+                <i data-feather="list"></i> Tasks
+            </button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="memory-tab" data-bs-toggle="tab" data-bs-target="#memory" type="button" role="tab">
+                <i data-feather="database"></i> Memory
+            </button>
+        </li>
+    </ul>
+
+    <div class="tab-content" id="agentTabsContent">
+        <div class="tab-pane fade show active" id="chat" role="tabpanel">
+            <div class="row">
+                <div class="col-lg-8">
+                    <div class="card">
+                        <div class="card-header d-flex justify-content-between align-items-center">
+                            <h5 class="mb-0"><i data-feather="message-circle"></i> Chat with {{ agent.agent_name }}</h5>
+                            <button class="btn btn-sm btn-outline-secondary" onclick="clearChat()">
+                                <i data-feather="trash-2"></i> Clear
+                            </button>
+                        </div>
+                        <div class="card-body" style="height: 400px; overflow-y: auto;" id="chatMessages">
+                            <div class="text-center text-muted py-5">
+                                <i data-feather="message-circle" style="width: 48px; height: 48px;"></i>
+                                <p class="mt-3">Start a conversation with {{ agent.agent_name }}</p>
+                            </div>
+                        </div>
+                        <div class="card-footer">
+                            <form id="chatForm" onsubmit="sendMessage(event)">
+                                <div class="input-group">
+                                    <input type="text" class="form-control" id="chatInput" placeholder="Ask {{ agent.agent_name }} anything..." autocomplete="off">
+                                    <button class="btn btn-primary" type="submit" id="sendBtn">
+                                        <i data-feather="send"></i> Send
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-lg-4">
+                    <div class="card mb-3">
+                        <div class="card-header">
+                            <h6 class="mb-0"><i data-feather="zap"></i> Quick Actions</h6>
+                        </div>
+                        <div class="card-body">
+                            <div class="d-grid gap-2">
+                                <button class="btn btn-outline-primary btn-sm" onclick="quickAction('Generate a summary report')">
+                                    <i data-feather="file-text"></i> Generate Report
+                                </button>
+                                <button class="btn btn-outline-primary btn-sm" onclick="quickAction('What are the top priorities?')">
+                                    <i data-feather="star"></i> Top Priorities
+                                </button>
+                                <button class="btn btn-outline-primary btn-sm" onclick="quickAction('Analyze recent performance')">
+                                    <i data-feather="bar-chart-2"></i> Performance Analysis
+                                </button>
+                                <button class="btn btn-outline-primary btn-sm" onclick="quickAction('Suggest improvements')">
+                                    <i data-feather="trending-up"></i> Suggestions
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="card">
+                        <div class="card-header">
+                            <h6 class="mb-0"><i data-feather="info"></i> Agent Capabilities</h6>
+                        </div>
+                        <div class="card-body small">
+                            <ul class="list-unstyled mb-0">
+                                <li class="mb-2"><i data-feather="check" class="text-success me-2"></i> Data Analysis</li>
+                                <li class="mb-2"><i data-feather="check" class="text-success me-2"></i> Report Generation</li>
+                                <li class="mb-2"><i data-feather="check" class="text-success me-2"></i> Strategy Recommendations</li>
+                                <li class="mb-2"><i data-feather="check" class="text-success me-2"></i> Task Automation</li>
+                                <li><i data-feather="check" class="text-success me-2"></i> Continuous Learning</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="tab-pane fade" id="reports" role="tabpanel">
+            <div class="row mb-4">
+                <div class="col-12">
+                    <div class="card">
+                        <div class="card-header d-flex justify-content-between align-items-center">
+                            <h5 class="mb-0"><i data-feather="file-text"></i> Generate Report</h5>
+                        </div>
+                        <div class="card-body">
+                            <div class="row g-3">
+                                <div class="col-md-3">
+                                    <button class="btn btn-primary w-100" onclick="generateReport('daily')">
+                                        <i data-feather="sun"></i> Daily Report
+                                    </button>
+                                </div>
+                                <div class="col-md-3">
+                                    <button class="btn btn-success w-100" onclick="generateReport('weekly')">
+                                        <i data-feather="calendar"></i> Weekly Report
+                                    </button>
+                                </div>
+                                <div class="col-md-3">
+                                    <button class="btn btn-info w-100" onclick="generateReport('monthly')">
+                                        <i data-feather="trending-up"></i> Monthly Report
+                                    </button>
+                                </div>
+                                <div class="col-md-3">
+                                    <button class="btn btn-warning w-100" onclick="generateReport('quarterly')">
+                                        <i data-feather="bar-chart-2"></i> Quarterly Report
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="row">
+                <div class="col-12">
+                    <div class="card">
+                        <div class="card-header">
+                            <h5 class="mb-0"><i data-feather="archive"></i> Report History</h5>
+                        </div>
+                        <div class="card-body">
+                            {% if reports %}
+                            <div class="table-responsive">
+                                <table class="table table-hover">
+                                    <thead>
+                                        <tr>
+                                            <th>Report Type</th>
+                                            <th>Period</th>
+                                            <th>Generated</th>
+                                            <th>Status</th>
+                                            <th>Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {% for report in reports %}
+                                        <tr>
+                                            <td>
+                                                <span class="badge bg-info">{{ report.report_type }}</span>
+                                            </td>
+                                            <td>{{ report.period_start.strftime('%Y-%m-%d') }} - {{ report.period_end.strftime('%Y-%m-%d') }}</td>
+                                            <td>{{ report.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+                                            <td>
+                                                {% if report.status == 'completed' %}
+                                                <span class="badge bg-success">Completed</span>
+                                                {% elif report.status == 'generating' %}
+                                                <span class="badge bg-warning">Generating</span>
+                                                {% else %}
+                                                <span class="badge bg-secondary">{{ report.status }}</span>
+                                                {% endif %}
+                                            </td>
+                                            <td>
+                                                <button class="btn btn-sm btn-outline-primary" onclick="viewReport({{ report.id }})">
+                                                    <i data-feather="eye"></i> View
+                                                </button>
+                                            </td>
+                                        </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                            </div>
+                            {% else %}
+                            <div class="text-center py-5 text-muted">
+                                <i data-feather="inbox" style="width: 48px; height: 48px;"></i>
+                                <p class="mt-3">No reports generated yet. Click a button above to generate your first report.</p>
+                            </div>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="tab-pane fade" id="deliverables" role="tabpanel">
+            <div class="row mb-4">
+                <div class="col-12">
+                    <div class="card">
+                        <div class="card-header">
+                            <h5 class="mb-0"><i data-feather="plus-circle"></i> Request Deliverable</h5>
+                        </div>
+                        <div class="card-body">
+                            <form id="deliverableForm" onsubmit="requestDeliverable(event)">
+                                <div class="row g-3">
+                                    <div class="col-md-4">
+                                        <label class="form-label">Deliverable Type</label>
+                                        <select class="form-select" id="deliverableType" required>
+                                            <option value="">Select type...</option>
+                                            <option value="strategy_document">Strategy Document</option>
+                                            <option value="content_calendar">Content Calendar</option>
+                                            <option value="campaign_plan">Campaign Plan</option>
+                                            <option value="analysis_report">Analysis Report</option>
+                                            <option value="recommendations">Recommendations</option>
+                                            <option value="competitor_analysis">Competitor Analysis</option>
+                                            <option value="audience_insights">Audience Insights</option>
+                                            <option value="custom">Custom Deliverable</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-md-5">
+                                        <label class="form-label">Description</label>
+                                        <input type="text" class="form-control" id="deliverableDescription" placeholder="Describe what you need..." required>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label class="form-label">Priority</label>
+                                        <select class="form-select" id="deliverablePriority">
+                                            <option value="low">Low</option>
+                                            <option value="normal" selected>Normal</option>
+                                            <option value="high">High</option>
+                                            <option value="urgent">Urgent</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-12">
+                                        <button type="submit" class="btn btn-primary">
+                                            <i data-feather="send"></i> Request Deliverable
+                                        </button>
+                                    </div>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="row">
+                <div class="col-12">
+                    <div class="card">
+                        <div class="card-header">
+                            <h5 class="mb-0"><i data-feather="package"></i> Deliverables</h5>
+                        </div>
+                        <div class="card-body">
+                            {% if deliverables %}
+                            <div class="table-responsive">
+                                <table class="table table-hover">
+                                    <thead>
+                                        <tr>
+                                            <th>Type</th>
+                                            <th>Title</th>
+                                            <th>Priority</th>
+                                            <th>Status</th>
+                                            <th>Requested</th>
+                                            <th>Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {% for deliverable in deliverables %}
+                                        <tr>
+                                            <td><span class="badge bg-secondary">{{ deliverable.deliverable_type }}</span></td>
+                                            <td>{{ deliverable.title }}</td>
+                                            <td>
+                                                {% if deliverable.priority == 'urgent' %}
+                                                <span class="badge bg-danger">Urgent</span>
+                                                {% elif deliverable.priority == 'high' %}
+                                                <span class="badge bg-warning">High</span>
+                                                {% elif deliverable.priority == 'normal' %}
+                                                <span class="badge bg-info">Normal</span>
+                                                {% else %}
+                                                <span class="badge bg-secondary">Low</span>
+                                                {% endif %}
+                                            </td>
+                                            <td>
+                                                {% if deliverable.status == 'completed' %}
+                                                <span class="badge bg-success">Completed</span>
+                                                {% elif deliverable.status == 'in_progress' %}
+                                                <span class="badge bg-primary">In Progress</span>
+                                                {% elif deliverable.status == 'pending' %}
+                                                <span class="badge bg-warning">Pending</span>
+                                                {% else %}
+                                                <span class="badge bg-secondary">{{ deliverable.status }}</span>
+                                                {% endif %}
+                                            </td>
+                                            <td>{{ deliverable.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+                                            <td>
+                                                <button class="btn btn-sm btn-outline-primary" onclick="viewDeliverable({{ deliverable.id }})">
+                                                    <i data-feather="eye"></i>
+                                                </button>
+                                            </td>
+                                        </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                            </div>
+                            {% else %}
+                            <div class="text-center py-5 text-muted">
+                                <i data-feather="package" style="width: 48px; height: 48px;"></i>
+                                <p class="mt-3">No deliverables requested yet. Use the form above to request your first deliverable.</p>
+                            </div>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="tab-pane fade" id="tasks" role="tabpanel">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0"><i data-feather="list"></i> Agent Tasks</h5>
+                    <button class="btn btn-sm btn-primary" onclick="createTask()">
+                        <i data-feather="plus"></i> New Task
+                    </button>
+                </div>
+                <div class="card-body">
+                    {% if tasks %}
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Task</th>
+                                    <th>Type</th>
+                                    <th>Status</th>
+                                    <th>Created</th>
+                                    <th>Completed</th>
+                                    <th>Duration</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for task in tasks %}
+                                <tr>
+                                    <td>{{ task.task_name }}</td>
+                                    <td><span class="badge bg-secondary">{{ task.task_type }}</span></td>
+                                    <td>
+                                        {% if task.status == 'completed' %}
+                                        <span class="badge bg-success">Completed</span>
+                                        {% elif task.status == 'failed' %}
+                                        <span class="badge bg-danger">Failed</span>
+                                        {% elif task.status == 'running' %}
+                                        <span class="badge bg-primary">Running</span>
+                                        {% else %}
+                                        <span class="badge bg-warning">Pending</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>{{ task.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+                                    <td>
+                                        {% if task.completed_at %}
+                                        {{ task.completed_at.strftime('%Y-%m-%d %H:%M') }}
+                                        {% else %}
+                                        -
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        {% if task.completed_at and task.created_at %}
+                                        {{ ((task.completed_at - task.created_at).total_seconds())|int }}s
+                                        {% else %}
+                                        -
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% else %}
+                    <div class="text-center py-5 text-muted">
+                        <i data-feather="inbox" style="width: 48px; height: 48px;"></i>
+                        <p class="mt-3">No tasks executed yet</p>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <div class="tab-pane fade" id="memory" role="tabpanel">
+            <div class="row">
+                <div class="col-lg-6">
+                    <div class="card mb-4">
+                        <div class="card-header">
+                            <h5 class="mb-0"><i data-feather="database"></i> Agent Memory</h5>
+                        </div>
+                        <div class="card-body">
+                            {% if memories %}
+                            <div class="list-group">
+                                {% for memory in memories %}
+                                <div class="list-group-item">
+                                    <div class="d-flex justify-content-between align-items-center">
+                                        <strong>{{ memory.memory_key }}</strong>
+                                        <small class="text-muted">{{ memory.updated_at.strftime('%Y-%m-%d') }}</small>
+                                    </div>
+                                    <p class="mb-0 small text-muted">{{ memory.memory_value[:100] }}{% if memory.memory_value|length > 100 %}...{% endif %}</p>
+                                </div>
+                                {% endfor %}
+                            </div>
+                            {% else %}
+                            <div class="text-center py-4 text-muted">
+                                <i data-feather="database" style="width: 32px; height: 32px;"></i>
+                                <p class="mt-2 mb-0">No stored memories</p>
+                            </div>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+                <div class="col-lg-6">
+                    <div class="card">
+                        <div class="card-header">
+                            <h5 class="mb-0"><i data-feather="clock"></i> Recent Conversations</h5>
+                        </div>
+                        <div class="card-body">
+                            {% if conversations %}
+                            <div class="list-group">
+                                {% for conv in conversations %}
+                                <div class="list-group-item">
+                                    <div class="d-flex justify-content-between align-items-center mb-1">
+                                        <span class="badge {% if conv.role == 'user' %}bg-primary{% else %}bg-success{% endif %}">{{ conv.role }}</span>
+                                        <small class="text-muted">{{ conv.created_at.strftime('%Y-%m-%d %H:%M') }}</small>
+                                    </div>
+                                    <p class="mb-0 small">{{ conv.message[:150] }}{% if conv.message|length > 150 %}...{% endif %}</p>
+                                </div>
+                                {% endfor %}
+                            </div>
+                            {% else %}
+                            <div class="text-center py-4 text-muted">
+                                <i data-feather="message-circle" style="width: 32px; height: 32px;"></i>
+                                <p class="mt-2 mb-0">No conversation history</p>
+                            </div>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="reportModal" tabindex="-1">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Report Details</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="reportContent">
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                <button type="button" class="btn btn-primary" onclick="downloadReport()">
+                    <i data-feather="download"></i> Download
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="deliverableModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Deliverable Details</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="deliverableContent">
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.agent-card {
+    transition: transform 0.2s ease-in-out;
+}
+.agent-card:hover {
+    transform: translateY(-3px);
+}
+#chatMessages .message {
+    max-width: 80%;
+    padding: 12px 16px;
+    border-radius: 12px;
+    margin-bottom: 12px;
+}
+#chatMessages .message.user {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    margin-left: auto;
+}
+#chatMessages .message.assistant {
+    background: #2d2d2d;
+    color: #e0e0e0;
+    margin-right: auto;
+}
+</style>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const agentType = '{{ agent_type }}';
+const csrfToken = '{{ csrf_token() }}';
+let currentReportId = null;
+
+function sendMessage(e) {
+    e.preventDefault();
+    const input = document.getElementById('chatInput');
+    const message = input.value.trim();
+    if (!message) return;
+
+    addMessage(message, 'user');
+    input.value = '';
+    document.getElementById('sendBtn').disabled = true;
+
+    fetch('/api/agents/chat', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': csrfToken
+        },
+        body: JSON.stringify({
+            agent_type: agentType,
+            message: message
+        })
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            addMessage(data.response, 'assistant');
+        } else {
+            addMessage('Sorry, I encountered an error. Please try again.', 'assistant');
+        }
+    })
+    .catch(() => {
+        addMessage('Connection error. Please check your network and try again.', 'assistant');
+    })
+    .finally(() => {
+        document.getElementById('sendBtn').disabled = false;
+    });
+}
+
+function addMessage(text, role) {
+    const container = document.getElementById('chatMessages');
+    const placeholder = container.querySelector('.text-center');
+    if (placeholder) placeholder.remove();
+
+    const div = document.createElement('div');
+    div.className = `message ${role}`;
+    div.textContent = text;
+    container.appendChild(div);
+    container.scrollTop = container.scrollHeight;
+}
+
+function quickAction(prompt) {
+    document.getElementById('chatInput').value = prompt;
+    document.getElementById('chatForm').dispatchEvent(new Event('submit'));
+}
+
+function clearChat() {
+    const container = document.getElementById('chatMessages');
+    container.innerHTML = `
+        <div class="text-center text-muted py-5">
+            <i data-feather="message-circle" style="width: 48px; height: 48px;"></i>
+            <p class="mt-3">Start a conversation with {{ agent.agent_name }}</p>
+        </div>
+    `;
+    feather.replace();
+}
+
+function generateReport(reportType) {
+    fetch('/api/agents/' + agentType + '/reports', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': csrfToken
+        },
+        body: JSON.stringify({ report_type: reportType })
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            alert('Report generation started! Check back in a moment.');
+            location.reload();
+        } else {
+            alert('Failed to generate report: ' + (data.error || 'Unknown error'));
+        }
+    })
+    .catch(() => alert('Connection error'));
+}
+
+function viewReport(reportId) {
+    currentReportId = reportId;
+    fetch('/api/agents/' + agentType + '/reports/' + reportId)
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            document.getElementById('reportContent').innerHTML = `
+                <h5>${data.report.title || ''}</h5>
+                <p class="text-muted">${data.report.period_start} - ${data.report.period_end}</p>
+                <hr>
+                <div>${data.report.content || 'Report content not available'}</div>
+            `;
+            new bootstrap.Modal(document.getElementById('reportModal')).show();
+        }
+    });
+}
+
+function downloadReport() {
+    if (currentReportId) {
+        window.open('/api/agents/' + agentType + '/reports/' + currentReportId + '/download', '_blank');
+    }
+}
+
+function requestDeliverable(e) {
+    e.preventDefault();
+    const type = document.getElementById('deliverableType').value;
+    const description = document.getElementById('deliverableDescription').value;
+    const priority = document.getElementById('deliverablePriority').value;
+
+    fetch('/api/agents/' + agentType + '/deliverables', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': csrfToken
+        },
+        body: JSON.stringify({
+            deliverable_type: type,
+            description: description,
+            priority: priority
+        })
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            alert('Deliverable request submitted!');
+            location.reload();
+        } else {
+            alert('Failed: ' + (data.error || 'Unknown error'));
+        }
+    })
+    .catch(() => alert('Connection error'));
+}
+
+function viewDeliverable(deliverableId) {
+    fetch('/api/agents/' + agentType + '/deliverables/' + deliverableId)
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            document.getElementById('deliverableContent').innerHTML = `
+                <h5>${data.deliverable.title}</h5>
+                <span class="badge bg-info">${data.deliverable.type}</span>
+                <span class="badge ${data.deliverable.status === 'completed' ? 'bg-success' : 'bg-warning'}">${data.deliverable.status}</span>
+                <hr>
+                <div>${data.deliverable.content || 'Content pending...'}</div>
+            `;
+            new bootstrap.Modal(document.getElementById('deliverableModal')).show();
+        }
+    });
+}
+
+function createTask() {
+    const taskName = prompt('Enter task name:');
+    if (!taskName) return;
+
+    fetch('/api/agents/' + agentType + '/tasks', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': csrfToken
+        },
+        body: JSON.stringify({
+            task_name: taskName,
+            task_type: 'manual'
+        })
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            location.reload();
+        } else {
+            alert('Failed to create task');
+        }
+    });
+}
+</script>
+{% endblock %}

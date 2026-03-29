@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Landing Page Builder - LUX Marketing{% endblock %}
+{% block title %}Landing Page Builder - LUX IT{% endblock %}
 
 {% block head %}
 <style>
@@ -487,6 +487,31 @@
                 <div class="component-item" draggable="true" data-section="map">
                     <i data-feather="map-pin"></i>
                     <span>Map</span>
+                </div>
+            </div>
+        </div>
+        
+        <div class="component-category">
+            <div class="component-category-header" onclick="toggleCategory(this)">
+                <span>Engagement</span>
+                <i data-feather="chevron-down"></i>
+            </div>
+            <div class="component-list">
+                <div class="component-item" draggable="true" data-section="poll">
+                    <i data-feather="bar-chart"></i>
+                    <span>Poll</span>
+                </div>
+                <div class="component-item" draggable="true" data-section="survey">
+                    <i data-feather="check-square"></i>
+                    <span>Survey</span>
+                </div>
+                <div class="component-item" draggable="true" data-section="quiz">
+                    <i data-feather="help-circle"></i>
+                    <span>Quiz</span>
+                </div>
+                <div class="component-item" draggable="true" data-section="rating">
+                    <i data-feather="star"></i>
+                    <span>Rating</span>
                 </div>
             </div>
         </div>
@@ -1095,6 +1120,116 @@ const sectionTemplates = {
             <div class="container">
                 <div class="bg-light p-4 rounded text-center">
                     <p class="text-muted mb-0">Custom HTML Block - Edit to add your own code</p>
+                </div>
+            </div>
+        </section>`,
+    'poll': `
+        <section class="py-5" style="background: #f8f9fa;">
+            <div class="container">
+                <div class="row justify-content-center">
+                    <div class="col-md-6">
+                        <div class="card shadow-sm">
+                            <div class="card-body p-4">
+                                <h4 class="text-center mb-4" style="color: #301934;">📊 Quick Poll</h4>
+                                <p class="text-center text-muted mb-4">What's your biggest marketing challenge?</p>
+                                <div class="d-grid gap-2">
+                                    <label class="btn btn-outline-secondary text-start"><input type="radio" name="poll" class="me-2"> Lead generation</label>
+                                    <label class="btn btn-outline-secondary text-start"><input type="radio" name="poll" class="me-2"> Content creation</label>
+                                    <label class="btn btn-outline-secondary text-start"><input type="radio" name="poll" class="me-2"> Social media management</label>
+                                    <label class="btn btn-outline-secondary text-start"><input type="radio" name="poll" class="me-2"> Email marketing</label>
+                                </div>
+                                <button class="btn btn-primary w-100 mt-3" style="background: #301934; border: none;">Vote</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>`,
+    'survey': `
+        <section class="py-5" style="background: linear-gradient(135deg, #301934 0%, #013220 100%);">
+            <div class="container">
+                <div class="row justify-content-center">
+                    <div class="col-md-8">
+                        <div class="card">
+                            <div class="card-body p-4">
+                                <h4 class="text-center mb-4" style="color: #301934;">📋 Help Us Serve You Better</h4>
+                                <div class="mb-4">
+                                    <label class="form-label fw-bold">1. How did you hear about us?</label>
+                                    <select class="form-select">
+                                        <option>Select an option</option>
+                                        <option>Google Search</option>
+                                        <option>Social Media</option>
+                                        <option>Referral from a friend</option>
+                                        <option>Advertisement</option>
+                                        <option>Other</option>
+                                    </select>
+                                </div>
+                                <div class="mb-4">
+                                    <label class="form-label fw-bold">2. What are you looking to achieve?</label>
+                                    <textarea class="form-control" rows="3" placeholder="Tell us about your goals..."></textarea>
+                                </div>
+                                <div class="mb-4">
+                                    <label class="form-label fw-bold">3. Rate your experience so far:</label>
+                                    <div class="d-flex gap-2">
+                                        <span class="btn btn-outline-secondary">1</span>
+                                        <span class="btn btn-outline-secondary">2</span>
+                                        <span class="btn btn-outline-secondary">3</span>
+                                        <span class="btn btn-outline-secondary">4</span>
+                                        <span class="btn btn-outline-secondary">5</span>
+                                    </div>
+                                </div>
+                                <button class="btn btn-success w-100">Submit Survey</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>`,
+    'quiz': `
+        <section class="py-5" style="background: #fff;">
+            <div class="container">
+                <div class="row justify-content-center">
+                    <div class="col-md-6">
+                        <div class="card border-0 shadow">
+                            <div class="card-body p-4">
+                                <h4 class="text-center mb-2" style="color: #301934;">🎯 Quick Quiz</h4>
+                                <p class="text-center text-muted mb-4">Test your knowledge!</p>
+                                <div class="mb-4">
+                                    <h6>Question 1 of 3:</h6>
+                                    <p class="fw-bold">What is your primary marketing goal?</p>
+                                    <div class="d-grid gap-2">
+                                        <button class="btn btn-outline-primary text-start">A. Increase brand awareness</button>
+                                        <button class="btn btn-outline-primary text-start">B. Generate more leads</button>
+                                        <button class="btn btn-outline-primary text-start">C. Improve customer retention</button>
+                                        <button class="btn btn-outline-primary text-start">D. Boost sales revenue</button>
+                                    </div>
+                                </div>
+                                <div class="d-flex justify-content-between">
+                                    <button class="btn btn-secondary" disabled>Previous</button>
+                                    <button class="btn btn-primary" style="background: #301934; border: none;">Next</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>`,
+    'rating': `
+        <section class="py-5" style="background: #f8f9fa;">
+            <div class="container">
+                <div class="row justify-content-center">
+                    <div class="col-md-6 text-center">
+                        <h4 class="mb-3" style="color: #301934;">How would you rate your experience?</h4>
+                        <div class="mb-4">
+                            <span style="font-size: 2.5rem; cursor: pointer; color: #ddd;" class="rating-star">⭐</span>
+                            <span style="font-size: 2.5rem; cursor: pointer; color: #ddd;" class="rating-star">⭐</span>
+                            <span style="font-size: 2.5rem; cursor: pointer; color: #ddd;" class="rating-star">⭐</span>
+                            <span style="font-size: 2.5rem; cursor: pointer; color: #ddd;" class="rating-star">⭐</span>
+                            <span style="font-size: 2.5rem; cursor: pointer; color: #ddd;" class="rating-star">⭐</span>
+                        </div>
+                        <textarea class="form-control mb-3" rows="3" placeholder="Share your feedback (optional)"></textarea>
+                        <button class="btn btn-primary" style="background: #301934; border: none;">Submit Rating</button>
+                    </div>
                 </div>
             </div>
         </section>`

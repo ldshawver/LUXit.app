@@ -1,122 +1,299 @@
 """Application entry point."""
+
+import importlib.util
+import json
+import logging
 import os
+import re
+from datetime import timedelta
+from typing import cast
 from uuid import uuid4
 
-from dotenv import load_dotenv
-from flask import Flask, g, redirect, render_template, request, url_for
+from flask import Flask, g, has_request_context, request
 from flask_login import LoginManager
-from sqlalchemy.exc import SQLAlchemyError
 from werkzeug.middleware.proxy_fix import ProxyFix
-
 from extensions import db, csrf
 
-CANONICAL_HOST = os.environ.get("CANONICAL_HOST", "app.luxit.app")
-ALLOWED_HOSTS = {"luxit.app", "www.luxit.app", "app.luxit.app", "api.luxit.app"}
 
-load_dotenv("/etc/lux-marketing/lux.env")
+# ============================================================
+# Logging (FIXED PRODUCTION CONFIG)
+# ============================================================
+
+class RequestIdFilter(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        if has_request_context():
+            record.request_id = getattr(g, "request_id", "-")
+        else:
+            record.request_id = "-"
+        return True
 
 
-def create_app():
-    app = Flask(__name__, template_folder="templates", static_folder="static")
+class RedactionFilter(logging.Filter):
+    _nine_digit = re.compile(r"\b\d{9}\b")
+    _keys = re.compile(r"\b(tin|ssn|ein)\b", re.IGNORECASE)
 
-    secret_key = os.getenv("SESSION_SECRET") or os.getenv("SECRET_KEY")
-    if not secret_key:
-        raise RuntimeError("SESSION_SECRET or SECRET_KEY must be set")
+    def filter(self, record: logging.LogRecord) -> bool:
+        if isinstance(record.msg, str):
+            msg = self._nine_digit.sub("***REDACTED***", record.msg)
+            msg = self._keys.sub("[redacted]", msg)
+            record.msg = msg
+        return True
 
-    app.config.update(
-        SECRET_KEY=secret_key,
-        SERVER_NAME=CANONICAL_HOST,
-        PREFERRED_URL_SCHEME="https",
-        SESSION_COOKIE_SECURE=True,
-        SESSION_COOKIE_SAMESITE="None",
-        WTF_CSRF_TIME_LIMIT=3600,
+
+def configure_logging():
+    log_format = (
+        "%(asctime)s %(levelname)s [%(name)s] "
+        "[request_id=%(request_id)s] %(message)s"
     )
 
-    app.config["SQLALCHEMY_DATABASE_URI"] = os.getenv(
-        "DATABASE_URL",
-        "sqlite:///email_marketing.db",
-    )
-    app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+    formatter = logging.Formatter(log_format)
 
-    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_port=1)
+    handler = logging.StreamHandler()
+    handler.setFormatter(formatter)
+    handler.addFilter(RequestIdFilter())
+    handler.addFilter(RedactionFilter())
+
+    root_logger = logging.getLogger()
+    root_logger.setLevel(logging.INFO)
+
+    # Remove default handlers (important for Gunicorn)
+    if root_logger.handlers:
+        root_logger.handlers.clear()
+
+    root_logger.addHandler(handler)
+
+
+configure_logging()
+
+
+# ============================================================
+# Application Factory
+# ============================================================
+
+def create_app() -> Flask:
+    app = Flask(__name__)
+
+    # --------------------------------------------------------
+    # Secret Key
+    # --------------------------------------------------------
+    session_secret = os.environ.get("SESSION_SECRET") or os.environ.get("SECRET_KEY")
+
+    if not session_secret:
+        session_secret = uuid4().hex
+        logging.warning("SESSION_SECRET not set — using generated key.")
+
+    app.secret_key = session_secret
+
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
+
+    # --------------------------------------------------------
+    # Database Configuration
+    # --------------------------------------------------------
+    db_url = os.environ.get("DATABASE_URL", "sqlite:///email_marketing.db")
+
+    if db_url.startswith("mysql") and importlib.util.find_spec("MySQLdb") is None:
+        if importlib.util.find_spec("pymysql") is not None:
+            db_url = db_url.replace("mysql://", "mysql+pymysql://", 1)
+            logging.warning("MySQLdb missing; using PyMySQL.")
+
+    app.config["SQLALCHEMY_DATABASE_URI"] = db_url
+    app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
+        "pool_recycle": 300,
+        "pool_pre_ping": True,
+    }
 
     db.init_app(app)
+
+    # --------------------------------------------------------
+    # CSRF + Session
+    # --------------------------------------------------------
+    is_replit = bool(os.environ.get("REPL_ID") or os.environ.get("REPLIT_DEV_DOMAIN"))
+
+    app.config.update(
+        WTF_CSRF_ENABLED=not is_replit,
+        WTF_CSRF_TIME_LIMIT=None,
+        SESSION_COOKIE_SAMESITE="Lax",
+        SESSION_COOKIE_HTTPONLY=True,
+        SESSION_COOKIE_SECURE=not is_replit,
+        PERMANENT_SESSION_LIFETIME=timedelta(days=7),
+    )
+
     csrf.init_app(app)
 
+    from flask_wtf.csrf import CSRFError
+
+    @app.errorhandler(CSRFError)
+    def handle_csrf_error(e):
+        from flask import flash as _flash, redirect as _redirect, request as _req, url_for as _url
+        _flash("Your session expired. Please try again.", "error")
+        referrer = _req.referrer
+        if referrer:
+            return _redirect(referrer)
+        if _req.path.startswith("/auth/"):
+            return _redirect(_req.url)
+        return _redirect(_url("auth.login"))
+
+    # --------------------------------------------------------
+    # Flask-Login
+    # --------------------------------------------------------
     login_manager = LoginManager()
     login_manager.init_app(app)
+
     login_manager.login_view = "auth.login"
-    login_manager.login_message = None
+    login_manager.login_message = "Please log in to access this page."
+    login_manager.login_message_category = "info"
 
     @login_manager.user_loader
     def load_user(user_id):
         from models import User
         try:
             return User.query.get(int(user_id))
-        except SQLAlchemyError as exc:
-            app.logger.error("User loader DB error: %s", exc)
-            try:
-                db.session.rollback()
-            except Exception:
-                pass
+        except Exception:
             return None
 
+    # --------------------------------------------------------
+    # Request Lifecycle
+    # --------------------------------------------------------
     @app.before_request
-    def canonical_and_request_id():
-        g.request_id = request.headers.get("X-Request-ID", str(uuid4()))
-        if app.testing:
-            return None
-        host = (request.headers.get("X-Forwarded-Host") or request.host or "").split(":")[0].lower()
-        if host and host not in ALLOWED_HOSTS:
-            return redirect(f"https://{CANONICAL_HOST}{request.full_path.rstrip('?')}", 301)
-        return None
+    def assign_request_id():
+        g.request_id = request.headers.get("X-Request-ID") or str(uuid4())
 
-    @app.context_processor
-    def inject_company_context():
-        from flask_login import current_user
-        try:
-            if not current_user.is_authenticated:
-                return {}
-            return {
-                "current_company": current_user.get_default_company(),
-                "user_companies": current_user.get_companies_safe(),
-            }
-        except SQLAlchemyError as exc:
-            app.logger.error("Template context DB error: %s", exc)
-            try:
-                db.session.rollback()
-            except Exception:
-                pass
-            return {}
+    @app.after_request
+    def attach_request_id(response):
+        request_id = getattr(g, "request_id", None)
 
-    @app.teardown_request
-    def rollback_on_error(_exception=None):
-        if _exception:
-            try:
-                db.session.rollback()
-            except Exception:
-                pass
+        if request_id:
+            response.headers["X-Request-ID"] = request_id
 
+            if response.mimetype == "application/json" and response.status_code >= 400:
+                payload = response.get_json(silent=True) or {}
+                payload.setdefault("request_id", request_id)
+                response.set_data(json.dumps(payload))
+
+        if response.mimetype == "text/html":
+            response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+            response.headers["Pragma"] = "no-cache"
+            response.headers["Expires"] = "0"
+
+        return response
+
+    # --------------------------------------------------------
+    # Blueprints
+    # --------------------------------------------------------
     from routes import main_bp
     from auth import auth_bp
+    from user_management import user_bp
+    from advanced_config import advanced_config_bp
     from marketing import marketing_bp
+    from legal import legal_bp
 
+    # IMPORTANT: Marketing first if it owns "/"
+    app.register_blueprint(marketing_bp)
+    app.register_blueprint(legal_bp)
     app.register_blueprint(main_bp)
     app.register_blueprint(auth_bp, url_prefix="/auth")
-    app.register_blueprint(marketing_bp)
+    app.register_blueprint(user_bp, url_prefix="/user")
+    app.register_blueprint(advanced_config_bp)
 
-    @app.route("/")
-    def marketing_home():
-        return render_template("marketing/index.html")
+    from utils import get_campaign_status_color
+    app.jinja_env.filters['campaign_status_color'] = get_campaign_status_color
 
-    @app.route("/login")
-    def login():
-        from auth import login as auth_login
-        return auth_login()
+    # --------------------------------------------------------
+    # App Context Initialization
+    # --------------------------------------------------------
+    with app.app_context():
+        import models  # noqa
+
+        db.create_all()
+
+        # Apply any missing columns to existing tables (safe migrations)
+        try:
+            from sqlalchemy import inspect, text
+            inspector = inspect(db.engine)
+            migrations = {
+                "automation_trigger_library": [
+                    ("name", "VARCHAR(200)"),
+                    ("trigger_type", "VARCHAR(100)"),
+                    ("description", "TEXT"),
+                    ("category", "VARCHAR(100)"),
+                    ("trigger_config", "JSON"),
+                    ("steps_template", "JSON"),
+                    ("is_active", "BOOLEAN DEFAULT TRUE"),
+                    ("created_at", "TIMESTAMP"),
+                ],
+                "automation_test": [
+                    ("automation_id", "INTEGER"),
+                    ("test_contact_id", "INTEGER"),
+                    ("test_data", "JSON"),
+                    ("status", "VARCHAR(50) DEFAULT 'pending'"),
+                    ("test_results", "JSON"),
+                    ("started_at", "TIMESTAMP"),
+                    ("completed_at", "TIMESTAMP"),
+                    ("created_at", "TIMESTAMP"),
+                ],
+                "automation_ab_test": [
+                    ("automation_id", "INTEGER"),
+                    ("name", "VARCHAR(200)"),
+                    ("variant_a", "JSON"),
+                    ("variant_b", "JSON"),
+                    ("status", "VARCHAR(50) DEFAULT 'running'"),
+                    ("winner", "VARCHAR(10)"),
+                    ("created_at", "TIMESTAMP"),
+                ],
+            }
+            for table, columns in migrations.items():
+                if inspector.has_table(table):
+                    existing = {c["name"] for c in inspector.get_columns(table)}
+                    for col_name, col_type in columns:
+                        if col_name not in existing:
+                            try:
+                                db.session.execute(text(
+                                    f"ALTER TABLE {table} ADD COLUMN {col_name} {col_type}"
+                                ))
+                                db.session.commit()
+                                logging.info(f"Added column {col_name} to {table}")
+                            except Exception as col_err:
+                                db.session.rollback()
+                                logging.warning(f"Could not add {col_name} to {table}: {col_err}")
+        except Exception as mig_err:
+            logging.warning(f"Migration check failed: {mig_err}")
+
+        try:
+            from services.automation_service import AutomationService
+            AutomationService.seed_trigger_library()
+            logging.info("Automation library seeded")
+        except Exception as e:
+            logging.error(f"Automation seed failed: {e}")
+            db.session.rollback()
+
+        try:
+            from error_logger import setup_error_logging_handler
+            setup_error_logging_handler()
+        except Exception as e:
+            logging.error(f"Error logging setup failed: {e}")
+
+        try:
+            from agent_scheduler import (
+                initialize_agent_scheduler,
+                get_agent_scheduler,
+            )
+
+            initialize_agent_scheduler()
+            app.extensions["agent_scheduler"] = get_agent_scheduler()
+            logging.info("Agent scheduler initialized")
+        except Exception as e:
+            logging.error(f"Agent scheduler failed: {e}")
 
     return app
 
 
+# ============================================================
+# Gunicorn Entry
+# ============================================================
+
+app = create_app()
+
+
 if __name__ == "__main__":
-    application = create_app()
-    application.run()
+    port = int(os.environ.get("PORT", 8000))
+    app.run(host="0.0.0.0", port=port, debug=False)

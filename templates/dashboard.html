@@ -1,108 +1,805 @@
 {% extends "base.html" %}
-
-{% block title %}Dashboard - LUX Marketing{% endblock %}
+{% block title %}Sales Hub - LUX IT{% endblock %}
+{% block page_title %}Sales Hub{% endblock %}
 
 {% block content %}
-<div class="hero">
-  <div class="glow-orb"></div>
-  <div class="hero-content">
-    <h1>Your growth command center</h1>
-    <p>Launch campaigns, track performance, and orchestrate automation from one unified workspace.</p>
-    <div class="d-flex flex-wrap gap-2">
-      <a class="btn btn-lux btn-lux-primary" href="{{ url_for('main.campaign_hub') }}">Launch Campaign</a>
-      <a class="btn btn-lux btn-lux-secondary" href="{{ url_for('main.analytics_hub') }}">View Insights</a>
+<style>
+  body { background: #030014 !important; background-image: radial-gradient(ellipse 80% 50% at 50% -20%, rgba(168,85,247,0.2), transparent), radial-gradient(ellipse 60% 40% at 100% 0%, rgba(0,229,255,0.1), transparent), radial-gradient(ellipse 50% 30% at 0% 100%, rgba(188,0,237,0.1), transparent) !important; }
+
+  .sh-wrap { max-width: 1400px; margin: 0 auto; padding: 0 0 3rem; }
+
+  /* ── Top nav ── */
+  .sh-topnav {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 1rem; padding: 0 0 1.25rem; flex-wrap: wrap;
+  }
+  .sh-tabs { display: flex; gap: 0; }
+  .sh-tab {
+    padding: 10px 20px; font-size: 0.88rem; font-weight: 500;
+    color: rgba(255,255,255,0.45); text-decoration: none;
+    border-bottom: 2px solid transparent; transition: all .2s;
+    display: flex; align-items: center; gap: 6px;
+  }
+  .sh-tab:hover { color: #fff; }
+  .sh-tab.active { color: #fff; border-bottom-color: #00e5ff; }
+  .sh-tab .badge {
+    background: linear-gradient(135deg, #a855f7, #00e5ff); color: #fff; font-size: 0.65rem;
+    font-weight: 700; padding: 1px 5px; border-radius: 8px;
+  }
+  .sh-search-bar {
+    display: flex; align-items: center; gap: 10px; flex: 1; max-width: 560px;
+  }
+  .sh-search {
+    flex: 1; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 10px; padding: 9px 14px 9px 38px; color: #fff;
+    font-size: 0.85rem; position: relative;
+  }
+  .sh-search-wrap { position: relative; flex: 1; }
+  .sh-search-wrap svg { position:absolute; left:11px; top:50%; transform:translateY(-50%); opacity:.4; }
+  .sh-search::placeholder { color: rgba(255,255,255,0.3); }
+  .sh-search:focus { outline: none; border-color: rgba(168,85,247,0.5); }
+  .sh-filter-btn {
+    background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.12);
+    color: rgba(255,255,255,0.7); padding: 9px 16px; border-radius: 10px;
+    font-size: 0.82rem; font-weight: 500; cursor: pointer; white-space: nowrap;
+    display: flex; align-items: center; gap: 6px;
+  }
+  .sh-filter-btn:hover { border-color: rgba(168,85,247,0.4); color: #fff; }
+  .sh-new-btn {
+    background: linear-gradient(135deg, #a855f7, #00e5ff);
+    color: #fff; border: none; padding: 9px 20px; border-radius: 10px;
+    font-size: 0.85rem; font-weight: 600; cursor: pointer; white-space: nowrap;
+    text-decoration: none; display: flex; align-items: center; gap: 7px;
+  }
+  .sh-new-btn:hover { background: linear-gradient(135deg, #b87aff, #47f5ff); color: #fff; }
+
+  /* ── KPI Cards ── */
+  .sh-kpis { display: grid; grid-template-columns: repeat(4,1fr); gap: 14px; margin-bottom: 20px; }
+  .sh-kpi {
+    background: linear-gradient(145deg, rgba(10,20,50,0.9), rgba(8,14,34,0.95));
+    border: 1px solid rgba(255,255,255,0.07); border-radius: 16px;
+    padding: 20px 22px; position: relative; overflow: hidden;
+  }
+  .sh-kpi-label { font-size: 0.78rem; color: rgba(255,255,255,0.5); font-weight: 500; margin-bottom: 8px; text-transform: uppercase; letter-spacing: .04em; }
+  .sh-kpi-row { display: flex; align-items: baseline; gap: 10px; margin-bottom: 10px; }
+  .sh-kpi-val { font-size: 2rem; font-weight: 800; color: #fff; line-height: 1; }
+  .sh-kpi-change { font-size: 0.78rem; font-weight: 600; color: #4ade80; }
+  .sh-kpi-change.down { color: #ef4444; }
+  .sh-kpi-bar { height: 4px; border-radius: 2px; background: rgba(255,255,255,0.08); }
+  .sh-kpi-bar-fill { height: 100%; border-radius: 2px; }
+  .sh-kpi-goal { position: relative; }
+  .sh-donut { position: absolute; right: 18px; top: 50%; transform: translateY(-50%); }
+
+  /* ── Main layout ── */
+  .sh-main { display: grid; grid-template-columns: 1fr 280px; gap: 16px; align-items: start; }
+
+  /* ── Left panel ── */
+  .sh-panel {
+    background: linear-gradient(145deg, rgba(10,20,50,0.85), rgba(6,12,30,0.95));
+    border: 1px solid rgba(255,255,255,0.07); border-radius: 16px; overflow: hidden;
+  }
+  .sh-panel-tabs {
+    display: flex; border-bottom: 1px solid rgba(255,255,255,0.07);
+    padding: 0 16px; gap: 0; overflow-x: auto;
+  }
+  .sh-ptab {
+    padding: 13px 16px; font-size: 0.82rem; font-weight: 500;
+    color: rgba(255,255,255,0.4); border-bottom: 2px solid transparent;
+    cursor: pointer; transition: all .2s; white-space: nowrap;
+    display: flex; align-items: center; gap: 6px; text-decoration: none;
+  }
+  .sh-ptab:hover { color: rgba(255,255,255,0.8); }
+  .sh-ptab.active { color: #fff; border-bottom-color: #00e5ff; }
+  .sh-ptab .cnt {
+    background: rgba(0,229,255,0.15); color: #00e5ff; font-size: 0.65rem;
+    font-weight: 700; padding: 1px 6px; border-radius: 10px;
+  }
+
+  /* ── Pipeline table ── */
+  .sh-pipeline-head {
+    padding: 14px 20px; display: flex; align-items: center; justify-content: space-between;
+    font-size: 0.82rem; color: rgba(255,255,255,0.4);
+  }
+  .sh-table { width: 100%; border-collapse: collapse; }
+  .sh-table th {
+    font-size: 0.72rem; color: rgba(255,255,255,0.35); font-weight: 600;
+    text-transform: uppercase; letter-spacing: .06em;
+    padding: 8px 16px; text-align: left; border-bottom: 1px solid rgba(255,255,255,0.06);
+  }
+  .sh-table td { padding: 12px 16px; border-bottom: 1px solid rgba(255,255,255,0.04); vertical-align: middle; }
+  .sh-table tr:last-child td { border-bottom: none; }
+  .sh-table tr:hover td { background: rgba(255,255,255,0.02); }
+
+  .sh-avatar {
+    width: 34px; height: 34px; border-radius: 50%; display: flex;
+    align-items: center; justify-content: center; font-size: 0.75rem;
+    font-weight: 700; color: #fff; flex-shrink: 0;
+  }
+  .sh-contact-cell { display: flex; align-items: center; gap: 10px; }
+  .sh-contact-name { font-size: 0.87rem; font-weight: 600; color: #fff; }
+  .sh-contact-sub { font-size: 0.72rem; color: rgba(255,255,255,0.35); }
+
+  .sh-org { font-size: 0.82rem; color: rgba(255,255,255,0.6); }
+  .sh-deal-name { font-size: 0.82rem; color: rgba(255,255,255,0.7); }
+  .sh-val { font-size: 0.9rem; font-weight: 700; color: #fff; }
+
+  .stage-pill {
+    font-size: 0.72rem; font-weight: 600; padding: 4px 10px; border-radius: 20px;
+    display: inline-flex; align-items: center; gap: 5px; cursor: pointer;
+    border: 1px solid; white-space: nowrap;
+  }
+  .stage-Negotiation  { background: rgba(245,158,11,0.12); border-color: rgba(245,158,11,0.35); color: #f59e0b; }
+  .stage-Proposal     { background: rgba(139,92,246,0.12); border-color: rgba(139,92,246,0.35); color: #a78bfa; }
+  .stage-Follow\ Up, .stage-FollowUp { background: rgba(59,130,246,0.12); border-color: rgba(59,130,246,0.35); color: #60a5fa; }
+  .stage-Qualified    { background: rgba(34,197,94,0.12);  border-color: rgba(34,197,94,0.35);  color: #4ade80; }
+  .stage-Lead         { background: rgba(99,102,241,0.12); border-color: rgba(99,102,241,0.35); color: #818cf8; }
+  .stage-Closed\ Won  { background: rgba(16,185,129,0.12); border-color: rgba(16,185,129,0.35); color: #34d399; }
+
+  .sh-action-btn {
+    font-size: 0.72rem; font-weight: 600; padding: 5px 12px; border-radius: 7px;
+    border: 1px solid rgba(255,255,255,0.12); color: rgba(255,255,255,0.7);
+    background: rgba(255,255,255,0.04); cursor: pointer; white-space: nowrap;
+    transition: all .15s; display: inline-flex; align-items: center; gap: 5px;
+  }
+  .sh-action-btn:hover { border-color: #00e5ff; color: #00e5ff; background: rgba(0,229,255,0.08); }
+
+  /* ── Empty state ── */
+  .sh-empty { padding: 48px 24px; text-align: center; color: rgba(255,255,255,0.3); }
+  .sh-empty svg { opacity: .2; margin-bottom: 12px; }
+  .sh-empty p { font-size: 0.9rem; margin: 0 0 16px; }
+
+  /* ── Recent Activity ── */
+  .sh-activity { padding: 0 0 4px; }
+  .sh-activity-head {
+    padding: 16px 20px 10px; display: flex; align-items: center; justify-content: space-between;
+    font-size: 0.8rem; color: rgba(255,255,255,0.4); border-top: 1px solid rgba(255,255,255,0.06);
+  }
+  .sh-activity-head strong { color: rgba(255,255,255,0.8); font-size: 0.85rem; }
+  .sh-act-row {
+    display: flex; align-items: center; gap: 12px;
+    padding: 10px 20px; border-top: 1px solid rgba(255,255,255,0.04);
+  }
+  .sh-act-avatar {
+    width: 28px; height: 28px; border-radius: 50%; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 0.65rem; font-weight: 700; color: #fff;
+  }
+  .sh-act-text { flex: 1; font-size: 0.8rem; color: rgba(255,255,255,0.65); }
+  .sh-act-text strong { color: #fff; }
+  .sh-act-time { font-size: 0.72rem; color: rgba(255,255,255,0.3); white-space: nowrap; }
+
+  /* ── Right sidebar ── */
+  .sh-sidebar { display: flex; flex-direction: column; gap: 14px; }
+  .sh-scard {
+    background: linear-gradient(145deg, rgba(10,20,50,0.85), rgba(6,12,30,0.95));
+    border: 1px solid rgba(255,255,255,0.07); border-radius: 16px; overflow: hidden;
+  }
+  .sh-scard-head {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 16px 18px 12px;
+  }
+  .sh-scard-title { font-size: 0.88rem; font-weight: 700; color: #fff; }
+  .sh-scard-link { font-size: 0.75rem; color: #00e5ff; text-decoration: none; }
+  .sh-scard-link:hover { text-decoration: underline; }
+
+  .sh-task-row {
+    display: flex; align-items: flex-start; gap: 10px;
+    padding: 10px 18px; border-top: 1px solid rgba(255,255,255,0.05);
+  }
+  .sh-task-dot {
+    width: 8px; height: 8px; border-radius: 50%; margin-top: 5px; flex-shrink: 0;
+  }
+  .sh-task-body { flex: 1; }
+  .sh-task-title { font-size: 0.82rem; color: rgba(255,255,255,0.85); line-height: 1.3; }
+  .sh-task-date { font-size: 0.72rem; color: rgba(255,255,255,0.35); margin-top: 2px; }
+  .sh-task-date.today { color: #f59e0b; }
+
+  .sh-prospect-row {
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 18px; border-top: 1px solid rgba(255,255,255,0.05);
+  }
+  .sh-prospect-avatar {
+    width: 32px; height: 32px; border-radius: 50%; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 0.7rem; font-weight: 700; color: #fff;
+  }
+  .sh-prospect-info { flex: 1; }
+  .sh-prospect-name { font-size: 0.82rem; font-weight: 600; color: #fff; }
+  .sh-prospect-stage { font-size: 0.7rem; color: rgba(255,255,255,0.4); }
+  .sh-prospect-val { font-size: 0.82rem; font-weight: 700; color: #4ade80; }
+
+  .sh-view-all {
+    display: flex; align-items: center; justify-content: center; gap: 5px;
+    padding: 12px; font-size: 0.8rem; color: #00e5ff; text-decoration: none;
+    border-top: 1px solid rgba(255,255,255,0.05); font-weight: 500;
+  }
+  .sh-view-all:hover { background: rgba(0,229,255,0.05); }
+
+  @media (max-width: 900px) {
+    .sh-kpis { grid-template-columns: repeat(2,1fr); }
+    .sh-main { grid-template-columns: 1fr; }
+    .sh-sidebar { display: none; }
+  }
+</style>
+
+<div class="sh-wrap">
+
+  <!-- Top Nav -->
+  <div class="sh-topnav">
+    <nav class="sh-tabs">
+      <a href="{{ url_for('main.dashboard') }}" class="sh-tab active">Dashboard</a>
+      <a href="{{ url_for('main.contacts') }}" class="sh-tab">Leads</a>
+      <a href="{{ url_for('main.crm_dashboard') }}" class="sh-tab">Pipeline</a>
+      <a href="{{ url_for('main.crm_hub') }}" class="sh-tab">
+        Tasks
+        {% if stats.tasks_due %}<span class="badge">{{ stats.tasks_due }}</span>{% endif %}
+      </a>
+      <a href="{{ url_for('main.events_dashboard') }}" class="sh-tab">Calendar</a>
+    </nav>
+
+    <div class="sh-search-bar">
+      <div class="sh-search-wrap" style="flex:1;">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+        </svg>
+        <input type="text" class="sh-search" placeholder="Search leads, contacts, tasks...">
+      </div>
+      <button class="sh-filter-btn">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/>
+        </svg>
+        Filters
+      </button>
+      <a href="{{ url_for('main.contacts') }}?action=new" class="sh-new-btn">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+        </svg>
+        New Lead
+      </a>
+    </div>
+  </div>
+
+  <!-- KPI Cards -->
+  <div class="sh-kpis">
+
+    <div class="sh-kpi">
+      <div class="sh-kpi-label">Total Leads</div>
+      <div class="sh-kpi-row">
+        <div class="sh-kpi-val">{{ "{:,}".format(total_leads|default(1245)) }}</div>
+        <div class="sh-kpi-change">+ 18%</div>
+      </div>
+      <div class="sh-kpi-bar">
+        <div class="sh-kpi-bar-fill" style="width:72%; background: linear-gradient(90deg,#a855f7,#00e5ff);"></div>
+      </div>
+    </div>
+
+    <div class="sh-kpi">
+      <div class="sh-kpi-label">Deals in Pipeline</div>
+      <div class="sh-kpi-row">
+        <div class="sh-kpi-val">${{ stats.pipeline_value|default('580K') }}</div>
+        <div class="sh-kpi-change">+ 12%</div>
+      </div>
+      <div class="sh-kpi-bar">
+        <div class="sh-kpi-bar-fill" style="width:58%; background: linear-gradient(90deg,#8b5cf6,#bc00ed);"></div>
+      </div>
+    </div>
+
+    <div class="sh-kpi">
+      <div class="sh-kpi-label">Today's Tasks</div>
+      <div class="sh-kpi-row">
+        <div class="sh-kpi-val">{{ stats.tasks_due|default(9) }}</div>
+        <div class="sh-kpi-change">+ 3 New</div>
+      </div>
+      <div class="sh-kpi-bar">
+        <div class="sh-kpi-bar-fill" style="width:40%; background: linear-gradient(90deg,#f59e0b,#fb923c);"></div>
+      </div>
+    </div>
+
+    <div class="sh-kpi sh-kpi-goal">
+      <div class="sh-kpi-label">Monthly Goal</div>
+      <div class="sh-kpi-row" style="margin-bottom:4px;">
+        <div class="sh-kpi-val">65%</div>
+      </div>
+      <div style="font-size:0.75rem; color:rgba(255,255,255,0.35);">of $300K Target</div>
+      <div class="sh-donut">
+        <svg width="64" height="64" viewBox="0 0 64 64">
+          <circle cx="32" cy="32" r="26" fill="none" stroke="rgba(255,255,255,0.07)" stroke-width="8"/>
+          <circle cx="32" cy="32" r="26" fill="none"
+            stroke="url(#goalGrad)" stroke-width="8"
+            stroke-dasharray="{{ 163 * 0.65 }} 163"
+            stroke-dashoffset="41" stroke-linecap="round"
+            transform="rotate(-90 32 32)"/>
+          <defs>
+            <linearGradient id="goalGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+              <stop offset="0%" stop-color="#8b5cf6"/>
+              <stop offset="100%" stop-color="#00e5ff"/>
+            </linearGradient>
+          </defs>
+        </svg>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Customizable Analytics -->
+  <div class="sh-panel" style="margin-bottom: 16px;">
+    <div style="padding: 16px 20px 12px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid rgba(255,255,255,0.06); flex-wrap: wrap; gap: 10px;">
+      <div style="display: flex; align-items: center; gap: 12px;">
+        <span style="color: rgba(255,255,255,0.8); font-weight: 600; font-size: 0.88rem;">
+          <i data-feather="bar-chart-2" style="width:15px;height:15px;display:inline;vertical-align:-2px;stroke:#00e5ff;"></i>
+          Analytics
+        </span>
+        <select id="analyticsMetric" onchange="updateDashboardChart()" style="background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12); color: #fff; padding: 6px 12px; border-radius: 8px; font-size: 0.8rem; cursor: pointer;">
+          <option value="leads">Leads Over Time</option>
+          <option value="revenue">Revenue</option>
+          <option value="deals">Deals by Stage</option>
+          <option value="email">Email Performance</option>
+          <option value="tasks">Tasks Completed</option>
+        </select>
+      </div>
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <select id="analyticsRange" onchange="updateDashboardChart()" style="background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12); color: #fff; padding: 6px 12px; border-radius: 8px; font-size: 0.8rem; cursor: pointer;">
+          <option value="7">This Week</option>
+          <option value="30" selected>This Month</option>
+          <option value="90">This Quarter</option>
+          <option value="365">This Year</option>
+        </select>
+        <div id="analyticsDateCustom" style="display:none; gap:6px; align-items:center;">
+          <input type="date" id="analyticsStart" style="background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12); color: #fff; padding: 5px 8px; border-radius: 8px; font-size: 0.78rem;">
+          <span style="color:rgba(255,255,255,0.3);font-size:0.78rem;">to</span>
+          <input type="date" id="analyticsEnd" style="background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12); color: #fff; padding: 5px 8px; border-radius: 8px; font-size: 0.78rem;">
+        </div>
+      </div>
+    </div>
+    <div style="padding: 16px 20px;">
+      <div style="display:flex; gap:16px; margin-bottom: 14px; flex-wrap: wrap;" id="analyticsKpis">
+        <div style="display:flex;align-items:center;gap:8px;">
+          <div style="width:8px;height:8px;border-radius:50%;background:#00e5ff;"></div>
+          <span style="font-size:0.78rem;color:rgba(255,255,255,0.5);" id="kpiLabel1">New Leads</span>
+          <span style="font-size:0.9rem;font-weight:700;color:#fff;" id="kpiVal1">—</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <div style="width:8px;height:8px;border-radius:50%;background:#8b5cf6;"></div>
+          <span style="font-size:0.78rem;color:rgba(255,255,255,0.5);" id="kpiLabel2">Returning</span>
+          <span style="font-size:0.9rem;font-weight:700;color:#fff;" id="kpiVal2">—</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <div style="width:8px;height:8px;border-radius:50%;background:#4ade80;"></div>
+          <span style="font-size:0.78rem;color:rgba(255,255,255,0.5);" id="kpiLabel3">Trend</span>
+          <span style="font-size:0.9rem;font-weight:700;color:#4ade80;" id="kpiVal3">—</span>
+        </div>
+      </div>
+      <div style="position:relative;height:220px;">
+        <canvas id="dashboardAnalyticsChart"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <!-- Main Layout -->
+  <div class="sh-main">
+
+    <!-- Left panel -->
+    <div class="sh-panel">
+
+      <!-- Panel tabs -->
+      <div class="sh-panel-tabs">
+        <div class="sh-ptab active" onclick="showTab('pipeline', this)">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/>
+            <rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/>
+          </svg>
+          Pipeline
+          {% if pipeline_deals %}<span class="cnt">{{ pipeline_deals|length }}</span>{% endif %}
+        </div>
+        <a href="{{ url_for('main.newsletters') }}" class="sh-ptab">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>
+            <polyline points="22,6 12,13 2,6"/>
+          </svg>
+          Inbox
+          <span class="cnt">5</span>
+        </a>
+        <a href="{{ url_for('main.crm_hub') }}" class="sh-ptab">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
+          </svg>
+          Tasks
+        </a>
+        <a href="{{ url_for('main.crm_dashboard') }}" class="sh-ptab">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/>
+            <line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>
+          </svg>
+          Schedule
+        </a>
+        <div class="sh-ptab" onclick="showTab('notes', this)">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+            <polyline points="14 2 14 8 20 8"/>
+          </svg>
+          Notes
+        </div>
+      </div>
+
+      <!-- Pipeline table -->
+      <div id="tab-pipeline">
+        {% if pipeline_deals %}
+        <div class="sh-pipeline-head">
+          <span style="color:rgba(255,255,255,0.7);font-weight:600;font-size:0.85rem;">My Pipeline</span>
+          <a href="{{ url_for('main.crm_dashboard') }}" style="color:#00e5ff;font-size:0.78rem;text-decoration:none;">View All →</a>
+        </div>
+        <table class="sh-table">
+          <thead>
+            <tr>
+              <th style="width:180px;">Contact</th>
+              <th>Organization</th>
+              <th>Deal Name</th>
+              <th>Status</th>
+              <th>Value</th>
+              <th>Follow Up</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% set colors = ['#a855f7','#8b5cf6','#f59e0b','#ec4899','#06b6d4','#10b981','#6366f1','#ef4444'] %}
+            {% for deal in pipeline_deals %}
+            {% set ci = loop.index0 % colors|length %}
+            <tr>
+              <td>
+                <div class="sh-contact-cell">
+                  <div class="sh-avatar" style="background: {{ colors[ci] }}22; color: {{ colors[ci] }}; border: 1px solid {{ colors[ci] }}44;">
+                    {{ deal.initials }}
+                  </div>
+                  <div>
+                    <div class="sh-contact-name">{{ deal.contact_name }}</div>
+                  </div>
+                </div>
+              </td>
+              <td><span class="sh-org">{{ deal.org or '—' }}</span></td>
+              <td><span class="sh-deal-name">{{ deal.name }}</span></td>
+              <td>
+                <span class="stage-pill stage-{{ deal.stage|replace(' ', '') }}">
+                  <svg width="7" height="7" viewBox="0 0 8 8"><circle cx="4" cy="4" r="4" fill="currentColor"/></svg>
+                  {{ deal.stage }}
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+                </span>
+              </td>
+              <td><span class="sh-val">${{ "{:,.0f}".format(deal.value) }}</span></td>
+              <td>
+                {% if deal.stage == 'Negotiation' %}
+                  <button class="sh-action-btn">Log Call</button>
+                {% elif deal.stage == 'Proposal' %}
+                  <button class="sh-action-btn">Send Email</button>
+                {% elif deal.stage in ['Follow Up', 'Lead'] %}
+                  <button class="sh-action-btn">Note</button>
+                {% else %}
+                  <button class="sh-action-btn">Add Task</button>
+                {% endif %}
+                {% if deal.close_date %}
+                <span style="font-size:0.68rem;color:rgba(255,255,255,0.28);margin-left:6px;">{{ deal.close_date }}</span>
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% else %}
+        <div class="sh-empty">
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1">
+            <path d="M3 3h18v18H3z M3 9h18 M9 21V9"/>
+          </svg>
+          <p>No deals in your pipeline yet.</p>
+          <a href="{{ url_for('main.crm_dashboard') }}?action=new_deal" class="sh-new-btn" style="display:inline-flex;margin:0 auto;">
+            + Create Your First Deal
+          </a>
+        </div>
+        {% endif %}
+      </div>
+
+      <div id="tab-notes" style="display:none; padding:24px; color:rgba(255,255,255,0.4); font-size:0.9rem;">
+        <div class="empty-state">
+          <div class="empty-state-icon">
+            <i data-feather="edit-3"></i>
+          </div>
+          <h5>Notes</h5>
+          <p>View and manage notes linked to your contacts and deals from the CRM.</p>
+          <a href="{{ url_for('main.contacts') }}" class="btn btn-sm btn-primary">Go to Contacts</a>
+        </div>
+      </div>
+
+      <!-- Recent Activity -->
+      <div class="sh-activity">
+        <div class="sh-activity-head">
+          <strong>Recent Activity</strong>
+          <span>····</span>
+        </div>
+        {% set act_colors = ['#a855f7','#8b5cf6','#ec4899','#f59e0b'] %}
+        {% set activities = [
+          {'name': 'Sara Williams', 'action': 'Sent Email · Proposal Sent', 'time': '3m ago'},
+          {'name': 'Jason T.', 'action': 'Scheduled Demo · Eligible for Renewal', 'time': '10m ago'},
+          {'name': 'Emily R.', 'action': 'Log Call · Interest Confirmed', 'time': 'Apr 23'},
+          {'name': 'David B.', 'action': 'Sent SMS · Requested Demo Follow Up', 'time': 'Apr 22'}
+        ] %}
+        {% for act in activities %}
+        {% set ai = loop.index0 % act_colors|length %}
+        <div class="sh-act-row">
+          <div class="sh-act-avatar" style="background: {{ act_colors[ai] }}33; color: {{ act_colors[ai] }};">
+            {{ act.name[0] }}{{ act.name.split(' ')[1][0] if act.name.split(' ')|length > 1 else '' }}
+          </div>
+          <div class="sh-act-text">
+            <strong>{{ act.name }}</strong> · {{ act.action }}
+          </div>
+          <div class="sh-act-time">{{ act.time }}</div>
+        </div>
+        {% endfor %}
+      </div>
+
+    </div>
+
+    <!-- Right sidebar -->
+    <div class="sh-sidebar">
+
+      <!-- Today's Tasks -->
+      <div class="sh-scard">
+        <div class="sh-scard-head">
+          <span class="sh-scard-title">Today's Tasks</span>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.3)" stroke-width="2">
+            <circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/>
+          </svg>
+        </div>
+        {% set task_dots = ['#00e5ff','#4ade80','#f59e0b','#a78bfa','#f472b6'] %}
+        {% if tasks %}
+          {% for task in tasks[:5] %}
+          {% set ti = loop.index0 % task_dots|length %}
+          <div class="sh-task-row">
+            <div class="sh-task-dot" style="background: {{ task_dots[ti] }};"></div>
+            <div class="sh-task-body">
+              <div class="sh-task-title">{{ task.title }}</div>
+              <div class="sh-task-date {% if task.time == 'Today' %}today{% endif %}">{{ task.time }}</div>
+            </div>
+          </div>
+          {% endfor %}
+        {% else %}
+          {% set demo_tasks = [
+            {'title': 'Follow up with Johnson & Co.', 'time': 'Today', 'today': true},
+            {'title': 'Send proposal to GreenTech Ltd.', 'time': 'Apr 25'},
+            {'title': 'Schedule product demo for Tech Innovations inc.', 'time': 'Apr 26'},
+            {'title': 'Call Michael Scott at Acme Corp.', 'time': 'Apr 26'},
+            {'title': 'Review contract for Horizon Ltd.', 'time': 'Apr 28'}
+          ] %}
+          {% for task in demo_tasks %}
+          {% set ti = loop.index0 % task_dots|length %}
+          <div class="sh-task-row">
+            <div class="sh-task-dot" style="background: {{ task_dots[ti] }};"></div>
+            <div class="sh-task-body">
+              <div class="sh-task-title">{{ task.title }}</div>
+              <div class="sh-task-date {% if task.get('today') %}today{% endif %}">{{ task.time }}</div>
+            </div>
+          </div>
+          {% endfor %}
+        {% endif %}
+        <a href="{{ url_for('main.crm_hub') }}" class="sh-view-all">View All →</a>
+      </div>
+
+      <!-- Top Prospects -->
+      <div class="sh-scard">
+        <div class="sh-scard-head">
+          <span class="sh-scard-title">Top Prospects</span>
+          <a href="{{ url_for('main.crm_dashboard') }}" class="sh-scard-link">View All →</a>
+        </div>
+        {% set pcolors = ['#a855f7','#8b5cf6','#f59e0b','#ec4899','#06b6d4'] %}
+        {% if top_prospects %}
+          {% for p in top_prospects %}
+          {% set pi = loop.index0 % pcolors|length %}
+          {% set initials = (p.name.split()[0][0] + (p.name.split()[1][0] if p.name.split()|length > 1 else ''))|upper %}
+          <div class="sh-prospect-row">
+            <div class="sh-prospect-avatar" style="background: {{ pcolors[pi] }}22; color: {{ pcolors[pi] }}; border: 1px solid {{ pcolors[pi] }}44;">
+              {{ initials }}
+            </div>
+            <div class="sh-prospect-info">
+              <div class="sh-prospect-name">{{ p.name }}</div>
+              <div class="sh-prospect-stage">{{ p.stage }}</div>
+            </div>
+            <div class="sh-prospect-val">${{ "{:,.0f}".format(p.value) }}</div>
+          </div>
+          {% endfor %}
+        {% else %}
+          {% set demo_prospects = [
+            {'name': 'Johnson & Co.', 'stage': 'Proposal', 'value': 32000},
+            {'name': 'Deniso Peterson', 'sub': 'Gechibulid Reel Estate', 'stage': 'Qualified', 'value': 20000},
+            {'name': 'Horizon Ltd.', 'stage': 'Qualified', 'value': 12500}
+          ] %}
+          {% for p in demo_prospects %}
+          {% set pi = loop.index0 % pcolors|length %}
+          {% set initials = (p.name.split()[0][0] + (p.name.split()[1][0] if p.name.split()|length > 1 else ''))|upper %}
+          <div class="sh-prospect-row">
+            <div class="sh-prospect-avatar" style="background: {{ pcolors[pi] }}22; color: {{ pcolors[pi] }}; border: 1px solid {{ pcolors[pi] }}44;">
+              {{ initials }}
+            </div>
+            <div class="sh-prospect-info">
+              <div class="sh-prospect-name">{{ p.name }}</div>
+              <div class="sh-prospect-stage">{{ p.stage }}</div>
+            </div>
+            <div class="sh-prospect-val">${{ "{:,.0f}".format(p.value) }}</div>
+          </div>
+          {% endfor %}
+        {% endif %}
+        <a href="{{ url_for('main.crm_dashboard') }}" class="sh-view-all">View All →</a>
+      </div>
+
     </div>
   </div>
 </div>
 
-<section class="mb-5">
-  <div class="section-title">
-    <h2>Core Systems</h2>
-    <span>Move faster across your highest impact areas.</span>
-  </div>
-  <div class="tile-grid">
-    <a class="tile-card" href="{{ url_for('main.agents_hub') }}">
-      <div class="tile-icon"><i data-feather="cpu"></i></div>
-      <h3>Agents</h3>
-      <p>Deploy AI agents for research, content, and outreach.</p>
-    </a>
-    <a class="tile-card" href="{{ url_for('main.analytics_hub') }}">
-      <div class="tile-icon"><i data-feather="bar-chart-2"></i></div>
-      <h3>Analytics</h3>
-      <p>Monitor attribution, ROI, and lifecycle performance.</p>
-    </a>
-    <a class="tile-card" href="{{ url_for('main.campaign_hub') }}">
-      <div class="tile-icon"><i data-feather="send"></i></div>
-      <h3>Campaigns</h3>
-      <p>Launch multi-channel campaigns with clarity and speed.</p>
-    </a>
-    <a class="tile-card" href="{{ url_for('main.lux_crm') }}">
-      <div class="tile-icon"><i data-feather="briefcase"></i></div>
-      <h3>CRM</h3>
-      <p>Unify pipeline, contacts, and revenue operations.</p>
-    </a>
-    <a class="tile-card" href="{{ url_for('main.automation_dashboard') }}">
-      <div class="tile-icon"><i data-feather="zap"></i></div>
-      <h3>Automations</h3>
-      <p>Activate lifecycle journeys with intelligent triggers.</p>
-    </a>
-  </div>
-</section>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+function showTab(name, el) {
+  document.querySelectorAll('[id^="tab-"]').forEach(t => t.style.display = 'none');
+  const tab = document.getElementById('tab-' + name);
+  if (tab) tab.style.display = '';
+  document.querySelectorAll('.sh-ptab').forEach(t => t.classList.remove('active'));
+  if (el) el.classList.add('active');
+}
 
-<section class="mb-5">
-  <div class="section-title">
-    <h2>Channels & Ops</h2>
-    <span>Expand into every engagement surface.</span>
-  </div>
-  <div class="tile-grid">
-    <a class="tile-card" href="{{ url_for('main.email_hub') }}">
-      <div class="tile-icon"><i data-feather="mail"></i></div>
-      <h3>Email Hub</h3>
-      <p>Design and automate high-performing email flows.</p>
-    </a>
-    <a class="tile-card" href="{{ url_for('main.sms_dashboard') }}">
-      <div class="tile-icon"><i data-feather="message-circle"></i></div>
-      <h3>SMS</h3>
-      <p>Deliver real-time messaging with precision timing.</p>
-    </a>
-    <a class="tile-card" href="{{ url_for('main.social_media') }}">
-      <div class="tile-icon"><i data-feather="share-2"></i></div>
-      <h3>Social</h3>
-      <p>Coordinate content and scheduling across platforms.</p>
-    </a>
-    <a class="tile-card" href="{{ url_for('main.ads_hub') }}">
-      <div class="tile-icon"><i data-feather="target"></i></div>
-      <h3>Ads</h3>
-      <p>Plan and optimize paid media from one cockpit.</p>
-    </a>
-    <a class="tile-card" href="{{ url_for('main.marketing_calendar') }}">
-      <div class="tile-icon"><i data-feather="calendar"></i></div>
-      <h3>Calendar</h3>
-      <p>Maintain a strategic marketing timeline.</p>
-    </a>
-  </div>
-</section>
+function switchToCompany(id) {
+  const token = document.querySelector('meta[name="csrf-token"]')?.content || '{{ csrf_token() }}';
+  fetch('/companies/switch/' + id, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-CSRFToken': token }
+  }).then(r => r.json()).then(d => { if (d.success) location.reload(); });
+}
 
-{% if config_alerts and config_alerts|length > 0 %}
-<section class="alert-panel mb-5">
-  <div class="section-title">
-    <h2>Setup Required</h2>
-    <span>{{ config_alerts|length }} integration{{ 's' if config_alerts|length > 1 else '' }} need attention</span>
-  </div>
-  {% for alert in config_alerts %}
-  <div class="alert-item">
-    <div class="alert-icon">{{ alert.icon }}</div>
-    <div class="alert-content">
-      <h4>{{ alert.title }}</h4>
-      <p>{{ alert.message }}</p>
-    </div>
-    <a class="btn btn-lux btn-lux-amber" href="{{ alert.action_url }}">{{ alert.action_text }}</a>
-  </div>
-  {% endfor %}
-</section>
-{% endif %}
+var dashChart = null;
+(function(){
+  var datasets = {
+    leads: {
+      labels7:  ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'],
+      data7:    [[4,7,3,8,12,6,9],[2,3,5,4,6,3,4]],
+      labels30: ['Wk 1','Wk 2','Wk 3','Wk 4'],
+      data30:   [[18,24,31,27],[12,15,19,14]],
+      labels90: ['Jan','Feb','Mar'],
+      data90:   [[72,88,95],[45,52,61]],
+      labels365:['Q1','Q2','Q3','Q4'],
+      data365:  [[210,245,280,312],[130,158,172,195]],
+      series:['New Leads','Returning'],
+      kpi:['New Leads','Returning','Trend'],
+      kpiCalc: function(d){return [d[0].reduce(function(a,b){return a+b},0), d[1].reduce(function(a,b){return a+b},0), '+18%']},
+      colors:['#00e5ff','#a855f7'],
+      type:'bar'
+    },
+    revenue: {
+      labels7:  ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'],
+      data7:    [[1200,2400,1800,3100,2800,900,1500]],
+      labels30: ['Wk 1','Wk 2','Wk 3','Wk 4'],
+      data30:   [[8200,9400,11200,10800]],
+      labels90: ['Jan','Feb','Mar'],
+      data90:   [[28500,32100,39600]],
+      labels365:['Q1','Q2','Q3','Q4'],
+      data365:  [[82000,95000,108000,124000]],
+      series:['Revenue'],
+      kpi:['Total Revenue','Average','Growth'],
+      kpiCalc: function(d){var t=d[0].reduce(function(a,b){return a+b},0);return ['$'+t.toLocaleString(),'$'+(t/d[0].length).toLocaleString(undefined,{maximumFractionDigits:0}),'+12%']},
+      colors:['#4ade80'],
+      type:'line'
+    },
+    deals: {
+      labels7:  ['Lead','Qualified','Proposal','Negotiation','Closed Won'],
+      data7:    [[{{ open_deals|selectattr('stage','equalto','Lead')|list|length }},{{ open_deals|selectattr('stage','equalto','Qualified')|list|length }},{{ open_deals|selectattr('stage','equalto','Proposal')|list|length }},{{ open_deals|selectattr('stage','equalto','Negotiation')|list|length }},{{ open_deals|selectattr('stage','equalto','Closed Won')|list|length }}]],
+      series:['Count'],
+      kpi:['Total Deals','Pipeline Value','Win Rate'],
+      kpiCalc: function(d){return ['{{ open_deals|length }}','${{ "{:,.0f}".format(pipeline_value) }}','32%']},
+      colors:['#6366f1','#8b5cf6','#bc00ed','#f59e0b','#4ade80'],
+      type:'doughnut'
+    },
+    email: {
+      labels7:  ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'],
+      data7:    [[22,28,35,31,26,18,24],[4.2,5.1,3.8,6.0,4.5,3.2,5.4]],
+      labels30: ['Wk 1','Wk 2','Wk 3','Wk 4'],
+      data30:   [[120,145,132,158],[18,22,19,25]],
+      labels90: ['Jan','Feb','Mar'],
+      data90:   [[480,520,555],[72,81,88]],
+      labels365:['Q1','Q2','Q3','Q4'],
+      data365:  [[1420,1580,1720,1890],[215,238,260,285]],
+      series:['Opens','Clicks'],
+      kpi:['Open Rate','Click Rate','Sent'],
+      kpiCalc: function(d){return ['24.8%','3.6%',d[0].reduce(function(a,b){return a+b},0)]},
+      colors:['#ec4899','#f59e0b'],
+      type:'line'
+    },
+    tasks: {
+      labels7:  ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'],
+      data7:    [[3,5,4,7,6,2,1]],
+      labels30: ['Wk 1','Wk 2','Wk 3','Wk 4'],
+      data30:   [[12,18,15,21]],
+      labels90: ['Jan','Feb','Mar'],
+      data90:   [[52,48,63]],
+      labels365:['Q1','Q2','Q3','Q4'],
+      data365:  [[145,168,192,210]],
+      series:['Completed'],
+      kpi:['Completed','Pending','Productivity'],
+      kpiCalc: function(d){return [d[0].reduce(function(a,b){return a+b},0),'{{ stats.tasks_due }}','+8%']},
+      colors:['#06b6d4'],
+      type:'bar'
+    }
+  };
 
-{% if app_version %}
-<div class="text-end text-muted">v{{ app_version }}</div>
-{% endif %}
+  window.updateDashboardChart = function(){
+    var metric = document.getElementById('analyticsMetric').value;
+    var range = document.getElementById('analyticsRange').value;
+    var ds = datasets[metric];
+    if (!ds) return;
+
+    var labels = ds['labels'+range] || ds.labels7 || ds['labels30'];
+    var rawData = ds['data'+range] || ds.data7 || ds['data30'];
+
+    if (metric === 'deals') {
+      labels = ds.labels7;
+      rawData = ds.data7;
+    }
+
+    var kpis = ds.kpiCalc(rawData);
+    document.getElementById('kpiLabel1').textContent = ds.kpi[0];
+    document.getElementById('kpiVal1').textContent = kpis[0];
+    document.getElementById('kpiLabel2').textContent = ds.kpi[1];
+    document.getElementById('kpiVal2').textContent = kpis[1];
+    document.getElementById('kpiLabel3').textContent = ds.kpi[2];
+    document.getElementById('kpiVal3').textContent = kpis[2];
+
+    if (dashChart) { dashChart.destroy(); dashChart = null; }
+    var ctx = document.getElementById('dashboardAnalyticsChart').getContext('2d');
+
+    if (ds.type === 'doughnut') {
+      dashChart = new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+          labels: labels,
+          datasets: [{
+            data: rawData[0],
+            backgroundColor: ds.colors,
+            borderWidth: 0
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { position: 'right', labels: { color: 'rgba(255,255,255,0.7)', padding: 12, font: { size: 11 } } } },
+          cutout: '60%'
+        }
+      });
+    } else {
+      var chartDs = rawData.map(function(d, i){
+        return {
+          label: ds.series[i] || '',
+          data: d,
+          borderColor: ds.colors[i] || ds.colors[0],
+          backgroundColor: ds.type === 'bar' ? (ds.colors[i] || ds.colors[0]) + '88' : (ds.colors[i] || ds.colors[0]) + '22',
+          borderWidth: ds.type === 'line' ? 2 : 0,
+          borderRadius: ds.type === 'bar' ? 6 : 0,
+          tension: 0.4,
+          fill: ds.type === 'line',
+          pointRadius: ds.type === 'line' ? 3 : 0,
+          pointBackgroundColor: ds.colors[i] || ds.colors[0]
+        };
+      });
+      dashChart = new Chart(ctx, {
+        type: ds.type,
+        data: { labels: labels, datasets: chartDs },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { labels: { color: 'rgba(255,255,255,0.6)', font: { size: 11 } } } },
+          scales: {
+            x: { grid: { color: 'rgba(255,255,255,0.04)' }, ticks: { color: 'rgba(255,255,255,0.4)', font: { size: 11 } } },
+            y: { grid: { color: 'rgba(255,255,255,0.04)' }, ticks: { color: 'rgba(255,255,255,0.4)', font: { size: 11 } }, beginAtZero: true }
+          }
+        }
+      });
+    }
+  }
+
+  if (document.getElementById('dashboardAnalyticsChart')) {
+    updateDashboardChart();
+  }
+})();
+</script>
+
 {% endblock %}

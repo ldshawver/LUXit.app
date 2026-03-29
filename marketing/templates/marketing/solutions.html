@@ -1,0 +1,96 @@
+{% extends "marketing/base.html" %}
+{% block title %}Solutions — LUX IT{% endblock %}
+{% block meta_description %}LUX IT solutions for booking calls, retaining customers, scaling agencies, and more. See the outcomes you can achieve with AI-powered revenue operations.{% endblock %}
+
+{% block content %}
+<div class="sell-hero">
+  <div class="section-label">Solutions</div>
+  <h1>The outcome you want.<br>The path to get there.</h1>
+  <p>Every team has a goal. LUX IT has a playbook for it — whether you're trying to book more calls, retain customers, or scale without hiring.</p>
+  <ul class="sell-benefits">
+    <li>Pre-built playbooks for the most common revenue goals</li>
+    <li>AI agents execute the work — you review and approve</li>
+    <li>Results in days, not months — go live in under 15 minutes</li>
+    <li>Works for agencies, SaaS, eCommerce, and B2B teams</li>
+    <li>Full visibility — every action logged and attributed</li>
+  </ul>
+  <div class="sell-cta-row">
+    <a class="btn-primary" href="/auth/login">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+      Start Free
+    </a>
+    <a class="btn-secondary" href="/book-demo">Request Demo</a>
+  </div>
+</div>
+
+<section class="section">
+  <div class="sell-grid">
+    {% for s in items %}
+    <a class="sell-card" href="/solutions/{{ s.slug }}">
+      <div class="section-label" style="margin-bottom:12px;">Use Case</div>
+      <h3>{{ s.name }}</h3>
+      <p>{{ s.tagline }}</p>
+      <ul>
+        {% for b in s.bullets %}
+        <li>{{ b }}</li>
+        {% endfor %}
+      </ul>
+      <span class="sell-card-link">See how it works →</span>
+    </a>
+    {% endfor %}
+  </div>
+</section>
+
+<!-- Social Proof -->
+<section class="social-proof-bar">
+  <div class="proof-label">Real results from real teams</div>
+  <div class="proof-testimonial">
+    <blockquote>"We went from 3 booked calls a week to 18 in the first month — using LUX IT's outreach automation with zero extra headcount."</blockquote>
+    <cite>— Founder, Digital Agency</cite>
+  </div>
+</section>
+
+<!-- FAQ -->
+<section class="section">
+  <div class="section-header">
+    <div class="section-label">FAQ</div>
+    <h2 class="section-title" style="font-size:2rem;">How it works</h2>
+  </div>
+  <div class="faq-list">
+    <div class="faq-item">
+      <button class="faq-q" onclick="this.parentElement.classList.toggle('open')">
+        How quickly can I see results?
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+      </button>
+      <div class="faq-a">Most customers see measurable improvements within the first 2 weeks. The AI agents start working the moment you connect your channels and import your contacts.</div>
+    </div>
+    <div class="faq-item">
+      <button class="faq-q" onclick="this.parentElement.classList.toggle('open')">
+        Do I need to configure the AI agents manually?
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+      </button>
+      <div class="faq-a">No. Each solution comes with pre-built AI playbooks. You select your goal, connect your tools, and the agents handle the rest. You can customize at any time.</div>
+    </div>
+    <div class="faq-item">
+      <button class="faq-q" onclick="this.parentElement.classList.toggle('open')">
+        Can I run multiple solutions at the same time?
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+      </button>
+      <div class="faq-a">Yes. LUX IT is designed for this. Book more calls, retain customers, and grow revenue — all running simultaneously with shared data and no conflicts.</div>
+    </div>
+  </div>
+</section>
+
+<!-- Bottom CTA -->
+<section class="section bottom-cta-section">
+  <div class="bottom-cta-box">
+    <div class="section-label">Your outcome is waiting</div>
+    <h2 class="section-title" style="font-size:2.2rem;">Pick a solution. Launch today.</h2>
+    <p class="section-subtitle" style="margin-bottom:32px;">Get live in 15 minutes. No credit card required.</p>
+    <div class="sell-cta-row">
+      <a class="btn-primary" href="/auth/login" style="font-size:1rem; padding:15px 32px;">Start Free</a>
+      <a class="btn-secondary" href="/book-demo" style="font-size:1rem; padding:15px 32px;">Request Demo</a>
+    </div>
+  </div>
+</section>
+{% endblock %}

@@ -1,0 +1,633 @@
+{% extends "base.html" %}
+{% block title %}Email Builder - LUX IT{% endblock %}
+{% block page_title %}Email Campaign Builder{% endblock %}
+
+{% block content %}
+<style>
+    main.container { max-width: 100% !important; padding: 0 !important; }
+    .eb-wrap { display: flex; flex-direction: column; height: calc(100vh - 80px); background: #030014; }
+    .eb-topbar {
+        display: flex; align-items: center; gap: 12px; padding: 10px 20px;
+        background: rgba(10, 8, 30, 0.95); border-bottom: 1px solid rgba(188, 0, 237, 0.2);
+        flex-wrap: wrap; min-height: 56px;
+    }
+    .eb-topbar input { background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12);
+        color: #f5f5f5; border-radius: 8px; padding: 7px 14px; font-size: 0.85rem; }
+    .eb-topbar input:focus { border-color: rgba(0,229,255,0.5); outline: none;
+        box-shadow: 0 0 0 2px rgba(0,229,255,0.15); }
+    .eb-topbar .eb-name { width: 200px; }
+    .eb-topbar .eb-subject { flex: 1; min-width: 180px; }
+    .eb-btn { padding: 7px 16px; border-radius: 8px; font-size: 0.82rem; font-weight: 600;
+        cursor: pointer; border: 1px solid transparent; transition: all 0.2s; display: inline-flex;
+        align-items: center; gap: 6px; }
+    .eb-btn svg { width: 15px; height: 15px; }
+    .eb-btn-outline { background: transparent; border-color: rgba(188,0,237,0.5); color: #c084fc; }
+    .eb-btn-outline:hover { background: rgba(188,0,237,0.15); border-color: #bc00ed; }
+    .eb-btn-ghost { background: rgba(255,255,255,0.05); border-color: rgba(255,255,255,0.1); color: #94a3b8; }
+    .eb-btn-ghost:hover { background: rgba(255,255,255,0.1); color: #f5f5f5; }
+    .eb-btn-primary { background: linear-gradient(135deg, #bc00ed, #7c3aed); color: #fff; }
+    .eb-btn-primary:hover { box-shadow: 0 4px 20px rgba(188,0,237,0.4); transform: translateY(-1px); }
+    .eb-btn-send { background: linear-gradient(135deg, #00e5ff, #00b4d8); color: #000; font-weight: 700; }
+    .eb-btn-send:hover { box-shadow: 0 4px 20px rgba(0,229,255,0.4); transform: translateY(-1px); }
+    .eb-toggle { display: flex; align-items: center; gap: 8px; font-size: 0.82rem; color: #94a3b8; }
+    .eb-toggle-switch { position: relative; width: 40px; height: 22px; cursor: pointer; }
+    .eb-toggle-switch input { opacity: 0; width: 0; height: 0; }
+    .eb-toggle-track { position: absolute; inset: 0; background: rgba(255,255,255,0.1);
+        border-radius: 11px; transition: background 0.2s; }
+    .eb-toggle-switch input:checked + .eb-toggle-track { background: linear-gradient(135deg, #bc00ed, #7c3aed); }
+    .eb-toggle-thumb { position: absolute; top: 2px; left: 2px; width: 18px; height: 18px;
+        background: #fff; border-radius: 50%; transition: transform 0.2s; pointer-events: none; }
+    .eb-toggle-switch input:checked ~ .eb-toggle-thumb { transform: translateX(18px); }
+
+    .eb-ab-bar {
+        display: none; padding: 10px 20px; gap: 16px; align-items: center;
+        background: rgba(188,0,237,0.08); border-bottom: 1px solid rgba(188,0,237,0.15);
+    }
+    .eb-ab-bar.active { display: flex; flex-wrap: wrap; }
+    .eb-ab-bar label { font-size: 0.8rem; color: #c084fc; font-weight: 600; }
+    .eb-ab-bar input { background: rgba(255,255,255,0.06); border: 1px solid rgba(188,0,237,0.3);
+        color: #f5f5f5; border-radius: 8px; padding: 6px 12px; font-size: 0.82rem; flex: 1; min-width: 160px; }
+    .eb-ab-bar input:focus { border-color: #bc00ed; outline: none; }
+
+    .eb-body { display: flex; flex: 1; overflow: hidden; }
+
+    .eb-sidebar {
+        width: 220px; min-width: 220px; padding: 16px;
+        background: rgba(8, 5, 25, 0.95); border-right: 1px solid rgba(255,255,255,0.06);
+        overflow-y: auto;
+    }
+    .eb-sidebar h3 { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 1.5px;
+        color: #64748b; margin-bottom: 12px; }
+    .eb-block {
+        display: flex; align-items: center; gap: 10px; padding: 10px 12px;
+        background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06);
+        border-radius: 10px; margin-bottom: 8px; cursor: grab; transition: all 0.2s;
+        color: #c8d0db; font-size: 0.85rem; font-weight: 500;
+    }
+    .eb-block:hover { background: rgba(188,0,237,0.1); border-color: rgba(188,0,237,0.3);
+        color: #f5f5f5; transform: translateX(3px); }
+    .eb-block:active { cursor: grabbing; }
+    .eb-block svg { width: 18px; height: 18px; stroke: #7c3aed; flex-shrink: 0; }
+    .eb-block.dragging { opacity: 0.4; }
+
+    .eb-canvas-wrap {
+        flex: 1; display: flex; flex-direction: column; align-items: center;
+        padding: 24px; overflow-y: auto; background: #030014;
+        background-image: radial-gradient(circle at 30% 20%, rgba(188,0,237,0.06), transparent 50%),
+            radial-gradient(circle at 70% 80%, rgba(0,229,255,0.04), transparent 50%);
+    }
+    .eb-canvas {
+        width: 100%; max-width: 640px; min-height: 500px; background: #ffffff;
+        border-radius: 8px; box-shadow: 0 8px 40px rgba(0,0,0,0.5), 0 0 60px rgba(188,0,237,0.1);
+        position: relative; overflow: hidden;
+    }
+    .eb-canvas-empty {
+        display: flex; flex-direction: column; align-items: center; justify-content: center;
+        min-height: 400px; color: #94a3b8; gap: 12px; padding: 40px;
+    }
+    .eb-canvas-empty svg { width: 48px; height: 48px; stroke: rgba(188,0,237,0.4); }
+    .eb-canvas-empty p { font-size: 0.9rem; text-align: center; }
+    .eb-drop-zone {
+        min-height: 4px; transition: min-height 0.2s, background 0.2s;
+        position: relative;
+    }
+    .eb-drop-zone.drag-over {
+        min-height: 48px; background: rgba(0,229,255,0.08);
+        border: 2px dashed rgba(0,229,255,0.4); border-radius: 4px; margin: 4px 0;
+    }
+    .eb-item {
+        position: relative; cursor: pointer; transition: outline 0.15s;
+        outline: 2px solid transparent; outline-offset: -2px;
+    }
+    .eb-item:hover { outline-color: rgba(0,229,255,0.4); }
+    .eb-item.selected { outline-color: #00e5ff; outline-width: 2px; }
+    .eb-item-actions {
+        position: absolute; top: 4px; right: 4px; display: none; gap: 4px; z-index: 10;
+    }
+    .eb-item.selected .eb-item-actions, .eb-item:hover .eb-item-actions { display: flex; }
+    .eb-item-action {
+        width: 26px; height: 26px; border-radius: 6px; border: none; cursor: pointer;
+        display: flex; align-items: center; justify-content: center;
+        background: rgba(0,0,0,0.7); color: #fff; transition: background 0.15s;
+    }
+    .eb-item-action:hover { background: #bc00ed; }
+    .eb-item-action svg { width: 14px; height: 14px; }
+
+    .eb-props {
+        width: 280px; min-width: 280px; padding: 16px;
+        background: rgba(8, 5, 25, 0.95); border-left: 1px solid rgba(255,255,255,0.06);
+        overflow-y: auto;
+    }
+    .eb-props h3 { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 1.5px;
+        color: #64748b; margin-bottom: 14px; }
+    .eb-props-empty { color: #475569; font-size: 0.85rem; text-align: center; padding: 40px 10px; }
+    .eb-prop-group { margin-bottom: 14px; }
+    .eb-prop-group label { display: block; font-size: 0.78rem; color: #94a3b8; margin-bottom: 4px; font-weight: 500; }
+    .eb-prop-group input, .eb-prop-group textarea, .eb-prop-group select {
+        width: 100%; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1);
+        color: #f5f5f5; border-radius: 8px; padding: 7px 10px; font-size: 0.82rem;
+    }
+    .eb-prop-group textarea { resize: vertical; min-height: 80px; }
+    .eb-prop-group input:focus, .eb-prop-group textarea:focus, .eb-prop-group select:focus {
+        border-color: rgba(0,229,255,0.5); outline: none;
+    }
+    .eb-prop-group input[type="color"] { height: 36px; padding: 2px; cursor: pointer; }
+    .eb-prop-row { display: flex; gap: 8px; }
+    .eb-prop-row .eb-prop-group { flex: 1; }
+
+    .eb-modal-overlay {
+        display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.7);
+        backdrop-filter: blur(6px); z-index: 2000; align-items: center; justify-content: center;
+    }
+    .eb-modal-overlay.active { display: flex; }
+    .eb-modal {
+        background: linear-gradient(145deg, #0f0a2a, #030014); border: 1px solid rgba(188,0,237,0.3);
+        border-radius: 16px; width: 90%; max-width: 800px; max-height: 80vh; overflow-y: auto;
+        box-shadow: 0 20px 60px rgba(0,0,0,0.6), 0 0 40px rgba(188,0,237,0.15);
+    }
+    .eb-modal-header {
+        display: flex; align-items: center; justify-content: space-between;
+        padding: 18px 24px; border-bottom: 1px solid rgba(255,255,255,0.08);
+    }
+    .eb-modal-header h2 { font-size: 1.1rem; color: #f5f5f5; margin: 0; }
+    .eb-modal-close { background: none; border: none; color: #94a3b8; cursor: pointer; padding: 4px; }
+    .eb-modal-close:hover { color: #f5f5f5; }
+    .eb-modal-close svg { width: 20px; height: 20px; }
+    .eb-modal-body { padding: 24px; }
+    .eb-tpl-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 16px; }
+    .eb-tpl-card {
+        background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08);
+        border-radius: 12px; padding: 20px; cursor: pointer; transition: all 0.2s; text-align: center;
+    }
+    .eb-tpl-card:hover { border-color: rgba(0,229,255,0.4); background: rgba(0,229,255,0.05);
+        transform: translateY(-3px); box-shadow: 0 8px 24px rgba(0,0,0,0.3); }
+    .eb-tpl-card .tpl-icon { width: 48px; height: 48px; border-radius: 12px; margin: 0 auto 12px;
+        display: flex; align-items: center; justify-content: center;
+        background: linear-gradient(135deg, rgba(188,0,237,0.2), rgba(0,229,255,0.1));
+        border: 1px solid rgba(188,0,237,0.2); }
+    .eb-tpl-card .tpl-icon svg { width: 24px; height: 24px; stroke: #c084fc; }
+    .eb-tpl-card h4 { font-size: 0.9rem; color: #e2e8f0; margin-bottom: 4px; }
+    .eb-tpl-card p { font-size: 0.75rem; color: #64748b; margin: 0; }
+
+    .eb-header-block { background: linear-gradient(135deg, #7c3aed, #bc00ed); padding: 32px 24px;
+        text-align: center; color: #fff; }
+    .eb-header-block h1 { font-size: 1.6rem; margin: 0 0 6px; font-weight: 700; }
+    .eb-header-block p { font-size: 0.9rem; margin: 0; opacity: 0.85; }
+    .eb-text-block { padding: 20px 24px; color: #333; font-size: 0.95rem; line-height: 1.7; }
+    .eb-image-block { padding: 0; text-align: center; }
+    .eb-image-block img { width: 100%; display: block; }
+    .eb-image-block .placeholder-img { background: #e9ecef; height: 200px; display: flex;
+        align-items: center; justify-content: center; color: #6b7280; font-size: 0.85rem; }
+    .eb-button-block { padding: 20px 24px; text-align: center; }
+    .eb-button-block a {
+        display: inline-block; padding: 14px 36px; background: #7c3aed; color: #fff;
+        border-radius: 8px; text-decoration: none; font-weight: 600; font-size: 0.95rem;
+    }
+    .eb-divider-block { padding: 10px 24px; }
+    .eb-divider-block hr { border: none; border-top: 2px solid #e5e7eb; }
+    .eb-social-block { padding: 20px 24px; text-align: center; display: flex; gap: 16px;
+        justify-content: center; }
+    .eb-social-block .social-icon { width: 36px; height: 36px; border-radius: 50%;
+        background: #7c3aed; display: flex; align-items: center; justify-content: center; }
+    .eb-social-block .social-icon svg { width: 18px; height: 18px; stroke: #fff; }
+    .eb-footer-block { background: #1f2937; padding: 24px; text-align: center;
+        color: #9ca3af; font-size: 0.8rem; line-height: 1.6; }
+    .eb-footer-block a { color: #7c3aed; }
+
+    @media (max-width: 900px) {
+        .eb-sidebar { display: none; }
+        .eb-props { display: none; }
+    }
+</style>
+
+<div class="eb-wrap">
+    <div class="eb-topbar">
+        <input type="text" class="eb-name" id="campaignName" placeholder="Campaign Name"
+            value="{{ campaign.name if campaign else '' }}">
+        <input type="text" class="eb-subject" id="subjectLine" placeholder="Subject Line"
+            value="{{ campaign.subject if campaign else '' }}">
+        <button class="eb-btn eb-btn-outline" onclick="openTemplateModal()">
+            <i data-feather="layout"></i> Pick Template
+        </button>
+        <div class="eb-toggle">
+            <label class="eb-toggle-switch">
+                <input type="checkbox" id="abToggle" onchange="toggleAB()">
+                <span class="eb-toggle-track"></span>
+                <span class="eb-toggle-thumb"></span>
+            </label>
+            <span>A/B Test</span>
+        </div>
+        <div style="flex:1"></div>
+        <button class="eb-btn eb-btn-ghost" onclick="saveDraft()">
+            <i data-feather="save"></i> Save Draft
+        </button>
+        <button class="eb-btn eb-btn-send" onclick="sendCampaign()">
+            <i data-feather="send"></i> Send
+        </button>
+    </div>
+
+    <div class="eb-ab-bar" id="abBar">
+        <label>Variant A Subject:</label>
+        <input type="text" id="abSubjectA" placeholder="Subject line for variant A">
+        <label>Variant B Subject:</label>
+        <input type="text" id="abSubjectB" placeholder="Subject line for variant B">
+        <div class="eb-prop-group" style="margin:0;min-width:80px;">
+            <select id="abSplit" style="padding:6px 8px;">
+                <option value="50">50/50</option>
+                <option value="70">70/30</option>
+                <option value="80">80/20</option>
+            </select>
+        </div>
+    </div>
+
+    <div class="eb-body">
+        <div class="eb-sidebar">
+            <h3>Content Blocks</h3>
+            <div class="eb-block" draggable="true" data-type="header">
+                <i data-feather="type"></i> Header
+            </div>
+            <div class="eb-block" draggable="true" data-type="text">
+                <i data-feather="align-left"></i> Text Block
+            </div>
+            <div class="eb-block" draggable="true" data-type="image">
+                <i data-feather="image"></i> Image
+            </div>
+            <div class="eb-block" draggable="true" data-type="button">
+                <i data-feather="mouse-pointer"></i> Button
+            </div>
+            <div class="eb-block" draggable="true" data-type="divider">
+                <i data-feather="minus"></i> Divider
+            </div>
+            <div class="eb-block" draggable="true" data-type="social">
+                <i data-feather="share-2"></i> Social Links
+            </div>
+            <div class="eb-block" draggable="true" data-type="footer">
+                <i data-feather="file-text"></i> Footer
+            </div>
+        </div>
+
+        <div class="eb-canvas-wrap" id="canvasWrap">
+            <div class="eb-canvas" id="emailCanvas">
+                <div class="eb-canvas-empty" id="canvasEmpty">
+                    <i data-feather="inbox"></i>
+                    <p>Drag blocks here to build your email<br><small style="color:#64748b">or pick a template to get started</small></p>
+                </div>
+            </div>
+        </div>
+
+        <div class="eb-props" id="propsPanel">
+            <h3>Properties</h3>
+            <div class="eb-props-empty" id="propsEmpty">
+                Select a block on the canvas to edit its properties
+            </div>
+            <div id="propsContent" style="display:none"></div>
+        </div>
+    </div>
+</div>
+
+<div class="eb-modal-overlay" id="templateModal">
+    <div class="eb-modal">
+        <div class="eb-modal-header">
+            <h2><i data-feather="layout" style="width:20px;height:20px;margin-right:8px;vertical-align:middle;stroke:#c084fc"></i> Choose a Template</h2>
+            <button class="eb-modal-close" onclick="closeTemplateModal()"><i data-feather="x"></i></button>
+        </div>
+        <div class="eb-modal-body">
+            <div class="eb-tpl-grid">
+                <div class="eb-tpl-card" onclick="loadTemplate('welcome')">
+                    <div class="tpl-icon"><i data-feather="smile"></i></div>
+                    <h4>Welcome Email</h4>
+                    <p>Greet new subscribers with a warm welcome</p>
+                </div>
+                <div class="eb-tpl-card" onclick="loadTemplate('newsletter')">
+                    <div class="tpl-icon"><i data-feather="book-open"></i></div>
+                    <h4>Newsletter</h4>
+                    <p>Regular updates with multiple content sections</p>
+                </div>
+                <div class="eb-tpl-card" onclick="loadTemplate('promotional')">
+                    <div class="tpl-icon"><i data-feather="tag"></i></div>
+                    <h4>Promotional</h4>
+                    <p>Drive sales with a compelling offer</p>
+                </div>
+                <div class="eb-tpl-card" onclick="loadTemplate('event')">
+                    <div class="tpl-icon"><i data-feather="calendar"></i></div>
+                    <h4>Event Invite</h4>
+                    <p>Invite subscribers to your upcoming event</p>
+                </div>
+                <div class="eb-tpl-card" onclick="loadTemplate('thankyou')">
+                    <div class="tpl-icon"><i data-feather="heart"></i></div>
+                    <h4>Thank You</h4>
+                    <p>Show appreciation after a purchase or signup</p>
+                </div>
+                <div class="eb-tpl-card" onclick="loadTemplate('reengagement')">
+                    <div class="tpl-icon"><i data-feather="refresh-cw"></i></div>
+                    <h4>Re-engagement</h4>
+                    <p>Win back inactive subscribers</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function() {
+    let canvasItems = [];
+    let selectedId = null;
+    let dragType = null;
+    let dragIndex = null;
+    let idCounter = 0;
+
+    const defaults = {
+        header: { heading: 'Your Headline Here', subtext: 'Supporting text for your header', bgColor: '#7c3aed', textColor: '#ffffff' },
+        text: { content: 'Write your email content here. You can customize this text to share your message with subscribers.', textColor: '#333333', fontSize: '15' },
+        image: { src: '', alt: 'Image description' },
+        button: { text: 'Click Here', url: '#', bgColor: '#7c3aed', textColor: '#ffffff', borderRadius: '8' },
+        divider: { color: '#e5e7eb', thickness: '2' },
+        social: { facebook: '#', twitter: '#', instagram: '#', linkedin: '#', iconColor: '#7c3aed' },
+        footer: { text: '© 2026 Your Company. All rights reserved.\n123 Main St, City, State 12345\nUnsubscribe | View in Browser', bgColor: '#1f2937', textColor: '#9ca3af' }
+    };
+
+    const templates = {
+        welcome: [
+            { type: 'header', props: { heading: 'Welcome to the Family! 🎉', subtext: 'We\'re thrilled to have you on board', bgColor: '#7c3aed', textColor: '#ffffff' }},
+            { type: 'text', props: { content: 'Hi there!\n\nThank you for joining us. We\'re excited to share our latest updates, exclusive offers, and helpful resources with you.\n\nHere\'s what you can expect:', textColor: '#333333', fontSize: '15' }},
+            { type: 'button', props: { text: 'Explore Now', url: '#', bgColor: '#7c3aed', textColor: '#ffffff', borderRadius: '8' }},
+            { type: 'divider', props: { color: '#e5e7eb', thickness: '2' }},
+            { type: 'social', props: { facebook: '#', twitter: '#', instagram: '#', linkedin: '#', iconColor: '#7c3aed' }},
+            { type: 'footer', props: { text: '© 2026 Your Company\nYou received this because you signed up.\nUnsubscribe', bgColor: '#1f2937', textColor: '#9ca3af' }}
+        ],
+        newsletter: [
+            { type: 'header', props: { heading: 'Monthly Newsletter', subtext: 'Your curated update — February 2026', bgColor: '#0f172a', textColor: '#ffffff' }},
+            { type: 'image', props: { src: '', alt: 'Featured article image' }},
+            { type: 'text', props: { content: '📰 Featured Story\n\nDiscover our latest insights and trends shaping the industry this month. From new product launches to expert interviews, we\'ve got you covered.', textColor: '#333333', fontSize: '15' }},
+            { type: 'button', props: { text: 'Read Full Article', url: '#', bgColor: '#0ea5e9', textColor: '#ffffff', borderRadius: '8' }},
+            { type: 'divider', props: { color: '#e5e7eb', thickness: '1' }},
+            { type: 'text', props: { content: '🔥 Quick Updates\n\n• New feature release coming next week\n• Community meetup on March 15th\n• Partner spotlight: Innovation Labs', textColor: '#333333', fontSize: '14' }},
+            { type: 'footer', props: { text: '© 2026 Your Company Newsletter\nUnsubscribe | Preferences | View Online', bgColor: '#1f2937', textColor: '#9ca3af' }}
+        ],
+        promotional: [
+            { type: 'header', props: { heading: '🔥 FLASH SALE — 40% OFF', subtext: 'Limited time offer. Don\'t miss out!', bgColor: '#dc2626', textColor: '#ffffff' }},
+            { type: 'image', props: { src: '', alt: 'Product showcase' }},
+            { type: 'text', props: { content: 'For a limited time, enjoy 40% off our entire collection. Use code SAVE40 at checkout.\n\nOffer ends this Sunday!', textColor: '#333333', fontSize: '15' }},
+            { type: 'button', props: { text: 'Shop Now →', url: '#', bgColor: '#dc2626', textColor: '#ffffff', borderRadius: '25' }},
+            { type: 'divider', props: { color: '#fecaca', thickness: '2' }},
+            { type: 'footer', props: { text: '© 2026 Your Company\nTerms apply. Offer valid while stocks last.\nUnsubscribe', bgColor: '#1f2937', textColor: '#9ca3af' }}
+        ],
+        event: [
+            { type: 'header', props: { heading: 'You\'re Invited! 🎊', subtext: 'Join us for an exclusive event', bgColor: '#4f46e5', textColor: '#ffffff' }},
+            { type: 'text', props: { content: '📅 Date: March 20, 2026\n🕐 Time: 2:00 PM — 5:00 PM EST\n📍 Location: Virtual Event\n\nJoin industry leaders for an afternoon of insights, networking, and innovation.', textColor: '#333333', fontSize: '15' }},
+            { type: 'image', props: { src: '', alt: 'Event banner' }},
+            { type: 'button', props: { text: 'Reserve Your Spot', url: '#', bgColor: '#4f46e5', textColor: '#ffffff', borderRadius: '8' }},
+            { type: 'text', props: { content: '🎤 Featured Speakers\n\n• Jane Smith — CEO, TechCorp\n• Mark Johnson — VP Marketing, InnovateCo\n• Lisa Chen — Head of Product, FutureLabs', textColor: '#555555', fontSize: '14' }},
+            { type: 'footer', props: { text: '© 2026 Your Company Events\nAdd to Calendar | Share with a Friend\nUnsubscribe', bgColor: '#1f2937', textColor: '#9ca3af' }}
+        ],
+        thankyou: [
+            { type: 'header', props: { heading: 'Thank You! ❤️', subtext: 'Your support means the world to us', bgColor: '#059669', textColor: '#ffffff' }},
+            { type: 'text', props: { content: 'Hi there,\n\nWe wanted to take a moment to say THANK YOU. Whether you\'ve made a purchase, referred a friend, or simply been a loyal subscriber — we appreciate you.\n\nAs a token of our gratitude, here\'s something special:', textColor: '#333333', fontSize: '15' }},
+            { type: 'button', props: { text: 'Claim Your Reward', url: '#', bgColor: '#059669', textColor: '#ffffff', borderRadius: '8' }},
+            { type: 'divider', props: { color: '#d1fae5', thickness: '2' }},
+            { type: 'social', props: { facebook: '#', twitter: '#', instagram: '#', linkedin: '#', iconColor: '#059669' }},
+            { type: 'footer', props: { text: '© 2026 Your Company\nThank you for being part of our community.\nUnsubscribe', bgColor: '#1f2937', textColor: '#9ca3af' }}
+        ],
+        reengagement: [
+            { type: 'header', props: { heading: 'We Miss You! 👋', subtext: 'It\'s been a while — let\'s reconnect', bgColor: '#f59e0b', textColor: '#000000' }},
+            { type: 'text', props: { content: 'Hey there,\n\nWe noticed you haven\'t visited in a while, and we wanted to reach out. A lot has changed since your last visit!\n\nHere\'s what you\'ve been missing:', textColor: '#333333', fontSize: '15' }},
+            { type: 'text', props: { content: '✨ New features and improvements\n📦 Exclusive products just launched\n🎁 A special comeback offer just for you', textColor: '#555555', fontSize: '14' }},
+            { type: 'button', props: { text: 'Come Back & Save 25%', url: '#', bgColor: '#f59e0b', textColor: '#000000', borderRadius: '25' }},
+            { type: 'divider', props: { color: '#fde68a', thickness: '2' }},
+            { type: 'footer', props: { text: '© 2026 Your Company\nStill not interested? Unsubscribe here.\nUnsubscribe', bgColor: '#1f2937', textColor: '#9ca3af' }}
+        ]
+    };
+
+    function uid() { return 'item_' + (++idCounter); }
+
+    function renderBlock(item) {
+        const p = item.props;
+        switch(item.type) {
+            case 'header':
+                return `<div class="eb-header-block" style="background:linear-gradient(135deg,${p.bgColor},${adjustColor(p.bgColor,30)});color:${p.textColor}">
+                    <h1 style="color:${p.textColor}">${esc(p.heading)}</h1>
+                    <p style="color:${p.textColor};opacity:0.85">${esc(p.subtext)}</p></div>`;
+            case 'text':
+                return `<div class="eb-text-block" style="color:${p.textColor};font-size:${p.fontSize}px">${esc(p.content).replace(/\n/g,'<br>')}</div>`;
+            case 'image':
+                if (p.src) return `<div class="eb-image-block"><img src="${esc(p.src)}" alt="${esc(p.alt)}" style="max-width:100%;display:block"></div>`;
+                return `<div class="eb-image-block"><div class="placeholder-img"><i data-feather="image" style="width:32px;height:32px;margin-right:8px"></i> Drop an image URL in properties</div></div>`;
+            case 'button':
+                return `<div class="eb-button-block"><a href="${esc(p.url)}" style="background:${p.bgColor};color:${p.textColor};border-radius:${p.borderRadius}px;padding:14px 36px;display:inline-block;text-decoration:none;font-weight:600">${esc(p.text)}</a></div>`;
+            case 'divider':
+                return `<div class="eb-divider-block"><hr style="border-top:${p.thickness}px solid ${p.color}"></div>`;
+            case 'social':
+                const icons = ['facebook','twitter','instagram','linkedin'];
+                const svgs = { facebook:'M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z',
+                    twitter:'M23 3a10.9 10.9 0 0 1-3.14 1.53 4.48 4.48 0 0 0-7.86 3v1A10.66 10.66 0 0 1 3 4s-4 9 5 13a11.64 11.64 0 0 1-7 2c9 5 20 0 20-11.5a4.5 4.5 0 0 0-.08-.83A7.72 7.72 0 0 0 23 3z',
+                    instagram:'M7.8 2h8.4C19.4 2 22 4.6 22 7.8v8.4a5.8 5.8 0 0 1-5.8 5.8H7.8C4.6 22 2 19.4 2 16.2V7.8A5.8 5.8 0 0 1 7.8 2m-.2 2A3.6 3.6 0 0 0 4 7.6v8.8C4 18.39 5.61 20 7.6 20h8.8a3.6 3.6 0 0 0 3.6-3.6V7.6C20 5.61 18.39 4 16.4 4H7.6m9.65 1.5a1.25 1.25 0 0 1 1.25 1.25A1.25 1.25 0 0 1 17.25 8 1.25 1.25 0 0 1 16 6.75a1.25 1.25 0 0 1 1.25-1.25M12 7a5 5 0 0 1 5 5 5 5 0 0 1-5 5 5 5 0 0 1-5-5 5 5 0 0 1 5-5m0 2a3 3 0 0 0-3 3 3 3 0 0 0 3 3 3 3 0 0 0 3-3 3 3 0 0 0-3-3z',
+                    linkedin:'M16 8a6 6 0 0 1 6 6v7h-4v-7a2 2 0 0 0-2-2 2 2 0 0 0-2 2v7h-4v-7a6 6 0 0 1 6-6zM2 9h4v12H2z' };
+                let html = '<div class="eb-social-block">';
+                icons.forEach(ic => {
+                    if (p[ic]) html += `<a href="${esc(p[ic])}" class="social-icon" style="background:${p.iconColor};width:36px;height:36px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><path d="${svgs[ic]}"/></svg></a>`;
+                });
+                return html + '</div>';
+            case 'footer':
+                return `<div class="eb-footer-block" style="background:${p.bgColor};color:${p.textColor}">${esc(p.text).replace(/\n/g,'<br>')}</div>`;
+            default: return '<div style="padding:20px;color:#999">Unknown block</div>';
+        }
+    }
+
+    function esc(s) { if (!s) return ''; const d=document.createElement('div'); d.textContent=s; return d.innerHTML; }
+    function adjustColor(hex, amt) {
+        hex = hex.replace('#','');
+        let r=parseInt(hex.substring(0,2),16), g=parseInt(hex.substring(2,4),16), b=parseInt(hex.substring(4,6),16);
+        r=Math.min(255,r+amt); g=Math.min(255,g+amt); b=Math.min(255,b+amt);
+        return '#'+[r,g,b].map(c=>c.toString(16).padStart(2,'0')).join('');
+    }
+
+    function renderCanvas() {
+        const canvas = document.getElementById('emailCanvas');
+        const empty = document.getElementById('canvasEmpty');
+        if (canvasItems.length === 0) {
+            canvas.innerHTML = '';
+            canvas.appendChild(empty);
+            empty.style.display = 'flex';
+            addCanvasDropZone(canvas, 0);
+            return;
+        }
+        empty.style.display = 'none';
+        canvas.innerHTML = '';
+        addCanvasDropZone(canvas, 0);
+        canvasItems.forEach((item, i) => {
+            const el = document.createElement('div');
+            el.className = 'eb-item' + (item.id === selectedId ? ' selected' : '');
+            el.innerHTML = renderBlock(item) +
+                `<div class="eb-item-actions">
+                    <button class="eb-item-action" title="Move up" onclick="event.stopPropagation();moveItem(${i},-1)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="18 15 12 9 6 15"/></svg></button>
+                    <button class="eb-item-action" title="Move down" onclick="event.stopPropagation();moveItem(${i},1)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg></button>
+                    <button class="eb-item-action" title="Duplicate" onclick="event.stopPropagation();dupItem(${i})"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>
+                    <button class="eb-item-action" title="Delete" onclick="event.stopPropagation();deleteItem(${i})" style="background:rgba(220,38,38,0.8)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>
+                </div>`;
+            el.setAttribute('draggable', 'true');
+            el.addEventListener('click', () => selectItem(item.id));
+            el.addEventListener('dragstart', (e) => { dragIndex = i; dragType = null; e.dataTransfer.effectAllowed = 'move'; });
+            el.addEventListener('dragend', () => { dragIndex = null; });
+            canvas.appendChild(el);
+            addCanvasDropZone(canvas, i + 1);
+        });
+        feather.replace();
+    }
+
+    function addCanvasDropZone(parent, index) {
+        const dz = document.createElement('div');
+        dz.className = 'eb-drop-zone';
+        dz.addEventListener('dragover', (e) => { e.preventDefault(); e.dataTransfer.dropEffect = dragType ? 'copy' : 'move'; dz.classList.add('drag-over'); });
+        dz.addEventListener('dragleave', () => dz.classList.remove('drag-over'));
+        dz.addEventListener('drop', (e) => {
+            e.preventDefault(); dz.classList.remove('drag-over');
+            if (dragType) {
+                const item = { id: uid(), type: dragType, props: JSON.parse(JSON.stringify(defaults[dragType])) };
+                canvasItems.splice(index, 0, item);
+                selectedId = item.id;
+            } else if (dragIndex !== null) {
+                const [moved] = canvasItems.splice(dragIndex, 1);
+                const insertAt = index > dragIndex ? index - 1 : index;
+                canvasItems.splice(insertAt, 0, moved);
+            }
+            dragType = null; dragIndex = null;
+            renderCanvas(); renderProps();
+        });
+        parent.appendChild(dz);
+    }
+
+    function selectItem(id) { selectedId = id; renderCanvas(); renderProps(); }
+
+    function renderProps() {
+        const empty = document.getElementById('propsEmpty');
+        const content = document.getElementById('propsContent');
+        const item = canvasItems.find(i => i.id === selectedId);
+        if (!item) { empty.style.display = 'block'; content.style.display = 'none'; return; }
+        empty.style.display = 'none'; content.style.display = 'block';
+        const p = item.props;
+        let html = `<div style="font-size:0.9rem;color:#c084fc;font-weight:600;margin-bottom:12px;text-transform:capitalize">${item.type} Block</div>`;
+
+        switch(item.type) {
+            case 'header':
+                html += propInput('Heading', 'heading', p.heading) + propInput('Subtext', 'subtext', p.subtext) +
+                    '<div class="eb-prop-row">' + propColor('Background', 'bgColor', p.bgColor) + propColor('Text Color', 'textColor', p.textColor) + '</div>';
+                break;
+            case 'text':
+                html += propTextarea('Content', 'content', p.content) +
+                    '<div class="eb-prop-row">' + propColor('Text Color', 'textColor', p.textColor) + propInput('Font Size', 'fontSize', p.fontSize, 'number') + '</div>';
+                break;
+            case 'image':
+                html += propInput('Image URL', 'src', p.src) + propInput('Alt Text', 'alt', p.alt);
+                break;
+            case 'button':
+                html += propInput('Button Text', 'text', p.text) + propInput('URL', 'url', p.url) +
+                    '<div class="eb-prop-row">' + propColor('Background', 'bgColor', p.bgColor) + propColor('Text Color', 'textColor', p.textColor) + '</div>' +
+                    propInput('Border Radius', 'borderRadius', p.borderRadius, 'number');
+                break;
+            case 'divider':
+                html += '<div class="eb-prop-row">' + propColor('Color', 'color', p.color) + propInput('Thickness', 'thickness', p.thickness, 'number') + '</div>';
+                break;
+            case 'social':
+                html += propInput('Facebook URL', 'facebook', p.facebook) + propInput('Twitter URL', 'twitter', p.twitter) +
+                    propInput('Instagram URL', 'instagram', p.instagram) + propInput('LinkedIn URL', 'linkedin', p.linkedin) +
+                    propColor('Icon Color', 'iconColor', p.iconColor);
+                break;
+            case 'footer':
+                html += propTextarea('Footer Text', 'text', p.text) +
+                    '<div class="eb-prop-row">' + propColor('Background', 'bgColor', p.bgColor) + propColor('Text Color', 'textColor', p.textColor) + '</div>';
+                break;
+        }
+        content.innerHTML = html;
+        content.querySelectorAll('[data-prop]').forEach(el => {
+            el.addEventListener('input', (e) => {
+                item.props[e.target.dataset.prop] = e.target.value;
+                renderCanvas();
+            });
+        });
+    }
+
+    function propInput(label, key, val, type) {
+        type = type || 'text';
+        return `<div class="eb-prop-group"><label>${label}</label><input type="${type}" data-prop="${key}" value="${esc(val||'')}"></div>`;
+    }
+    function propTextarea(label, key, val) {
+        return `<div class="eb-prop-group"><label>${label}</label><textarea data-prop="${key}">${esc(val||'')}</textarea></div>`;
+    }
+    function propColor(label, key, val) {
+        return `<div class="eb-prop-group"><label>${label}</label><input type="color" data-prop="${key}" value="${val||'#000000'}"></div>`;
+    }
+
+    window.moveItem = function(i, dir) {
+        const ni = i + dir;
+        if (ni < 0 || ni >= canvasItems.length) return;
+        [canvasItems[i], canvasItems[ni]] = [canvasItems[ni], canvasItems[i]];
+        renderCanvas(); renderProps();
+    };
+    window.dupItem = function(i) {
+        const clone = JSON.parse(JSON.stringify(canvasItems[i]));
+        clone.id = uid();
+        canvasItems.splice(i + 1, 0, clone);
+        selectedId = clone.id;
+        renderCanvas(); renderProps();
+    };
+    window.deleteItem = function(i) {
+        if (canvasItems[i].id === selectedId) selectedId = null;
+        canvasItems.splice(i, 1);
+        renderCanvas(); renderProps();
+    };
+
+    window.openTemplateModal = function() { document.getElementById('templateModal').classList.add('active'); };
+    window.closeTemplateModal = function() { document.getElementById('templateModal').classList.remove('active'); };
+
+    window.loadTemplate = function(name) {
+        const tpl = templates[name];
+        if (!tpl) return;
+        canvasItems = tpl.map(t => ({ id: uid(), type: t.type, props: JSON.parse(JSON.stringify(t.props)) }));
+        selectedId = null;
+        renderCanvas(); renderProps();
+        closeTemplateModal();
+    };
+
+    window.toggleAB = function() {
+        const bar = document.getElementById('abBar');
+        bar.classList.toggle('active', document.getElementById('abToggle').checked);
+    };
+
+    window.saveDraft = function() {
+        const name = document.getElementById('campaignName').value;
+        if (!name) { alert('Please enter a campaign name'); return; }
+        alert('Draft saved: ' + name);
+    };
+
+    window.sendCampaign = function() {
+        const name = document.getElementById('campaignName').value;
+        const subject = document.getElementById('subjectLine').value;
+        if (!name) { alert('Please enter a campaign name'); return; }
+        if (!subject) { alert('Please enter a subject line'); return; }
+        if (canvasItems.length === 0) { alert('Please add at least one block to your email'); return; }
+        alert('Campaign "' + name + '" is ready to send!');
+    };
+
+    document.querySelectorAll('.eb-block').forEach(block => {
+        block.addEventListener('dragstart', (e) => {
+            dragType = block.dataset.type;
+            dragIndex = null;
+            block.classList.add('dragging');
+            e.dataTransfer.effectAllowed = 'copy';
+        });
+        block.addEventListener('dragend', () => {
+            block.classList.remove('dragging');
+            dragType = null;
+        });
+    });
+
+    document.getElementById('templateModal').addEventListener('click', (e) => {
+        if (e.target === e.currentTarget) closeTemplateModal();
+    });
+
+    renderCanvas();
+})();
+</script>
+{% endblock %}

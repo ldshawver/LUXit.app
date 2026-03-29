@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}Agent Reports - LUX Marketing{% endblock %}
+{% block title %}Agent Reports - LUX IT{% endblock %}
 
 {% block content %}
 <div class="container-fluid">
@@ -68,7 +68,7 @@
                                             <span class="badge bg-primary">{{ report.report_type | replace('_', ' ') | title }}</span>
                                         </td>
                                         <td>
-                                            <strong>{{ report.title }}</strong>
+                                            <strong>{{ report.report_title }}</strong>
                                         </td>
                                         <td>{{ report.agent_name }}</td>
                                         <td>{{ report.created_at.strftime('%Y-%m-%d %H:%M') }}</td>

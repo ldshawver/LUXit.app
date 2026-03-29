@@ -1,0 +1,556 @@
+{% extends "marketing/base.html" %}
+
+{% block title %}LUX IT — Revenue Operations Reimagined with AI{% endblock %}
+
+{% block content %}
+<!-- Hero -->
+<section class="hero">
+  <div class="hero-content">
+    <div class="hero-badge">Introducing LUX IT 3.0</div>
+    <h1 class="hero-title">
+      <span class="line"><span class="gradient-text"><span id="typewriter"></span></span></span>
+      <span class="line"><img src="{{ url_for('static', filename='images/reimagined-ai.png') }}" alt="Reimagined with AI" class="reimagined-img"></span>
+    </h1>
+    <p class="hero-subtitle">
+      The licensable revenue operating system that unifies AI agents, CRM, and automated outreach into one compliant command center.
+    </p>
+    <div class="hero-buttons">
+      <a class="btn-primary" href="/auth/login">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+        Start Free
+      </a>
+      <a class="btn-secondary" href="/book-demo">Request Demo</a>
+    </div>
+  </div>
+</section>
+
+<!-- Stats -->
+<div class="stats-row">
+  <div class="stat scroll-reveal-drop delay-1"><div class="stat-number">11</div><div class="stat-label">AI Agents</div></div>
+  <div class="stat scroll-reveal-drop delay-2"><div class="stat-number">3x</div><div class="stat-label">Productivity</div></div>
+  <div class="stat scroll-reveal-drop delay-3"><div class="stat-number">60%</div><div class="stat-label">Cost Savings</div></div>
+  <div class="stat scroll-reveal-drop delay-4"><div class="stat-number">50+</div><div class="stat-label">Integrations</div></div>
+</div>
+
+<!-- Social Proof -->
+<section class="social-proof-bar">
+  <div class="proof-label">Trusted by growth teams at</div>
+  <div class="proof-logos">
+    <span class="proof-logo">Agencies</span>
+    <span class="proof-divider">·</span>
+    <span class="proof-logo">eCommerce Brands</span>
+    <span class="proof-divider">·</span>
+    <span class="proof-logo">SaaS Companies</span>
+    <span class="proof-divider">·</span>
+    <span class="proof-logo">B2B Teams</span>
+    <span class="proof-divider">·</span>
+    <span class="proof-logo">Media Businesses</span>
+  </div>
+  <div class="proof-testimonial">
+    <blockquote>"We replaced 6 tools with LUX IT and cut our marketing spend by 40% — while closing 2x more deals."</blockquote>
+    <cite>— Director of Marketing, Agency Partner</cite>
+  </div>
+</section>
+
+<!-- Features -->
+
+<section class="section" id="features">
+  <div class="section-header">
+    <div class="section-label">Platform</div>
+    <h2 class="section-title">Everything You Need to Scale</h2>
+    <p class="section-subtitle">A complete revenue operating system for modern agencies and enterprises.</p>
+  </div>
+  <svg style="position:absolute;width:0;height:0;">
+    <defs>
+      <linearGradient id="iconGrad" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#00e5ff"/><stop offset="100%" stop-color="#a855f7"/></linearGradient>
+    </defs>
+  </svg>
+  <div class="feature-grid">
+    <div class="feature-card scroll-reveal-left delay-1">
+      <div class="feature-summary">
+        <div class="feature-card-icon">
+          <svg viewBox="0 0 48 48" fill="none" stroke="url(#iconGrad)" stroke-width="1.5">
+            <rect x="8" y="6" width="32" height="24" rx="4" fill="none"/>
+            <circle cx="18" cy="16" r="3" fill="#00e5ff" stroke="none"/>
+            <circle cx="30" cy="16" r="3" fill="#00e5ff" stroke="none"/>
+            <path d="M16 24c0 0 3 4 8 4s8-4 8-4" stroke-linecap="round"/>
+            <rect x="20" y="30" width="8" height="4" rx="1"/>
+            <rect x="14" y="34" width="20" height="3" rx="1.5"/>
+            <path d="M6 14l-3-2M6 20l-3 2M42 14l3-2M42 20l3 2" stroke-linecap="round" opacity="0.6"/>
+            <circle cx="24" cy="3" r="2" fill="#a855f7" stroke="none"/>
+            <line x1="24" y1="5" x2="24" y2="6" stroke-width="2"/>
+          </svg>
+        </div>
+        <div class="feature-content">
+          <h3>11 Autonomous AI Agents</h3>
+          <p>Research, outreach, follow-ups, and optimization running 24/7 without manual intervention.</p>
+        </div>
+        <div class="expand-indicator"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg></div>
+      </div>
+      <div class="feature-details">
+        <ul>
+          <li>Lead Research Agent - Finds and qualifies prospects automatically</li>
+          <li>Content Writer Agent - Generates blog posts, emails, and social content</li>
+          <li>Email CRM Agent - Manages campaigns and follow-up sequences</li>
+          <li>Social Media Agent - Schedules and publishes across all platforms</li>
+          <li>Analytics Agent - Tracks KPIs and generates performance reports</li>
+          <li>SEO Agent - Optimizes content and tracks keyword rankings</li>
+        </ul>
+      </div>
+    </div>
+    <div class="feature-card scroll-reveal-right delay-2">
+      <div class="feature-summary">
+        <div class="feature-card-icon">
+          <svg viewBox="0 0 48 48" fill="none" stroke="url(#iconGrad)" stroke-width="1.5">
+            <ellipse cx="24" cy="24" rx="20" ry="8" fill="none"/>
+            <ellipse cx="24" cy="24" rx="8" ry="20" fill="none" transform="rotate(60 24 24)"/>
+            <ellipse cx="24" cy="24" rx="8" ry="20" fill="none" transform="rotate(-60 24 24)"/>
+            <circle cx="24" cy="24" r="4" fill="#00e5ff" stroke="none"/>
+            <circle cx="24" cy="4" r="2" fill="#a855f7" stroke="none"/>
+            <circle cx="41" cy="34" r="2" fill="#ec4899" stroke="none"/>
+            <circle cx="7" cy="34" r="2" fill="#00e5ff" stroke="none"/>
+            <path d="M24 28v8M20 36h8" stroke-linecap="round" opacity="0.5"/>
+          </svg>
+        </div>
+        <div class="feature-content">
+          <h3>Multi-Channel Outreach</h3>
+          <p>Email, SMS, social media orchestrated from one dashboard with compliance built in.</p>
+        </div>
+        <div class="expand-indicator"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg></div>
+      </div>
+      <div class="feature-details">
+        <ul>
+          <li>Email campaigns with A/B testing and smart scheduling</li>
+          <li>SMS marketing with Twilio integration</li>
+          <li>Social publishing to Instagram, TikTok, Facebook, LinkedIn, X</li>
+          <li>Unified inbox for all channel responses</li>
+          <li>Automated drip sequences and nurture campaigns</li>
+        </ul>
+      </div>
+    </div>
+    <div class="feature-card scroll-reveal-left delay-3">
+      <div class="feature-summary">
+        <div class="feature-card-icon">
+          <svg viewBox="0 0 48 48" fill="none" stroke="url(#iconGrad)" stroke-width="1.5">
+            <path d="M24 4L6 14v16c0 8 8 14 18 14s18-6 18-14V14L24 4z" fill="none"/>
+            <path d="M24 8L10 16v12c0 6 6 10 14 10s14-4 14-10V16L24 8z" fill="rgba(0,229,255,0.1)" stroke="none"/>
+            <path d="M16 24l6 6 12-12" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+            <circle cx="24" cy="42" r="2" fill="#00e5ff" stroke="none"/>
+            <path d="M6 14l4 2M42 14l-4 2" stroke-linecap="round" opacity="0.5"/>
+          </svg>
+        </div>
+        <div class="feature-content">
+          <h3>Enterprise Security</h3>
+          <p>Approval workflows, audit logs, emergency stops, and role-based permissions.</p>
+        </div>
+        <div class="expand-indicator"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg></div>
+      </div>
+      <div class="feature-details">
+        <ul>
+          <li>Content approval queue before publishing</li>
+          <li>Full audit trail of all actions</li>
+          <li>Emergency stop to halt all automation instantly</li>
+          <li>Role-based access control (Admin, Manager, User)</li>
+          <li>GDPR and CAN-SPAM compliance tools</li>
+        </ul>
+      </div>
+    </div>
+    <div class="feature-card scroll-reveal-right delay-4">
+      <div class="feature-summary">
+        <div class="feature-card-icon">
+          <svg viewBox="0 0 48 48" fill="none" stroke="url(#iconGrad)" stroke-width="1.5">
+            <rect x="4" y="8" width="40" height="32" rx="3" fill="none"/>
+            <line x1="4" y1="16" x2="44" y2="16"/>
+            <circle cx="10" cy="12" r="1.5" fill="#ec4899" stroke="none"/>
+            <circle cx="16" cy="12" r="1.5" fill="#f59e0b" stroke="none"/>
+            <circle cx="22" cy="12" r="1.5" fill="#00e5ff" stroke="none"/>
+            <rect x="10" y="22" width="6" height="14" rx="1" fill="rgba(0,229,255,0.3)" stroke="none"/>
+            <rect x="21" y="26" width="6" height="10" rx="1" fill="rgba(168,85,247,0.3)" stroke="none"/>
+            <rect x="32" y="20" width="6" height="16" rx="1" fill="rgba(236,72,153,0.3)" stroke="none"/>
+            <path d="M8 32l8-6 8 4 8-10 8 6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            <circle cx="40" cy="26" r="2" fill="#00e5ff" stroke="none"/>
+          </svg>
+        </div>
+        <div class="feature-content">
+          <h3>Analytics & Intelligence</h3>
+          <p>Real-time dashboards with CAC, LTV, attribution, and campaign performance metrics.</p>
+        </div>
+        <div class="expand-indicator"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg></div>
+      </div>
+      <div class="feature-details">
+        <ul>
+          <li>Customer Acquisition Cost (CAC) tracking</li>
+          <li>Lifetime Value (LTV) calculations</li>
+          <li>Multi-touch attribution modeling</li>
+          <li>Campaign ROI and conversion analytics</li>
+          <li>Cohort analysis and retention metrics</li>
+          <li>Custom report builder with export options</li>
+        </ul>
+      </div>
+
+  </div>
+</section>
+
+
+<!-- Comparison -->
+<section class="comparison-section" id="compare">
+  <div class="section-header">
+    <div class="section-label">Comparison</div>
+    <h2 class="section-title">Replace Your Entire Stack</h2>
+    <p class="section-subtitle">Stop paying for 10 different tools. LUX IT consolidates everything.</p>
+  </div>
+  <table class="comparison-table">
+    <thead>
+      <tr>
+        <th>Feature</th>
+        <th class="highlight">LUX IT</th>
+        <th>HubSpot</th>
+        <th>Salesforce</th>
+        <th>ActiveCampaign</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr class="clickable-row" onclick="showDetails('ai-agents')">
+        <td>AI Agents (Autonomous) <span class="row-expand-hint">▸</span></td>
+        <td class="highlight"><span class="check">✓ 11 Agents</span></td>
+        <td><span class="cross">✗</span></td>
+        <td><span class="partial">Limited</span></td>
+        <td><span class="cross">✗</span></td>
+      </tr>
+      <tr class="clickable-row" onclick="showDetails('multi-channel')">
+        <td>Multi-Channel Outreach <span class="row-expand-hint">▸</span></td>
+        <td class="highlight"><span class="check">✓ All Channels</span></td>
+        <td><span class="check">✓</span></td>
+        <td><span class="check">✓</span></td>
+        <td><span class="partial">Email Only</span></td>
+      </tr>
+      <tr class="clickable-row" onclick="showDetails('white-label')">
+        <td>White-Label / Licensable <span class="row-expand-hint">▸</span></td>
+        <td class="highlight"><span class="check">✓ Full</span></td>
+        <td><span class="cross">✗</span></td>
+        <td><span class="cross">✗</span></td>
+        <td><span class="cross">✗</span></td>
+      </tr>
+      <tr class="clickable-row" onclick="showDetails('approval')">
+        <td>Approval Workflows <span class="row-expand-hint">▸</span></td>
+        <td class="highlight"><span class="check">✓ Built-in</span></td>
+        <td><span class="partial">Add-on</span></td>
+        <td><span class="check">✓</span></td>
+        <td><span class="cross">✗</span></td>
+      </tr>
+      <tr class="clickable-row" onclick="showDetails('social')">
+        <td>Social Media Publishing <span class="row-expand-hint">▸</span></td>
+        <td class="highlight"><span class="check">✓ All Platforms</span></td>
+        <td><span class="partial">Limited</span></td>
+        <td><span class="cross">✗</span></td>
+        <td><span class="cross">✗</span></td>
+      </tr>
+      <tr class="clickable-row" onclick="showDetails('analytics')">
+        <td>Analytics & Reporting <span class="row-expand-hint">▸</span></td>
+        <td class="highlight"><span class="check">✓ 10 Categories</span></td>
+        <td><span class="check">✓</span></td>
+        <td><span class="check">✓</span></td>
+        <td><span class="partial">Basic</span></td>
+      </tr>
+      <tr class="clickable-row" onclick="showDetails('crm')">
+        <td>CRM & Pipeline <span class="row-expand-hint">▸</span></td>
+        <td class="highlight"><span class="check">✓ Full CRM</span></td>
+        <td><span class="check">✓</span></td>
+        <td><span class="check">✓</span></td>
+        <td><span class="partial">Basic</span></td>
+      </tr>
+      <tr class="clickable-row" onclick="showDetails('landing')">
+        <td>Landing Page Builder <span class="row-expand-hint">▸</span></td>
+        <td class="highlight"><span class="check">✓ Drag & Drop</span></td>
+        <td><span class="check">✓</span></td>
+        <td><span class="cross">✗</span></td>
+        <td><span class="check">✓</span></td>
+      </tr>
+      <tr>
+        <td>Starting Price</td>
+        <td class="highlight"><span class="check">$199/mo</span></td>
+        <td>$800/mo</td>
+        <td>$1,250/mo</td>
+        <td>$149/mo</td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- Feature Details Modal -->
+<div id="featureModal" class="feature-modal" onclick="if(event.target===this)closeDetails()">
+  <div class="feature-modal-content">
+    <button class="modal-close" onclick="closeDetails()">&times;</button>
+    <h3 id="modalTitle"></h3>
+    <div id="modalBody"></div>
+  </div>
+</div>
+
+<!-- Pricing -->
+<section class="pricing-section" id="pricing">
+  <div class="section-header">
+    <div class="section-label">Pricing</div>
+    <h2 class="section-title">Plans That Scale With You</h2>
+    <p class="section-subtitle">From startups to enterprise. No hidden fees.</p>
+  </div>
+  <div class="pricing-grid">
+    <div class="pricing-card scroll-reveal-flip delay-1" data-delay="0">
+      <div class="pricing-tier">Starter</div>
+      <div class="pricing-name">Small Business</div>
+      <div class="pricing-price">$199<span>/mo</span></div>
+      <div class="pricing-desc">Perfect for growing teams</div>
+      <ul class="pricing-features">
+        <li>3 AI Agents</li>
+        <li>2,500 Contacts</li>
+        <li>Email & SMS Outreach</li>
+        <li>Basic Analytics</li>
+        <li>5 Team Members</li>
+      </ul>
+      <a href="/auth/login" class="pricing-btn secondary">Get Started</a>
+    </div>
+    <div class="pricing-card featured scroll-reveal-flip delay-2" data-delay="1">
+      <span class="popular-badge">Most Popular</span>
+      <div class="pricing-tier">Professional</div>
+      <div class="pricing-name">Agencies & Teams</div>
+      <div class="pricing-price">$499<span>/mo</span></div>
+      <div class="pricing-desc">Manage multiple companies</div>
+      <ul class="pricing-features">
+        <li>All 11 AI Agents</li>
+        <li>50,000 Contacts</li>
+        <li>Multi-Company Dashboard</li>
+        <li>All Channels + Social</li>
+        <li>Advanced Analytics</li>
+        <li>Unlimited Team</li>
+        <li>Priority Support</li>
+      </ul>
+      <a href="/auth/login" class="pricing-btn primary">Start Free Trial</a>
+    </div>
+    <div class="pricing-card scroll-reveal-flip delay-3" data-delay="2">
+      <div class="pricing-tier">Enterprise</div>
+      <div class="pricing-name">White Label</div>
+      <div class="pricing-price">Custom</div>
+      <div class="pricing-desc">Your brand, your platform</div>
+      <ul class="pricing-features">
+        <li>Full White-Label</li>
+        <li>Unlimited Everything</li>
+        <li>Custom Integrations</li>
+        <li>Dedicated Support</li>
+        <li>On-Premise Option</li>
+        <li>SLA Guarantee</li>
+      </ul>
+      <a href="/auth/login" class="pricing-btn secondary">Contact Sales</a>
+    </div>
+  </div>
+</section>
+
+<!-- FAQ -->
+<section class="section" id="faq">
+  <div class="section-header">
+    <div class="section-label">FAQ</div>
+    <h2 class="section-title">Common Questions</h2>
+    <p class="section-subtitle">Everything you need to know before you start.</p>
+  </div>
+  <div class="faq-list">
+    <div class="faq-item">
+      <button class="faq-q" onclick="this.parentElement.classList.toggle('open')">
+        How long does it take to get up and running?
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+      </button>
+      <div class="faq-a">Most teams are live within 15 minutes. Connect your email, import your contacts, and your first AI-assisted campaign is ready to launch.</div>
+    </div>
+    <div class="faq-item">
+      <button class="faq-q" onclick="this.parentElement.classList.toggle('open')">
+        Do I need technical skills to use LUX IT?
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+      </button>
+      <div class="faq-a">No. LUX IT is built for marketers and operators, not developers. Everything is point-and-click, and the AI agents handle the complex work automatically.</div>
+    </div>
+    <div class="faq-item">
+      <button class="faq-q" onclick="this.parentElement.classList.toggle('open')">
+        Can I replace HubSpot or Salesforce with LUX IT?
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+      </button>
+      <div class="faq-a">Yes. LUX IT includes full CRM, email marketing, social publishing, analytics, and 11 AI agents — everything you currently pay for separately, in one platform at a fraction of the cost.</div>
+    </div>
+    <div class="faq-item">
+      <button class="faq-q" onclick="this.parentElement.classList.toggle('open')">
+        Is there a free trial?
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+      </button>
+      <div class="faq-a">Yes. Start free and explore the platform with no credit card required. Upgrade when you're ready to scale.</div>
+    </div>
+    <div class="faq-item">
+      <button class="faq-q" onclick="this.parentElement.classList.toggle('open')">
+        Can agencies white-label and resell LUX IT?
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+      </button>
+      <div class="faq-a">Absolutely. Our Enterprise plan includes full white-label rights — your logo, your domain, your pricing. Many agencies use LUX IT as a revenue-generating service they offer to clients.</div>
+    </div>
+  </div>
+</section>
+
+<!-- Bottom CTA -->
+<section class="section bottom-cta-section" id="demo">
+  <div class="bottom-cta-box">
+    <div class="section-label">Launch Today</div>
+    <h2 class="section-title" style="font-size:2.4rem;">Get live in 15 minutes.</h2>
+    <p class="section-subtitle" style="margin-bottom:36px;">Launch your first campaign today. No setup fees, no contracts — just results.</p>
+    <div class="hero-buttons" style="justify-content:center;">
+      <a class="btn-primary" href="/auth/login" style="font-size:1.05rem; padding:16px 36px;">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+        Start Free
+      </a>
+      <a class="btn-secondary" href="/book-demo" style="font-size:1.05rem; padding:16px 36px;">Request Demo</a>
+    </div>
+    <p style="margin-top:20px; color: var(--text-secondary); font-size:0.85rem;">No credit card required &nbsp;·&nbsp; Cancel anytime &nbsp;·&nbsp; Live in minutes</p>
+  </div>
+</section>
+
+<script>
+const featureDetails = {
+  'ai-agents': {
+    title: '11 Autonomous AI Agents',
+    content: `<p><strong>LUX IT</strong> includes 11 specialized AI agents that work 24/7:</p>
+    <ul>
+      <li><strong>Lead Research Agent</strong> - Finds and qualifies prospects automatically</li>
+      <li><strong>Content Writer Agent</strong> - Generates blog posts, emails, social content</li>
+      <li><strong>Email CRM Agent</strong> - Manages campaigns and follow-up sequences</li>
+      <li><strong>Social Media Agent</strong> - Schedules and publishes across all platforms</li>
+      <li><strong>Analytics Agent</strong> - Tracks KPIs and generates reports</li>
+      <li><strong>SEO Agent</strong> - Optimizes content and tracks rankings</li>
+      <li><strong>Competitor Intelligence Agent</strong> - Monitors competitor activity</li>
+      <li><strong>Advertising Agent</strong> - Manages ad campaigns across networks</li>
+      <li><strong>Customer Support Agent</strong> - Handles inquiries and tickets</li>
+      <li><strong>Sync Agent</strong> - Keeps data synchronized across systems</li>
+      <li><strong>Compliance Agent</strong> - Ensures GDPR/CAN-SPAM compliance</li>
+    </ul>
+    <p><strong>Competitors:</strong> HubSpot and ActiveCampaign have no autonomous AI agents. Salesforce offers limited Einstein AI but requires additional licensing.</p>`
+  },
+  'multi-channel': {
+    title: 'Multi-Channel Outreach',
+    content: `<p><strong>LUX IT</strong> provides unified outreach across all channels:</p>
+    <ul>
+      <li><strong>Email</strong> - Campaigns with A/B testing, scheduling, templates</li>
+      <li><strong>SMS</strong> - Twilio-powered text messaging with compliance</li>
+      <li><strong>Social Media</strong> - Instagram, TikTok, Facebook, LinkedIn, X, YouTube</li>
+      <li><strong>Unified Inbox</strong> - All responses in one place</li>
+      <li><strong>Drip Sequences</strong> - Automated nurture campaigns</li>
+    </ul>
+    <p><strong>Competitors:</strong> HubSpot and Salesforce offer similar capabilities but at 4-6x the price. ActiveCampaign focuses primarily on email only.</p>`
+  },
+  'white-label': {
+    title: 'White-Label / Licensable',
+    content: `<p><strong>LUX IT</strong> is fully licensable and white-labelable:</p>
+    <ul>
+      <li><strong>Custom Branding</strong> - Your logo, colors, domain</li>
+      <li><strong>Resell Rights</strong> - License to your own clients</li>
+      <li><strong>Multi-Tenant</strong> - Manage multiple companies from one instance</li>
+      <li><strong>API Access</strong> - Full API for custom integrations</li>
+      <li><strong>On-Premise Option</strong> - Deploy on your own infrastructure</li>
+    </ul>
+    <p><strong>Competitors:</strong> HubSpot, Salesforce, and ActiveCampaign do not offer white-label or licensing options.</p>`
+  },
+  'approval': {
+    title: 'Approval Workflows',
+    content: `<p><strong>LUX IT</strong> includes enterprise-grade content approval:</p>
+    <ul>
+      <li><strong>Approval Queue</strong> - All content routed through approval before publishing</li>
+      <li><strong>Role-Based Permissions</strong> - Admin, Manager, User access levels</li>
+      <li><strong>Audit Logs</strong> - Complete history of all actions</li>
+      <li><strong>Emergency Stop</strong> - Halt all automation instantly</li>
+      <li><strong>Feature Toggles</strong> - 27 safe-off defaults for compliance</li>
+    </ul>
+    <p><strong>Competitors:</strong> HubSpot requires add-on pricing. Salesforce includes but is expensive. ActiveCampaign lacks this feature entirely.</p>`
+  },
+  'social': {
+    title: 'Social Media Publishing',
+    content: `<p><strong>LUX IT</strong> publishes to all major platforms:</p>
+    <ul>
+      <li><strong>Instagram</strong> - Posts, Stories, Reels with insights</li>
+      <li><strong>TikTok</strong> - Video publishing with analytics</li>
+      <li><strong>Facebook</strong> - Pages, Groups, Ads integration</li>
+      <li><strong>LinkedIn</strong> - Personal and Company pages</li>
+      <li><strong>X (Twitter)</strong> - Tweets and threads</li>
+      <li><strong>YouTube</strong> - Video uploads with SEO</li>
+    </ul>
+    <p><strong>Competitors:</strong> HubSpot has limited social. Salesforce and ActiveCampaign do not include social publishing.</p>`
+  },
+  'analytics': {
+    title: 'Analytics & Reporting',
+    content: `<p><strong>LUX IT</strong> provides 10 metric categories:</p>
+    <ul>
+      <li><strong>Acquisition</strong> - Traffic sources, channels, campaigns</li>
+      <li><strong>Conversion</strong> - Funnel analytics, goal tracking</li>
+      <li><strong>Revenue</strong> - Sales tracking, deal values</li>
+      <li><strong>CAC</strong> - Customer acquisition cost analysis</li>
+      <li><strong>Retention</strong> - Churn rates, cohort analysis</li>
+      <li><strong>Engagement</strong> - Email opens, clicks, social engagement</li>
+      <li><strong>Attribution</strong> - Multi-touch attribution modeling</li>
+      <li><strong>Segments</strong> - Customer segmentation analytics</li>
+      <li><strong>Campaigns</strong> - Campaign performance tracking</li>
+      <li><strong>Compliance</strong> - GDPR/CAN-SPAM compliance metrics</li>
+    </ul>
+    <p><strong>Competitors:</strong> All offer analytics but LUX IT includes real-time dashboards and period-over-period comparison at no extra cost.</p>`
+  },
+  'crm': {
+    title: 'CRM & Pipeline',
+    content: `<p><strong>LUX IT</strong> includes a complete CRM system:</p>
+    <ul>
+      <li><strong>Contact Management</strong> - Full customer profiles with activity timeline</li>
+      <li><strong>Lead Scoring</strong> - AI-powered lead qualification</li>
+      <li><strong>Pipeline Stages</strong> - Customizable deal stages</li>
+      <li><strong>Next Actions</strong> - Coaching widgets for sales teams</li>
+      <li><strong>Activity Tracking</strong> - Calls, emails, meetings logged automatically</li>
+      <li><strong>Deal Management</strong> - Track deals from lead to close</li>
+    </ul>
+    <p><strong>Competitors:</strong> HubSpot and Salesforce have full CRM but at much higher prices. ActiveCampaign has basic CRM only.</p>`
+  },
+  'landing': {
+    title: 'Landing Page Builder',
+    content: `<p><strong>LUX IT</strong> includes a powerful landing page builder:</p>
+    <ul>
+      <li><strong>Drag & Drop</strong> - Visual editor with no coding required</li>
+      <li><strong>Templates</strong> - Pre-built templates for different industries</li>
+      <li><strong>Forms</strong> - Contact forms, surveys, quizzes</li>
+      <li><strong>Polls & Ratings</strong> - Interactive engagement components</li>
+      <li><strong>A/B Testing</strong> - Test different versions</li>
+      <li><strong>WordPress Integration</strong> - Export to WordPress sites</li>
+      <li><strong>UTM Tracking</strong> - Built-in campaign tracking</li>
+    </ul>
+    <p><strong>Competitors:</strong> HubSpot and ActiveCampaign include builders. Salesforce does not.</p>`
+  }
+};
+
+function showDetails(feature) {
+  const modal = document.getElementById('featureModal');
+  const title = document.getElementById('modalTitle');
+  const body = document.getElementById('modalBody');
+  const data = featureDetails[feature];
+  if (data) {
+    title.innerHTML = data.title;
+    body.innerHTML = data.content;
+    modal.classList.add('show');
+  }
+}
+
+function closeDetails() {
+  document.getElementById('featureModal').classList.remove('show');
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+  const cards = document.querySelectorAll('.chrome-border');
+  let currentCard = 0;
+  
+  function animateChrome() {
+    cards.forEach(card => card.classList.remove('chrome-active'));
+    if (cards[currentCard]) {
+      cards[currentCard].classList.add('chrome-active');
+    }
+    currentCard = (currentCard + 1) % cards.length;
+  }
+  
+  setInterval(animateChrome, 2000);
+  setTimeout(animateChrome, 500);
+});
+</script>
+{% endblock %}

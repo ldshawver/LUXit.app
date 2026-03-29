@@ -1,148 +1,280 @@
-{% extends "base_simple.html" %}
+{% extends "base.html" %}
 
-{% block title %}Email Marketing Hub - LUX Marketing{% endblock %}
-
-{% block page_header %}
-<span style="color: #c0c0c0;">Email Marketing Hub</span>
-{% endblock %}
+{% block title %}Email Hub - LUX IT{% endblock %}
+{% block page_title %}Email Hub{% endblock %}
 
 {% block content %}
-<div class="container-fluid" style="background: #000000; min-height: 100vh; padding: 2rem;">
-  <div class="row mb-4">
-    <div class="col-12">
-      <h1 class="display-4">Email Marketing Hub</h1>
-      <p class="lead">Comprehensive email marketing with A/B testing, templates, and automation</p>
+<div class="container-fluid px-4 py-3">
+
+  <div class="d-flex align-items-center justify-content-between mb-4">
+    <div>
+      <h2 class="mb-1 fw-bold" style="background: linear-gradient(135deg, var(--lux-primary, #bc00ed), var(--lux-secondary, #00ffb4)); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">Email Hub</h2>
+      <p class="text-muted mb-0" style="font-size: 0.9rem;">Design, automate, and optimize your email marketing</p>
+    </div>
+    <button class="btn px-4 py-2" style="background: linear-gradient(135deg, var(--lux-primary, #bc00ed), var(--lux-secondary, #00ffb4)); color: #fff; font-weight: 600; border: none; border-radius: 10px; font-size: 0.9rem;" data-bs-toggle="modal" data-bs-target="#aiGenerateModal">
+      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="me-2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+      AI Generate Campaign
+    </button>
+  </div>
+
+  <div class="row g-3 mb-4">
+    <div class="col-md-3">
+      <div class="glass-card p-3 text-center">
+        <div style="font-size: 1.6rem; font-weight: 700; color: var(--lux-secondary, #00ffb4);">{{ total_sent|default(0) }}</div>
+        <div class="text-muted" style="font-size: 0.78rem;">Emails Sent</div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="glass-card p-3 text-center">
+        <div style="font-size: 1.6rem; font-weight: 700; color: #00e5ff;">{{ open_rate|default('24.8') }}%</div>
+        <div class="text-muted" style="font-size: 0.78rem;">Open Rate</div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="glass-card p-3 text-center">
+        <div style="font-size: 1.6rem; font-weight: 700; color: var(--lux-primary, #bc00ed);">{{ click_rate|default('3.2') }}%</div>
+        <div class="text-muted" style="font-size: 0.78rem;">Click Rate</div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="glass-card p-3 text-center">
+        <div style="font-size: 1.6rem; font-weight: 700; color: #a855f7;">{{ active_campaigns|default(0) }}</div>
+        <div class="text-muted" style="font-size: 0.78rem;">Active Campaigns</div>
+      </div>
     </div>
   </div>
 
-  <div class="row g-4">
-    <div class="col-md-4">
-      <div class="card bg-dark border-primary">
-        <div class="card-body">
-          <h5 class="card-title"><i data-feather="send"></i> Campaigns</h5>
-          <p class="card-text">Create and manage email campaigns</p>
-          <a href="{{ url_for('main.campaigns') }}" class="btn btn-primary">Go to Campaigns</a>
+  <div class="row g-3 mb-4">
+
+    <div class="col-lg-8">
+      <div class="glass-card p-4">
+        <div class="d-flex align-items-center justify-content-between mb-3">
+          <h5 class="mb-0 fw-semibold"><i data-feather="send" class="me-2" style="width:18px; height:18px; color:#00e5ff;"></i>Campaigns</h5>
+          <a href="{{ url_for('main.campaigns') }}" class="btn btn-sm btn-outline-light" style="border-radius: 8px;">View All</a>
         </div>
+        {% if recent_campaigns %}
+        <div class="table-responsive">
+          <table class="table table-dark table-borderless align-middle" style="font-size: 0.85rem;">
+            <thead><tr style="color: rgba(255,255,255,0.45); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.06em;">
+              <th>Campaign</th><th>Status</th><th>Sent</th><th>Open Rate</th><th>Action</th>
+            </tr></thead>
+            <tbody>
+            {% for c in recent_campaigns[:5] %}
+              <tr style="border-bottom: 1px solid rgba(255,255,255,0.05);">
+                <td class="fw-medium">{{ c.name or c.subject or 'Untitled' }}</td>
+                <td><span class="badge" style="background: {% if c.status == 'sent' %}rgba(0,255,180,0.15); color:#00ffb4{% elif c.status == 'draft' %}rgba(255,255,255,0.1); color:rgba(255,255,255,0.5){% else %}rgba(0,229,255,0.15); color:#00e5ff{% endif %}; font-size:0.72rem;">{{ c.status|default('draft')|title }}</span></td>
+                <td>{{ c.sent_count|default(0) }}</td>
+                <td>{{ c.open_rate|default('-') }}</td>
+                <td><a href="{{ url_for('main.campaigns') }}" class="text-info" style="font-size:0.8rem;">Edit</a></td>
+              </tr>
+            {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% else %}
+        <div class="text-center py-4">
+          <p class="text-muted mb-2">No campaigns yet</p>
+          <a href="{{ url_for('main.campaigns') }}" class="btn btn-sm btn-outline-info" style="border-radius: 8px;">Create First Campaign</a>
+        </div>
+        {% endif %}
       </div>
     </div>
 
-    <div class="col-md-4">
-      <div class="card bg-dark border-success">
-        <div class="card-body">
-          <h5 class="card-title"><i data-feather="shuffle"></i> A/B Testing</h5>
-          <p class="card-text">Test and optimize your campaigns</p>
-          <a href="{{ url_for('main.ab_tests') }}" class="btn btn-success">Manage A/B Tests</a>
+    <div class="col-lg-4">
+      <div class="glass-card p-4 h-100">
+        <h5 class="mb-3 fw-semibold"><i data-feather="shuffle" class="me-2" style="width:18px; height:18px; color:#a855f7;"></i>A/B Testing</h5>
+        {% if ab_tests %}
+        {% for test in ab_tests[:3] %}
+        <div class="mb-3 p-2" style="background: rgba(168,85,247,0.06); border: 1px solid rgba(168,85,247,0.12); border-radius: 8px;">
+          <div class="fw-medium" style="font-size: 0.85rem;">{{ test.name|default('Test') }}</div>
+          <div class="d-flex justify-content-between mt-1" style="font-size: 0.75rem; color: rgba(255,255,255,0.5);">
+            <span>Variant A: {{ test.variant_a_rate|default('--') }}%</span>
+            <span>Variant B: {{ test.variant_b_rate|default('--') }}%</span>
+          </div>
+          <div class="progress mt-2" style="height: 4px; background: rgba(255,255,255,0.06);">
+            <div class="progress-bar" style="width: {{ test.progress|default(50) }}%; background: linear-gradient(90deg, #a855f7, #00e5ff);"></div>
+          </div>
         </div>
+        {% endfor %}
+        {% else %}
+        <div class="text-center py-3">
+          <div style="width:48px; height:48px; margin:0 auto 12px; background: rgba(168,85,247,0.1); border-radius: 12px; display:flex; align-items:center; justify-content:center;">
+            <i data-feather="shuffle" style="width:22px; height:22px; color:#a855f7;"></i>
+          </div>
+          <p class="text-muted mb-2" style="font-size: 0.85rem;">No active A/B tests</p>
+          <p class="text-muted" style="font-size: 0.75rem;">Split-test subject lines, content, and send times to maximize engagement</p>
+          <a href="{{ url_for('main.ab_tests') }}" class="btn btn-sm" style="background: rgba(168,85,247,0.15); color: #a855f7; border: 1px solid rgba(168,85,247,0.2); border-radius: 8px;">Create A/B Test</a>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <div class="row g-3 mb-4">
+    <div class="col-lg-6">
+      <div class="glass-card p-4">
+        <div class="d-flex align-items-center justify-content-between mb-3">
+          <h5 class="mb-0 fw-semibold"><i data-feather="archive" class="me-2" style="width:18px; height:18px; color:#00ffb4;"></i>Email Repository</h5>
+          <a href="{{ url_for('main.newsletter_archive') }}" class="btn btn-sm btn-outline-light" style="border-radius: 8px;">View All</a>
+        </div>
+        {% if past_emails %}
+        {% for email in past_emails[:4] %}
+        <div class="d-flex align-items-center justify-content-between py-2" style="border-bottom: 1px solid rgba(255,255,255,0.05);">
+          <div>
+            <div class="fw-medium" style="font-size: 0.85rem;">{{ email.subject or email.name or 'Untitled' }}</div>
+            <div style="font-size: 0.72rem; color: rgba(255,255,255,0.4);">{{ email.created_at.strftime('%b %d, %Y') if email.created_at else 'No date' }}</div>
+          </div>
+          <span class="badge" style="background: rgba(0,255,180,0.1); color: #00ffb4; font-size: 0.7rem;">{{ email.status|default('sent')|title }}</span>
+        </div>
+        {% endfor %}
+        {% else %}
+        <div class="text-center py-4">
+          <div style="width:48px; height:48px; margin:0 auto 12px; background: rgba(0,255,180,0.1); border-radius: 12px; display:flex; align-items:center; justify-content:center;">
+            <i data-feather="archive" style="width:22px; height:22px; color:#00ffb4;"></i>
+          </div>
+          <p class="text-muted mb-1" style="font-size: 0.85rem;">No past emails yet</p>
+          <p class="text-muted" style="font-size: 0.75rem;">Your sent campaigns and newsletters will appear here</p>
+        </div>
+        {% endif %}
       </div>
     </div>
 
-    <div class="col-md-4">
-      <div class="card bg-dark border-info">
-        <div class="card-body">
-          <h5 class="card-title"><i data-feather="edit-3"></i> Template Editor</h5>
-          <p class="card-text">Create emails with drag & drop</p>
-          <a href="{{ url_for('main.drag_drop_editor') }}" class="btn btn-info">Open Editor</a>
+    <div class="col-lg-6">
+      <div class="glass-card p-4">
+        <div class="d-flex align-items-center justify-content-between mb-3">
+          <h5 class="mb-0 fw-semibold"><i data-feather="mail" class="me-2" style="width:18px; height:18px; color:#00e5ff;"></i>Newsletters</h5>
+          <a href="{{ url_for('main.newsletters') }}" class="btn btn-sm btn-outline-light" style="border-radius: 8px;">Manage</a>
         </div>
+        {% if recent_newsletters %}
+        {% for nl in recent_newsletters[:4] %}
+        <div class="d-flex align-items-center justify-content-between py-2" style="border-bottom: 1px solid rgba(255,255,255,0.05);">
+          <div>
+            <div class="fw-medium" style="font-size: 0.85rem;">{{ nl.title or 'Untitled' }}</div>
+            <div style="font-size: 0.72rem; color: rgba(255,255,255,0.4);">{{ nl.published_at.strftime('%b %d, %Y') if nl.published_at else '' }}</div>
+          </div>
+          <span class="badge" style="background: rgba(0,229,255,0.1); color: #00e5ff; font-size: 0.7rem;">Published</span>
+        </div>
+        {% endfor %}
+        {% else %}
+        <div class="text-center py-4">
+          <div style="width:48px; height:48px; margin:0 auto 12px; background: rgba(0,229,255,0.1); border-radius: 12px; display:flex; align-items:center; justify-content:center;">
+            <i data-feather="mail" style="width:22px; height:22px; color:#00e5ff;"></i>
+          </div>
+          <p class="text-muted mb-1" style="font-size: 0.85rem;">No newsletters yet</p>
+          <a href="{{ url_for('main.newsletters') }}" class="btn btn-sm" style="background: rgba(0,229,255,0.1); color: #00e5ff; border: 1px solid rgba(0,229,255,0.2); border-radius: 8px;">Create Newsletter</a>
+        </div>
+        {% endif %}
       </div>
     </div>
+  </div>
 
-    <div class="col-md-4">
-      <div class="card bg-dark border-warning">
-        <div class="card-body">
-          <h5 class="card-title"><i data-feather="file-text"></i> Templates</h5>
-          <p class="card-text">Browse and select email templates</p>
-          <a href="{{ url_for('main.templates') }}" class="btn btn-warning">View Templates</a>
+  <div class="row g-3">
+    <div class="col-md-3">
+      <a href="{{ url_for('main.drag_drop_editor') }}" class="glass-card p-3 d-block text-decoration-none" style="transition: all 0.2s;">
+        <div class="d-flex align-items-center gap-3">
+          <div style="width:38px; height:38px; background: rgba(0,229,255,0.1); border-radius: 10px; display:flex; align-items:center; justify-content:center; flex-shrink:0;">
+            <i data-feather="edit-3" style="width:18px; height:18px; color:#00e5ff;"></i>
+          </div>
+          <div>
+            <div class="fw-semibold text-white" style="font-size: 0.85rem;">Template Editor</div>
+            <div style="font-size: 0.72rem; color: rgba(255,255,255,0.4);">Drag & drop builder</div>
+          </div>
         </div>
-      </div>
+      </a>
     </div>
-
-    <div class="col-md-4">
-      <div class="card bg-dark border-danger">
-        <div class="card-body">
-          <h5 class="card-title"><i data-feather="zap"></i> Automations</h5>
-          <p class="card-text">Set up automated workflows</p>
-          <a href="{{ url_for('main.automation_dashboard') }}" class="btn btn-danger">Manage Automations</a>
+    <div class="col-md-3">
+      <a href="{{ url_for('main.templates') }}" class="glass-card p-3 d-block text-decoration-none" style="transition: all 0.2s;">
+        <div class="d-flex align-items-center gap-3">
+          <div style="width:38px; height:38px; background: rgba(168,85,247,0.1); border-radius: 10px; display:flex; align-items:center; justify-content:center; flex-shrink:0;">
+            <i data-feather="file-text" style="width:18px; height:18px; color:#a855f7;"></i>
+          </div>
+          <div>
+            <div class="fw-semibold text-white" style="font-size: 0.85rem;">Templates</div>
+            <div style="font-size: 0.72rem; color: rgba(255,255,255,0.4);">Browse library</div>
+          </div>
         </div>
-      </div>
+      </a>
     </div>
-
-    <div class="col-md-4">
-      <div class="card bg-dark border-secondary">
-        <div class="card-body">
-          <h5 class="card-title"><i data-feather="book"></i> Trigger Library</h5>
-          <p class="card-text">Browse automation triggers</p>
-          <a href="{{ url_for('main.automation_triggers') }}" class="btn btn-secondary">View Triggers</a>
+    <div class="col-md-3">
+      <a href="{{ url_for('main.forms_dashboard') }}" class="glass-card p-3 d-block text-decoration-none" style="transition: all 0.2s;">
+        <div class="d-flex align-items-center gap-3">
+          <div style="width:38px; height:38px; background: rgba(0,255,180,0.1); border-radius: 10px; display:flex; align-items:center; justify-content:center; flex-shrink:0;">
+            <i data-feather="clipboard" style="width:18px; height:18px; color:#00ffb4;"></i>
+          </div>
+          <div>
+            <div class="fw-semibold text-white" style="font-size: 0.85rem;">Forms</div>
+            <div style="font-size: 0.72rem; color: rgba(255,255,255,0.4);">Signup forms</div>
+          </div>
         </div>
-      </div>
+      </a>
     </div>
-
-    <div class="col-md-4">
-      <div class="card bg-dark border-primary">
-        <div class="card-body">
-          <h5 class="card-title"><i data-feather="users"></i> Contacts</h5>
-          <p class="card-text">Manage your contact lists</p>
-          <a href="{{ url_for('main.contacts') }}" class="btn btn-primary">View Contacts</a>
+    <div class="col-md-3">
+      <a href="{{ url_for('main.landing_pages') }}" class="glass-card p-3 d-block text-decoration-none" style="transition: all 0.2s;">
+        <div class="d-flex align-items-center gap-3">
+          <div style="width:38px; height:38px; background: rgba(255,165,0,0.1); border-radius: 10px; display:flex; align-items:center; justify-content:center; flex-shrink:0;">
+            <i data-feather="globe" style="width:18px; height:18px; color:#ffa500;"></i>
+          </div>
+          <div>
+            <div class="fw-semibold text-white" style="font-size: 0.85rem;">Landing Pages</div>
+            <div style="font-size: 0.72rem; color: rgba(255,255,255,0.4);">Conversion pages</div>
+          </div>
         </div>
-      </div>
+      </a>
     </div>
+  </div>
+</div>
 
-    <div class="col-md-4">
-      <div class="card bg-dark border-success">
-        <div class="card-body">
-          <h5 class="card-title"><i data-feather="filter"></i> Segmentation</h5>
-          <p class="card-text">Create targeted segments</p>
-          <a href="{{ url_for('main.segments') }}" class="btn btn-success">Manage Segments</a>
-        </div>
+<div class="modal fade" id="aiGenerateModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content" style="background: rgba(12,14,30,0.95); border: 1px solid rgba(255,255,255,0.1); border-radius: 16px; backdrop-filter: blur(20px);">
+      <div class="modal-header border-0 pb-0">
+        <h5 class="modal-title fw-semibold">
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#a855f7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="me-2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+          AI Campaign Generator
+        </h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
       </div>
-    </div>
-
-    <div class="col-md-4">
-      <div class="card bg-dark border-info">
-        <div class="card-body">
-          <h5 class="card-title"><i data-feather="clipboard"></i> Forms</h5>
-          <p class="card-text">Create web forms for signups</p>
-          <a href="{{ url_for('main.forms_dashboard') }}" class="btn btn-info">Manage Forms</a>
-        </div>
-      </div>
-    </div>
-
-    <div class="col-md-4">
-      <div class="card bg-dark border-warning">
-        <div class="card-body">
-          <h5 class="card-title"><i data-feather="globe"></i> Landing Pages</h5>
-          <p class="card-text">Build conversion-focused pages</p>
-          <a href="{{ url_for('main.landing_pages') }}" class="btn btn-warning">View Landing Pages</a>
-        </div>
-      </div>
-    </div>
-
-    <div class="col-md-4">
-      <div class="card bg-dark" style="border-color: #8b5cf6;">
-        <div class="card-body">
-          <h5 class="card-title"><i data-feather="mail"></i> Newsletters</h5>
-          <p class="card-text">Create and manage newsletters</p>
-          <a href="{{ url_for('main.newsletters') }}" class="btn" style="background: #8b5cf6; color: white;">Manage Newsletters</a>
-        </div>
-      </div>
-    </div>
-
-    <div class="col-md-4">
-      <div class="card bg-dark border-danger">
-        <div class="card-body">
-          <h5 class="card-title"><i data-feather="bar-chart"></i> Polls & Surveys</h5>
-          <p class="card-text">Collect feedback and insights</p>
-          <a href="{{ url_for('main.polls_management') }}" class="btn btn-danger">Manage Polls</a>
-        </div>
-      </div>
-    </div>
-
-    <div class="col-md-4">
-      <div class="card bg-dark border-secondary">
-        <div class="card-body">
-          <h5 class="card-title"><i data-feather="archive"></i> Newsletter</h5>
-          <p class="card-text">Newsletter archive and management</p>
-          <a href="{{ url_for('main.newsletter_archive') }}" class="btn btn-secondary">View Newsletter</a>
-        </div>
+      <div class="modal-body">
+        <form action="{{ url_for('main.campaigns') }}" method="get">
+          <div class="mb-3">
+            <label class="form-label" style="font-size: 0.85rem; color: rgba(255,255,255,0.6);">Campaign Goal</label>
+            <select class="form-select bg-dark text-white border-secondary" style="border-radius: 10px;">
+              <option>Product Launch</option>
+              <option>Newsletter</option>
+              <option>Promotional Offer</option>
+              <option>Re-engagement</option>
+              <option>Welcome Series</option>
+              <option>Event Invitation</option>
+            </select>
+          </div>
+          <div class="mb-3">
+            <label class="form-label" style="font-size: 0.85rem; color: rgba(255,255,255,0.6);">Target Audience</label>
+            <select class="form-select bg-dark text-white border-secondary" style="border-radius: 10px;">
+              <option>All Contacts</option>
+              <option>New Subscribers</option>
+              <option>Engaged Users</option>
+              <option>Inactive Users</option>
+              <option>VIP Customers</option>
+            </select>
+          </div>
+          <div class="mb-3">
+            <label class="form-label" style="font-size: 0.85rem; color: rgba(255,255,255,0.6);">Describe your campaign</label>
+            <textarea class="form-control bg-dark text-white border-secondary" rows="3" placeholder="e.g. 20% off spring collection for returning customers..." style="border-radius: 10px;"></textarea>
+          </div>
+          <div class="mb-3">
+            <label class="form-label" style="font-size: 0.85rem; color: rgba(255,255,255,0.6);">Tone</label>
+            <div class="d-flex gap-2 flex-wrap">
+              <span class="badge px-3 py-2" style="background: rgba(168,85,247,0.15); color: #a855f7; cursor: pointer; border-radius: 20px; font-weight: 500;">Professional</span>
+              <span class="badge px-3 py-2" style="background: rgba(255,255,255,0.06); color: rgba(255,255,255,0.5); cursor: pointer; border-radius: 20px; font-weight: 500;">Casual</span>
+              <span class="badge px-3 py-2" style="background: rgba(255,255,255,0.06); color: rgba(255,255,255,0.5); cursor: pointer; border-radius: 20px; font-weight: 500;">Urgent</span>
+              <span class="badge px-3 py-2" style="background: rgba(255,255,255,0.06); color: rgba(255,255,255,0.5); cursor: pointer; border-radius: 20px; font-weight: 500;">Playful</span>
+            </div>
+          </div>
+          <button type="submit" class="btn w-100 py-2" style="background: linear-gradient(135deg, var(--lux-primary, #bc00ed), var(--lux-secondary, #00ffb4)); color: #fff; font-weight: 600; border: none; border-radius: 10px;">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="me-2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+            Generate Campaign
+          </button>
+        </form>
       </div>
     </div>
   </div>

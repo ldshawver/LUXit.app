@@ -6,10 +6,10 @@
 <div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
     <h1 class="h2"><i data-feather="users"></i> Manage Users</h1>
     <div>
-        <a href="{{ url_for('user.add_user') }}" class="btn btn-primary">
+        <a href="{{ url_for('main.add_user') }}" class="btn btn-primary">
             <i data-feather="user-plus"></i> Add User
         </a>
-        <a href="{{ url_for('user.profile') }}" class="btn btn-outline-secondary">
+        <a href="{{ url_for('main.user_profile') }}" class="btn btn-outline-secondary">
             <i data-feather="arrow-left"></i> Back to Profile
         </a>
     </div>
@@ -46,11 +46,11 @@
                 <td>{{ user.created_at.strftime('%m/%d/%Y') }}</td>
                 <td>
                     <div class="btn-group btn-group-sm" role="group">
-                        <a href="{{ url_for('user.edit_user', user_id=user.id) }}" class="btn btn-outline-primary">
+                        <a href="{{ url_for('main.edit_user', user_id=user.id) }}" class="btn btn-outline-primary">
                             <i data-feather="edit"></i> Edit
                         </a>
                         {% if user.id != current_user.id %}
-                        <form method="POST" action="{{ url_for('user.delete_user', user_id=user.id) }}" class="d-inline" 
+                        <form method="POST" action="{{ url_for('main.delete_user', user_id=user.id) }}" class="d-inline" 
                               onsubmit="return confirm('Are you sure you want to delete user {{ user.username }}?')">
                             <button type="submit" class="btn btn-outline-danger">
                                 <i data-feather="trash-2"></i> Delete

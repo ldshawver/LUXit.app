@@ -75,11 +75,11 @@
                     <a href="{{ url_for('main.edit_user_profile') }}" class="btn btn-primary">
                         <i data-feather="edit"></i> Edit Profile
                     </a>
-                    <a href="{{ url_for('user.change_password') }}" class="btn btn-outline-secondary">
+                    <a href="{{ url_for('main.change_password') }}" class="btn btn-outline-secondary">
                         <i data-feather="key"></i> Change Password
                     </a>
                     {% if user.is_admin %}
-                    <a href="{{ url_for('user.manage_users') }}" class="btn btn-outline-secondary">
+                    <a href="{{ url_for('main.manage_users') }}" class="btn btn-outline-secondary">
                         <i data-feather="users"></i> Manage Users
                     </a>
                     {% endif %}
@@ -107,6 +107,35 @@
                     <a href="{{ url_for('main.analytics') }}" class="list-group-item list-group-item-action">
                         <i data-feather="bar-chart-2"></i> Analytics
                     </a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row mt-4">
+    <div class="col-12">
+        <div class="card mb-4" style="background: linear-gradient(135deg, #000000 0%, #001a1a 100%); border: 2px solid #00ffb4;">
+            <div class="card-header" style="background: linear-gradient(135deg, #00ffb4, #bc00ed); color: #000;">
+                <h5 class="card-title mb-0"><i data-feather="layout"></i> Default Hub Preference</h5>
+            </div>
+            <div class="card-body">
+                <p class="text-muted mb-3">Choose which hub you see when you log in. You can switch between hubs at any time from the dashboard.</p>
+                <div class="d-flex gap-3">
+                    <div class="form-check form-check-inline">
+                        <input class="form-check-input" type="radio" name="defaultHub" id="hubSales" value="sales" {% if user.default_hub != 'marketing' %}checked{% endif %} onchange="setDefaultHubPref('sales')">
+                        <label class="form-check-label" for="hubSales">
+                            <i data-feather="briefcase" style="width:16px;"></i> Sales Hub
+                            <small class="d-block text-muted">Focus on deals, pipeline, and customer relationships</small>
+                        </label>
+                    </div>
+                    <div class="form-check form-check-inline">
+                        <input class="form-check-input" type="radio" name="defaultHub" id="hubMarketing" value="marketing" {% if user.default_hub == 'marketing' %}checked{% endif %} onchange="setDefaultHubPref('marketing')">
+                        <label class="form-check-label" for="hubMarketing">
+                            <i data-feather="megaphone" style="width:16px;"></i> Marketing Hub
+                            <small class="d-block text-muted">Focus on campaigns, content, and audience growth</small>
+                        </label>
+                    </div>
                 </div>
             </div>
         </div>
@@ -189,6 +218,29 @@ async function setDefaultCompany(companyId) {
         }
     } catch (e) {
         alert('Error setting default company');
+    }
+}
+
+async function setDefaultHubPref(hub) {
+    const csrfToken = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
+    try {
+        const response = await fetch('/api/user/set-default-hub', {
+            method: 'POST',
+            headers: { 
+                'Content-Type': 'application/json',
+                'X-CSRFToken': csrfToken
+            },
+            body: JSON.stringify({ hub: hub })
+        });
+        const data = await response.json();
+        if (data.success) {
+            const hubName = hub === 'sales' ? 'Sales Hub' : 'Marketing Hub';
+            alert(hubName + ' is now your default!');
+        } else {
+            alert('Error: ' + data.error);
+        }
+    } catch (e) {
+        alert('Error setting default hub');
     }
 }
 </script>

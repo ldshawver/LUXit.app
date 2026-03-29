@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="robots" content="index,follow">
+  <title>Terms of Service | LUXit</title>
+  <style>
+    :root {
+      --lux-bg: #0b0d12;
+      --lux-surface: #101522;
+      --lux-border: #1f2633;
+      --lux-text: #f7f7fb;
+      --lux-muted: #9aa4b2;
+      --lux-accent: #7c3aed;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Inter", system-ui, sans-serif;
+      background: var(--lux-bg);
+      color: var(--lux-text);
+      line-height: 1.7;
+    }
+    nav {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 20px 40px;
+      border-bottom: 1px solid var(--lux-border);
+      background: rgba(11,13,18,0.95);
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      backdrop-filter: blur(12px);
+    }
+    nav a { color: var(--lux-muted); text-decoration: none; font-size: 0.9rem; }
+    nav a:hover { color: var(--lux-text); }
+    .nav-logo { font-weight: 700; font-size: 1rem; color: var(--lux-text); letter-spacing: 0.05em; }
+    .container {
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 60px 24px 80px;
+    }
+    h1 { font-size: 2.2rem; margin-bottom: 4px; }
+    .updated { color: var(--lux-muted); font-size: 0.9rem; margin-bottom: 40px; }
+    h2 {
+      font-size: 1.15rem;
+      margin-top: 36px;
+      margin-bottom: 8px;
+      color: var(--lux-text);
+      padding-bottom: 6px;
+      border-bottom: 1px solid var(--lux-border);
+    }
+    p, li { color: #c8d0dc; }
+    ul { padding-left: 20px; }
+    li { margin-bottom: 6px; }
+    a { color: #7c3aed; }
+    a:hover { color: #a78bfa; }
+    strong { color: var(--lux-text); }
+    footer {
+      border-top: 1px solid var(--lux-border);
+      padding: 32px 40px;
+      text-align: center;
+      color: var(--lux-muted);
+      font-size: 0.85rem;
+    }
+    footer a { color: var(--lux-muted); margin: 0 8px; text-decoration: none; }
+    footer a:hover { color: var(--lux-text); }
+  </style>
+</head>
+<body>
+  <nav>
+    <a class="nav-logo" href="/">LUXit</a>
+    <div style="display:flex;gap:20px;">
+      <a href="/features">Features</a>
+      <a href="/pricing">Pricing</a>
+      <a href="/auth/login">Sign In</a>
+    </div>
+  </nav>
+
+  <div class="container">
+    <h1>Terms of Service</h1>
+    <p class="updated">Last updated: {{ updated }}</p>
+
+    <h2>1. Agreement</h2>
+    <p>
+      By accessing or using LUXit at <strong>luxit.app</strong> (the "Service"), you agree to these Terms.
+      If you do not agree, do not use the Service.
+    </p>
+
+    <h2>2. Eligibility</h2>
+    <p>
+      You must be legally able to form a contract. The Service is not intended for children under 13
+      (or higher age where required by local law).
+    </p>
+
+    <h2>3. Accounts &amp; Security</h2>
+    <ul>
+      <li>You are responsible for your account credentials and all activity under your account.</li>
+      <li>You must provide accurate information and keep it updated.</li>
+      <li>Notify us of unauthorized use at <strong>support@luxit.app</strong>.</li>
+    </ul>
+
+    <h2>4. Acceptable Use</h2>
+    <p>You agree not to:</p>
+    <ul>
+      <li>Break laws or violate others' rights.</li>
+      <li>Access the Service in an unauthorized manner, or attempt to bypass security.</li>
+      <li>Upload malware, conduct scraping that harms the Service, or abuse rate limits.</li>
+      <li>Use the Service to send spam or unlawful communications.</li>
+    </ul>
+
+    <h2>5. Customer Content</h2>
+    <ul>
+      <li>You retain ownership of content you submit to the Service ("Customer Content").</li>
+      <li>You grant LUXit a limited license to host, process, and display Customer Content solely to provide the Service.</li>
+      <li>You represent you have the rights needed to submit Customer Content and authorize its processing.</li>
+    </ul>
+
+    <h2>6. Third-Party Platform Integrations</h2>
+    <p>
+      If you connect LUXit to third-party platforms (e.g., Meta, X, TikTok, YouTube/Google, Snapchat,
+      LinkedIn), your use may be subject to those platforms' terms and policies. You are responsible for
+      complying with them.
+    </p>
+
+    <h2>7. Subscriptions, Billing &amp; Refunds</h2>
+    <p>
+      Paid plans, billing cycles, and refunds (if any) will be described at checkout or in an order form.
+      Taxes may apply. Failure to pay may result in suspension or termination of access.
+    </p>
+
+    <h2>8. Privacy</h2>
+    <p>
+      Our <a href="/privacy">Privacy Policy</a> explains how we collect and use your information.
+      By using the Service, you agree to our data practices as described there.
+    </p>
+
+    <h2>9. Termination</h2>
+    <p>
+      You may stop using the Service at any time. We may suspend or terminate access if you violate
+      these Terms, if needed for security or legal compliance, or for any other reason with reasonable notice.
+    </p>
+
+    <h2>10. Disclaimers</h2>
+    <p>
+      The Service is provided "as is" and "as available." We disclaim all warranties to the maximum extent
+      permitted by law, including implied warranties of merchantability and fitness for a particular purpose.
+    </p>
+
+    <h2>11. Limitation of Liability</h2>
+    <p>
+      To the maximum extent permitted by law, LUXit will not be liable for indirect, incidental, special,
+      consequential, or punitive damages, or any loss of profits, revenues, data, or goodwill arising from
+      your use of the Service.
+    </p>
+
+    <h2>12. Indemnification</h2>
+    <p>
+      You agree to indemnify and hold LUXit and its affiliates, officers, and employees harmless from
+      claims, damages, and expenses arising from your use of the Service or violation of these Terms.
+    </p>
+
+    <h2>13. Changes to These Terms</h2>
+    <p>
+      We may update these Terms from time to time. We will notify you of material changes. Continued
+      use after updates means you accept the revised Terms.
+    </p>
+
+    <h2>14. Contact</h2>
+    <p>
+      Support: <strong>support@luxit.app</strong><br>
+      Legal: <strong>legal@luxit.app</strong>
+    </p>
+  </div>
+
+  <footer>
+    <div style="margin-bottom:12px;">LUXit &bull; Your entire marketing department, automated.</div>
+    <div>
+      <a href="/privacy">Privacy Policy</a>
+      <a href="/terms">Terms of Service</a>
+      <a href="/data-deletion">Data Deletion</a>
+    </div>
+  </footer>
+</body>
+</html>

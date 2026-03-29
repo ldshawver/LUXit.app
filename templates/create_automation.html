@@ -1,71 +1,433 @@
 {% extends "base.html" %}
-
-{% block title %}Create Automation - LUX Marketing{% endblock %}
+{% block title %}Create Automation - LUX IT{% endblock %}
+{% block page_title %}Automations{% endblock %}
 
 {% block content %}
-<div class="container mt-4">
-  <div class="row mb-4">
-    <div class="col-md-12">
-      <h2>Create Marketing Automation</h2>
-      <p class="text-muted">Build automated workflows to streamline your marketing</p>
-    </div>
+<style>
+  body { background: #030014 !important; }
+
+  .ca-wrap { max-width:900px; }
+  .ca-back { color:#888; text-decoration:none; font-size:0.82rem; display:inline-flex; align-items:center; gap:5px; margin-bottom:1rem; }
+  .ca-back:hover { color:#fff; }
+  .ca-title { font-size:1.15rem; font-weight:700; color:#fff; margin:0 0 4px; }
+  .ca-subtitle { color:#666; font-size:0.82rem; margin:0 0 1.5rem; }
+
+  .ca-steps { display:flex; align-items:center; gap:0; margin-bottom:2rem; }
+  .ca-step { display:flex; align-items:center; gap:8px; padding:10px 18px; border-radius:10px; font-size:0.82rem; font-weight:600; color:#555; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.06); cursor:default; }
+  .ca-step.active { color:#fff; background:rgba(168,85,247,0.12); border-color:rgba(168,85,247,0.4); }
+  .ca-step.done { color:#4ade80; background:rgba(74,222,128,0.08); border-color:rgba(74,222,128,0.2); }
+  .ca-step-num { width:22px; height:22px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:0.7rem; font-weight:700; background:rgba(255,255,255,0.06); color:#888; }
+  .ca-step.active .ca-step-num { background:rgba(168,85,247,0.3); color:#fff; }
+  .ca-step.done .ca-step-num { background:rgba(74,222,128,0.2); color:#4ade80; }
+  .ca-step-line { width:32px; height:1px; background:rgba(255,255,255,0.08); }
+
+  .ca-panel { background:rgba(12,14,20,0.85); border:1px solid rgba(255,255,255,0.06); border-radius:16px; padding:28px; margin-bottom:1.5rem; }
+  .ca-panel-title { font-size:0.9rem; font-weight:700; color:#fff; margin:0 0 16px; display:flex; align-items:center; gap:8px; }
+
+  .ca-channels { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; }
+  .ca-ch { padding:20px; border-radius:14px; border:2px solid rgba(255,255,255,0.06); text-align:center; cursor:pointer; transition:all 0.2s; background:transparent; }
+  .ca-ch:hover { border-color:rgba(168,85,247,0.3); }
+  .ca-ch.selected { border-color:#a855f7; background:rgba(168,85,247,0.08); }
+  .ca-ch input { display:none; }
+  .ca-ch-icon { width:48px; height:48px; border-radius:12px; display:flex; align-items:center; justify-content:center; margin:0 auto 10px; }
+  .ca-ch h6 { color:#fff; font-size:0.88rem; font-weight:600; margin:0 0 4px; }
+  .ca-ch p { color:#666; font-size:0.72rem; margin:0; }
+
+  .ca-triggers { display:grid; grid-template-columns:repeat(2,1fr); gap:10px; }
+  .ca-trig { padding:14px 16px; border-radius:12px; border:2px solid rgba(255,255,255,0.06); cursor:pointer; transition:all 0.2s; display:flex; align-items:center; gap:12px; background:transparent; }
+  .ca-trig:hover { border-color:rgba(0,229,255,0.3); }
+  .ca-trig.selected { border-color:#00e5ff; background:rgba(0,229,255,0.06); }
+  .ca-trig input { display:none; }
+  .ca-trig-icon { width:36px; height:36px; border-radius:10px; display:flex; align-items:center; justify-content:center; background:rgba(255,255,255,0.04); flex-shrink:0; }
+  .ca-trig h6 { color:#fff; font-size:0.82rem; font-weight:600; margin:0 0 2px; }
+  .ca-trig p { color:#555; font-size:0.7rem; margin:0; }
+
+  .ca-form-group { margin-bottom:1rem; }
+  .ca-label { font-size:0.78rem; font-weight:600; color:rgba(255,255,255,0.5); text-transform:uppercase; letter-spacing:0.04em; margin-bottom:6px; display:block; }
+  .ca-input { width:100%; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.1); color:#fff; padding:10px 14px; border-radius:10px; font-size:0.85rem; }
+  .ca-input:focus { outline:none; border-color:rgba(168,85,247,0.5); }
+  .ca-textarea { width:100%; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.1); color:#fff; padding:10px 14px; border-radius:10px; font-size:0.85rem; resize:vertical; min-height:70px; }
+  .ca-textarea:focus { outline:none; border-color:rgba(168,85,247,0.5); }
+
+  .ca-template-grid { display:grid; grid-template-columns:repeat(2,1fr); gap:10px; max-height:280px; overflow-y:auto; }
+  .ca-tpl-card { padding:14px; border-radius:12px; border:2px solid rgba(255,255,255,0.06); cursor:pointer; transition:all 0.2s; }
+  .ca-tpl-card:hover { border-color:rgba(0,255,180,0.3); }
+  .ca-tpl-card.selected { border-color:#00ffb4; background:rgba(0,255,180,0.06); }
+  .ca-tpl-card input { display:none; }
+  .ca-tpl-card h6 { color:#fff; font-size:0.82rem; font-weight:600; margin:0 0 4px; }
+  .ca-tpl-card p { color:#555; font-size:0.7rem; margin:0; }
+
+  .ca-actions { display:flex; justify-content:space-between; align-items:center; margin-top:1.5rem; }
+  .ca-btn-primary { background:linear-gradient(135deg,#a855f7,#6366f1); color:#fff; border:none; padding:10px 24px; border-radius:10px; font-size:0.85rem; font-weight:600; cursor:pointer; display:inline-flex; align-items:center; gap:6px; }
+  .ca-btn-primary:hover { background:linear-gradient(135deg,#9333ea,#4f46e5); }
+  .ca-btn-secondary { background:transparent; border:1px solid rgba(255,255,255,0.12); color:#ccc; padding:9px 18px; border-radius:10px; font-size:0.85rem; cursor:pointer; text-decoration:none; }
+  .ca-btn-secondary:hover { border-color:rgba(255,255,255,0.3); color:#fff; }
+
+  .ca-editor-link { display:flex; align-items:center; gap:12px; padding:16px; border-radius:12px; background:rgba(168,85,247,0.08); border:1px solid rgba(168,85,247,0.2); margin-top:12px; }
+  .ca-editor-link i { width:20px; height:20px; color:#a855f7; }
+  .ca-editor-link span { color:#ccc; font-size:0.82rem; }
+  .ca-editor-link a { color:#a855f7; font-weight:600; font-size:0.82rem; margin-left:auto; text-decoration:none; }
+  .ca-editor-link a:hover { color:#c084fc; }
+
+  @media (max-width:768px) {
+    .ca-channels { grid-template-columns:1fr; }
+    .ca-triggers { grid-template-columns:1fr; }
+    .ca-template-grid { grid-template-columns:1fr; }
+  }
+</style>
+
+<div class="ca-wrap">
+  <a href="{{ url_for('main.automation_dashboard') }}" class="ca-back">
+    <i data-feather="arrow-left" style="width:14px;height:14px;"></i> Back to Automations
+  </a>
+
+  <h2 class="ca-title">Create Marketing Automation</h2>
+  <p class="ca-subtitle">Set up an automated workflow triggered by customer actions</p>
+
+  <!-- Steps Indicator -->
+  <div class="ca-steps">
+    <div class="ca-step active" id="stepInd1"><span class="ca-step-num">1</span> Channel</div>
+    <div class="ca-step-line"></div>
+    <div class="ca-step" id="stepInd2"><span class="ca-step-num">2</span> Trigger</div>
+    <div class="ca-step-line"></div>
+    <div class="ca-step" id="stepInd3"><span class="ca-step-num">3</span> Details</div>
   </div>
 
-  <div class="row">
-    <div class="col-md-8">
-      <div class="card bg-dark">
-        <div class="card-body">
-          <form method="POST" action="{{ url_for('main.create_automation') }}">
-            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-            <div class="mb-3">
-              <label for="name" class="form-label">Automation Name</label>
-              <input type="text" class="form-control bg-dark text-light" id="name" name="name" required>
-            </div>
+  <form method="POST" action="{{ url_for('main.create_automation') }}" id="automationForm">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="channel_type" id="channelInput" value="{{ request.args.get('channel', '') }}">
+    <input type="hidden" name="trigger_type" id="triggerInput" value="">
 
-            <div class="mb-3">
-              <label for="description" class="form-label">Description</label>
-              <textarea class="form-control bg-dark text-light" id="description" name="description" rows="3"></textarea>
-            </div>
-
-            <div class="mb-3">
-              <label for="trigger_type" class="form-label">Trigger</label>
-              <select class="form-select bg-dark text-light" id="trigger_type" name="trigger_type" required>
-                <option value="">Select a trigger...</option>
-                <option value="signup">New Contact Signup</option>
-                <option value="purchase">Purchase Made</option>
-                <option value="abandoned_cart">Abandoned Cart</option>
-                <option value="email_open">Email Opened</option>
-                <option value="link_click">Link Clicked</option>
-                <option value="date_based">Date-Based</option>
-              </select>
-            </div>
-
-            <div class="d-flex justify-content-between">
-              <a href="{{ url_for('main.automation_dashboard') }}" class="btn btn-secondary">Cancel</a>
-              <button type="submit" class="btn btn-primary">Create Automation</button>
-            </div>
-          </form>
+    <!-- Step 1: Choose Channel -->
+    <div id="step1">
+      <div class="ca-panel">
+        <div class="ca-panel-title">
+          <i data-feather="send" style="width:16px;height:16px;color:#a855f7;"></i>
+          Choose a Channel
         </div>
+        <div class="ca-channels">
+          <label class="ca-ch" data-channel="email">
+            <input type="radio" name="channel_radio" value="email">
+            <div class="ca-ch-icon" style="background:rgba(168,85,247,0.15);">
+              <i data-feather="mail" style="width:24px;height:24px;color:#a855f7;"></i>
+            </div>
+            <h6>Email</h6>
+            <p>Automated email sequences with drag-and-drop editor</p>
+          </label>
+          <label class="ca-ch" data-channel="sms">
+            <input type="radio" name="channel_radio" value="sms">
+            <div class="ca-ch-icon" style="background:rgba(0,229,255,0.12);">
+              <i data-feather="smartphone" style="width:24px;height:24px;color:#00e5ff;"></i>
+            </div>
+            <h6>SMS / Text</h6>
+            <p>Automated text messages for alerts, reminders, promos</p>
+          </label>
+          <label class="ca-ch" data-channel="social_dm">
+            <input type="radio" name="channel_radio" value="social_dm">
+            <div class="ca-ch-icon" style="background:rgba(236,72,153,0.12);">
+              <i data-feather="message-circle" style="width:24px;height:24px;color:#ec4899;"></i>
+            </div>
+            <h6>Social DM</h6>
+            <p>Auto-replies and welcome messages via Instagram/Facebook DMs</p>
+          </label>
+        </div>
+      </div>
+      <div style="text-align:right;">
+        <button type="button" class="ca-btn-primary" onclick="goToStep(2)" id="step1Next" disabled>
+          Next: Choose Trigger <i data-feather="arrow-right" style="width:14px;height:14px;"></i>
+        </button>
       </div>
     </div>
 
-    <div class="col-md-4">
-      <div class="card bg-dark border-info">
-        <div class="card-header bg-info">
-          <h6 class="mb-0">Quick Start Templates</h6>
+    <!-- Step 2: Choose Trigger -->
+    <div id="step2" style="display:none;">
+      <div class="ca-panel">
+        <div class="ca-panel-title">
+          <i data-feather="git-branch" style="width:16px;height:16px;color:#00e5ff;"></i>
+          Choose a Trigger
         </div>
-        <div class="card-body">
-          <p class="small">Start with a pre-built template:</p>
-          <div class="d-grid gap-2">
-            <a href="{{ url_for('main.automation_templates') }}" class="btn btn-sm btn-outline-primary">Browse Templates</a>
+        <div class="ca-triggers" id="triggerGrid">
+          <label class="ca-trig" data-trigger="signup">
+            <input type="radio" name="trigger_radio" value="signup">
+            <div class="ca-trig-icon"><i data-feather="user-plus" style="width:18px;height:18px;color:#4ade80;"></i></div>
+            <div><h6>New Contact Signup</h6><p>When someone joins your list or creates an account</p></div>
+          </label>
+          <label class="ca-trig" data-trigger="purchase">
+            <input type="radio" name="trigger_radio" value="purchase">
+            <div class="ca-trig-icon"><i data-feather="shopping-bag" style="width:18px;height:18px;color:#f59e0b;"></i></div>
+            <div><h6>Purchase Made</h6><p>After a customer completes a purchase</p></div>
+          </label>
+          <label class="ca-trig" data-trigger="abandoned_cart">
+            <input type="radio" name="trigger_radio" value="abandoned_cart">
+            <div class="ca-trig-icon"><i data-feather="shopping-cart" style="width:18px;height:18px;color:#ef4444;"></i></div>
+            <div><h6>Abandoned Cart</h6><p>When a customer leaves items in their cart</p></div>
+          </label>
+          <label class="ca-trig" data-trigger="email_open">
+            <input type="radio" name="trigger_radio" value="email_open">
+            <div class="ca-trig-icon"><i data-feather="eye" style="width:18px;height:18px;color:#8b5cf6;"></i></div>
+            <div><h6>Email Opened</h6><p>When a contact opens a specific email</p></div>
+          </label>
+          <label class="ca-trig" data-trigger="link_click">
+            <input type="radio" name="trigger_radio" value="link_click">
+            <div class="ca-trig-icon"><i data-feather="mouse-pointer" style="width:18px;height:18px;color:#06b6d4;"></i></div>
+            <div><h6>Link Clicked</h6><p>When a contact clicks a tracked link</p></div>
+          </label>
+          <label class="ca-trig" data-trigger="date_based">
+            <input type="radio" name="trigger_radio" value="date_based">
+            <div class="ca-trig-icon"><i data-feather="calendar" style="width:18px;height:18px;color:#ec4899;"></i></div>
+            <div><h6>Date-Based</h6><p>Anniversary, birthday, or scheduled date</p></div>
+          </label>
+          <label class="ca-trig" data-trigger="tag_added">
+            <input type="radio" name="trigger_radio" value="tag_added">
+            <div class="ca-trig-icon"><i data-feather="tag" style="width:18px;height:18px;color:#00ffb4;"></i></div>
+            <div><h6>Tag Added</h6><p>When a tag is applied to a contact</p></div>
+          </label>
+          <label class="ca-trig" data-trigger="inactivity">
+            <input type="radio" name="trigger_radio" value="inactivity">
+            <div class="ca-trig-icon"><i data-feather="clock" style="width:18px;height:18px;color:#f97316;"></i></div>
+            <div><h6>Inactivity</h6><p>No engagement for a set number of days</p></div>
+          </label>
+          <label class="ca-trig social-only" data-trigger="new_follower" style="display:none;">
+            <input type="radio" name="trigger_radio" value="new_follower">
+            <div class="ca-trig-icon"><i data-feather="user-check" style="width:18px;height:18px;color:#ec4899;"></i></div>
+            <div><h6>New Follower</h6><p>When someone follows your social profile</p></div>
+          </label>
+          <label class="ca-trig social-only" data-trigger="dm_keyword" style="display:none;">
+            <input type="radio" name="trigger_radio" value="dm_keyword">
+            <div class="ca-trig-icon"><i data-feather="hash" style="width:18px;height:18px;color:#a855f7;"></i></div>
+            <div><h6>DM Keyword</h6><p>When a message contains a specific keyword</p></div>
+          </label>
+          <label class="ca-trig social-only" data-trigger="comment_trigger" style="display:none;">
+            <input type="radio" name="trigger_radio" value="comment_trigger">
+            <div class="ca-trig-icon"><i data-feather="message-square" style="width:18px;height:18px;color:#06b6d4;"></i></div>
+            <div><h6>Comment Trigger</h6><p>Auto-reply when someone comments on a post</p></div>
+          </label>
+          <label class="ca-trig social-only" data-trigger="story_reply" style="display:none;">
+            <input type="radio" name="trigger_radio" value="story_reply">
+            <div class="ca-trig-icon"><i data-feather="image" style="width:18px;height:18px;color:#f59e0b;"></i></div>
+            <div><h6>Story Reply</h6><p>When someone replies to your story</p></div>
+          </label>
+        </div>
+      </div>
+      <div class="ca-actions">
+        <button type="button" class="ca-btn-secondary" onclick="goToStep(1)">
+          <i data-feather="arrow-left" style="width:14px;height:14px;"></i> Back
+        </button>
+        <button type="button" class="ca-btn-primary" onclick="goToStep(3)" id="step2Next" disabled>
+          Next: Details <i data-feather="arrow-right" style="width:14px;height:14px;"></i>
+        </button>
+      </div>
+    </div>
+
+    <!-- Step 3: Automation Details & Content -->
+    <div id="step3" style="display:none;">
+      <div class="ca-panel">
+        <div class="ca-panel-title">
+          <i data-feather="settings" style="width:16px;height:16px;color:#00ffb4;"></i>
+          Automation Details
+        </div>
+        <div class="ca-form-group">
+          <label class="ca-label">Automation Name</label>
+          <input type="text" name="name" class="ca-input" placeholder="e.g., Welcome Email Series" required>
+        </div>
+        <div class="ca-form-group">
+          <label class="ca-label">Description (optional)</label>
+          <textarea name="description" class="ca-textarea" placeholder="What does this automation do?"></textarea>
+        </div>
+      </div>
+
+      <!-- Email-specific: Editor link -->
+      <div class="ca-panel" id="emailEditorPanel" style="display:none;">
+        <div class="ca-panel-title">
+          <i data-feather="mail" style="width:16px;height:16px;color:#a855f7;"></i>
+          Email Content
+        </div>
+        <p style="color:#888;font-size:0.82rem;margin:0 0 12px;">Design your email in the drag-and-drop editor, or pick a template to start with.</p>
+        <div class="ca-editor-link">
+          <i data-feather="layout"></i>
+          <span>Open the visual email builder after creating this automation</span>
+          <a href="{{ url_for('main.drag_drop_editor') }}" target="_blank">Open Editor →</a>
+        </div>
+        <div style="margin-top:16px;">
+          <label class="ca-label">Or start from a template</label>
+          <div class="ca-template-grid">
+            {% for tpl in email_templates[:6] %}
+            <label class="ca-tpl-card">
+              <input type="radio" name="email_template_id" value="{{ tpl.id }}">
+              <h6>{{ tpl.name }}</h6>
+              <p>{{ tpl.category|default('General') }}</p>
+            </label>
+            {% endfor %}
+            {% if not email_templates %}
+            <div style="grid-column:1/-1;text-align:center;padding:20px;color:#555;font-size:0.82rem;">
+              No email templates yet. You can create one in the editor.
+            </div>
+            {% endif %}
           </div>
         </div>
       </div>
+
+      <!-- SMS-specific: Message editor -->
+      <div class="ca-panel" id="smsEditorPanel" style="display:none;">
+        <div class="ca-panel-title">
+          <i data-feather="smartphone" style="width:16px;height:16px;color:#00e5ff;"></i>
+          SMS Message
+        </div>
+        <div class="ca-form-group">
+          <label class="ca-label">Message Text</label>
+          <textarea name="sms_message" class="ca-textarea" placeholder="Hi {{first_name}}, thanks for signing up! Reply STOP to opt out." style="min-height:90px;" maxlength="160"></textarea>
+          <small style="color:#555;font-size:0.7rem;">Max 160 characters. Use {{first_name}}, {{company}} as merge tags.</small>
+        </div>
+        <div style="margin-top:12px;">
+          <label class="ca-label">Or use a template</label>
+          <div class="ca-template-grid">
+            <label class="ca-tpl-card">
+              <input type="radio" name="sms_template" value="welcome">
+              <h6>Welcome Message</h6>
+              <p>Greet new subscribers with a warm welcome</p>
+            </label>
+            <label class="ca-tpl-card">
+              <input type="radio" name="sms_template" value="confirmation">
+              <h6>Order Confirmation</h6>
+              <p>Confirm a purchase or booking</p>
+            </label>
+            <label class="ca-tpl-card">
+              <input type="radio" name="sms_template" value="reminder">
+              <h6>Appointment Reminder</h6>
+              <p>Remind about upcoming events/appointments</p>
+            </label>
+            <label class="ca-tpl-card">
+              <input type="radio" name="sms_template" value="flash_sale">
+              <h6>Flash Sale Alert</h6>
+              <p>Time-limited offer notification</p>
+            </label>
+          </div>
+        </div>
+      </div>
+
+      <!-- Social DM-specific: Message editor -->
+      <div class="ca-panel" id="socialEditorPanel" style="display:none;">
+        <div class="ca-panel-title">
+          <i data-feather="message-circle" style="width:16px;height:16px;color:#ec4899;"></i>
+          Social DM Message
+        </div>
+        <div class="ca-form-group">
+          <label class="ca-label">Auto-Reply Message</label>
+          <textarea name="social_message" class="ca-textarea" placeholder="Hey {{name}}! Thanks for reaching out. How can we help you today?" style="min-height:90px;"></textarea>
+          <small style="color:#555;font-size:0.7rem;">Use {{name}} as a merge tag. This message will be sent via Instagram/Facebook DM.</small>
+        </div>
+        <div style="margin-top:12px;">
+          <label class="ca-label">Or use a template</label>
+          <div class="ca-template-grid">
+            <label class="ca-tpl-card">
+              <input type="radio" name="social_template" value="welcome_dm">
+              <h6>Welcome DM</h6>
+              <p>Auto-greet new followers with a custom message</p>
+            </label>
+            <label class="ca-tpl-card">
+              <input type="radio" name="social_template" value="lead_magnet">
+              <h6>Lead Magnet Delivery</h6>
+              <p>Send a free resource link when triggered by keyword</p>
+            </label>
+            <label class="ca-tpl-card">
+              <input type="radio" name="social_template" value="support_reply">
+              <h6>Support Auto-Reply</h6>
+              <p>Acknowledge DMs and route to support</p>
+            </label>
+            <label class="ca-tpl-card">
+              <input type="radio" name="social_template" value="promo_dm">
+              <h6>Promo Message</h6>
+              <p>Share exclusive deals via direct message</p>
+            </label>
+          </div>
+        </div>
+      </div>
+
+      <div class="ca-actions">
+        <button type="button" class="ca-btn-secondary" onclick="goToStep(2)">
+          <i data-feather="arrow-left" style="width:14px;height:14px;"></i> Back
+        </button>
+        <button type="submit" class="ca-btn-primary">
+          <i data-feather="zap" style="width:14px;height:14px;"></i> Create Automation
+        </button>
+      </div>
     </div>
-  </div>
+  </form>
 </div>
 
 <script>
+var currentStep = 1;
+var selectedChannel = '{{ request.args.get("channel", "") }}';
+var selectedTrigger = '';
+
+document.addEventListener('DOMContentLoaded', function() {
   feather.replace();
+
+  document.querySelectorAll('.ca-ch').forEach(function(el) {
+    el.addEventListener('click', function() {
+      document.querySelectorAll('.ca-ch').forEach(function(c){ c.classList.remove('selected'); });
+      el.classList.add('selected');
+      selectedChannel = el.dataset.channel;
+      document.getElementById('channelInput').value = selectedChannel;
+      document.getElementById('step1Next').disabled = false;
+      updateTriggerVisibility();
+    });
+  });
+
+  document.querySelectorAll('.ca-trig').forEach(function(el) {
+    el.addEventListener('click', function() {
+      document.querySelectorAll('.ca-trig').forEach(function(c){ c.classList.remove('selected'); });
+      el.classList.add('selected');
+      selectedTrigger = el.dataset.trigger;
+      document.getElementById('triggerInput').value = selectedTrigger;
+      document.getElementById('step2Next').disabled = false;
+    });
+  });
+
+  document.querySelectorAll('.ca-tpl-card').forEach(function(el) {
+    el.addEventListener('click', function() {
+      var group = el.closest('.ca-template-grid');
+      group.querySelectorAll('.ca-tpl-card').forEach(function(c){ c.classList.remove('selected'); });
+      el.classList.add('selected');
+    });
+  });
+
+  if (selectedChannel) {
+    var ch = document.querySelector('.ca-ch[data-channel="' + selectedChannel + '"]');
+    if (ch) { ch.click(); goToStep(2); }
+  }
+});
+
+function updateTriggerVisibility() {
+  document.querySelectorAll('.ca-trig.social-only').forEach(function(el) {
+    el.style.display = selectedChannel === 'social_dm' ? '' : 'none';
+  });
+  document.querySelectorAll('.ca-trig').forEach(function(c){ c.classList.remove('selected'); });
+  selectedTrigger = '';
+  document.getElementById('triggerInput').value = '';
+  document.getElementById('step2Next').disabled = true;
+}
+
+function goToStep(n) {
+  currentStep = n;
+  document.getElementById('step1').style.display = n === 1 ? '' : 'none';
+  document.getElementById('step2').style.display = n === 2 ? '' : 'none';
+  document.getElementById('step3').style.display = n === 3 ? '' : 'none';
+
+  for (var i = 1; i <= 3; i++) {
+    var ind = document.getElementById('stepInd' + i);
+    ind.classList.remove('active', 'done');
+    if (i < n) ind.classList.add('done');
+    else if (i === n) ind.classList.add('active');
+  }
+
+  if (n === 3) {
+    document.getElementById('emailEditorPanel').style.display = selectedChannel === 'email' ? '' : 'none';
+    document.getElementById('smsEditorPanel').style.display = selectedChannel === 'sms' ? '' : 'none';
+    document.getElementById('socialEditorPanel').style.display = selectedChannel === 'social_dm' ? '' : 'none';
+  }
+
+  feather.replace();
+}
 </script>
 {% endblock %}

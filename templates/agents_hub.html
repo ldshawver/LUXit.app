@@ -1,278 +1,859 @@
-{% extends "base_simple.html" %}
+{% extends "base.html" %}
 
-{% block title %}AI Marketing Team - LUX Marketing{% endblock %}
-
-{% block page_header %}
-<span style="color: #c0c0c0;">AI Marketing Team</span>
-{% endblock %}
+{% block title %}AI Marketing Team - LUX IT{% endblock %}
+{% block page_title %}AI Marketing Team{% endblock %}
 
 {% block content %}
 <style>
-  .agent-card {
-    background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
-    border: 2px solid #8b5cf6;
-    transition: all 0.3s ease;
-    cursor: pointer;
+  body {
+    background: #030014 !important;
+    background-image:
+      radial-gradient(ellipse 80% 50% at 50% -20%, rgba(139, 92, 246, 0.25), transparent),
+      radial-gradient(ellipse 60% 40% at 100% 0%, rgba(0, 229, 255, 0.12), transparent),
+      radial-gradient(ellipse 50% 30% at 0% 100%, rgba(188, 0, 237, 0.15), transparent) !important;
   }
-  
-  .agent-card:hover {
-    transform: translateY(-5px);
-    box-shadow: 0 10px 30px rgba(139, 92, 246, 0.3);
-    border-color: #4ade80;
+
+  /* ── Layout ── */
+  .aihub-layout {
+    display: flex;
+    gap: 1.25rem;
+    min-height: calc(100vh - 110px);
   }
-  
-  .agent-card.selected {
-    border-color: #4ade80;
-    box-shadow: 0 0 20px rgba(74, 222, 128, 0.4);
-  }
-  
-  .agent-status-active {
-    color: #4ade80;
-    animation: pulse 2s infinite;
-  }
-  
-  @keyframes pulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.5; }
-  }
-  
-  .chat-container {
-    background: #1a1a2e;
-    border: 2px solid #8b5cf6;
-    border-radius: 15px;
-    height: 400px;
+
+  /* ── Agent roster (left) ── */
+  .aihub-roster {
+    width: 248px;
+    flex-shrink: 0;
     display: flex;
     flex-direction: column;
+    gap: 0;
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 14px;
+    overflow: hidden;
   }
-  
-  .chat-messages {
+  .aihub-roster-header {
+    padding: 14px 16px 10px;
+    border-bottom: 1px solid rgba(255,255,255,0.07);
+  }
+  .aihub-roster-header h6 {
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: #555;
+    margin: 0;
+  }
+  .aihub-roster-body {
     flex: 1;
     overflow-y: auto;
-    padding: 15px;
+    padding: 8px;
   }
-  
-  .chat-message {
-    margin-bottom: 15px;
-    padding: 12px 16px;
-    border-radius: 12px;
-    max-width: 85%;
+  .aihub-roster-body::-webkit-scrollbar { width: 4px; }
+  .aihub-roster-body::-webkit-scrollbar-track { background: transparent; }
+  .aihub-roster-body::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 4px; }
+
+  /* ── Agent row ── */
+  .agent-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 9px 10px;
+    border-radius: 9px;
+    cursor: pointer;
+    transition: all 0.18s ease;
+    border: 1px solid transparent;
+    margin-bottom: 2px;
   }
-  
-  .chat-message.user {
-    background: linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%);
-    margin-left: auto;
+  .agent-row:hover {
+    background: rgba(255,255,255,0.05);
   }
-  
-  .chat-message.agent {
-    background: linear-gradient(135deg, #374151 0%, #1f2937 100%);
-    border: 1px solid #4b5563;
+  .agent-row.active {
+    background: rgba(0, 229, 255, 0.07);
+    border-color: rgba(0, 229, 255, 0.2);
   }
-  
-  .task-item {
-    background: rgba(139, 92, 246, 0.1);
-    border: 1px solid #4b5563;
-    border-radius: 8px;
-    padding: 12px;
-    margin-bottom: 10px;
-    transition: all 0.3s ease;
-  }
-  
-  .task-item:hover {
-    border-color: #8b5cf6;
-    background: rgba(139, 92, 246, 0.2);
-  }
-  
-  .task-item.enabled {
-    border-left: 4px solid #4ade80;
-  }
-  
-  .task-item.disabled {
-    border-left: 4px solid #ef4444;
-    opacity: 0.7;
-  }
-  
-  .suggestion-card {
-    background: linear-gradient(135deg, rgba(251, 191, 36, 0.1) 0%, rgba(245, 158, 11, 0.1) 100%);
-    border: 1px solid #fbbf24;
-    border-radius: 10px;
-    padding: 15px;
-    margin-bottom: 10px;
-  }
-  
-  .agent-avatar {
-    width: 50px;
-    height: 50px;
-    border-radius: 50%;
+  .agent-row.active .agent-row-name { color: #fff; }
+  .agent-row.active .agent-icon-wrap { box-shadow: 0 0 12px var(--agent-color, #00e5ff); }
+
+  .agent-icon-wrap {
+    width: 36px;
+    height: 36px;
+    border-radius: 9px;
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 24px;
+    flex-shrink: 0;
+    transition: box-shadow 0.2s;
+    background: var(--agent-bg, rgba(168,85,247,0.15));
+    border: 1px solid var(--agent-color, #a855f7);
+  }
+  .agent-icon-wrap svg {
+    width: 16px;
+    height: 16px;
+    stroke: var(--agent-color, #a855f7);
+    flex-shrink: 0;
+  }
+
+  .agent-row-info { flex: 1; min-width: 0; }
+  .agent-row-name {
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: #ccc;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    line-height: 1.2;
+  }
+  .agent-row-role {
+    font-size: 0.7rem;
+    color: #555;
+    line-height: 1.2;
+    margin-top: 1px;
+  }
+  .agent-pulse {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #00ffb4;
+    flex-shrink: 0;
+    box-shadow: 0 0 6px #00ffb4;
+    animation: glow-pulse 2.5s ease-in-out infinite;
+  }
+  @keyframes glow-pulse {
+    0%, 100% { opacity: 1; box-shadow: 0 0 5px #00ffb4; }
+    50% { opacity: 0.45; box-shadow: 0 0 2px #00ffb4; }
+  }
+
+  /* ── Main panel (right) ── */
+  .aihub-main {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+
+  /* ── Agent hero card ── */
+  .agent-hero {
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.09);
+    border-radius: 14px;
+    padding: 20px 24px;
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    transition: border-color 0.3s;
+  }
+  .agent-hero-icon {
+    width: 56px;
+    height: 56px;
+    border-radius: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    border: 1.5px solid var(--agent-color, #00e5ff);
+    background: var(--agent-bg, rgba(0,229,255,0.1));
+    box-shadow: 0 0 20px var(--agent-glow, rgba(0,229,255,0.25));
+    transition: all 0.3s;
+  }
+  .agent-hero-icon svg {
+    width: 26px;
+    height: 26px;
+    stroke: var(--agent-color, #00e5ff);
+  }
+  .agent-hero-body { flex: 1; }
+  .agent-hero-name {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: #fff;
+    letter-spacing: -0.01em;
+    margin: 0 0 2px;
+  }
+  .agent-hero-role {
+    font-size: 0.8rem;
+    color: var(--agent-color, #00e5ff);
+    font-weight: 600;
+    margin: 0 0 8px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    font-size: 0.68rem;
+  }
+  .agent-hero-desc {
+    font-size: 0.86rem;
+    color: #888;
+    margin: 0;
+    line-height: 1.5;
+  }
+  .agent-expertise-tags {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    margin-top: 12px;
+  }
+  .expertise-tag {
+    font-size: 0.7rem;
+    font-weight: 600;
+    padding: 3px 10px;
+    border-radius: 20px;
+    border: 1px solid rgba(255,255,255,0.1);
+    color: #aaa;
+    background: rgba(255,255,255,0.04);
+    letter-spacing: 0.02em;
+  }
+
+  /* ── Tabs ── */
+  .hub-tabs {
+    display: flex;
+    gap: 4px;
+    background: rgba(255,255,255,0.04);
+    border-radius: 10px;
+    padding: 3px;
+    width: fit-content;
+    border: 1px solid rgba(255,255,255,0.07);
+  }
+  .hub-tab-btn {
+    padding: 7px 18px;
+    border-radius: 7px;
+    color: #666;
+    font-size: 0.82rem;
+    font-weight: 500;
+    background: none;
+    border: none;
+    cursor: pointer;
+    transition: all 0.18s;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .hub-tab-btn svg { width: 14px; height: 14px; }
+  .hub-tab-btn:hover { color: #ccc; background: rgba(255,255,255,0.05); }
+  .hub-tab-btn.active {
+    background: linear-gradient(135deg, rgba(0,229,255,0.18), rgba(168,85,247,0.14));
+    color: #fff;
+    font-weight: 600;
+  }
+
+  /* ── Tab panels ── */
+  .hub-panel {
+    display: none;
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 14px;
+    overflow: hidden;
+    flex: 1;
+  }
+  .hub-panel.active { display: flex; flex-direction: column; }
+
+  /* ── Chat ── */
+  .chat-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    min-height: 320px;
+    max-height: 420px;
+  }
+  .chat-body::-webkit-scrollbar { width: 4px; }
+  .chat-body::-webkit-scrollbar-track { background: transparent; }
+  .chat-body::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 4px; }
+
+  .chat-msg {
+    max-width: 82%;
+    padding: 11px 15px;
+    border-radius: 12px;
+    font-size: 0.875rem;
+    line-height: 1.55;
+  }
+  .chat-msg.agent {
+    align-self: flex-start;
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.08);
+    color: #ddd;
+    border-bottom-left-radius: 4px;
+  }
+  .chat-msg.agent strong {
+    display: block;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--agent-color, #00e5ff);
+    margin-bottom: 4px;
+  }
+  .chat-msg.user {
+    align-self: flex-end;
+    background: linear-gradient(135deg, rgba(168,85,247,0.3), rgba(0,229,255,0.15));
+    border: 1px solid rgba(168,85,247,0.3);
+    color: #f0f0f0;
+    border-bottom-right-radius: 4px;
+  }
+  .chat-footer {
+    padding: 12px 16px;
+    border-top: 1px solid rgba(255,255,255,0.07);
+    display: flex;
+    gap: 8px;
+  }
+  .chat-input {
+    flex: 1;
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 8px;
+    padding: 9px 14px;
+    color: #fff;
+    font-size: 0.875rem;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+  .chat-input:focus { border-color: rgba(0,229,255,0.4); }
+  .chat-input::placeholder { color: #444; }
+  .chat-send-btn {
+    background: linear-gradient(135deg, #00e5ff, #a855f7);
+    border: none;
+    border-radius: 8px;
+    width: 40px;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: opacity 0.2s, transform 0.15s;
+  }
+  .chat-send-btn:hover { opacity: 0.85; transform: scale(1.05); }
+  .chat-send-btn svg { width: 16px; height: 16px; stroke: #000; }
+
+  /* ── Tasks ── */
+  .tasks-toolbar {
+    padding: 14px 18px;
+    border-bottom: 1px solid rgba(255,255,255,0.07);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .tasks-toolbar h6 {
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: #666;
+    margin: 0;
+  }
+  .tasks-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-height: 300px;
+  }
+  .task-row {
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.07);
+    border-radius: 10px;
+    padding: 12px 14px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    transition: border-color 0.2s, background 0.2s;
+  }
+  .task-row:hover { background: rgba(255,255,255,0.05); border-color: rgba(255,255,255,0.12); }
+  .task-row.task-on { border-left: 3px solid #00ffb4; }
+  .task-row.task-off { border-left: 3px solid rgba(255,255,255,0.15); opacity: 0.6; }
+  .task-indicator {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .task-on .task-indicator { background: #00ffb4; box-shadow: 0 0 6px #00ffb4; }
+  .task-off .task-indicator { background: #444; }
+  .task-info { flex: 1; min-width: 0; }
+  .task-name { font-size: 0.84rem; font-weight: 600; color: #ddd; margin: 0 0 3px; }
+  .task-meta { font-size: 0.72rem; color: #555; }
+  .task-actions { display: flex; gap: 4px; flex-shrink: 0; }
+  .task-btn {
+    width: 30px; height: 30px;
+    border-radius: 7px;
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.08);
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer;
+    transition: all 0.15s;
+    color: #666;
+  }
+  .task-btn svg { width: 13px; height: 13px; }
+  .task-btn:hover { background: rgba(255,255,255,0.1); color: #fff; }
+  .task-btn.danger:hover { background: rgba(239,68,68,0.15); border-color: rgba(239,68,68,0.3); color: #f87171; }
+
+  /* ── Suggestions ── */
+  .suggestions-toolbar {
+    padding: 14px 18px;
+    border-bottom: 1px solid rgba(255,255,255,0.07);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .suggestions-toolbar h6 {
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: #666;
+    margin: 0;
+  }
+  .suggestions-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    min-height: 300px;
+  }
+  .suggestion-row {
+    background: rgba(255,191,36,0.04);
+    border: 1px solid rgba(255,191,36,0.15);
+    border-radius: 10px;
+    padding: 14px 16px;
+    display: flex;
+    gap: 14px;
+  }
+  .suggestion-num {
+    width: 24px; height: 24px;
+    border-radius: 6px;
+    background: linear-gradient(135deg, #f59e0b, #fbbf24);
+    color: #000;
+    font-size: 0.7rem;
+    font-weight: 800;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+  }
+  .suggestion-content { flex: 1; }
+  .suggestion-title { font-size: 0.84rem; font-weight: 600; color: #ddd; margin: 0 0 4px; }
+  .suggestion-desc { font-size: 0.78rem; color: #666; line-height: 1.5; margin: 0 0 8px; }
+  .priority-badge {
+    font-size: 0.65rem;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 20px;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+  }
+  .priority-high { background: rgba(239,68,68,0.15); color: #f87171; border: 1px solid rgba(239,68,68,0.25); }
+  .priority-medium { background: rgba(245,158,11,0.15); color: #fbbf24; border: 1px solid rgba(245,158,11,0.25); }
+  .priority-low { background: rgba(0,229,255,0.1); color: #00e5ff; border: 1px solid rgba(0,229,255,0.2); }
+
+  /* ── Reports ── */
+  .report-row {
+    background: rgba(168,85,247,0.04);
+    border: 1px solid rgba(168,85,247,0.12);
+    border-radius: 10px;
+    padding: 14px 16px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .report-row:hover { background: rgba(168,85,247,0.08); border-color: rgba(168,85,247,0.25); }
+  .report-icon {
+    width: 36px; height: 36px;
+    border-radius: 8px;
+    background: linear-gradient(135deg, #a855f7, #7c3aed);
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+  }
+  .report-icon svg { width: 16px; height: 16px; stroke: #fff; }
+  .report-info { flex: 1; min-width: 0; }
+  .report-title { font-size: 0.84rem; font-weight: 600; color: #ddd; margin: 0 0 3px; }
+  .report-meta { font-size: 0.72rem; color: #555; }
+  .report-status {
+    font-size: 0.65rem; font-weight: 700; padding: 2px 8px;
+    border-radius: 20px; letter-spacing: 0.05em; text-transform: uppercase;
+  }
+  .report-status.completed { background: rgba(0,255,180,0.1); color: #00ffb4; border: 1px solid rgba(0,255,180,0.2); }
+  .report-status.generating { background: rgba(0,229,255,0.1); color: #00e5ff; border: 1px solid rgba(0,229,255,0.2); }
+  .report-status.failed { background: rgba(239,68,68,0.1); color: #f87171; border: 1px solid rgba(239,68,68,0.2); }
+
+  /* ── Deliverables ── */
+  .deliverable-row {
+    background: rgba(0,229,255,0.03);
+    border: 1px solid rgba(0,229,255,0.1);
+    border-radius: 10px;
+    padding: 14px 16px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    transition: all 0.2s;
+  }
+  .deliverable-row:hover { background: rgba(0,229,255,0.06); border-color: rgba(0,229,255,0.2); }
+  .deliverable-icon {
+    width: 36px; height: 36px;
+    border-radius: 8px;
+    background: linear-gradient(135deg, #00e5ff, #0891b2);
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+  }
+  .deliverable-icon svg { width: 16px; height: 16px; stroke: #fff; }
+  .deliverable-info { flex: 1; min-width: 0; }
+  .deliverable-title { font-size: 0.84rem; font-weight: 600; color: #ddd; margin: 0 0 3px; }
+  .deliverable-meta { font-size: 0.72rem; color: #555; }
+  .deliverable-type {
+    font-size: 0.65rem; font-weight: 600; padding: 2px 8px;
+    border-radius: 20px; background: rgba(255,255,255,0.05);
+    color: #888; border: 1px solid rgba(255,255,255,0.08);
+  }
+
+  /* ── Report detail modal ── */
+  .report-detail-content {
+    max-height: 60vh;
+    overflow-y: auto;
+    padding: 16px;
+    background: rgba(255,255,255,0.02);
+    border-radius: 8px;
+    border: 1px solid rgba(255,255,255,0.06);
+    font-size: 0.85rem;
+    line-height: 1.7;
+    color: #ccc;
+  }
+  .report-detail-content h1, .report-detail-content h2, .report-detail-content h3 {
+    color: #fff; margin-top: 1em;
+  }
+  .report-detail-content strong { color: #00e5ff; }
+
+  /* ── Buttons ── */
+  .btn-lux-sm {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 6px 13px;
+    border-radius: 7px;
+    font-size: 0.76rem;
+    font-weight: 600;
+    border: 1px solid rgba(0,229,255,0.25);
+    background: rgba(0,229,255,0.08);
+    color: #00e5ff;
+    cursor: pointer;
+    transition: all 0.18s;
+    letter-spacing: 0.02em;
+  }
+  .btn-lux-sm svg { width: 13px; height: 13px; stroke: currentColor; }
+  .btn-lux-sm:hover { background: rgba(0,229,255,0.15); border-color: rgba(0,229,255,0.4); }
+
+  .btn-lux-amber {
+    border-color: rgba(251,191,36,0.3);
+    background: rgba(251,191,36,0.08);
+    color: #fbbf24;
+  }
+  .btn-lux-amber:hover { background: rgba(251,191,36,0.15); border-color: rgba(251,191,36,0.45); }
+
+  /* ── Empty state ── */
+  .empty-state {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 48px 24px;
+    text-align: center;
+    color: #444;
+    gap: 12px;
+  }
+  .empty-state svg { width: 36px; height: 36px; stroke: #333; }
+  .empty-state p { font-size: 0.85rem; margin: 0; }
+
+  /* ── Spinner ── */
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .spinning { animation: spin 1s linear infinite; }
+
+  /* ── Modal overrides ── */
+  .modal-content {
+    background: #0c0c1a;
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 14px;
+  }
+  .modal-header { border-bottom: 1px solid rgba(255,255,255,0.07); }
+  .modal-footer { border-top: 1px solid rgba(255,255,255,0.07); }
+  .form-control, .form-select {
+    background: rgba(255,255,255,0.05) !important;
+    border: 1px solid rgba(255,255,255,0.1) !important;
+    color: #ddd !important;
+    border-radius: 8px;
+  }
+  .form-control:focus, .form-select:focus {
+    border-color: rgba(0,229,255,0.35) !important;
+    box-shadow: 0 0 0 3px rgba(0,229,255,0.08) !important;
+    color: #fff !important;
   }
 </style>
 
-<div class="container-fluid" style="background: #000000; min-height: 100vh; padding: 2rem;">
-  <div class="row mb-4">
-    <div class="col-12">
-      <h1 class="display-4"><i data-feather="users" style="color: #8b5cf6;"></i> AI Marketing Team</h1>
-      <p class="lead">Your 11 AI employees - each specialized in their area of marketing</p>
+<!-- Page header -->
+<div class="d-flex align-items-center justify-content-between mb-4">
+  <div>
+    <h4 class="mb-1 fw-bold" style="color:#fff; letter-spacing:-0.02em;">AI Marketing Team</h4>
+    <p class="mb-0" style="color:#555; font-size:0.83rem;">11 specialized agents — always on, always optimizing</p>
+  </div>
+  <div class="d-flex align-items-center gap-2">
+    <span style="width:8px;height:8px;border-radius:50%;background:#00ffb4;box-shadow:0 0 8px #00ffb4;display:inline-block;"></span>
+    <span style="font-size:0.78rem;color:#00ffb4;font-weight:600;">All Agents Active</span>
+  </div>
+</div>
+
+<div class="aihub-layout">
+
+  <!-- ── Roster ── -->
+  <div class="aihub-roster">
+    <div class="aihub-roster-header">
+      <h6>Your Team</h6>
+    </div>
+    <div class="aihub-roster-body">
+      {% for agent_key, agent_info in agents.items() %}
+      <div class="agent-row {% if loop.first %}active{% endif %}"
+           data-agent="{{ agent_key }}"
+           onclick="selectAgent('{{ agent_key }}')">
+        <div class="agent-icon-wrap"
+             style="--agent-color: {{ agent_info.color }}; --agent-bg: {{ agent_info.color }}1a;"
+             id="roster-icon-{{ agent_key }}">
+          <svg data-feather="{{ agent_info.get('feather_icon', 'cpu') }}"></svg>
+        </div>
+        <div class="agent-row-info">
+          <div class="agent-row-name">{{ agent_info.name }}</div>
+          <div class="agent-row-role">{{ agent_info.role }}</div>
+        </div>
+        <div class="agent-pulse"></div>
+      </div>
+      {% endfor %}
     </div>
   </div>
 
-  <div class="row">
-    <!-- Agent List (Left Side) -->
-    <div class="col-lg-4">
-      <div class="card bg-dark border-secondary mb-4">
-        <div class="card-header bg-dark">
-          <h5 class="mb-0"><i data-feather="cpu"></i> Your Marketing Team</h5>
+  <!-- ── Main ── -->
+  <div class="aihub-main">
+
+    <!-- Hero card -->
+    <div class="agent-hero" id="agentHero"
+         style="--agent-color: {{ (agents.values()|list)[0].color if agents else '#00e5ff' }};
+                --agent-bg:    {{ (agents.values()|list)[0].color ~ '18' if agents else 'rgba(0,229,255,0.1)' }};
+                --agent-glow:  {{ (agents.values()|list)[0].color ~ '30' if agents else 'rgba(0,229,255,0.2)' }};">
+      <div class="agent-hero-icon" id="heroIcon">
+        <svg data-feather="{{ (agents.values()|list)[0].get('feather_icon', 'cpu') if agents else 'cpu' }}" id="heroIconSvg"></svg>
+      </div>
+      <div class="agent-hero-body">
+        <p class="agent-hero-role" id="heroRole">{{ (agents.values()|list)[0].role if agents else '' }}</p>
+        <h5 class="agent-hero-name" id="heroName">{{ (agents.values()|list)[0].name if agents else 'Select an Agent' }}</h5>
+        <p class="agent-hero-desc" id="heroDesc">{{ (agents.values()|list)[0].description if agents else '' }}</p>
+        <div class="agent-expertise-tags" id="heroExpertise">
+          {% if agents %}
+            {% for tag in (agents.values()|list)[0].expertise %}
+            <span class="expertise-tag">{{ tag }}</span>
+            {% endfor %}
+          {% endif %}
         </div>
-        <div class="card-body" style="max-height: 600px; overflow-y: auto;">
-          {% for agent_key, agent_info in agents.items() %}
-          <div class="agent-card card mb-3 {{ 'selected' if loop.first else '' }}" 
-               data-agent="{{ agent_key }}" onclick="selectAgent('{{ agent_key }}')">
-            <div class="card-body py-3">
-              <div class="d-flex align-items-center">
-                <div class="agent-avatar me-3" style="background: {{ agent_info.color }};">
-                  {{ agent_info.icon }}
-                </div>
-                <div class="flex-grow-1">
-                  <h6 class="mb-0">{{ agent_info.name }}</h6>
-                  <small class="text-muted">{{ agent_info.role }}</small>
-                </div>
-                <span class="badge bg-success agent-status-active">Active</span>
-              </div>
+      </div>
+    </div>
+
+    <!-- Tabs -->
+    <div class="hub-tabs">
+      <button class="hub-tab-btn active" id="tab-chat" onclick="switchTab('chat')">
+        <svg data-feather="message-circle"></svg> Chat
+      </button>
+      <button class="hub-tab-btn" id="tab-tasks" onclick="switchTab('tasks')">
+        <svg data-feather="check-square"></svg> Tasks
+      </button>
+      <button class="hub-tab-btn" id="tab-reports" onclick="switchTab('reports')">
+        <svg data-feather="file-text"></svg> Reports
+      </button>
+      <button class="hub-tab-btn" id="tab-deliverables" onclick="switchTab('deliverables')">
+        <svg data-feather="package"></svg> Deliverables
+      </button>
+      <button class="hub-tab-btn" id="tab-suggestions" onclick="switchTab('suggestions')">
+        <svg data-feather="zap"></svg> Suggestions
+      </button>
+      <button class="hub-tab-btn" id="tab-performance" onclick="switchTab('performance')">
+        <svg data-feather="activity"></svg> Performance
+      </button>
+    </div>
+
+    <!-- Chat panel -->
+    <div class="hub-panel active" id="panel-chat">
+      <div class="chat-body" id="chatMessages">
+        <div class="chat-msg agent">
+          <strong id="chatAgentLabel">{{ (agents.values()|list)[0].name if agents else 'Agent' }}</strong>
+          <span id="chatWelcome">{{ (agents.values()|list)[0].welcome_message if agents else 'Hello! How can I help you?' }}</span>
+        </div>
+      </div>
+      <div class="chat-footer">
+        <input type="text" class="chat-input" id="chatInput"
+               placeholder="Ask anything about marketing strategy, campaigns, analytics…"
+               autocomplete="off">
+        <button class="chat-send-btn" onclick="sendMessage()" title="Send">
+          <svg data-feather="send"></svg>
+        </button>
+      </div>
+    </div>
+
+    <!-- Tasks panel -->
+    <div class="hub-panel" id="panel-tasks">
+      <div class="tasks-toolbar">
+        <h6>Automated Tasks</h6>
+        <button class="btn-lux-sm" onclick="addNewTask()">
+          <svg data-feather="plus"></svg> Add Task
+        </button>
+      </div>
+      <div class="tasks-body" id="tasksList">
+        <div class="empty-state">
+          <svg data-feather="loader" class="spinning"></svg>
+          <p>Loading tasks…</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Reports panel -->
+    <div class="hub-panel" id="panel-reports">
+      <div class="tasks-toolbar">
+        <h6>Reports</h6>
+        <div class="d-flex gap-2">
+          <button class="btn-lux-sm" onclick="generateReport('monthly')" id="genMonthlyBtn">
+            <svg data-feather="calendar"></svg> Monthly Report
+          </button>
+          <button class="btn-lux-sm btn-lux-amber" onclick="generateReport('quarterly')" id="genQuarterlyBtn">
+            <svg data-feather="trending-up"></svg> Quarterly Report
+          </button>
+        </div>
+      </div>
+      <div class="tasks-body" id="reportsList" style="min-height:300px;">
+        <div class="empty-state">
+          <svg data-feather="loader" class="spinning"></svg>
+          <p>Loading reports...</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Deliverables panel -->
+    <div class="hub-panel" id="panel-deliverables">
+      <div class="tasks-toolbar">
+        <h6>Deliverables</h6>
+        <span style="font-size:0.72rem;color:#555;">Auto-generated outputs from agent tasks</span>
+      </div>
+      <div class="tasks-body" id="deliverablesList" style="min-height:300px;">
+        <div class="empty-state">
+          <svg data-feather="loader" class="spinning"></svg>
+          <p>Loading deliverables...</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Suggestions panel -->
+    <div class="hub-panel" id="panel-suggestions">
+      <div class="suggestions-toolbar">
+        <h6>AI Suggestions</h6>
+        <button class="btn-lux-sm btn-lux-amber" onclick="getSuggestions()" id="getSuggestionsBtn">
+          <svg data-feather="refresh-cw"></svg> Generate
+        </button>
+      </div>
+      <div class="suggestions-body" id="suggestionsList">
+        <div class="empty-state">
+          <svg data-feather="zap"></svg>
+          <p>Click Generate to receive AI-powered recommendations for this agent.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="hub-panel" id="panel-performance">
+      <div class="suggestions-toolbar">
+        <h6>Agent Performance (30 Days)</h6>
+      </div>
+      <div class="suggestions-body" style="gap:8px;">
+        {% for agent_key, agent_info in agents.items() %}
+        {% set perf = agent_performance.get(agent_key, {}) %}
+        <div class="deliverable-row" style="border-color:{{ agent_info.color }}22;background:{{ agent_info.color }}06;">
+          <div style="width:36px;height:36px;border-radius:8px;background:{{ agent_info.color }}20;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+            <svg data-feather="{{ agent_info.feather_icon }}" style="width:16px;height:16px;stroke:{{ agent_info.color }};"></svg>
+          </div>
+          <div style="flex:1;min-width:0;">
+            <div style="font-size:0.84rem;font-weight:600;color:#ddd;">{{ agent_info.name }}</div>
+            <div style="display:flex;gap:12px;margin-top:4px;font-size:0.72rem;color:#666;">
+              <span>{{ perf.get('total', 0) }} tasks</span>
+              <span style="color:var(--lux-green);">{{ perf.get('completed', 0) }} done</span>
+              {% if perf.get('failed', 0) > 0 %}
+              <span style="color:var(--lux-pink);">{{ perf.failed }} failed</span>
+              {% endif %}
+              {% if perf.get('running', 0) > 0 %}
+              <span style="color:var(--lux-cyan);">{{ perf.running }} running</span>
+              {% endif %}
+            </div>
+          </div>
+          <div style="text-align:center;">
+            <div style="font-size:1.1rem;font-weight:800;background:linear-gradient(135deg,{{ agent_info.color }},var(--lux-cyan));-webkit-background-clip:text;-webkit-text-fill-color:transparent;">
+              {{ perf.get('score', 0) }}%
+            </div>
+            <div style="font-size:0.65rem;color:#555;text-transform:uppercase;letter-spacing:0.05em;">Score</div>
+          </div>
+        </div>
+        {% endfor %}
+
+        {% if recent_reports %}
+        <div style="margin-top:16px;padding-top:16px;border-top:1px solid rgba(255,255,255,0.06);">
+          <h6 style="font-size:0.72rem;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:#555;margin:0 0 12px;">Recent Reports</h6>
+          {% for report in recent_reports[:5] %}
+          <div class="report-row" style="margin-bottom:6px;">
+            <div class="report-icon">
+              <svg data-feather="file-text"></svg>
+            </div>
+            <div class="report-info">
+              <div class="report-title">{{ report.title or report.report_type or 'Agent Report' }}</div>
+              <div class="report-meta">{{ report.agent_type or 'system' }} · {{ report.created_at.strftime('%b %d') if report.created_at else '' }}</div>
+            </div>
+            <span class="report-status {{ report.status or 'completed' }}">{{ report.status or 'completed' }}</span>
+          </div>
+          {% endfor %}
+        </div>
+        {% endif %}
+
+        {% if recent_tasks %}
+        <div style="margin-top:16px;padding-top:16px;border-top:1px solid rgba(255,255,255,0.06);">
+          <h6 style="font-size:0.72rem;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:#555;margin:0 0 12px;">Recent Tasks</h6>
+          {% for task in recent_tasks[:8] %}
+          <div class="activity-item" style="padding:8px 0;">
+            <div class="activity-dot" style="background:{% if task.status == 'completed' %}var(--lux-green){% elif task.status == 'failed' %}var(--lux-pink){% elif task.status == 'running' %}var(--lux-cyan){% else %}var(--lux-muted){% endif %};color:{% if task.status == 'completed' %}var(--lux-green){% elif task.status == 'failed' %}var(--lux-pink){% elif task.status == 'running' %}var(--lux-cyan){% else %}var(--lux-muted){% endif %};"></div>
+            <div class="activity-content">
+              <div class="activity-title" style="font-size:0.82rem;">{{ task.task_type or task.agent_type or 'Task' }}</div>
+              <div class="activity-meta">{{ task.agent_type or '' }} · {{ task.status or 'pending' }} · {{ task.created_at.strftime('%b %d, %H:%M') if task.created_at else '' }}</div>
             </div>
           </div>
           {% endfor %}
         </div>
+        {% endif %}
       </div>
     </div>
 
-    <!-- Agent Details (Right Side) -->
-    <div class="col-lg-8">
-      <!-- Agent Info Header -->
-      <div class="card bg-dark border-primary mb-4" id="agentInfoCard">
-        <div class="card-body">
-          <div class="d-flex align-items-center mb-3">
-            <div class="agent-avatar me-3" id="selectedAgentAvatar" style="background: #8b5cf6; font-size: 32px;">
-              {{ (agents.values()|list)[0].icon if agents else '🤖' }}
-            </div>
-            <div>
-              <h3 class="mb-0" id="selectedAgentName">{{ (agents.values()|list)[0].name if agents else 'Select an Agent' }}</h3>
-              <p class="text-muted mb-0" id="selectedAgentRole">{{ (agents.values()|list)[0].role if agents else '' }}</p>
-            </div>
-          </div>
-          <p id="selectedAgentDescription">{{ (agents.values()|list)[0].description if agents else '' }}</p>
-          <div class="d-flex gap-2">
-            <span class="badge bg-primary">{{ (agents.values()|list)[0].expertise[0] if agents and (agents.values()|list)[0].expertise else '' }}</span>
-            <span class="badge bg-info">{{ (agents.values()|list)[0].expertise[1] if agents and (agents.values()|list)[0].expertise|length > 1 else '' }}</span>
-            <span class="badge bg-secondary">{{ (agents.values()|list)[0].expertise[2] if agents and (agents.values()|list)[0].expertise|length > 2 else '' }}</span>
-          </div>
-        </div>
-      </div>
-
-      <!-- Tabs for Chat, Tasks, Suggestions -->
-      <ul class="nav nav-tabs" id="agentTabs" role="tablist">
-        <li class="nav-item" role="presentation">
-          <button class="nav-link active" id="chat-tab" data-bs-toggle="tab" data-bs-target="#chat" type="button" role="tab">
-            <i data-feather="message-circle"></i> Chat with Agent
-          </button>
-        </li>
-        <li class="nav-item" role="presentation">
-          <button class="nav-link" id="tasks-tab" data-bs-toggle="tab" data-bs-target="#tasks" type="button" role="tab">
-            <i data-feather="check-square"></i> Automated Tasks
-          </button>
-        </li>
-        <li class="nav-item" role="presentation">
-          <button class="nav-link" id="suggestions-tab" data-bs-toggle="tab" data-bs-target="#suggestions" type="button" role="tab">
-            <i data-feather="lightbulb"></i> Suggestions
-          </button>
-        </li>
-      </ul>
-
-      <div class="tab-content" id="agentTabsContent">
-        <!-- Chat Tab -->
-        <div class="tab-pane fade show active" id="chat" role="tabpanel">
-          <div class="chat-container mt-3">
-            <div class="chat-messages" id="chatMessages">
-              <div class="chat-message agent">
-                <strong id="chatAgentName">{{ (agents.values()|list)[0].name if agents else 'Agent' }}</strong>
-                <p class="mb-0 mt-1" id="chatWelcome">{{ (agents.values()|list)[0].welcome_message if agents else 'Hello! How can I help you?' }}</p>
-              </div>
-            </div>
-            <div class="p-3 border-top border-secondary">
-              <form id="chatForm" onsubmit="sendMessage(event)">
-                <div class="input-group">
-                  <input type="text" class="form-control bg-dark text-light border-secondary" 
-                         id="chatInput" placeholder="Ask me anything about marketing..." autocomplete="off">
-                  <button class="btn btn-primary" type="submit" id="sendBtn">
-                    <i data-feather="send"></i>
-                  </button>
-                </div>
-              </form>
-            </div>
-          </div>
-        </div>
-
-        <!-- Tasks Tab -->
-        <div class="tab-pane fade" id="tasks" role="tabpanel">
-          <div class="card bg-dark border-secondary mt-3">
-            <div class="card-header bg-dark d-flex justify-content-between align-items-center">
-              <h5 class="mb-0"><i data-feather="list"></i> Automated Tasks</h5>
-              <button class="btn btn-sm btn-primary" onclick="addNewTask()">
-                <i data-feather="plus"></i> Add Task
-              </button>
-            </div>
-            <div class="card-body" id="tasksList">
-              <!-- Tasks will be loaded dynamically -->
-              <div class="text-center text-muted py-4">
-                <i data-feather="loader" class="spin"></i> Loading tasks...
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Suggestions Tab -->
-        <div class="tab-pane fade" id="suggestions" role="tabpanel">
-          <div class="card bg-dark border-secondary mt-3">
-            <div class="card-header bg-dark d-flex justify-content-between align-items-center">
-              <h5 class="mb-0"><i data-feather="zap"></i> AI Suggestions</h5>
-              <button class="btn btn-sm btn-warning" onclick="getSuggestions()" id="getSuggestionsBtn">
-                <i data-feather="refresh-cw"></i> Get New Suggestions
-              </button>
-            </div>
-            <div class="card-body" id="suggestionsList">
-              <div class="text-center text-muted py-4">
-                Click "Get New Suggestions" to receive AI-powered recommendations
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-</div>
+  </div><!-- /aihub-main -->
+</div><!-- /aihub-layout -->
 
 <!-- Add Task Modal -->
 <div class="modal fade" id="addTaskModal" tabindex="-1">
   <div class="modal-dialog">
-    <div class="modal-content bg-dark">
-      <div class="modal-header border-secondary">
-        <h5 class="modal-title">Add Automated Task</h5>
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" style="color:#ddd;font-size:0.95rem;font-weight:700;">Add Automated Task</h5>
         <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
       </div>
       <div class="modal-body">
         <form id="addTaskForm">
           <div class="mb-3">
-            <label class="form-label">Task Name</label>
-            <input type="text" class="form-control bg-dark text-light border-secondary" id="taskName" required>
+            <label class="form-label" style="font-size:0.8rem;color:#888;">Task Name</label>
+            <input type="text" class="form-control" id="taskName" placeholder="e.g. Weekly campaign report" required>
           </div>
           <div class="mb-3">
-            <label class="form-label">Description</label>
-            <textarea class="form-control bg-dark text-light border-secondary" id="taskDescription" rows="2"></textarea>
+            <label class="form-label" style="font-size:0.8rem;color:#888;">Description</label>
+            <textarea class="form-control" id="taskDescription" rows="2" placeholder="What should this agent do?"></textarea>
           </div>
           <div class="mb-3">
-            <label class="form-label">Schedule</label>
-            <select class="form-select bg-dark text-light border-secondary" id="taskSchedule">
+            <label class="form-label" style="font-size:0.8rem;color:#888;">Schedule</label>
+            <select class="form-select" id="taskSchedule">
               <option value="hourly">Hourly</option>
               <option value="daily" selected>Daily</option>
               <option value="weekly">Weekly</option>
@@ -281,13 +862,34 @@
           </div>
           <div class="form-check">
             <input class="form-check-input" type="checkbox" id="taskEnabled" checked>
-            <label class="form-check-label" for="taskEnabled">Enable this task</label>
+            <label class="form-check-label" style="font-size:0.82rem;color:#aaa;" for="taskEnabled">Enable immediately</label>
           </div>
         </form>
       </div>
-      <div class="modal-footer border-secondary">
-        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-        <button type="button" class="btn btn-primary" onclick="saveTask()">Save Task</button>
+      <div class="modal-footer">
+        <button type="button" class="btn-lux-sm" style="color:#888;border-color:rgba(255,255,255,0.1);background:transparent;" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn-lux-sm" onclick="saveTask()">Save Task</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Report Detail Modal -->
+<div class="modal fade" id="reportDetailModal" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" style="color:#ddd;font-size:0.95rem;font-weight:700;" id="reportDetailTitle">Report</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="d-flex gap-2 mb-3" id="reportDetailMeta"></div>
+        <div class="report-detail-content" id="reportDetailBody">
+          Loading...
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn-lux-sm" style="color:#888;border-color:rgba(255,255,255,0.1);background:transparent;" data-bs-dismiss="modal">Close</button>
       </div>
     </div>
   </div>
@@ -296,287 +898,404 @@
 
 {% block scripts %}
 <script>
-// Agent data from server
 const agentsData = {{ agents_json|safe }};
-let currentAgent = '{{ (agents.keys()|list)[0] if agents else '' }}';
 
-function selectAgent(agentKey) {
-  currentAgent = agentKey;
-  const agent = agentsData[agentKey];
-  
-  // Update selected state
-  document.querySelectorAll('.agent-card').forEach(card => {
-    card.classList.remove('selected');
-    if (card.dataset.agent === agentKey) {
-      card.classList.add('selected');
-    }
+/* Map agent keys → feather icon names */
+const iconMap = {
+  brand_strategy:  'target',
+  content_seo:     'file-text',
+  analytics:       'bar-chart-2',
+  creative_design: 'layers',
+  advertising:     'radio',
+  social_media:    'share-2',
+  email_crm:       'mail',
+  sales_enablement:'briefcase',
+  retention:       'heart',
+  operations:      'settings',
+  app_intelligence:'cpu'
+};
+
+/* Inject feather icon name back into agentsData for JS use */
+Object.keys(agentsData).forEach(k => { agentsData[k].feather_icon = iconMap[k] || 'cpu'; });
+
+let currentAgent = '{{ (agents.keys()|list)[0] if agents else "" }}';
+
+/* ─── Tab switcher ─── */
+function switchTab(tab) {
+  ['chat','tasks','reports','deliverables','suggestions'].forEach(t => {
+    document.getElementById('panel-' + t).classList.toggle('active', t === tab);
+    document.getElementById('tab-' + t).classList.toggle('active', t === tab);
   });
-  
-  // Update agent info
-  document.getElementById('selectedAgentName').textContent = agent.name;
-  document.getElementById('selectedAgentRole').textContent = agent.role;
-  document.getElementById('selectedAgentDescription').textContent = agent.description;
-  document.getElementById('selectedAgentAvatar').innerHTML = agent.icon;
-  document.getElementById('selectedAgentAvatar').style.background = agent.color;
-  
-  // Update chat welcome
-  document.getElementById('chatAgentName').textContent = agent.name;
-  document.getElementById('chatWelcome').textContent = agent.welcome_message;
-  
-  // Clear and reset chat
-  const chatMessages = document.getElementById('chatMessages');
-  chatMessages.innerHTML = `
-    <div class="chat-message agent">
-      <strong>${agent.name}</strong>
-      <p class="mb-0 mt-1">${agent.welcome_message}</p>
-    </div>
-  `;
-  
-  // Load tasks for this agent
-  loadTasks(agentKey);
-  
-  // Reinitialize feather icons
+  if (tab === 'tasks') loadTasks(currentAgent);
+  if (tab === 'reports') loadReports(currentAgent);
+  if (tab === 'deliverables') loadDeliverables(currentAgent);
   if (typeof feather !== 'undefined') feather.replace();
 }
 
-async function sendMessage(event) {
-  event.preventDefault();
+/* ─── Agent selector ─── */
+function selectAgent(key) {
+  currentAgent = key;
+  const agent = agentsData[key];
+
+  /* roster highlight */
+  document.querySelectorAll('.agent-row').forEach(r => r.classList.toggle('active', r.dataset.agent === key));
+
+  /* hero card */
+  const hero = document.getElementById('agentHero');
+  hero.style.setProperty('--agent-color', agent.color);
+  hero.style.setProperty('--agent-bg', agent.color + '18');
+  hero.style.setProperty('--agent-glow', agent.color + '30');
+
+  document.getElementById('heroName').textContent = agent.name;
+  document.getElementById('heroRole').textContent = agent.role;
+  document.getElementById('heroDesc').textContent = agent.description;
+
+  const iconWrap = document.getElementById('heroIcon');
+  iconWrap.innerHTML = `<svg data-feather="${agent.feather_icon}" id="heroIconSvg"></svg>`;
+
+  const tags = document.getElementById('heroExpertise');
+  tags.innerHTML = (agent.expertise || []).map(t => `<span class="expertise-tag">${t}</span>`).join('');
+
+  /* reset chat */
+  const msgs = document.getElementById('chatMessages');
+  msgs.innerHTML = `
+    <div class="chat-msg agent">
+      <strong id="chatAgentLabel">${agent.name}</strong>
+      <span>${agent.welcome_message}</span>
+    </div>`;
+  document.getElementById('chatInput').value = '';
+
+  /* reload tasks if visible */
+  if (document.getElementById('panel-tasks').classList.contains('active')) loadTasks(key);
+
+  if (typeof feather !== 'undefined') feather.replace();
+}
+
+/* ─── Chat ─── */
+async function sendMessage() {
   const input = document.getElementById('chatInput');
-  const message = input.value.trim();
-  if (!message) return;
-  
-  const chatMessages = document.getElementById('chatMessages');
+  const msg = input.value.trim();
+  if (!msg) return;
+
+  const msgs = document.getElementById('chatMessages');
   const agent = agentsData[currentAgent];
-  
-  // Add user message
-  chatMessages.innerHTML += `
-    <div class="chat-message user">
-      <p class="mb-0">${message}</p>
-    </div>
-  `;
-  
+
+  msgs.innerHTML += `<div class="chat-msg user"><p class="mb-0">${msg}</p></div>`;
   input.value = '';
-  chatMessages.scrollTop = chatMessages.scrollHeight;
-  
-  // Show typing indicator
+  msgs.scrollTop = msgs.scrollHeight;
+
   const typingId = 'typing-' + Date.now();
-  chatMessages.innerHTML += `
-    <div class="chat-message agent" id="${typingId}">
+  msgs.innerHTML += `
+    <div class="chat-msg agent" id="${typingId}">
       <strong>${agent.name}</strong>
-      <p class="mb-0 mt-1"><i>Thinking...</i></p>
-    </div>
-  `;
-  chatMessages.scrollTop = chatMessages.scrollHeight;
-  
+      <span><em style="color:#555;">Thinking…</em></span>
+    </div>`;
+  msgs.scrollTop = msgs.scrollHeight;
+
   try {
-    const response = await fetch('/api/agents/chat', {
+    const res = await fetch('/api/agents/chat', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-CSRFToken': '{{ csrf_token() }}'
-      },
-      body: JSON.stringify({
-        agent_type: currentAgent,
-        message: message
-      })
+      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': '{{ csrf_token() }}' },
+      body: JSON.stringify({ agent_type: currentAgent, message: msg })
     });
-    
-    const data = await response.json();
-    
-    // Remove typing indicator and add response
-    document.getElementById(typingId).remove();
-    
-    chatMessages.innerHTML += `
-      <div class="chat-message agent">
+    const data = await res.json();
+    document.getElementById(typingId)?.remove();
+    msgs.innerHTML += `
+      <div class="chat-msg agent">
         <strong>${agent.name}</strong>
-        <p class="mb-0 mt-1">${data.response || 'Sorry, I encountered an error. Please try again.'}</p>
-      </div>
-    `;
-    
-  } catch (error) {
-    document.getElementById(typingId).remove();
-    chatMessages.innerHTML += `
-      <div class="chat-message agent">
+        <span>${data.response || 'Sorry, I encountered an error.'}</span>
+      </div>`;
+  } catch {
+    document.getElementById(typingId)?.remove();
+    msgs.innerHTML += `
+      <div class="chat-msg agent">
         <strong>${agent.name}</strong>
-        <p class="mb-0 mt-1 text-warning">Sorry, I'm having trouble connecting. Please try again.</p>
-      </div>
-    `;
+        <span style="color:#f59e0b;">Connection issue — please try again.</span>
+      </div>`;
   }
-  
-  chatMessages.scrollTop = chatMessages.scrollHeight;
+  msgs.scrollTop = msgs.scrollHeight;
 }
 
-async function loadTasks(agentKey) {
-  const tasksList = document.getElementById('tasksList');
-  tasksList.innerHTML = '<div class="text-center text-muted py-4"><i data-feather="loader"></i> Loading tasks...</div>';
+/* Enter key to send */
+document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('chatInput').addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+  });
+});
+
+/* ─── Tasks ─── */
+async function loadTasks(key) {
+  const list = document.getElementById('tasksList');
+  list.innerHTML = `
+    <div class="empty-state">
+      <svg data-feather="loader" class="spinning"></svg>
+      <p>Loading tasks…</p>
+    </div>`;
   if (typeof feather !== 'undefined') feather.replace();
-  
+
   try {
-    const response = await fetch(`/api/agents/${agentKey}/tasks`);
-    const data = await response.json();
-    
+    const res = await fetch(`/api/agents/${key}/tasks`);
+    const data = await res.json();
     if (data.tasks && data.tasks.length > 0) {
-      tasksList.innerHTML = data.tasks.map(task => `
-        <div class="task-item ${task.enabled ? 'enabled' : 'disabled'}">
-          <div class="d-flex justify-content-between align-items-start">
-            <div>
-              <h6 class="mb-1">${task.name}</h6>
-              <p class="text-muted mb-1 small">${task.description || ''}</p>
-              <span class="badge bg-secondary">${task.schedule}</span>
-              ${task.last_run ? `<span class="badge bg-info ms-1">Last: ${task.last_run}</span>` : ''}
+      list.innerHTML = data.tasks.map(t => `
+        <div class="task-row ${t.enabled ? 'task-on' : 'task-off'}">
+          <div class="task-indicator"></div>
+          <div class="task-info">
+            <div class="task-name">${t.name}</div>
+            <div class="task-meta">${t.schedule}${t.description ? ' · ' + t.description : ''}${t.last_run ? ' · Last: ' + t.last_run : ''}</div>
+          </div>
+          <div class="task-actions">
+            <div class="task-btn" onclick="toggleTask('${key}','${t.id}',${!t.enabled})" title="${t.enabled ? 'Pause' : 'Resume'}">
+              <svg data-feather="${t.enabled ? 'pause' : 'play'}"></svg>
             </div>
-            <div class="btn-group">
-              <button class="btn btn-sm btn-outline-${task.enabled ? 'success' : 'warning'}" 
-                      onclick="toggleTask('${agentKey}', '${task.id}', ${!task.enabled})">
-                <i data-feather="${task.enabled ? 'pause' : 'play'}"></i>
-              </button>
-              <button class="btn btn-sm btn-outline-primary" onclick="editTask('${agentKey}', '${task.id}')">
-                <i data-feather="edit-2"></i>
-              </button>
-              <button class="btn btn-sm btn-outline-danger" onclick="deleteTask('${agentKey}', '${task.id}')">
-                <i data-feather="trash-2"></i>
-              </button>
+            <div class="task-btn" onclick="editTask('${key}','${t.id}')" title="Edit">
+              <svg data-feather="edit-2"></svg>
+            </div>
+            <div class="task-btn danger" onclick="deleteTask('${key}','${t.id}')" title="Delete">
+              <svg data-feather="trash-2"></svg>
             </div>
           </div>
-        </div>
-      `).join('');
+        </div>`).join('');
     } else {
-      tasksList.innerHTML = `
-        <div class="text-center text-muted py-4">
-          <p>No automated tasks configured yet.</p>
-          <button class="btn btn-primary" onclick="addNewTask()">
-            <i data-feather="plus"></i> Add Your First Task
+      list.innerHTML = `
+        <div class="empty-state">
+          <svg data-feather="check-square"></svg>
+          <p>No automated tasks yet.</p>
+          <button class="btn-lux-sm mt-2" onclick="addNewTask()">
+            <svg data-feather="plus"></svg> Add First Task
           </button>
-        </div>
-      `;
+        </div>`;
     }
-    
-    if (typeof feather !== 'undefined') feather.replace();
-    
-  } catch (error) {
-    tasksList.innerHTML = '<div class="text-center text-danger py-4">Error loading tasks</div>';
+  } catch {
+    list.innerHTML = `<div class="empty-state"><svg data-feather="alert-circle"></svg><p>Error loading tasks.</p></div>`;
   }
+  if (typeof feather !== 'undefined') feather.replace();
 }
 
 function addNewTask() {
-  const modal = new bootstrap.Modal(document.getElementById('addTaskModal'));
   document.getElementById('addTaskForm').reset();
-  modal.show();
+  new bootstrap.Modal(document.getElementById('addTaskModal')).show();
 }
 
 async function saveTask() {
-  const name = document.getElementById('taskName').value;
-  const description = document.getElementById('taskDescription').value;
-  const schedule = document.getElementById('taskSchedule').value;
-  const enabled = document.getElementById('taskEnabled').checked;
-  
   try {
-    const response = await fetch(`/api/agents/${currentAgent}/tasks`, {
+    const res = await fetch(`/api/agents/${currentAgent}/tasks`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-CSRFToken': '{{ csrf_token() }}'
-      },
-      body: JSON.stringify({ name, description, schedule, enabled })
+      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': '{{ csrf_token() }}' },
+      body: JSON.stringify({
+        name: document.getElementById('taskName').value,
+        description: document.getElementById('taskDescription').value,
+        schedule: document.getElementById('taskSchedule').value,
+        enabled: document.getElementById('taskEnabled').checked
+      })
     });
-    
-    if (response.ok) {
+    if (res.ok) {
       bootstrap.Modal.getInstance(document.getElementById('addTaskModal')).hide();
       loadTasks(currentAgent);
-    } else {
-      alert('Error saving task');
     }
-  } catch (error) {
-    alert('Error saving task');
-  }
+  } catch { /* silent */ }
 }
 
-async function toggleTask(agentKey, taskId, enabled) {
+async function toggleTask(key, id, enabled) {
   try {
-    await fetch(`/api/agents/${agentKey}/tasks/${taskId}`, {
+    await fetch(`/api/agents/${key}/tasks/${id}`, {
       method: 'PATCH',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-CSRFToken': '{{ csrf_token() }}'
-      },
+      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': '{{ csrf_token() }}' },
       body: JSON.stringify({ enabled })
     });
-    loadTasks(agentKey);
-  } catch (error) {
-    alert('Error updating task');
-  }
+    loadTasks(key);
+  } catch { /* silent */ }
 }
 
-async function deleteTask(agentKey, taskId) {
-  if (!confirm('Are you sure you want to delete this task?')) return;
-  
+async function deleteTask(key, id) {
+  if (!confirm('Delete this task?')) return;
   try {
-    await fetch(`/api/agents/${agentKey}/tasks/${taskId}`, {
+    await fetch(`/api/agents/${key}/tasks/${id}`, {
       method: 'DELETE',
       headers: { 'X-CSRFToken': '{{ csrf_token() }}' }
     });
-    loadTasks(agentKey);
-  } catch (error) {
-    alert('Error deleting task');
-  }
+    loadTasks(key);
+  } catch { /* silent */ }
 }
 
+/* ─── Reports ─── */
+async function loadReports(key) {
+  const list = document.getElementById('reportsList');
+  list.innerHTML = `<div class="empty-state"><svg data-feather="loader" class="spinning"></svg><p>Loading reports...</p></div>`;
+  if (typeof feather !== 'undefined') feather.replace();
+
+  try {
+    const res = await fetch(`/api/agents/${key}/reports`);
+    const data = await res.json();
+    if (data.reports && data.reports.length > 0) {
+      list.innerHTML = data.reports.map(r => `
+        <div class="report-row" onclick="viewReport('${key}', ${r.id})">
+          <div class="report-icon"><svg data-feather="${r.report_type === 'quarterly' ? 'trending-up' : 'calendar'}"></svg></div>
+          <div class="report-info">
+            <div class="report-title">${r.title || r.report_type + ' Report'}</div>
+            <div class="report-meta">${r.report_type} · ${r.period_start ? r.period_start.substring(0,10) : 'N/A'} → ${r.period_end ? r.period_end.substring(0,10) : 'N/A'}</div>
+          </div>
+          <span class="report-status ${r.status || 'completed'}">${r.status || 'completed'}</span>
+        </div>`).join('');
+    } else {
+      list.innerHTML = `
+        <div class="empty-state">
+          <svg data-feather="file-text"></svg>
+          <p>No reports yet for this agent.</p>
+          <div class="d-flex gap-2 mt-2">
+            <button class="btn-lux-sm" onclick="generateReport('monthly')"><svg data-feather="calendar"></svg> Generate Monthly</button>
+            <button class="btn-lux-sm btn-lux-amber" onclick="generateReport('quarterly')"><svg data-feather="trending-up"></svg> Generate Quarterly</button>
+          </div>
+        </div>`;
+    }
+  } catch {
+    list.innerHTML = `<div class="empty-state"><svg data-feather="alert-circle"></svg><p>Error loading reports.</p></div>`;
+  }
+  if (typeof feather !== 'undefined') feather.replace();
+}
+
+async function generateReport(reportType) {
+  const btnId = reportType === 'monthly' ? 'genMonthlyBtn' : 'genQuarterlyBtn';
+  const btn = document.getElementById(btnId);
+  if (btn) { btn.disabled = true; btn.innerHTML = `<svg data-feather="loader" class="spinning"></svg> Generating...`; }
+  if (typeof feather !== 'undefined') feather.replace();
+
+  try {
+    const res = await fetch(`/api/agents/${currentAgent}/reports`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': '{{ csrf_token() }}' },
+      body: JSON.stringify({ report_type: reportType })
+    });
+    const data = await res.json();
+    if (data.success) {
+      switchTab('reports');
+      loadReports(currentAgent);
+    } else {
+      alert(data.error || 'Failed to generate report');
+    }
+  } catch {
+    alert('Error generating report. Please try again.');
+  }
+
+  if (btn) {
+    btn.disabled = false;
+    const icon = reportType === 'monthly' ? 'calendar' : 'trending-up';
+    const label = reportType === 'monthly' ? 'Monthly Report' : 'Quarterly Report';
+    btn.innerHTML = `<svg data-feather="${icon}"></svg> ${label}`;
+  }
+  if (typeof feather !== 'undefined') feather.replace();
+}
+
+async function viewReport(agentKey, reportId) {
+  const modal = new bootstrap.Modal(document.getElementById('reportDetailModal'));
+  document.getElementById('reportDetailTitle').textContent = 'Loading report...';
+  document.getElementById('reportDetailMeta').innerHTML = '';
+  document.getElementById('reportDetailBody').innerHTML = '<div class="text-center p-4"><svg data-feather="loader" class="spinning" style="width:24px;height:24px;stroke:#555;"></svg></div>';
+  modal.show();
+  if (typeof feather !== 'undefined') feather.replace();
+
+  try {
+    const res = await fetch(`/api/agents/${agentKey}/reports/${reportId}`);
+    const data = await res.json();
+    if (data.success && data.report) {
+      const r = data.report;
+      document.getElementById('reportDetailTitle').textContent = r.title || 'Report';
+      document.getElementById('reportDetailMeta').innerHTML = `
+        <span class="report-status ${r.status || 'completed'}">${r.status || 'completed'}</span>
+        <span class="deliverable-type">${r.report_type}</span>`;
+      const content = r.content || r.report_data || 'Report content not available.';
+      const body = document.getElementById('reportDetailBody');
+      body.textContent = '';
+      const pre = document.createElement('div');
+      pre.style.whiteSpace = 'pre-wrap';
+      pre.textContent = typeof content === 'string' ? content : JSON.stringify(content, null, 2);
+      body.appendChild(pre);
+    } else {
+      document.getElementById('reportDetailBody').innerHTML = '<p style="color:#f87171;">Report not found or access denied.</p>';
+    }
+  } catch {
+    document.getElementById('reportDetailBody').innerHTML = '<p style="color:#f87171;">Error loading report.</p>';
+  }
+  if (typeof feather !== 'undefined') feather.replace();
+}
+
+/* ─── Deliverables ─── */
+async function loadDeliverables(key) {
+  const list = document.getElementById('deliverablesList');
+  list.innerHTML = `<div class="empty-state"><svg data-feather="loader" class="spinning"></svg><p>Loading deliverables...</p></div>`;
+  if (typeof feather !== 'undefined') feather.replace();
+
+  try {
+    const res = await fetch(`/api/agents/${key}/deliverables`);
+    const data = await res.json();
+    if (data.deliverables && data.deliverables.length > 0) {
+      list.innerHTML = data.deliverables.map(d => `
+        <div class="deliverable-row">
+          <div class="deliverable-icon"><svg data-feather="package"></svg></div>
+          <div class="deliverable-info">
+            <div class="deliverable-title">${d.title || 'Deliverable'}</div>
+            <div class="deliverable-meta">${d.deliverable_type || 'output'} · ${d.created_at ? d.created_at.substring(0,10) : 'N/A'}</div>
+          </div>
+          <span class="deliverable-type">${d.deliverable_type || 'output'}</span>
+        </div>`).join('');
+    } else {
+      list.innerHTML = `
+        <div class="empty-state">
+          <svg data-feather="package"></svg>
+          <p>No deliverables yet. Agents will produce outputs as they complete tasks.</p>
+        </div>`;
+    }
+  } catch {
+    list.innerHTML = `<div class="empty-state"><svg data-feather="alert-circle"></svg><p>Error loading deliverables.</p></div>`;
+  }
+  if (typeof feather !== 'undefined') feather.replace();
+}
+
+/* ─── Suggestions ─── */
 async function getSuggestions() {
   const btn = document.getElementById('getSuggestionsBtn');
-  const suggestionsList = document.getElementById('suggestionsList');
-  
+  const list = document.getElementById('suggestionsList');
+
   btn.disabled = true;
-  btn.innerHTML = '<i data-feather="loader"></i> Generating...';
+  btn.innerHTML = '<svg data-feather="loader" class="spinning"></svg> Generating…';
+  list.innerHTML = `<div class="empty-state"><svg data-feather="loader" class="spinning"></svg><p>Analyzing your marketing data…</p></div>`;
   if (typeof feather !== 'undefined') feather.replace();
-  
-  suggestionsList.innerHTML = '<div class="text-center py-4"><div class="spinner-border text-warning"></div><p class="mt-2">Analyzing your marketing data...</p></div>';
-  
+
   try {
-    const response = await fetch(`/api/agents/${currentAgent}/suggestions`, {
+    const res = await fetch(`/api/agents/${currentAgent}/suggestions`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-CSRFToken': '{{ csrf_token() }}'
-      }
+      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': '{{ csrf_token() }}' }
     });
-    
-    const data = await response.json();
-    
+    const data = await res.json();
+
     if (data.suggestions && data.suggestions.length > 0) {
-      suggestionsList.innerHTML = data.suggestions.map((suggestion, index) => `
-        <div class="suggestion-card">
-          <div class="d-flex align-items-start">
-            <span class="badge bg-warning me-2">${index + 1}</span>
-            <div class="flex-grow-1">
-              <h6 class="mb-1">${suggestion.title}</h6>
-              <p class="mb-2 text-muted small">${suggestion.description}</p>
-              <div class="d-flex gap-2">
-                <span class="badge bg-${suggestion.priority === 'high' ? 'danger' : suggestion.priority === 'medium' ? 'warning' : 'info'}">${suggestion.priority} priority</span>
-                <span class="badge bg-secondary">${suggestion.impact || 'Potential impact'}</span>
-              </div>
-              ${suggestion.action ? `<button class="btn btn-sm btn-outline-success mt-2" onclick="implementSuggestion('${suggestion.id}')"><i data-feather="check"></i> Implement</button>` : ''}
+      list.innerHTML = data.suggestions.map((s, i) => `
+        <div class="suggestion-row">
+          <div class="suggestion-num">${i + 1}</div>
+          <div class="suggestion-content">
+            <div class="suggestion-title">${s.title}</div>
+            <div class="suggestion-desc">${s.description}</div>
+            <div class="d-flex gap-2 flex-wrap">
+              <span class="priority-badge priority-${s.priority || 'low'}">${s.priority || 'low'} priority</span>
+              ${s.impact ? `<span class="priority-badge" style="background:rgba(255,255,255,0.05);color:#555;border-color:rgba(255,255,255,0.08);">${s.impact}</span>` : ''}
             </div>
           </div>
-        </div>
-      `).join('');
+        </div>`).join('');
     } else {
-      suggestionsList.innerHTML = '<div class="text-center text-muted py-4">No suggestions available at this time. Your marketing is looking great!</div>';
+      list.innerHTML = `<div class="empty-state"><svg data-feather="check-circle"></svg><p>No new suggestions — your marketing looks strong.</p></div>`;
     }
-    
-  } catch (error) {
-    suggestionsList.innerHTML = '<div class="text-center text-danger py-4">Error generating suggestions. Please try again.</div>';
+  } catch {
+    list.innerHTML = `<div class="empty-state"><svg data-feather="alert-circle"></svg><p>Error generating suggestions.</p></div>`;
   }
-  
+
   btn.disabled = false;
-  btn.innerHTML = '<i data-feather="refresh-cw"></i> Get New Suggestions';
+  btn.innerHTML = '<svg data-feather="refresh-cw"></svg> Generate';
   if (typeof feather !== 'undefined') feather.replace();
 }
 
-// Initialize on page load
-document.addEventListener('DOMContentLoaded', function() {
-  if (currentAgent) {
-    loadTasks(currentAgent);
-  }
+/* ─── Init ─── */
+document.addEventListener('DOMContentLoaded', () => {
+  if (currentAgent) loadTasks(currentAgent);
   if (typeof feather !== 'undefined') feather.replace();
 });
 </script>

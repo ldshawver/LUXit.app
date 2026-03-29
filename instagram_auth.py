@@ -64,7 +64,9 @@ class InstagramService:
     @staticmethod
     def get_redirect_uri():
         """Get OAuth redirect URI"""
-        return "https://lux.lucifercruz.com/auth/instagram/callback"
+        import os
+        base = os.environ.get("APP_BASE_URL", "https://luxit.app").rstrip("/")
+        return f"{base}/auth/instagram/callback"
     
     @staticmethod
     def get_authorization_url(company_id):

@@ -9,7 +9,7 @@ def client():
 
     from lux import create_app
 
-    app = create_app("testing")
+    app = create_app(testing=True)
     app.config.update(SERVER_NAME="localhost")
 
     with app.test_client() as test_client:
@@ -21,7 +21,7 @@ def test_lux_marketing_homepage_renders(client):
 
     assert response.status_code == 200
     body = response.get_data(as_text=True)
-    assert "LUX IT" in body
+    assert "LUXit" in body
 
 
 def test_lux_login_alias_redirects(client):

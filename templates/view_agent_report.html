@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}{{ report.title }} - Agent Report{% endblock %}
+{% block title %}{{ report.report_title }} - Agent Report{% endblock %}
 
 {% block content %}
 <div class="container-fluid">
@@ -19,7 +19,7 @@
         <div class="col-lg-8">
             <div class="card mb-4">
                 <div class="card-header">
-                    <h4 class="mb-0">{{ report.title }}</h4>
+                    <h4 class="mb-0">{{ report.report_title }}</h4>
                 </div>
                 <div class="card-body">
                     <div class="mb-3">

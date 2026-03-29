@@ -396,33 +396,72 @@ def initialize_agent_scheduler():
     """Initialize and start the agent scheduler with all agents"""
     try:
         app = current_app._get_current_object()
-        from agents.brand_strategy_agent import BrandStrategyAgent
-        from agents.content_seo_agent import ContentSEOAgent
-        from agents.analytics_agent import AnalyticsAgent
-        from agents.creative_agent import CreativeAgent
-        from agents.advertising_agent import AdvertisingAgent
-        from agents.social_media_agent import SocialMediaAgent
-        from agents.email_crm_agent import EmailCRMAgent
-        from agents.sales_enablement_agent import SalesEnablementAgent
-        from agents.retention_agent import RetentionAgent
-        from agents.operations_agent import OperationsAgent
-        from agents.app_agent import AppAgent
+        agent_classes = {}
+        try:
+            from agents.brand_strategy_agent import BrandStrategyAgent
+            agent_classes['brand_strategy'] = BrandStrategyAgent
+        except ImportError as exc:
+            logger.warning("BrandStrategyAgent unavailable: %s", exc)
+        try:
+            from agents.content_seo_agent import ContentSEOAgent
+            agent_classes['content_seo'] = ContentSEOAgent
+        except ImportError as exc:
+            logger.warning("ContentSEOAgent unavailable: %s", exc)
+        try:
+            from agents.analytics_agent import AnalyticsAgent
+            agent_classes['analytics'] = AnalyticsAgent
+        except ImportError as exc:
+            logger.warning("AnalyticsAgent unavailable: %s", exc)
+        try:
+            from agents.creative_agent import CreativeAgent
+            agent_classes['creative_design'] = CreativeAgent
+        except ImportError as exc:
+            logger.warning("CreativeAgent unavailable: %s", exc)
+        try:
+            from agents.advertising_agent import AdvertisingAgent
+            agent_classes['advertising'] = AdvertisingAgent
+        except ImportError as exc:
+            logger.warning("AdvertisingAgent unavailable: %s", exc)
+        try:
+            from agents.social_media_agent import SocialMediaAgent
+            agent_classes['social_media'] = SocialMediaAgent
+        except ImportError as exc:
+            logger.warning("SocialMediaAgent unavailable: %s", exc)
+        try:
+            from agents.email_crm_agent import EmailCRMAgent
+            agent_classes['email_crm'] = EmailCRMAgent
+        except ImportError as exc:
+            logger.warning("EmailCRMAgent unavailable: %s", exc)
+        try:
+            from agents.sales_enablement_agent import SalesEnablementAgent
+            agent_classes['sales_enablement'] = SalesEnablementAgent
+        except ImportError as exc:
+            logger.warning("SalesEnablementAgent unavailable: %s", exc)
+        try:
+            from agents.retention_agent import RetentionAgent
+            agent_classes['retention'] = RetentionAgent
+        except ImportError as exc:
+            logger.warning("RetentionAgent unavailable: %s", exc)
+        try:
+            from agents.operations_agent import OperationsAgent
+            agent_classes['operations'] = OperationsAgent
+        except ImportError as exc:
+            logger.warning("OperationsAgent unavailable: %s", exc)
+        try:
+            from agents.app_agent import AppAgent
+            agent_classes['app_intelligence'] = AppAgent
+        except ImportError as exc:
+            logger.warning("AppAgent unavailable: %s", exc)
         
         scheduler = get_agent_scheduler()
         scheduler.set_app(app)
         
-        # Register all 11 agents (including APP Agent)
-        scheduler.register_agent('brand_strategy', BrandStrategyAgent())
-        scheduler.register_agent('content_seo', ContentSEOAgent())
-        scheduler.register_agent('analytics', AnalyticsAgent())
-        scheduler.register_agent('creative_design', CreativeAgent())
-        scheduler.register_agent('advertising', AdvertisingAgent())
-        scheduler.register_agent('social_media', SocialMediaAgent())
-        scheduler.register_agent('email_crm', EmailCRMAgent())
-        scheduler.register_agent('sales_enablement', SalesEnablementAgent())
-        scheduler.register_agent('retention', RetentionAgent())
-        scheduler.register_agent('operations', OperationsAgent())
-        scheduler.register_agent('app_intelligence', AppAgent())
+        if not agent_classes:
+            logger.warning("No agents available; scheduler startup skipped.")
+            return scheduler
+
+        for agent_type, agent_class in agent_classes.items():
+            scheduler.register_agent(agent_type, agent_class())
         
         # Schedule all agents
         scheduler.schedule_brand_strategy_agent()
@@ -433,9 +472,12 @@ def initialize_agent_scheduler():
         scheduler.schedule_app_agent()
         
         # Start scheduler
-        scheduler.start()
+        if scheduler.agents:
+            scheduler.start()
+        else:
+            logger.warning("Scheduler has no agents; startup skipped.")
         
-        logger.info("All 11 AI agents (including APP Agent) initialized and scheduled successfully")
+        logger.info("AI agents initialized and scheduled successfully")
         return scheduler
         
     except Exception as e:

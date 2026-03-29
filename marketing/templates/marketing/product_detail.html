@@ -1,0 +1,82 @@
+{% extends "marketing/base.html" %}
+{% block title %}{{ item.name }} — LUX IT Products{% endblock %}
+{% block meta_description %}{{ item.tagline }} Learn how LUX IT's {{ item.name }} module helps you grow revenue faster.{% endblock %}
+
+{% block content %}
+<div class="sell-hero">
+  <div class="section-label">Products / {{ item.category }}</div>
+  <h1>{{ item.name }}</h1>
+  <p>{{ item.tagline }}</p>
+  <div class="sell-cta-row" style="margin-bottom:0;">
+    <a class="btn-primary" href="/auth/login">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+      Start Free
+    </a>
+    <a class="btn-secondary" href="/book-demo">Request Demo</a>
+  </div>
+</div>
+
+<section class="section">
+  <div style="max-width:760px; margin:0 auto;">
+    <div class="section-label" style="margin-bottom:20px;">What you get</div>
+    <ul class="sell-benefits">
+      {% for b in item.bullets %}
+      <li>{{ b }}</li>
+      {% endfor %}
+    </ul>
+
+    {% if item.outcomes %}
+    <div class="section-label" style="margin-top:48px; margin-bottom:20px;">Outcomes</div>
+    <div class="sell-grid">
+      {% for o in item.outcomes %}
+      <div class="sell-card" style="display:block;">
+        <h3 style="font-size:1rem; margin-bottom:8px;">{{ o.stat }}</h3>
+        <p style="margin-bottom:0;">{{ o.label }}</p>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </div>
+</section>
+
+<!-- Social Proof -->
+<section class="social-proof-bar">
+  <div class="proof-label">Used by teams across industries</div>
+  <div class="proof-testimonial">
+    <blockquote>"{{ item.testimonial }}"</blockquote>
+    <cite>— {{ item.testimonial_author }}</cite>
+  </div>
+</section>
+
+<!-- FAQ -->
+<section class="section">
+  <div class="section-header">
+    <div class="section-label">FAQ</div>
+    <h2 class="section-title" style="font-size:2rem;">Questions about {{ item.name }}</h2>
+  </div>
+  <div class="faq-list">
+    {% for q in item.faqs %}
+    <div class="faq-item">
+      <button class="faq-q" onclick="this.parentElement.classList.toggle('open')">
+        {{ q.q }}
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+      </button>
+      <div class="faq-a">{{ q.a }}</div>
+    </div>
+    {% endfor %}
+  </div>
+</section>
+
+<!-- Bottom CTA -->
+<section class="section bottom-cta-section">
+  <div class="bottom-cta-box">
+    <div class="section-label">Get started</div>
+    <h2 class="section-title" style="font-size:2.2rem;">Launch your first {{ item.name }} workflow today.</h2>
+    <p class="section-subtitle" style="margin-bottom:32px;">Get live in 15 minutes. No credit card required.</p>
+    <div class="sell-cta-row">
+      <a class="btn-primary" href="/auth/login" style="font-size:1rem; padding:15px 32px;">Start Free</a>
+      <a class="btn-secondary" href="/book-demo" style="font-size:1rem; padding:15px 32px;">Request Demo</a>
+    </div>
+  </div>
+</section>
+{% endblock %}

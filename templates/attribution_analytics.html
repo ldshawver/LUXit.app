@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+
+{% block title %}Attribution Analytics - LUX IT{% endblock %}
+
+{% block content %}
+<div class="container-fluid mt-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h2><i data-feather="git-merge"></i> Attribution Analytics</h2>
+            <p class="text-muted mb-0">Track how each channel and campaign drives revenue</p>
+        </div>
+    </div>
+
+    <div class="row mb-4">
+        <div class="col-md-4">
+            <div class="card glassmorphism-card">
+                <div class="card-body text-center">
+                    <h5 class="text-cyan">${{ "%.2f"|format(attribution_data|sum(attribute='revenue') if attribution_data else 0) }}</h5>
+                    <small class="text-muted">Total Attributed Revenue</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card glassmorphism-card">
+                <div class="card-body text-center">
+                    <h5 class="text-success">{{ attribution_data|sum(attribute='conversions') if attribution_data else 0 }}</h5>
+                    <small class="text-muted">Total Conversions</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card glassmorphism-card">
+                <div class="card-body text-center">
+                    <h5 class="text-info">{{ attribution_data|length }}</h5>
+                    <small class="text-muted">Campaigns Tracked</small>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card glassmorphism-card">
+        <div class="card-header">
+            <h5 class="mb-0">Campaign Attribution Breakdown</h5>
+        </div>
+        <div class="card-body">
+            {% if attribution_data %}
+                <div class="table-responsive">
+                    <table class="table table-dark table-hover">
+                        <thead>
+                            <tr>
+                                <th>Campaign</th>
+                                <th>Revenue</th>
+                                <th>Conversions</th>
+                                <th>Avg Revenue/Conversion</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for row in attribution_data %}
+                            <tr>
+                                <td>{{ row.name or 'Unknown' }}</td>
+                                <td>${{ "%.2f"|format(row.revenue or 0) }}</td>
+                                <td>{{ row.conversions or 0 }}</td>
+                                <td>${{ "%.2f"|format((row.revenue or 0) / (row.conversions or 1)) }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            {% else %}
+                <div class="text-center py-5">
+                    <i data-feather="bar-chart-2" style="width: 48px; height: 48px;" class="text-muted mb-3"></i>
+                    <h5 class="text-muted">No Attribution Data Yet</h5>
+                    <p class="text-muted">Attribution data will appear as campaigns generate conversions and revenue.</p>
+                </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}

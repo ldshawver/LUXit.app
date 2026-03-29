@@ -4,6 +4,8 @@ import logging
 from flask_login import UserMixin
 from sqlalchemy import JSON, Text
 
+from extensions import db
+
 user_company = db.metadata.tables.get("user_company")
 if user_company is None:
     user_company = db.Table('user_company',
@@ -102,11 +104,13 @@ class User(UserMixin, db.Model):
     avatar_path = db.Column(db.String(255))
     tags = db.Column(db.String(255))
     segment = db.Column(db.String(100), default="user")
+    default_hub = db.Column(db.String(20), default="sales")  # 'sales' or 'marketing'
     custom_fields = db.Column(JSON)
     engagement_score = db.Column(db.Float, default=0.0)
     last_activity = db.Column(db.DateTime)
-    bio = db.Column(Text)
-
+    bio = db.Column(db.Text)  # User bio/description
+    preferred_hub = db.Column(db.String(20), default='marketing')  # 'marketing' or 'sales'
+    
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(
         db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
@@ -203,7 +207,16 @@ class User(UserMixin, db.Model):
         db.session.commit()
 
     def get_all_companies(self):
-        return Company.query.filter_by(is_active=True).order_by(Company.name).all()
+        try:
+            return (
+                Company.query
+                .join(user_company, (user_company.c.company_id == Company.id) & (user_company.c.user_id == self.id))
+                .filter(Company.is_active == True)
+                .order_by(Company.name)
+                .all()
+            )
+        except Exception:
+            return list(self.companies)
 
     def get_companies_safe(self):
         """Get companies safely for rendering contexts."""
@@ -299,3 +312,1703 @@ class TikTokOAuth(db.Model):
     updated_at = db.Column(
         db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
     )
+
+
+class Company(db.Model):
+    __tablename__ = "company"
+
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(255))
+    is_active = db.Column(db.Boolean, default=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    logo_path = db.Column(db.String(255))
+    icon_path = db.Column(db.String(255))
+    website_url = db.Column(db.String(255))
+    primary_color = db.Column(db.String(20), default='#bc00ed')
+    secondary_color = db.Column(db.String(20), default='#00ffb4')
+    accent_color = db.Column(db.String(20), default='#e4055c')
+    font_family = db.Column(db.String(100), default='Inter, sans-serif')
+    apply_brand_colors = db.Column(db.Boolean, default=False)
+    industry = db.Column(db.String(100))
+    description = db.Column(Text)
+
+
+class Contact(db.Model):
+    __tablename__ = "contact"
+
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=True)
+    email = db.Column(db.String(255))
+    first_name = db.Column(db.String(120))
+    last_name = db.Column(db.String(120))
+    company = db.Column(db.String(255))
+    phone = db.Column(db.String(50))
+    tags = db.Column(db.String(255))
+    is_active = db.Column(db.Boolean, default=True)
+    is_subscribed = db.Column(db.Boolean, default=True)
+    source = db.Column(db.String(100))
+    segment = db.Column(db.String(100))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class Campaign(db.Model):
+    __tablename__ = "campaign"
+
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=True)
+    name = db.Column(db.String(255))
+    subject = db.Column(db.String(500))
+    template_id = db.Column(db.Integer, db.ForeignKey("email_template.id"), nullable=True)
+    automation_id = db.Column(db.Integer, db.ForeignKey("automation.id"), nullable=True)
+    ab_test_id = db.Column(db.Integer, nullable=True)
+    status = db.Column(db.String(50))
+    scheduled_at = db.Column(db.DateTime)
+    sent_at = db.Column(db.DateTime)
+    revenue_generated = db.Column(db.Float, default=0.0)
+    utm_keyword = db.Column(db.String(255))
+    ai_generated = db.Column(db.Boolean, default=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class CampaignRecipient(db.Model):
+    __tablename__ = "campaign_recipient"
+
+    id = db.Column(db.Integer, primary_key=True)
+    contact_id = db.Column(db.Integer, db.ForeignKey("contact.id"), nullable=True)
+    campaign_id = db.Column(db.Integer, db.ForeignKey("campaign.id"), nullable=True)
+    opened_at = db.Column(db.DateTime)
+    clicked_at = db.Column(db.DateTime)
+
+
+class EmailTemplate(db.Model):
+    __tablename__ = "email_template"
+
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(255))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class EmailTracking(db.Model):
+    __tablename__ = "email_tracking"
+
+    id = db.Column(db.Integer, primary_key=True)
+    campaign_id = db.Column(db.Integer, db.ForeignKey("campaign.id"), nullable=True)
+    event_type = db.Column(db.String(50))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class BlogPost(db.Model):
+    __tablename__ = "blog_post"
+
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=True)
+    title = db.Column(db.String(255))
+    content = db.Column(db.Text)
+    excerpt = db.Column(db.Text)
+    category = db.Column(db.String(120))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class CompanySecret(db.Model):
+    __tablename__ = "company_secret"
+
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=True)
+    key = db.Column(db.String(255))
+    value = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class ContactActivity(db.Model):
+    __tablename__ = "contact_activity"
+
+    id = db.Column(db.Integer, primary_key=True)
+    contact_id = db.Column(db.Integer, db.ForeignKey("contact.id"), nullable=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=True)
+    activity_type = db.Column(db.String(50))
+    touchpoint = db.Column(db.String(50))
+    source = db.Column(db.String(100))
+    title = db.Column(db.String(255))
+    description = db.Column(db.Text)
+    extra_data = db.Column(JSON)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    contact = db.relationship("Contact", backref="activities")
+    company = db.relationship("Company", backref="contact_activities")
+
+
+class AnalyticsData(db.Model):
+    __tablename__ = "analytics_data"
+
+    id = db.Column(db.Integer, primary_key=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class BrandKit(db.Model):
+    __tablename__ = "brand_kit"
+
+    id = db.Column(db.Integer, primary_key=True)
+
+
+class EmailComponent(db.Model):
+    __tablename__ = "email_component"
+
+    id = db.Column(db.Integer, primary_key=True)
+
+
+class Poll(db.Model):
+    __tablename__ = "poll"
+
+    id = db.Column(db.Integer, primary_key=True)
+
+
+class PollResponse(db.Model):
+    __tablename__ = "poll_response"
+
+    id = db.Column(db.Integer, primary_key=True)
+
+
+class ABTest(db.Model):
+    __tablename__ = "ab_test"
+
+    id = db.Column(db.Integer, primary_key=True)
+    campaign_id = db.Column(db.Integer, db.ForeignKey("campaign.id"), nullable=True)
+    test_type = db.Column(db.String(50))
+    variant_a = db.Column(db.Text)
+    variant_b = db.Column(db.Text)
+    split_ratio = db.Column(db.Float, default=0.5)
+    winner = db.Column(db.String(10))
+    status = db.Column(db.String(50), default='draft')
+    started_at = db.Column(db.DateTime)
+    ended_at = db.Column(db.DateTime)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    campaign = db.relationship("Campaign", backref="ab_tests")
+
+
+class Automation(db.Model):
+    __tablename__ = "automation"
+
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(255))
+    is_active = db.Column(db.Boolean, default=True)
+    status = db.Column(db.String(50), default='active')
+    trigger_type = db.Column(db.String(100))
+    channel_type = db.Column(db.String(50), default='email')
+    description = db.Column(db.Text, nullable=True)
+    trigger_conditions = db.Column(db.JSON, nullable=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class AutomationStep(db.Model):
+    __tablename__ = "automation_step"
+
+    id = db.Column(db.Integer, primary_key=True)
+    automation_id = db.Column(db.Integer, db.ForeignKey("automation.id"), nullable=True)
+    step_type = db.Column(db.String(100))
+    step_order = db.Column(db.Integer)
+    template_id = db.Column(db.Integer)
+    delay_hours = db.Column(db.Integer, default=0)
+    conditions = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    automation = db.relationship("Automation", backref="steps")
+
+
+class SMSCampaign(db.Model):
+    __tablename__ = "sms_campaign"
+
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(255))
+    message = db.Column(db.String(1000))
+    status = db.Column(db.String(50))
+    scheduled_at = db.Column(db.DateTime)
+    sent_at = db.Column(db.DateTime)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    recipients = db.relationship('SMSRecipient', backref='campaign', lazy='dynamic', foreign_keys='SMSRecipient.campaign_id')
+
+
+class SMSRecipient(db.Model):
+    __tablename__ = "sms_recipient"
+
+    id = db.Column(db.Integer, primary_key=True)
+    campaign_id = db.Column(db.Integer, db.ForeignKey("sms_campaign.id"), nullable=True)
+    contact_id = db.Column(db.Integer, db.ForeignKey("contact.id"), nullable=True)
+    status = db.Column(db.String(50))
+    sent_at = db.Column(db.DateTime)
+    delivered_at = db.Column(db.DateTime)
+    error_message = db.Column(db.Text)
+
+
+class SMSTemplate(db.Model):
+    __tablename__ = "sms_template"
+
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(255))
+    message = db.Column(db.Text)
+    category = db.Column(db.String(100))
+    tone = db.Column(db.String(50))
+    has_opt_out = db.Column(db.Boolean, default=True)
+    is_compliant = db.Column(db.Boolean, default=True)
+    usage_count = db.Column(db.Integer, default=0)
+    is_active = db.Column(db.Boolean, default=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class SocialPost(db.Model):
+    __tablename__ = "social_post"
+
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True)
+    platform = db.Column(db.String(50))
+    content = db.Column(db.Text)
+    platforms = db.Column(db.JSON)
+    media_urls = db.Column(db.JSON)
+    image_url = db.Column(db.String(500))
+    status = db.Column(db.String(50))
+    scheduled_at = db.Column(db.DateTime)
+    published_at = db.Column(db.DateTime)
+    engagement_data = db.Column(db.JSON)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class Segment(db.Model):
+    __tablename__ = "segment"
+
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(255), nullable=False)
+    description = db.Column(db.Text, nullable=True)
+    segment_type = db.Column(db.String(100), default="behavioral")
+    conditions = db.Column(db.JSON, nullable=True)
+    is_dynamic = db.Column(db.Boolean, default=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    members = db.relationship("SegmentMember", backref="segment", lazy="dynamic", cascade="all, delete-orphan")
+
+
+class SegmentMember(db.Model):
+    __tablename__ = "segment_member"
+
+    id = db.Column(db.Integer, primary_key=True)
+    segment_id = db.Column(db.Integer, db.ForeignKey("segment.id"), nullable=False)
+    contact_id = db.Column(db.Integer, db.ForeignKey("contact.id"), nullable=False)
+    added_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    contact = db.relationship("Contact", backref="segment_memberships")
+
+
+class WebForm(db.Model):
+    __tablename__ = "web_form"
+
+    id = db.Column(db.Integer, primary_key=True)
+
+
+class FormSubmission(db.Model):
+    __tablename__ = "form_submission"
+
+    id = db.Column(db.Integer, primary_key=True)
+
+
+class Event(db.Model):
+    __tablename__ = "event"
+
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(255))
+    description = db.Column(db.Text)
+    start_date = db.Column(db.DateTime)
+    end_date = db.Column(db.DateTime)
+    location = db.Column(db.String(255))
+    max_attendees = db.Column(db.Integer)
+    price = db.Column(db.Float, default=0.0)
+    is_active = db.Column(db.Boolean, default=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    registrations = db.relationship('EventRegistration', backref='event', lazy='dynamic')
+    tickets = db.relationship('EventTicket', backref='event', lazy='dynamic')
+
+
+class EventRegistration(db.Model):
+    __tablename__ = "event_registration"
+
+    id = db.Column(db.Integer, primary_key=True)
+    event_id = db.Column(db.Integer, db.ForeignKey("event.id"), nullable=True)
+    contact_id = db.Column(db.Integer, db.ForeignKey("contact.id"), nullable=True)
+    status = db.Column(db.String(50), default='registered')
+    payment_status = db.Column(db.String(50), default='pending')
+    registered_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class EventTicket(db.Model):
+    __tablename__ = "event_ticket"
+
+    id = db.Column(db.Integer, primary_key=True)
+    event_id = db.Column(db.Integer, db.ForeignKey("event.id"), nullable=True)
+
+
+class Product(db.Model):
+    __tablename__ = "product"
+
+    id = db.Column(db.Integer, primary_key=True)
+
+
+class Order(db.Model):
+    __tablename__ = "order"
+
+    id = db.Column(db.Integer, primary_key=True)
+
+
+class CalendarEvent(db.Model):
+    __tablename__ = "calendar_event"
+
+    id = db.Column(db.Integer, primary_key=True)
+    event_type = db.Column(db.String(50))
+    start_date = db.Column(db.DateTime)
+
+
+class AutomationTemplate(db.Model):
+    __tablename__ = "automation_template"
+
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(255))
+    description = db.Column(db.Text)
+    category = db.Column(db.String(100))
+    trigger_type = db.Column(db.String(100))
+    is_predefined = db.Column(db.Boolean, default=False)
+    template_data = db.Column(db.Text)
+
+
+class AutomationExecution(db.Model):
+    __tablename__ = "automation_execution"
+
+    id = db.Column(db.Integer, primary_key=True)
+    automation_id = db.Column(db.Integer, db.ForeignKey("automation.id"), nullable=True)
+    status = db.Column(db.String(50), default='pending')
+    started_at = db.Column(db.DateTime)
+    completed_at = db.Column(db.DateTime)
+
+
+class AutomationAction(db.Model):
+    __tablename__ = "automation_action"
+
+    id = db.Column(db.Integer, primary_key=True)
+
+
+class LandingPage(db.Model):
+    __tablename__ = "landing_page"
+
+    id = db.Column(db.Integer, primary_key=True)
+
+
+class NewsletterArchive(db.Model):
+    __tablename__ = "newsletter_archive"
+
+    id = db.Column(db.Integer, primary_key=True)
+    campaign_id = db.Column(db.Integer, db.ForeignKey("campaign.id"), nullable=True)
+    title = db.Column(db.String(255))
+    slug = db.Column(db.String(255))
+    html_content = db.Column(db.Text)
+    published_at = db.Column(db.DateTime)
+    view_count = db.Column(db.Integer, default=0)
+    is_public = db.Column(db.Boolean, default=True)
+
+
+class NonOpenerResend(db.Model):
+    __tablename__ = "non_opener_resend"
+
+    id = db.Column(db.Integer, primary_key=True)
+
+
+class SEOKeyword(db.Model):
+    __tablename__ = "seo_keyword"
+
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=True, index=True)
+    keyword = db.Column(db.String(255), nullable=True, default="")
+    monthly_volume = db.Column(db.Integer, default=0)
+    difficulty = db.Column(db.Integer, default=0)
+    current_position = db.Column(db.Integer)
+    is_tracking = db.Column(db.Boolean, default=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    company = db.relationship("Company", backref="seo_keywords")
+
+
+class KeywordRanking(db.Model):
+    __tablename__ = "keyword_ranking"
+    
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=True, index=True)
+    keyword_id = db.Column(db.Integer, db.ForeignKey("seo_keyword.id"), nullable=True)
+    position = db.Column(db.Integer)
+    url = db.Column(db.Text)
+    change = db.Column(db.Integer, default=0)
+    recorded_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    company = db.relationship("Company", backref="keyword_rankings")
+    keyword = db.relationship("SEOKeyword", backref="rankings")
+
+
+class SEOBacklink(db.Model):
+    __tablename__ = "seo_backlink"
+
+    id = db.Column(db.Integer, primary_key=True)
+    source_url = db.Column(db.Text)
+    source_domain = db.Column(db.String(255))
+    target_url = db.Column(db.Text)
+    anchor_text = db.Column(db.String(500))
+    link_type = db.Column(db.String(50))
+    status = db.Column(db.String(50), default='active')
+    domain_authority = db.Column(db.Float)
+    page_authority = db.Column(db.Float)
+    spam_score = db.Column(db.Float)
+    first_seen = db.Column(db.DateTime)
+    last_seen = db.Column(db.DateTime)
+    lost_at = db.Column(db.DateTime)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class SEOCompetitor(db.Model):
+    __tablename__ = "seo_competitor"
+
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(255))
+    domain = db.Column(db.String(255))
+    organic_traffic = db.Column(db.Integer, default=0)
+    organic_keywords = db.Column(db.Integer, default=0)
+    backlinks = db.Column(db.Integer, default=0)
+    domain_authority = db.Column(db.Float)
+    page_authority = db.Column(db.Float)
+    notes = db.Column(db.Text)
+    is_active = db.Column(db.Boolean, default=True)
+    last_analyzed = db.Column(db.DateTime)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class SEOAudit(db.Model):
+    __tablename__ = "seo_audit"
+
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=True)
+    url = db.Column(db.String(500))
+    score = db.Column(db.Integer, default=0)
+    issues = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    company = db.relationship("Company", backref="seo_audits")
+
+
+class SEOPage(db.Model):
+    __tablename__ = "seo_page"
+
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=True)
+    url = db.Column(db.String(500))
+    title = db.Column(db.String(255))
+    meta_description = db.Column(db.Text)
+    h1_count = db.Column(db.Integer, default=0)
+    word_count = db.Column(db.Integer, default=0)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    company = db.relationship("Company", backref="seo_pages")
+
+
+class CompetitorSnapshot(db.Model):
+    __tablename__ = "competitor_snapshot"
+    
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=True)
+    competitor_id = db.Column(db.Integer, db.ForeignKey("seo_competitor.id"), nullable=True)
+    domain_authority = db.Column(db.Integer, default=0)
+    organic_keywords = db.Column(db.Integer, default=0)
+    organic_traffic = db.Column(db.Integer, default=0)
+    backlinks = db.Column(db.Integer, default=0)
+    recorded_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    company = db.relationship("Company", backref="competitor_snapshots")
+    competitor = db.relationship("SEOCompetitor", backref="snapshots")
+
+
+class TicketPurchase(db.Model):
+    __tablename__ = "ticket_purchase"
+
+    id = db.Column(db.Integer, primary_key=True)
+
+
+class EventCheckIn(db.Model):
+    __tablename__ = "event_check_in"
+
+    id = db.Column(db.Integer, primary_key=True)
+
+
+class SocialMediaAccount(db.Model):
+    __tablename__ = "social_media_account"
+
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=True, index=True)
+    platform = db.Column(db.String(50), nullable=True, default="")
+    account_name = db.Column(db.String(255))
+    account_id = db.Column(db.String(255))
+    access_token = db.Column(db.Text)
+    refresh_token = db.Column(db.Text)
+    token_expires_at = db.Column(db.DateTime)
+    is_active = db.Column(db.Boolean, default=True)
+    is_verified = db.Column(db.Boolean, default=False)
+    follower_count = db.Column(db.Integer, default=0)
+    last_synced = db.Column(db.DateTime)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    company = db.relationship("Company", backref="social_media_accounts")
+
+
+class SocialMediaSchedule(db.Model):
+    __tablename__ = "social_media_schedule"
+
+    id = db.Column(db.Integer, primary_key=True)
+
+
+class AutomationTest(db.Model):
+    __tablename__ = "automation_test"
+
+    id = db.Column(db.Integer, primary_key=True)
+    automation_id = db.Column(db.Integer, db.ForeignKey("automation.id"), nullable=True)
+    test_contact_id = db.Column(db.Integer, db.ForeignKey("contact.id"), nullable=True)
+    test_data = db.Column(db.JSON)
+    status = db.Column(db.String(50), default="pending")
+    test_results = db.Column(db.JSON)
+    started_at = db.Column(db.DateTime)
+    completed_at = db.Column(db.DateTime)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class AutomationTriggerLibrary(db.Model):
+    __tablename__ = "automation_trigger_library"
+
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(200), nullable=False)
+    trigger_type = db.Column(db.String(100))
+    description = db.Column(db.Text)
+    category = db.Column(db.String(100))
+    trigger_config = db.Column(db.JSON)
+    steps_template = db.Column(db.JSON)
+    is_active = db.Column(db.Boolean, default=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class AutomationABTest(db.Model):
+    __tablename__ = "automation_ab_test"
+
+    id = db.Column(db.Integer, primary_key=True)
+    automation_id = db.Column(db.Integer, db.ForeignKey("automation.id"), nullable=True)
+    name = db.Column(db.String(200))
+    variant_a = db.Column(db.JSON)
+    variant_b = db.Column(db.JSON)
+    status = db.Column(db.String(50), default="running")
+    winner = db.Column(db.String(10))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class Deal(db.Model):
+    __tablename__ = "deal"
+
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=True)
+    stage = db.Column(db.String(100))
+    value = db.Column(db.Float)
+    name = db.Column(db.String(200))
+    contact_id = db.Column(db.Integer, db.ForeignKey("contact.id"), nullable=True)
+    expected_close_date = db.Column(db.DateTime)
+    probability = db.Column(db.Float, default=0.5)
+    notes = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    company = db.relationship("Company", backref="deals")
+    contact = db.relationship("Contact", backref="deals")
+
+
+class LeadScore(db.Model):
+    __tablename__ = "lead_score"
+
+    id = db.Column(db.Integer, primary_key=True)
+    contact_id = db.Column(db.Integer, db.ForeignKey("contact.id"), nullable=True)
+    lead_score = db.Column(db.Integer, default=0)
+    engagement_score = db.Column(db.Integer, default=0)
+    behavior_score = db.Column(db.Integer, default=0)
+    fit_score = db.Column(db.Integer, default=0)
+    last_calculated = db.Column(db.DateTime)
+    
+    contact = db.relationship("Contact", backref="lead_scores")
+
+    @property
+    def score(self):
+        return self.lead_score or 0
+
+
+class SalesStage(db.Model):
+    __tablename__ = "sales_stage"
+    
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=True)
+    name = db.Column(db.String(100), nullable=False)
+    order = db.Column(db.Integer, default=0)
+    probability = db.Column(db.Float, default=0.0)
+    color = db.Column(db.String(20), default="#bc00ed")
+    description = db.Column(db.Text)
+    suggested_actions = db.Column(JSON)
+    materials = db.Column(JSON)
+    is_active = db.Column(db.Boolean, default=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    company = db.relationship("Company", backref="sales_stages")
+
+
+class CRMTask(db.Model):
+    __tablename__ = "crm_task"
+    
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True)
+    contact_id = db.Column(db.Integer, db.ForeignKey("contact.id"), nullable=True)
+    deal_id = db.Column(db.Integer, db.ForeignKey("deal.id"), nullable=True)
+    title = db.Column(db.String(255), nullable=False)
+    description = db.Column(db.Text)
+    task_type = db.Column(db.String(50))
+    priority = db.Column(db.String(20), default="medium")
+    status = db.Column(db.String(20), default="pending")
+    due_date = db.Column(db.DateTime)
+    completed_at = db.Column(db.DateTime)
+    reminder_at = db.Column(db.DateTime)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    company = db.relationship("Company", backref="crm_tasks")
+    user = db.relationship("User", backref="crm_tasks")
+    contact = db.relationship("Contact", backref="tasks")
+    deal = db.relationship("Deal", backref="tasks")
+
+
+class Meeting(db.Model):
+    __tablename__ = "meeting"
+    
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True)
+    contact_id = db.Column(db.Integer, db.ForeignKey("contact.id"), nullable=True)
+    deal_id = db.Column(db.Integer, db.ForeignKey("deal.id"), nullable=True)
+    title = db.Column(db.String(255), nullable=False)
+    description = db.Column(db.Text)
+    meeting_type = db.Column(db.String(50))
+    start_time = db.Column(db.DateTime)
+    end_time = db.Column(db.DateTime)
+    location = db.Column(db.String(255))
+    meeting_url = db.Column(db.String(500))
+    status = db.Column(db.String(20), default="scheduled")
+    notes = db.Column(db.Text)
+    ai_prep_notes = db.Column(db.Text)
+    ai_follow_up = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    company = db.relationship("Company", backref="meetings")
+    user = db.relationship("User", backref="meetings")
+    contact = db.relationship("Contact", backref="meetings")
+    deal = db.relationship("Deal", backref="meetings")
+
+
+class Playbook(db.Model):
+    __tablename__ = "playbook"
+    
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=False)
+    name = db.Column(db.String(200), nullable=False)
+    description = db.Column(db.Text)
+    playbook_type = db.Column(db.String(50))
+    content = db.Column(JSON)
+    is_active = db.Column(db.Boolean, default=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    company = db.relationship("Company", backref="playbooks")
+
+
+class Document(db.Model):
+    __tablename__ = "document"
+    
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=False)
+    name = db.Column(db.String(255), nullable=False)
+    description = db.Column(db.Text)
+    file_path = db.Column(db.String(500))
+    file_type = db.Column(db.String(50))
+    document_type = db.Column(db.String(50))
+    view_count = db.Column(db.Integer, default=0)
+    share_count = db.Column(db.Integer, default=0)
+    is_active = db.Column(db.Boolean, default=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    company = db.relationship("Company", backref="documents")
+
+
+class TouchpointEvent(db.Model):
+    __tablename__ = "touchpoint_event"
+    
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=False)
+    contact_id = db.Column(db.Integer, db.ForeignKey("contact.id"), nullable=True)
+    visitor_id = db.Column(db.String(100))
+    touchpoint_type = db.Column(db.String(50), nullable=False)
+    source = db.Column(db.String(100))
+    page_url = db.Column(db.String(500))
+    referrer = db.Column(db.String(500))
+    event_data = db.Column(JSON)
+    ip_address = db.Column(db.String(50))
+    user_agent = db.Column(db.String(500))
+    session_id = db.Column(db.String(100))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    company = db.relationship("Company", backref="touchpoint_events")
+    contact = db.relationship("Contact", backref="touchpoint_events")
+
+
+class PersonalizationRule(db.Model):
+    __tablename__ = "personalization_rule"
+
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=True)
+    name = db.Column(db.String(255))
+    segment_criteria = db.Column(db.Text)
+    personalization_config = db.Column(db.Text)
+    priority = db.Column(db.Integer, default=0)
+    is_active = db.Column(db.Boolean, default=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    company = db.relationship("Company", backref="personalization_rules")
+
+
+class KeywordResearch(db.Model):
+    __tablename__ = "keyword_research"
+
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=True)
+    keyword = db.Column(db.String(255))
+    search_volume = db.Column(db.Integer, default=0)
+    difficulty_score = db.Column(db.Float)
+    competition = db.Column(db.String(50))
+    seasonal_trend = db.Column(db.Text)
+    intent = db.Column(db.String(100))
+    related_keywords = db.Column(db.Text)
+    status = db.Column(db.String(50), default='active')
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    company = db.relationship("Company", backref="keyword_research")
+
+
+class AgentTask(db.Model):
+    __tablename__ = "agent_task"
+
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=False, index=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True)
+    agent_type = db.Column(db.String(100), nullable=False, index=True)
+    agent_name = db.Column(db.String(200))
+    task_name = db.Column(db.String(255))
+    task_type = db.Column(db.String(100))
+    task_data = db.Column(db.Text)
+    result_data = db.Column(db.Text)
+    status = db.Column(db.String(50), default='pending', index=True)
+    priority = db.Column(db.Integer, default=5)
+    scheduled_at = db.Column(db.DateTime)
+    started_at = db.Column(db.DateTime)
+    completed_at = db.Column(db.DateTime)
+    error_message = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    company = db.relationship("Company", backref="agent_tasks")
+    user = db.relationship("User", backref="agent_tasks")
+    
+    __table_args__ = (
+        db.Index("ix_agent_task_company_status", "company_id", "status"),
+        db.Index("ix_agent_task_agent_type_status", "agent_type", "status"),
+    )
+
+
+class AgentLog(db.Model):
+    __tablename__ = "agent_log"
+
+    id = db.Column(db.Integer, primary_key=True)
+    agent_type = db.Column(db.String(100), nullable=False)
+    agent_name = db.Column(db.String(200))
+    activity_type = db.Column(db.String(100))
+    details = db.Column(db.Text)
+    status = db.Column(db.String(50))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class AgentReport(db.Model):
+    __tablename__ = "agent_report"
+
+    id = db.Column(db.Integer, primary_key=True)
+    agent_type = db.Column(db.String(100), nullable=False, index=True)
+    agent_name = db.Column(db.String(200))
+    report_type = db.Column(db.String(50), nullable=False)
+    report_title = db.Column(db.String(500))
+    report_data = db.Column(db.Text)
+    insights = db.Column(db.Text)
+    period_start = db.Column(db.DateTime)
+    period_end = db.Column(db.DateTime)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class AgentSchedule(db.Model):
+    __tablename__ = "agent_schedule"
+
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey('company.id'), nullable=False)
+    contact_id = db.Column(db.Integer, db.ForeignKey('contact.id'), nullable=True)
+    title = db.Column(db.String(255), nullable=False)
+    description = db.Column(db.Text)
+    value = db.Column(db.Float)  # Deal value
+    currency = db.Column(db.String(3), default='USD')
+    stage = db.Column(db.String(50), default='prospecting')  # prospecting, qualification, proposal, negotiation, won, lost
+    probability = db.Column(db.Float, default=0.0)  # 0-1.0
+    expected_close_date = db.Column(db.DateTime)
+    closed_at = db.Column(db.DateTime)
+    owner_id = db.Column(db.Integer, db.ForeignKey('user.id'))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    company = db.relationship("Company", backref="agent_schedules")
+
+
+class AgentDeliverable(db.Model):
+    __tablename__ = "agent_deliverable"
+
+    id = db.Column(db.Integer, primary_key=True)
+    agent_type = db.Column(db.String(100), nullable=False, index=True)
+    agent_name = db.Column(db.String(200))
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=True, index=True)
+    deliverable_type = db.Column(db.String(100))
+    title = db.Column(db.String(500))
+    description = db.Column(db.Text)
+    content = db.Column(db.Text)
+    content_format = db.Column(db.String(50))
+    file_path = db.Column(db.String(500))
+    extra_data = db.Column(db.Text)
+    prompt_used = db.Column(db.Text)
+    status = db.Column(db.String(50), default='requested')
+    is_starred = db.Column(db.Boolean, default=False)
+    view_count = db.Column(db.Integer, default=0)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    company = db.relationship("Company", backref="agent_deliverables")
+
+
+class AgentPerformance(db.Model):
+    __tablename__ = "agent_performance"
+
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=False, index=True)
+    agent_type = db.Column(db.String(100), nullable=False)
+    metric_type = db.Column(db.String(100))
+    metric_value = db.Column(db.Float)
+    metric_data = db.Column(db.Text)
+    period_start = db.Column(db.DateTime)
+    period_end = db.Column(db.DateTime)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    company = db.relationship("Company", backref="agent_performance")
+
+
+class AgentMemory(db.Model):
+    __tablename__ = "agent_memory"
+
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=False, index=True)
+    agent_type = db.Column(db.String(100), nullable=False, index=True)
+    memory_type = db.Column(db.String(100))
+    source = db.Column(db.String(255))
+    category = db.Column(db.String(100))
+    key = db.Column(db.String(255))
+    value = db.Column(db.Text)
+    confidence = db.Column(db.Float)
+    usage_count = db.Column(db.Integer, default=0)
+    success_rate = db.Column(db.Float)
+    expires_at = db.Column(db.DateTime)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    company = db.relationship("Company", backref="agent_memories")
+
+    @property
+    def memory_key(self):
+        return self.key
+
+    @property
+    def memory_value(self):
+        return self.value
+
+
+class AgentConversation(db.Model):
+    __tablename__ = "agent_conversation"
+
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=False, index=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    agent_type = db.Column(db.String(100), nullable=False, index=True)
+    session_id = db.Column(db.String(100))
+    role = db.Column(db.String(20))
+    message = db.Column(db.Text)
+    message_metadata = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    company = db.relationship("Company", backref="agent_conversations")
+    user = db.relationship("User", backref="agent_conversations")
+    
+    __table_args__ = (
+        db.Index("ix_agent_conversation_session", "company_id", "session_id"),
+    )
+
+
+class AgentReview(db.Model):
+    __tablename__ = "agent_review"
+
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=False, index=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True)
+    agent_type = db.Column(db.String(100), nullable=False)
+    review_type = db.Column(db.String(100))
+    item_type = db.Column(db.String(100))
+    item_id = db.Column(db.Integer)
+    item_content = db.Column(db.Text)
+    analysis = db.Column(db.Text)
+    suggestions = db.Column(db.Text)
+    score = db.Column(db.Float)
+    status = db.Column(db.String(50), default='pending')
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    company = db.relationship("Company", backref="agent_reviews")
+    user = db.relationship("User", backref="agent_reviews")
+
+
+class MarketSignal(db.Model):
+    __tablename__ = "market_signal"
+
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=True)
+    source = db.Column(db.String(255))
+    signal_type = db.Column(db.String(100))
+    title = db.Column(db.String(500))
+    summary = db.Column(db.Text)
+    severity = db.Column(db.String(50))
+    signal_date = db.Column(db.DateTime)
+    raw_data = db.Column(db.Text)
+    is_actionable = db.Column(db.Boolean, default=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    company = db.relationship("Company", backref="market_signals")
+
+
+class StrategyRecommendation(db.Model):
+    __tablename__ = "strategy_recommendation"
+
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=True)
+    related_signal_id = db.Column(db.Integer)
+    title = db.Column(db.String(500))
+    recommendation_type = db.Column(db.String(100))
+    priority = db.Column(db.String(50))
+    status = db.Column(db.String(50), default='pending')
+    rationale = db.Column(db.Text)
+    action_steps = db.Column(db.Text)
+    generated_by = db.Column(db.String(100))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    company = db.relationship("Company", backref="strategy_recommendations")
+
+
+class Competitor(db.Model):
+    __tablename__ = "competitor"
+
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=True)
+    name = db.Column(db.String(255))
+    website_url = db.Column(db.String(500))
+    industry = db.Column(db.String(100))
+    status = db.Column(db.String(50))
+    notes = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    company = db.relationship("Company", backref="competitors")
+
+
+class FacebookOAuth(db.Model):
+    """
+    Stores Facebook OAuth login records per user+company.
+    Holds the Facebook App-Scoped User ID (ASID), display identity,
+    and an encrypted long-lived user access token (~60 days).
+    Page access tokens are stored separately in CompanySecret
+    under key "facebook_page_tokens" (also encrypted).
+    """
+    __tablename__ = "facebook_oauth"
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, index=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=False, index=True)
+
+    # Facebook identity fields
+    facebook_user_id = db.Column(db.String(64), nullable=True)   # App-Scoped User ID (ASID)
+    display_name = db.Column(db.String(255), nullable=True)
+    email = db.Column(db.String(254), nullable=True)
+    avatar_url = db.Column(db.Text, nullable=True)
+
+    # Encrypted long-lived user access token
+    _access_token = db.Column("access_token", db.Text, nullable=True)
+
+    # Selected Facebook Page (after page picker step)
+    page_id = db.Column(db.String(64), nullable=True)
+    page_name = db.Column(db.String(255), nullable=True)
+    page_avatar_url = db.Column(db.Text, nullable=True)
+
+    # Meta
+    status = db.Column(db.String(20), default="active")
+    expires_at = db.Column(db.DateTime, nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    user = db.relationship("User", backref="facebook_oauths")
+    company = db.relationship("Company", backref="facebook_oauths")
+
+    def set_access_token(self, token: str):
+        """Encrypt and store the access token."""
+        if not token:
+            self._access_token = None
+            return
+        try:
+            from services.secret_vault import vault
+            self._access_token = vault.encrypt(token)
+        except Exception:
+            self._access_token = token
+
+    def get_access_token(self) -> str:
+        """Decrypt and return the access token."""
+        if not self._access_token:
+            return None
+        try:
+            from services.secret_vault import vault
+            return vault.decrypt(self._access_token)
+        except Exception:
+            return self._access_token
+
+
+class InstagramOAuth(db.Model):
+    __tablename__ = "instagram_oauth"
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=True)
+    instagram_account_id = db.Column(db.String(255))
+    access_token = db.Column(db.Text)
+    expires_at = db.Column(db.DateTime)
+    username = db.Column(db.String(255))
+    avatar_url = db.Column(db.String(500))
+    status = db.Column(db.String(50), default='active')
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    company = db.relationship("Company", backref="instagram_oauths")
+
+
+class WordPressIntegration(db.Model):
+    __tablename__ = "wordpress_integration"
+
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=True)
+
+    company = db.relationship("Company", backref="wordpress_integrations")
+
+
+class CompetitorProfile(db.Model):
+    __tablename__ = "competitor_profile"
+
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=True)
+    competitor_name = db.Column(db.String(200))
+    website_url = db.Column(db.String(255))
+    strengths = db.Column(Text)
+    weaknesses = db.Column(Text)
+    pricing_model = db.Column(db.String(100))
+    market_share = db.Column(db.String(100))
+    last_analyzed = db.Column(db.DateTime)
+    notes = db.Column(Text)
+    is_active = db.Column(db.Boolean, default=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    @property
+    def name(self):
+        return self.competitor_name or ''
+
+
+class MultivariateTest(db.Model):
+    __tablename__ = "multivariate_test"
+
+    id = db.Column(db.Integer, primary_key=True)
+    campaign_id = db.Column(db.Integer, db.ForeignKey("campaign.id"), nullable=True)
+    name = db.Column(db.String(255))
+    variables = db.Column(db.Text)
+    variants = db.Column(db.Text)
+    sample_size = db.Column(db.Integer)
+    confidence_level = db.Column(db.Float)
+    status = db.Column(db.String(50), default='draft')
+    winner = db.Column(db.String(100))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class CampaignCost(db.Model):
+    __tablename__ = "campaign_cost"
+
+    id = db.Column(db.Integer, primary_key=True)
+    campaign_id = db.Column(db.Integer, db.ForeignKey("campaign.id"), nullable=True)
+    cost_type = db.Column(db.String(50))
+    amount = db.Column(db.Float)
+    currency = db.Column(db.String(10))
+    cost_date = db.Column(db.DateTime)
+
+    campaign = db.relationship("Campaign", backref="costs")
+
+
+class AttributionModel(db.Model):
+    __tablename__ = "attribution_model"
+
+    id = db.Column(db.Integer, primary_key=True)
+    campaign_id = db.Column(db.Integer, db.ForeignKey("campaign.id"), nullable=True)
+    contact_id = db.Column(db.Integer, db.ForeignKey("contact.id"), nullable=True)
+    revenue = db.Column(db.Float)
+    attribution_model = db.Column(db.String(50))
+    confidence_score = db.Column(db.Float)
+
+    campaign = db.relationship("Campaign", backref="attributions")
+
+
+class SurveyResponse(db.Model):
+    __tablename__ = "survey_response"
+
+    id = db.Column(db.Integer, primary_key=True)
+    contact_id = db.Column(db.Integer, db.ForeignKey("contact.id"), nullable=True)
+    survey_type = db.Column(db.String(50))
+    score = db.Column(db.Integer, default=0)
+    feedback = db.Column(db.Text)
+    sentiment = db.Column(db.String(50))
+    sentiment_score = db.Column(db.Float)
+    topics = db.Column(db.Text)
+    responded_at = db.Column(db.DateTime)
+
+
+class AgentConfiguration(db.Model):
+    __tablename__ = "agent_configuration"
+
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=True)
+    agent_type = db.Column(db.String(100))
+    is_enabled = db.Column(db.Boolean, default=False)
+    schedule_frequency = db.Column(db.String(50))
+    configuration = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    company = db.relationship("Company", backref="agent_configurations")
+
+
+class CompanyIntegrationConfig(db.Model):
+    __tablename__ = "company_integration_config"
+
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=False, index=True)
+    service_slug = db.Column(db.String(100), nullable=False)
+    is_active = db.Column(db.Boolean, default=False)
+    config_json = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_by_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True)
+    updated_by_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True)
+
+    @property
+    def is_enabled(self):
+        return self.is_active
+
+
+class IntegrationAuditLog(db.Model):
+    __tablename__ = "integration_audit_log"
+
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=False, index=True)
+    config_id = db.Column(db.Integer, nullable=True)
+    service_slug = db.Column(db.String(100), nullable=False)
+    action = db.Column(db.String(50), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True)
+    changes = db.Column(db.JSON)
+    ip_address = db.Column(db.String(45))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class AgentAutomation(db.Model):
+    __tablename__ = "agent_automation"
+
+    id = db.Column(db.Integer, primary_key=True)
+    agent_type = db.Column(db.String(100))
+    name = db.Column(db.String(255))
+    description = db.Column(db.Text)
+    schedule = db.Column(db.String(100))
+    enabled = db.Column(db.Boolean, default=True)
+    last_run = db.Column(db.DateTime)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class ApprovalQueue(db.Model):
+    __tablename__ = "approval_queue"
+
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=False, index=True)
+    content_type = db.Column(db.String(100), nullable=False)
+    content_id = db.Column(db.Integer, nullable=True)
+    title = db.Column(db.String(500), nullable=False)
+    content_preview = db.Column(db.Text)
+    content_full = db.Column(db.Text)
+    status = db.Column(db.String(50), default='pending', index=True)
+    creation_mode = db.Column(db.String(50), default='manual')
+    created_by_agent = db.Column(db.String(100))
+    created_by_user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True)
+    reviewed_by_user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True)
+    reviewed_at = db.Column(db.DateTime)
+    review_notes = db.Column(db.Text)
+    ai_rationale = db.Column(db.Text)
+    confidence_score = db.Column(db.Float)
+    risk_level = db.Column(db.String(50), default='low')
+    target_platform = db.Column(db.String(100))
+    target_audience = db.Column(db.String(255))
+    scheduled_publish_at = db.Column(db.DateTime)
+    published_at = db.Column(db.DateTime)
+    edit_history = db.Column(db.Text)
+    version = db.Column(db.Integer, default=1)
+    previous_version_id = db.Column(db.Integer)
+    compliance_flags = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    company = db.relationship("Company", backref="approval_queue_items")
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'company_id': self.company_id,
+            'content_type': self.content_type,
+            'content_id': self.content_id,
+            'title': self.title,
+            'content_preview': self.content_preview,
+            'status': self.status,
+            'creation_mode': self.creation_mode,
+            'created_by_agent': self.created_by_agent,
+            'created_by_user_id': self.created_by_user_id,
+            'reviewed_by_user_id': self.reviewed_by_user_id,
+            'reviewed_at': self.reviewed_at.isoformat() if self.reviewed_at else None,
+            'review_notes': self.review_notes,
+            'ai_rationale': self.ai_rationale,
+            'confidence_score': self.confidence_score,
+            'risk_level': self.risk_level,
+            'target_platform': self.target_platform,
+            'target_audience': self.target_audience,
+            'scheduled_publish_at': self.scheduled_publish_at.isoformat() if self.scheduled_publish_at else None,
+            'published_at': self.published_at.isoformat() if self.published_at else None,
+            'version': self.version,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+        }
+
+
+class ApprovalAuditLog(db.Model):
+    __tablename__ = "approval_audit_log"
+
+    id = db.Column(db.Integer, primary_key=True)
+    approval_queue_id = db.Column(db.Integer, db.ForeignKey("approval_queue.id"), nullable=False)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=False)
+    action = db.Column(db.String(50), nullable=False)
+    previous_status = db.Column(db.String(50))
+    new_status = db.Column(db.String(50))
+    action_by_user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True)
+    action_by_agent = db.Column(db.String(100))
+    notes = db.Column(db.Text)
+    changes_made = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'approval_queue_id': self.approval_queue_id,
+            'action': self.action,
+            'previous_status': self.previous_status,
+            'new_status': self.new_status,
+            'action_by_user_id': self.action_by_user_id,
+            'action_by_agent': self.action_by_agent,
+            'notes': self.notes,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+        }
+
+
+class FeatureToggle(db.Model):
+    __tablename__ = "feature_toggle"
+
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=True, index=True)
+    feature_key = db.Column(db.String(255))
+    feature_name = db.Column(db.String(255))
+    feature_category = db.Column(db.String(100))
+    description = db.Column(db.Text)
+    is_enabled = db.Column(db.Boolean, default=False)
+    agent_type = db.Column(db.String(100))
+    allow_automated_creation = db.Column(db.Boolean, default=False)
+    require_approval = db.Column(db.Boolean, default=True)
+    confidence_threshold = db.Column(db.Float)
+    daily_limit = db.Column(db.Integer)
+    budget_ceiling = db.Column(db.Float)
+    risk_tolerance = db.Column(db.String(50))
+    content_aggressiveness = db.Column(db.String(50))
+    brand_strictness = db.Column(db.String(50))
+    platform_rules = db.Column(db.JSON)
+    schedule_frequency = db.Column(db.String(50))
+    active_hours_start = db.Column(db.Integer)
+    active_hours_end = db.Column(db.Integer)
+    emergency_stop = db.Column(db.Boolean, default=False)
+    last_modified_by = db.Column(db.Integer)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    company = db.relationship("Company", backref="feature_toggles")
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'company_id': self.company_id,
+            'feature_key': self.feature_key,
+            'feature_name': self.feature_name,
+            'feature_category': self.feature_category,
+            'description': self.description,
+            'is_enabled': self.is_enabled,
+            'agent_type': self.agent_type,
+            'allow_automated_creation': self.allow_automated_creation,
+            'require_approval': self.require_approval,
+            'confidence_threshold': self.confidence_threshold,
+            'daily_limit': self.daily_limit,
+            'budget_ceiling': self.budget_ceiling,
+            'risk_tolerance': self.risk_tolerance,
+            'content_aggressiveness': self.content_aggressiveness,
+            'brand_strictness': self.brand_strictness,
+            'schedule_frequency': self.schedule_frequency,
+            'active_hours_start': self.active_hours_start,
+            'active_hours_end': self.active_hours_end,
+            'emergency_stop': self.emergency_stop,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+
+# ============= DEFAULT FEATURE TOGGLES =============
+DEFAULT_FEATURE_TOGGLES = [
+    # AI Agent Toggles (ALL OFF by default)
+    {'feature_key': 'agent_brand_strategy', 'feature_name': 'Brand Strategy Agent', 'feature_category': 'ai_agents', 'agent_type': 'brand_strategy', 'is_enabled': False, 'require_approval': True},
+    {'feature_key': 'agent_content_seo', 'feature_name': 'Content & SEO Agent', 'feature_category': 'ai_agents', 'agent_type': 'content_seo', 'is_enabled': False, 'require_approval': True},
+    {'feature_key': 'agent_analytics', 'feature_name': 'Analytics Agent', 'feature_category': 'ai_agents', 'agent_type': 'analytics', 'is_enabled': False, 'require_approval': True},
+    {'feature_key': 'agent_creative_design', 'feature_name': 'Creative & Design Agent', 'feature_category': 'ai_agents', 'agent_type': 'creative_design', 'is_enabled': False, 'require_approval': True},
+    {'feature_key': 'agent_advertising', 'feature_name': 'Advertising Agent', 'feature_category': 'ai_agents', 'agent_type': 'advertising', 'is_enabled': False, 'require_approval': True},
+    {'feature_key': 'agent_social_media', 'feature_name': 'Social Media Agent', 'feature_category': 'ai_agents', 'agent_type': 'social_media', 'is_enabled': False, 'require_approval': True},
+    {'feature_key': 'agent_email_crm', 'feature_name': 'Email & CRM Agent', 'feature_category': 'ai_agents', 'agent_type': 'email_crm', 'is_enabled': False, 'require_approval': True},
+    {'feature_key': 'agent_sales_enablement', 'feature_name': 'Sales Enablement Agent', 'feature_category': 'ai_agents', 'agent_type': 'sales_enablement', 'is_enabled': False, 'require_approval': True},
+    {'feature_key': 'agent_retention', 'feature_name': 'Retention Agent', 'feature_category': 'ai_agents', 'agent_type': 'retention', 'is_enabled': False, 'require_approval': True},
+    {'feature_key': 'agent_operations', 'feature_name': 'Operations Agent', 'feature_category': 'ai_agents', 'agent_type': 'operations', 'is_enabled': False, 'require_approval': True},
+    {'feature_key': 'agent_app_intelligence', 'feature_name': 'APP Agent', 'feature_category': 'ai_agents', 'agent_type': 'app_intelligence', 'is_enabled': False, 'require_approval': True},
+    
+    # Channel Toggles (ALL OFF by default)
+    {'feature_key': 'channel_instagram', 'feature_name': 'Instagram Publishing', 'feature_category': 'channels', 'is_enabled': False, 'require_approval': True},
+    {'feature_key': 'channel_facebook', 'feature_name': 'Facebook Publishing', 'feature_category': 'channels', 'is_enabled': False, 'require_approval': True},
+    {'feature_key': 'channel_tiktok', 'feature_name': 'TikTok Publishing', 'feature_category': 'channels', 'is_enabled': False, 'require_approval': True},
+    {'feature_key': 'channel_twitter', 'feature_name': 'X/Twitter Publishing', 'feature_category': 'channels', 'is_enabled': False, 'require_approval': True},
+    {'feature_key': 'channel_linkedin', 'feature_name': 'LinkedIn Publishing', 'feature_category': 'channels', 'is_enabled': False, 'require_approval': True},
+    {'feature_key': 'channel_email', 'feature_name': 'Email Campaigns', 'feature_category': 'channels', 'is_enabled': False, 'require_approval': True},
+    {'feature_key': 'channel_sms', 'feature_name': 'SMS Campaigns', 'feature_category': 'channels', 'is_enabled': False, 'require_approval': True},
+    {'feature_key': 'channel_blog', 'feature_name': 'Blog Publishing', 'feature_category': 'channels', 'is_enabled': False, 'require_approval': True},
+    
+    # Automation Toggles (ALL OFF by default)
+    {'feature_key': 'automation_scheduled_posts', 'feature_name': 'Scheduled Post Publishing', 'feature_category': 'automation', 'is_enabled': False, 'require_approval': True},
+    {'feature_key': 'automation_ai_content', 'feature_name': 'AI Content Generation', 'feature_category': 'automation', 'is_enabled': False, 'require_approval': True},
+    {'feature_key': 'automation_workflow_triggers', 'feature_name': 'Automation Workflows', 'feature_category': 'automation', 'is_enabled': False, 'require_approval': True},
+    {'feature_key': 'automation_ad_optimization', 'feature_name': 'Ad Campaign Optimization', 'feature_category': 'automation', 'is_enabled': False, 'require_approval': True},
+    
+    # Safety Toggles (ALL ON by default - these are safety features)
+    {'feature_key': 'safety_content_review', 'feature_name': 'Content Review Required', 'feature_category': 'safety', 'is_enabled': True, 'require_approval': True},
+    {'feature_key': 'safety_brand_check', 'feature_name': 'Brand Safety Check', 'feature_category': 'safety', 'is_enabled': True, 'require_approval': True},
+    {'feature_key': 'safety_compliance_scan', 'feature_name': 'Compliance Scanning', 'feature_category': 'safety', 'is_enabled': True, 'require_approval': True},
+    {'feature_key': 'safety_budget_limits', 'feature_name': 'Budget Limit Enforcement', 'feature_category': 'safety', 'is_enabled': True, 'require_approval': True},
+]
+
+
+def seed_feature_toggles(company_id):
+    """Seed default feature toggles for a company with safe defaults (OFF)"""
+    for toggle_data in DEFAULT_FEATURE_TOGGLES:
+        existing = FeatureToggle.query.filter_by(
+            company_id=company_id,
+            feature_key=toggle_data['feature_key']
+        ).first()
+        
+        if not existing:
+            toggle = FeatureToggle(
+                company_id=company_id,
+                **toggle_data
+            )
+            db.session.add(toggle)
+    
+    db.session.commit()
+
+
+class DemoRequest(db.Model):
+    __tablename__ = 'demo_request'
+
+    id = db.Column(db.Integer, primary_key=True)
+    first_name = db.Column(db.String(100), nullable=False)
+    last_name = db.Column(db.String(100), nullable=False)
+    email = db.Column(db.String(200), nullable=False)
+    phone = db.Column(db.String(50))
+    company_name = db.Column(db.String(200))
+    job_title = db.Column(db.String(200))
+    team_size = db.Column(db.String(50))
+    message = db.Column(db.Text)
+    preferred_contact = db.Column(db.String(20), default='email')
+    source_page = db.Column(db.String(100))
+    status = db.Column(db.String(20), default='new')
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class DeletionRequest(db.Model):
+    """Stores user data deletion requests submitted via /data-deletion."""
+    __tablename__ = 'deletion_requests'
+
+    id = db.Column(db.Integer, primary_key=True)
+    request_id = db.Column(db.String(36), unique=True, nullable=False)
+    email = db.Column(db.String(254), nullable=False)
+    details = db.Column(db.Text)
+    status = db.Column(db.String(20), default='pending')
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class UserQuickLink(db.Model):
+    __tablename__ = "user_quick_link"
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    label = db.Column(db.String(50), nullable=False)
+    url = db.Column(db.String(500), nullable=False)
+    icon = db.Column(db.String(50), default='link')
+    position = db.Column(db.Integer, default=0)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class ActivityLog(db.Model):
+    __tablename__ = "activity_log"
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=True)
+    action = db.Column(db.String(200), nullable=False)
+    detail = db.Column(db.String(500))
+    icon = db.Column(db.String(50), default='activity')
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class Notification(db.Model):
+    __tablename__ = "notification"
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=True)
+    title = db.Column(db.String(200), nullable=False)
+    message = db.Column(db.Text)
+    category = db.Column(db.String(50), default='system')
+    icon = db.Column(db.String(50), default='bell')
+    link = db.Column(db.String(500))
+    is_read = db.Column(db.Boolean, default=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    user = db.relationship('User', backref=db.backref('notifications', lazy='dynamic'))
+
+
+class InboxMessage(db.Model):
+    __tablename__ = "inbox_message"
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=True)
+    sender_name = db.Column(db.String(200), nullable=False)
+    sender_email = db.Column(db.String(200))
+    subject = db.Column(db.String(300), nullable=False)
+    body = db.Column(db.Text)
+    category = db.Column(db.String(50), default='general')
+    is_read = db.Column(db.Boolean, default=False)
+    is_starred = db.Column(db.Boolean, default=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    user = db.relationship('User', backref=db.backref('inbox_messages', lazy='dynamic'))
+
+
+class DashboardStickyNote(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=True)
+    content = db.Column(db.Text, default='')
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    user = db.relationship('User', backref=db.backref('sticky_notes', lazy='dynamic'))
+
+
+class DashboardTask(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=True)
+    title = db.Column(db.String(500), nullable=False)
+    is_completed = db.Column(db.Boolean, default=False)
+    due_date = db.Column(db.String(50))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    user = db.relationship('User', backref=db.backref('dashboard_tasks', lazy='dynamic'))
+
+
+class AffiliateLink(db.Model):
+    __tablename__ = "affiliate_link"
+
+    id = db.Column(db.Integer, primary_key=True)
+    tracking_code = db.Column(db.String(100), unique=True)
+    affiliate_id = db.Column(db.Integer)
+    product_url = db.Column(db.Text)
+    campaign_name = db.Column(db.String(200))
+    commission_rate = db.Column(db.Float, default=10.0)
+    commission_type = db.Column(db.String(20), default='percentage')
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class Influencer(db.Model):
+    __tablename__ = "influencer"
+
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(200), nullable=False)
+    email = db.Column(db.String(200))
+    instagram_handle = db.Column(db.String(100))
+    tiktok_handle = db.Column(db.String(100))
+    youtube_channel = db.Column(db.String(200))
+    twitter_handle = db.Column(db.String(100))
+    niche = db.Column(db.String(100))
+    follower_count = db.Column(db.Integer, default=0)
+    engagement_rate = db.Column(db.Float, default=0.0)
+    tier = db.Column(db.String(20), default='micro')
+    status = db.Column(db.String(20), default='prospect')
+    notes = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class AffiliateClick(db.Model):
+    __tablename__ = "affiliate_click"
+
+    id = db.Column(db.Integer, primary_key=True)
+    tracking_code = db.Column(db.String(100))
+    ip_address = db.Column(db.String(50))
+    user_agent = db.Column(db.Text)
+    referrer = db.Column(db.Text)
+    clicked_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class AffiliateConversion(db.Model):
+    __tablename__ = "affiliate_conversion"
+
+    id = db.Column(db.Integer, primary_key=True)
+    tracking_code = db.Column(db.String(100))
+    affiliate_id = db.Column(db.Integer)
+    sale_amount = db.Column(db.Float, default=0.0)
+    commission_amount = db.Column(db.Float, default=0.0)
+    order_id = db.Column(db.String(100))
+    status = db.Column(db.String(20), default='pending')
+    converted_at = db.Column(db.DateTime, default=datetime.utcnow)
+    paid_at = db.Column(db.DateTime)
+
+
+class UTMLink(db.Model):
+    __tablename__ = "utm_link"
+
+    id = db.Column(db.Integer, primary_key=True)
+    campaign_name = db.Column(db.String(200))
+    base_url = db.Column(db.Text)
+    full_url = db.Column(db.Text)
+    short_url = db.Column(db.String(300))
+    utm_source = db.Column(db.String(100))
+    utm_medium = db.Column(db.String(100))
+    utm_campaign = db.Column(db.String(200))
+    utm_term = db.Column(db.String(200))
+    utm_content = db.Column(db.String(200))
+    clicks = db.Column(db.Integer, default=0)
+    conversions = db.Column(db.Integer, default=0)
+    revenue = db.Column(db.Float, default=0.0)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_by = db.Column(db.Integer)
+
+
+class PressRelease(db.Model):
+    __tablename__ = "press_release"
+
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"))
+    title = db.Column(db.String(300), nullable=False)
+    subtitle = db.Column(db.String(300))
+    content = db.Column(db.Text)
+    status = db.Column(db.String(20), default='draft')
+    release_date = db.Column(db.Date)
+    embargo_until = db.Column(db.DateTime)
+    contact_info = db.Column(db.Text)
+    pickups = db.Column(db.Integer, default=0)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_by = db.Column(db.Integer, db.ForeignKey("user.id"))
+
+
+class MediaContact(db.Model):
+    __tablename__ = "media_contact"
+
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"))
+    name = db.Column(db.String(200), nullable=False)
+    email = db.Column(db.String(200))
+    outlet = db.Column(db.String(200))
+    beat = db.Column(db.String(200))
+    relationship_score = db.Column(db.Integer, default=5)
+    notes = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class Workflow(db.Model):
+    __tablename__ = "workflow"
+
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"))
+    name = db.Column(db.String(200), nullable=False)
+    description = db.Column(db.Text)
+    status = db.Column(db.String(20), default='draft')
+    nodes_data = db.Column(JSON)
+    connections_data = db.Column(JSON)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_by = db.Column(db.Integer, db.ForeignKey("user.id"))

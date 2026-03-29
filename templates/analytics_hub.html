@@ -1,39 +1,38 @@
-{% extends "base_simple.html" %}
+{% extends "base.html" %}
 
-{% block title %}Analytics Hub - LUX Marketing{% endblock %}
-
-{% block page_header %}
-<span style="color: #c0c0c0;">Analytics Hub</span>
-{% endblock %}
+{% block title %}Analytics - LUX IT{% endblock %}
+{% block page_title %}Analytics{% endblock %}
 
 {% block content %}
 <style>
   .analytics-card {
-    background: linear-gradient(135deg, #480749 0%, #004845 100%);
-    border: 1px solid;
-    border-image: linear-gradient(135deg, #bc00ed, #00ffb4) 1;
+    background: rgba(12, 14, 20, 0.85);
+    border: 1px solid rgba(0, 229, 255, 0.2);
+    border-radius: 12px;
     transition: all 0.3s ease;
   }
 
   .analytics-card:hover {
-    transform: translateY(-5px);
-    box-shadow: 0 10px 20px rgba(0, 255, 180, 0.2);
+    transform: translateY(-3px);
+    border-color: rgba(0, 229, 255, 0.4);
+    box-shadow: 0 8px 24px rgba(0, 229, 255, 0.15);
   }
 
   .metric-value {
     font-size: 2.5rem;
     font-weight: 700;
-    background: linear-gradient(135deg, #bc00ed, #00ffb4);
+    background: linear-gradient(135deg, #00e5ff, #a855f7);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
   }
 
   .metric-label {
-    color: #00ffb4;
-    font-size: 0.9rem;
+    color: #00e5ff;
+    font-size: 0.85rem;
     text-transform: uppercase;
     letter-spacing: 1px;
+    opacity: 0.9;
   }
 
   .chart-container {
@@ -43,8 +42,9 @@
   }
   
   .metric-box {
-    background: rgba(0, 0, 0, 0.5);
-    border-radius: 8px;
+    background: rgba(12, 14, 20, 0.9);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 12px;
     padding: 1.5rem;
     text-align: center;
     transition: all 0.3s ease;
@@ -52,54 +52,72 @@
   
   .metric-box:hover {
     transform: translateY(-3px);
-    box-shadow: 0 5px 15px rgba(188, 0, 237, 0.3);
+    box-shadow: 0 8px 24px rgba(0, 229, 255, 0.15);
   }
   
-  .metric-box.cyan { border: 1px solid #00ffb4; }
-  .metric-box.purple { border: 1px solid #bc00ed; }
-  .metric-box.pink { border: 1px solid #e4055c; }
-  .metric-box.blue { border: 1px solid #0044ff; }
+  .metric-box.cyan { border-color: rgba(0, 229, 255, 0.4); }
+  .metric-box.purple { border-color: rgba(168, 85, 247, 0.4); }
+  .metric-box.pink { border-color: rgba(236, 72, 153, 0.4); }
+  .metric-box.blue { border-color: rgba(59, 130, 246, 0.4); }
   
   .metric-box h3 { color: #fff; margin: 0.5rem 0; font-size: 1.8rem; }
-  .metric-box h6 { margin-bottom: 0.5rem; }
-  .metric-box small { opacity: 0.7; }
+  .metric-box h6 { margin-bottom: 0.5rem; color: rgba(255,255,255,0.7); }
+  .metric-box small { opacity: 0.6; }
+  
+  .nav-tabs {
+    border-bottom: 1px solid rgba(255,255,255,0.1);
+  }
   
   .nav-tabs .nav-link {
-    color: #888;
+    color: rgba(255,255,255,0.6);
     border: none;
     padding: 0.75rem 1.25rem;
     transition: all 0.3s ease;
+    border-radius: 8px 8px 0 0;
   }
   
   .nav-tabs .nav-link:hover {
-    color: #00ffb4;
-    border-color: transparent;
+    color: #00e5ff;
+    background: rgba(0, 229, 255, 0.05);
   }
   
   .nav-tabs .nav-link.active {
-    background: linear-gradient(135deg, #480749, #004845);
-    color: #00ffb4;
-    border: 1px solid #00ffb4;
+    background: rgba(0, 229, 255, 0.1);
+    color: #00e5ff;
+    border: 1px solid rgba(0, 229, 255, 0.3);
     border-bottom: none;
   }
   
   .section-card {
-    background: #111;
-    border: 1px solid #333;
+    background: rgba(12, 14, 20, 0.9);
+    border: 1px solid rgba(255, 255, 255, 0.08);
     border-radius: 12px;
     margin-bottom: 1.5rem;
   }
   
   .section-header {
     padding: 1rem 1.5rem;
-    border-bottom: 1px solid #333;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
     display: flex;
     align-items: center;
     gap: 0.75rem;
   }
   
+  .section-header h5 {
+    color: #fff;
+    margin: 0;
+  }
+  
   .trend-up { color: #4ade80; }
   .trend-down { color: #ef4444; }
+  
+  .tab-content {
+    background: rgba(12, 14, 20, 0.5);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-top: none;
+    border-radius: 0 0 12px 12px;
+    padding: 1.5rem;
+  }
   
   .progress-bar-custom {
     height: 8px;
@@ -108,60 +126,63 @@
   }
 </style>
 
-<div class="container-fluid" style="background: #000000; min-height: 100vh; padding: 2rem;">
-  <div class="row mb-4">
-    <div class="col-12">
-      <h1 class="display-4" style="background: linear-gradient(135deg, #bc00ed, #00ffb4); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;">Analytics Hub</h1>
-      <p class="lead" style="color: #00ffb4;">Comprehensive visual insights across all marketing channels</p>
-    </div>
-  </div>
+<style>
+  .ah-header { margin-bottom: 1.25rem; }
+  .ah-header h2 { font-size: 1.2rem; font-weight: 700; color: #fff; margin: 0; }
+  .ah-header p { color: #888; margin: 0.15rem 0 0; font-size: 0.82rem; }
+</style>
 
-  <!-- Date Filter & Export Controls -->
+  <!-- Date Filter & Comparison Controls -->
   <div class="row mb-4">
-    <div class="col-lg-8">
-      <div class="card bg-dark" style="border: 1px solid #bc00ed;">
+    <div class="col-lg-9">
+      <div class="card" style="background: rgba(10,10,15,0.9); border: 1px solid rgba(188,0,237,0.3); border-radius: 12px;">
         <div class="card-body">
           <div class="row align-items-end g-3">
-            <div class="col-md-3">
-              <label style="color: #00ffb4; font-size: 0.9rem;">Time Period</label>
-              <select id="periodSelector" class="form-select bg-dark text-light" style="border: 1px solid #bc00ed;" onchange="updateAnalytics()">
+            <div class="col-md-2">
+              <label style="color: #00ffb4; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.5px;">Period</label>
+              <select id="periodSelector" class="form-select" style="background: rgba(0,0,0,0.5); border: 1px solid rgba(0,255,180,0.3); color: #fff; border-radius: 8px;" onchange="updateAnalytics()">
                 <option value="7">This Week</option>
                 <option value="30" selected>This Month</option>
                 <option value="90">This Quarter</option>
                 <option value="365">This Year</option>
-                <option value="custom">Custom Range</option>
+                <option value="custom">Custom</option>
               </select>
             </div>
-            <div class="col-md-3">
-              <label style="color: #00ffb4; font-size: 0.9rem;">Start Date</label>
-              <input type="date" id="startDate" class="form-control bg-dark text-light" style="border: 1px solid #bc00ed;">
+            <div class="col-md-2">
+              <label style="color: #00ffb4; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.5px;">From</label>
+              <input type="date" id="startDate" class="form-control" style="background: rgba(0,0,0,0.5); border: 1px solid rgba(0,255,180,0.3); color: #fff; border-radius: 8px;">
+            </div>
+            <div class="col-md-2">
+              <label style="color: #00ffb4; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.5px;">To</label>
+              <input type="date" id="endDate" class="form-control" style="background: rgba(0,0,0,0.5); border: 1px solid rgba(0,255,180,0.3); color: #fff; border-radius: 8px;">
             </div>
             <div class="col-md-3">
-              <label style="color: #00ffb4; font-size: 0.9rem;">End Date</label>
-              <input type="date" id="endDate" class="form-control bg-dark text-light" style="border: 1px solid #bc00ed;">
+              <label style="color: #bc00ed; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.5px;">Compare To</label>
+              <select id="compareSelector" class="form-select" style="background: rgba(188,0,237,0.15); border: 1px solid rgba(188,0,237,0.4); color: #fff; border-radius: 8px;">
+                <option value="previous">Previous Period</option>
+                <option value="lastyear">Same Period Last Year</option>
+                <option value="none">No Comparison</option>
+              </select>
             </div>
-            <div class="col-md-3">
-              <button class="btn w-100" style="background: linear-gradient(135deg, #bc00ed, #00ffb4); color: #fff;" onclick="refreshAnalytics()">
-                <i data-feather="refresh-cw"></i> Refresh
+            <div class="col-md-2">
+              <button class="btn w-100" style="background: linear-gradient(135deg, #bc00ed, #00ffb4); color: #000; font-weight: 600; border-radius: 8px;" onclick="refreshAnalytics()">
+                <i data-feather="refresh-cw" style="width:14px;height:14px;"></i> Apply
               </button>
             </div>
           </div>
-        </div>
-      </div>
-    </div>
-    <div class="col-lg-4">
-      <div class="card bg-dark" style="border: 1px solid #bc00ed;">
-        <div class="card-body">
-          <label style="color: #00ffb4; font-size: 0.9rem; display: block; margin-bottom: 0.5rem;">Export Reports</label>
-          <button class="btn btn-sm me-2 mb-2" style="background: linear-gradient(135deg, #bc00ed, #0044ff); color: #fff;" onclick="exportAnalytics('pdf')">
-            <i data-feather="file-text"></i> PDF
-          </button>
-          <button class="btn btn-sm me-2 mb-2" style="background: linear-gradient(135deg, #00ffb4, #004845); color: #000;" onclick="exportAnalytics('csv')">
-            <i data-feather="grid"></i> CSV
-          </button>
-          <button class="btn btn-sm mb-2" style="background: linear-gradient(135deg, #e4055c, #bc00ed); color: #fff;" onclick="exportAnalytics('excel')">
-            <i data-feather="table"></i> Excel
-          </button>
+          <div class="mt-3 pt-3" style="border-top: 1px solid rgba(255,255,255,0.1);">
+            <div class="d-flex align-items-center gap-4">
+              <div class="form-check form-switch">
+                <input class="form-check-input" type="checkbox" id="showComparison" checked style="background-color: #bc00ed; border-color: #bc00ed;">
+                <label class="form-check-label" for="showComparison" style="color: #a1a7b8; font-size: 0.85rem;">Show period comparison</label>
+              </div>
+              <div class="form-check form-switch">
+                <input class="form-check-input" type="checkbox" id="utmOnly" style="background-color: #00ffb4; border-color: #00ffb4;">
+                <label class="form-check-label" for="utmOnly" style="color: #a1a7b8; font-size: 0.85rem;">UTM-tracked only</label>
+              </div>
+              <small style="color: #666;">Data refreshes every 15 minutes</small>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -285,7 +306,7 @@
             </div>
             <div class="col-md-3">
               <div class="metric-box purple">
-                <h6 style="color: #bc00ed;"><i data-feather="mail-open"></i> Email Open Rate</h6>
+                <h6 style="color: #bc00ed;"><i data-feather="mail"></i> Email Open Rate</h6>
                 <h3>{{ analytics.comprehensive.conversion.open_rate|default(0) }}%</h3>
                 <small>{{ analytics.comprehensive.conversion.emails_opened|default(0) }} opens</small>
               </div>
@@ -545,7 +566,7 @@
             </div>
             <div class="col-md-3">
               <div class="metric-box purple">
-                <h6 style="color: #bc00ed;"><i data-feather="mail-open"></i> Email Open Rate</h6>
+                <h6 style="color: #bc00ed;"><i data-feather="mail"></i> Email Open Rate</h6>
                 <h3>{{ analytics.comprehensive.retention.email_open_rate|default(0) }}%</h3>
                 <small>Engagement signal</small>
               </div>
@@ -1010,6 +1031,31 @@
       </div>
     </div>
 
+  </div>
+  
+  <!-- Export Reports Section (At Bottom) -->
+  <div class="row mt-4">
+    <div class="col-12">
+      <div class="card" style="background: rgba(12, 14, 20, 0.9); border: 1px solid rgba(188, 0, 237, 0.3); border-radius: 12px;">
+        <div class="card-body d-flex justify-content-between align-items-center flex-wrap gap-3">
+          <div>
+            <h5 class="mb-1" style="color: #fff;"><i data-feather="download"></i> Export Reports</h5>
+            <small style="color: #a1a7b8;">Download your analytics data in various formats</small>
+          </div>
+          <div class="d-flex gap-2 flex-wrap">
+            <button class="btn" style="background: linear-gradient(135deg, #bc00ed, #0044ff); color: #fff; border-radius: 8px; padding: 0.5rem 1.25rem;" onclick="exportAnalytics('pdf')">
+              <i data-feather="file-text" style="width:16px;height:16px;"></i> Export as PDF
+            </button>
+            <button class="btn" style="background: linear-gradient(135deg, #00ffb4, #004845); color: #000; border-radius: 8px; padding: 0.5rem 1.25rem;" onclick="exportAnalytics('csv')">
+              <i data-feather="grid" style="width:16px;height:16px;"></i> Export as CSV
+            </button>
+            <button class="btn" style="background: linear-gradient(135deg, #e4055c, #bc00ed); color: #fff; border-radius: 8px; padding: 0.5rem 1.25rem;" onclick="exportAnalytics('excel')">
+              <i data-feather="table" style="width:16px;height:16px;"></i> Export as Excel
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 </div>
 

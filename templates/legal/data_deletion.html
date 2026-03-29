@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="robots" content="index,follow">
+  <title>Data Deletion Request | LUXit</title>
+  <style>
+    :root {
+      --lux-bg: #0b0d12;
+      --lux-surface: #101522;
+      --lux-border: #1f2633;
+      --lux-text: #f7f7fb;
+      --lux-muted: #9aa4b2;
+      --lux-accent: #7c3aed;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Inter", system-ui, sans-serif;
+      background: var(--lux-bg);
+      color: var(--lux-text);
+      line-height: 1.7;
+    }
+    nav {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 20px 40px;
+      border-bottom: 1px solid var(--lux-border);
+      background: rgba(11,13,18,0.95);
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      backdrop-filter: blur(12px);
+    }
+    nav a { color: var(--lux-muted); text-decoration: none; font-size: 0.9rem; }
+    nav a:hover { color: var(--lux-text); }
+    .nav-logo { font-weight: 700; font-size: 1rem; color: var(--lux-text); letter-spacing: 0.05em; }
+    .container {
+      max-width: 700px;
+      margin: 0 auto;
+      padding: 60px 24px 80px;
+    }
+    h1 { font-size: 2rem; margin-bottom: 4px; }
+    .updated { color: var(--lux-muted); font-size: 0.9rem; margin-bottom: 28px; }
+    h2 {
+      font-size: 1.1rem;
+      margin-top: 36px;
+      margin-bottom: 8px;
+      padding-bottom: 6px;
+      border-bottom: 1px solid var(--lux-border);
+    }
+    p, li { color: #c8d0dc; }
+    ul { padding-left: 20px; }
+    li { margin-bottom: 6px; }
+    a { color: #7c3aed; }
+    a:hover { color: #a78bfa; }
+    strong { color: var(--lux-text); }
+    .form-card {
+      background: var(--lux-surface);
+      border: 1px solid var(--lux-border);
+      border-radius: 16px;
+      padding: 32px;
+      margin-top: 32px;
+    }
+    label {
+      display: block;
+      font-size: 0.9rem;
+      font-weight: 600;
+      color: var(--lux-text);
+      margin-bottom: 6px;
+    }
+    input[type="email"], textarea {
+      width: 100%;
+      padding: 12px 14px;
+      background: var(--lux-bg);
+      border: 1px solid var(--lux-border);
+      border-radius: 8px;
+      color: var(--lux-text);
+      font-family: inherit;
+      font-size: 0.95rem;
+      transition: border-color 0.2s;
+      outline: none;
+    }
+    input[type="email"]:focus, textarea:focus {
+      border-color: var(--lux-accent);
+    }
+    textarea { resize: vertical; min-height: 120px; }
+    .form-group { margin-bottom: 20px; }
+    button[type="submit"] {
+      padding: 12px 28px;
+      background: linear-gradient(120deg, #7c3aed, #4f46e5);
+      color: white;
+      border: none;
+      border-radius: 999px;
+      font-weight: 600;
+      font-size: 0.95rem;
+      cursor: pointer;
+      font-family: inherit;
+      transition: opacity 0.2s;
+    }
+    button[type="submit"]:hover { opacity: 0.85; }
+    .info-box {
+      background: rgba(124, 58, 237, 0.08);
+      border: 1px solid rgba(124, 58, 237, 0.25);
+      border-radius: 10px;
+      padding: 16px 20px;
+      margin-top: 28px;
+    }
+    .info-box p { margin: 0; font-size: 0.9rem; color: var(--lux-muted); }
+    footer {
+      border-top: 1px solid var(--lux-border);
+      padding: 32px 40px;
+      text-align: center;
+      color: var(--lux-muted);
+      font-size: 0.85rem;
+    }
+    footer a { color: var(--lux-muted); margin: 0 8px; text-decoration: none; }
+    footer a:hover { color: var(--lux-text); }
+  </style>
+</head>
+<body>
+  <nav>
+    <a class="nav-logo" href="/">LUXit</a>
+    <div style="display:flex;gap:20px;">
+      <a href="/privacy">Privacy Policy</a>
+      <a href="/terms">Terms</a>
+      <a href="/auth/login">Sign In</a>
+    </div>
+  </nav>
+
+  <div class="container">
+    <h1>Data Deletion Request</h1>
+    <p class="updated">Last updated: {{ updated }}</p>
+
+    <p>
+      You can request deletion of personal data associated with your LUXit account and/or data obtained
+      through connected integrations. We may require identity verification before processing your request.
+    </p>
+
+    <div class="form-card">
+      <form method="POST" action="/data-deletion">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="form-group">
+          <label for="email">Email associated with your account *</label>
+          <input type="email" id="email" name="email" required placeholder="you@example.com">
+        </div>
+
+        <div class="form-group">
+          <label for="details">Details (optional)</label>
+          <textarea id="details" name="details" placeholder="What should we delete? (account data, integration data, logs, specific platforms, etc.)"></textarea>
+        </div>
+
+        <button type="submit">Submit Deletion Request</button>
+      </form>
+    </div>
+
+    <h2>What Happens Next</h2>
+    <ul>
+      <li>We confirm receipt and may request identity verification.</li>
+      <li>We delete or de-identify data unless retention is required by law or needed for security/fraud prevention.</li>
+      <li>We aim to complete requests within 30 days (or sooner where required by applicable law).</li>
+      <li>You will receive confirmation at the email address provided.</li>
+    </ul>
+
+    <h2>Alternative Method</h2>
+    <div class="info-box">
+      <p>
+        You can also email <strong>privacy@luxit.app</strong> with the subject
+        <strong>"Data Deletion Request"</strong> and include your account email and what you'd like deleted.
+      </p>
+    </div>
+  </div>
+
+  <footer>
+    <div style="margin-bottom:12px;">LUXit &bull; Your entire marketing department, automated.</div>
+    <div>
+      <a href="/privacy">Privacy Policy</a>
+      <a href="/terms">Terms of Service</a>
+      <a href="/data-deletion">Data Deletion</a>
+    </div>
+  </footer>
+</body>
+</html>

@@ -1,6 +1,6 @@
 {% extends "base_simple.html" %}
 
-{% block title %}Settings & Integrations - LUX Marketing{% endblock %}
+{% block title %}Settings & Integrations - LUX IT{% endblock %}
 
 {% block page_header %}
 <span style="color: #00ffb4;">Settings & Integrations</span>
@@ -513,9 +513,9 @@
                     <p style="color: #888; font-size: 12px;">Loading status...</p>
                 </div>
                 <div id="tiktok-actions" style="display: flex; gap: 10px; flex-wrap: wrap;">
-                    <a href="{{ url_for('tiktok.connect') }}" id="tiktok-connect-btn" class="btn-oauth" style="display: none;" target="_blank" rel="noopener">
-                        Connect TikTok
-                    </a>
+                    <span id="tiktok-connect-btn" class="btn-oauth btn-secondary" style="display: none; cursor: default; opacity: 0.5;" title="TikTok OAuth requires server configuration">
+                        Connect TikTok (Setup Required)
+                    </span>
                     <button onclick="disconnectTikTok()" id="tiktok-disconnect-btn" class="btn-oauth btn-danger" style="display: none;">
                         Disconnect
                     </button>
@@ -536,9 +536,9 @@
                     <p style="color: #888; font-size: 12px;">Loading status...</p>
                 </div>
                 <div id="instagram-actions" style="display: flex; gap: 10px; flex-wrap: wrap;">
-                    <a href="{{ url_for('instagram_auth.connect') }}" id="instagram-connect-btn" class="btn-oauth" style="display: none;" target="_blank" rel="noopener">
-                        Connect Instagram
-                    </a>
+                    <span id="instagram-connect-btn" class="btn-oauth btn-secondary" style="display: none; cursor: default; opacity: 0.5;" title="Instagram OAuth requires server configuration">
+                        Connect Instagram (Setup Required)
+                    </span>
                     <button onclick="disconnectInstagram()" id="instagram-disconnect-btn" class="btn-oauth btn-danger" style="display: none;">
                         Disconnect
                     </button>
@@ -556,9 +556,9 @@
                     <p style="color: #888; font-size: 12px;">Loading status...</p>
                 </div>
                 <div id="facebook-actions" style="display: flex; gap: 10px; flex-wrap: wrap;">
-                    <a href="{{ url_for('facebook_auth.connect') }}" id="facebook-connect-btn" class="btn-oauth" style="display: none;" target="_blank" rel="noopener">
-                        Connect Facebook
-                    </a>
+                    <span id="facebook-connect-btn" class="btn-oauth btn-secondary" style="display: none; cursor: default; opacity: 0.5;" title="Facebook OAuth requires server configuration">
+                        Connect Facebook (Setup Required)
+                    </span>
                     <button onclick="disconnectFacebook()" id="facebook-disconnect-btn" class="btn-oauth btn-danger" style="display: none;">
                         Disconnect
                     </button>
@@ -679,8 +679,20 @@ function switchTab(tabName) {
     document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
     document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
     document.getElementById(tabName).classList.add('active');
-    event.target.classList.add('active');
+    const tabs = document.querySelectorAll('.tab');
+    const tabMap = {'brand': 0, 'secrets': 1, 'oauth': 2};
+    if (tabMap[tabName] !== undefined && tabs[tabMap[tabName]]) {
+        tabs[tabMap[tabName]].classList.add('active');
+    }
+    window.history.replaceState(null, '', '#' + tabName);
 }
+
+(function() {
+    const hash = window.location.hash.replace('#', '');
+    if (hash && document.getElementById(hash)) {
+        switchTab(hash);
+    }
+})();
 
 async function loadSecrets() {
     const company_id = {{ company.id }};

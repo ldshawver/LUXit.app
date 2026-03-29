@@ -1,11 +1,15 @@
 {% extends "base.html" %}
 
-{% block title %}Edit User{% endblock %}
+{% block title %}Edit User - LUX IT{% endblock %}
+
+{% block page_header %}
+<span style="color: #c0c0c0;">Edit User</span>
+{% endblock %}
 
 {% block content %}
 <div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
     <h1 class="h2"><i data-feather="edit"></i> Edit User: {{ user.username }}</h1>
-    <a href="{{ url_for('user.manage_users') }}" class="btn btn-outline-secondary">
+    <a href="{{ url_for('main.manage_users') }}" class="btn btn-outline-secondary">
         <i data-feather="arrow-left"></i> Back to Users
     </a>
 </div>
@@ -15,7 +19,6 @@
         <div class="card">
             <div class="card-body">
                 <form method="POST">
-                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
                     <div class="mb-3">
                         <label for="username" class="form-label">Username</label>
                         <input type="text" class="form-control" id="username" name="username" value="{{ user.username }}" required>
@@ -23,7 +26,7 @@
                     
                     <div class="mb-3">
                         <label for="email" class="form-label">Email</label>
-                        <input type="email" class="form-control" id="email" name="email" value="{{ user.email }}" required>
+                        <input type="email" class="form-control" id="email" name="email" value="{{ user.email or '' }}" required>
                     </div>
                     
                     <div class="mb-3">
@@ -42,46 +45,27 @@
                     </div>
                     
                     <div class="mb-3">
-                        <label for="bio" class="form-label">Bio</label>
-                        <textarea class="form-control" id="bio" name="bio" rows="3">{{ user.bio or '' }}</textarea>
-                    </div>
-                    
-                    <div class="mb-3">
-                        <label for="segment" class="form-label">Segment</label>
-                        <select class="form-control" id="segment" name="segment">
-                            <option value="user" {% if user.segment == 'user' %}selected{% endif %}>User</option>
-                            <option value="admin" {% if user.segment == 'admin' %}selected{% endif %}>Admin</option>
-                            <option value="moderator" {% if user.segment == 'moderator' %}selected{% endif %}>Moderator</option>
+                        <label for="role" class="form-label">Role</label>
+                        <select class="form-select" id="role" name="role">
+                            <option value="user" {% if user.role == 'user' %}selected{% endif %}>User</option>
+                            <option value="manager" {% if user.role == 'manager' %}selected{% endif %}>Manager</option>
+                            <option value="admin" {% if user.role == 'admin' %}selected{% endif %}>Admin</option>
                         </select>
-                    </div>
-                    
-                    <div class="mb-3">
-                        <label for="tags" class="form-label">Tags (comma-separated)</label>
-                        <input type="text" class="form-control" id="tags" name="tags" value="{{ user.tags or '' }}" placeholder="e.g. admin,vip,beta">
-                        <div class="form-text">Include 'admin' tag to mark as admin</div>
-                    </div>
-                    
-                    <div class="mb-3">
-                        <label for="new_password" class="form-label">New Password (Optional)</label>
-                        <input type="password" class="form-control" id="new_password" name="new_password">
-                        <div class="form-text">Leave blank to keep current password. If changing, must be at least 6 characters.</div>
                     </div>
                     
                     {% if user.id != current_user.id %}
                     <div class="mb-3 form-check">
-                        <input type="checkbox" class="form-check-input" id="is_admin" name="is_admin" value="1" 
+                        <input type="checkbox" class="form-check-input" id="is_admin" name="is_admin"
                                {% if user.is_admin %}checked{% endif %}>
                         <label class="form-check-label" for="is_admin">
                             Administrator privileges
                         </label>
-                        <div class="form-text">Administrators can manage users and access all features.</div>
                     </div>
                     {% else %}
                     <div class="mb-3">
                         <div class="alert alert-info">
                             <i data-feather="info"></i> You cannot modify your own admin status.
                         </div>
-                        <input type="hidden" name="is_admin" value="{% if user.is_admin %}1{% else %}0{% endif %}">
                     </div>
                     {% endif %}
                     
@@ -96,16 +80,3 @@
     </div>
 </div>
 {% endblock %}
-<!-- WordPress & Newsletter Import Links -->
-<hr style="border-color: #bc00ed; margin: 2rem 0;">
-<div class="alert alert-secondary" style="background: linear-gradient(135deg, #1a0033 0%, #2d004d 100%); border: 2px solid #bc00ed; color: #00ffb4;">
-    <h5 style="color: #bc00ed;"><i class="fas fa-download"></i> Bulk Imports</h5>
-    <p class="mb-0">
-        <a href="{{ url_for('main.import_wordpress_users') }}" class="btn btn-sm" style="background: #bc00ed; color: white;">
-            <i class="fas fa-wordpress"></i> Import WordPress Users
-        </a>
-        <a href="{{ url_for('main.import_forminator_newsletter') }}" class="btn btn-sm" style="background: #bc00ed; color: white;">
-            <i class="fas fa-envelope"></i> Import Newsletter Signups
-        </a>
-    </p>
-</div>

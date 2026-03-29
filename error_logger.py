@@ -158,9 +158,10 @@ def log_application_error(error_type, error_message, endpoint='unknown', method=
 
 def setup_error_logging_handler():
     """Set up Flask error handler to capture all errors"""
-    from flask import request, g
-    from app import app
-    
+    from flask import request, g, current_app
+
+    app = current_app._get_current_object()
+
     @app.errorhandler(Exception)
     def handle_error(error):
         """Capture all unhandled errors"""

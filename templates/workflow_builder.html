@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}Workflow Builder - LUX Marketing{% endblock %}
+{% block title %}Workflow Builder - LUX IT{% endblock %}
 
 {% block extra_css %}
 <style>
@@ -159,7 +159,7 @@
                         <i data-feather="file-text"></i> Form Submitted
                     </div>
                     <div class="palette-node" draggable="true" data-type="trigger" data-action="email_opened">
-                        <i data-feather="mail-open"></i> Email Opened
+                        <i data-feather="mail"></i> Email Opened
                     </div>
                 </div>
 
@@ -508,7 +508,7 @@ function saveWorkflow() {
     
     fetch('/workflow/save', {
         method: 'POST',
-        headers: {'Content-Type': 'application/json'},
+        headers: {'Content-Type': 'application/json', 'X-CSRFToken': document.querySelector('meta[name="csrf-token"]').content},
         body: JSON.stringify(data)
     })
     .then(r => r.json())
@@ -529,7 +529,8 @@ function activateWorkflow() {
     }
     
     fetch(`/workflow/${workflowData.id}/activate`, {
-        method: 'POST'
+        method: 'POST',
+        headers: {'X-CSRFToken': document.querySelector('meta[name="csrf-token"]').content}
     })
     .then(r => r.json())
     .then(result => {

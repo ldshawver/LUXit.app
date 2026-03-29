@@ -1,0 +1,998 @@
+{% extends "base.html" %}
+
+{% block title %}Marketing Hub - LUX IT{% endblock %}
+{% block page_title %}Marketing Hub{% endblock %}
+
+{% block content %}
+<style>
+  body {
+    background: #030014 !important;
+    background-image:
+      radial-gradient(ellipse 80% 50% at 50% -20%, rgba(139, 92, 246, 0.3), transparent),
+      radial-gradient(ellipse 60% 40% at 100% 0%, rgba(0, 245, 255, 0.15), transparent),
+      radial-gradient(ellipse 50% 30% at 0% 100%, rgba(255, 0, 255, 0.2), transparent),
+      radial-gradient(ellipse 40% 30% at 10% 20%, rgba(71, 245, 255, 0.06), transparent) !important;
+  }
+  .mh-layout {
+    display: flex;
+    gap: 1.5rem;
+    min-height: calc(100vh - 100px);
+  }
+  .mh-sidebar {
+    width: 220px;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .mh-sidebar a {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px;
+    border-radius: 10px;
+    color: #ccc;
+    text-decoration: none;
+    font-size: 0.9rem;
+    transition: all 0.2s;
+  }
+  .mh-sidebar a:hover {
+    background: rgba(71, 245, 255, 0.08);
+    color: #fff;
+  }
+  .mh-sidebar a svg { width: 18px; height: 18px; stroke: #888; flex-shrink: 0; }
+  .mh-sidebar a:hover svg { stroke: var(--lux-cyan, #47f5ff); }
+  .mh-sidebar .new-badge {
+    background: linear-gradient(135deg, #00ffb4, #0ea5e9);
+    color: #000;
+    font-size: 0.6rem;
+    font-weight: 700;
+    padding: 2px 6px;
+    border-radius: 4px;
+    margin-left: auto;
+  }
+  .mh-main {
+    flex: 1;
+    min-width: 0;
+  }
+  .mh-tabs {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 1rem;
+    background: rgba(255,255,255,0.04);
+    border-radius: 10px;
+    padding: 3px;
+    width: fit-content;
+  }
+  .mh-tab {
+    padding: 6px 16px;
+    border-radius: 7px;
+    color: #888;
+    text-decoration: none;
+    font-size: 0.82rem;
+    font-weight: 500;
+    transition: all 0.2s;
+  }
+  .mh-tab:hover { color: #fff; background: rgba(255,255,255,0.06); }
+  .mh-tab.active {
+    background: linear-gradient(135deg, rgba(0,229,255,0.2), rgba(188,0,237,0.15));
+    color: #fff;
+    font-weight: 600;
+  }
+  .mh-welcome {
+    margin-bottom: 0;
+  }
+  .mh-welcome h2 {
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: #fff;
+    margin: 0;
+  }
+  .mh-welcome p {
+    color: #888;
+    margin: 0.1rem 0 0;
+    font-size: 0.78rem;
+  }
+  .mh-topbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.5rem;
+  }
+  .mh-filters {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+  .mh-filter-btn {
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.1);
+    color: #ccc;
+    padding: 6px 14px;
+    border-radius: 8px;
+    font-size: 0.8rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .mh-filter-btn:hover { border-color: rgba(71,245,255,0.3); color: #fff; }
+  .mh-kpi-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 0.75rem;
+    margin-bottom: 0.75rem;
+  }
+  .mh-kpi {
+    background: rgba(12, 14, 20, 0.85);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 14px;
+    padding: 0.85rem 1.25rem;
+    position: relative;
+    overflow: hidden;
+    backdrop-filter: blur(12px);
+  }
+  .mh-kpi::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 2px;
+    background: linear-gradient(90deg, var(--lux-cyan, #47f5ff), var(--lux-primary, #bc00ed));
+    opacity: 0.6;
+  }
+  .mh-kpi-label {
+    font-size: 0.8rem;
+    color: #888;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin-bottom: 0.5rem;
+  }
+  .mh-kpi-value {
+    font-size: 1.6rem;
+    font-weight: 800;
+    color: #fff;
+    line-height: 1;
+    margin-bottom: 0.25rem;
+  }
+  .mh-kpi-change {
+    font-size: 0.78rem;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .mh-kpi-change.up { color: #00ffb4; }
+  .mh-kpi-change.down { color: #ef4444; }
+  .mh-kpi-icon {
+    position: absolute;
+    right: 1.25rem;
+    top: 50%;
+    transform: translateY(-50%);
+    opacity: 0.12;
+  }
+  .mh-kpi-icon svg { width: 48px; height: 48px; stroke: var(--lux-cyan, #47f5ff); }
+  .mh-card {
+    background: rgba(12, 14, 20, 0.85);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 14px;
+    padding: 0.85rem;
+    height: 100%;
+    backdrop-filter: blur(12px);
+  }
+  .mh-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.6rem;
+  }
+  .mh-card-header h6 {
+    margin: 0;
+    font-weight: 600;
+    color: #fff;
+    font-size: 0.95rem;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .mh-card-header a {
+    color: var(--lux-cyan, #47f5ff);
+    font-size: 0.78rem;
+    text-decoration: none;
+  }
+  .mh-card-header a:hover { text-decoration: underline; }
+  .mh-chart-area {
+    background: rgba(12, 14, 20, 0.85);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 14px;
+    padding: 0.85rem;
+    margin-bottom: 0.75rem;
+    backdrop-filter: blur(12px);
+  }
+  .mh-chart-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.5rem;
+  }
+  .mh-chart-header h6 {
+    margin: 0;
+    font-weight: 600;
+    color: #fff;
+    font-size: 0.95rem;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .mh-legend { display: flex; gap: 16px; align-items: center; }
+  .mh-legend-item { display: flex; align-items: center; gap: 6px; font-size: 0.78rem; color: #888; }
+  .mh-legend-dot { width: 8px; height: 8px; border-radius: 50%; }
+  .mh-task-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 5px 0;
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+  }
+  .mh-task-item:last-child { border-bottom: none; }
+  .mh-task-check {
+    width: 18px;
+    height: 18px;
+    border: 2px solid rgba(255,255,255,0.2);
+    border-radius: 4px;
+    flex-shrink: 0;
+    margin-top: 2px;
+    cursor: pointer;
+    transition: border-color 0.2s;
+  }
+  .mh-task-check:hover { border-color: var(--lux-cyan, #47f5ff); }
+  .mh-task-check.checked { border-color: #00ffb4; background: rgba(0,255,180,0.3); position: relative; }
+  .mh-task-check.checked::after { content: '✓'; position: absolute; top: -2px; left: 2px; font-size: 0.7rem; color: #00ffb4; font-weight: 700; }
+  .mh-task-text { font-size: 0.85rem; color: #ddd; }
+  .mh-task-text.completed { text-decoration: line-through; color: rgba(255,255,255,0.3); }
+  .mh-task-due { font-size: 0.7rem; color: #f59e0b; }
+  .mh-task-delete { background: none; border: none; color: rgba(255,255,255,0.2); cursor: pointer; padding: 2px; flex-shrink: 0; margin-top: 2px; transition: color 0.15s; }
+  .mh-task-delete:hover { color: #ef4444; }
+  .mh-approval-item {
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+    padding: 10px;
+    background: rgba(0,0,0,0.2);
+    border-radius: 8px;
+    margin-bottom: 8px;
+  }
+  .mh-approval-item:last-child { margin-bottom: 0; }
+  .mh-approval-icon {
+    width: 36px;
+    height: 36px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+  .mh-approval-status {
+    font-size: 0.7rem;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 4px;
+  }
+  .mh-hub-switch {
+    display: flex;
+    gap: 6px;
+    margin-bottom: 1rem;
+  }
+  .mh-hub-btn {
+    padding: 6px 16px;
+    border-radius: 20px;
+    border: 1px solid rgba(255,255,255,0.12);
+    background: transparent;
+    color: #aaa;
+    font-size: 0.8rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+    text-decoration: none;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .mh-hub-btn:hover { border-color: rgba(255,255,255,0.3); color: #fff; }
+  .mh-hub-btn.active {
+    background: linear-gradient(135deg, rgba(0,229,255,0.15), rgba(188,0,237,0.15));
+    border-color: rgba(71,245,255,0.3);
+    color: #fff;
+    font-weight: 600;
+  }
+  .mh-cal-mini {
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 10px;
+    overflow: hidden;
+  }
+  .mh-cal-grid {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 0;
+  }
+  .mh-cal-dayname {
+    text-align: center;
+    font-size: 0.65rem;
+    color: #666;
+    text-transform: uppercase;
+    padding: 6px 0;
+    font-weight: 600;
+    border-bottom: 1px solid rgba(255,255,255,0.08);
+    border-right: 1px solid rgba(255,255,255,0.05);
+  }
+  .mh-cal-dayname:last-child { border-right: none; }
+  .mh-cal-dayname.weekend { color: #f59e0b; }
+  .mh-cal-day {
+    text-align: center;
+    padding: 4px 2px;
+    font-size: 0.72rem;
+    color: #888;
+    cursor: pointer;
+    position: relative;
+    min-height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-right: 1px solid rgba(255,255,255,0.05);
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+  }
+  .mh-cal-day:nth-child(7n) { border-right: none; }
+  .mh-cal-day:hover { background: rgba(255,255,255,0.06); color: #fff; }
+  .mh-cal-day.today { background: rgba(0,229,255,0.15); color: #47f5ff; font-weight: 700; }
+  .mh-cal-day.has-event::after {
+    content: '';
+    position: absolute;
+    bottom: 2px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+  }
+  .mh-cal-event-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 8px;
+    border-bottom: 1px solid rgba(255,255,255,0.04);
+    font-size: 0.8rem;
+    color: #ccc;
+    cursor: pointer;
+    transition: background 0.2s;
+  }
+  .mh-cal-event-row:hover { background: rgba(255,255,255,0.04); }
+  .mh-cal-event-row:last-child { border-bottom: none; }
+  .mh-cal-event-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .mh-cal-event-time { color: #888; margin-left: auto; font-size: 0.72rem; white-space: nowrap; }
+  .mh-cal-legend { display: flex; gap: 12px; flex-wrap: wrap; padding: 8px 0 0; }
+  .mh-cal-legend-item { display: flex; align-items: center; gap: 4px; font-size: 0.68rem; color: #888; }
+  .mh-cal-legend-dot { width: 6px; height: 6px; border-radius: 50%; }
+  .mh-cal-nav {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .mh-cal-nav-btn {
+    background: none;
+    border: none;
+    color: #888;
+    cursor: pointer;
+    padding: 4px;
+    border-radius: 6px;
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+  }
+  .mh-cal-nav-btn:hover { background: rgba(255,255,255,0.08); color: #fff; }
+  .mh-cal-month { font-size: 0.85rem; font-weight: 600; color: #fff; }
+  .ai-agent-insight {
+    padding: 6px 0;
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+  }
+  .ai-agent-insight:last-child { border-bottom: none; }
+  .ai-agent-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    background: linear-gradient(135deg, #00ffb4, #bc00ed);
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 0.6rem;
+    font-weight: 700;
+    color: #000;
+  }
+  .ai-agent-title {
+    font-size: 0.82rem;
+    color: #ddd;
+    margin-top: 5px;
+    font-weight: 500;
+  }
+  .ai-agent-detail {
+    font-size: 0.72rem;
+    color: #888;
+    margin-top: 2px;
+  }
+  .sticky-note {
+    background: linear-gradient(135deg, rgba(245,158,11,0.08), rgba(12,14,20,0.85));
+    border: 1px solid rgba(245,158,11,0.15);
+  }
+  .sticky-inner {
+    background: rgba(245,158,11,0.08);
+    border-radius: 10px;
+    padding: 1rem;
+    border-left: 3px solid #f59e0b;
+  }
+  @media (max-width: 992px) {
+    .mh-layout { flex-direction: column; }
+    .mh-sidebar { width: 100%; flex-direction: row; flex-wrap: wrap; gap: 4px; }
+    .mh-sidebar a { padding: 8px 12px; font-size: 0.82rem; }
+    .mh-kpi-row { grid-template-columns: 1fr 1fr; }
+  }
+  @media (max-width: 576px) {
+    .mh-kpi-row { grid-template-columns: 1fr; }
+    .mh-tabs { flex-wrap: wrap; }
+  }
+</style>
+
+    <div class="mh-kpi-row">
+      <div class="mh-kpi">
+        <div class="mh-kpi-label">Revenue</div>
+        <div class="mh-kpi-value">${{ stats.revenue|default('82,450') }}</div>
+        <div class="mh-kpi-change up">
+          <i data-feather="trending-up" style="width:14px;height:14px;"></i> 15.6% vs last month
+        </div>
+        <div class="mh-kpi-icon"><i data-feather="dollar-sign"></i></div>
+      </div>
+      <div class="mh-kpi">
+        <div class="mh-kpi-label">Leads</div>
+        <div class="mh-kpi-value">{{ stats.total_subscribers|default('1,230') }}</div>
+        <div class="mh-kpi-change up">
+          <i data-feather="trending-up" style="width:14px;height:14px;"></i> 9.8% vs last month
+        </div>
+        <div class="mh-kpi-icon"><i data-feather="users"></i></div>
+      </div>
+      <div class="mh-kpi">
+        <div class="mh-kpi-label">Conversion Rate</div>
+        <div class="mh-kpi-value">{{ stats.click_rate|default('4.6%') }}</div>
+        <div class="mh-kpi-change up">
+          <i data-feather="trending-up" style="width:14px;height:14px;"></i> 1.2% vs last month
+        </div>
+        <div class="mh-kpi-icon"><i data-feather="percent"></i></div>
+      </div>
+    </div>
+
+    <div class="row g-2 mb-2">
+      <div class="col-lg-4">
+        <div class="mh-card" style="padding:0.75rem;height:100%;">
+          <div class="mh-card-header" style="margin-bottom:0.4rem;">
+            <h6 style="font-size:0.85rem;"><i data-feather="cpu" style="width:14px;height:14px;color:#bc00ed;"></i> AI Agent Insights</h6>
+            <a href="{{ url_for('main.agents_hub') }}" style="font-size:0.72rem;color:#47f5ff;text-decoration:none;">View All</a>
+          </div>
+          <div class="ai-agent-insight">
+            <span class="ai-agent-badge"><i data-feather="mail" style="width:10px;height:10px;"></i> Email Agent</span>
+            <div class="ai-agent-title">Best Send Time</div>
+            <div class="ai-agent-detail">Tuesdays at 10 AM get 28% more opens based on last 90 days</div>
+          </div>
+          <div class="ai-agent-insight">
+            <span class="ai-agent-badge"><i data-feather="share-2" style="width:10px;height:10px;"></i> Social Agent</span>
+            <div class="ai-agent-title">Engagement Opportunity</div>
+            <div class="ai-agent-detail">Video content outperforms images by 3.2x this month</div>
+          </div>
+          <div class="ai-agent-insight">
+            <span class="ai-agent-badge"><i data-feather="heart" style="width:10px;height:10px;"></i> Retention Agent</span>
+            <div class="ai-agent-title">Win-Back Alert</div>
+            <div class="ai-agent-detail">42 contacts inactive 30+ days - send re-engagement</div>
+          </div>
+        </div>
+      </div>
+      <div class="col-lg-8">
+        <div class="mh-chart-area" style="height:100%;">
+          <div class="mh-chart-header">
+            <h6><i data-feather="bar-chart-2" style="width:16px;height:16px;color:var(--lux-cyan,#47f5ff);"></i> Customizable Analytics</h6>
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+              <select id="analyticsSource" style="background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);color:#fff;font-size:0.72rem;padding:3px 8px;border-radius:6px;outline:none;cursor:pointer;">
+                <option value="all" selected>All Channels</option>
+                <option value="email">Email</option>
+                <option value="social">Social</option>
+                <option value="seo">SEO</option>
+                <option value="ads">Ads</option>
+                <option value="campaigns">Campaigns</option>
+                <option value="conversions">Conversions</option>
+                <option value="revenue">Revenue</option>
+              </select>
+              <select id="analyticsMetric" style="background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);color:#fff;font-size:0.72rem;padding:3px 8px;border-radius:6px;outline:none;cursor:pointer;">
+                <option value="engagement" selected>Engagement</option>
+                <option value="clicks">Clicks</option>
+                <option value="impressions">Impressions</option>
+                <option value="leads">Leads Generated</option>
+              </select>
+              <select id="analyticsRange" style="background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);color:#fff;font-size:0.72rem;padding:3px 8px;border-radius:6px;outline:none;cursor:pointer;">
+                <option value="7d" selected>Last 7 Days</option>
+                <option value="30d">Last 30 Days</option>
+                <option value="90d">Last 90 Days</option>
+                <option value="12m">Last 12 Months</option>
+              </select>
+            </div>
+          </div>
+          <div class="mh-legend" style="margin-bottom:4px;">
+            <span class="mh-legend-item" id="legendEmail"><span class="mh-legend-dot" style="background:#00ffb4;"></span> Email</span>
+            <span class="mh-legend-item" id="legendSocial"><span class="mh-legend-dot" style="background:#bc00ed;"></span> Social</span>
+            <span class="mh-legend-item" id="legendSeo"><span class="mh-legend-dot" style="background:#f59e0b;"></span> SEO</span>
+            <span class="mh-legend-item" id="legendAds" style="display:none;"><span class="mh-legend-dot" style="background:#3b82f6;"></span> Ads</span>
+            <span class="mh-legend-item" id="legendCampaigns" style="display:none;"><span class="mh-legend-dot" style="background:#ef4444;"></span> Campaigns</span>
+            <span class="mh-legend-item" id="legendConversions" style="display:none;"><span class="mh-legend-dot" style="background:#a855f7;"></span> Conversions</span>
+            <span class="mh-legend-item" id="legendRevenue" style="display:none;"><span class="mh-legend-dot" style="background:#14b8a6;"></span> Revenue</span>
+          </div>
+          <div style="position:relative;height:140px;">
+            <canvas id="analyticsChart"></canvas>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="row g-2 mb-2">
+      <div class="col-lg-3">
+        <div class="mh-card">
+          <div class="mh-card-header">
+            <h6><i data-feather="check-square" style="width:16px;height:16px;color:var(--lux-cyan,#47f5ff);"></i> My Tasks</h6>
+          </div>
+          <div id="tasksList">
+            {% for task in dashboard_tasks %}
+            <div class="mh-task-item" data-task-id="{{ task.id }}">
+              <div class="mh-task-check{% if task.is_completed %} checked{% endif %}" onclick="toggleTask({{ task.id }}, this)"></div>
+              <div style="flex:1;min-width:0;">
+                <div class="mh-task-text{% if task.is_completed %} completed{% endif %}">{{ task.title }}</div>
+                {% if task.due_date %}<div class="mh-task-due">{{ task.due_date }}</div>{% endif %}
+              </div>
+              <button class="mh-task-delete" onclick="deleteTask({{ task.id }}, this)" title="Delete">
+                <i data-feather="x" style="width:12px;height:12px;"></i>
+              </button>
+            </div>
+            {% endfor %}
+          </div>
+          <form id="addTaskForm" onsubmit="addTask(event)" style="display:flex;gap:4px;margin-top:6px;">
+            <input type="text" id="newTaskInput" placeholder="Add a task..." style="flex:1;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);color:#fff;font-size:0.78rem;padding:5px 8px;border-radius:6px;outline:none;">
+            <button type="submit" style="background:rgba(0,229,255,0.15);border:1px solid rgba(0,229,255,0.3);color:#47f5ff;font-size:0.72rem;padding:5px 10px;border-radius:6px;cursor:pointer;white-space:nowrap;">Add</button>
+          </form>
+        </div>
+      </div>
+
+      <div class="col-lg-3">
+        <div class="mh-card">
+          <div class="mh-card-header">
+            <h6><i data-feather="shield" style="width:16px;height:16px;color:#bc00ed;"></i> Content Approval</h6>
+          </div>
+          <div class="mh-approval-item">
+            <div class="mh-approval-icon" style="background:rgba(0,229,255,0.15);">
+              <i data-feather="file-text" style="width:18px;height:18px;color:#47f5ff;"></i>
+            </div>
+            <div style="flex:1;min-width:0;">
+              <div style="font-size:0.82rem;color:#fff;font-weight:500;">SEO Guide for Beginners</div>
+              <div style="font-size:0.7rem;color:#888;">Blog &bull; Pending</div>
+            </div>
+            <span class="mh-approval-status" style="background:rgba(245,158,11,0.2);color:#f59e0b;">Pending</span>
+          </div>
+          <div class="mh-approval-item">
+            <div class="mh-approval-icon" style="background:rgba(0,255,180,0.15);">
+              <i data-feather="mail" style="width:18px;height:18px;color:#00ffb4;"></i>
+            </div>
+            <div style="flex:1;min-width:0;">
+              <div style="font-size:0.82rem;color:#fff;font-weight:500;">Spring Sale Newsletter</div>
+              <div style="font-size:0.7rem;color:#888;">Email &bull; Approved</div>
+            </div>
+            <span class="mh-approval-status" style="background:rgba(0,255,180,0.2);color:#00ffb4;">Approved</span>
+          </div>
+          <div class="mh-approval-item">
+            <div class="mh-approval-icon" style="background:rgba(239,68,68,0.15);">
+              <i data-feather="share-2" style="width:18px;height:18px;color:#ef4444;"></i>
+            </div>
+            <div style="flex:1;min-width:0;">
+              <div style="font-size:0.82rem;color:#fff;font-weight:500;">New Product Launch Ad</div>
+              <div style="font-size:0.7rem;color:#888;">Social Ad &bull; Rejected</div>
+            </div>
+            <span class="mh-approval-status" style="background:rgba(239,68,68,0.2);color:#ef4444;">Rejected</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="col-lg-6">
+        <div class="mh-card">
+          <div class="mh-card-header">
+            <h6><i data-feather="calendar" style="width:16px;height:16px;color:#00ffb4;"></i> Marketing Calendar</h6>
+            <div class="mh-cal-nav">
+              <button class="mh-cal-nav-btn" onclick="changeCalMonth(-1)"><i data-feather="chevron-left" style="width:14px;height:14px;"></i></button>
+              <span class="mh-cal-month" id="calMonthLabel">February 2026</span>
+              <button class="mh-cal-nav-btn" onclick="changeCalMonth(1)"><i data-feather="chevron-right" style="width:14px;height:14px;"></i></button>
+              <a href="{{ url_for('main.marketing_calendar') }}" style="font-size:0.72rem;color:#47f5ff;margin-left:8px;">View All</a>
+            </div>
+          </div>
+          <div class="mh-cal-mini">
+            <div class="mh-cal-grid" style="background:rgba(0,0,0,0.2);padding:4px 0;">
+              <div class="mh-cal-dayname">Sun</div>
+              <div class="mh-cal-dayname">Mon</div>
+              <div class="mh-cal-dayname">Tue</div>
+              <div class="mh-cal-dayname">Wed</div>
+              <div class="mh-cal-dayname">Thu</div>
+              <div class="mh-cal-dayname">Fri</div>
+              <div class="mh-cal-dayname weekend">Sat</div>
+            </div>
+            <div class="mh-cal-grid" id="calGrid" style="padding:4px;">
+            </div>
+          </div>
+          <div class="mh-cal-legend" style="padding:8px 0 0; justify-content: center;">
+            <span class="mh-cal-legend-item"><span class="mh-cal-legend-dot" style="background:#3b82f6;"></span> Blog</span>
+            <span class="mh-cal-legend-item"><span class="mh-cal-legend-dot" style="background:#00ffb4;"></span> Newsletter</span>
+            <span class="mh-cal-legend-item"><span class="mh-cal-legend-dot" style="background:#bc00ed;"></span> Social</span>
+            <span class="mh-cal-legend-item"><span class="mh-cal-legend-dot" style="background:#f59e0b;"></span> Email</span>
+            <span class="mh-cal-legend-item"><span class="mh-cal-legend-dot" style="background:#ef4444;"></span> Campaign</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="row g-2 mb-2">
+      <div class="col-lg-4">
+        <div class="mh-card sticky-note">
+          <div class="mh-card-header">
+            <h6><i data-feather="edit" style="width:16px;height:16px;color:#f59e0b;"></i> Sticky Note</h6>
+            <span id="stickyStatus" style="font-size:0.65rem;color:rgba(255,255,255,0.3);"></span>
+          </div>
+          <div class="sticky-inner">
+            <textarea id="stickyNoteContent" placeholder="Write your notes here..." style="width:100%;min-height:80px;background:transparent;border:none;color:#ccc;font-size:0.82rem;line-height:1.5;resize:vertical;outline:none;font-family:inherit;">{{ sticky_note.content if sticky_note else '' }}</textarea>
+          </div>
+        </div>
+      </div>
+      <div class="col-lg-8">
+        <div class="mh-card">
+          <div class="mh-card-header">
+            <h6><i data-feather="calendar" style="width:16px;height:16px;color:var(--lux-cyan,#47f5ff);"></i> Upcoming Marketing Schedule</h6>
+            <a href="{{ url_for('main.marketing_calendar') }}">View All</a>
+          </div>
+          <div class="row">
+            <div class="col-md-6">
+              <div class="mh-cal-event-row">
+                <span class="mh-cal-event-dot" style="background:#3b82f6;"></span>
+                <strong style="font-size:0.8rem;color:#fff;">Blog Post</strong>
+                <span class="mh-cal-event-time">Feb 22</span>
+              </div>
+              <div class="mh-cal-event-row">
+                <span class="mh-cal-event-dot" style="background:#00ffb4;"></span>
+                <strong style="font-size:0.8rem;color:#fff;">Newsletter</strong>
+                <span class="mh-cal-event-time">Feb 23</span>
+              </div>
+              <div class="mh-cal-event-row">
+                <span class="mh-cal-event-dot" style="background:#bc00ed;"></span>
+                <strong style="font-size:0.8rem;color:#fff;">Social Post</strong>
+                <span class="mh-cal-event-time">Feb 25</span>
+              </div>
+            </div>
+            <div class="col-md-6">
+              <div class="mh-cal-event-row">
+                <span class="mh-cal-event-dot" style="background:#f59e0b;"></span>
+                <strong style="font-size:0.8rem;color:#fff;">Newsletter Launch</strong>
+                <span class="mh-cal-event-time">6PM</span>
+              </div>
+              <div class="mh-cal-event-row">
+                <span class="mh-cal-event-dot" style="background:#ef4444;"></span>
+                <strong style="font-size:0.8rem;color:#fff;">Social Post</strong>
+                <span class="mh-cal-event-time">4PM</span>
+              </div>
+              <div class="mh-cal-event-row">
+                <span class="mh-cal-event-dot" style="background:#00ffb4;"></span>
+                <strong style="font-size:0.8rem;color:#fff;">Newsletter Launch</strong>
+                <span class="mh-cal-event-time">6PM</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  
+
+
+<script>
+var csrfToken = document.querySelector('meta[name="csrf-token"]') ? document.querySelector('meta[name="csrf-token"]').getAttribute('content') : '';
+
+var analyticsDataSets = {
+  engagement: {
+    '7d': {
+      labels: ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'],
+      email: [42,55,48,65,58,70,62], social: [28,35,45,52,40,48,55], seo: [15,22,30,38,35,40,42], ads: [20,25,32,28,35,30,38],
+      campaigns: [8,12,10,15,11,14,13], conversions: [5,8,6,12,9,11,10], revenue: [320,480,390,680,520,640,580]
+    },
+    '30d': {
+      labels: ['Week 1','Week 2','Week 3','Week 4'],
+      email: [180,220,195,260], social: [120,160,190,210], seo: [80,110,145,170], ads: [95,120,140,155],
+      campaigns: [35,42,48,55], conversions: [22,30,38,45], revenue: [1800,2400,2100,3200]
+    },
+    '90d': {
+      labels: ['Month 1','Month 2','Month 3'],
+      email: [720,850,940], social: [480,620,780], seo: [320,450,620], ads: [380,480,560],
+      campaigns: [140,175,210], conversions: [85,120,165], revenue: [7200,9500,12800]
+    },
+    '12m': {
+      labels: ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'],
+      email: [420,550,480,650,580,700,620,680,750,820,780,900], social: [280,350,450,520,400,480,550,600,650,700,680,750],
+      seo: [150,220,300,380,350,400,420,480,520,580,600,650], ads: [200,250,320,280,350,300,380,420,460,500,480,550],
+      campaigns: [45,52,60,68,55,72,65,78,82,90,85,95], conversions: [28,35,42,55,48,60,52,65,70,78,72,85],
+      revenue: [2800,3500,4200,5500,4800,6000,5200,6500,7000,7800,7200,8500]
+    }
+  },
+  clicks: {
+    '7d': {
+      labels: ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'],
+      email: [120,145,135,180,165,190,175], social: [85,110,125,140,105,130,150], seo: [45,60,72,88,80,95,98], ads: [65,78,90,82,95,88,102],
+      campaigns: [22,28,32,40,35,42,38], conversions: [12,18,15,25,20,24,22], revenue: [840,1100,950,1500,1200,1400,1300]
+    },
+    '30d': {
+      labels: ['Week 1','Week 2','Week 3','Week 4'],
+      email: [520,680,610,780], social: [380,480,550,620], seo: [220,310,400,470], ads: [300,380,420,490],
+      campaigns: [95,120,140,165], conversions: [55,72,88,110], revenue: [4800,6200,5800,7500]
+    },
+    '90d': {
+      labels: ['Month 1','Month 2','Month 3'],
+      email: [2100,2600,3200], social: [1500,2000,2500], seo: [900,1350,1900], ads: [1200,1600,2000],
+      campaigns: [380,480,580], conversions: [220,310,420], revenue: [19200,25500,32000]
+    },
+    '12m': {
+      labels: ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'],
+      email: [1200,1500,1350,1800,1650,2000,1800,2100,2300,2500,2400,2800], social: [850,1050,1200,1400,1100,1350,1500,1650,1800,1950,1900,2100],
+      seo: [450,620,800,1000,950,1100,1150,1300,1400,1550,1600,1750], ads: [600,750,900,800,1000,880,1050,1200,1350,1450,1400,1600],
+      campaigns: [130,160,185,210,175,225,205,245,260,280,270,300], conversions: [80,105,125,165,145,180,155,195,210,235,220,260],
+      revenue: [8000,10500,12500,16500,14500,18000,15500,19500,21000,23500,22000,26000]
+    }
+  },
+  impressions: {
+    '7d': {
+      labels: ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'],
+      email: [850,1100,980,1400,1200,1500,1350], social: [1200,1600,1800,2100,1700,2000,2300], seo: [680,900,1050,1300,1200,1400,1500], ads: [950,1200,1400,1100,1500,1300,1600],
+      campaigns: [180,240,220,320,280,340,300], conversions: [15,22,18,30,25,28,24], revenue: [1200,1800,1500,2500,2000,2400,2100]
+    },
+    '30d': {
+      labels: ['Week 1','Week 2','Week 3','Week 4'],
+      email: [3800,4800,4200,5600], social: [5200,6800,7500,8400], seo: [3000,4100,5200,6000], ads: [4200,5200,5800,6500],
+      campaigns: [720,920,880,1200], conversions: [68,88,82,115], revenue: [5400,7200,6500,9000]
+    },
+    '90d': {
+      labels: ['Month 1','Month 2','Month 3'],
+      email: [16000,20000,24000], social: [22000,29000,35000], seo: [13000,18000,25000], ads: [18000,22000,27000],
+      campaigns: [3200,4000,4800], conversions: [280,380,480], revenue: [22000,30000,38000]
+    },
+    '12m': {
+      labels: ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'],
+      email: [5000,6500,5800,8000,7200,8800,7800,8500,9200,10000,9500,11000], social: [7000,8500,10000,12000,9500,11500,13000,14000,15500,17000,16000,18000],
+      seo: [4000,5500,7000,9000,8500,10000,10500,12000,13000,14500,15000,16500], ads: [5500,7000,8500,7500,9500,8200,10000,11500,13000,14000,13500,15500],
+      campaigns: [1050,1350,1550,1800,1500,1900,1750,2100,2250,2450,2350,2600], conversions: [90,120,140,185,160,200,175,220,240,265,250,290],
+      revenue: [9000,12000,14000,18500,16000,20000,17500,22000,24000,26500,25000,29000]
+    }
+  },
+  leads: {
+    '7d': {
+      labels: ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'],
+      email: [8,12,10,16,14,18,15], social: [5,8,10,12,9,11,13], seo: [3,5,7,9,8,10,11], ads: [6,8,10,8,11,9,12],
+      campaigns: [4,6,5,9,7,10,8], conversions: [3,5,4,8,6,7,6], revenue: [240,400,320,640,480,560,500]
+    },
+    '30d': {
+      labels: ['Week 1','Week 2','Week 3','Week 4'],
+      email: [35,48,42,58], social: [25,36,42,50], seo: [18,28,35,44], ads: [28,35,42,48],
+      campaigns: [18,25,30,38], conversions: [14,20,26,34], revenue: [1400,2000,2600,3400]
+    },
+    '90d': {
+      labels: ['Month 1','Month 2','Month 3'],
+      email: [140,180,220], social: [100,150,200], seo: [70,115,165], ads: [110,145,190],
+      campaigns: [72,95,130], conversions: [55,80,115], revenue: [5500,8000,11500]
+    },
+    '12m': {
+      labels: ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'],
+      email: [45,60,52,72,65,80,70,78,85,95,88,102], social: [32,42,52,60,48,56,64,70,76,82,78,88],
+      seo: [18,26,35,45,42,48,50,56,62,68,72,78], ads: [24,30,38,34,42,36,46,52,58,62,58,68],
+      campaigns: [20,26,32,38,30,40,36,44,48,52,50,56], conversions: [15,20,25,34,28,36,30,38,42,48,44,52],
+      revenue: [1500,2000,2500,3400,2800,3600,3000,3800,4200,4800,4400,5200]
+    }
+  }
+};
+
+var analyticsChart = null;
+var allSources = ['email','social','seo','ads','campaigns','conversions','revenue'];
+var sourceColors = {
+  email: { border:'#00ffb4', bg:'rgba(0,255,180,0.08)' },
+  social: { border:'#bc00ed', bg:'rgba(188,0,237,0.08)' },
+  seo: { border:'#f59e0b', bg:'rgba(245,158,11,0.08)' },
+  ads: { border:'#3b82f6', bg:'rgba(59,130,246,0.08)' },
+  campaigns: { border:'#ef4444', bg:'rgba(239,68,68,0.08)' },
+  conversions: { border:'#a855f7', bg:'rgba(168,85,247,0.08)' },
+  revenue: { border:'#14b8a6', bg:'rgba(20,184,166,0.08)' }
+};
+var sourceLabels = { email:'Email', social:'Social', seo:'SEO', ads:'Ads', campaigns:'Campaigns', conversions:'Conversions', revenue:'Revenue' };
+
+function buildAnalyticsChart() {
+  var source = document.getElementById('analyticsSource').value;
+  var metric = document.getElementById('analyticsMetric').value;
+  var range = document.getElementById('analyticsRange').value;
+  var metricData = analyticsDataSets[metric] || analyticsDataSets['engagement'];
+  var d = metricData[range] || metricData['7d'];
+  var datasets = [];
+
+  allSources.forEach(function(s) {
+    var show = (source === 'all' || source === s);
+    var el = document.getElementById('legend' + s.charAt(0).toUpperCase() + s.slice(1));
+    if (el) el.style.display = show ? '' : 'none';
+    if (show && d[s]) {
+      var c = sourceColors[s];
+      datasets.push({ label: sourceLabels[s], data: d[s], borderColor: c.border, backgroundColor: c.bg, tension: 0.4, fill: true, pointRadius: 3, pointBackgroundColor: c.border });
+    }
+  });
+
+  if (analyticsChart) analyticsChart.destroy();
+
+  var ctx = document.getElementById('analyticsChart');
+  if (!ctx) return;
+  analyticsChart = new Chart(ctx, {
+    type: 'line',
+    data: { labels: d.labels, datasets: datasets },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      animation: { duration: 600 },
+      resizeDelay: 200,
+      interaction: { intersect: false, mode: 'index' },
+      plugins: {
+        legend: { display: false },
+        tooltip: { backgroundColor:'rgba(12,14,20,0.95)', borderColor:'rgba(255,255,255,0.1)', borderWidth:1, titleColor:'#fff', bodyColor:'#ccc', padding:12, cornerRadius:8 }
+      },
+      scales: {
+        x: { grid:{ color:'rgba(255,255,255,0.04)' }, ticks:{ color:'#666', font:{ size:11 } } },
+        y: { grid:{ color:'rgba(255,255,255,0.04)' }, ticks:{ color:'#666', font:{ size:11 } } }
+      }
+    }
+  });
+}
+
+var stickyTimer = null;
+function saveStickyNote() {
+  var content = document.getElementById('stickyNoteContent').value;
+  var status = document.getElementById('stickyStatus');
+  status.textContent = 'Saving...';
+  fetch('/api/sticky-note', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken },
+    body: JSON.stringify({ content: content })
+  }).then(function(r) { return r.json(); }).then(function(d) {
+    status.textContent = d.success ? 'Saved' : 'Error';
+    setTimeout(function() { status.textContent = ''; }, 2000);
+  }).catch(function() { status.textContent = 'Error'; });
+}
+
+function toggleTask(id, el) {
+  fetch('/api/dashboard-tasks/' + id + '/toggle', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken }
+  }).then(function(r) { return r.json(); }).then(function(d) {
+    if (d.success) {
+      el.classList.toggle('checked', d.is_completed);
+      var text = el.parentElement.querySelector('.mh-task-text');
+      if (text) text.classList.toggle('completed', d.is_completed);
+    }
+  });
+}
+
+function deleteTask(id, el) {
+  fetch('/api/dashboard-tasks/' + id, {
+    method: 'DELETE',
+    headers: { 'X-CSRFToken': csrfToken }
+  }).then(function(r) { return r.json(); }).then(function(d) {
+    if (d.success) {
+      var item = el.closest('.mh-task-item');
+      if (item) item.remove();
+    }
+  });
+}
+
+function addTask(e) {
+  e.preventDefault();
+  var input = document.getElementById('newTaskInput');
+  var title = input.value.trim();
+  if (!title) return;
+  fetch('/api/dashboard-tasks', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken },
+    body: JSON.stringify({ title: title })
+  }).then(function(r) { return r.json(); }).then(function(d) {
+    if (d.success) {
+      var list = document.getElementById('tasksList');
+      var item = document.createElement('div');
+      item.className = 'mh-task-item';
+      item.setAttribute('data-task-id', d.id);
+      item.innerHTML = '<div class="mh-task-check" onclick="toggleTask('+d.id+', this)"></div><div style="flex:1;min-width:0;"><div class="mh-task-text">'+d.title+'</div></div><button class="mh-task-delete" onclick="deleteTask('+d.id+', this)" title="Delete"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>';
+      list.appendChild(item);
+      input.value = '';
+    }
+  });
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+  buildAnalyticsChart();
+
+  document.getElementById('analyticsSource').addEventListener('change', buildAnalyticsChart);
+  document.getElementById('analyticsMetric').addEventListener('change', buildAnalyticsChart);
+  document.getElementById('analyticsRange').addEventListener('change', buildAnalyticsChart);
+
+  var stickyEl = document.getElementById('stickyNoteContent');
+  if (stickyEl) {
+    stickyEl.addEventListener('input', function() {
+      clearTimeout(stickyTimer);
+      stickyTimer = setTimeout(saveStickyNote, 800);
+    });
+  }
+
+  var calEvents = {
+    5: '#3b82f6', 8: '#ef4444', 12: '#00ffb4', 15: '#bc00ed',
+    18: '#f59e0b', 22: '#3b82f6', 23: '#00ffb4', 25: '#bc00ed',
+    26: '#f59e0b', 28: '#ef4444'
+  };
+
+  var calDate = new Date(2026, 1, 1);
+  window._calDate = calDate;
+  window._calEvents = calEvents;
+  renderCalendar(calDate, calEvents);
+});
+
+function renderCalendar(date, events) {
+  var grid = document.getElementById('calGrid');
+  if (!grid) return;
+  grid.innerHTML = '';
+
+  var year = date.getFullYear();
+  var month = date.getMonth();
+  var firstDay = new Date(year, month, 1).getDay();
+  var daysInMonth = new Date(year, month + 1, 0).getDate();
+  var today = new Date();
+
+  var monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  var label = document.getElementById('calMonthLabel');
+  if (label) label.textContent = monthNames[month] + ' ' + year;
+
+  for (var i = 0; i < firstDay; i++) {
+    var empty = document.createElement('div');
+    empty.className = 'mh-cal-day';
+    empty.style.visibility = 'hidden';
+    grid.appendChild(empty);
+  }
+
+  for (var d = 1; d <= daysInMonth; d++) {
+    var cell = document.createElement('div');
+    cell.className = 'mh-cal-day';
+    cell.textContent = d;
+
+    if (d === today.getDate() && month === today.getMonth() && year === today.getFullYear()) {
+      cell.classList.add('today');
+    }
+
+    if (events[d]) {
+      cell.classList.add('has-event');
+      cell.style.setProperty('--event-color', events[d]);
+      var dot = document.createElement('span');
+      dot.style.cssText = 'position:absolute;bottom:2px;left:50%;transform:translateX(-50%);width:4px;height:4px;border-radius:50%;background:' + events[d];
+      cell.style.position = 'relative';
+      cell.appendChild(dot);
+    }
+
+    grid.appendChild(cell);
+  }
+
+  feather.replace();
+}
+
+function changeCalMonth(dir) {
+  var d = window._calDate;
+  d.setMonth(d.getMonth() + dir);
+  renderCalendar(d, window._calEvents);
+}
+</script>
+{% endblock %}

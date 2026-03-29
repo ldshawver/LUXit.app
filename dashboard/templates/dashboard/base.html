@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}Dashboard • LUXit{% endblock %}</title>
+  <link rel="icon" type="image/png" href="{{ url_for('static', filename='favicon.png') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/custom.css') }}">
+  <style>
+    body { margin: 0; font-family: "Inter", system-ui, sans-serif; background: #0b0d12; color: #f7f7fb; }
+    .shell { max-width: 1100px; margin: 0 auto; padding: 32px 20px 80px; }
+    .topbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 32px; }
+    .brand { display: flex; align-items: center; gap: 12px; font-weight: 600; }
+    .card { background: #111827; border: 1px solid #1f2937; border-radius: 16px; padding: 24px; }
+    .grid { display: grid; gap: 20px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+    .muted { color: #9aa4b2; }
+    .pill { display: inline-flex; gap: 8px; padding: 6px 12px; border-radius: 999px; border: 1px solid #273043; font-size: 0.85rem; }
+    .actions { display: flex; gap: 12px; flex-wrap: wrap; }
+    .btn-link { color: #f7f7fb; text-decoration: none; border: 1px solid #273043; border-radius: 999px; padding: 8px 14px; }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <div class="topbar">
+      <div class="brand">
+        <img src="{{ url_for('static', filename='lux_logo.png') }}" alt="LUXit" style="height: 32px; width: auto;">
+        LUXit Command Center
+      </div>
+      <div class="actions">
+        <a class="btn-link" href="/auth/logout">Log out</a>
+      </div>
+    </div>
+
+    {% block content %}{% endblock %}
+  </div>
+</body>
+</html>

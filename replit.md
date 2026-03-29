@@ -1,7 +1,7 @@
 # LUX Marketing Platform - Project Documentation
 
 ## Overview
-LUX Marketing is a multi-channel marketing automation platform designed to streamline marketing efforts. It features a tile-based dashboard with 11 AI agents, AI-powered campaign generation using GPT-4o, and seamless contact capture via Zapier webhooks. The platform integrates an advanced error logging and diagnostics system and an AI chatbot with auto-repair capabilities. Its core ambition is to provide a launch-ready, automated marketing solution with centralized management for all integrations and API keys, alongside robust social media publishing and management.
+LUX Marketing is a multi-channel marketing automation platform designed to streamline marketing efforts. It features a tile-based dashboard with 11 AI agents and AI-powered campaign generation using GPT-4o. The platform aims to be a launch-ready, automated marketing solution offering centralized management for all integrations and API keys, robust social media publishing, and comprehensive contact capture. It includes advanced error logging, diagnostics, and an AI chatbot with auto-repair capabilities to ensure seamless operation.
 
 ## User Preferences
 - Black background with purple, cyan, pink branding
@@ -12,60 +12,119 @@ LUX Marketing is a multi-channel marketing automation platform designed to strea
 - All social media platforms available in Settings → Integrations for all companies
 
 ## System Architecture
-The platform is built around a tile-based dashboard with 11 AI agents and leverages GPT-4o for AI-powered campaign generation. The UI/UX features a pure black background accented with brand colors (purple, cyan, pink). Authentication is handled via Replit Auth OAuth, supporting Google, GitHub, Apple, and email sign-in, with JWKS-based JWT signature verification.
+The platform is built around a tile-based dashboard with 11 AI agents, leveraging GPT-4o for AI-powered campaign generation. The UI/UX features a pure black background accented with brand colors (purple, cyan, pink). Authentication is handled via Replit Auth OAuth, supporting Google, GitHub, Apple, and email sign-in, with JWKS-based JWT signature verification.
 
-Key technical implementations and features include:
-- **Admin Approval Queue System**: Mandatory approval workflow for ALL marketing content (AI-generated and manual). Features ApprovalQueue model with status workflow (pending→approved/rejected→published), FeatureToggle model with 27 safe-off defaults, ApprovalService for submit/approve/reject/edit/cancel operations, and ApprovalAuditLog for immutable action tracking. AI agents (SocialMediaAgent, EmailCRMAgent) route content through submit_for_approval() instead of direct execution. Publishing routes verify approved queue items before dispatching. Includes emergency stop capability to halt all automation.
-- **Social Media Integrations**: Full OAuth 2.0 implementations for platforms like Instagram and TikTok, supporting content publishing, media listing, and insights, including secure token management. Integrations also exist for Facebook, Reddit, YouTube, LinkedIn, Snapchat, and X/Twitter.
-- **Centralized API Keys & Secrets Management**: A dedicated section in Settings → Integrations for secure, encrypted storage and management of API keys and secrets per company.
-- **Zapier Webhook Integration**: An authenticated endpoint (`/api/webhook/zapier-contact`) for contact capture and auto-segmentation.
-- **Error Logging & Diagnostics**: A robust system logs all application errors to a `error_log` database table, providing detailed diagnostics and system health information.
-- **AI Chatbot with Auto-Repair**: Functions as a marketing assistant and troubleshooter, capable of analyzing server logs and triggering an automated error repair system using ChatGPT to generate and test fix plans.
-- **Keyword Research Integrations**: Multi-provider keyword research supporting DataForSEO, SEMrush, and Moz, with dedicated API endpoints.
-- **Event Integrations**: Multi-provider event search supporting Eventbrite and Ticketmaster, with dedicated API endpoints.
-- **Customer Profile & Engagement Tracking**: Comprehensive customer management with editable profiles, lead scoring, activity timelines, and quick-action buttons for logging interactions.
-- **CRM Hub Transformation**: An action-oriented coaching system with pipeline stages, "Next Actions" coaching widgets, and activity-based metrics.
-- **Comprehensive Analytics Hub**: An analytics system providing 10 metric categories (Acquisition, Conversion, Revenue, CAC, Retention, Engagement, Attribution, Segments, Campaigns, Compliance) with Chart.js visualizations and a dark theme UI.
-- **Contact-Subscriber Sync**: Bidirectional synchronization between contacts and newsletter subscribers, including automatic daily sync via an AI agent.
-- **Automation Trigger Library**: An expanded library of 25+ automation templates across various marketing categories (Ecommerce, Engagement, Nurture, Retention, SMS, Social) with full CRUD API support.
+Key architectural decisions and features include:
+- **Admin Approval Queue System**: Implements a mandatory approval workflow for all marketing content with status tracking, feature toggles for safe-off defaults, and an immutable audit log. AI agents route content through this system before execution.
+- **Social Media Integrations**: Full OAuth 2.0 implementations for various platforms (Instagram, TikTok, Facebook, Reddit, YouTube, LinkedIn, Snapchat, X/Twitter) supporting content publishing, media listing, insights, and secure token management.
+- **Centralized API Keys & Secrets Management**: A dedicated section for secure, encrypted storage and management of API keys and secrets per company.
+- **Contact Management**: Features Zapier webhook integration for authenticated contact capture and auto-segmentation, comprehensive customer profiles with lead scoring, activity timelines, and quick actions. Bidirectional synchronization between contacts and newsletter subscribers is included.
+- **Error Logging & Diagnostics**: A robust system logs application errors to a database, providing detailed diagnostics.
+- **AI Chatbot with Auto-Repair**: Functions as a marketing assistant and troubleshooter, capable of analyzing server logs and triggering an automated error repair system using ChatGPT.
+- **Layout**: 224px left sidebar (glassmorphism) with Marketing/Sales toggle at top, followed by grouped nav items under section labels (Core Marketing, Content Engine, Intelligence, Customers, Automations, Engagement). A horizontal category tab bar (38px, sticky below header) mirrors these groups as top-level tabs with AI button, inbox, and notification icons on the right. Active tab/sidebar item highlights in cyan. LUX logo links to Marketing Hub or CRM Hub based on user's `preferred_hub` (auto-set when visiting either hub).
+- **Notifications & Inbox**: Full notification center (`/notifications`) with category filters (system, campaign, automation, contact, team), mark-as-read, and clear-all. Inbox (`/inbox`) with message detail view, starring, and read tracking. Badge counts in the category bar update from real data.
+- **FeatureToggle Model**: Manages per-company feature flags for AI agents, channels, automation, and safety controls with emergency stop capability.
+- **CRM Hub Transformation**: An action-oriented coaching system with pipeline stages, "Next Actions" widgets, and activity-based metrics, featuring a unified Sales Hub with a visual Kanban pipeline and comprehensive deal management.
+- **Autonomous Systems Governor (Orchestrator Agent)**: A master oversight agent providing a 6-tab dashboard for system health, agent orchestration, UX optimization, feature governance, competitive intelligence, and executive reporting.
+- **Comprehensive Analytics Hub**: An analytics system providing 10 metric categories with Chart.js visualizations and a dark theme UI. Uses shared global sidebar/topbar from base.html (no duplicate navigation).
+- **Dashboard Customizable Analytics**: Interactive Chart.js widget on the Sales Hub dashboard with data source selector (Leads, Revenue, Deals by Stage, Email Performance, Tasks) and date range picker (Week/Month/Quarter/Year). Charts and KPI summaries update dynamically based on user selection.
+- **Marketing Automations Hub**: Restructured automation dashboard focused on marketing automations (email, SMS, social DM) with channel-based quick-create cards, trigger selection (signup, purchase, abandoned cart, email open, link click, date-based, tag added, inactivity, plus social-specific triggers), 3-step creation wizard (channel → trigger → details), and per-channel content editors. `Automation` model includes `channel_type` field. AI agent automations moved to AI Hub.
+- **Automation Trigger Library**: An expanded library of 25+ automation templates across various marketing categories with full CRUD API support.
 - **SMS Service Integration**: Full Twilio integration for SMS campaign creation, bulk sending, AI-powered content generation, and compliance checking.
-- **Marketing Calendar**: Full FullCalendar.js integration with drag-and-drop rescheduling, click-to-edit events, type filtering, and an upcoming 30-day view.
-- **AI Auto-Generate for Campaigns**: AI-powered subject line generation for campaigns with CSRF protection and graceful fallback.
-- **Social Media Post Creation**: Enhanced features including advanced image handling (stock search via Unsplash/Pexels, upload, URL import, AI generation), AI-powered hashtag generation, and URL shortening.
-- **TikTok Pixel Integration**: Automatic injection of TikTok Pixel into all pages for tracking.
-- **Configuration Status Service**: Enhanced service to check and differentiate between missing API credentials and disconnected OAuth sessions for various integrations.
+- **Marketing Calendar**: Full FullCalendar.js integration with drag-and-drop rescheduling and event management. Pulls scheduled social posts, SMS campaigns, and email campaigns into both month view and upcoming list panel. Filter chips for SMS/Social/Email/Deadlines/Notes.
+- **AI Auto-Generate for Campaigns**: AI-powered subject line generation for campaigns and advanced social media post creation features (image handling, hashtag generation, URL shortening).
+- **TikTok Pixel Integration**: Automatic injection of TikTok Pixel for tracking.
+- **Email Campaign Builder**: A drag-and-drop email builder with content blocks, a visual canvas, template picker, and A/B testing capabilities.
+- **User and Company Management**: Includes user profiles, password management, user management, and company-specific branding settings.
 
 ## External Dependencies
-### Core Integrations
 - **OpenAI API**: AI-powered campaign generation, content optimization, and diagnostics.
-- **Microsoft Graph API**: Microsoft 365 email delivery service (OAuth 2.0).
-- **Zapier**: Contact capture and automation via webhooks.
+- **Microsoft Graph API**: Microsoft 365 email delivery.
+- **Zapier**: Contact capture via webhooks.
 - **Replit Auth (OpenID Connect)**: OAuth authentication (Google, GitHub, Apple, email).
-- **Instagram Graph API**: OAuth integration, content publishing, insights.
-- **TikTok API**: OAuth integration, user info, video listing, upload, publishing.
+- **Instagram Graph API**: Instagram integration.
+- **TikTok API**: TikTok integration.
 - **Facebook API**: Facebook Page integration.
 - **Reddit API**: Reddit integration.
 - **YouTube Data API**: YouTube integration.
 - **LinkedIn API**: LinkedIn integration.
 - **Snapchat API**: Snapchat integration.
 - **X (formerly Twitter) API**: Twitter integration.
-- **DataForSEO API**: Keyword research data.
-- **SEMrush API**: Premium keyword and competitor data.
+- **DataForSEO API**: Keyword research.
+- **SEMrush API**: Keyword and competitor data.
 - **Moz API**: Domain authority and keyword difficulty.
-- **Eventbrite API**: Local events, ticketing, categories.
-- **Ticketmaster Discovery API**: Concerts, sports, theater, attractions.
-- **Twilio API**: SMS service integration.
+- **Eventbrite API**: Event search.
+- **Ticketmaster Discovery API**: Event search.
+- **Twilio API**: SMS service.
 - **Unsplash API**: Stock image search.
-- **Pexels API**: Alternative stock image search.
+- **Pexels API**: Stock image search.
 - **TinyURL/Bitly API**: URL shortening.
+- **Flask**: Web framework.
+- **APScheduler**: Background task scheduling.
+- **SQLAlchemy**: ORM.
+- **Bootstrap 5**: UI framework.
+- **Feather Icons**: Icon set.
 
-### Framework & Data Layer
-- **Flask**: Web framework with SQLAlchemy, Login, and other extensions.
-- **APScheduler**: Background task scheduling for automated campaigns.
-- **SQLAlchemy**: ORM supporting multiple database backends.
-- **Database**: SQLite for development; PostgreSQL/MySQL in production.
+## Recent Major Fixes & Feature Implementations (March 2026)
 
-### Frontend Dependencies
-- **Bootstrap 5**: Dark theme UI framework.
-- **Feather Icons**: Lightweight icon set.
-- **Custom CSS/JS**: Glassmorphism UI and interaction helpers.
+### Phase 1: Crash Fixes
+- **14 crashing pages fixed**: All 500-error routes resolved by syncing SQLAlchemy models with actual DB schemas. Models updated: SEOBacklink, SEOCompetitor, ABTest, LeadScore, AgentMemory, AgentConfiguration, CampaignCost, AttributionModel, PersonalizationRule, KeywordResearch, CompetitorProfile, WordPressIntegration, Competitor, MarketSignal, StrategyRecommendation, InstagramOAuth, SurveyResponse, CompanyIntegrationConfig.
+- **Health check fixed**: Removed corrupted A/B test code mixed into `/health` route; added inline `_db_status()` function.
+- **Security fix**: SESSION_COOKIE_SECURE set to True.
+
+### Phase 2: Feature Implementations
+- **Affiliate Dashboard** (`/affiliate/dashboard`): Full CRUD for influencers and affiliate link generation. KPI cards (clicks, conversions, commission, conversion rate). Influencer CRM tab with filtering. Affiliate link builder with QR code generation. Payout tracking. Detail pages for influencers. Models: AffiliateLink, Influencer, AffiliateClick, AffiliateConversion.
+- **Press Releases** (`/press-releases`): Full CRUD — create, view detail, edit, delete. Media contact management. Press release sending. Status tracking (draft/published/sent). Embargo support. Models: PressRelease, MediaContact. Tables created in DB.
+- **Workflow Builder** (`/workflow-builder`): Visual drag-and-drop workflow canvas with node palette (triggers, actions, logic, exit). Save/activate/delete workflows. Node configuration panel. Model: Workflow. Table created in DB.
+- **Orchestrator** (`/orchestrator`): Dashboard showing active automations and recent agent tasks with status KPIs.
+- **Predictive Analytics** (`/analytics/predictive`): Lead scoring with hot/warm/cold/frozen classifications. Churn risk prediction based on inactivity. Send time optimization recommendations. Subject line performance analyzer with scoring algorithm.
+- **Attribution Analytics** (`/analytics/attribution`): Campaign attribution breakdown with revenue and conversion tracking.
+- **LTV Analytics** (`/analytics/ltv`): Company-scoped customer lifetime value calculations. Avg LTV, revenue per customer, lifespan, LTV:CAC ratio. Health status assessment.
+- **ROI Analytics** (`/roi-analytics`): Campaign investment vs revenue tracking.
+- **UTM Builder** (`/utm-builder`): Client-side UTM link generator with copy, QR code, and template saving.
+
+### API Endpoints Added
+- `POST /affiliate/generate-link` — Generate tracked affiliate links with QR codes
+- `POST /influencer/create` — Add influencers to CRM
+- `POST /workflow/save` — Save workflow with nodes/connections
+- `POST /workflow/<id>/activate` — Activate a workflow
+- `GET /analytics/lead-scores` — Lead scoring data (company-scoped)
+- `GET /analytics/churn-risks` — Churn risk predictions (company-scoped)
+- `GET /analytics/send-time-optimization` — Send time recommendations
+- `POST /analytics/predict-content-performance` — Subject line analysis
+- `POST /api/press-releases/<id>/send` — Send press release (with ownership check)
+
+### Phase 3: Design Overhaul & Feature Expansion (March 2026)
+- **Design System Overhaul**: Complete CSS rewrite in `static/css/custom.css` with design tokens (glass cards, stat cards, KPI cards, buttons, forms, tables, badges, modals, alerts, animations). Brand palette: bg `#030014`, cyan `#00e5ff`/`#47f5ff`, purple `#a855f7`/`#7c3aed`, teal `#00ffb4`, metallic `#c0c8d8`.
+- **Dashboard Color Fixes**: Replaced all blue `#4f8ef7` with cyan `#00e5ff` and `#3b6fd4` with `#a855f7` purple across dashboard.
+- **Ads Hub Color Fix**: Replaced all amber `#f59e0b` references with brand purple `#a855f7` and cyan `#00e5ff` throughout `ads_hub.html`.
+- **CRM Hub Color Fix**: Updated CSS variable fallbacks from `#bc00ed` to `#a855f7`.
+- **AI Hub Reports & Deliverables**: Added Reports and Deliverables tabs to the AI Hub (`agents_hub.html`). Monthly/quarterly report generation with OpenAI, report viewing in modal, deliverables listing. Fixed AgentReport model/route field mismatch (routes now use correct `report_title`/`report_data` fields). Added XSS protection with `textContent` rendering.
+- **Customer Onboarding Wizard** (`/onboarding`): Multi-step wizard for new company setup: (1) Company info, (2) Brand kit (colors, fonts), (3) API key configuration (OpenAI, SendGrid, GA, Facebook), (4) Launch checklist. File upload hardened with extension whitelist and 5MB size limit.
+
+### Phase 3 Continued: Brand Kit Token System
+- **Design Token Expansion**: ~55 semantic CSS tokens in `custom.css` `:root` covering backgrounds, text, buttons, nav, borders, interactive states, status, modal/table, dropdown, typography, and links.
+- **Two-tier architecture**: Primitive tokens (palette values) + semantic tokens (purpose-driven). All new components must use semantic tokens only.
+- **Legacy alias deprecation**: Old tokens (`--lux-card-bg`, `--lux-glass`, `--lux-muted`, `--lux-border`, etc.) preserved with `[COMPAT]` comments pointing to preferred semantic equivalents.
+- **Brand override refactor**: `base.html` brand block reduced from ~30 selector-specific `!important` overrides to clean `:root`-only token injection. Brand colors cascade through `color-mix()` derived variants automatically.
+- **Token documentation**: `static/css/TOKENS.md` provides full reference — token purpose, default values, usage guidelines, legacy alias mapping, and brand override strategy.
+- **Inline style tokenization**: All hardcoded hex colors in `base.html` header, sidebar, category bar, nav, modal, and badges replaced with CSS token references.
+
+### Security
+- All new endpoints enforce tenant scoping (company_id checks)
+- Workflow activate and press release send have IDOR protection
+- CSRF tokens added to all JavaScript fetch calls
+- CompetitorProfile model: DB column is `competitor_name`, model exposes `.name` property for backward compatibility.
+- Report content rendered with `textContent` (not `innerHTML`) to prevent XSS
+- Onboarding file uploads validated for allowed image extensions and 5MB size limit
+- Session cookie uses `SameSite=Lax` with `Secure=False` on Replit dev (CSRF disabled in iframe env); production uses `Secure=True`
+- Auth blueprint responses include `Cache-Control: no-store` to prevent stale login pages
+
+### Phase 3 Continued: T003 Stub Features
+- **SEO Dashboard** (`/seo/dashboard`): Redesigned with glassmorphism cards, stat cards for keywords/rankings/backlinks/competitors, quick action buttons, top keywords table
+- **SEO Tools** (`/seo-tools`): Redesigned with design system variables, dark-themed accordion for best practices
+- **Content Generator** (`/content-generator`): Redesigned with design system CSS variables replacing inline hex colors, consistent card styling
+- **Ads Hub** (`/ads-hub`): Route now passes real campaign/cost data from DB with per-campaign spend and ROAS calculations. Template uses dynamic KPI cards (Active Campaigns, Total Ad Spend, Average ROAS, Revenue Generated) and campaign table with live data. Error handling with logging for DB query failures.
+- **Dashboard Notes Tab**: Replaced "coming soon" text with styled empty-state component linking to Contacts.
+- **V1 Dashboard**: Replaced "Coming Soon" badges with "Available" links to live feature pages (Campaigns, Analytics, Automations).
+- **Onboarding Data Seeding**: `onboarding_submit` now seeds 6 default sales pipeline stages (Lead, Qualified, Proposal, Negotiation, Closed Won, Closed Lost) and 5 default segments (Newsletter, Leads, Customers, Churned, VIP) when creating a new company. Errors are logged rather than silently ignored.

@@ -1,212 +1,328 @@
 {% extends "base.html" %}
-{% block title %}LUX CRM - Customer & Deal Management{% endblock %}
+{% block title %}LUX CRM - Sales Hub{% endblock %}
+{% block title %}CRM - LUX IT{% endblock %}
+{% block page_title %}CRM{% endblock %}
 {% block content %}
 <style>
-.crm-nav { background: rgba(0,0,0,0.5); border-bottom: 2px solid #bc00ed; overflow-x: auto; }
-.crm-nav button { color: #00ffb4; padding: 1rem 1.5rem; border: none; background: none; cursor: pointer; font-weight: 500; transition: all 0.3s; }
-.crm-nav button.active { background: rgba(188,0,237,0.3); border-bottom: 3px solid #00ffb4; }
-.crm-nav button:hover { background: rgba(188,0,237,0.2); }
-.crm-section { display: none; }
+.sales-hub { max-width: 100%; overflow: hidden; }
+.crm-header { background: linear-gradient(135deg, rgba(188,0,237,0.15), rgba(0,255,180,0.05)); border-bottom: 2px solid var(--lux-primary, #bc00ed); padding: 1.5rem 0; margin-bottom: 1.5rem; }
+.hub-selector { display: inline-flex; gap: 4px; background: rgba(0,0,0,0.4); border-radius: 8px; padding: 3px; margin-bottom: 0.75rem; }
+.hub-selector a { padding: 6px 16px; border-radius: 6px; font-size: 0.8rem; font-weight: 500; color: #888; text-decoration: none; transition: all 0.2s; }
+.hub-selector a.active { background: rgba(188,0,237,0.3); color: var(--lux-secondary); }
+.hub-selector a:hover:not(.active) { color: #eee; background: rgba(188,0,237,0.1); }
+.stats-row { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 1.5rem; }
+.stat-card { flex: 1 1 calc(16.666% - 12px); min-width: 140px; background: rgba(188,0,237,0.08); border: 1px solid rgba(188,0,237,0.25); border-radius: 10px; padding: 1rem; text-align: center; transition: transform 0.2s, box-shadow 0.2s; overflow: hidden; }
+.stat-card:hover { transform: translateY(-3px); box-shadow: 0 6px 20px rgba(188,0,237,0.25); }
+.stat-value { font-size: 1.6rem; font-weight: 700; color: var(--lux-secondary); line-height: 1.2; }
+.stat-label { color: #999; font-size: 0.75rem; margin-top: 0.2rem; text-transform: uppercase; letter-spacing: 0.5px; }
+.stat-sub { color: #666; font-size: 0.7rem; margin-top: 2px; }
+.quick-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 1.5rem; }
+.quick-action-btn { display: inline-flex; align-items: center; gap: 6px; padding: 8px 16px; background: rgba(188,0,237,0.1); border: 1px solid rgba(188,0,237,0.25); border-radius: 8px; color: #ccc; font-size: 0.82rem; font-weight: 500; text-decoration: none; transition: all 0.2s; cursor: pointer; }
+.quick-action-btn:hover { background: rgba(188,0,237,0.2); color: var(--lux-secondary); border-color: var(--lux-primary); transform: translateY(-1px); }
+.crm-tabs { display: flex; gap: 4px; background: rgba(0,0,0,0.3); border-radius: 8px; padding: 4px; margin-bottom: 1.5rem; overflow-x: auto; flex-wrap: nowrap; }
+.crm-tab { padding: 8px 18px; border: none; background: none; color: #999; cursor: pointer; border-radius: 6px; font-weight: 500; font-size: 0.85rem; transition: all 0.2s; white-space: nowrap; }
+.crm-tab.active { background: rgba(188,0,237,0.3); color: var(--lux-secondary); }
+.crm-tab:hover { color: #eee; background: rgba(188,0,237,0.15); }
+.crm-section { display: none; overflow: hidden; }
 .crm-section.active { display: block; }
-.stat-card { background: rgba(188,0,237,0.1); border: 1px solid rgba(188,0,237,0.3); border-radius: 8px; padding: 1.5rem; text-align: center; transition: transform 0.2s, box-shadow 0.2s; }
-.stat-card:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(188,0,237,0.3); }
-.stat-value { font-size: 2rem; font-weight: bold; color: #00ffb4; }
-.stat-label { color: #999; font-size: 0.9rem; margin-top: 0.5rem; }
-.action-card { background: linear-gradient(135deg, rgba(188,0,237,0.15), rgba(0,255,180,0.05)); border: 1px solid rgba(188,0,237,0.4); border-radius: 12px; }
-.action-item { padding: 1rem; border-bottom: 1px solid rgba(188,0,237,0.2); display: flex; align-items: center; gap: 1rem; transition: background 0.2s; cursor: pointer; }
+.kanban-board { display: flex; gap: 12px; overflow-x: auto; padding-bottom: 1rem; min-height: 400px; max-width: 100%; }
+.kanban-column { min-width: 220px; max-width: 260px; flex: 1 0 220px; background: rgba(0,0,0,0.3); border-radius: 12px; border: 1px solid rgba(188,0,237,0.2); overflow: hidden; }
+.kanban-header { padding: 12px 16px; border-bottom: 1px solid rgba(188,0,237,0.2); display: flex; justify-content: space-between; align-items: center; }
+.kanban-header h6 { margin: 0; font-size: 0.85rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
+.kanban-count { background: rgba(0,255,180,0.15); color: var(--lux-secondary); padding: 2px 8px; border-radius: 10px; font-size: 0.75rem; font-weight: 600; }
+.kanban-value { font-size: 0.7rem; color: #888; margin-top: 2px; }
+.kanban-body { padding: 8px; min-height: 200px; max-height: 500px; overflow-y: auto; }
+.kanban-body.drag-over { background: rgba(188,0,237,0.08); }
+.deal-card { background: rgba(255,255,255,0.04); border: 1px solid rgba(188,0,237,0.15); border-radius: 8px; padding: 12px; margin-bottom: 8px; cursor: grab; transition: all 0.2s; }
+.deal-card:hover { border-color: var(--lux-primary); background: rgba(188,0,237,0.08); transform: translateY(-1px); }
+.deal-card:active { cursor: grabbing; opacity: 0.8; }
+.deal-card.dragging { opacity: 0.4; }
+.deal-card .deal-title { font-weight: 600; color: #eee; font-size: 0.9rem; margin-bottom: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.deal-card .deal-contact { color: #888; font-size: 0.78rem; }
+.deal-card .deal-value { color: var(--lux-secondary); font-weight: 700; font-size: 0.9rem; }
+.deal-card .deal-meta { display: flex; justify-content: space-between; align-items: center; margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.05); }
+.deal-card .deal-date { color: #666; font-size: 0.72rem; }
+.deal-card .stale-indicator { background: #ff4757; color: white; font-size: 0.65rem; padding: 1px 6px; border-radius: 4px; animation: pulse-stale 2s infinite; }
+@keyframes pulse-stale { 0%,100% { opacity: 1; } 50% { opacity: 0.6; } }
+.prob-bar { height: 4px; background: rgba(255,255,255,0.08); border-radius: 2px; margin-top: 6px; overflow: hidden; }
+.prob-fill { height: 100%; border-radius: 2px; background: linear-gradient(90deg, var(--lux-primary), var(--lux-secondary)); transition: width 0.3s; }
+.action-panel { background: linear-gradient(135deg, rgba(188,0,237,0.12), rgba(0,255,180,0.04)); border: 1px solid rgba(188,0,237,0.3); border-radius: 12px; overflow: hidden; }
+.action-item { padding: 12px 16px; border-bottom: 1px solid rgba(188,0,237,0.12); display: flex; align-items: center; gap: 12px; transition: background 0.2s; cursor: pointer; }
 .action-item:last-child { border-bottom: none; }
-.action-item:hover { background: rgba(188,0,237,0.1); }
+.action-item:hover { background: rgba(188,0,237,0.08); }
 .action-item.warning { border-left: 4px solid #ffc107; }
 .action-item.success { border-left: 4px solid #00ff88; }
 .action-item.info { border-left: 4px solid #00bfff; }
-.priority-high { color: #ff6b6b; }
-.priority-medium { color: #ffc107; }
-.stage-card { position: relative; overflow: hidden; display: flex; flex-direction: column; justify-content: center; align-items: center; min-height: 120px; height: 120px; }
-.stage-card .stage-progress { position: absolute; bottom: 0; left: 0; height: 4px; background: linear-gradient(90deg, #bc00ed, #00ffb4); transition: width 0.5s ease; }
-.stage-action { font-size: 0.7rem; color: #bc00ed; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; white-space: nowrap; }
-.stage-label { font-size: 0.9rem; font-weight: 600; margin: 0.3rem 0; white-space: nowrap; }
-.stage-count { font-size: 1.5rem; font-weight: bold; color: #00ffb4; }
-.zero-state { text-align: center; padding: 3rem; background: linear-gradient(135deg, rgba(188,0,237,0.1), rgba(0,255,180,0.05)); border-radius: 16px; border: 2px dashed rgba(188,0,237,0.4); }
-.zero-state h3 { color: #00ffb4; margin-bottom: 1rem; }
-.zero-state p { color: #aaa; max-width: 500px; margin: 0 auto 1.5rem; }
-.stale-badge { background: #ff6b6b; font-size: 0.7rem; padding: 2px 6px; border-radius: 4px; color: white; animation: pulse 2s infinite; }
-@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.6; } }
+.priority-high { color: #ff6b6b; font-size: 0.7rem; text-transform: uppercase; font-weight: 600; }
+.priority-medium { color: #ffc107; font-size: 0.7rem; text-transform: uppercase; font-weight: 600; }
+.zero-state { text-align: center; padding: 3rem; background: linear-gradient(135deg, rgba(188,0,237,0.08), rgba(0,255,180,0.03)); border-radius: 16px; border: 2px dashed rgba(188,0,237,0.3); }
+.zero-state h3 { color: var(--lux-secondary); margin-bottom: 0.8rem; }
+.zero-state p { color: #888; max-width: 500px; margin: 0 auto 1.5rem; }
+.customer-row { cursor: pointer; transition: background 0.15s; }
+.customer-row:hover { background: rgba(188,0,237,0.08) !important; }
+.badge-hot { background: rgba(255,107,107,0.2); color: #ff6b6b; }
+.badge-warm { background: rgba(255,193,7,0.2); color: #ffc107; }
+.badge-cold { background: rgba(136,136,136,0.2); color: #888; }
+.modal-content { background: #1a1a2e; border: 1px solid rgba(188,0,237,0.3); }
+.modal-header { border-bottom: 1px solid rgba(188,0,237,0.2); }
+.modal-footer { border-top: 1px solid rgba(188,0,237,0.2); }
+.form-control, .form-select { background: rgba(0,0,0,0.3); border: 1px solid rgba(188,0,237,0.2); color: #eee; }
+.form-control:focus, .form-select:focus { border-color: var(--lux-primary); box-shadow: 0 0 0 0.2rem rgba(188,0,237,0.15); background: rgba(0,0,0,0.4); color: #eee; }
+.form-label { color: #aaa; font-size: 0.85rem; }
+.deal-detail-panel { position: fixed; right: -500px; top: 0; width: 480px; height: 100vh; background: #1a1a2e; border-left: 2px solid var(--lux-primary); z-index: 1050; transition: right 0.3s ease; overflow-y: auto; padding: 1.5rem; }
+.deal-detail-panel.open { right: 0; }
+.deal-detail-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1040; display: none; }
+.deal-detail-overlay.open { display: block; }
+.activity-timeline { position: relative; padding-left: 24px; }
+.activity-timeline::before { content: ''; position: absolute; left: 8px; top: 0; bottom: 0; width: 2px; background: rgba(188,0,237,0.2); }
+.timeline-item { position: relative; margin-bottom: 16px; }
+.timeline-item::before { content: ''; position: absolute; left: -20px; top: 4px; width: 10px; height: 10px; border-radius: 50%; background: var(--lux-primary); border: 2px solid #1a1a2e; }
+.timeline-item.stage_change::before { background: var(--lux-secondary); }
+.timeline-item.call::before { background: #00bfff; }
+.timeline-item.email::before { background: #ffc107; }
+.sales-nav-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 2rem; margin-bottom: 2rem; }
+.sales-nav-card { background: rgba(188,0,237,0.06); border: 1px solid rgba(188,0,237,0.2); border-radius: 12px; padding: 1.2rem; text-decoration: none; color: #ccc; transition: all 0.2s; display: block; overflow: hidden; }
+.sales-nav-card:hover { background: rgba(188,0,237,0.12); border-color: var(--lux-primary); color: var(--lux-secondary); transform: translateY(-2px); }
+.sales-nav-card.active-card { border-color: var(--lux-primary); background: rgba(188,0,237,0.1); }
+.sales-nav-card h6 { color: #eee; margin-bottom: 4px; font-size: 0.9rem; }
+.sales-nav-card p { color: #777; font-size: 0.75rem; margin: 0; }
+.task-item { display: flex; align-items: center; gap: 10px; padding: 10px 14px; background: rgba(255,255,255,0.03); border: 1px solid rgba(188,0,237,0.12); border-radius: 8px; margin-bottom: 6px; }
+.task-item.completed { opacity: 0.5; }
+.task-item.completed .task-title { text-decoration: line-through; }
+.task-title { flex: 1; color: #eee; font-size: 0.85rem; }
+.task-priority { font-size: 0.65rem; text-transform: uppercase; font-weight: 600; padding: 2px 8px; border-radius: 4px; }
+.task-priority.high { background: rgba(255,107,107,0.2); color: #ff6b6b; }
+.task-priority.medium { background: rgba(255,193,7,0.2); color: #ffc107; }
+.task-priority.low { background: rgba(0,191,255,0.2); color: #00bfff; }
+.task-date { color: #666; font-size: 0.72rem; }
+.task-delete { background: none; border: none; color: #666; cursor: pointer; padding: 2px; }
+.task-delete:hover { color: #ff6b6b; }
+@media (max-width: 991px) {
+  .stat-card { flex: 1 1 calc(33.333% - 12px); }
+  .sales-nav-grid { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 767px) {
+  .stat-card { flex: 1 1 calc(50% - 12px); }
+  .sales-nav-grid { grid-template-columns: 1fr; }
+  .deal-detail-panel { width: 100%; right: -100%; }
+}
 </style>
 
-<div class="container-fluid p-4">
-  <div class="d-flex justify-content-between align-items-center mb-4">
-    <h1><i data-feather="users"></i> LUX CRM</h1>
-    <div>
-      <button class="btn btn-primary me-2" data-bs-toggle="modal" data-bs-target="#newDealModal">
-        <i data-feather="plus"></i> New Deal
-      </button>
-      <button class="btn btn-outline-primary" data-bs-toggle="modal" data-bs-target="#newCustomerModal">
-        <i data-feather="user-plus"></i> New Customer
-      </button>
+<div class="sales-hub">
+  <div class="crm-header">
+    <div class="hub-selector">
+      <a href="{{ url_for('main.lux_crm') }}" class="active">Sales Hub</a>
+      <a href="{{ url_for('main.dashboard') }}">Marketing Hub</a>
+    </div>
+    <div class="d-flex justify-content-between align-items-center">
+      <div>
+        <h2 class="mb-0" style="color: #eee;"><i data-feather="briefcase" style="color: var(--lux-primary);"></i> Sales Hub</h2>
+        <small style="color: #888;">Action-driven CRM workspace</small>
+      </div>
+      <div class="d-flex gap-2 flex-wrap">
+        <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#newDealModal">
+          <i data-feather="plus" style="width:16px;height:16px;"></i> New Deal
+        </button>
+        <a href="{{ url_for('main.contacts') }}" class="btn btn-outline-light">
+          <i data-feather="users" style="width:16px;height:16px;"></i> Contacts
+        </a>
+      </div>
     </div>
   </div>
 
-  <!-- Navigation Tabs - Core CRM Features Only -->
-  <div class="crm-nav">
-    <button class="crm-tab active" data-section="deals"><i data-feather="briefcase"></i> Deals & Pipeline</button>
-    <button class="crm-tab" data-section="customers"><i data-feather="users"></i> Customers</button>
-    <button class="crm-tab" data-section="lead-scoring"><i data-feather="trending-up"></i> Lead Scoring</button>
-    <button class="crm-tab" data-section="segments"><i data-feather="filter"></i> Segments</button>
-    <button class="crm-tab" data-section="crm-analytics"><i data-feather="bar-chart-2"></i> CRM Analytics</button>
+  <div class="stats-row">
+    <div class="stat-card">
+      <div class="stat-value" style="color: #00bfff;">{{ activity_stats.new_leads_this_week|default(0) }}</div>
+      <div class="stat-label">New Leads</div>
+      <div class="stat-sub">This week</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value">{{ activity_stats.active_deals|default(0) }}</div>
+      <div class="stat-label">Open Deals</div>
+      <div class="stat-sub">Worth ${{ deals|map(attribute='value')|sum|int }}</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value" style="color: #ff6b6b;">{{ activity_stats.stale_deals|default(0) }}</div>
+      <div class="stat-label">Need Follow-up</div>
+      <div class="stat-sub">Stale deals</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value" style="color: #00ff88;">{{ activity_stats.hot_leads|default(0) }}</div>
+      <div class="stat-label">Hot Leads</div>
+      <div class="stat-sub">Score 70+</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value" style="color: var(--lux-primary);">{{ activity_stats.deals_won_this_month|default(0) }}</div>
+      <div class="stat-label">Won This Month</div>
+      <div class="stat-sub">Closed deals</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value">${{ deals|map(attribute='value')|sum|int }}</div>
+      <div class="stat-label">Pipeline Value</div>
+      <div class="stat-sub">Total value</div>
+    </div>
   </div>
 
-  <!-- DEALS & PIPELINE -->
-  <div class="crm-section active" data-section="deals">
-    <!-- Activity Stats Row -->
-    <div class="row mb-4">
-      <div class="col-md-2 col-sm-4 mb-3">
-        <div class="stat-card">
-          <div class="stat-value" style="color: #00bfff;">{{ activity_stats.new_leads_this_week|default(0) }}</div>
-          <div class="stat-label">New Leads This Week</div>
-        </div>
-      </div>
-      <div class="col-md-2 col-sm-4 mb-3">
-        <div class="stat-card">
-          <div class="stat-value">{{ activity_stats.active_deals|default(0) }}</div>
-          <div class="stat-label">Active Deals</div>
-        </div>
-      </div>
-      <div class="col-md-2 col-sm-4 mb-3">
-        <div class="stat-card">
-          <div class="stat-value" style="color: #ff6b6b;">{{ activity_stats.stale_deals|default(0) }}</div>
-          <div class="stat-label">Need Follow-up</div>
-        </div>
-      </div>
-      <div class="col-md-2 col-sm-4 mb-3">
-        <div class="stat-card">
-          <div class="stat-value" style="color: #00ff88;">{{ activity_stats.hot_leads|default(0) }}</div>
-          <div class="stat-label">Hot Leads</div>
-        </div>
-      </div>
-      <div class="col-md-2 col-sm-4 mb-3">
-        <div class="stat-card">
-          <div class="stat-value" style="color: #bc00ed;">{{ activity_stats.deals_won_this_month|default(0) }}</div>
-          <div class="stat-label">Deals Won</div>
-        </div>
-      </div>
-      <div class="col-md-2 col-sm-4 mb-3">
-        <div class="stat-card">
-          <div class="stat-value">{{ activity_stats.total_contacts|default(0) }}</div>
-          <div class="stat-label">Total Contacts</div>
-        </div>
-      </div>
-    </div>
+  <div class="quick-actions">
+    <a href="{{ url_for('main.contacts') }}" class="quick-action-btn">
+      <i data-feather="user-plus" style="width:16px;height:16px;"></i> Add New Lead
+    </a>
+    <a href="{{ url_for('main.marketing_calendar') }}" class="quick-action-btn">
+      <i data-feather="calendar" style="width:16px;height:16px;"></i> Schedule Meeting
+    </a>
+    <button class="quick-action-btn" data-bs-toggle="modal" data-bs-target="#newDealModal">
+      <i data-feather="plus-circle" style="width:16px;height:16px;"></i> Create Deal
+    </button>
+    <a href="{{ url_for('main.campaigns') }}" class="quick-action-btn">
+      <i data-feather="send" style="width:16px;height:16px;"></i> Quick Campaign
+    </a>
+  </div>
 
+  <div class="crm-tabs">
+    <button class="crm-tab active" data-section="pipeline"><i data-feather="git-branch" style="width:14px;height:14px;"></i> Pipeline</button>
+    <button class="crm-tab" data-section="deals-list"><i data-feather="list" style="width:14px;height:14px;"></i> Deal List</button>
+    <button class="crm-tab" data-section="customers"><i data-feather="users" style="width:14px;height:14px;"></i> Customers</button>
+    <button class="crm-tab" data-section="lead-scoring"><i data-feather="trending-up" style="width:14px;height:14px;"></i> Lead Scoring</button>
+    <button class="crm-tab" data-section="crm-analytics"><i data-feather="bar-chart-2" style="width:14px;height:14px;"></i> Analytics</button>
+    <button class="crm-tab" data-section="tasks"><i data-feather="check-square" style="width:14px;height:14px;"></i> Tasks</button>
+  </div>
+
+  <!-- PIPELINE VIEW (KANBAN) -->
+  <div class="crm-section active" data-section="pipeline">
     <div class="row">
-      <!-- Next Actions Panel -->
-      <div class="col-lg-4 mb-4">
-        <div class="card action-card h-100">
-          <div class="card-header" style="background: transparent; border-bottom: 1px solid rgba(188,0,237,0.3);">
-            <h5 class="mb-0" style="color: #00ffb4;"><i data-feather="zap"></i> Next Actions</h5>
+      <div class="col-lg-3 mb-4">
+        <div class="action-panel h-100">
+          <div class="p-3" style="border-bottom: 1px solid rgba(188,0,237,0.2);">
+            <h6 style="color: var(--lux-secondary); margin: 0;"><i data-feather="zap" style="width:16px;height:16px;"></i> Next Actions</h6>
           </div>
-          <div class="card-body p-0">
-            {% if next_actions %}
-              {% for action in next_actions %}
-              <div class="action-item {{ action.type }}">
-                <i data-feather="{{ action.icon }}" style="width: 20px; height: 20px; {% if action.type == 'warning' %}color: #ffc107;{% elif action.type == 'success' %}color: #00ff88;{% else %}color: #00bfff;{% endif %}"></i>
-                <div style="flex: 1;">
-                  <div style="color: #eee; font-size: 0.9rem;">{{ action.action }}</div>
-                  <span class="{% if action.priority == 'high' %}priority-high{% else %}priority-medium{% endif %}" style="font-size: 0.75rem; text-transform: uppercase;">{{ action.priority }} priority</span>
-                </div>
-                <button class="btn btn-sm btn-outline-light" style="padding: 4px 8px;"><i data-feather="arrow-right" style="width: 14px; height: 14px;"></i></button>
+          {% if next_actions %}
+            {% for action in next_actions %}
+            <div class="action-item {{ action.type }}">
+              <i data-feather="{{ action.icon }}" style="width:18px;height:18px;{% if action.type == 'warning' %}color:#ffc107;{% elif action.type == 'success' %}color:#00ff88;{% else %}color:#00bfff;{% endif %}"></i>
+              <div style="flex:1;">
+                <div style="color:#eee;font-size:0.85rem;">{{ action.action }}</div>
+                <span class="{% if action.priority == 'high' %}priority-high{% else %}priority-medium{% endif %}">{{ action.priority }}</span>
               </div>
-              {% endfor %}
-            {% else %}
-              <div class="text-center p-4" style="color: #888;">
-                <i data-feather="check-circle" style="width: 40px; height: 40px; color: #00ff88;"></i>
-                <p class="mt-2 mb-0">All caught up! No urgent actions.</p>
-              </div>
-            {% endif %}
-          </div>
+            </div>
+            {% endfor %}
+          {% else %}
+            <div class="text-center p-4" style="color: #666;">
+              <i data-feather="check-circle" style="width:36px;height:36px;color:#00ff88;"></i>
+              <p class="mt-2 mb-0" style="font-size:0.85rem;">All caught up!</p>
+            </div>
+          {% endif %}
         </div>
       </div>
 
-      <!-- Pipeline Stages with Action Labels -->
-      <div class="col-lg-8 mb-4">
-        <div class="card" style="background: rgba(0,0,0,0.3); border: 1px solid rgba(188,0,237,0.3);">
-          <div class="card-header d-flex justify-content-between" style="background: transparent; border-bottom: 1px solid rgba(188,0,237,0.3);">
-            <h5 class="mb-0" style="color: #00ffb4;"><i data-feather="git-branch"></i> Sales Pipeline</h5>
-            <span style="color: #00ffb4;">{{ activity_stats.active_deals|default(0) }} active deals</span>
-          </div>
-          <div class="card-body">
-            <div class="row">
-              {% set action_stages = [
-                {'key': 'prospecting', 'label': 'Make Contact', 'action': 'Reach out', 'color': '#00bfff'},
-                {'key': 'qualification', 'label': 'Qualify Need', 'action': 'Discover pain', 'color': '#bc00ed'},
-                {'key': 'proposal', 'label': 'Send Proposal', 'action': 'Present offer', 'color': '#ff6b6b'},
-                {'key': 'negotiation', 'label': 'Close Deal', 'action': 'Negotiate terms', 'color': '#ffc107'},
-                {'key': 'won', 'label': 'Won', 'action': 'Celebrate!', 'color': '#00ff88'},
-                {'key': 'lost', 'label': 'Lost', 'action': 'Learn & iterate', 'color': '#888'}
-              ] %}
-              {% for stage in action_stages %}
-              {% set stage_deals = deals|selectattr('stage', 'equalto', stage.key)|list %}
-              {% set total_deals = deals|length if deals else 1 %}
-              {% set progress = ((stage_deals|length / total_deals) * 100)|int if total_deals > 0 else 0 %}
-              <div class="col-lg-2 col-md-4 col-6 mb-3">
-                <div class="stat-card stage-card">
-                  <div class="stage-action">{{ stage.action }}</div>
-                  <div class="stage-label" style="color: {{ stage.color }};">{{ stage.label }}</div>
-                  <div class="stage-count">{{ stage_deals|length }}</div>
-                  <div class="stage-progress" style="width: {{ progress }}%;"></div>
+      <div class="col-lg-9">
+        {% if deals %}
+        <div class="kanban-board">
+          {% set stages = [
+            {'key': 'prospecting', 'label': 'Prospecting', 'color': '#00bfff', 'action': 'Make contact'},
+            {'key': 'qualification', 'label': 'Qualification', 'color': '#bc00ed', 'action': 'Discover need'},
+            {'key': 'proposal', 'label': 'Proposal', 'color': '#ff6b6b', 'action': 'Present offer'},
+            {'key': 'negotiation', 'label': 'Negotiation', 'color': '#ffc107', 'action': 'Close terms'},
+            {'key': 'won', 'label': 'Won', 'color': '#00ff88', 'action': 'Onboard'},
+            {'key': 'lost', 'label': 'Lost', 'color': '#666', 'action': 'Learn'}
+          ] %}
+          {% for stage in stages %}
+          {% set stage_deals = deals|selectattr('stage', 'equalto', stage.key)|list %}
+          <div class="kanban-column">
+            <div class="kanban-header">
+              <div>
+                <h6 style="color: {{ stage.color }};">{{ stage.label }}</h6>
+                <div class="kanban-value">${{ stage_deals|map(attribute='value')|sum|int }}</div>
+              </div>
+              <span class="kanban-count">{{ stage_deals|length }}</span>
+            </div>
+            <div class="kanban-body" data-stage="{{ stage.key }}" ondragover="handleDragOver(event)" ondrop="handleDrop(event, '{{ stage.key }}')" ondragleave="handleDragLeave(event)">
+              {% for deal in stage_deals %}
+              <div class="deal-card" draggable="true" data-deal-id="{{ deal.id }}" onclick="openDealPanel({{ deal.id }})" ondragstart="handleDragStart(event, {{ deal.id }})">
+                <div class="deal-title">{{ deal.title }}</div>
+                <div class="deal-contact">
+                  <i data-feather="user" style="width:12px;height:12px;"></i>
+                  {{ deal.contact.full_name if deal.contact else 'No contact' }}
+                </div>
+                <div class="deal-meta">
+                  <span class="deal-value">${{ deal.value|int if deal.value else 0 }}</span>
+                  <span class="deal-date">
+                    {% if deal in stale_deals %}
+                      <span class="stale-indicator">STALE</span>
+                    {% elif deal.expected_close_date %}
+                      {{ deal.expected_close_date.strftime('%b %d') }}
+                    {% endif %}
+                  </span>
+                </div>
+                <div class="prob-bar">
+                  <div class="prob-fill" style="width: {{ (deal.probability * 100)|int }}%;"></div>
                 </div>
               </div>
               {% endfor %}
             </div>
           </div>
+          {% endfor %}
         </div>
+        {% else %}
+        <div class="zero-state">
+          <i data-feather="target" style="width:64px;height:64px;color:var(--lux-primary);margin-bottom:1rem;"></i>
+          <h3>Build Your Sales Pipeline</h3>
+          <p>Add your first deal to start tracking opportunities. Drag deals between stages as they progress through your sales process.</p>
+          <button class="btn btn-primary btn-lg" data-bs-toggle="modal" data-bs-target="#newDealModal">
+            <i data-feather="plus"></i> Create First Deal
+          </button>
+        </div>
+        {% endif %}
       </div>
     </div>
+  </div>
 
-    <!-- Deals Table -->
-    <div class="card" style="background: rgba(0,0,0,0.3); border: 1px solid rgba(188,0,237,0.3);">
-      <div class="card-header d-flex justify-content-between" style="background: transparent; border-bottom: 1px solid rgba(188,0,237,0.3);">
-        <h5 class="mb-0" style="color: #00ffb4;"><i data-feather="list"></i> All Deals</h5>
-        <small style="color: #888;">Total Value: ${{ deals|map(attribute='value')|sum|int }}</small>
+  <!-- DEAL LIST VIEW -->
+  <div class="crm-section" data-section="deals-list">
+    <div class="card" style="background: rgba(0,0,0,0.3); border: 1px solid rgba(188,0,237,0.2); overflow: hidden;">
+      <div class="card-header d-flex justify-content-between" style="background:transparent;border-bottom:1px solid rgba(188,0,237,0.2);">
+        <h5 class="mb-0" style="color:var(--lux-secondary);">All Deals</h5>
+        <small style="color:#888;">{{ deals|length }} deals | ${{ deals|map(attribute='value')|sum|int }} total</small>
       </div>
       <div class="card-body">
         {% if deals %}
         <div class="table-responsive">
           <table class="table table-hover">
             <thead>
-              <tr style="color: #00ffb4;">
+              <tr style="color:var(--lux-secondary);">
                 <th>Deal</th>
-                <th>Customer</th>
+                <th>Contact</th>
                 <th>Stage</th>
-                <th>Status</th>
                 <th>Value</th>
+                <th>Probability</th>
                 <th>Close Date</th>
-                <th>Action</th>
+                <th>Actions</th>
               </tr>
             </thead>
             <tbody>
               {% for deal in deals %}
-              {% set is_stale = deal in stale_deals %}
-              <tr style="{% if is_stale %}background: rgba(255,107,107,0.1);{% endif %}">
+              <tr style="cursor:pointer;{% if deal in stale_deals %}background:rgba(255,107,107,0.06);{% endif %}" onclick="openDealPanel({{ deal.id }})">
                 <td>
-                  <strong>{{ deal.title }}</strong>
-                  {% if is_stale %}<span class="stale-badge ms-2">NEEDS ATTENTION</span>{% endif %}
+                  <strong style="color:#eee;">{{ deal.title }}</strong>
+                  {% if deal in stale_deals %}<span class="stale-indicator ms-2">STALE</span>{% endif %}
                 </td>
-                <td>{{ deal.contact.full_name if deal.contact else '-' }}</td>
+                <td style="color:#888;">{{ deal.contact.full_name if deal.contact else '-' }}</td>
                 <td>
-                  {% set stage_info = {'prospecting': 'Make Contact', 'qualification': 'Qualify Need', 'proposal': 'Send Proposal', 'negotiation': 'Close Deal', 'won': 'Won', 'lost': 'Lost'} %}
-                  <span class="badge" style="background: rgba(188,0,237,0.3);">{{ stage_info.get(deal.stage, deal.stage.title()) }}</span>
+                  {% set stage_colors = {'prospecting': '#00bfff', 'qualification': '#bc00ed', 'proposal': '#ff6b6b', 'negotiation': '#ffc107', 'won': '#00ff88', 'lost': '#666'} %}
+                  <span class="badge" style="background:{{ stage_colors.get(deal.stage, '#888') }}22;color:{{ stage_colors.get(deal.stage, '#888') }};">{{ deal.stage|title }}</span>
                 </td>
+                <td style="color:var(--lux-secondary);font-weight:600;">${{ deal.value|int if deal.value else 0 }}</td>
                 <td>
-                  <div class="progress" style="height: 8px; width: 60px; background: rgba(255,255,255,0.1);">
-                    <div class="progress-bar" style="width: {{ (deal.probability * 100)|int }}%; background: linear-gradient(90deg, #bc00ed, #00ffb4);"></div>
+                  <div class="d-flex align-items-center gap-2">
+                    <div class="prob-bar" style="width:60px;">
+                      <div class="prob-fill" style="width:{{ (deal.probability * 100)|int }}%;"></div>
+                    </div>
+                    <small style="color:#888;">{{ (deal.probability * 100)|int }}%</small>
                   </div>
-                  <small style="color: #888;">{{ (deal.probability * 100)|int }}%</small>
                 </td>
-                <td style="color: #00ffb4;">${{ deal.value|int if deal.value else 0 }}</td>
-                <td style="color: #888;">{{ deal.expected_close_date.strftime('%b %d') if deal.expected_close_date else '-' }}</td>
+                <td style="color:#666;">{{ deal.expected_close_date.strftime('%b %d, %Y') if deal.expected_close_date else '-' }}</td>
                 <td>
-                  <button class="btn btn-sm btn-outline-primary" onclick="viewDeal({{ deal.id }})">
-                    {% if is_stale %}Follow Up{% else %}View{% endif %}
+                  <button class="btn btn-sm btn-outline-primary" onclick="event.stopPropagation();openDealPanel({{ deal.id }})">
+                    <i data-feather="eye" style="width:14px;height:14px;"></i>
                   </button>
                 </td>
               </tr>
@@ -216,153 +332,133 @@
         </div>
         {% else %}
         <div class="zero-state">
-          <i data-feather="target" style="width: 64px; height: 64px; color: #bc00ed; margin-bottom: 1rem;"></i>
-          <h3>Start Building Your Pipeline</h3>
-          <p>Your CRM is ready to help you close deals. Add your first deal to start tracking opportunities and get personalized coaching on your next steps.</p>
-          <button class="btn btn-primary btn-lg" data-bs-toggle="modal" data-bs-target="#newDealModal">
-            <i data-feather="plus"></i> Create Your First Deal
+          <p>No deals yet. Create your first deal to get started.</p>
+          <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#newDealModal">
+            <i data-feather="plus"></i> New Deal
           </button>
-          <div class="mt-3" style="color: #666; font-size: 0.9rem;">
-            <strong>Pro tip:</strong> Import contacts first, then create deals linked to them for full tracking.
-          </div>
         </div>
         {% endif %}
       </div>
     </div>
   </div>
 
-  <!-- CUSTOMERS -->
+  <!-- CUSTOMERS TAB -->
   <div class="crm-section" data-section="customers">
     <div class="row mb-4">
       <div class="col-md-3 mb-3">
         <div class="stat-card">
           <div class="stat-value">{{ all_contacts|length }}</div>
-          <div class="stat-label">Total Customers</div>
+          <div class="stat-label">Total Contacts</div>
         </div>
       </div>
       <div class="col-md-3 mb-3">
         <div class="stat-card">
-          {% set hot_leads = all_contacts|selectattr('lead_score')|selectattr('lead_score', 'ge', 70)|list %}
-          <div class="stat-value" style="color: #ff6b6b;">{{ hot_leads|length }}</div>
-          <div class="stat-label">Hot Leads (70+)</div>
+          <div class="stat-value" style="color:#ff6b6b;">{{ all_contacts|selectattr('lead_score')|selectattr('lead_score', 'ge', 70)|list|length }}</div>
+          <div class="stat-label">Hot Leads</div>
         </div>
       </div>
       <div class="col-md-3 mb-3">
         <div class="stat-card">
-          {% set subscribed = all_contacts|selectattr('is_subscribed')|list %}
-          <div class="stat-value" style="color: #00ff88;">{{ subscribed|length }}</div>
+          <div class="stat-value" style="color:#00ff88;">{{ all_contacts|selectattr('is_subscribed')|list|length }}</div>
           <div class="stat-label">Subscribed</div>
         </div>
       </div>
       <div class="col-md-3 mb-3">
         <div class="stat-card">
-          {% set with_notes = all_contacts|selectattr('notes')|list %}
-          <div class="stat-value" style="color: #bc00ed;">{{ with_notes|length }}</div>
-          <div class="stat-label">Have Notes</div>
+          <div class="stat-value" style="color:var(--lux-primary);">{{ deals|selectattr('stage', 'equalto', 'won')|list|length }}</div>
+          <div class="stat-label">Deals Won</div>
         </div>
       </div>
     </div>
 
-    <div class="card" style="background: rgba(0,0,0,0.3); border: 1px solid rgba(188,0,237,0.3);">
-      <div class="card-header d-flex justify-content-between align-items-center" style="background: transparent; border-bottom: 1px solid rgba(188,0,237,0.3);">
-        <h5 class="mb-0" style="color: #00ffb4;"><i data-feather="users"></i> Customer Directory</h5>
-        <button class="btn btn-outline-primary btn-sm" data-bs-toggle="modal" data-bs-target="#newCustomerModal">
-          <i data-feather="user-plus" style="width: 14px; height: 14px;"></i> Add Customer
-        </button>
+    <div class="card" style="background:rgba(0,0,0,0.3);border:1px solid rgba(188,0,237,0.2);overflow:hidden;">
+      <div class="card-header d-flex justify-content-between align-items-center" style="background:transparent;border-bottom:1px solid rgba(188,0,237,0.2);">
+        <h5 class="mb-0" style="color:var(--lux-secondary);">Customer Directory</h5>
+        <a href="{{ url_for('main.contacts') }}" class="btn btn-sm btn-outline-primary">View All Contacts</a>
       </div>
       <div class="card-body">
+        {% if all_contacts %}
         <div class="table-responsive">
           <table class="table table-hover">
             <thead>
-              <tr style="color: #00ffb4;">
+              <tr style="color:var(--lux-secondary);">
                 <th>Name</th>
                 <th>Email</th>
                 <th>Phone</th>
-                <th>Lead Score</th>
-                <th>Last Activity</th>
+                <th>Score</th>
                 <th>Segment</th>
-                <th>Notes</th>
-                <th></th>
+                <th>Last Activity</th>
               </tr>
             </thead>
             <tbody>
-              {% for contact in all_contacts %}
-              <tr style="cursor: pointer;" onclick="window.location='/customers/{{ contact.id }}'">
+              {% for contact in all_contacts[:50] %}
+              <tr class="customer-row" onclick="window.location='/contacts/{{ contact.id }}/edit'">
                 <td>
-                  <strong>{{ contact.full_name }}</strong>
-                  {% if contact.is_subscribed %}<i data-feather="mail" style="width: 12px; height: 12px; color: #00ff88; margin-left: 5px;" title="Subscribed"></i>{% endif %}
+                  <strong style="color:#eee;">{{ contact.full_name }}</strong>
+                  {% if contact.is_subscribed %}<i data-feather="mail" style="width:12px;height:12px;color:#00ff88;margin-left:4px;" title="Subscribed"></i>{% endif %}
                 </td>
-                <td style="color: #888;">{{ contact.email }}</td>
-                <td style="color: #888;">{{ contact.phone or '-' }}</td>
+                <td style="color:#888;">{{ contact.email }}</td>
+                <td style="color:#888;">{{ contact.phone or '-' }}</td>
                 <td>
                   {% set score = contact.lead_score or 0 %}
                   {% if score >= 70 %}
-                  <span class="badge" style="background: rgba(255,107,107,0.2); color: #ff6b6b;">{{ score }} Hot</span>
+                  <span class="badge badge-hot">{{ score }} Hot</span>
                   {% elif score >= 40 %}
-                  <span class="badge" style="background: rgba(255,193,7,0.2); color: #ffc107;">{{ score }} Warm</span>
+                  <span class="badge badge-warm">{{ score }} Warm</span>
                   {% else %}
-                  <span class="badge" style="background: rgba(136,136,136,0.2); color: #888;">{{ score }}</span>
+                  <span class="badge badge-cold">{{ score }}</span>
                   {% endif %}
                 </td>
-                <td style="color: #666;">{{ contact.last_activity.strftime('%b %d') if contact.last_activity else 'Never' }}</td>
-                <td><span class="badge" style="background: rgba(188,0,237,0.3);">{{ contact.segment|title }}</span></td>
-                <td>
-                  {% if contact.notes %}
-                  <i data-feather="file-text" style="width: 14px; height: 14px; color: #bc00ed;" title="{{ contact.notes[:50] }}..."></i>
-                  {% else %}
-                  <span style="color: #444;">-</span>
-                  {% endif %}
-                </td>
-                <td>
-                  <a href="/customers/{{ contact.id }}" class="btn btn-sm btn-outline-primary" onclick="event.stopPropagation();">
-                    <i data-feather="edit" style="width: 12px; height: 12px;"></i> Edit
-                  </a>
-                </td>
+                <td><span class="badge" style="background:rgba(188,0,237,0.2);color:var(--lux-primary);">{{ contact.segment|title if contact.segment else 'Lead' }}</span></td>
+                <td style="color:#666;">{{ contact.last_activity.strftime('%b %d') if contact.last_activity else 'Never' }}</td>
               </tr>
               {% endfor %}
             </tbody>
           </table>
         </div>
-        {% if not all_contacts %}
-        <div class="text-center py-4" style="color: #666;">
-          <i data-feather="users" style="width: 48px; height: 48px; margin-bottom: 1rem;"></i>
-          <p>No customers yet. Add your first customer to get started!</p>
+        {% else %}
+        <div class="text-center py-4" style="color:#666;">
+          <i data-feather="users" style="width:48px;height:48px;margin-bottom:1rem;"></i>
+          <p>No contacts yet. Import or add contacts to get started.</p>
         </div>
         {% endif %}
       </div>
     </div>
   </div>
 
-  <!-- LEAD SCORING -->
+  <!-- LEAD SCORING TAB -->
   <div class="crm-section" data-section="lead-scoring">
     <div class="row mb-4">
-      <div class="col-md-4">
+      <div class="col-md-4 mb-3">
         <div class="stat-card">
-          <div class="stat-value" style="color: #00ff00;">{% set hot = lead_scores|selectattr('lead_score', 'ge', 70)|list %}{{ hot|length }}</div>
+          <div class="stat-value" style="color:#ff6b6b;">{{ lead_scores|selectattr('lead_score', 'ge', 70)|list|length }}</div>
           <div class="stat-label">Hot Leads (70+)</div>
         </div>
       </div>
-      <div class="col-md-4">
+      <div class="col-md-4 mb-3">
         <div class="stat-card">
-          <div class="stat-value" style="color: #ffaa00;">{% set warm = lead_scores|selectattr('lead_score', 'ge', 40)|selectattr('lead_score', 'lt', 70)|list %}{{ warm|length }}</div>
+          <div class="stat-value" style="color:#ffc107;">{{ lead_scores|selectattr('lead_score', 'ge', 40)|selectattr('lead_score', 'lt', 70)|list|length }}</div>
           <div class="stat-label">Warm Leads (40-69)</div>
         </div>
       </div>
-      <div class="col-md-4">
+      <div class="col-md-4 mb-3">
         <div class="stat-card">
-          <div class="stat-value" style="color: #999;">{% set cold = lead_scores|selectattr('lead_score', 'lt', 40)|list %}{{ cold|length }}</div>
-          <div class="stat-label">Cold Leads (<40)</div>
+          <div class="stat-value" style="color:#888;">{{ lead_scores|selectattr('lead_score', 'lt', 40)|list|length }}</div>
+          <div class="stat-label">Cold Leads (&lt;40)</div>
         </div>
       </div>
     </div>
 
-    <div class="card">
-      <div class="card-header"><h5 class="mb-0">Lead Scoring</h5></div>
+    <div class="card" style="background:rgba(0,0,0,0.3);border:1px solid rgba(188,0,237,0.2);overflow:hidden;">
+      <div class="card-header" style="background:transparent;border-bottom:1px solid rgba(188,0,237,0.2);">
+        <h5 class="mb-0" style="color:var(--lux-secondary);">Lead Scores</h5>
+      </div>
       <div class="card-body">
+        {% if lead_scores %}
         <div class="table-responsive">
-          <table class="table">
+          <table class="table table-hover">
             <thead>
-              <tr style="color: #00ffb4;">
+              <tr style="color:var(--lux-secondary);">
                 <th>Contact</th>
                 <th>Score</th>
                 <th>Grade</th>
@@ -374,9 +470,13 @@
             <tbody>
               {% for score in lead_scores %}
               <tr>
-                <td><strong>{{ score.contact.full_name }}</strong></td>
-                <td>{{ (score.lead_score)|int }}/100</td>
-                <td><span class="badge bg-{{ 'success' if score.lead_score >= 70 else 'warning' if score.lead_score >= 40 else 'secondary' }}">{{ 'A' if score.lead_score >= 80 else 'B' if score.lead_score >= 60 else 'C' }}</span></td>
+                <td><strong style="color:#eee;">{{ score.contact.full_name if score.contact else 'Unknown' }}</strong></td>
+                <td style="color:var(--lux-secondary);font-weight:600;">{{ (score.lead_score)|int }}/100</td>
+                <td>
+                  {% if score.lead_score >= 80 %}<span class="badge" style="background:#00ff88;">A</span>
+                  {% elif score.lead_score >= 60 %}<span class="badge" style="background:#ffc107;color:#000;">B</span>
+                  {% else %}<span class="badge" style="background:#888;">C</span>{% endif %}
+                </td>
                 <td>{{ (score.engagement_score)|int }}</td>
                 <td>{{ (score.behavior_score)|int }}</td>
                 <td>{{ (score.fit_score)|int }}</td>
@@ -385,306 +485,504 @@
             </tbody>
           </table>
         </div>
+        {% else %}
+        <div class="text-center py-4" style="color:#666;">
+          <p>No lead scores yet. Scores are calculated based on contact engagement.</p>
+        </div>
+        {% endif %}
       </div>
     </div>
   </div>
 
-  <!-- CUSTOMER SEGMENTS -->
-  <div class="crm-section" data-section="segments">
-    <div class="row mb-4">
-      <div class="col-12">
-        <button class="btn btn-primary mb-3"><i data-feather="plus"></i> Create Segment</button>
-      </div>
-    </div>
-
-    <div class="row">
-      <div class="col-md-6 mb-3">
-        <div class="card">
-          <div class="card-body">
-            <h6 style="color: #00ffb4;">High Value Customers</h6>
-            <p class="text-muted small">LTV > $500</p>
-            <small>Contacts: 0</small>
-          </div>
-        </div>
-      </div>
-      <div class="col-md-6 mb-3">
-        <div class="card">
-          <div class="card-body">
-            <h6 style="color: #00ffb4;">Premium Members</h6>
-            <p class="text-muted small">Active subscription</p>
-            <small>Contacts: 0</small>
-          </div>
-        </div>
-      </div>
-      <div class="col-md-6 mb-3">
-        <div class="card">
-          <div class="card-body">
-            <h6 style="color: #00ffb4;">At Risk</h6>
-            <p class="text-muted small">No activity 60+ days</p>
-            <small>Contacts: 0</small>
-          </div>
-        </div>
-      </div>
-      <div class="col-md-6 mb-3">
-        <div class="card">
-          <div class="card-body">
-            <h6 style="color: #00ffb4;">Verified Age</h6>
-            <p class="text-muted small">ID verified customers</p>
-            <small>Contacts: 0</small>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- CRM-FOCUSED ANALYTICS (RFM, Churn, Membership) -->
+  <!-- CRM ANALYTICS TAB -->
   <div class="crm-section" data-section="crm-analytics">
     <div class="row mb-4">
-      <div class="col-md-3">
+      <div class="col-md-3 mb-3">
         <div class="stat-card">
           <div class="stat-value">${{ deals|map(attribute='value')|sum|int }}</div>
-          <div class="stat-label">Total Pipeline Value</div>
+          <div class="stat-label">Pipeline Value</div>
         </div>
       </div>
-      <div class="col-md-3">
+      <div class="col-md-3 mb-3">
         <div class="stat-card">
-          <div class="stat-value">{{ deals|selectattr('stage', 'equalto', 'won')|list|length }}</div>
+          <div class="stat-value" style="color:#00ff88;">{{ deals|selectattr('stage', 'equalto', 'won')|list|length }}</div>
           <div class="stat-label">Deals Won</div>
         </div>
       </div>
-      <div class="col-md-3">
+      <div class="col-md-3 mb-3">
         <div class="stat-card">
           <div class="stat-value">
-            {% if deals|length > 0 %}
-              {{ (deals|selectattr('stage', 'equalto', 'won')|list|length / deals|length * 100)|int }}%
-            {% else %}
-              0%
-            {% endif %}
+            {% if deals|length > 0 %}{{ (deals|selectattr('stage', 'equalto', 'won')|list|length / deals|length * 100)|int }}%{% else %}0%{% endif %}
           </div>
           <div class="stat-label">Win Rate</div>
         </div>
       </div>
-      <div class="col-md-3">
+      <div class="col-md-3 mb-3">
         <div class="stat-card">
-          <div class="stat-value">$0</div>
-          <div class="stat-label">Customer Churn Value</div>
+          {% set won_deals = deals|selectattr('stage', 'equalto', 'won')|list %}
+          <div class="stat-value">${{ (won_deals|map(attribute='value')|sum / won_deals|length)|int if won_deals else 0 }}</div>
+          <div class="stat-label">Avg Deal Size</div>
         </div>
       </div>
     </div>
 
-    <div class="card">
-      <div class="card-header"><h5 class="mb-0">RFM Analysis (Recency, Frequency, Monetary)</h5></div>
-      <div class="card-body">
-        <p class="text-muted">RFM segmentation helps identify your most valuable customers and those at risk of churning.</p>
-        <table class="table">
-          <thead>
-            <tr style="color: #00ffb4;">
-              <th>Segment</th>
-              <th>Count</th>
-              <th>Avg LTV</th>
-              <th>Action</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td>Champions (High R, F, M)</td>
-              <td>0</td>
-              <td>$0</td>
-              <td><small class="text-success">Retain & Grow</small></td>
-            </tr>
-            <tr>
-              <td>At Risk (Low R, F, M)</td>
-              <td>0</td>
-              <td>$0</td>
-              <td><small class="text-warning">Win Back</small></td>
-            </tr>
-          </tbody>
-        </table>
+    <div class="row">
+      <div class="col-md-6 mb-4">
+        <div class="card" style="background:rgba(0,0,0,0.3);border:1px solid rgba(188,0,237,0.2);overflow:hidden;">
+          <div class="card-header" style="background:transparent;border-bottom:1px solid rgba(188,0,237,0.2);">
+            <h6 style="color:var(--lux-secondary);">Pipeline by Stage</h6>
+          </div>
+          <div class="card-body">
+            <canvas id="pipelineChart" height="200"></canvas>
+          </div>
+        </div>
+      </div>
+      <div class="col-md-6 mb-4">
+        <div class="card" style="background:rgba(0,0,0,0.3);border:1px solid rgba(188,0,237,0.2);overflow:hidden;">
+          <div class="card-header" style="background:transparent;border-bottom:1px solid rgba(188,0,237,0.2);">
+            <h6 style="color:var(--lux-secondary);">Deal Value by Stage</h6>
+          </div>
+          <div class="card-body">
+            <canvas id="valueChart" height="200"></canvas>
+          </div>
+        </div>
       </div>
     </div>
+  </div>
+
+  <!-- TASKS TAB -->
+  <div class="crm-section" data-section="tasks">
+    <div class="card" style="background:rgba(0,0,0,0.3);border:1px solid rgba(188,0,237,0.2);overflow:hidden;">
+      <div class="card-header d-flex justify-content-between align-items-center" style="background:transparent;border-bottom:1px solid rgba(188,0,237,0.2);">
+        <h5 class="mb-0" style="color:var(--lux-secondary);">Today's Tasks</h5>
+        <button class="btn btn-sm btn-primary" onclick="document.getElementById('taskForm').style.display=document.getElementById('taskForm').style.display==='none'?'flex':'none'">
+          <i data-feather="plus" style="width:14px;height:14px;"></i> Add Task
+        </button>
+      </div>
+      <div class="card-body">
+        <div id="taskForm" style="display:none;gap:8px;flex-wrap:wrap;margin-bottom:1rem;padding:12px;background:rgba(188,0,237,0.06);border-radius:8px;align-items:flex-end;">
+          <div style="flex:2;min-width:180px;">
+            <label class="form-label" style="font-size:0.75rem;">Task</label>
+            <input type="text" class="form-control form-control-sm" id="taskTitle" placeholder="What needs to be done?">
+          </div>
+          <div style="flex:0 0 110px;">
+            <label class="form-label" style="font-size:0.75rem;">Priority</label>
+            <select class="form-select form-select-sm" id="taskPriority">
+              <option value="high">High</option>
+              <option value="medium" selected>Medium</option>
+              <option value="low">Low</option>
+            </select>
+          </div>
+          <div style="flex:1;min-width:140px;">
+            <label class="form-label" style="font-size:0.75rem;">Assign to</label>
+            <select class="form-select form-select-sm" id="taskAssign">
+              <option value="">None</option>
+              {% for deal in deals %}
+              <option value="deal:{{ deal.id }}">Deal: {{ deal.title }}</option>
+              {% endfor %}
+              {% for contact in all_contacts[:20] %}
+              <option value="contact:{{ contact.id }}">Contact: {{ contact.full_name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div style="flex:0 0 140px;">
+            <label class="form-label" style="font-size:0.75rem;">Due Date</label>
+            <input type="date" class="form-control form-control-sm" id="taskDate">
+          </div>
+          <div style="flex:0 0 auto;">
+            <button class="btn btn-sm btn-primary" onclick="addTask()">Add</button>
+          </div>
+        </div>
+        <div id="taskList"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SALES TOOLS NAVIGATION -->
+  <div style="margin-top:2rem;">
+    <h5 style="color:var(--lux-secondary);margin-bottom:1rem;"><i data-feather="grid" style="width:18px;height:18px;"></i> Sales Tools</h5>
+    <div class="sales-nav-grid">
+      <a href="{{ url_for('main.crm_hub') }}" class="sales-nav-card">
+        <h6><i data-feather="layers" style="width:16px;height:16px;color:var(--lux-primary);"></i> CRM Features</h6>
+        <p>Complete feature suite</p>
+      </a>
+      <a href="{{ url_for('main.contacts') }}" class="sales-nav-card">
+        <h6><i data-feather="users" style="width:16px;height:16px;color:var(--lux-primary);"></i> Contacts</h6>
+        <p>Customer database & profiles</p>
+      </a>
+      <a href="{{ url_for('main.lux_crm') }}" class="sales-nav-card active-card">
+        <h6><i data-feather="git-branch" style="width:16px;height:16px;color:var(--lux-secondary);"></i> Pipeline</h6>
+        <p>Visual Kanban board</p>
+      </a>
+      <a href="{{ url_for('main.agents_hub') }}" class="sales-nav-card">
+        <h6><i data-feather="cpu" style="width:16px;height:16px;color:var(--lux-primary);"></i> AI Agents</h6>
+        <p>Sales AI assistance</p>
+      </a>
+      <a href="{{ url_for('main.analytics_hub') }}" class="sales-nav-card">
+        <h6><i data-feather="bar-chart-2" style="width:16px;height:16px;color:var(--lux-primary);"></i> Analytics</h6>
+        <p>Revenue & conversion metrics</p>
+      </a>
+      <a href="{{ url_for('main.automation_dashboard') }}" class="sales-nav-card">
+        <h6><i data-feather="zap" style="width:16px;height:16px;color:var(--lux-primary);"></i> Automations</h6>
+        <p>Sales workflow triggers</p>
+      </a>
+    </div>
+  </div>
+</div>
+
+<!-- Deal Detail Slide Panel -->
+<div class="deal-detail-overlay" id="dealOverlay" onclick="closeDealPanel()"></div>
+<div class="deal-detail-panel" id="dealPanel">
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <h5 style="color:var(--lux-secondary);margin:0;" id="panelTitle">Deal Details</h5>
+    <button class="btn btn-sm btn-outline-light" onclick="closeDealPanel()"><i data-feather="x" style="width:16px;height:16px;"></i></button>
+  </div>
+  <div id="dealPanelContent">
+    <div class="text-center py-5" style="color:#888;">Loading...</div>
   </div>
 </div>
 
 <!-- New Deal Modal -->
 <div class="modal fade" id="newDealModal" tabindex="-1">
-  <div class="modal-dialog modal-lg">
-    <div class="modal-content bg-dark">
-      <div class="modal-header border-bottom" style="border-bottom-color: rgba(188,0,237,0.3) !important;">
-        <h5 class="modal-title" style="color: #00ffb4;">Create Deal</h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" style="color:var(--lux-secondary);">New Deal</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
       </div>
-      <form id="newDealForm">
-        <div class="modal-body">
-          <div class="mb-3">
-            <label class="form-label">Deal Title</label>
-            <input type="text" class="form-control" id="dealTitle" placeholder="e.g., ABC Corp - Q1 Campaign" required>
+      <div class="modal-body">
+        <div class="mb-3">
+          <label class="form-label">Deal Title</label>
+          <input type="text" class="form-control" id="dealTitle" placeholder="e.g., Website Redesign Project">
+        </div>
+        <div class="row">
+          <div class="col-md-6 mb-3">
+            <label class="form-label">Value ($)</label>
+            <input type="number" class="form-control" id="dealValue" placeholder="5000" value="0">
           </div>
-          <div class="row">
-            <div class="col-md-6 mb-3">
-              <label class="form-label">Customer</label>
-              <select class="form-select" id="dealContact">
-                <option value="">-- Select customer --</option>
-                {% for contact in all_contacts %}
-                <option value="{{ contact.id }}">{{ contact.full_name }}</option>
-                {% endfor %}
-              </select>
-            </div>
-            <div class="col-md-6 mb-3">
-              <label class="form-label">Value ($)</label>
-              <input type="number" class="form-control" id="dealValue" placeholder="50000" min="0" step="1000">
-            </div>
+          <div class="col-md-6 mb-3">
+            <label class="form-label">Stage</label>
+            <select class="form-select" id="dealStage">
+              <option value="prospecting">Prospecting</option>
+              <option value="qualification" selected>Qualification</option>
+              <option value="proposal">Proposal</option>
+              <option value="negotiation">Negotiation</option>
+            </select>
           </div>
-          <div class="row">
-            <div class="col-md-6 mb-3">
-              <label class="form-label">Stage</label>
-              <select class="form-select" id="dealStage">
-                <option value="prospecting">Prospecting</option>
-                <option value="qualification" selected>Qualification</option>
-                <option value="proposal">Proposal</option>
-                <option value="negotiation">Negotiation</option>
-                <option value="won">Won</option>
-                <option value="lost">Lost</option>
-              </select>
-            </div>
-            <div class="col-md-6 mb-3">
-              <label class="form-label">Probability (%)</label>
-              <input type="range" class="form-range" id="dealProbability" min="0" max="100" value="50">
-              <small class="text-muted">Current: <span id="probValue">50</span>%</small>
-            </div>
+        </div>
+        <div class="row">
+          <div class="col-md-6 mb-3">
+            <label class="form-label">Probability (%)</label>
+            <input type="number" class="form-control" id="dealProbability" min="0" max="100" value="50">
           </div>
-          <div class="mb-3">
-            <label class="form-label">Close Date</label>
+          <div class="col-md-6 mb-3">
+            <label class="form-label">Expected Close</label>
             <input type="date" class="form-control" id="dealCloseDate">
           </div>
         </div>
-        <div class="modal-footer">
-          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-          <button type="submit" class="btn btn-primary">Create Deal</button>
+        <div class="mb-3">
+          <label class="form-label">Contact</label>
+          <select class="form-select" id="dealContact">
+            <option value="">-- Select Contact --</option>
+            {% for contact in all_contacts %}
+            <option value="{{ contact.id }}">{{ contact.full_name }} ({{ contact.email }})</option>
+            {% endfor %}
+          </select>
         </div>
-      </form>
-    </div>
-  </div>
-</div>
-
-<!-- New Customer Modal -->
-<div class="modal fade" id="newCustomerModal" tabindex="-1">
-  <div class="modal-dialog">
-    <div class="modal-content bg-dark">
-      <div class="modal-header border-bottom" style="border-bottom-color: rgba(188,0,237,0.3) !important;">
-        <h5 class="modal-title" style="color: #00ffb4;">Add Customer</h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        <div class="mb-3">
+          <label class="form-label">Description</label>
+          <textarea class="form-control" id="dealDescription" rows="3" placeholder="Brief description of the deal..."></textarea>
+        </div>
       </div>
-      <form id="newCustomerForm">
-        <div class="modal-body">
-          <div class="mb-3">
-            <label class="form-label">Full Name</label>
-            <input type="text" class="form-control" id="custName" required>
-          </div>
-          <div class="mb-3">
-            <label class="form-label">Email</label>
-            <input type="email" class="form-control" id="custEmail" required>
-          </div>
-          <div class="mb-3">
-            <label class="form-label">Phone</label>
-            <input type="tel" class="form-control" id="custPhone">
-          </div>
-          <div class="mb-3">
-            <label class="form-label">Tags</label>
-            <input type="text" class="form-control" id="custTags" placeholder="VIP, Premium, Creator...">
-          </div>
-        </div>
-        <div class="modal-footer">
-          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-          <button type="submit" class="btn btn-primary">Add Customer</button>
-        </div>
-      </form>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-light" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-primary" onclick="createDeal()">Create Deal</button>
+      </div>
     </div>
   </div>
 </div>
 
-{% endblock %}
-
-{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
-document.addEventListener('DOMContentLoaded', function() {
-  // View customer profile
-  window.showCustomerProfile = function(contactId) {
-    const csrfToken = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
-    fetch(`/api/contacts/${contactId}`, {
-      headers: { 'X-CSRFToken': csrfToken }
-    })
-    .then(r => r.json())
-    .then(contact => {
-      alert(`Customer Profile:\n\nName: ${contact.full_name}\nEmail: ${contact.email}\nPhone: ${contact.phone || 'N/A'}\nTags: ${contact.tags || 'None'}`);
-    })
-    .catch(e => alert('Error loading profile: ' + e.message));
-  };
-
-  // Tab navigation - switch between CRM sections
-  document.querySelectorAll('.crm-tab').forEach(tab => {
-    tab.addEventListener('click', function(e) {
-      e.preventDefault();
-      const sectionName = this.dataset.section;
-      
-      // Remove active from all tabs and sections
-      document.querySelectorAll('.crm-tab').forEach(t => t.classList.remove('active'));
-      document.querySelectorAll('.crm-section').forEach(s => s.classList.remove('active'));
-      
-      // Add active to clicked tab and corresponding section
-      this.classList.add('active');
-      const section = document.querySelector(`.crm-section[data-section="${sectionName}"]`);
-      if (section) {
-        section.classList.add('active');
-      }
-    });
+document.querySelectorAll('.crm-tab').forEach(tab => {
+  tab.addEventListener('click', function() {
+    document.querySelectorAll('.crm-tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.crm-section').forEach(s => s.classList.remove('active'));
+    this.classList.add('active');
+    document.querySelector(`.crm-section[data-section="${this.dataset.section}"]`).classList.add('active');
+    if (this.dataset.section === 'crm-analytics') initCharts();
+    if (this.dataset.section === 'tasks') renderTasks();
+    feather.replace();
   });
+});
 
-  // Probability slider
-  const probSlider = document.getElementById('dealProbability');
-  if (probSlider) {
-    probSlider.addEventListener('input', function() {
-      document.getElementById('probValue').textContent = this.value;
-    });
-  }
+const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
+const jsonHeaders = {'Content-Type': 'application/json', 'X-CSRFToken': csrfToken};
+let draggedDealId = null;
+function handleDragStart(e, dealId) {
+  draggedDealId = dealId;
+  e.target.classList.add('dragging');
+  e.dataTransfer.effectAllowed = 'move';
+}
+function handleDragOver(e) {
+  e.preventDefault();
+  e.currentTarget.classList.add('drag-over');
+}
+function handleDragLeave(e) {
+  e.currentTarget.classList.remove('drag-over');
+}
+function handleDrop(e, newStage) {
+  e.preventDefault();
+  e.currentTarget.classList.remove('drag-over');
+  if (!draggedDealId) return;
+  fetch(`/crm/deals/${draggedDealId}/update-stage`, {
+    method: 'POST',
+    headers: jsonHeaders,
+    body: JSON.stringify({stage: newStage})
+  }).then(r => r.json()).then(data => {
+    if (data.success) location.reload();
+    else alert('Error: ' + (data.error || 'Failed to update stage'));
+  }).catch(err => alert('Network error'));
+}
 
-  // Create deal form
-  const dealForm = document.getElementById('newDealForm');
-  if (dealForm) {
-    dealForm.addEventListener('submit', function(e) {
-      e.preventDefault();
-      const csrfToken = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
-      
-      fetch('{{ url_for("main.create_deal") }}', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-CSRFToken': csrfToken
-        },
-        body: JSON.stringify({
-          title: document.getElementById('dealTitle').value,
-          contact_id: document.getElementById('dealContact').value || null,
-          value: parseFloat(document.getElementById('dealValue').value || 0),
-          stage: document.getElementById('dealStage').value,
-          probability: parseFloat(document.getElementById('dealProbability').value) / 100,
-          expected_close_date: document.getElementById('dealCloseDate').value || null,
-          description: ''
-        })
-      })
-      .then(r => r.json())
-      .then(d => {
-        if (d.success) {
-          alert('✓ Deal created!');
-          location.reload();
-        } else {
-          alert('Error: ' + (d.error || 'Unknown error'));
-        }
-      })
-      .catch(e => {
-        console.error('Deal creation error:', e);
-        alert('Error: ' + e.message);
+function createDeal() {
+  const data = {
+    title: document.getElementById('dealTitle').value,
+    value: document.getElementById('dealValue').value || 0,
+    stage: document.getElementById('dealStage').value,
+    probability: (document.getElementById('dealProbability').value || 50) / 100,
+    expected_close_date: document.getElementById('dealCloseDate').value || null,
+    contact_id: document.getElementById('dealContact').value || null,
+    description: document.getElementById('dealDescription').value
+  };
+  if (!data.title) { alert('Please enter a deal title'); return; }
+  fetch('/crm/deals/create', {
+    method: 'POST',
+    headers: jsonHeaders,
+    body: JSON.stringify(data)
+  }).then(r => r.json()).then(d => {
+    if (d.success) location.reload();
+    else alert('Error: ' + (d.error || 'Failed'));
+  }).catch(err => alert('Network error'));
+}
+
+function openDealPanel(dealId) {
+  document.getElementById('dealOverlay').classList.add('open');
+  document.getElementById('dealPanel').classList.add('open');
+  document.getElementById('dealPanelContent').innerHTML = '<div class="text-center py-5" style="color:#888;">Loading...</div>';
+  fetch(`/crm/deals/${dealId}/json`).then(r => r.json()).then(deal => {
+    let activitiesHtml = '';
+    if (deal.activities && deal.activities.length) {
+      activitiesHtml = '<div class="activity-timeline">';
+      deal.activities.forEach(a => {
+        activitiesHtml += `<div class="timeline-item ${a.type}">
+          <div style="color:#eee;font-size:0.85rem;"><strong>${a.type.replace('_',' ').replace(/\b\w/g, l => l.toUpperCase())}</strong></div>
+          <div style="color:#888;font-size:0.8rem;">${a.description || 'No description'}</div>
+          <div style="color:#555;font-size:0.72rem;">${a.date}</div>
+        </div>`;
       });
+      activitiesHtml += '</div>';
+    } else {
+      activitiesHtml = '<p style="color:#666;font-size:0.85rem;">No activities yet</p>';
+    }
+    const stageColors = {prospecting:'#00bfff',qualification:'#bc00ed',proposal:'#ff6b6b',negotiation:'#ffc107',won:'#00ff88',lost:'#666'};
+    document.getElementById('panelTitle').textContent = deal.title;
+    document.getElementById('dealPanelContent').innerHTML = `
+      <div class="mb-3">
+        <span class="badge" style="background:${stageColors[deal.stage]||'#888'}22;color:${stageColors[deal.stage]||'#888'};font-size:0.85rem;padding:6px 12px;">${deal.stage.charAt(0).toUpperCase()+deal.stage.slice(1)}</span>
+      </div>
+      <div class="row mb-3">
+        <div class="col-6">
+          <div style="color:#888;font-size:0.75rem;text-transform:uppercase;">Value</div>
+          <div style="color:#00ffb4;font-size:1.4rem;font-weight:700;">$${Math.round(deal.value).toLocaleString()}</div>
+        </div>
+        <div class="col-6">
+          <div style="color:#888;font-size:0.75rem;text-transform:uppercase;">Probability</div>
+          <div style="color:#eee;font-size:1.4rem;font-weight:700;">${Math.round(deal.probability*100)}%</div>
+        </div>
+      </div>
+      ${deal.contact_name ? `<div class="mb-3" style="padding:10px;background:rgba(188,0,237,0.08);border-radius:8px;">
+        <div style="color:#888;font-size:0.75rem;text-transform:uppercase;">Contact</div>
+        <div style="color:#eee;font-weight:600;">${deal.contact_name}</div>
+        <div style="color:#888;font-size:0.8rem;">${deal.contact_email}</div>
+      </div>` : ''}
+      ${deal.description ? `<div class="mb-3"><div style="color:#888;font-size:0.75rem;text-transform:uppercase;">Description</div><p style="color:#aaa;font-size:0.85rem;">${deal.description}</p></div>` : ''}
+      <div class="mb-3">
+        <div style="color:#888;font-size:0.75rem;">Close Date: <span style="color:#eee;">${deal.expected_close_date ? new Date(deal.expected_close_date).toLocaleDateString() : 'Not set'}</span></div>
+        <div style="color:#888;font-size:0.75rem;">Created: <span style="color:#eee;">${deal.created_at}</span></div>
+      </div>
+      <div class="mb-3">
+        <label class="form-label" style="font-size:0.8rem;">Move to Stage</label>
+        <div class="d-flex gap-1 flex-wrap">
+          ${['prospecting','qualification','proposal','negotiation','won','lost'].map(s => 
+            `<button class="btn btn-sm ${s===deal.stage?'btn-primary':'btn-outline-light'}" onclick="moveDealStage(${deal.id},'${s}')" ${s===deal.stage?'disabled':''}>${s.charAt(0).toUpperCase()+s.slice(1)}</button>`
+          ).join('')}
+        </div>
+      </div>
+      <hr style="border-color:rgba(188,0,237,0.2);">
+      <div class="mb-3">
+        <h6 style="color:#00ffb4;font-size:0.85rem;">Quick Log Activity</h6>
+        <div class="d-flex gap-2 mb-2">
+          <select class="form-select form-select-sm" id="activityType" style="max-width:140px;">
+            <option value="note">Note</option>
+            <option value="call">Call</option>
+            <option value="email">Email</option>
+            <option value="meeting">Meeting</option>
+          </select>
+          <input type="text" class="form-control form-control-sm" id="activityDesc" placeholder="What happened?">
+          <button class="btn btn-sm btn-primary" onclick="logActivity(${deal.id})">Log</button>
+        </div>
+      </div>
+      <h6 style="color:#00ffb4;font-size:0.85rem;">Activity History</h6>
+      ${activitiesHtml}
+      <hr style="border-color:rgba(188,0,237,0.2);">
+      <div class="d-flex gap-2">
+        <button class="btn btn-sm btn-outline-danger" onclick="deleteDeal(${deal.id})"><i data-feather="trash-2" style="width:14px;height:14px;"></i> Delete</button>
+      </div>
+    `;
+    feather.replace();
+  }).catch(err => {
+    document.getElementById('dealPanelContent').innerHTML = '<div class="text-center py-5" style="color:#ff6b6b;">Error loading deal details</div>';
+  });
+}
+
+function closeDealPanel() {
+  document.getElementById('dealOverlay').classList.remove('open');
+  document.getElementById('dealPanel').classList.remove('open');
+}
+
+function moveDealStage(dealId, stage) {
+  fetch(`/crm/deals/${dealId}/update-stage`, {
+    method: 'POST',
+    headers: jsonHeaders,
+    body: JSON.stringify({stage: stage})
+  }).then(r => r.json()).then(data => {
+    if (data.success) location.reload();
+    else alert('Error: ' + (data.error || 'Failed'));
+  });
+}
+
+function logActivity(dealId) {
+  const type = document.getElementById('activityType').value;
+  const desc = document.getElementById('activityDesc').value;
+  if (!desc) { alert('Please describe the activity'); return; }
+  fetch(`/crm/deals/${dealId}/activity`, {
+    method: 'POST',
+    headers: jsonHeaders,
+    body: JSON.stringify({activity_type: type, description: desc})
+  }).then(r => r.json()).then(data => {
+    if (data.success) openDealPanel(dealId);
+    else alert('Error: ' + (data.error || 'Failed'));
+  });
+}
+
+function deleteDeal(dealId) {
+  if (!confirm('Are you sure you want to delete this deal? This cannot be undone.')) return;
+  fetch(`/crm/deals/${dealId}/delete`, {
+    method: 'POST',
+    headers: jsonHeaders
+  }).then(r => r.json()).then(data => {
+    if (data.success) { closeDealPanel(); location.reload(); }
+    else alert('Error: ' + (data.error || 'Failed'));
+  });
+}
+
+function initCharts() {
+  const stages = {{ stages_json|safe }};
+  const counts = {{ counts_json|safe }};
+  const values = {{ values_json|safe }};
+  const colors = ['#00bfff','#bc00ed','#ff6b6b','#ffc107','#00ff88','#666'];
+  
+  const ctx1 = document.getElementById('pipelineChart');
+  if (ctx1 && !ctx1._chartInit) {
+    new Chart(ctx1, {
+      type: 'bar',
+      data: { labels: stages, datasets: [{ label: 'Deals', data: counts, backgroundColor: colors.map(c => c + '66'), borderColor: colors, borderWidth: 1 }] },
+      options: { responsive: true, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, ticks: { color: '#888' }, grid: { color: 'rgba(255,255,255,0.05)' } }, x: { ticks: { color: '#888' }, grid: { display: false } } } }
     });
+    ctx1._chartInit = true;
   }
+  const ctx2 = document.getElementById('valueChart');
+  if (ctx2 && !ctx2._chartInit) {
+    new Chart(ctx2, {
+      type: 'doughnut',
+      data: { labels: stages, datasets: [{ data: values, backgroundColor: colors.map(c => c + '99'), borderColor: '#1a1a2e', borderWidth: 2 }] },
+      options: { responsive: true, plugins: { legend: { position: 'bottom', labels: { color: '#888', padding: 12 } } } }
+    });
+    ctx2._chartInit = true;
+  }
+}
+
+const TASKS_KEY = 'lux_crm_tasks';
+function getTasks() {
+  try { return JSON.parse(localStorage.getItem(TASKS_KEY)) || []; }
+  catch(e) { return []; }
+}
+function saveTasks(tasks) {
+  localStorage.setItem(TASKS_KEY, JSON.stringify(tasks));
+}
+function addTask() {
+  const title = document.getElementById('taskTitle').value.trim();
+  if (!title) { alert('Please enter a task title'); return; }
+  const priority = document.getElementById('taskPriority').value;
+  const assign = document.getElementById('taskAssign').value;
+  const date = document.getElementById('taskDate').value;
+  const tasks = getTasks();
+  tasks.push({
+    id: Date.now(),
+    title: title,
+    priority: priority,
+    assign: assign,
+    date: date,
+    completed: false,
+    createdAt: new Date().toISOString()
+  });
+  saveTasks(tasks);
+  document.getElementById('taskTitle').value = '';
+  document.getElementById('taskDate').value = '';
+  renderTasks();
+}
+function toggleTask(id) {
+  const tasks = getTasks();
+  const task = tasks.find(t => t.id === id);
+  if (task) task.completed = !task.completed;
+  saveTasks(tasks);
+  renderTasks();
+}
+function deleteTask(id) {
+  let tasks = getTasks();
+  tasks = tasks.filter(t => t.id !== id);
+  saveTasks(tasks);
+  renderTasks();
+}
+function renderTasks() {
+  const tasks = getTasks();
+  const container = document.getElementById('taskList');
+  if (!container) return;
+  if (tasks.length === 0) {
+    container.innerHTML = '<div class="zero-state" style="padding:2rem;"><i data-feather="check-square" style="width:48px;height:48px;color:var(--lux-primary);margin-bottom:0.5rem;"></i><h3 style="font-size:1.1rem;">No tasks yet</h3><p>Add your first task to stay organized.</p></div>';
+    feather.replace();
+    return;
+  }
+  const pending = tasks.filter(t => !t.completed);
+  const done = tasks.filter(t => t.completed);
+  let html = '';
+  [...pending, ...done].forEach(t => {
+    html += `<div class="task-item ${t.completed ? 'completed' : ''}">
+      <input type="checkbox" ${t.completed ? 'checked' : ''} onchange="toggleTask(${t.id})" style="accent-color:var(--lux-primary);width:18px;height:18px;cursor:pointer;">
+      <span class="task-title">${t.title}</span>
+      <span class="task-priority ${t.priority}">${t.priority}</span>
+      ${t.date ? `<span class="task-date">${t.date}</span>` : ''}
+      <button class="task-delete" onclick="deleteTask(${t.id})"><i data-feather="x" style="width:14px;height:14px;"></i></button>
+    </div>`;
+  });
+  container.innerHTML = html;
+  feather.replace();
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+  feather.replace();
+  renderTasks();
 });
 </script>
 {% endblock %}
