@@ -2012,3 +2012,62 @@ class Workflow(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     created_by = db.Column(db.Integer, db.ForeignKey("user.id"))
+
+
+class HelpContent(db.Model):
+    __tablename__ = "help_content"
+
+    id = db.Column(db.Integer, primary_key=True)
+    screen_key = db.Column(db.String(100), nullable=False, index=True)
+    title = db.Column(db.String(200), nullable=False)
+    instructions = db.Column(db.Text)
+    video_url = db.Column(db.String(500))
+    pdf_url = db.Column(db.String(500))
+    role_filter = db.Column(db.String(50))
+    product_filter = db.Column(db.String(50))
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"))
+    sort_order = db.Column(db.Integer, default=0)
+    is_active = db.Column(db.Boolean, default=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class WalkthroughDef(db.Model):
+    __tablename__ = "walkthrough_def"
+
+    id = db.Column(db.Integer, primary_key=True)
+    screen_key = db.Column(db.String(100), nullable=False, index=True)
+    name = db.Column(db.String(200), nullable=False)
+    description = db.Column(db.Text)
+    steps = db.Column(JSON, nullable=False, default=list)
+    role_filter = db.Column(db.String(50))
+    product_filter = db.Column(db.String(50))
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"))
+    is_active = db.Column(db.Boolean, default=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class WalkthroughProgress(db.Model):
+    __tablename__ = "walkthrough_progress"
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    walkthrough_id = db.Column(db.Integer, db.ForeignKey("walkthrough_def.id"), nullable=False)
+    completed_steps = db.Column(JSON, default=list)
+    is_complete = db.Column(db.Boolean, default=False)
+    started_at = db.Column(db.DateTime, default=datetime.utcnow)
+    completed_at = db.Column(db.DateTime)
+
+
+class OnboardingProgress(db.Model):
+    __tablename__ = "onboarding_progress"
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=False)
+    setup_pct = db.Column(db.Integer, default=0)
+    training_pct = db.Column(db.Integer, default=0)
+    docs_pct = db.Column(db.Integer, default=0)
+    go_live_ready = db.Column(db.Boolean, default=False)
+    checklist_data = db.Column(JSON, default=dict)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

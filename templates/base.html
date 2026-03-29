@@ -637,6 +637,8 @@
     </script>
     <script src="{{ url_for('static', filename='js/analytics.js') }}"></script>
     {% endif %}
+    {% include 'partials/help_drawer.html' %}
+    <script src="{{ url_for('static', filename='js/walkthrough.js') }}"></script>
     {% block scripts %}{% endblock %}
     <script>if (typeof feather !== 'undefined') feather.replace();</script>
 </body>
