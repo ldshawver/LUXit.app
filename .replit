@@ -48,3 +48,7 @@ GIT_URL = "https://ldshawver:${GITHUB_PERSONAL_ACCESS_TOKEN}@github.com/ldshawve
 FB_VERIFY_TOKEN = "lux_fb_webhook_secret_123"
 APP_BASE_URL = "https://luxit.app"
 META_WEBHOOK_VERIFY_TOKEN = "luxit_meta_fi84qn9n_webhook"
+
+[postMerge]
+path = "scripts/post-merge.sh"
+timeoutMs = 180000
