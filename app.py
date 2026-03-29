@@ -267,6 +267,12 @@ def create_app() -> Flask:
             db.session.rollback()
 
         try:
+            from routes import seed_help_content
+            seed_help_content()
+        except Exception as e:
+            logging.error(f"Help content seed failed: {e}")
+
+        try:
             from error_logger import setup_error_logging_handler
             setup_error_logging_handler()
         except Exception as e:
