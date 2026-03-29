@@ -1,4 +1,4 @@
-amodules = ["python-3.11", "postgresql-16", "python3"]
+Samodules = ["python-3.11", "postgresql-16", "python3"]
 modules = ["web", "python-3.11", "bash", "nodejs-20", "postgresql-16"]
 
 [nix]
@@ -8,6 +8,7 @@ packages = ["cargo", "freetype", "glibcLocales", "lcms2", "libiconv", "libimageq
 [deployment]
 deploymentTarget = "autoscale"
 run = ["gunicorn", "--bind=0.0.0.0:5000", "--workers=4", "--reuse-port", "wsgi:app"]
+build = ["bash", "scripts/build.sh"]
 
 [workflows]
 runButton = "Project"

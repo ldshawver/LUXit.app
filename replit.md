@@ -33,6 +33,7 @@ Key architectural decisions and features include:
 - **Email Campaign Builder**: Drag-and-drop builder with content blocks, templates, and A/B testing.
 - **User and Company Management**: Includes user profiles, password management, and company-specific branding settings.
 - **Onboarding Wizard**: Multi-step process for new company setup, including company info, brand kit, API key configuration, and a launch checklist, with robust file upload validation.
+- **In-App Help & Walkthroughs**: Contextual help system with help icons on key screens, slide-out help drawer with instructions/video/PDF, JSON-driven interactive walkthroughs with step highlighting, and onboarding progress tracking (setup/training/docs/go-live readiness). Models: HelpContent, WalkthroughDef, WalkthroughProgress, OnboardingProgress. JS: `static/js/walkthrough.js`. Templates: `templates/partials/help_icon.html`, `help_drawer.html`, `onboarding_progress.html`.
 - **Security Enhancements**: Tenant scoping, IDOR protection, CSRF tokens, XSS prevention, and secure cookie configurations.
 
 ## External Dependencies

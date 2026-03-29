@@ -11190,8 +11190,14 @@ def api_help_content(screen_key):
 @main_bp.route('/api/walkthroughs/<int:wt_id>/step', methods=['POST'])
 @login_required
 def api_walkthrough_step(wt_id):
-    from models import WalkthroughProgress
+    from models import WalkthroughProgress, WalkthroughDef
     try:
+        wt = WalkthroughDef.query.get(wt_id)
+        if not wt or not wt.is_active:
+            return jsonify({'success': False, 'error': 'Walkthrough not found'}), 404
+        company = current_user.get_default_company()
+        if wt.company_id and (not company or wt.company_id != company.id):
+            return jsonify({'success': False, 'error': 'Unauthorized'}), 403
         data = request.get_json() or {}
         step_index = data.get('step_index', 0)
         progress = WalkthroughProgress.query.filter_by(
@@ -11215,8 +11221,14 @@ def api_walkthrough_step(wt_id):
 @main_bp.route('/api/walkthroughs/<int:wt_id>/complete', methods=['POST'])
 @login_required
 def api_walkthrough_complete(wt_id):
-    from models import WalkthroughProgress
+    from models import WalkthroughProgress, WalkthroughDef
     try:
+        wt = WalkthroughDef.query.get(wt_id)
+        if not wt or not wt.is_active:
+            return jsonify({'success': False, 'error': 'Walkthrough not found'}), 404
+        company = current_user.get_default_company()
+        if wt.company_id and (not company or wt.company_id != company.id):
+            return jsonify({'success': False, 'error': 'Unauthorized'}), 403
         progress = WalkthroughProgress.query.filter_by(
             user_id=current_user.id, walkthrough_id=wt_id
         ).first()

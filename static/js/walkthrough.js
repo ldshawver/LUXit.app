@@ -97,13 +97,19 @@ var LuxWalkthrough = (function() {
 
   function next() {
     var step = steps[currentStep];
-    if (step.required && step.validate) {
-      var el = document.querySelector(step.selector);
-      if (el && !el.value && !el.textContent.trim()) {
-        popup.querySelector('.lux-wt-popup-header').insertAdjacentHTML(
-          'afterend', '<div class="lux-wt-error">This step must be completed before continuing.</div>'
-        );
-        return;
+    if (step.required) {
+      var el = step.selector ? document.querySelector(step.selector) : null;
+      if (el) {
+        var isInput = el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT';
+        if (isInput && !el.value.trim()) {
+          var existing = popup.querySelector('.lux-wt-error');
+          if (!existing) {
+            popup.querySelector('.lux-wt-popup-header').insertAdjacentHTML(
+              'afterend', '<div class="lux-wt-error">This step must be completed before continuing.</div>'
+            );
+          }
+          return;
+        }
       }
     }
     markStepComplete(currentStep);
