@@ -1809,6 +1809,26 @@ class DeletionRequest(db.Model):
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
+class LicenseRequest(db.Model):
+    __tablename__ = 'license_request'
+
+    id = db.Column(db.Integer, primary_key=True)
+    email = db.Column(db.String(254), nullable=False, index=True)
+    first_name = db.Column(db.String(100))
+    last_name = db.Column(db.String(100))
+    company_name = db.Column(db.String(200))
+    plan = db.Column(db.String(50), nullable=False)
+    message = db.Column(db.Text)
+    status = db.Column(db.String(20), default='new', index=True)
+    ip_address = db.Column(db.String(45))
+    user_agent = db.Column(db.String(512))
+    source_page = db.Column(db.String(200))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+    reviewed_at = db.Column(db.DateTime)
+    reviewed_by = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    admin_notes = db.Column(db.Text)
+
+
 class UserQuickLink(db.Model):
     __tablename__ = "user_quick_link"
 

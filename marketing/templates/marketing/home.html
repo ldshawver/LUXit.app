@@ -306,7 +306,7 @@
         <li>Basic Analytics</li>
         <li>5 Team Members</li>
       </ul>
-      <a href="/auth/login" class="pricing-btn secondary">Get Started</a>
+      <button type="button" class="pricing-btn secondary" onclick="openLicenseModal('starter')">Request Access</button>
     </div>
     <div class="pricing-card featured scroll-reveal-flip delay-2" data-delay="1">
       <span class="popular-badge">Most Popular</span>
@@ -323,7 +323,7 @@
         <li>Unlimited Team</li>
         <li>Priority Support</li>
       </ul>
-      <a href="/auth/login" class="pricing-btn primary">Start Free Trial</a>
+      <button type="button" class="pricing-btn primary" onclick="openLicenseModal('professional')">Request Access</button>
     </div>
     <div class="pricing-card scroll-reveal-flip delay-3" data-delay="2">
       <div class="pricing-tier">Enterprise</div>
@@ -338,7 +338,7 @@
         <li>On-Premise Option</li>
         <li>SLA Guarantee</li>
       </ul>
-      <a href="/auth/login" class="pricing-btn secondary">Contact Sales</a>
+      <button type="button" class="pricing-btn secondary" onclick="openLicenseModal('enterprise')">Contact Sales</button>
     </div>
   </div>
 </section>
@@ -553,4 +553,5 @@ document.addEventListener('DOMContentLoaded', function() {
   setTimeout(animateChrome, 500);
 });
 </script>
+{% include "marketing/partials/license_modal.html" %}
 {% endblock %}
