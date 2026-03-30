@@ -1,4 +1,4 @@
-Samodules = ["python-3.11", "postgresql-16", "python3"]
+amodules = ["python-3.11", "postgresql-16", "python3"]
 modules = ["web", "python-3.11", "bash", "nodejs-20", "postgresql-16"]
 
 [nix]
@@ -8,7 +8,6 @@ packages = ["cargo", "freetype", "glibcLocales", "lcms2", "libiconv", "libimageq
 [deployment]
 deploymentTarget = "autoscale"
 run = ["gunicorn", "--bind=0.0.0.0:5000", "--workers=4", "--reuse-port", "wsgi:app"]
-build = ["bash", "scripts/build.sh"]
 
 [workflows]
 runButton = "Project"
@@ -49,7 +48,3 @@ GIT_URL = "https://ldshawver:${GITHUB_PERSONAL_ACCESS_TOKEN}@github.com/ldshawve
 FB_VERIFY_TOKEN = "lux_fb_webhook_secret_123"
 APP_BASE_URL = "https://luxit.app"
 META_WEBHOOK_VERIFY_TOKEN = "luxit_meta_fi84qn9n_webhook"
-
-[postMerge]
-path = "scripts/post-merge.sh"
-timeoutMs = 180000

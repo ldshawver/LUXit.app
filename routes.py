@@ -8840,6 +8840,11 @@ def update_agent_task(agent_type, task_id):
     from models import AgentAutomation
     
     try:
+        from integrations.events import EventService
+        company = current_user.get_default_company()
+        if not company:
+            return jsonify({'success': False, 'error': 'No company selected'}), 400
+        
         data = request.get_json()
         task = AgentAutomation.query.get(int(task_id))
         
@@ -9171,6 +9176,8 @@ def create_agent_deliverable(agent_type):
             'deliverable_id': deliverable.id
         })
         
+        db.session.commit()
+        return jsonify({'success': True})
     except Exception as e:
         db.session.rollback()
         logger.error(f"Create deliverable error: {e}")
