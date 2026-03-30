@@ -8840,6 +8840,11 @@ def update_agent_task(agent_type, task_id):
     from models import AgentAutomation
     
     try:
+        from integrations.events import EventService
+        company = current_user.get_default_company()
+        if not company:
+            return jsonify({'success': False, 'error': 'No company selected'}), 400
+        
         data = request.get_json()
         task = AgentAutomation.query.get(int(task_id))
         
@@ -9171,6 +9176,8 @@ def create_agent_deliverable(agent_type):
             'deliverable_id': deliverable.id
         })
         
+        db.session.commit()
+        return jsonify({'success': True})
     except Exception as e:
         db.session.rollback()
         logger.error(f"Create deliverable error: {e}")
@@ -11154,4 +11161,241 @@ def delete_workflow(wf_id):
     return redirect(url_for('main.workflow_builder'))
 
 
+@main_bp.route('/api/help/<screen_key>')
+@login_required
+def api_help_content(screen_key):
+    from models import HelpContent, WalkthroughDef
+    try:
+        company = current_user.get_default_company()
+        company_id = company.id if company else None
+        query = HelpContent.query.filter_by(screen_key=screen_key, is_active=True)
+        if company_id:
+            query = query.filter(db.or_(HelpContent.company_id == company_id, HelpContent.company_id == None))
+        else:
+            query = query.filter(HelpContent.company_id == None)
+        help_items = query.order_by(HelpContent.sort_order).all()
+        wt_query = WalkthroughDef.query.filter_by(screen_key=screen_key, is_active=True)
+        if company_id:
+            wt_query = wt_query.filter(db.or_(WalkthroughDef.company_id == company_id, WalkthroughDef.company_id == None))
+        else:
+            wt_query = wt_query.filter(WalkthroughDef.company_id == None)
+        walkthroughs = wt_query.all()
+        return jsonify({
+            'help': [{
+                'id': h.id, 'title': h.title, 'instructions': h.instructions,
+                'video_url': h.video_url, 'pdf_url': h.pdf_url
+            } for h in help_items],
+            'walkthroughs': [{
+                'id': w.id, 'name': w.name, 'description': w.description, 'steps': w.steps or []
+            } for w in walkthroughs]
+        })
+    except Exception as e:
+        logger.error("Help content error: %s", e)
+        return jsonify({'help': [], 'walkthroughs': []})
+
+
+@main_bp.route('/api/walkthroughs/<int:wt_id>/step', methods=['POST'])
+@login_required
+def api_walkthrough_step(wt_id):
+    from models import WalkthroughProgress, WalkthroughDef
+    try:
+        wt = WalkthroughDef.query.get(wt_id)
+        if not wt or not wt.is_active:
+            return jsonify({'success': False, 'error': 'Walkthrough not found'}), 404
+        company = current_user.get_default_company()
+        if wt.company_id and (not company or wt.company_id != company.id):
+            return jsonify({'success': False, 'error': 'Unauthorized'}), 403
+        data = request.get_json() or {}
+        step_index = data.get('step_index', 0)
+        progress = WalkthroughProgress.query.filter_by(
+            user_id=current_user.id, walkthrough_id=wt_id
+        ).first()
+        if not progress:
+            progress = WalkthroughProgress(user_id=current_user.id, walkthrough_id=wt_id, completed_steps=[])
+            db.session.add(progress)
+        completed = progress.completed_steps or []
+        if step_index not in completed:
+            completed.append(step_index)
+            progress.completed_steps = completed
+        db.session.commit()
+        return jsonify({'success': True})
+    except Exception as e:
+        db.session.rollback()
+        logger.error("Walkthrough step error: %s", e)
+        return jsonify({'success': False}), 500
+
+
+@main_bp.route('/api/walkthroughs/<int:wt_id>/complete', methods=['POST'])
+@login_required
+def api_walkthrough_complete(wt_id):
+    from models import WalkthroughProgress, WalkthroughDef
+    try:
+        wt = WalkthroughDef.query.get(wt_id)
+        if not wt or not wt.is_active:
+            return jsonify({'success': False, 'error': 'Walkthrough not found'}), 404
+        company = current_user.get_default_company()
+        if wt.company_id and (not company or wt.company_id != company.id):
+            return jsonify({'success': False, 'error': 'Unauthorized'}), 403
+        progress = WalkthroughProgress.query.filter_by(
+            user_id=current_user.id, walkthrough_id=wt_id
+        ).first()
+        if not progress:
+            progress = WalkthroughProgress(user_id=current_user.id, walkthrough_id=wt_id, completed_steps=[])
+            db.session.add(progress)
+        progress.is_complete = True
+        progress.completed_at = datetime.utcnow()
+        db.session.commit()
+        _recalc_onboarding_progress(current_user.id)
+        return jsonify({'success': True})
+    except Exception as e:
+        db.session.rollback()
+        logger.error("Walkthrough complete error: %s", e)
+        return jsonify({'success': False}), 500
+
+
+@main_bp.route('/api/onboarding/progress')
+@login_required
+def api_onboarding_progress():
+    from models import OnboardingProgress
+    try:
+        company = current_user.get_default_company()
+        company_id = company.id if company else None
+        if not company_id:
+            return jsonify({'progress': {'setup_pct': 0, 'training_pct': 0, 'docs_pct': 0, 'go_live_ready': False}})
+        progress = OnboardingProgress.query.filter_by(
+            user_id=current_user.id, company_id=company_id
+        ).first()
+        if not progress:
+            progress = _create_onboarding_progress(current_user.id, company_id)
+        return jsonify({'progress': {
+            'setup_pct': progress.setup_pct,
+            'training_pct': progress.training_pct,
+            'docs_pct': progress.docs_pct,
+            'go_live_ready': progress.go_live_ready,
+            'checklist': progress.checklist_data or {}
+        }})
+    except Exception as e:
+        logger.error("Onboarding progress error: %s", e)
+        return jsonify({'progress': {'setup_pct': 0, 'training_pct': 0, 'docs_pct': 0, 'go_live_ready': False}})
+
+
+def _create_onboarding_progress(user_id, company_id):
+    from models import OnboardingProgress, CompanySecret, Contact
+    setup_checks = {
+        'company_created': True,
+        'brand_configured': False,
+        'api_keys_set': False,
+        'contacts_imported': False,
+        'first_campaign': False
+    }
+    try:
+        company = db.session.get(Company, company_id)
+        if company:
+            setup_checks['brand_configured'] = bool(company.primary_color)
+        secrets_count = CompanySecret.query.filter_by(company_id=company_id).count()
+        setup_checks['api_keys_set'] = secrets_count > 0
+        contacts_count = Contact.query.filter_by(company_id=company_id).count()
+        setup_checks['contacts_imported'] = contacts_count > 0
+        campaigns_count = Campaign.query.filter_by(company_id=company_id).count()
+        setup_checks['first_campaign'] = campaigns_count > 0
+    except Exception:
+        pass
+    done = sum(1 for v in setup_checks.values() if v)
+    setup_pct = int(done / len(setup_checks) * 100)
+    progress = OnboardingProgress(
+        user_id=user_id, company_id=company_id,
+        setup_pct=setup_pct, training_pct=0, docs_pct=0,
+        go_live_ready=False, checklist_data=setup_checks
+    )
+    try:
+        db.session.add(progress)
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+    return progress
+
+
+def _recalc_onboarding_progress(user_id):
+    from models import OnboardingProgress, WalkthroughProgress, WalkthroughDef
+    try:
+        company = current_user.get_default_company()
+        if not company:
+            return
+        progress = OnboardingProgress.query.filter_by(
+            user_id=user_id, company_id=company.id
+        ).first()
+        if not progress:
+            return
+        completed_wts = WalkthroughProgress.query.filter_by(
+            user_id=user_id, is_complete=True
+        ).count()
+        total_wts = WalkthroughDef.query.filter_by(is_active=True).count()
+        if total_wts > 0:
+            progress.training_pct = min(100, int(completed_wts / total_wts * 100))
+        overall = (progress.setup_pct + progress.training_pct + progress.docs_pct) / 3
+        progress.go_live_ready = overall >= 80
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        logger.error("Recalc onboarding error: %s", e)
+
+
+def seed_help_content():
+    from models import HelpContent, WalkthroughDef
+    try:
+        existing = HelpContent.query.first()
+        if existing:
+            return
+        defaults = [
+            HelpContent(
+                screen_key='sales_hub', title='Sales Hub Overview',
+                instructions='<p>The Sales Hub is your command center for managing leads, deals, and pipeline. Use the tabs above to navigate between the Dashboard overview, Leads list, Pipeline view, Tasks, and Calendar.</p><p><strong>Key features:</strong></p><ul><li>Track lead activity and engagement</li><li>Manage your deal pipeline visually</li><li>Schedule tasks and meetings</li><li>Monitor sales KPIs in real-time</li></ul>',
+                sort_order=0
+            ),
+            HelpContent(
+                screen_key='crm_hub', title='CRM Hub Guide',
+                instructions='<p>The CRM Hub provides 15 integrated modules for complete customer relationship management.</p><p><strong>Getting started:</strong></p><ul><li>Import your contacts from CSV or connect your email</li><li>Set up your sales stages in Settings</li><li>Create your first deal and assign it to a pipeline stage</li><li>Use segments to organize contacts by type</li></ul>',
+                sort_order=0
+            ),
+            HelpContent(
+                screen_key='marketing_hub', title='Marketing Hub Guide',
+                instructions='<p>Create and manage marketing campaigns, email sequences, and content from one place.</p><p><strong>Quick actions:</strong></p><ul><li>Create email campaigns with AI-powered content</li><li>Track campaign performance metrics</li><li>Manage your subscriber lists and segments</li><li>Schedule social media posts</li></ul>',
+                sort_order=0
+            ),
+            HelpContent(
+                screen_key='ads_hub', title='Advertising & Demand Gen',
+                instructions='<p>The Ads Hub helps you manage advertising campaigns across multiple platforms.</p><p><strong>Capabilities:</strong></p><ul><li>Track ad spend and ROAS across platforms</li><li>AI-powered ad copy generation</li><li>Campaign performance analytics</li><li>Budget optimization suggestions</li></ul>',
+                sort_order=0
+            ),
+        ]
+        wt_defaults = [
+            WalkthroughDef(
+                screen_key='sales_hub', name='Getting Started with Sales Hub',
+                description='Learn the basics of the Sales Hub in 5 easy steps',
+                steps=[
+                    {'title': 'Welcome to Sales Hub', 'description': 'This is your sales command center. Let\'s explore the key areas.', 'selector': '.sh-tabs', 'required': False},
+                    {'title': 'Your KPI Dashboard', 'description': 'These cards show your key sales metrics at a glance — leads, pipeline value, and tasks.', 'selector': '.sh-kpis', 'required': False},
+                    {'title': 'Onboarding Progress', 'description': 'Track your setup progress here. Complete all sections to go live.', 'selector': '#onboarding-progress-widget', 'required': False},
+                    {'title': 'Analytics', 'description': 'Use the analytics panel to visualize trends and filter by time range.', 'selector': '#analyticsMetric', 'required': False},
+                    {'title': 'Quick Actions', 'description': 'Use the New Lead button to add contacts, or the search bar to find existing ones.', 'selector': '.sh-new-btn', 'required': False}
+                ]
+            ),
+            WalkthroughDef(
+                screen_key='crm_hub', name='CRM Hub Walkthrough',
+                description='Discover all 15 CRM modules',
+                steps=[
+                    {'title': 'CRM Overview', 'description': 'The CRM Hub provides a complete suite of tools for managing customer relationships.', 'selector': '.crm-features-header', 'required': False},
+                    {'title': 'Feature Modules', 'description': 'Each card represents a CRM module. Click any card to access that feature.', 'selector': '.row.g-3', 'required': False}
+                ]
+            ),
+        ]
+        db.session.add_all(defaults + wt_defaults)
+        db.session.commit()
+        logger.info("Help content and walkthroughs seeded")
+    except Exception as e:
+        db.session.rollback()
+        logger.error("Seed help content error: %s", e)
+
+
+print("✓ Help system & walkthrough routes loaded")
 print("✓ All route stubs loaded")

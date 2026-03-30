@@ -19,125 +19,44 @@
           --lux-primary: {{ brand.primary_color if brand and brand.primary_color else '#bc00ed' }};
           --lux-secondary: {{ brand.secondary_color if brand and brand.secondary_color else '#00ffb4' }};
           --lux-accent: {{ brand.accent_color if brand and brand.accent_color else '#e4055c' }};
-          --lux-font: {{ brand.font_family if brand and brand.font_family else 'Inter, sans-serif' }};
+          {% if brand and brand.font_family %}
+          --lux-font: {{ brand.font_family }};
+          {% endif %}
         {% else %}
           --lux-primary: #bc00ed;
           --lux-secondary: #00ffb4;
           --lux-accent: #e4055c;
-          --lux-font: Inter, sans-serif;
         {% endif %}
+        --lux-primary-glow: color-mix(in srgb, var(--lux-primary), transparent 60%);
+        --lux-secondary-glow: color-mix(in srgb, var(--lux-secondary), transparent 60%);
+        --lux-accent-glow: color-mix(in srgb, var(--lux-accent), transparent 60%);
         --lux-primary-10: color-mix(in srgb, var(--lux-primary), transparent 90%);
+        --lux-primary-15: color-mix(in srgb, var(--lux-primary), transparent 85%);
+        --lux-primary-25: color-mix(in srgb, var(--lux-primary), transparent 75%);
         --lux-secondary-10: color-mix(in srgb, var(--lux-secondary), transparent 90%);
+        --lux-secondary-15: color-mix(in srgb, var(--lux-secondary), transparent 85%);
+        --lux-secondary-25: color-mix(in srgb, var(--lux-secondary), transparent 75%);
         --lux-accent-10: color-mix(in srgb, var(--lux-accent), transparent 90%);
-      }
-      html[data-bs-theme="dark"] {
-        --bs-primary: {{ current_company.secondary_color or '#00ffb4' }} !important;
-        --bs-secondary: {{ current_company.primary_color or '#bc00ed' }} !important;
-        --bs-link-color: {{ current_company.secondary_color or '#00ffb4' }} !important;
-        --bs-link-hover-color: {{ current_company.secondary_color or '#00ffb4' }}cc !important;
+        --lux-btn-primary-bg: linear-gradient(135deg, var(--lux-primary), var(--lux-secondary));
+        --lux-btn-primary-border: var(--lux-primary);
+        --lux-border-focus: var(--lux-secondary);
+        --lux-focus-ring: color-mix(in srgb, var(--lux-secondary), transparent 75%);
+        --lux-focus-ring-color: var(--lux-secondary);
+        --lux-sidebar-active-text: var(--lux-secondary);
+        --lux-table-header-text: var(--lux-secondary);
+        --bs-primary: var(--lux-secondary);
+        --bs-secondary: var(--lux-primary);
+        --bs-link-color: var(--lux-secondary);
+        --bs-link-hover-color: var(--lux-secondary);
       }
       body {
-        background: radial-gradient(circle at top, {{ current_company.secondary_color or '#00ffb4' }}14, transparent 45%),
-          radial-gradient(circle at 20% 20%, {{ current_company.primary_color or '#bc00ed' }}14, transparent 40%),
-          radial-gradient(circle at bottom right, {{ current_company.accent_color or '#e4055c' }}1a, transparent 45%),
-          var(--lux-bg) !important;
-        color: #ffffff;
-        font-family: var(--lux-font);
+        font-family: var(--lux-font, "Inter", "Segoe UI", system-ui, -apple-system, sans-serif);
       }
-      .btn-primary, .btn-lux-primary {
-        background: linear-gradient(135deg, {{ current_company.primary_color or '#bc00ed' }}, {{ current_company.secondary_color or '#00ffb4' }}) !important;
-        border-color: {{ current_company.primary_color or '#bc00ed' }} !important;
-      }
-      .btn-outline-primary {
-        color: {{ current_company.secondary_color or '#00ffb4' }} !important;
-        border-color: {{ current_company.secondary_color or '#00ffb4' }} !important;
-      }
-      .btn-outline-primary:hover {
-        background: {{ current_company.secondary_color or '#00ffb4' }} !important;
-        color: #000 !important;
-      }
-      .app-header {
-        border-bottom-color: {{ current_company.primary_color or '#bc00ed' }} !important;
-      }
-      .tile-icon, .stat-badge, .quick-action-btn i {
-        background: linear-gradient(135deg, {{ current_company.primary_color or '#bc00ed' }}, {{ current_company.secondary_color or '#00ffb4' }}) !important;
-        -webkit-background-clip: text !important;
-        -webkit-text-fill-color: transparent !important;
-      }
-      .metric-value {
-        background: linear-gradient(135deg, {{ current_company.secondary_color or '#00ffb4' }}, {{ current_company.primary_color or '#bc00ed' }}) !important;
-        -webkit-background-clip: text !important;
-        -webkit-text-fill-color: transparent !important;
-      }
-      .nav-link.active, .nav-link:hover {
-        color: {{ current_company.secondary_color or '#00ffb4' }} !important;
-      }
-      .sidebar-item.active {
-        border-left-color: {{ current_company.secondary_color or '#00ffb4' }} !important;
-      }
-      .text-success, .text-primary {
-        color: {{ current_company.secondary_color or '#00ffb4' }} !important;
-      }
-      .badge.bg-primary {
-        background: {{ current_company.primary_color or '#bc00ed' }} !important;
-      }
-      a:not(.btn):not(.nav-link):not(.brand-link) {
-        color: {{ current_company.secondary_color or '#00ffb4' }};
-      }
-      .action-card:hover {
-        border-color: {{ current_company.secondary_color or '#00ffb4' }}66 !important;
-        box-shadow: 0 8px 32px {{ current_company.secondary_color or '#00ffb4' }}26 !important;
-      }
-      .hub-btn.active {
-        background: linear-gradient(135deg, {{ current_company.secondary_color or '#00ffb4' }}, {{ current_company.primary_color or '#bc00ed' }}) !important;
-      }
-      .progress-bar, .bg-success {
-        background-color: {{ current_company.secondary_color or '#00ffb4' }} !important;
-      }
-      .form-check-input:checked {
-        background-color: {{ current_company.primary_color or '#bc00ed' }} !important;
-        border-color: {{ current_company.primary_color or '#bc00ed' }} !important;
-      }
-      .brand-it { color: {{ current_company.secondary_color or '#00ffb4' }} !important; }
-      .brand-app { color: {{ current_company.secondary_color or '#00ffb4' }} !important; }
-      .company-initial {
-        background: linear-gradient(135deg, {{ current_company.primary_color or '#bc00ed' }}, {{ current_company.secondary_color or '#00ffb4' }}) !important;
-      }
-      .sidebar-item:hover, .sidebar-item.active {
-        background: {{ current_company.secondary_color or '#00ffb4' }}26 !important;
-        border-color: {{ current_company.secondary_color or '#00ffb4' }}59 !important;
-      }
-      .tile:hover {
-        border-color: {{ current_company.secondary_color or '#00ffb4' }}66 !important;
-        box-shadow: var(--lux-shadow), 0 0 28px {{ current_company.secondary_color or '#00ffb4' }}47 !important;
-      }
-      .tile .tile-icon svg {
-        stroke: {{ current_company.secondary_color or '#00ffb4' }} !important;
-      }
-      .form-control:focus, .form-select:focus {
-        border-color: {{ current_company.secondary_color or '#00ffb4' }}59 !important;
-        box-shadow: 0 0 0 0.25rem {{ current_company.secondary_color or '#00ffb4' }}26 !important;
-      }
-      .quick-action-btn {
-        background: linear-gradient(135deg, {{ current_company.secondary_color or '#00ffb4' }}26, {{ current_company.primary_color or '#bc00ed' }}1a) !important;
-        border-color: {{ current_company.secondary_color or '#00ffb4' }}4d !important;
-      }
-      .quick-action-btn:hover {
-        background: linear-gradient(135deg, {{ current_company.secondary_color or '#00ffb4' }}4d, {{ current_company.primary_color or '#bc00ed' }}33) !important;
-        border-color: {{ current_company.secondary_color or '#00ffb4' }} !important;
-      }
-      .quick-action-btn i, .channel-card:hover { color: {{ current_company.secondary_color or '#00ffb4' }} !important; }
-      .ai-badge {
-        background: linear-gradient(135deg, {{ current_company.secondary_color or '#00ffb4' }}, {{ current_company.primary_color or '#bc00ed' }}) !important;
-      }
-      {% if current_company.font_family %}
-      body { font-family: {{ current_company.font_family }} !important; }
-      {% endif %}
     </style>
     {% endif %}
     <style>
       *, *::before, *::after { box-sizing: border-box; }
-      body { margin: 0; background: #030014; }
+      body { margin: 0; background: var(--lux-dark-bg); }
 
       .app-shell { display: flex; flex-direction: column; min-height: 100vh; }
 
@@ -161,13 +80,13 @@
         border-radius: 7px; color: rgba(255,255,255,0.3);
         transition: all 0.15s; border: 1px solid transparent;
       }
-      .back-arrow-glow:hover { color: #00e5ff; border-color: rgba(0,229,255,0.2); background: rgba(0,229,255,0.07); }
+      .back-arrow-glow:hover { color: var(--lux-secondary); border-color: color-mix(in srgb, var(--lux-secondary), transparent 80%); background: color-mix(in srgb, var(--lux-secondary), transparent 93%); }
       .back-arrow-glow svg { width: 16px; height: 16px; }
       .brand-link { text-decoration: none; display: flex; align-items: center; gap: 4px; }
       .brand-logo { display: flex; align-items: center; gap: 4px; }
       .brand-lux-img { height: 32px !important; max-height: 32px !important; width: auto !important; }
       .brand-stack { display: flex; flex-direction: column; line-height: 1; }
-      .brand-it { font-size: 0.65rem; font-weight: 800; color: #00e5ff; letter-spacing: 0.05em; }
+      .brand-it { font-size: 0.65rem; font-weight: 800; color: var(--lux-secondary); letter-spacing: 0.05em; }
       .brand-app { font-size: 0.55rem; color: rgba(255,255,255,0.4); }
       .header-spacer { flex: 1; }
       .header-actions { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
@@ -176,7 +95,7 @@
       .working-on { font-size: 0.72rem; color: rgba(255,255,255,0.3); margin-left: 4px; }
       .company-icon { width: 28px; height: 28px; border-radius: 7px; overflow: hidden; border: 1px solid rgba(255,255,255,0.12); }
       .company-icon img { width: 100%; height: 100%; object-fit: cover; }
-      .company-initial { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; font-size: 0.72rem; font-weight: 700; background: linear-gradient(135deg,#bc00ed,#00ffb4); color: #000; }
+      .company-initial { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; font-size: 0.72rem; font-weight: 700; background: linear-gradient(135deg, var(--lux-primary), var(--lux-teal)); color: #000; }
       .gear-btn {
         background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1);
         color: rgba(255,255,255,0.5); border-radius: 8px; width: 32px; height: 32px;
@@ -208,12 +127,12 @@
       }
       .catbar-switcher {
         display: flex; gap: 2px; padding: 2px;
-        background: linear-gradient(270deg, #bc00ed, #00e5ff, #00ffb4, #a855f7, #bc00ed);
+        background: linear-gradient(270deg, var(--lux-primary), var(--lux-secondary), var(--lux-teal), var(--lux-primary), var(--lux-primary));
         background-size: 400% 400%;
         animation: switcher-glow 6s ease infinite;
         border-radius: 7px; flex-shrink: 0;
         margin-right: 10px;
-        box-shadow: 0 0 8px rgba(188,0,237,0.15), 0 0 12px rgba(0,229,255,0.08);
+        box-shadow: 0 0 8px var(--lux-primary-glow), 0 0 12px var(--lux-secondary-glow);
       }
       .catbar-sw {
         display: flex; align-items: center; justify-content: center;
@@ -255,8 +174,8 @@
       }
       .cat-tab:hover { color: rgba(255,255,255,0.85); text-decoration: none; }
       .cat-tab.active {
-        color: #00e5ff;
-        border-bottom-color: #00e5ff;
+        color: var(--lux-secondary);
+        border-bottom-color: var(--lux-secondary);
         font-weight: 600;
       }
       .cat-right {
@@ -287,18 +206,18 @@
         display: flex; align-items: center; justify-content: center;
         padding: 0 3px; line-height: 1;
       }
-      .badge-red { background: #ef4444; color: #fff; }
-      .badge-amber { background: #f59e0b; color: #000; }
+      .badge-red { background: var(--lux-status-danger); color: #fff; }
+      .badge-amber { background: var(--lux-status-warning); color: #000; }
       .topnav-ai-btn {
         display: flex; align-items: center; gap: 5px;
         padding: 4px 10px; border-radius: 7px;
-        background: linear-gradient(135deg, rgba(168,85,247,0.12), rgba(0,229,255,0.08));
-        border: 1px solid rgba(168,85,247,0.22);
-        color: #d8b4fe; font-size: 0.73rem; font-weight: 600;
+        background: linear-gradient(135deg, var(--lux-primary-10), var(--lux-secondary-10));
+        border: 1px solid color-mix(in srgb, var(--lux-primary), transparent 78%);
+        color: var(--lux-text-secondary); font-size: 0.73rem; font-weight: 600;
         cursor: pointer; transition: all 0.2s; text-decoration: none;
         white-space: nowrap; flex-shrink: 0;
       }
-      .topnav-ai-btn:hover { background: linear-gradient(135deg, rgba(168,85,247,0.22), rgba(0,229,255,0.15)); border-color: rgba(168,85,247,0.4); color: #fff; text-decoration: none; }
+      .topnav-ai-btn:hover { background: linear-gradient(135deg, var(--lux-primary-25), var(--lux-secondary-15)); border-color: color-mix(in srgb, var(--lux-primary), transparent 60%); color: var(--lux-text-primary); text-decoration: none; }
 
       /* ── App body = sidebar + content ── */
       .app-body {
@@ -346,8 +265,8 @@
       }
       .sidebar-nav-item svg, .sidebar-nav-item i { width: 15px; height: 15px; flex-shrink: 0; }
       .sidebar-nav-item:hover { color: #fff; background: rgba(255,255,255,0.08); border-color: rgba(255,255,255,0.12); text-decoration: none; }
-      .sidebar-nav-item.active { color: #00e5ff; background: rgba(0,229,255,0.1); border-color: rgba(0,229,255,0.25); font-weight: 600; }
-      .sidebar-nav-item.active svg, .sidebar-nav-item.active i { color: #00e5ff; }
+      .sidebar-nav-item.active { color: var(--lux-sidebar-active-text); background: var(--lux-secondary-10); border-color: var(--lux-secondary-25); font-weight: 600; }
+      .sidebar-nav-item.active svg, .sidebar-nav-item.active i { color: var(--lux-sidebar-active-text); }
       .sidebar-spacer { flex: 1; }
 
       /* ── Content area ── */
@@ -640,13 +559,13 @@
     {% if current_user.is_authenticated %}
     <div class="modal fade" id="quickLinksModal" tabindex="-1">
         <div class="modal-dialog">
-            <div class="modal-content" style="background: #0f0f1a; border: 1px solid rgba(168,85,247,0.3);">
-                <div class="modal-header" style="border-bottom: 1px solid rgba(255,255,255,0.07);">
-                    <h5 class="modal-title" style="color: #00e5ff;">Customize Quick Links</h5>
+            <div class="modal-content" style="background: var(--lux-modal-bg); border: 1px solid var(--lux-modal-border);">
+                <div class="modal-header" style="border-bottom: 1px solid var(--lux-border-subtle);">
+                    <h5 class="modal-title" style="color: var(--lux-secondary);">Customize Quick Links</h5>
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
-                    <p style="font-size:0.82rem;color:rgba(255,255,255,0.4);margin-bottom:12px;">Add shortcuts that appear in your top tab bar. These are personal to your account.</p>
+                    <p style="font-size:0.82rem;color:var(--lux-text-muted);margin-bottom:12px;">Add shortcuts that appear in your top tab bar. These are personal to your account.</p>
                     <div id="ql-list"></div>
                     <div class="d-flex gap-2 mt-3">
                         <input type="text" id="ql-new-label" class="form-control form-control-sm" placeholder="Label (e.g. Inbox)" style="flex:1;">
@@ -718,6 +637,8 @@
     </script>
     <script src="{{ url_for('static', filename='js/analytics.js') }}"></script>
     {% endif %}
+    {% include 'partials/help_drawer.html' %}
+    <script src="{{ url_for('static', filename='js/walkthrough.js') }}"></script>
     {% block scripts %}{% endblock %}
     <script>if (typeof feather !== 'undefined') feather.replace();</script>
 </body>

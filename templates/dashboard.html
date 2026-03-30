@@ -226,7 +226,7 @@
 
   <!-- Top Nav -->
   <div class="sh-topnav">
-    <nav class="sh-tabs">
+    <nav class="sh-tabs" style="align-items:center;">
       <a href="{{ url_for('main.dashboard') }}" class="sh-tab active">Dashboard</a>
       <a href="{{ url_for('main.contacts') }}" class="sh-tab">Leads</a>
       <a href="{{ url_for('main.crm_dashboard') }}" class="sh-tab">Pipeline</a>
@@ -235,6 +235,7 @@
         {% if stats.tasks_due %}<span class="badge">{{ stats.tasks_due }}</span>{% endif %}
       </a>
       <a href="{{ url_for('main.events_dashboard') }}" class="sh-tab">Calendar</a>
+      {% with screen_key='sales_hub' %}{% include 'partials/help_icon.html' %}{% endwith %}
     </nav>
 
     <div class="sh-search-bar">
@@ -320,6 +321,10 @@
     </div>
 
   </div>
+
+  <!-- Onboarding Progress -->
+  {% include 'partials/onboarding_progress.html' %}
+  <div style="height: 16px;"></div>
 
   <!-- Customizable Analytics -->
   <div class="sh-panel" style="margin-bottom: 16px;">

@@ -1,0 +1,119 @@
+<div id="licenseModal" style="display:none; position:fixed; inset:0; z-index:9999; align-items:center; justify-content:center; background:rgba(0,0,0,0.7); backdrop-filter:blur(12px);">
+  <div style="background:rgba(12,12,20,0.95); border:1px solid rgba(255,255,255,0.08); border-radius:20px; padding:40px; max-width:480px; width:90%; position:relative; box-shadow:0 24px 80px rgba(0,0,0,0.6);">
+    <button type="button" onclick="closeLicenseModal()" style="position:absolute; top:16px; right:16px; background:none; border:none; color:rgba(255,255,255,0.5); font-size:1.5rem; cursor:pointer; line-height:1;">&times;</button>
+    <div style="text-align:center; margin-bottom:28px;">
+      <div style="font-size:0.75rem; font-weight:700; text-transform:uppercase; letter-spacing:0.15em; color:var(--accent-cyan, #00e5ff); margin-bottom:8px;">License Request</div>
+      <h3 id="licenseModalTitle" style="font-size:1.4rem; font-weight:800; margin:0;">Request Access</h3>
+      <p style="color:rgba(255,255,255,0.5); font-size:0.85rem; margin-top:6px;">Fill out the form and our team will reach out within 24 hours.</p>
+    </div>
+    <form id="licenseForm" onsubmit="return submitLicenseRequest(event)">
+      <input type="hidden" id="lr_plan" value="starter">
+      <input type="hidden" id="lr_source" value="">
+      <div style="margin-bottom:16px;">
+        <label style="display:block; font-size:0.8rem; font-weight:600; color:rgba(255,255,255,0.7); margin-bottom:6px;">First Name *</label>
+        <input type="text" id="lr_first_name" required maxlength="100" style="width:100%; padding:12px 16px; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.1); border-radius:10px; color:#fff; font-size:0.95rem; outline:none; transition:border-color 0.3s;" onfocus="this.style.borderColor='rgba(0,229,255,0.4)'" onblur="this.style.borderColor='rgba(255,255,255,0.1)'">
+      </div>
+      <div style="margin-bottom:16px;">
+        <label style="display:block; font-size:0.8rem; font-weight:600; color:rgba(255,255,255,0.7); margin-bottom:6px;">Last Name</label>
+        <input type="text" id="lr_last_name" maxlength="100" style="width:100%; padding:12px 16px; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.1); border-radius:10px; color:#fff; font-size:0.95rem; outline:none; transition:border-color 0.3s;" onfocus="this.style.borderColor='rgba(0,229,255,0.4)'" onblur="this.style.borderColor='rgba(255,255,255,0.1)'">
+      </div>
+      <div style="margin-bottom:16px;">
+        <label style="display:block; font-size:0.8rem; font-weight:600; color:rgba(255,255,255,0.7); margin-bottom:6px;">Work Email *</label>
+        <input type="email" id="lr_email" required maxlength="254" style="width:100%; padding:12px 16px; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.1); border-radius:10px; color:#fff; font-size:0.95rem; outline:none; transition:border-color 0.3s;" onfocus="this.style.borderColor='rgba(0,229,255,0.4)'" onblur="this.style.borderColor='rgba(255,255,255,0.1)'">
+      </div>
+      <div style="margin-bottom:16px;">
+        <label style="display:block; font-size:0.8rem; font-weight:600; color:rgba(255,255,255,0.7); margin-bottom:6px;">Company</label>
+        <input type="text" id="lr_company" maxlength="200" style="width:100%; padding:12px 16px; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.1); border-radius:10px; color:#fff; font-size:0.95rem; outline:none; transition:border-color 0.3s;" onfocus="this.style.borderColor='rgba(0,229,255,0.4)'" onblur="this.style.borderColor='rgba(255,255,255,0.1)'">
+      </div>
+      <div style="margin-bottom:24px;">
+        <label style="display:block; font-size:0.8rem; font-weight:600; color:rgba(255,255,255,0.7); margin-bottom:6px;">Message (optional)</label>
+        <textarea id="lr_message" rows="3" maxlength="2000" style="width:100%; padding:12px 16px; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.1); border-radius:10px; color:#fff; font-size:0.95rem; outline:none; resize:vertical; transition:border-color 0.3s; font-family:inherit;" onfocus="this.style.borderColor='rgba(0,229,255,0.4)'" onblur="this.style.borderColor='rgba(255,255,255,0.1)'"></textarea>
+      </div>
+      <div id="lr_feedback" style="display:none; padding:12px 16px; border-radius:10px; margin-bottom:16px; font-size:0.85rem;"></div>
+      <button type="submit" id="lr_submit_btn" style="width:100%; padding:14px; background:linear-gradient(135deg, var(--accent-cyan, #00e5ff), var(--accent-purple, #a855f7)); color:#fff; border:none; border-radius:10px; font-weight:700; font-size:1rem; cursor:pointer; transition:all 0.3s; box-shadow:0 0 20px rgba(0,229,255,0.3); text-shadow:0 1px 2px rgba(0,0,0,0.3);">
+        Submit Request
+      </button>
+    </form>
+  </div>
+</div>
+
+<script>
+var _planLabels = {starter:'Starter', professional:'Professional', enterprise:'Enterprise'};
+
+function openLicenseModal(plan) {
+  var modal = document.getElementById('licenseModal');
+  document.getElementById('lr_plan').value = plan || 'starter';
+  document.getElementById('lr_source').value = window.location.pathname;
+  document.getElementById('licenseModalTitle').textContent = 'Request ' + (_planLabels[plan] || 'Access');
+  document.getElementById('lr_feedback').style.display = 'none';
+  document.getElementById('lr_submit_btn').disabled = false;
+  document.getElementById('lr_submit_btn').textContent = 'Submit Request';
+  modal.style.display = 'flex';
+  setTimeout(function(){ document.getElementById('lr_first_name').focus(); }, 100);
+}
+
+function closeLicenseModal() {
+  document.getElementById('licenseModal').style.display = 'none';
+  document.getElementById('licenseForm').reset();
+}
+
+document.getElementById('licenseModal').addEventListener('click', function(e) {
+  if (e.target === this) closeLicenseModal();
+});
+
+function submitLicenseRequest(e) {
+  e.preventDefault();
+  var btn = document.getElementById('lr_submit_btn');
+  var fb = document.getElementById('lr_feedback');
+
+  btn.disabled = true;
+  btn.textContent = 'Submitting...';
+  fb.style.display = 'none';
+
+  var payload = {
+    first_name: document.getElementById('lr_first_name').value.trim(),
+    last_name: document.getElementById('lr_last_name').value.trim(),
+    email: document.getElementById('lr_email').value.trim(),
+    company_name: document.getElementById('lr_company').value.trim(),
+    plan: document.getElementById('lr_plan').value,
+    message: document.getElementById('lr_message').value.trim(),
+    source_page: document.getElementById('lr_source').value
+  };
+
+  fetch('{{ url_for("marketing.api_license_request") }}', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(payload)
+  })
+  .then(function(r){ return r.json().then(function(d){ return {ok: r.ok, data: d}; }); })
+  .then(function(res) {
+    fb.style.display = 'block';
+    if (res.data.success) {
+      fb.style.background = 'rgba(0,229,255,0.1)';
+      fb.style.border = '1px solid rgba(0,229,255,0.3)';
+      fb.style.color = '#00e5ff';
+      fb.textContent = res.data.message;
+      btn.textContent = 'Submitted';
+      setTimeout(closeLicenseModal, 3000);
+    } else {
+      fb.style.background = 'rgba(239,68,68,0.1)';
+      fb.style.border = '1px solid rgba(239,68,68,0.3)';
+      fb.style.color = '#ef4444';
+      fb.textContent = res.data.message;
+      btn.disabled = false;
+      btn.textContent = 'Submit Request';
+    }
+  })
+  .catch(function() {
+    fb.style.display = 'block';
+    fb.style.background = 'rgba(239,68,68,0.1)';
+    fb.style.border = '1px solid rgba(239,68,68,0.3)';
+    fb.style.color = '#ef4444';
+    fb.textContent = 'Network error. Please try again.';
+    btn.disabled = false;
+    btn.textContent = 'Submit Request';
+  });
+
+  return false;
+}
+</script>
