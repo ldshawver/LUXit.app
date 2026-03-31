@@ -1,13 +1,20 @@
-name: Test VPS SSH
+name: Deploy to VPS
 
 on:
+  push:
+    branches:
+      - main
   workflow_dispatch:
 
 jobs:
-  test-ssh:
+  deploy:
     runs-on: ubuntu-latest
+
     steps:
-      - name: Test SSH connection
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Deploy to VPS
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.VPS_HOST }}
@@ -15,11 +22,35 @@ jobs:
           key: ${{ secrets.VPS_SSH_KEY }}
           port: ${{ secrets.VPS_PORT }}
           timeout: 60s
-          command_timeout: 5m
+          command_timeout: 30m
           debug: true
           script_stop: true
           script: |
-            echo "CONNECTED"
+            set -e
+            echo "=== Connected to VPS ==="
             whoami
             hostname
-            date
+
+            cd /root/lux-email-bot
+
+            git config --global --add safe.directory /root/lux-email-bot
+
+            echo "=== Pulling latest code ==="
+            git fetch origin main
+            git reset --hard origin/main
+
+            echo "=== Activating venv ==="
+            source .venv/bin/activate
+
+            echo "=== Installing dependencies ==="
+            python -m pip install --upgrade pip
+            pip install -r requirements.txt --upgrade
+
+            echo "=== Restarting service ==="
+            systemctl restart lux-email-bot
+
+            sleep 3
+
+            echo "=== Checking status ==="
+            systemctl --no-pager --full status lux-email-bot || true
+            systemctl is-active lux-email-bot
