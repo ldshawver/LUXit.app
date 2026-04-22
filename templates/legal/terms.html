@@ -43,7 +43,7 @@
       padding: 60px 24px 80px;
     }
     h1 { font-size: 2.2rem; margin-bottom: 4px; }
-    .updated { color: var(--lux-muted); font-size: 0.9rem; margin-bottom: 40px; }
+    .effective { color: var(--lux-muted); font-size: 0.9rem; margin-bottom: 40px; }
     h2 {
       font-size: 1.15rem;
       margin-top: 36px;
@@ -58,6 +58,14 @@
     a { color: #7c3aed; }
     a:hover { color: #a78bfa; }
     strong { color: var(--lux-text); }
+    .intro {
+      background: var(--lux-surface);
+      border: 1px solid var(--lux-border);
+      border-radius: 8px;
+      padding: 20px 24px;
+      margin-bottom: 32px;
+      color: #c8d0dc;
+    }
     footer {
       border-top: 1px solid var(--lux-border);
       padding: 32px 40px;
@@ -81,97 +89,111 @@
 
   <div class="container">
     <h1>Terms of Service</h1>
-    <p class="updated">Last updated: {{ updated }}</p>
+    <p class="effective">Effective Date: {{ updated }}</p>
 
-    <h2>1. Agreement</h2>
+    <div class="intro">
+      Welcome to LUXit.app ("Company," "we," "our," or "us"). By accessing or using our application,
+      website, or services (collectively, the "Service"), you agree to these Terms of Service ("Terms").
+      <br><br>
+      <strong>If you do not agree, do not use the Service.</strong>
+    </div>
+
+    <h2>1. Eligibility</h2>
     <p>
-      By accessing or using LUXit at <strong>luxit.app</strong> (the "Service"), you agree to these Terms.
-      If you do not agree, do not use the Service.
+      You must be at least 18 years old (or the age of majority in your jurisdiction) to use the Service.
+      By using the Service, you represent that you meet this requirement.
     </p>
 
-    <h2>2. Eligibility</h2>
-    <p>
-      You must be legally able to form a contract. The Service is not intended for children under 13
-      (or higher age where required by local law).
-    </p>
-
-    <h2>3. Accounts &amp; Security</h2>
+    <h2>2. Account Registration</h2>
+    <p>You may be required to create an account. You agree to:</p>
     <ul>
-      <li>You are responsible for your account credentials and all activity under your account.</li>
-      <li>You must provide accurate information and keep it updated.</li>
-      <li>Notify us of unauthorized use at <strong>support@luxit.app</strong>.</li>
+      <li>Provide accurate and complete information</li>
+      <li>Maintain the security of your login credentials</li>
+      <li>Notify us immediately of unauthorized use</li>
     </ul>
+    <p>You are responsible for all activity under your account.</p>
 
-    <h2>4. Acceptable Use</h2>
+    <h2>3. Use of the Service</h2>
     <p>You agree not to:</p>
     <ul>
-      <li>Break laws or violate others' rights.</li>
-      <li>Access the Service in an unauthorized manner, or attempt to bypass security.</li>
-      <li>Upload malware, conduct scraping that harms the Service, or abuse rate limits.</li>
-      <li>Use the Service to send spam or unlawful communications.</li>
+      <li>Violate any laws or regulations</li>
+      <li>Infringe intellectual property rights</li>
+      <li>Upload harmful, abusive, or fraudulent content</li>
+      <li>Attempt to hack, disrupt, or reverse engineer the Service</li>
     </ul>
+    <p>We reserve the right to suspend or terminate accounts violating these rules.</p>
 
-    <h2>5. Customer Content</h2>
+    <h2>4. Intellectual Property</h2>
+    <p>
+      All content, trademarks, branding, and technology related to LUXit.app are owned by or licensed to us.
+    </p>
+    <p>
+      You are granted a limited, non-exclusive, non-transferable license to use the Service for personal
+      or business purposes.
+    </p>
+
+    <h2>5. User Content</h2>
+    <p>If you submit or upload content:</p>
     <ul>
-      <li>You retain ownership of content you submit to the Service ("Customer Content").</li>
-      <li>You grant LUXit a limited license to host, process, and display Customer Content solely to provide the Service.</li>
-      <li>You represent you have the rights needed to submit Customer Content and authorize its processing.</li>
+      <li>You retain ownership</li>
+      <li>You grant us a worldwide, royalty-free license to use, display, and distribute it for operating and improving the Service</li>
+    </ul>
+    <p>You are responsible for ensuring your content does not violate laws or third-party rights.</p>
+
+    <h2>6. Payments &amp; Subscriptions</h2>
+    <ul>
+      <li>Fees are billed as described at the time of purchase</li>
+      <li>Subscriptions automatically renew unless canceled</li>
+      <li>All payments are non-refundable unless required by law</li>
     </ul>
 
-    <h2>6. Third-Party Platform Integrations</h2>
+    <h2>7. Termination</h2>
+    <p>We may suspend or terminate your access at any time if:</p>
+    <ul>
+      <li>You violate these Terms</li>
+      <li>We are required by law</li>
+      <li>We discontinue the Service</li>
+    </ul>
+    <p>You may stop using the Service at any time.</p>
+
+    <h2>8. Disclaimers</h2>
+    <p>The Service is provided "as is" without warranties of any kind, including:</p>
+    <ul>
+      <li>Accuracy or reliability</li>
+      <li>Availability or uptime</li>
+      <li>Fitness for a particular purpose</li>
+    </ul>
+
+    <h2>9. Limitation of Liability</h2>
+    <p>To the maximum extent permitted by law:</p>
+    <ul>
+      <li>We are not liable for indirect, incidental, or consequential damages</li>
+      <li>Our total liability is limited to the amount you paid us (if any) in the last 12 months</li>
+    </ul>
+
+    <h2>10. Indemnification</h2>
+    <p>You agree to indemnify and hold us harmless from claims arising from:</p>
+    <ul>
+      <li>Your use of the Service</li>
+      <li>Your violation of these Terms</li>
+      <li>Your content</li>
+    </ul>
+
+    <h2>11. Governing Law</h2>
     <p>
-      If you connect LUXit to third-party platforms (e.g., Meta, X, TikTok, YouTube/Google, Snapchat,
-      LinkedIn), your use may be subject to those platforms' terms and policies. You are responsible for
-      complying with them.
+      These Terms are governed by the laws of the State of California, without regard to conflict-of-law principles.
     </p>
 
-    <h2>7. Subscriptions, Billing &amp; Refunds</h2>
+    <h2>12. Changes to Terms</h2>
     <p>
-      Paid plans, billing cycles, and refunds (if any) will be described at checkout or in an order form.
-      Taxes may apply. Failure to pay may result in suspension or termination of access.
+      We may update these Terms at any time. Continued use of the Service after updates means you accept
+      the revised Terms.
     </p>
 
-    <h2>8. Privacy</h2>
+    <h2>13. Contact</h2>
     <p>
-      Our <a href="/privacy">Privacy Policy</a> explains how we collect and use your information.
-      By using the Service, you agree to our data practices as described there.
-    </p>
-
-    <h2>9. Termination</h2>
-    <p>
-      You may stop using the Service at any time. We may suspend or terminate access if you violate
-      these Terms, if needed for security or legal compliance, or for any other reason with reasonable notice.
-    </p>
-
-    <h2>10. Disclaimers</h2>
-    <p>
-      The Service is provided "as is" and "as available." We disclaim all warranties to the maximum extent
-      permitted by law, including implied warranties of merchantability and fitness for a particular purpose.
-    </p>
-
-    <h2>11. Limitation of Liability</h2>
-    <p>
-      To the maximum extent permitted by law, LUXit will not be liable for indirect, incidental, special,
-      consequential, or punitive damages, or any loss of profits, revenues, data, or goodwill arising from
-      your use of the Service.
-    </p>
-
-    <h2>12. Indemnification</h2>
-    <p>
-      You agree to indemnify and hold LUXit and its affiliates, officers, and employees harmless from
-      claims, damages, and expenses arising from your use of the Service or violation of these Terms.
-    </p>
-
-    <h2>13. Changes to These Terms</h2>
-    <p>
-      We may update these Terms from time to time. We will notify you of material changes. Continued
-      use after updates means you accept the revised Terms.
-    </p>
-
-    <h2>14. Contact</h2>
-    <p>
-      Support: <strong>support@luxit.app</strong><br>
-      Legal: <strong>legal@luxit.app</strong>
+      For questions, contact us at:<br>
+      <strong>legal@luxit.app</strong>
     </p>
   </div>
 

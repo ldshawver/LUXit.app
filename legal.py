@@ -14,7 +14,7 @@ legal_bp = Blueprint("legal", __name__)
 
 logger = logging.getLogger(__name__)
 
-LAST_UPDATED = "2026-02-27"
+LAST_UPDATED = "April 22, 2026"
 
 
 @legal_bp.get("/privacy")
