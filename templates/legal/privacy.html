@@ -194,6 +194,46 @@
       For privacy-related questions:<br>
       <strong>privacy@luxit.app</strong>
     </p>
+
+    <h2>11. Connected Social Media Accounts (X / Twitter)</h2>
+    <p>
+      When you connect a social media account (such as X / Twitter) to LUXit, we collect and
+      store the following information to provide the integration:
+    </p>
+    <ul>
+      <li>Your platform user ID, username, and display name</li>
+      <li>Your profile image URL</li>
+      <li>OAuth 2.0 access tokens and refresh tokens (stored encrypted at rest)</li>
+      <li>Token expiry metadata and authorized permission scopes</li>
+    </ul>
+
+    <h3>How we use this data</h3>
+    <ul>
+      <li>To authenticate and post content on your behalf when you initiate an action in LUXit</li>
+      <li>To automatically refresh your access token before it expires (using the <code>offline.access</code> scope)</li>
+      <li>To display your connection status and recent posts within LUXit</li>
+    </ul>
+
+    <h3>How long we retain it</h3>
+    <p>
+      Tokens and profile data are retained for as long as the account remains connected.
+      You can disconnect at any time from <strong>Settings → Social Accounts → X Integration</strong>.
+      Disconnecting immediately revokes the token with X and deletes all stored credentials from our
+      database.
+    </p>
+
+    <h3>Sharing</h3>
+    <p>
+      We transmit your access token only to X's official API endpoints
+      (<code>api.x.com</code>) to fulfil requests you initiate. We do not sell,
+      share, or expose your tokens to any other third party.
+    </p>
+
+    <h3>Security</h3>
+    <p>
+      All OAuth tokens are encrypted before being written to the database and decrypted
+      only at the time of use, in memory.
+    </p>
   </div>
 
   <footer>
