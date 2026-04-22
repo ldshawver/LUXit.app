@@ -43,7 +43,7 @@
       padding: 60px 24px 80px;
     }
     h1 { font-size: 2.2rem; margin-bottom: 4px; }
-    .updated { color: var(--lux-muted); font-size: 0.9rem; margin-bottom: 40px; }
+    .effective { color: var(--lux-muted); font-size: 0.9rem; margin-bottom: 40px; }
     h2 {
       font-size: 1.15rem;
       margin-top: 36px;
@@ -52,12 +52,26 @@
       padding-bottom: 6px;
       border-bottom: 1px solid var(--lux-border);
     }
+    h3 {
+      font-size: 1rem;
+      margin-top: 20px;
+      margin-bottom: 6px;
+      color: var(--lux-text);
+    }
     p, li { color: #c8d0dc; }
     ul { padding-left: 20px; }
     li { margin-bottom: 6px; }
     a { color: #7c3aed; }
     a:hover { color: #a78bfa; }
     strong { color: var(--lux-text); }
+    .intro {
+      background: var(--lux-surface);
+      border: 1px solid var(--lux-border);
+      border-radius: 8px;
+      padding: 20px 24px;
+      margin-bottom: 32px;
+      color: #c8d0dc;
+    }
     footer {
       border-top: 1px solid var(--lux-border);
       padding: 32px 40px;
@@ -81,121 +95,104 @@
 
   <div class="container">
     <h1>Privacy Policy</h1>
-    <p class="updated">Last updated: {{ updated }}</p>
+    <p class="effective">Effective Date: {{ updated }}</p>
 
-    <h2>1. Who We Are</h2>
-    <p>
-      LUXit ("LUXit," "we," "us") provides marketing automation software and services at
-      <strong>luxit.app</strong> ("Service"). This Privacy Policy explains how we collect,
-      use, share, retain, and protect your information.
-    </p>
+    <div class="intro">
+      LUXit.app ("we," "our," or "us") respects your privacy. This Privacy Policy explains how we
+      collect, use, and protect your information.
+    </div>
 
-    <h2>2. Contact</h2>
-    <p>
-      Privacy questions or requests: <strong>privacy@luxit.app</strong><br>
-      Data deletion requests: <a href="/data-deletion">luxit.app/data-deletion</a>
-    </p>
+    <h2>1. Information We Collect</h2>
 
-    <h2>3. Information We Collect</h2>
+    <h3>a. Information You Provide</h3>
     <ul>
-      <li><strong>Account data:</strong> name, email, username, password hash, organization info.</li>
-      <li><strong>Usage data:</strong> logs, device/browser info, IP address, timestamps, pages visited, crash reports.</li>
-      <li><strong>Customer content:</strong> data you upload or input (CRM notes, campaigns, assets).</li>
-      <li><strong>Payments:</strong> billing address and payment status. We use a payment processor and do not store full card numbers.</li>
-      <li><strong>Cookies &amp; similar tech:</strong> session cookies, security cookies, preferences, and analytics tags.</li>
+      <li>Name, email, phone number</li>
+      <li>Account credentials</li>
+      <li>Payment information (processed via third-party providers)</li>
+      <li>Content you upload or submit</li>
     </ul>
 
-    <h2>4. Information from Third-Party Platforms</h2>
-    <p>
-      If you connect LUXit to third-party services (Meta/Facebook/Instagram, X, TikTok, YouTube/Google,
-      Snapchat, LinkedIn, email providers, analytics tools), we may receive data you authorize through
-      those integrations (e.g., profile identifiers, page/account IDs, tokens, and metrics). We use
-      this only to provide the features you requested.
-    </p>
-
-    <h2>5. How We Use Information</h2>
+    <h3>b. Automatically Collected Information</h3>
     <ul>
-      <li>Provide, maintain, and secure the Service (authentication, fraud prevention, access control).</li>
-      <li>Operate features you request (publishing, analytics, automation, reporting, integrations).</li>
-      <li>Communicate with you (service notices, support, security alerts).</li>
-      <li>Improve the Service (debugging, performance, feature development).</li>
-      <li>Comply with legal obligations and enforce our terms.</li>
+      <li>IP address</li>
+      <li>Device information</li>
+      <li>Browser type</li>
+      <li>Usage data and interaction logs</li>
     </ul>
 
-    <h2>6. Legal Bases (Where Applicable)</h2>
+    <h3>c. Cookies &amp; Tracking</h3>
+    <p>We use cookies and similar technologies to:</p>
     <ul>
-      <li><strong>Contract:</strong> to provide the Service you requested.</li>
-      <li><strong>Legitimate interests:</strong> security, fraud prevention, product improvement.</li>
-      <li><strong>Consent:</strong> for optional cookies/marketing or certain integrations, where required.</li>
-      <li><strong>Legal obligation:</strong> compliance with applicable laws.</li>
+      <li>Improve user experience</li>
+      <li>Analyze usage</li>
+      <li>Personalize content</li>
     </ul>
 
-    <h2>7. How We Share Information</h2>
-    <p>We do not sell your personal information. We may share information with:</p>
+    <h2>2. How We Use Information</h2>
+    <p>We use your data to:</p>
     <ul>
-      <li><strong>Service providers:</strong> hosting, analytics, support, email delivery, payment processing.</li>
-      <li><strong>Integrations you enable:</strong> we transmit data to third parties when you connect them.</li>
-      <li><strong>Legal/safety:</strong> to comply with law, protect rights, prevent fraud/abuse, and enforce policies.</li>
-      <li><strong>Business changes:</strong> merger/acquisition/asset transfer (with appropriate safeguards).</li>
+      <li>Provide and maintain the Service</li>
+      <li>Process transactions</li>
+      <li>Communicate with you</li>
+      <li>Improve performance and features</li>
+      <li>Prevent fraud and abuse</li>
     </ul>
 
-    <h2>8. Data Retention</h2>
-    <p>
-      We retain personal information only as long as necessary for the purposes described, including security,
-      dispute resolution, and legal compliance. If you delete your account or submit a deletion request, we
-      will delete or de-identify information unless we are required to keep it by law.
-    </p>
-
-    <h2>9. Data Deletion &amp; Account Controls</h2>
-    <p>
-      You can request deletion of your LUXit-related personal data at:
-      <a href="/data-deletion">luxit.app/data-deletion</a> or by emailing <strong>privacy@luxit.app</strong>.
-      We may need to verify your identity before completing a request.
-    </p>
-
-    <h2>10. Security</h2>
-    <p>
-      We use reasonable administrative, technical, and physical safeguards to protect information from
-      unauthorized access, loss, misuse, or alteration. No system is 100% secure; please use strong
-      passwords and protect your credentials.
-    </p>
-
-    <h2>11. International Transfers</h2>
-    <p>
-      We may process and store information in the United States and other locations where our providers
-      operate. Where required, we implement appropriate safeguards for cross-border transfers.
-    </p>
-
-    <h2>12. Children</h2>
-    <p>
-      LUXit is not directed to children under 13 (or higher age where required by local law). If you
-      believe a child provided personal information, contact us at <strong>privacy@luxit.app</strong>.
-    </p>
-
-    <h2>13. Your Privacy Rights</h2>
-    <p>
-      Depending on your location, you may have rights to access, correct, delete, or object to certain
-      processing, and to request portability. To exercise rights, use the
-      <a href="/data-deletion">Data Deletion</a> page or email <strong>privacy@luxit.app</strong>.
-    </p>
-
-    <h2>14. Cookies &amp; Analytics</h2>
-    <p>
-      We use cookies and similar technologies for login sessions, security, preferences, and analytics.
-      You can control cookies via browser settings; some features may not function without essential cookies.
-    </p>
-
-    <h2>15. Platform-Specific Notes</h2>
+    <h2>3. Sharing of Information</h2>
+    <p>We do not sell your personal data.</p>
+    <p>We may share information with:</p>
     <ul>
-      <li><strong>Meta:</strong> We provide a clear data deletion request path and honor deletion requests related to our app's data use.</li>
-      <li><strong>YouTube/Google APIs:</strong> If we access Google user data via Google APIs, we use it only to provide requested features and comply with Google API Services User Data Policy.</li>
-      <li><strong>X, LinkedIn, TikTok, Snapchat:</strong> If you connect these services, we handle authorized data consistent with this policy and your configuration.</li>
+      <li>Service providers (hosting, payments, analytics)</li>
+      <li>Legal authorities if required</li>
+      <li>Business partners in case of merger or acquisition</li>
     </ul>
 
-    <h2>16. Changes to This Policy</h2>
+    <h2>4. California Privacy Rights (CCPA/CPRA)</h2>
+    <p>If you are a California resident, you have the right to:</p>
+    <ul>
+      <li>Request access to your personal data</li>
+      <li>Request deletion</li>
+      <li>Correct inaccurate data</li>
+      <li>Opt-out of data sharing (if applicable)</li>
+    </ul>
     <p>
-      We may update this policy from time to time. We will post the updated version here with a revised
-      "Last updated" date.
+      To exercise these rights, contact us at:
+      <strong>privacy@luxit.app</strong>
+    </p>
+
+    <h2>5. Data Retention</h2>
+    <p>We retain data only as long as necessary for:</p>
+    <ul>
+      <li>Providing services</li>
+      <li>Legal compliance</li>
+      <li>Business operations</li>
+    </ul>
+
+    <h2>6. Data Security</h2>
+    <p>
+      We implement reasonable safeguards to protect your data. However, no system is 100% secure.
+    </p>
+
+    <h2>7. Third-Party Services</h2>
+    <p>
+      Our Service may include links or integrations with third-party platforms. We are not responsible
+      for their privacy practices.
+    </p>
+
+    <h2>8. Children's Privacy</h2>
+    <p>
+      We do not knowingly collect data from children under 13. If discovered, we will delete such data.
+    </p>
+
+    <h2>9. Changes to This Policy</h2>
+    <p>
+      We may update this Privacy Policy. Changes will be posted with an updated effective date.
+    </p>
+
+    <h2>10. Contact</h2>
+    <p>
+      For privacy-related questions:<br>
+      <strong>privacy@luxit.app</strong>
     </p>
   </div>
 
