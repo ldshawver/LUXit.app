@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 import logging
 
 from flask_login import UserMixin
@@ -2077,6 +2077,83 @@ class WalkthroughProgress(db.Model):
     is_complete = db.Column(db.Boolean, default=False)
     started_at = db.Column(db.DateTime, default=datetime.utcnow)
     completed_at = db.Column(db.DateTime)
+
+
+class XOAuth(db.Model):
+    """Stores X (Twitter) OAuth 2.0 PKCE tokens per user/company."""
+    __tablename__ = "x_oauth"
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=True)
+
+    x_user_id = db.Column(db.String(255), nullable=False)
+    username = db.Column(db.String(255))
+    display_name = db.Column(db.String(255))
+    profile_image_url = db.Column(db.String(500))
+
+    _access_token = db.Column("access_token", db.Text, nullable=False)
+    _refresh_token = db.Column("refresh_token", db.Text)
+    expires_at = db.Column(db.DateTime)
+    scope = db.Column(db.String(500))
+    token_type = db.Column(db.String(50), default="bearer")
+    status = db.Column(db.String(50), default="active")
+
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    user = db.relationship("User", backref="x_oauths")
+    company = db.relationship("Company", backref="x_oauths")
+
+    def set_access_token(self, token: str):
+        if not token:
+            self._access_token = None
+            return
+        try:
+            from services.secret_vault import vault
+            self._access_token = vault.encrypt(token)
+        except Exception:
+            self._access_token = token
+
+    def get_access_token(self) -> str:
+        if not self._access_token:
+            return None
+        try:
+            from services.secret_vault import vault
+            return vault.decrypt(self._access_token)
+        except Exception:
+            return self._access_token
+
+    def set_refresh_token(self, token: str):
+        if not token:
+            self._refresh_token = None
+            return
+        try:
+            from services.secret_vault import vault
+            self._refresh_token = vault.encrypt(token)
+        except Exception:
+            self._refresh_token = token
+
+    def get_refresh_token(self) -> str:
+        if not self._refresh_token:
+            return None
+        try:
+            from services.secret_vault import vault
+            return vault.decrypt(self._refresh_token)
+        except Exception:
+            return self._refresh_token
+
+    @property
+    def is_expired(self) -> bool:
+        if not self.expires_at:
+            return False
+        return datetime.utcnow() >= self.expires_at
+
+    @property
+    def needs_refresh(self) -> bool:
+        if not self.expires_at:
+            return False
+        return datetime.utcnow() >= self.expires_at - timedelta(minutes=10)
 
 
 class OnboardingProgress(db.Model):
