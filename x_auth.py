@@ -1,12 +1,12 @@
 """
-X (Twitter) OAuth 2.0 PKCE Integration for LUX Marketing Platform.
+X (Twitter) OAuth 2.0 PKCE Integration — LUX Marketing Platform.
 
-Supports:
-- Sign in with X (PKCE authorization code flow)
-- User-access-token for all posting/account actions
-- Automatic token refresh using offline.access scope
-- Recent-posts view and tweet deletion
-- Robust X API error handling
+Multi-account support:
+- Each X account goes through its own Sign in with X consent flow.
+- Tokens are stored per XOAuth record (user × x_user_id).
+- Every posting/read/delete action requires an explicit account_id,
+  verified against the requesting user before use.
+- Auto-refresh per account using offline.access refresh tokens.
 """
 
 import base64
@@ -32,19 +32,19 @@ logger = logging.getLogger(__name__)
 # X API constants
 # ---------------------------------------------------------------------------
 
-X_AUTH_URL    = "https://x.com/i/oauth2/authorize"
-X_TOKEN_URL   = "https://api.x.com/2/oauth2/token"
-X_REVOKE_URL  = "https://api.x.com/2/oauth2/revoke"
-X_ME_URL      = "https://api.x.com/2/users/me"
-X_TWEETS_URL  = "https://api.x.com/2/tweets"
-X_SCOPES      = "tweet.read users.read tweet.write offline.access"
+X_AUTH_URL   = "https://x.com/i/oauth2/authorize"
+X_TOKEN_URL  = "https://api.x.com/2/oauth2/token"
+X_REVOKE_URL = "https://api.x.com/2/oauth2/revoke"
+X_ME_URL     = "https://api.x.com/2/users/me"
+X_TWEETS_URL = "https://api.x.com/2/tweets"
+X_SCOPES     = "tweet.read users.read tweet.write offline.access"
 
 x_bp     = Blueprint("x_auth", __name__, url_prefix="/auth/x")
 x_api_bp = Blueprint("x_api",  __name__, url_prefix="/api/x")
 
 
 # ---------------------------------------------------------------------------
-# Internal helpers
+# Private helpers
 # ---------------------------------------------------------------------------
 
 def _b64url(data: bytes) -> str:
@@ -71,26 +71,43 @@ def _get_current_company():
     return None
 
 
-def _get_oauth_record(user_id, company_id):
+def _get_all_records(user_id: int, company_id) -> list:
+    """Return every XOAuth record that belongs to this user+company."""
     from models import XOAuth
-    return XOAuth.query.filter_by(
-        user_id=user_id,
-        company_id=company_id,
-        status="active",
-    ).first()
+    return (
+        XOAuth.query
+        .filter_by(user_id=user_id, company_id=company_id)
+        .order_by(XOAuth.created_at)
+        .all()
+    )
 
 
-def _parse_x_error(resp) -> tuple[str, dict]:
+def _get_account(account_id: int, user_id: int, company_id) -> tuple:
+    """
+    Fetch a specific XOAuth record and verify ownership.
+    Returns (record, error_message). error_message is None on success.
+    """
+    from models import XOAuth
+    record = XOAuth.query.get(account_id)
+    if not record:
+        return None, "X account not found."
+    if record.user_id != user_id:
+        return None, "X account does not belong to your account."
+    if company_id is not None and record.company_id != company_id:
+        return None, "X account belongs to a different workspace."
+    return record, None
+
+
+def _parse_x_error(resp) -> tuple:
     """
     Parse an X API error response into (human_message, raw_data).
-    Handles X API v2 format, OAuth error format, and HTTP status fallbacks.
+    Handles X API v2 errors array, OAuth envelopes, and HTTP status fallbacks.
     """
     try:
         data = resp.json()
     except Exception:
         return f"Unexpected response (HTTP {resp.status_code})", {}
 
-    # X API v2 errors array
     errors = data.get("errors")
     if isinstance(errors, list) and errors:
         first = errors[0]
@@ -102,38 +119,34 @@ def _parse_x_error(resp) -> tuple[str, dict]:
         )
         return msg, data
 
-    # OAuth error envelope
     if "error" in data:
         return data.get("error_description") or data.get("error"), data
 
-    # Single-detail field
     if "detail" in data:
         return data["detail"], data
-
     if "title" in data:
         return data["title"], data
 
-    # HTTP status fallbacks
-    status_messages = {
+    fallback = {
         400: "Bad request — check the content you are trying to post.",
-        401: "Authentication failed. Please reconnect your X account.",
+        401: "Authentication failed. Please reconnect this X account.",
         403: "Permission denied. Make sure tweet.write and tweet.read are authorized.",
         404: "Resource not found on X.",
         429: "X rate limit reached. Please wait a moment and try again.",
         500: "X is experiencing an internal error. Please try again later.",
         503: "X is temporarily unavailable. Please try again later.",
     }
-    return status_messages.get(resp.status_code, f"HTTP {resp.status_code}"), data
+    return fallback.get(resp.status_code, f"HTTP {resp.status_code}"), data
 
 
-def _refresh_token(oauth_record) -> bool:
+def _do_refresh(record) -> bool:
     """
-    Exchange a refresh token for a fresh access token.
-    Updates the record in-place and commits. Returns True on success.
+    Exchange the stored refresh token for a fresh access token.
+    Updates the record in-place, commits, returns True on success.
     """
-    refresh_tok = oauth_record.get_refresh_token()
+    refresh_tok = record.get_refresh_token()
     if not refresh_tok:
-        logger.warning("X refresh: no refresh token stored for user %s", oauth_record.user_id)
+        logger.warning("X refresh: no refresh token for account id=%s", record.id)
         return False
 
     client_id = _get_client_id()
@@ -153,60 +166,73 @@ def _refresh_token(oauth_record) -> bool:
             timeout=15,
         )
     except requests.RequestException as exc:
-        logger.error("X refresh network error: %s", exc)
+        logger.error("X refresh network error (account id=%s): %s", record.id, exc)
         return False
 
     if not resp.ok:
         msg, _ = _parse_x_error(resp)
-        logger.warning("X token refresh failed for user %s: %s", oauth_record.user_id, msg)
-        oauth_record.status = "expired"
+        logger.warning("X token refresh rejected (account id=%s): %s", record.id, msg)
+        record.status = "expired"
         db.session.commit()
         return False
 
     data = resp.json()
-    oauth_record.set_access_token(data["access_token"])
+    record.set_access_token(data["access_token"])
     if data.get("refresh_token"):
-        oauth_record.set_refresh_token(data["refresh_token"])
+        record.set_refresh_token(data["refresh_token"])
     if data.get("expires_in"):
-        oauth_record.expires_at = datetime.utcnow() + timedelta(
-            seconds=int(data["expires_in"])
-        )
-    oauth_record.status = "active"
-    oauth_record.updated_at = datetime.utcnow()
+        record.expires_at = datetime.utcnow() + timedelta(seconds=int(data["expires_in"]))
+    record.status      = "active"
+    record.updated_at  = datetime.utcnow()
     db.session.commit()
-    logger.info("X token refreshed for user %s", oauth_record.user_id)
+    logger.info("X token refreshed (account id=%s @%s)", record.id, record.username)
     return True
 
 
-def _refresh_token_if_needed(oauth_record) -> bool:
-    """Refresh only when the token is near expiry or already expired."""
-    if not oauth_record.needs_refresh:
+def _refresh_if_needed(record) -> bool:
+    """Refresh only when the token is within 10 min of expiry or already expired."""
+    if not record.needs_refresh:
         return True
-    return _refresh_token(oauth_record)
+    return _do_refresh(record)
 
 
-def _make_user_request(oauth_record, method: str, url: str, **kwargs) -> requests.Response:
+def _make_user_request(record, method: str, url: str, **kwargs) -> requests.Response:
     """
-    Make an authenticated X API request using the user's access token.
-    Automatically refreshes and retries once on HTTP 401.
+    Make an authenticated X API request using the account's access token.
+    Auto-refreshes and retries once on HTTP 401.
     Raises requests.RequestException on network failure.
     """
-    def _do_request():
-        token = oauth_record.get_access_token()
-        hdrs = kwargs.pop("headers", {})
+    def _call():
+        token = record.get_access_token()
+        hdrs  = kwargs.pop("headers", {})
         hdrs["Authorization"] = f"Bearer {token}"
         return requests.request(method, url, headers=hdrs, timeout=15, **kwargs)
 
-    resp = _do_request()
+    resp = _call()
 
     if resp.status_code == 401:
-        logger.info("X API 401 — attempting token refresh for user %s", oauth_record.user_id)
-        if _refresh_token(oauth_record):
-            resp = _do_request()
-        else:
-            logger.warning("X API 401 — refresh failed, staying on original response")
+        logger.info("X API 401 — attempting refresh for account id=%s", record.id)
+        if _do_refresh(record):
+            resp = _call()
 
     return resp
+
+
+def _record_to_dict(r) -> dict:
+    """Serialise an XOAuth record for JSON / template use."""
+    return {
+        "id":                r.id,
+        "x_user_id":         r.x_user_id,
+        "username":          r.username,
+        "display_name":      r.display_name,
+        "profile_image_url": r.profile_image_url,
+        "status":            r.status,
+        "is_expired":        r.is_expired,
+        "needs_refresh":     r.needs_refresh,
+        "scope":             r.scope,
+        "expires_at":        r.expires_at.isoformat() if r.expires_at else None,
+        "created_at":        r.created_at.isoformat() if r.created_at else None,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -216,7 +242,7 @@ def _make_user_request(oauth_record, method: str, url: str, **kwargs) -> request
 @x_bp.route("/connect")
 @login_required
 def connect():
-    """Initiate X OAuth 2.0 PKCE flow."""
+    """Initiate a new X OAuth 2.0 PKCE consent flow for a fresh account."""
     client_id = _get_client_id()
     if not client_id:
         flash(
@@ -232,10 +258,10 @@ def connect():
     code_challenge = _b64url(hashlib.sha256(code_verifier.encode()).digest())
     state          = _b64url(secrets.token_bytes(24))
 
-    session["x_oauth_state"]        = state
+    session["x_oauth_state"]         = state
     session["x_oauth_code_verifier"] = code_verifier
     company = _get_current_company()
-    session["x_oauth_company_id"]   = company.id if company else None
+    session["x_oauth_company_id"]    = company.id if company else None
 
     params = {
         "response_type":         "code",
@@ -253,29 +279,29 @@ def connect():
 @x_bp.route("/callback")
 @login_required
 def callback():
-    """Handle the X OAuth callback — exchange code for tokens, store record."""
+    """Exchange the auth code for tokens and store/update the XOAuth record."""
     error = request.args.get("error")
     if error:
         flash(
             f"X authorization failed: {request.args.get('error_description', error)}",
             "error",
         )
-        return redirect(url_for("main.dashboard"))
+        return redirect(url_for("x_auth.manage"))
 
-    state        = request.args.get("state")
-    code         = request.args.get("code")
-    stored_state = session.pop("x_oauth_state",        None)
+    state         = request.args.get("state")
+    code          = request.args.get("code")
+    stored_state  = session.pop("x_oauth_state",         None)
     code_verifier = session.pop("x_oauth_code_verifier", None)
-    company_id   = session.pop("x_oauth_company_id",   None)
+    company_id    = session.pop("x_oauth_company_id",    None)
 
     if not stored_state or state != stored_state:
         logger.error("X OAuth state mismatch — possible CSRF from user %s", current_user.id)
         flash("Security validation failed. Please try connecting again.", "error")
-        return redirect(url_for("main.dashboard"))
+        return redirect(url_for("x_auth.manage"))
 
     if not code:
         flash("No authorization code received from X.", "error")
-        return redirect(url_for("main.dashboard"))
+        return redirect(url_for("x_auth.manage"))
 
     client_id = _get_client_id()
     try:
@@ -294,13 +320,13 @@ def callback():
     except requests.RequestException as exc:
         logger.error("X token exchange network error: %s", exc)
         flash("Could not reach X. Please check your connection and try again.", "error")
-        return redirect(url_for("main.dashboard"))
+        return redirect(url_for("x_auth.manage"))
 
     if not token_resp.ok:
         msg, _ = _parse_x_error(token_resp)
         logger.error("X token exchange failed: %s", msg)
         flash(f"Failed to connect X account: {msg}", "error")
-        return redirect(url_for("main.dashboard"))
+        return redirect(url_for("x_auth.manage"))
 
     token_data   = token_resp.json()
     access_token = token_data.get("access_token")
@@ -314,13 +340,13 @@ def callback():
     except requests.RequestException as exc:
         logger.error("X /users/me network error: %s", exc)
         flash("Connected but failed to fetch your X profile. Please try again.", "error")
-        return redirect(url_for("main.dashboard"))
+        return redirect(url_for("x_auth.manage"))
 
     if not me_resp.ok:
         msg, _ = _parse_x_error(me_resp)
         logger.error("X /users/me failed: %s", msg)
         flash(f"Could not retrieve your X profile: {msg}", "error")
-        return redirect(url_for("main.dashboard"))
+        return redirect(url_for("x_auth.manage"))
 
     user_info = me_resp.json().get("data", {})
 
@@ -335,6 +361,7 @@ def callback():
             seconds=int(token_data["expires_in"])
         )
 
+    # Upsert: if this exact X account was already connected, refresh its tokens.
     existing = XOAuth.query.filter_by(
         user_id=current_user.id,
         x_user_id=user_info.get("id"),
@@ -343,18 +370,21 @@ def callback():
     if existing:
         existing.set_access_token(access_token)
         existing.set_refresh_token(token_data.get("refresh_token"))
-        existing.expires_at       = expires_at
-        existing.scope            = token_data.get("scope", X_SCOPES)
-        existing.token_type       = token_data.get("token_type", "bearer")
-        existing.username         = user_info.get("username")
-        existing.display_name     = user_info.get("name")
+        existing.expires_at        = expires_at
+        existing.scope             = token_data.get("scope", X_SCOPES)
+        existing.token_type        = token_data.get("token_type", "bearer")
+        existing.username          = user_info.get("username")
+        existing.display_name      = user_info.get("name")
         existing.profile_image_url = user_info.get("profile_image_url")
-        existing.status           = "active"
-        existing.company_id       = company.id if company else None
-        existing.updated_at       = datetime.utcnow()
+        existing.status            = "active"
+        existing.company_id        = company.id if company else None
+        existing.updated_at        = datetime.utcnow()
         db.session.commit()
         flash(f"X account @{existing.username} reconnected successfully!", "success")
-        account_username = existing.username
+        logger.info(
+            "X OAuth re-connected: user=%s @%s (record id=%s)",
+            current_user.id, existing.username, existing.id,
+        )
     else:
         record = XOAuth(
             user_id=current_user.id,
@@ -373,100 +403,98 @@ def callback():
         db.session.add(record)
         db.session.commit()
         flash(f"X account @{record.username} connected successfully!", "success")
-        account_username = record.username
+        logger.info(
+            "X OAuth connected: user=%s @%s (record id=%s)",
+            current_user.id, record.username, record.id,
+        )
 
-    logger.info("X OAuth completed — user %s connected @%s", current_user.id, account_username)
     return redirect(url_for("x_auth.manage"))
 
 
 @x_bp.route("/disconnect", methods=["POST"])
 @login_required
 def disconnect():
-    """Revoke the X token and remove the stored OAuth record."""
-    company = _get_current_company()
-    try:
-        from models import XOAuth
-        record = XOAuth.query.filter_by(
-            user_id=current_user.id,
-            company_id=company.id if company else None,
-        ).first()
+    """Revoke and delete one specific X account (identified by account_id)."""
+    payload    = request.get_json() or {}
+    account_id = payload.get("account_id")
+    company    = _get_current_company()
 
-        if not record:
-            return jsonify({"success": False, "error": "No X account connected"})
+    if not account_id:
+        return jsonify({"success": False, "error": "account_id is required"})
 
-        access_token = record.get_access_token()
-        client_id    = _get_client_id()
-        if access_token and client_id:
-            try:
-                requests.post(
-                    X_REVOKE_URL,
-                    data={"token": access_token, "client_id": client_id},
-                    headers={"Content-Type": "application/x-www-form-urlencoded"},
-                    timeout=10,
-                )
-            except Exception as exc:
-                logger.warning("X token revoke non-fatal error: %s", exc)
+    record, err = _get_account(
+        int(account_id), current_user.id, company.id if company else None
+    )
+    if err:
+        return jsonify({"success": False, "error": err})
 
-        db.session.delete(record)
-        db.session.commit()
-        logger.info("X account disconnected for user %s", current_user.id)
-        return jsonify({"success": True, "message": "X account disconnected"})
+    access_token = record.get_access_token()
+    client_id    = _get_client_id()
+    if access_token and client_id:
+        try:
+            requests.post(
+                X_REVOKE_URL,
+                data={"token": access_token, "client_id": client_id},
+                headers={"Content-Type": "application/x-www-form-urlencoded"},
+                timeout=10,
+            )
+        except Exception as exc:
+            logger.warning("X token revoke non-fatal error: %s", exc)
 
-    except Exception as exc:
-        logger.error("X disconnect error: %s", exc)
-        return jsonify({"success": False, "error": str(exc)})
+    username = record.username
+    db.session.delete(record)
+    db.session.commit()
+    logger.info(
+        "X account @%s (id=%s) disconnected by user %s",
+        username, account_id, current_user.id,
+    )
+    return jsonify({"success": True, "message": f"@{username} disconnected"})
 
 
 @x_bp.route("/refresh", methods=["POST"])
 @login_required
 def refresh():
-    """Manually force a token refresh."""
-    company = _get_current_company()
-    try:
-        record = _get_oauth_record(current_user.id, company.id if company else None)
-        if not record:
-            return jsonify({"success": False, "error": "No active X account connected"})
+    """Force a token refresh for one specific account."""
+    payload    = request.get_json() or {}
+    account_id = payload.get("account_id")
+    company    = _get_current_company()
 
-        if _refresh_token(record):
-            return jsonify({"success": True, "message": "X token refreshed successfully"})
+    if not account_id:
+        return jsonify({"success": False, "error": "account_id is required"})
+
+    record, err = _get_account(
+        int(account_id), current_user.id, company.id if company else None
+    )
+    if err:
+        return jsonify({"success": False, "error": err})
+
+    if _do_refresh(record):
         return jsonify({
-            "success": False,
-            "error": "Token refresh failed. Please disconnect and reconnect your X account.",
+            "success":   True,
+            "message":   f"Token refreshed for @{record.username}",
+            "is_expired": record.is_expired,
         })
-
-    except Exception as exc:
-        logger.error("X manual refresh error: %s", exc)
-        return jsonify({"success": False, "error": str(exc)})
+    return jsonify({
+        "success": False,
+        "error":   "Token refresh failed. Please disconnect and reconnect this account.",
+        "action":  "reconnect",
+    })
 
 
 @x_bp.route("/status")
 @login_required
 def status():
-    """Return the current X connection status for the active company."""
+    """Return the list of all connected X accounts for the current user/company."""
     company = _get_current_company()
     try:
-        from models import XOAuth
-        record = XOAuth.query.filter_by(
-            user_id=current_user.id,
-            company_id=company.id if company else None,
-        ).first()
-
-        if not record:
-            return jsonify({"connected": False, "message": "No X account connected"})
-
+        records = _get_all_records(
+            current_user.id, company.id if company else None
+        )
         return jsonify({
-            "connected":         True,
-            "status":            record.status,
-            "username":          record.username,
-            "display_name":      record.display_name,
-            "profile_image_url": record.profile_image_url,
-            "x_user_id":         record.x_user_id,
-            "expires_at":        record.expires_at.isoformat() if record.expires_at else None,
-            "is_expired":        record.is_expired,
-            "needs_refresh":     record.needs_refresh,
-            "scope":             record.scope,
+            "connected": len(records) > 0,
+            "count":     len(records),
+            "accounts":  [_record_to_dict(r) for r in records],
         })
-
     except Exception as exc:
         logger.error("X status error: %s", exc)
         return jsonify({"connected": False, "error": str(exc)})
@@ -475,16 +503,14 @@ def status():
 @x_bp.route("/manage")
 @login_required
 def manage():
-    """Render the X account management page."""
+    """Render the X accounts management page."""
     company = _get_current_company()
-    from models import XOAuth
-    record = XOAuth.query.filter_by(
-        user_id=current_user.id,
-        company_id=company.id if company else None,
-    ).first()
+    records = _get_all_records(
+        current_user.id, company.id if company else None
+    )
     return render_template(
         "x_integration.html",
-        x_record=record,
+        x_records=records,
         company=company,
     )
 
@@ -493,30 +519,58 @@ def manage():
 # API routes  (/api/x/…)
 # ---------------------------------------------------------------------------
 
+@x_api_bp.route("/accounts")
+@login_required
+def list_accounts():
+    """Return all connected X accounts as JSON."""
+    company = _get_current_company()
+    try:
+        records = _get_all_records(
+            current_user.id, company.id if company else None
+        )
+        return jsonify({
+            "success":  True,
+            "accounts": [_record_to_dict(r) for r in records],
+            "count":    len(records),
+        })
+    except Exception as exc:
+        logger.error("X list_accounts error: %s", exc)
+        return jsonify({"success": False, "error": str(exc)})
+
+
 @x_api_bp.route("/tweet", methods=["POST"])
 @login_required
 def create_tweet():
-    """Post a tweet on behalf of the connected X account (user token)."""
+    """
+    Post a tweet on behalf of a specific connected X account.
+    Required JSON fields: text (str), account_id (int)
+    """
     company = _get_current_company()
-    payload = request.get_json() or {}
-    text    = (payload.get("text") or "").strip()
+    payload    = request.get_json() or {}
+    text       = (payload.get("text") or "").strip()
+    account_id = payload.get("account_id")
 
     if not text:
         return jsonify({"success": False, "error": "Tweet text is required"})
     if len(text) > 280:
         return jsonify({"success": False, "error": "Tweet text exceeds 280 characters"})
+    if not account_id:
+        return jsonify({"success": False, "error": "account_id is required — select which X account to post from"})
 
     try:
-        record = _get_oauth_record(current_user.id, company.id if company else None)
-        if not record:
-            return jsonify({"success": False, "error": "X account not connected. Please connect first."})
+        record, err = _get_account(
+            int(account_id), current_user.id, company.id if company else None
+        )
+        if err:
+            return jsonify({"success": False, "error": err})
 
-        _refresh_token_if_needed(record)
+        _refresh_if_needed(record)
         if record.is_expired:
             return jsonify({
-                "success": False,
-                "error":   "X token expired. Please reconnect your account.",
-                "action":  "reconnect",
+                "success":  False,
+                "error":    f"Token expired for @{record.username}. Please reconnect this account.",
+                "action":   "reconnect",
+                "account_id": record.id,
             })
 
         resp = _make_user_request(
@@ -527,23 +581,31 @@ def create_tweet():
 
         if not resp.ok:
             msg, raw = _parse_x_error(resp)
-            logger.error("X create tweet failed (HTTP %s): %s", resp.status_code, raw)
+            logger.error(
+                "X create tweet failed (account @%s, HTTP %s): %s",
+                record.username, resp.status_code, raw,
+            )
             result = {"success": False, "error": msg}
             if resp.status_code == 429:
                 result["action"] = "rate_limited"
             elif resp.status_code == 401:
-                result["action"] = "reconnect"
+                result["action"]     = "reconnect"
+                result["account_id"] = record.id
             return jsonify(result)
 
-        data      = resp.json().get("data", {})
-        tweet_id  = data.get("id")
-        tweet_text = data.get("text", text)
-        logger.info("X tweet created (id=%s) for user %s", tweet_id, current_user.id)
+        tweet_data = resp.json().get("data", {})
+        tweet_id   = tweet_data.get("id")
+        tweet_text = tweet_data.get("text", text)
+        logger.info(
+            "X tweet created (id=%s, account @%s, user %s)",
+            tweet_id, record.username, current_user.id,
+        )
         return jsonify({
-            "success":  True,
-            "tweet_id": tweet_id,
-            "text":     tweet_text,
-            "url":      f"https://x.com/{record.username}/status/{tweet_id}",
+            "success":       True,
+            "tweet_id":      tweet_id,
+            "text":          tweet_text,
+            "account":       record.username,
+            "url":           f"https://x.com/{record.username}/status/{tweet_id}",
         })
 
     except requests.RequestException as exc:
@@ -557,18 +619,28 @@ def create_tweet():
 @x_api_bp.route("/tweet/<tweet_id>", methods=["DELETE"])
 @login_required
 def delete_tweet(tweet_id):
-    """Delete a tweet by ID (must be owned by the connected account)."""
-    company = _get_current_company()
-    try:
-        record = _get_oauth_record(current_user.id, company.id if company else None)
-        if not record:
-            return jsonify({"success": False, "error": "X account not connected"})
+    """
+    Delete a tweet that belongs to a specific connected account.
+    Requires query param: account_id
+    """
+    company    = _get_current_company()
+    account_id = request.args.get("account_id")
 
-        _refresh_token_if_needed(record)
+    if not account_id:
+        return jsonify({"success": False, "error": "account_id query param is required"})
+
+    try:
+        record, err = _get_account(
+            int(account_id), current_user.id, company.id if company else None
+        )
+        if err:
+            return jsonify({"success": False, "error": err})
+
+        _refresh_if_needed(record)
         if record.is_expired:
             return jsonify({
                 "success": False,
-                "error":   "X token expired. Please reconnect.",
+                "error":   f"Token expired for @{record.username}. Please reconnect.",
                 "action":  "reconnect",
             })
 
@@ -578,18 +650,24 @@ def delete_tweet(tweet_id):
 
         if not resp.ok:
             msg, raw = _parse_x_error(resp)
-            logger.error("X delete tweet %s failed (HTTP %s): %s", tweet_id, resp.status_code, raw)
-            result = {"success": False, "error": msg}
+            logger.error(
+                "X delete tweet %s failed (account @%s, HTTP %s): %s",
+                tweet_id, record.username, resp.status_code, raw,
+            )
             if resp.status_code == 403:
-                result["error"] = "You can only delete your own tweets."
+                msg = "You can only delete your own tweets."
             elif resp.status_code == 404:
-                result["error"] = "Tweet not found — it may have already been deleted."
-            elif resp.status_code == 429:
+                msg = "Tweet not found — it may have already been deleted."
+            result = {"success": False, "error": msg}
+            if resp.status_code == 429:
                 result["action"] = "rate_limited"
             return jsonify(result)
 
         deleted = resp.json().get("data", {}).get("deleted", False)
-        logger.info("X tweet %s deleted by user %s", tweet_id, current_user.id)
+        logger.info(
+            "X tweet %s deleted (account @%s, user %s)",
+            tweet_id, record.username, current_user.id,
+        )
         return jsonify({"success": True, "deleted": deleted})
 
     except requests.RequestException as exc:
@@ -603,62 +681,73 @@ def delete_tweet(tweet_id):
 @x_api_bp.route("/tweets")
 @login_required
 def get_recent_tweets():
-    """Fetch the authenticated user's recent tweets (up to 10)."""
-    company = _get_current_company()
-    try:
-        record = _get_oauth_record(current_user.id, company.id if company else None)
-        if not record:
-            return jsonify({"success": False, "error": "X account not connected"})
+    """
+    Fetch recent tweets for a specific connected account.
+    Requires query param: account_id
+    """
+    company    = _get_current_company()
+    account_id = request.args.get("account_id")
 
-        _refresh_token_if_needed(record)
+    if not account_id:
+        return jsonify({"success": False, "error": "account_id query param is required"})
+
+    try:
+        record, err = _get_account(
+            int(account_id), current_user.id, company.id if company else None
+        )
+        if err:
+            return jsonify({"success": False, "error": err})
+
+        _refresh_if_needed(record)
         if record.is_expired:
             return jsonify({
                 "success": False,
-                "error":   "X token expired. Please reconnect.",
+                "error":   f"Token expired for @{record.username}. Please reconnect.",
                 "action":  "reconnect",
             })
 
         params = {
-            "max_results":   10,
-            "tweet.fields":  "created_at,public_metrics",
-            "exclude":       "retweets,replies",
+            "max_results":  10,
+            "tweet.fields": "created_at,public_metrics",
+            "exclude":      "retweets,replies",
         }
         resp = _make_user_request(
-            record,
-            "GET",
+            record, "GET",
             f"https://api.x.com/2/users/{record.x_user_id}/tweets",
             params=params,
         )
 
         if not resp.ok:
             msg, raw = _parse_x_error(resp)
-            logger.error("X get tweets failed (HTTP %s): %s", resp.status_code, raw)
+            logger.error(
+                "X get tweets failed (account @%s, HTTP %s): %s",
+                record.username, resp.status_code, raw,
+            )
             result = {"success": False, "error": msg}
-            if resp.status_code == 429:
-                result["action"] = "rate_limited"
-            elif resp.status_code == 401:
-                result["action"] = "reconnect"
+            if resp.status_code in (401, 429):
+                result["action"] = "reconnect" if resp.status_code == 401 else "rate_limited"
             return jsonify(result)
 
-        data   = resp.json()
-        tweets = data.get("data") or []
-        formatted = []
-        for t in tweets:
-            metrics = t.get("public_metrics", {})
-            formatted.append({
-                "id":            t["id"],
-                "text":          t["text"],
-                "created_at":    t.get("created_at"),
-                "likes":         metrics.get("like_count", 0),
-                "retweets":      metrics.get("retweet_count", 0),
-                "replies":       metrics.get("reply_count", 0),
-                "url":           f"https://x.com/{record.username}/status/{t['id']}",
+        raw_tweets = resp.json().get("data") or []
+        tweets = []
+        for t in raw_tweets:
+            m = t.get("public_metrics", {})
+            tweets.append({
+                "id":         t["id"],
+                "text":       t["text"],
+                "created_at": t.get("created_at"),
+                "likes":      m.get("like_count", 0),
+                "retweets":   m.get("retweet_count", 0),
+                "replies":    m.get("reply_count", 0),
+                "url":        f"https://x.com/{record.username}/status/{t['id']}",
             })
 
         return jsonify({
-            "success": True,
-            "tweets":  formatted,
-            "count":   len(formatted),
+            "success":    True,
+            "tweets":     tweets,
+            "count":      len(tweets),
+            "account_id": record.id,
+            "username":   record.username,
         })
 
     except requests.RequestException as exc:
@@ -672,24 +761,18 @@ def get_recent_tweets():
 @x_api_bp.route("/user")
 @login_required
 def get_user():
-    """Return the stored connected X user info."""
+    """Return stored info for all connected X accounts."""
     company = _get_current_company()
     try:
-        record = _get_oauth_record(current_user.id, company.id if company else None)
-        if not record:
-            return jsonify({"success": False, "error": "X account not connected"})
-
+        records = _get_all_records(
+            current_user.id, company.id if company else None
+        )
+        if not records:
+            return jsonify({"success": False, "error": "No X accounts connected"})
         return jsonify({
-            "success":          True,
-            "x_user_id":        record.x_user_id,
-            "username":         record.username,
-            "display_name":     record.display_name,
-            "profile_image_url": record.profile_image_url,
-            "status":           record.status,
-            "is_expired":       record.is_expired,
-            "needs_refresh":    record.needs_refresh,
+            "success":  True,
+            "accounts": [_record_to_dict(r) for r in records],
         })
-
     except Exception as exc:
-        logger.error("X get user error: %s", exc)
+        logger.error("X get_user error: %s", exc)
         return jsonify({"success": False, "error": str(exc)})

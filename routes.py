@@ -4568,11 +4568,11 @@ def social_accounts():
     from models import SocialMediaAccount, XOAuth
     accounts = SocialMediaAccount.query.filter_by(is_active=True).all()
     company = current_user.get_default_company() if current_user.is_authenticated else None
-    x_record = XOAuth.query.filter_by(
+    x_records = XOAuth.query.filter_by(
         user_id=current_user.id,
         company_id=company.id if company else None,
-    ).first()
-    return render_template('social_accounts.html', accounts=accounts, x_record=x_record)
+    ).all()
+    return render_template('social_accounts.html', accounts=accounts, x_records=x_records)
 
 @main_bp.route('/facebook/accounts')
 @login_required
