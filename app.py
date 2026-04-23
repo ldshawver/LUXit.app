@@ -112,9 +112,14 @@ def create_app() -> Flask:
     app.config.update(
         WTF_CSRF_ENABLED=not is_replit,
         WTF_CSRF_TIME_LIMIT=None,
-        SESSION_COOKIE_SAMESITE="Lax",
+        # Replit serves the app inside an iframe (replit.com parent, replit.dev child).
+        # SameSite=Lax blocks cookies across that boundary, so we use None+Secure on Replit.
+        SESSION_COOKIE_SAMESITE="None" if is_replit else "Lax",
         SESSION_COOKIE_HTTPONLY=True,
-        SESSION_COOKIE_SECURE=not is_replit,
+        SESSION_COOKIE_SECURE=True,
+        REMEMBER_COOKIE_SAMESITE="None" if is_replit else "Lax",
+        REMEMBER_COOKIE_SECURE=True,
+        REMEMBER_COOKIE_HTTPONLY=True,
         PERMANENT_SESSION_LIFETIME=timedelta(days=7),
     )
 
@@ -142,6 +147,7 @@ def create_app() -> Flask:
     login_manager.login_view = "auth.login"
     login_manager.login_message = "Please log in to access this page."
     login_manager.login_message_category = "info"
+    login_manager.session_protection = "basic"
 
     @login_manager.user_loader
     def load_user(user_id):
