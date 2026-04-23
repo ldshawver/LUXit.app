@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% block title %}Call Log — LUXit{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4" style="max-width:960px;">
+
+  <div class="d-flex align-items-center gap-3 mb-4">
+    <div>
+      <h4 class="mb-0 fw-bold">
+        <i data-feather="phone" style="width:18px;height:18px;color:#7c3aed;"></i>
+        Call Log
+      </h4>
+      <small class="text-muted">Inbound & outbound call history</small>
+    </div>
+    <div class="ms-auto">
+      <a href="{{ url_for('twilio.inbox') }}" class="btn btn-sm btn-outline-secondary">
+        <i data-feather="inbox" style="width:13px;height:13px;"></i> SMS Inbox
+      </a>
+    </div>
+  </div>
+
+  {% if calls %}
+  <div class="card" style="background:#0f1117;border:1px solid #1e2535;">
+    <div class="table-responsive">
+      <table class="table table-dark mb-0" style="font-size:.87rem;">
+        <thead style="border-bottom:1px solid #1e2535;color:#9aa4b2;">
+          <tr>
+            <th>From</th><th>To</th><th>Caller</th><th>Direction</th>
+            <th>Status</th><th>Duration</th><th>Missed Text</th><th>Date</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for call in calls %}
+          <tr style="border-bottom:1px solid #1e2535;">
+            <td>{{ call.from_number }}</td>
+            <td>{{ call.to_number }}</td>
+            <td class="text-muted">{{ call.caller_name or '—' }}</td>
+            <td>
+              <span class="badge" style="font-size:.72rem;background:{% if call.direction=='inbound' %}rgba(124,58,237,.3);color:#a78bfa{% else %}rgba(6,182,212,.3);color:#06b6d4{% endif %};">
+                {{ call.direction }}
+              </span>
+            </td>
+            <td>
+              <span class="badge" style="font-size:.72rem;background:{% if call.status=='completed' %}rgba(34,197,94,.3);color:#4ade80{% elif call.status in ('no-answer','busy') %}rgba(239,68,68,.3);color:#f87171{% else %}rgba(107,114,128,.3);color:#9ca3af{% endif %};">
+                {{ call.status }}
+              </span>
+            </td>
+            <td class="text-muted">{% if call.duration %}{{ call.duration }}s{% else %}—{% endif %}</td>
+            <td>{% if call.missed_text_sent %}<span class="badge bg-success" style="font-size:.7rem;">Sent</span>{% else %}—{% endif %}</td>
+            <td class="text-muted">{{ call.created_at.strftime('%b %-d %I:%M %p') if call.created_at else '—' }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% else %}
+  <div class="card text-center py-5" style="background:#0f1117;border:1px solid #1e2535;">
+    <div class="card-body">
+      <i data-feather="phone-off" style="width:40px;height:40px;opacity:.3;"></i>
+      <p class="text-muted mt-3">No call records yet. Configure the voice webhook to start logging calls.</p>
+    </div>
+  </div>
+  {% endif %}
+</div>
+<script>feather.replace();</script>
+{% endblock %}

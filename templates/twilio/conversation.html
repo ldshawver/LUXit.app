@@ -1,0 +1,180 @@
+{% extends "base.html" %}
+{% block title %}{{ conv.contact_name or conv.from_number }} — SMS Inbox{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-3" style="max-width:860px;">
+
+  <!-- Back + header -->
+  <div class="d-flex align-items-center gap-3 mb-3">
+    <a href="{{ url_for('twilio.inbox') }}" class="btn btn-sm btn-outline-secondary">
+      <i data-feather="arrow-left" style="width:13px;height:13px;"></i>
+    </a>
+    <div>
+      <h5 class="mb-0 fw-bold">{{ conv.contact_name or conv.from_number }}</h5>
+      <small class="text-muted">
+        {{ conv.from_number }}
+        {% if conv.is_opted_out %} · <span class="text-danger">Opted Out</span>{% endif %}
+        {% if conv.lead_captured %} · <span style="color:#7c3aed;">Lead Captured</span>{% endif %}
+      </small>
+    </div>
+    <div class="ms-auto d-flex gap-2">
+      {% if not conv.is_opted_out %}
+      <button class="btn btn-sm btn-outline-secondary" onclick="addTag()">
+        <i data-feather="tag" style="width:13px;height:13px;"></i> Tag
+      </button>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- Tags -->
+  {% if conv.tags %}
+  <div class="d-flex gap-1 mb-3 flex-wrap">
+    {% for tag in conv.tags %}
+    <span class="badge bg-dark border" style="border-color:#374151!important;font-size:.78rem;">{{ tag }}</span>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  <!-- Notes -->
+  <div class="card mb-3" style="background:#0f1117;border:1px solid #1e2535;">
+    <div class="card-body py-2 px-3">
+      <div class="d-flex align-items-center gap-2 mb-1">
+        <i data-feather="file-text" style="width:13px;height:13px;color:#9aa4b2;"></i>
+        <small class="text-muted">Notes</small>
+        <button class="btn btn-xs ms-auto" style="padding:0 6px;font-size:.75rem;color:#7c3aed;" onclick="saveNote()">Save</button>
+      </div>
+      <textarea id="notes-field" class="form-control form-control-sm"
+                style="background:#0b0d14;border-color:#1e2535;color:#f7f7fb;resize:none;" rows="2"
+                placeholder="Internal notes about this contact…">{{ conv.notes or '' }}</textarea>
+    </div>
+  </div>
+
+  <!-- Message thread -->
+  <div id="thread" class="mb-3" style="max-height:420px;overflow-y:auto;display:flex;flex-direction:column;gap:10px;padding-right:4px;">
+    {% for msg in messages %}
+    <div class="d-flex {% if msg.direction == 'outbound' %}justify-content-end{% endif %}">
+      <div style="max-width:72%;padding:10px 14px;border-radius:
+        {% if msg.direction == 'outbound' %}16px 4px 16px 16px{% else %}4px 16px 16px 16px{% endif %};
+        background:{% if msg.direction == 'outbound' %}{% if msg.is_auto_reply %}rgba(6,182,212,.15);border:1px solid rgba(6,182,212,.3){% else %}#7c3aed{% endif %}{% else %}#1e2535{% endif %};">
+        <p class="mb-1" style="font-size:.88rem;color:#f7f7fb;word-break:break-word;">{{ msg.body or '(media)' }}</p>
+        <div class="d-flex align-items-center gap-2">
+          <small style="font-size:.72rem;color:#9aa4b2;">
+            {{ msg.created_at.strftime('%b %-d %I:%M %p') if msg.created_at else '' }}
+            {% if msg.is_auto_reply %} · <span style="color:#06b6d4;">auto-reply</span>{% endif %}
+          </small>
+          {% if msg.direction == 'outbound' %}
+          <small style="font-size:.72rem;color:
+            {% if msg.status == 'delivered' %}#22c55e
+            {% elif msg.status == 'failed' %}#ef4444
+            {% elif msg.status == 'undelivered' %}#f59e0b
+            {% else %}#9aa4b2{% endif %};">
+            {{ msg.status }}
+          </small>
+          {% endif %}
+        </div>
+        {% if msg.media_urls %}
+        {% for url in msg.media_urls %}
+        <img src="{{ url }}" alt="MMS" style="max-width:200px;border-radius:8px;margin-top:6px;">
+        {% endfor %}
+        {% endif %}
+      </div>
+    </div>
+    {% endfor %}
+    {% if not messages %}
+    <p class="text-muted text-center py-4">No messages yet.</p>
+    {% endif %}
+  </div>
+
+  <!-- Compose (only if not opted out) -->
+  {% if not conv.is_opted_out %}
+  {% if ta and ta.is_configured %}
+  <div class="card" style="background:#0f1117;border:1px solid #1e2535;">
+    <div class="card-body">
+      <textarea id="reply-body" class="form-control mb-2"
+                placeholder="Type a message…" rows="3" maxlength="1600"
+                style="background:#0b0d14;border-color:#1e2535;color:#f7f7fb;resize:none;"></textarea>
+      <div class="d-flex justify-content-between align-items-center">
+        <small id="reply-count" class="text-muted">0 / 1600</small>
+        <button class="btn btn-sm btn-primary" onclick="sendReply()" id="send-btn">
+          <i data-feather="send" style="width:13px;height:13px;"></i> Send
+        </button>
+      </div>
+      <div id="reply-result" class="mt-2" style="display:none;"></div>
+    </div>
+  </div>
+  {% else %}
+  <div class="alert alert-warning">
+    <a href="{{ url_for('twilio.settings') }}" class="alert-link">Configure Twilio</a> to send replies.
+  </div>
+  {% endif %}
+  {% else %}
+  <div class="alert alert-secondary">This contact has opted out of messages.</div>
+  {% endif %}
+</div>
+
+<script>
+feather.replace();
+const CSRF = '{{ csrf_token() }}';
+const CONV_ID = {{ conv.id }};
+
+// Scroll to bottom of thread
+const thread = document.getElementById('thread');
+if (thread) thread.scrollTop = thread.scrollHeight;
+
+// Char counter
+const replyBody = document.getElementById('reply-body');
+if (replyBody) {
+  replyBody.addEventListener('input', () => {
+    document.getElementById('reply-count').textContent = replyBody.value.length + ' / 1600';
+  });
+}
+
+async function sendReply() {
+  const body = replyBody?.value.trim();
+  if (!body) return;
+  const btn = document.getElementById('send-btn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>';
+
+  const r = await fetch('/twilio/send', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF },
+    body: JSON.stringify({ to: '{{ conv.from_number }}', body, conversation_id: CONV_ID }),
+  });
+  const data = await r.json();
+  if (data.success) {
+    replyBody.value = '';
+    document.getElementById('reply-count').textContent = '0 / 1600';
+    setTimeout(() => location.reload(), 600);
+  } else {
+    const el = document.getElementById('reply-result');
+    el.style.display = 'block';
+    el.innerHTML = `<div class="alert alert-danger py-2">${data.error || 'Send failed.'}</div>`;
+    btn.disabled = false;
+    btn.innerHTML = '<i data-feather="send" style="width:13px;height:13px;"></i> Send';
+    feather.replace();
+  }
+}
+
+async function addTag() {
+  const tag = prompt('Enter tag (e.g. hot-lead, vip, follow-up):');
+  if (!tag) return;
+  const r = await fetch(`/twilio/conversation/{{ conv.id }}/tag`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF },
+    body: JSON.stringify({ tag }),
+  });
+  const data = await r.json();
+  if (data.success) location.reload();
+}
+
+async function saveNote() {
+  const notes = document.getElementById('notes-field').value;
+  await fetch(`/twilio/conversation/{{ conv.id }}/note`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF },
+    body: JSON.stringify({ notes }),
+  });
+}
+</script>
+{% endblock %}

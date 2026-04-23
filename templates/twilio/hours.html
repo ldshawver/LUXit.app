@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% block title %}Business Hours — LUXit{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4" style="max-width:680px;">
+
+  <div class="d-flex align-items-center gap-3 mb-4">
+    <div>
+      <h4 class="mb-0 fw-bold">
+        <i data-feather="clock" style="width:18px;height:18px;color:#7c3aed;"></i>
+        Business Hours
+      </h4>
+      <small class="text-muted">Used for after-hours auto-reply rules</small>
+    </div>
+    <div class="ms-auto">
+      <a href="{{ url_for('twilio.inbox') }}" class="btn btn-sm btn-outline-secondary">
+        <i data-feather="inbox" style="width:13px;height:13px;"></i> Inbox
+      </a>
+    </div>
+  </div>
+
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}{% for c,m in messages %}
+    <div class="alert alert-{{ 'danger' if c=='error' else c }} alert-dismissible fade show">
+      {{ m }}<button class="btn-close" data-bs-dismiss="alert"></button>
+    </div>{% endfor %}{% endif %}
+  {% endwith %}
+
+  <form method="POST">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+    <div class="card mb-4" style="background:#0f1117;border:1px solid #1e2535;">
+      <div class="card-header" style="background:#0b0d14;border-bottom:1px solid #1e2535;">
+        <div class="row align-items-center" style="font-size:.82rem;color:#9aa4b2;">
+          <div class="col-3">Day</div>
+          <div class="col-2">Open</div>
+          <div class="col-3">Opens</div>
+          <div class="col-3">Closes</div>
+        </div>
+      </div>
+      <div class="card-body p-0">
+        {% for bh in hours %}
+        <div class="row align-items-center px-3 py-2" style="border-bottom:1px solid #1e2535;">
+          <div class="col-3 fw-semibold" style="font-size:.88rem;">{{ days[bh.day_of_week] }}</div>
+          <div class="col-2">
+            <div class="form-check form-switch">
+              <input class="form-check-input" type="checkbox"
+                     name="open_{{ bh.day_of_week }}" id="open_{{ bh.day_of_week }}"
+                     {% if bh.is_open %}checked{% endif %}
+                     onchange="toggleDay({{ bh.day_of_week }}, this.checked)">
+            </div>
+          </div>
+          <div class="col-3" id="times_{{ bh.day_of_week }}" {% if not bh.is_open %}style="opacity:.3;"{% endif %}>
+            <input type="time" name="open_time_{{ bh.day_of_week }}" class="form-control form-control-sm"
+                   value="{{ bh.open_time }}"
+                   style="background:#0b0d14;border-color:#1e2535;color:#f7f7fb;">
+          </div>
+          <div class="col-3" id="times_close_{{ bh.day_of_week }}" {% if not bh.is_open %}style="opacity:.3;"{% endif %}>
+            <input type="time" name="close_time_{{ bh.day_of_week }}" class="form-control form-control-sm"
+                   value="{{ bh.close_time }}"
+                   style="background:#0b0d14;border-color:#1e2535;color:#f7f7fb;">
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+
+    <div class="mb-4">
+      <label class="form-label" style="font-size:.85rem;">Timezone</label>
+      <select name="timezone" class="form-select" style="background:#0b0d14;border-color:#1e2535;color:#f7f7fb;max-width:300px;">
+        {% set tz = hours[0].timezone if hours else 'America/Chicago' %}
+        {% for zone in ['America/New_York','America/Chicago','America/Denver','America/Los_Angeles','America/Phoenix','America/Anchorage','Pacific/Honolulu','UTC'] %}
+        <option value="{{ zone }}" {% if zone == tz %}selected{% endif %}>{{ zone }}</option>
+        {% endfor %}
+      </select>
+      <small class="text-muted d-block mt-1">Note: Full timezone support coming soon — hours are compared to UTC.</small>
+    </div>
+
+    <button type="submit" class="btn btn-primary">
+      <i data-feather="save" style="width:14px;height:14px;"></i> Save Hours
+    </button>
+  </form>
+</div>
+<script>
+feather.replace();
+function toggleDay(day, open) {
+  ['times_' + day, 'times_close_' + day].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.style.opacity = open ? '1' : '0.3';
+  });
+}
+</script>
+{% endblock %}

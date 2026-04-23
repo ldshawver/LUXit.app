@@ -2168,3 +2168,201 @@ class OnboardingProgress(db.Model):
     go_live_ready = db.Column(db.Boolean, default=False)
     checklist_data = db.Column(JSON, default=dict)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+# ---------------------------------------------------------------------------
+# Twilio Multi-Tenant SMS / Call Platform
+# ---------------------------------------------------------------------------
+
+class TwilioAccount(db.Model):
+    """Per-company Twilio credentials and global settings."""
+    __tablename__ = "twilio_account"
+
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=False, unique=True)
+
+    _account_sid = db.Column("account_sid", db.Text)
+    _auth_token  = db.Column("auth_token",  db.Text)
+    messaging_service_sid = db.Column(db.String(60))
+    from_phone   = db.Column(db.String(20))
+    webhook_base_url = db.Column(db.String(500))
+
+    is_active            = db.Column(db.Boolean, default=True)
+    automation_enabled   = db.Column(db.Boolean, default=True)
+    ai_mode              = db.Column(db.String(20), default="off")   # off | assist | auto
+    ai_system_prompt     = db.Column(db.Text)
+    missed_call_text     = db.Column(db.Text, default="Sorry we missed your call! Reply to schedule a callback.")
+    after_hours_text     = db.Column(db.Text, default="Thanks for reaching out! Our team is currently away. We'll reply during business hours.")
+
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    company = db.relationship("Company", backref=db.backref("twilio_account", uselist=False))
+
+    def set_account_sid(self, sid: str):
+        if not sid:
+            self._account_sid = None
+            return
+        try:
+            from services.secret_vault import vault
+            self._account_sid = vault.encrypt(sid)
+        except Exception:
+            self._account_sid = sid
+
+    def get_account_sid(self) -> str:
+        if not self._account_sid:
+            return None
+        try:
+            from services.secret_vault import vault
+            return vault.decrypt(self._account_sid)
+        except Exception:
+            return self._account_sid
+
+    def set_auth_token(self, token: str):
+        if not token:
+            self._auth_token = None
+            return
+        try:
+            from services.secret_vault import vault
+            self._auth_token = vault.encrypt(token)
+        except Exception:
+            self._auth_token = token
+
+    def get_auth_token(self) -> str:
+        if not self._auth_token:
+            return None
+        try:
+            from services.secret_vault import vault
+            return vault.decrypt(self._auth_token)
+        except Exception:
+            return self._auth_token
+
+    @property
+    def is_configured(self) -> bool:
+        return bool(self._account_sid and self._auth_token and
+                    (self.messaging_service_sid or self.from_phone))
+
+
+class TwilioConversation(db.Model):
+    """One thread per (company, external phone number)."""
+    __tablename__ = "twilio_conversation"
+
+    id = db.Column(db.Integer, primary_key=True)
+    company_id      = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=False)
+    contact_id      = db.Column(db.Integer, db.ForeignKey("contact.id"), nullable=True)
+    from_number     = db.Column(db.String(20), nullable=False)
+    to_number       = db.Column(db.String(20))
+    contact_name    = db.Column(db.String(200))
+    is_read         = db.Column(db.Boolean, default=False)
+    is_opted_out    = db.Column(db.Boolean, default=False)
+    is_first_contact = db.Column(db.Boolean, default=True)
+    lead_captured   = db.Column(db.Boolean, default=False)
+    tags            = db.Column(JSON, default=list)
+    notes           = db.Column(db.Text)
+    assigned_user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True)
+    last_message_at = db.Column(db.DateTime)
+    last_message_preview = db.Column(db.String(200))
+    message_count   = db.Column(db.Integer, default=0)
+    created_at      = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at      = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    messages = db.relationship(
+        "TwilioMessage", backref="conversation", lazy="dynamic",
+        order_by="TwilioMessage.created_at", cascade="all, delete-orphan"
+    )
+    company  = db.relationship("Company", backref="twilio_conversations")
+    contact  = db.relationship("Contact", backref="twilio_conversations")
+
+    __table_args__ = (
+        db.UniqueConstraint("company_id", "from_number", name="uq_twilio_conv_company_from"),
+    )
+
+
+class TwilioMessage(db.Model):
+    """Individual SMS message (inbound or outbound)."""
+    __tablename__ = "twilio_message"
+
+    id              = db.Column(db.Integer, primary_key=True)
+    conversation_id = db.Column(db.Integer, db.ForeignKey("twilio_conversation.id"), nullable=False)
+    company_id      = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=False)
+    twilio_sid      = db.Column(db.String(100), unique=True, nullable=True)
+    direction       = db.Column(db.String(10), nullable=False)   # inbound | outbound
+    from_number     = db.Column(db.String(20))
+    to_number       = db.Column(db.String(20))
+    body            = db.Column(db.Text)
+    status          = db.Column(db.String(50), default="received")
+    num_segments    = db.Column(db.Integer, default=1)
+    media_urls      = db.Column(JSON)
+    is_auto_reply   = db.Column(db.Boolean, default=False)
+    rule_id         = db.Column(db.Integer, db.ForeignKey("auto_reply_rule.id"), nullable=True)
+    error_code      = db.Column(db.String(20))
+    error_message   = db.Column(db.Text)
+    raw_payload     = db.Column(JSON)
+    created_at      = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at      = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class AutoReplyRule(db.Model):
+    """Keyword- and schedule-based auto-reply rules per company."""
+    __tablename__ = "auto_reply_rule"
+
+    id           = db.Column(db.Integer, primary_key=True)
+    company_id   = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=False)
+    name         = db.Column(db.String(200), nullable=False)
+    trigger_type = db.Column(db.String(50))
+    # keyword_contains | keyword_exact | first_contact | after_hours | always | stop_keyword
+    keywords     = db.Column(JSON, default=list)
+    response     = db.Column(db.Text)
+    is_active    = db.Column(db.Boolean, default=True)
+    priority     = db.Column(db.Integer, default=0)
+    action       = db.Column(db.String(50), default="reply")  # reply | forward | opt_out | tag
+    forward_to   = db.Column(db.String(200))
+    tag_value    = db.Column(db.String(100))
+    match_count  = db.Column(db.Integer, default=0)
+    active_days  = db.Column(JSON)           # [0,1,2,3,4] = Mon-Fri
+    active_hours_start = db.Column(db.String(5))   # "09:00"
+    active_hours_end   = db.Column(db.String(5))   # "17:00"
+    created_at   = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at   = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    company = db.relationship("Company", backref="auto_reply_rules")
+
+
+class BusinessHours(db.Model):
+    """Per-company business hours (one row per day of week)."""
+    __tablename__ = "business_hours"
+
+    id           = db.Column(db.Integer, primary_key=True)
+    company_id   = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=False)
+    day_of_week  = db.Column(db.Integer)    # 0=Mon … 6=Sun
+    is_open      = db.Column(db.Boolean, default=True)
+    open_time    = db.Column(db.String(5), default="09:00")
+    close_time   = db.Column(db.String(5), default="17:00")
+    timezone     = db.Column(db.String(50), default="America/Chicago")
+
+    company = db.relationship("Company", backref="business_hours")
+
+    __table_args__ = (
+        db.UniqueConstraint("company_id", "day_of_week", name="uq_biz_hours_company_day"),
+    )
+
+
+class TwilioCallLog(db.Model):
+    """Inbound and outbound call records."""
+    __tablename__ = "twilio_call_log"
+
+    id           = db.Column(db.Integer, primary_key=True)
+    company_id   = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=False)
+    twilio_sid   = db.Column(db.String(100))
+    direction    = db.Column(db.String(20))     # inbound | outbound
+    from_number  = db.Column(db.String(20))
+    to_number    = db.Column(db.String(20))
+    status       = db.Column(db.String(50))     # completed | missed | no-answer | busy | failed
+    duration     = db.Column(db.Integer, default=0)
+    caller_name  = db.Column(db.String(200))
+    notes        = db.Column(db.Text)
+    missed_text_sent = db.Column(db.Boolean, default=False)
+    raw_payload  = db.Column(JSON)
+    created_at   = db.Column(db.DateTime, default=datetime.utcnow)
+
+    company = db.relationship("Company", backref="twilio_call_logs")

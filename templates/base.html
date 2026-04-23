@@ -433,8 +433,11 @@
                     <a href="{{ url_for('main.email_hub') }}" class="sidebar-nav-item{% if _p.startswith('/email') %} active{% endif %}">
                         <i data-feather="mail"></i> Email
                     </a>
-                    <a href="{{ url_for('main.sms_dashboard') }}" class="sidebar-nav-item{% if _p.startswith('/sms') %} active{% endif %}">
-                        <i data-feather="smartphone"></i> SMS
+                    <a href="{{ url_for('main.sms_dashboard') }}" class="sidebar-nav-item{% if _p.startswith('/sms') and not _p.startswith('/twilio') %} active{% endif %}">
+                        <i data-feather="smartphone"></i> SMS Campaigns
+                    </a>
+                    <a href="{{ url_for('twilio.inbox') }}" class="sidebar-nav-item{% if _p.startswith('/twilio') %} active{% endif %}">
+                        <i data-feather="message-square"></i> SMS Inbox
                     </a>
                     <a href="{{ url_for('main.social_media') }}" class="sidebar-nav-item{% if _p.startswith('/social') %} active{% endif %}">
                         <i data-feather="share-2"></i> Social

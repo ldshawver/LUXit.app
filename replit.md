@@ -28,6 +28,7 @@ Key architectural decisions and features include:
 - **Comprehensive Analytics Hub**: Provides 10 metric categories with Chart.js visualizations, including customizable dashboard analytics and predictive analytics (lead scoring, churn risk, send time optimization).
 - **Marketing Automations Hub**: Restructured dashboard for email, SMS, and social DM automations, featuring quick-create cards, trigger selection, a 3-step creation wizard, and a rich automation trigger library.
 - **SMS Service Integration**: Full Twilio integration for campaigns, bulk sending, and AI-powered content.
+- **Multi-Tenant Twilio SMS/Call Platform** (`twilio_sms.py`): Production-ready per-company Twilio platform under `/twilio/*` with encrypted credential storage, conversation threading, auto-reply rules engine (keyword/first-contact/after-hours/stop triggers), business hours, lead auto-capture, missed-call SMS, call log, analytics dashboard, and a full inbox UI. Accessible from sidebar under "SMS Inbox". Webhook endpoints: `POST /twilio/sms/inbound`, `POST /twilio/sms/status`, `POST /twilio/voice/inbound`.
 - **Marketing Calendar**: FullCalendar.js integration for managing scheduled posts, SMS, and email campaigns with drag-and-drop rescheduling.
 - **AI Auto-Generate for Campaigns**: AI-powered subject line generation and advanced social media post creation features.
 - **Email Campaign Builder**: Drag-and-drop builder with content blocks, templates, and A/B testing.

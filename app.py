@@ -187,6 +187,7 @@ def create_app() -> Flask:
     from marketing import marketing_bp
     from legal import legal_bp
     from x_auth import x_bp, x_api_bp
+    from twilio_sms import twilio_bp
 
     # IMPORTANT: Marketing first if it owns "/"
     app.register_blueprint(marketing_bp)
@@ -197,6 +198,7 @@ def create_app() -> Flask:
     app.register_blueprint(advanced_config_bp)
     app.register_blueprint(x_bp)
     app.register_blueprint(x_api_bp)
+    app.register_blueprint(twilio_bp)
 
     from utils import get_campaign_status_color
     app.jinja_env.filters['campaign_status_color'] = get_campaign_status_color

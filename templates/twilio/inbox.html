@@ -1,0 +1,184 @@
+{% extends "base.html" %}
+{% block title %}SMS Inbox — LUXit{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-3" style="max-width:1100px;">
+
+  <!-- Header -->
+  <div class="d-flex align-items-center gap-3 mb-3">
+    <div>
+      <h4 class="mb-0 fw-bold">
+        <i data-feather="message-square" style="width:20px;height:20px;color:#7c3aed;"></i>
+        SMS Inbox
+        {% if unread_count > 0 %}<span class="badge bg-danger ms-2" style="font-size:.7rem;">{{ unread_count }}</span>{% endif %}
+      </h4>
+      <small class="text-muted">Multi-tenant Twilio messaging platform</small>
+    </div>
+    <div class="ms-auto d-flex gap-2 flex-wrap">
+      <a href="{{ url_for('twilio.settings') }}" class="btn btn-sm btn-outline-secondary">
+        <i data-feather="settings" style="width:13px;height:13px;"></i> Settings
+      </a>
+      <a href="{{ url_for('twilio.rules') }}" class="btn btn-sm btn-outline-secondary">
+        <i data-feather="zap" style="width:13px;height:13px;"></i> Rules
+      </a>
+      <a href="{{ url_for('twilio.analytics') }}" class="btn btn-sm btn-outline-secondary">
+        <i data-feather="bar-chart-2" style="width:13px;height:13px;"></i> Analytics
+      </a>
+      <button class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#newMsgModal">
+        <i data-feather="plus" style="width:13px;height:13px;"></i> New Message
+      </button>
+    </div>
+  </div>
+
+  {% if not ta or not ta.is_configured %}
+  <div class="alert alert-warning d-flex align-items-center gap-3">
+    <i data-feather="alert-triangle" style="width:20px;height:20px;"></i>
+    <div>
+      Twilio is not configured.
+      <a href="{{ url_for('twilio.settings') }}" class="alert-link">Add your Twilio credentials →</a>
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- Sub-nav + Search -->
+  <div class="d-flex align-items-center gap-2 mb-3 flex-wrap">
+    <a href="{{ url_for('twilio.inbox') }}" class="btn btn-sm {% if status_filter == 'all' %}btn-primary{% else %}btn-outline-secondary{% endif %}">All</a>
+    <a href="{{ url_for('twilio.inbox', status='unread') }}" class="btn btn-sm {% if status_filter == 'unread' %}btn-primary{% else %}btn-outline-secondary{% endif %}">Unread</a>
+    <a href="{{ url_for('twilio.inbox', status='opted_out') }}" class="btn btn-sm {% if status_filter == 'opted_out' %}btn-primary{% else %}btn-outline-secondary{% endif %}">Opted Out</a>
+    <form class="ms-auto d-flex gap-2" method="get" action="">
+      <input type="hidden" name="status" value="{{ status_filter }}">
+      <input type="search" name="q" class="form-control form-control-sm"
+             placeholder="Search number or name…" value="{{ search }}"
+             style="width:220px;background:#0b0d14;border-color:#1e2535;color:#f7f7fb;">
+      <button class="btn btn-sm btn-outline-secondary" type="submit">
+        <i data-feather="search" style="width:13px;height:13px;"></i>
+      </button>
+    </form>
+  </div>
+
+  <!-- Conversation List -->
+  {% if conversations %}
+  <div class="card" style="background:#0f1117;border:1px solid #1e2535;">
+    {% for conv in conversations %}
+    <a href="{{ url_for('twilio.conversation', conv_id=conv.id) }}"
+       class="d-flex align-items-center gap-3 px-3 py-3 text-decoration-none
+              {% if not conv.is_read %}fw-semibold{% endif %}"
+       style="border-bottom:1px solid #1e2535;color:#f7f7fb;
+              background:{% if not conv.is_read %}rgba(124,58,237,.07){% else %}transparent{% endif %};">
+
+      <!-- Avatar -->
+      <div style="width:42px;height:42px;border-radius:50%;background:#1e2535;
+                  display:flex;align-items:center;justify-content:center;flex-shrink:0;
+                  border:2px solid {% if conv.is_opted_out %}#6b7280{% elif not conv.is_read %}#7c3aed{% else %}#374151{% endif %};">
+        <i data-feather="user" style="width:18px;height:18px;color:#6b7280;"></i>
+      </div>
+
+      <div class="flex-grow-1 min-w-0">
+        <div class="d-flex justify-content-between align-items-baseline">
+          <span style="font-size:.9rem;">
+            {{ conv.contact_name or conv.from_number }}
+            {% if conv.contact_name %}<small class="text-muted ms-1">{{ conv.from_number }}</small>{% endif %}
+          </span>
+          <small class="text-muted flex-shrink-0">
+            {{ conv.last_message_at.strftime('%b %-d') if conv.last_message_at else '' }}
+          </small>
+        </div>
+        <div class="d-flex align-items-center gap-2">
+          <span class="text-muted text-truncate" style="font-size:.82rem;max-width:400px;">
+            {{ conv.last_message_preview or 'No messages yet' }}
+          </span>
+          <div class="ms-auto d-flex gap-1 flex-shrink-0">
+            {% if conv.is_opted_out %}<span class="badge bg-secondary" style="font-size:.68rem;">Opted Out</span>{% endif %}
+            {% if conv.lead_captured %}<span class="badge" style="background:#7c3aed;font-size:.68rem;">Lead</span>{% endif %}
+            {% for tag in (conv.tags or [])[:2] %}
+            <span class="badge bg-dark border" style="font-size:.68rem;border-color:#374151!important;">{{ tag }}</span>
+            {% endfor %}
+            {% if not conv.is_read %}<span class="badge bg-primary" style="font-size:.68rem;width:8px;height:8px;border-radius:50%;padding:0;"></span>{% endif %}
+          </div>
+        </div>
+      </div>
+    </a>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="card text-center py-5" style="background:#0f1117;border:1px solid #1e2535;">
+    <div class="card-body">
+      <i data-feather="inbox" style="width:48px;height:48px;opacity:.3;"></i>
+      <p class="text-muted mt-3">
+        {% if search %}No conversations matching "{{ search }}"{% else %}No conversations yet. Configure Twilio and start messaging!{% endif %}
+      </p>
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- Sub-nav links -->
+  <div class="d-flex gap-3 mt-3" style="font-size:.83rem;">
+    <a href="{{ url_for('twilio.calls') }}" class="text-muted text-decoration-none">
+      <i data-feather="phone" style="width:13px;height:13px;"></i> Call Log
+    </a>
+    <a href="{{ url_for('twilio.business_hours') }}" class="text-muted text-decoration-none">
+      <i data-feather="clock" style="width:13px;height:13px;"></i> Business Hours
+    </a>
+    <a href="{{ url_for('main.sms_dashboard') }}" class="text-muted text-decoration-none">
+      <i data-feather="send" style="width:13px;height:13px;"></i> SMS Campaigns
+    </a>
+  </div>
+</div>
+
+<!-- New Message Modal -->
+<div class="modal fade" id="newMsgModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content" style="background:#0f1117;border:1px solid #1e2535;">
+      <div class="modal-header" style="border-bottom:1px solid #1e2535;">
+        <h5 class="modal-title">New SMS</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="mb-3">
+          <label class="form-label" style="font-size:.85rem;">To (phone number)</label>
+          <input type="tel" id="new-to" class="form-control" placeholder="+15551234567"
+                 style="background:#0b0d14;border-color:#1e2535;color:#f7f7fb;">
+        </div>
+        <div class="mb-3">
+          <label class="form-label" style="font-size:.85rem;">Message</label>
+          <textarea id="new-body" class="form-control" rows="4" maxlength="1600"
+                    style="background:#0b0d14;border-color:#1e2535;color:#f7f7fb;resize:none;"></textarea>
+        </div>
+        <div id="new-msg-result" style="display:none;"></div>
+      </div>
+      <div class="modal-footer" style="border-top:1px solid #1e2535;">
+        <button class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button class="btn btn-sm btn-primary" onclick="sendNewMessage()">
+          <i data-feather="send" style="width:13px;height:13px;"></i> Send
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+feather.replace();
+const CSRF = document.querySelector('meta[name="csrf-token"]')?.content || '{{ csrf_token() }}';
+
+async function sendNewMessage() {
+  const to   = document.getElementById('new-to').value.trim();
+  const body = document.getElementById('new-body').value.trim();
+  const res  = document.getElementById('new-msg-result');
+  if (!to || !body) { res.style.display='block'; res.innerHTML='<div class="alert alert-warning py-2">To and message are required.</div>'; return; }
+
+  const r = await fetch('/twilio/send', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF },
+    body: JSON.stringify({ to, body }),
+  });
+  const data = await r.json();
+  res.style.display = 'block';
+  if (data.success) {
+    res.innerHTML = '<div class="alert alert-success py-2">Sent!</div>';
+    setTimeout(() => location.reload(), 1200);
+  } else {
+    res.innerHTML = `<div class="alert alert-danger py-2">${data.error || 'Send failed.'}</div>`;
+  }
+}
+</script>
+{% endblock %}

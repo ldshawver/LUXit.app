@@ -1,0 +1,189 @@
+{% extends "base.html" %}
+{% block title %}Twilio Settings — LUXit{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4" style="max-width:780px;">
+
+  <div class="d-flex align-items-center gap-3 mb-4">
+    <div>
+      <h4 class="mb-0 fw-bold">
+        <i data-feather="phone" style="width:18px;height:18px;color:#7c3aed;"></i>
+        Twilio Settings
+      </h4>
+      <small class="text-muted">Per-company Twilio credentials and messaging config</small>
+    </div>
+    <div class="ms-auto d-flex gap-2">
+      <a href="{{ url_for('twilio.inbox') }}" class="btn btn-sm btn-outline-secondary">
+        <i data-feather="inbox" style="width:13px;height:13px;"></i> Inbox
+      </a>
+    </div>
+  </div>
+
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}{% for c,m in messages %}
+    <div class="alert alert-{{ 'danger' if c=='error' else c }} alert-dismissible fade show">
+      {{ m }}<button class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+    {% endfor %}{% endif %}
+  {% endwith %}
+
+  <form method="POST">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+    <!-- Credentials -->
+    <div class="card mb-4" style="background:#0f1117;border:1px solid #1e2535;">
+      <div class="card-header d-flex align-items-center gap-2" style="background:#0b0d14;border-bottom:1px solid #1e2535;">
+        <i data-feather="key" style="width:14px;height:14px;color:#7c3aed;"></i>
+        <span class="fw-semibold" style="font-size:.88rem;">Credentials</span>
+        {% if ta and ta.is_configured %}
+        <span class="badge bg-success ms-auto" style="font-size:.72rem;">Configured</span>
+        {% else %}
+        <span class="badge bg-secondary ms-auto" style="font-size:.72rem;">Not Set</span>
+        {% endif %}
+      </div>
+      <div class="card-body">
+        <div class="mb-3">
+          <label class="form-label" style="font-size:.85rem;">Account SID</label>
+          <input type="text" name="account_sid" class="form-control"
+                 placeholder="ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+                 value="{{ ta.get_account_sid()[:8] + '…' if ta and ta._account_sid else '' }}"
+                 style="background:#0b0d14;border-color:#1e2535;color:#f7f7fb;">
+          <small class="text-muted">Starts with AC — leave blank to keep existing</small>
+        </div>
+        <div class="mb-3">
+          <label class="form-label" style="font-size:.85rem;">Auth Token</label>
+          <input type="password" name="auth_token" class="form-control"
+                 placeholder="Leave blank to keep existing"
+                 style="background:#0b0d14;border-color:#1e2535;color:#f7f7fb;">
+        </div>
+        <div class="row g-3">
+          <div class="col-md-6">
+            <label class="form-label" style="font-size:.85rem;">Messaging Service SID</label>
+            <input type="text" name="messaging_service_sid" class="form-control"
+                   placeholder="MGxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+                   value="{{ ta.messaging_service_sid or '' }}"
+                   style="background:#0b0d14;border-color:#1e2535;color:#f7f7fb;">
+            <small class="text-muted">Recommended — takes priority over From number</small>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label" style="font-size:.85rem;">From Phone Number</label>
+            <input type="text" name="from_phone" class="form-control"
+                   placeholder="+15551234567"
+                   value="{{ ta.from_phone or '' }}"
+                   style="background:#0b0d14;border-color:#1e2535;color:#f7f7fb;">
+            <small class="text-muted">Fallback if no Messaging Service SID</small>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Webhook URLs (read-only info) -->
+    <div class="card mb-4" style="background:#0f1117;border:1px solid #1e2535;">
+      <div class="card-header d-flex align-items-center gap-2" style="background:#0b0d14;border-bottom:1px solid #1e2535;">
+        <i data-feather="link" style="width:14px;height:14px;color:#06b6d4;"></i>
+        <span class="fw-semibold" style="font-size:.88rem;">Webhook URLs</span>
+      </div>
+      <div class="card-body">
+        <p class="text-muted mb-3" style="font-size:.85rem;">
+          Configure these URLs in your Twilio console (Messaging Service → Webhooks):
+        </p>
+        <div class="mb-3">
+          <label class="form-label" style="font-size:.8rem;color:#9aa4b2;">Inbound SMS Webhook URL</label>
+          <div class="input-group">
+            <input type="text" class="form-control" readonly
+                   value="{{ request.host_url.rstrip('/') }}/twilio/sms/inbound"
+                   style="background:#0b0d14;border-color:#1e2535;color:#a78bfa;">
+            <button class="btn btn-outline-secondary btn-sm" type="button"
+                    onclick="navigator.clipboard.writeText(this.previousElementSibling.value)">
+              <i data-feather="copy" style="width:13px;height:13px;"></i>
+            </button>
+          </div>
+        </div>
+        <div class="mb-3">
+          <label class="form-label" style="font-size:.8rem;color:#9aa4b2;">Delivery Status Callback URL</label>
+          <div class="input-group">
+            <input type="text" class="form-control" readonly
+                   value="{{ request.host_url.rstrip('/') }}/twilio/sms/status"
+                   style="background:#0b0d14;border-color:#1e2535;color:#a78bfa;">
+            <button class="btn btn-outline-secondary btn-sm" type="button"
+                    onclick="navigator.clipboard.writeText(this.previousElementSibling.value)">
+              <i data-feather="copy" style="width:13px;height:13px;"></i>
+            </button>
+          </div>
+        </div>
+        <div class="mb-2">
+          <label class="form-label" style="font-size:.8rem;color:#9aa4b2;">Voice / Call Webhook URL</label>
+          <div class="input-group">
+            <input type="text" class="form-control" readonly
+                   value="{{ request.host_url.rstrip('/') }}/twilio/voice/inbound"
+                   style="background:#0b0d14;border-color:#1e2535;color:#a78bfa;">
+            <button class="btn btn-outline-secondary btn-sm" type="button"
+                    onclick="navigator.clipboard.writeText(this.previousElementSibling.value)">
+              <i data-feather="copy" style="width:13px;height:13px;"></i>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Automation -->
+    <div class="card mb-4" style="background:#0f1117;border:1px solid #1e2535;">
+      <div class="card-header d-flex align-items-center gap-2" style="background:#0b0d14;border-bottom:1px solid #1e2535;">
+        <i data-feather="zap" style="width:14px;height:14px;color:#ec4899;"></i>
+        <span class="fw-semibold" style="font-size:.88rem;">Automation & AI</span>
+      </div>
+      <div class="card-body">
+        <div class="form-check form-switch mb-3">
+          <input type="checkbox" class="form-check-input" id="automation_enabled"
+                 name="automation_enabled" {% if not ta or ta.automation_enabled %}checked{% endif %}>
+          <label class="form-check-label" for="automation_enabled" style="font-size:.9rem;">
+            Enable auto-reply rules
+          </label>
+        </div>
+        <div class="mb-3">
+          <label class="form-label" style="font-size:.85rem;">AI Mode</label>
+          <select name="ai_mode" class="form-select" style="background:#0b0d14;border-color:#1e2535;color:#f7f7fb;">
+            <option value="off" {% if not ta or ta.ai_mode == 'off' %}selected{% endif %}>Off — manual replies only</option>
+            <option value="assist" {% if ta and ta.ai_mode == 'assist' %}selected{% endif %}>Assist — suggest replies</option>
+            <option value="auto" {% if ta and ta.ai_mode == 'auto' %}selected{% endif %}>Auto — AI replies automatically</option>
+          </select>
+        </div>
+        <div class="mb-3">
+          <label class="form-label" style="font-size:.85rem;">AI System Prompt</label>
+          <textarea name="ai_system_prompt" class="form-control" rows="3"
+                    style="background:#0b0d14;border-color:#1e2535;color:#f7f7fb;"
+                    placeholder="You are a helpful assistant for [Company Name]. Be concise and friendly.">{{ ta.ai_system_prompt or '' if ta else '' }}</textarea>
+        </div>
+      </div>
+    </div>
+
+    <!-- Auto-responses -->
+    <div class="card mb-4" style="background:#0f1117;border:1px solid #1e2535;">
+      <div class="card-header d-flex align-items-center gap-2" style="background:#0b0d14;border-bottom:1px solid #1e2535;">
+        <i data-feather="message-circle" style="width:14px;height:14px;color:#f59e0b;"></i>
+        <span class="fw-semibold" style="font-size:.88rem;">Auto-Response Templates</span>
+      </div>
+      <div class="card-body">
+        <div class="mb-3">
+          <label class="form-label" style="font-size:.85rem;">Missed Call Text</label>
+          <textarea name="missed_call_text" class="form-control" rows="2"
+                    style="background:#0b0d14;border-color:#1e2535;color:#f7f7fb;">{{ ta.missed_call_text or '' if ta else 'Sorry we missed your call! Reply to schedule a callback.' }}</textarea>
+        </div>
+        <div class="mb-2">
+          <label class="form-label" style="font-size:.85rem;">After-Hours Text</label>
+          <textarea name="after_hours_text" class="form-control" rows="2"
+                    style="background:#0b0d14;border-color:#1e2535;color:#f7f7fb;">{{ ta.after_hours_text or '' if ta else "Thanks for reaching out! Our team is currently away. We'll reply during business hours." }}</textarea>
+        </div>
+      </div>
+    </div>
+
+    <div class="d-flex gap-2">
+      <button type="submit" class="btn btn-primary">
+        <i data-feather="save" style="width:14px;height:14px;"></i> Save Settings
+      </button>
+      <a href="{{ url_for('twilio.inbox') }}" class="btn btn-outline-secondary">Cancel</a>
+    </div>
+  </form>
+</div>
+<script>feather.replace();</script>
+{% endblock %}
