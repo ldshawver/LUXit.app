@@ -5937,15 +5937,30 @@ def save_company_secrets(company_id):
             return jsonify({'success': False, 'error': 'You do not have permission to edit this company'}), 403
         
         data = request.get_json()
-        
+        saved = 0
+
         for key, value in data.items():
             if value:  # Only save if value is provided
-                company.set_secret(key, value)
-        
+                secret = CompanySecret.query.filter_by(
+                    company_id=company_id, key=key
+                ).first()
+                if secret:
+                    secret.value = value
+                else:
+                    secret = CompanySecret(
+                        company_id=company_id,
+                        key=key,
+                        value=value
+                    )
+                    db.session.add(secret)
+                saved += 1
+
+        db.session.commit()
+
         return jsonify({
             'success': True,
             'company': company.name,
-            'secrets_saved': len([k for k, v in data.items() if v])
+            'secrets_saved': saved
         })
     except Exception as e:
         logger.error(f"Save secrets error: {e}")
