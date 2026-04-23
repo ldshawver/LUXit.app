@@ -51,6 +51,46 @@
     </div>
 </div>
 
+<!-- Twilio Connection Panel -->
+<div class="card mb-4" style="background: rgba(10,10,15,0.95); border: 1px solid rgba(124,58,237,0.5);">
+    <div class="card-body">
+        <div class="d-flex align-items-center gap-3 mb-3">
+            <div style="width:36px;height:36px;border-radius:10px;background:rgba(124,58,237,.2);display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+                <i data-feather="phone" style="width:18px;height:18px;color:#a78bfa;"></i>
+            </div>
+            <div>
+                <div class="fw-semibold" style="color:#f7f7fb;">Twilio SMS Connection</div>
+                <div style="font-size:.8rem;color:#9aa4b2;">Inbound inbox, auto-replies, call log &amp; analytics</div>
+            </div>
+            {% if twilio_configured %}
+            <span class="badge bg-success ms-auto" style="font-size:.75rem;">Connected</span>
+            {% else %}
+            <span class="badge bg-secondary ms-auto" style="font-size:.75rem;">Not Configured</span>
+            {% endif %}
+        </div>
+        <div class="d-flex flex-wrap gap-2">
+            <a href="{{ url_for('twilio.inbox') }}" class="btn btn-sm" style="background:rgba(124,58,237,.2);border:1px solid rgba(124,58,237,.4);color:#a78bfa;">
+                <i data-feather="inbox" style="width:13px;height:13px;"></i> SMS Inbox
+            </a>
+            <a href="{{ url_for('twilio.settings') }}" class="btn btn-sm" style="background:rgba(124,58,237,.2);border:1px solid rgba(124,58,237,.4);color:#a78bfa;">
+                <i data-feather="settings" style="width:13px;height:13px;"></i> Twilio Settings
+            </a>
+            <a href="{{ url_for('twilio.rules') }}" class="btn btn-sm" style="background:rgba(6,182,212,.1);border:1px solid rgba(6,182,212,.3);color:#06b6d4;">
+                <i data-feather="zap" style="width:13px;height:13px;"></i> Auto-Reply Rules
+            </a>
+            <a href="{{ url_for('twilio.business_hours') }}" class="btn btn-sm" style="background:rgba(6,182,212,.1);border:1px solid rgba(6,182,212,.3);color:#06b6d4;">
+                <i data-feather="clock" style="width:13px;height:13px;"></i> Business Hours
+            </a>
+            <a href="{{ url_for('twilio.calls') }}" class="btn btn-sm" style="background:rgba(236,72,153,.1);border:1px solid rgba(236,72,153,.3);color:#ec4899;">
+                <i data-feather="phone" style="width:13px;height:13px;"></i> Call Log
+            </a>
+            <a href="{{ url_for('twilio.analytics') }}" class="btn btn-sm" style="background:rgba(236,72,153,.1);border:1px solid rgba(236,72,153,.3);color:#ec4899;">
+                <i data-feather="bar-chart-2" style="width:13px;height:13px;"></i> Analytics
+            </a>
+        </div>
+    </div>
+</div>
+
 <!-- Quick Actions -->
 <div class="card mb-4" style="background: rgba(10,10,15,0.9); border: 1px solid rgba(188,0,237,0.3);">
     <div class="card-body">

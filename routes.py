@@ -3198,13 +3198,25 @@ def sms_dashboard():
     sent_campaigns = SMSCampaign.query.filter_by(status='sent').count()
     scheduled_campaigns = SMSCampaign.query.filter_by(status='scheduled').count()
     
+    # Check if Twilio is configured for this company
+    twilio_configured = False
+    try:
+        from models import TwilioAccount
+        company = current_user.get_default_company() if current_user.is_authenticated else None
+        if company:
+            ta = TwilioAccount.query.filter_by(company_id=company.id).first()
+            twilio_configured = bool(ta and ta.is_configured)
+    except Exception:
+        pass
+
     return render_template('sms_campaigns.html',
                          campaigns=campaigns,
                          templates=templates,
                          total_campaigns=total_campaigns,
                          sent_campaigns=sent_campaigns,
                          scheduled_campaigns=scheduled_campaigns,
-                         sms_enabled=True)
+                         sms_enabled=True,
+                         twilio_configured=twilio_configured)
 
 @main_bp.route('/sms/create', methods=['GET', 'POST'])
 @login_required
