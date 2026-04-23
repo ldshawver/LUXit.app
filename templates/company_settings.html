@@ -201,29 +201,43 @@
             </div>
 
             <!-- Twitter/X -->
+            <div class="secret-field" style="border:1px solid rgba(29,161,242,.4);border-radius:8px;padding:12px;margin-bottom:8px;">
+                <div style="font-size:.78rem;color:#9aa4b2;margin-bottom:10px;line-height:1.5;">
+                    <strong style="color:#f7f7fb;">𝕏 X (Twitter) API Keys — where to find them:</strong><br>
+                    Go to <a href="https://developer.x.com/en/portal/dashboard" target="_blank" style="color:#1da1f2;">developer.x.com → Projects &amp; Apps → your app → "Keys and tokens"</a>
+                    <ul style="margin:6px 0 0 16px;padding:0;">
+                        <li><strong>Consumer Key / API Key</strong> → X_CONSUMER_KEY field below</li>
+                        <li><strong>Consumer Key Secret / API Key Secret</strong> → X_CONSUMER_KEY_SECRET field below</li>
+                        <li><strong>Bearer Token</strong> → XTwitter_Bearer_Token field below</li>
+                        <li><strong>OAuth 2.0 Client ID</strong> → X_CLIENT_ID field below (also required in Replit Secrets for the login flow)</li>
+                        <li><strong>OAuth 2.0 Client Secret</strong> → X_CLIENT_SECRET field below</li>
+                        <li><strong>OAuth access/refresh tokens</strong> — auto-generated after connecting an X account via the OAuth login button. Do not enter manually.</li>
+                    </ul>
+                </div>
+            </div>
             <div class="secret-field">
-                <label>𝕏 Twitter API Key</label>
-                <input type="password" data-secret="TWITTER_API_KEY" placeholder="api_key...">
+                <label>𝕏 Consumer Key (API Key) — your <code>X_CONSUMER_KEY</code></label>
+                <input type="password" data-secret="TWITTER_API_KEY" placeholder="e.g. aBcDeFgH12345...">
                 <div class="secret-status" id="status-TWITTER_API_KEY">Not configured</div>
             </div>
             <div class="secret-field">
-                <label>𝕏 Twitter API Secret</label>
-                <input type="password" data-secret="TWITTER_API_SECRET" placeholder="api_secret...">
+                <label>𝕏 Consumer Key Secret (API Key Secret) — your <code>X_CONSUMER_KEY_SECRET</code></label>
+                <input type="password" data-secret="TWITTER_API_SECRET" placeholder="e.g. xYzAbC98765...">
                 <div class="secret-status" id="status-TWITTER_API_SECRET">Not configured</div>
             </div>
             <div class="secret-field">
-                <label>𝕏 Twitter Bearer Token</label>
-                <input type="password" data-secret="TWITTER_BEARER_TOKEN" placeholder="bearer_token...">
+                <label>𝕏 Bearer Token — your <code>XTwitter_Bearer_Token</code></label>
+                <input type="password" data-secret="TWITTER_BEARER_TOKEN" placeholder="AAAA...">
                 <div class="secret-status" id="status-TWITTER_BEARER_TOKEN">Not configured</div>
             </div>
             <div class="secret-field">
-                <label>𝕏 Twitter Client ID</label>
-                <input type="text" data-secret="TWITTER_CLIENT_ID" placeholder="client_id...">
+                <label>𝕏 OAuth 2.0 Client ID — your <code>X_CLIENT_ID</code> <span style="color:#f59e0b;">(⚠ also add to Replit Secrets)</span></label>
+                <input type="text" data-secret="TWITTER_CLIENT_ID" placeholder="e.g. abc123XYZ...">
                 <div class="secret-status" id="status-TWITTER_CLIENT_ID">Not configured</div>
             </div>
             <div class="secret-field">
-                <label>𝕏 Twitter Client Secret</label>
-                <input type="password" data-secret="TWITTER_CLIENT_SECRET" placeholder="client_secret...">
+                <label>𝕏 OAuth 2.0 Client Secret — your <code>X_CLIENT_SECRET</code></label>
+                <input type="password" data-secret="TWITTER_CLIENT_SECRET" placeholder="e.g. xyz789...">
                 <div class="secret-status" id="status-TWITTER_CLIENT_SECRET">Not configured</div>
             </div>
 
