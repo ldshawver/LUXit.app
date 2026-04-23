@@ -177,6 +177,43 @@
       </div>
     </div>
 
+    <!-- Forwarding -->
+    <div class="card mb-4" style="background:#0f1117;border:1px solid #1e2535;">
+      <div class="card-header d-flex align-items-center gap-2" style="background:#0b0d14;border-bottom:1px solid #1e2535;">
+        <i data-feather="phone-forwarded" style="width:14px;height:14px;color:#a78bfa;"></i>
+        <span class="fw-semibold" style="font-size:.88rem;">Text &amp; Call Forwarding</span>
+      </div>
+      <div class="card-body">
+        <p class="text-muted mb-3" style="font-size:.82rem;">
+          Forward every inbound text or call to a personal phone number. Leave blank to disable.
+        </p>
+        <div class="row g-3">
+          <div class="col-md-6">
+            <label class="form-label" style="font-size:.85rem;">
+              <i data-feather="message-square" style="width:13px;height:13px;color:#06b6d4;"></i>
+              Forward Texts To
+            </label>
+            <input type="text" name="sms_forward_to" class="form-control"
+                   placeholder="+15551234567"
+                   value="{{ ta.sms_forward_to or '' if ta else '' }}"
+                   style="background:#0b0d14;border-color:#1e2535;color:#f7f7fb;">
+            <small class="text-muted">All inbound SMS will be copied to this number</small>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label" style="font-size:.85rem;">
+              <i data-feather="phone-call" style="width:13px;height:13px;color:#06b6d4;"></i>
+              Forward Calls To
+            </label>
+            <input type="text" name="call_forward_to" class="form-control"
+                   placeholder="+15551234567"
+                   value="{{ ta.call_forward_to or '' if ta else '' }}"
+                   style="background:#0b0d14;border-color:#1e2535;color:#f7f7fb;">
+            <small class="text-muted">All inbound calls will be forwarded to this number</small>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <div class="d-flex gap-2">
       <button type="submit" class="btn btn-primary">
         <i data-feather="save" style="width:14px;height:14px;"></i> Save Settings

@@ -2210,6 +2210,8 @@ class TwilioAccount(db.Model):
     ai_system_prompt     = db.Column(db.Text)
     missed_call_text     = db.Column(db.Text, default="Sorry we missed your call! Reply to schedule a callback.")
     after_hours_text     = db.Column(db.Text, default="Thanks for reaching out! Our team is currently away. We'll reply during business hours.")
+    sms_forward_to       = db.Column(db.String(20))   # Forward all inbound SMS to this number
+    call_forward_to      = db.Column(db.String(20))   # Forward all inbound calls to this number
 
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

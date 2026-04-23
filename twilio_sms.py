@@ -437,6 +437,15 @@ def inbound_sms():
         if not conv.is_opted_out:
             _apply_auto_reply_rules(conv, body, ta)
 
+        # SMS forwarding — send a copy to the forwarding number
+        if ta.sms_forward_to:
+            try:
+                fwd_body = f"FWD from {from_number}: {body}" if body else f"FWD from {from_number}: (media)"
+                _send_sms(ta, ta.sms_forward_to, fwd_body)
+                logger.info("SMS forwarded from %s to %s", from_number, ta.sms_forward_to)
+            except Exception as fwd_exc:
+                logger.warning("SMS forward failed: %s", fwd_exc)
+
         # Mark that we've now received at least one message
         if conv.is_first_contact:
             conv.is_first_contact = False
@@ -515,7 +524,15 @@ def inbound_call():
                     log.missed_text_sent = True
                     db.session.commit()
 
-    twiml = """<?xml version="1.0" encoding="UTF-8"?>
+    # Build TwiML: forward the call if a forward number is set, otherwise voicemail
+    if ta and ta.call_forward_to:
+        twiml = f"""<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Dial timeout="30" action="/twilio/voice/inbound">{ta.call_forward_to}</Dial>
+  <Say>Sorry, we could not reach anyone. Please try again later.</Say>
+</Response>"""
+    else:
+        twiml = """<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Say>Thank you for calling. Please leave a message after the tone.</Say>
   <Record maxLength="120" />
@@ -640,6 +657,8 @@ def settings():
         ai_system_prompt     = request.form.get("ai_system_prompt", "").strip()
         missed_call_text     = request.form.get("missed_call_text", "").strip()
         after_hours_text     = request.form.get("after_hours_text", "").strip()
+        sms_forward_to       = request.form.get("sms_forward_to", "").strip()
+        call_forward_to      = request.form.get("call_forward_to", "").strip()
 
         if not ta:
             ta = TwilioAccount(company_id=company.id)
@@ -657,6 +676,8 @@ def settings():
         ta.ai_system_prompt      = ai_system_prompt
         ta.missed_call_text      = missed_call_text
         ta.after_hours_text      = after_hours_text
+        ta.sms_forward_to        = sms_forward_to or None
+        ta.call_forward_to       = call_forward_to or None
         ta.is_active             = True
         db.session.commit()
 

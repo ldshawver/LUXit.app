@@ -1,7 +1,7 @@
 import logging
 from urllib.parse import urlparse
 
-from flask import Blueprint, flash, redirect, render_template, request, url_for
+from flask import Blueprint, current_app, flash, redirect, render_template, request, url_for
 from flask_login import current_user, login_required, login_user, logout_user
 from extensions import csrf
 from jinja2 import TemplateNotFound
@@ -129,7 +129,12 @@ def login():
                 logger.warning("Auth login template missing: %s", exc)
                 return render_template("login.html")
 
+        from flask import session as _session
+        _session.permanent = True
         login_user(user, remember=True)
+        logger.info("LOGIN: after login_user — session keys=%s, _user_id=%s, is_authenticated=%s, user.id=%s, is_secure=%s, scheme=%s",
+                    list(_session.keys()), _session.get('_user_id'), current_user.is_authenticated, user.id,
+                    request.is_secure, request.environ.get('wsgi.url_scheme'))
 
         try:
             from models import ActivityLog
@@ -350,6 +355,41 @@ def register():
 def logout():
     logout_user()
     return redirect(url_for("auth.login", _external=False))
+
+
+# --------------------------------------------------
+# Session diagnostics (temp debug endpoint)
+# --------------------------------------------------
+
+@auth_bp.route("/debug-session")
+@csrf.exempt
+def debug_session():
+    """Temporary endpoint to diagnose session/cookie issues."""
+    from flask import session, jsonify
+    from flask_login import current_user
+    from extensions import db as _db
+    from models import User
+    try:
+        uid = session.get('_user_id')
+        user_from_loader = None
+        if uid:
+            try:
+                user_from_loader = User.query.get(int(uid))
+            except Exception as e:
+                user_from_loader = f"error: {e}"
+        return jsonify({
+            'session_keys': list(session.keys()),
+            'user_id_in_session': uid,
+            'user_found_by_loader': str(user_from_loader),
+            'is_authenticated': current_user.is_authenticated,
+            'is_secure': request.is_secure,
+            'scheme': request.environ.get('wsgi.url_scheme'),
+            'forwarded_proto': request.headers.get('X-Forwarded-Proto'),
+            'cookie_names': [c for c in request.cookies],
+            'secret_key_prefix': str(current_app.secret_key)[:8] + '...' if current_app.secret_key else None,
+        })
+    except Exception as exc:
+        return jsonify({'error': str(exc)}), 500
 
 
 # --------------------------------------------------

@@ -112,8 +112,9 @@ def create_app() -> Flask:
     app.config.update(
         WTF_CSRF_ENABLED=not is_replit,
         WTF_CSRF_TIME_LIMIT=None,
-        # Replit serves the app inside an iframe (replit.com parent, replit.dev child).
-        # SameSite=Lax blocks cookies across that boundary, so we use None+Secure on Replit.
+        # SameSite=None + Secure required so cookies work inside Replit's iframe
+        # (parent frame is replit.com; app is replit.dev — treated as cross-site).
+        # On VPS keep Lax which is the safe default for a direct browser session.
         SESSION_COOKIE_SAMESITE="None" if is_replit else "Lax",
         SESSION_COOKIE_HTTPONLY=True,
         SESSION_COOKIE_SECURE=True,
@@ -152,9 +153,14 @@ def create_app() -> Flask:
     @login_manager.user_loader
     def load_user(user_id):
         from models import User
+        import logging as _logging
+        _log = _logging.getLogger("auth")
         try:
-            return User.query.get(int(user_id))
-        except Exception:
+            u = User.query.get(int(user_id))
+            _log.info("USER_LOADER: id=%s → user=%s (authenticated=%s)", user_id, u, bool(u))
+            return u
+        except Exception as _exc:
+            _log.warning("USER_LOADER: exception for id=%s: %s", user_id, _exc)
             return None
 
     # --------------------------------------------------------
@@ -163,6 +169,10 @@ def create_app() -> Flask:
     @app.before_request
     def assign_request_id():
         g.request_id = request.headers.get("X-Request-ID") or str(uuid4())
+        # Replit's proxy delivers HTTPS externally but passes HTTP internally.
+        # Force WSGI to treat requests as HTTPS so Secure cookies are accepted.
+        if is_replit and request.environ.get("wsgi.url_scheme") != "https":
+            request.environ["wsgi.url_scheme"] = "https"
 
     @app.after_request
     def attach_request_id(response):
