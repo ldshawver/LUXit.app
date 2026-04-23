@@ -164,26 +164,33 @@ def forgot_password():
         identifier = (request.form.get("identifier") or "").strip()
         if identifier:
             from extensions import db as _db
+            from models import PasswordResetToken
             import secrets, datetime
             try:
                 user = User.query.filter(
-                    or_(User.email == identifier.lower(), User.username == identifier)
+                    or_(
+                        User.email == identifier.lower(),
+                        User.username == identifier,
+                        User.username == identifier.lower(),
+                    )
                 ).first()
                 if user:
                     token = secrets.token_urlsafe(32)
                     expires = datetime.datetime.utcnow() + datetime.timedelta(hours=2)
-                    _db.session.execute(
-                        "INSERT INTO password_reset_token (user_id, token, expires_at) "
-                        "VALUES (:uid, :tok, :exp) ON CONFLICT (token) DO NOTHING",
-                        {"uid": user.id, "tok": token, "exp": expires}
+                    prt = PasswordResetToken(
+                        user_id=user.id,
+                        token=token,
+                        expires_at=expires,
                     )
+                    _db.session.add(prt)
                     _db.session.commit()
                     reset_url = url_for("auth.reset_password", token=token, _external=True)
                     sent = True
                 else:
                     not_found = True
-            except SQLAlchemyError:
+            except Exception as exc:
                 _db.session.rollback()
+                logger.error("Forgot password error: %s", exc)
                 not_found = True
 
     return render_template(
@@ -199,26 +206,19 @@ def forgot_password():
 def reset_password(token):
     import datetime
     from extensions import db as _db
+    from models import PasswordResetToken
 
     error = None
     success = False
 
-    try:
-        row = _db.session.execute(
-            "SELECT prt.id, prt.user_id, prt.expires_at, prt.used "
-            "FROM password_reset_token prt WHERE prt.token = :tok",
-            {"tok": token}
-        ).fetchone()
-    except SQLAlchemyError:
-        _db.session.rollback()
-        row = None
+    prt = PasswordResetToken.query.filter_by(token=token).first()
 
-    if not row or row.used or row.expires_at < datetime.datetime.utcnow():
+    if not prt or prt.used or prt.expires_at < datetime.datetime.utcnow():
         return render_template("auth/reset_password.html", invalid=True, success=False, error=None)
 
     if request.method == "POST":
         from werkzeug.security import generate_password_hash
-        new_pw = request.form.get("password") or ""
+        new_pw  = request.form.get("password") or ""
         confirm = request.form.get("confirm") or ""
         if len(new_pw) < 8:
             error = "Password must be at least 8 characters."
@@ -226,19 +226,17 @@ def reset_password(token):
             error = "Passwords do not match."
         else:
             try:
-                user = User.query.get(row.user_id)
+                user = User.query.get(prt.user_id)
                 if user:
                     user.password_hash = generate_password_hash(new_pw)
-                    _db.session.execute(
-                        "UPDATE password_reset_token SET used = TRUE WHERE token = :tok",
-                        {"tok": token}
-                    )
+                    prt.used = True
                     _db.session.commit()
                     success = True
                 else:
                     error = "User not found."
-            except SQLAlchemyError:
+            except Exception as exc:
                 _db.session.rollback()
+                logger.error("Reset password error: %s", exc)
                 error = "Something went wrong. Please try again."
 
     return render_template("auth/reset_password.html", invalid=False, success=success, error=error)
