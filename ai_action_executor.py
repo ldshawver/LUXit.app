@@ -63,10 +63,22 @@ class AIActionExecutor:
             for secret_key in secrets_list:
                 value = os.getenv(secret_key)
                 if value:
-                    company.set_secret(secret_key, value)
+                    secret = CompanySecret.query.filter_by(
+                        company_id=company.id, key=secret_key
+                    ).first()
+                    if secret:
+                        secret.value = value
+                    else:
+                        secret = CompanySecret(
+                            company_id=company.id,
+                            key=secret_key,
+                            value=value,
+                        )
+                        db.session.add(secret)
                     added.append(secret_key)
                 else:
                     skipped.append(secret_key)
+            db.session.commit()
             
             return {
                 'status': 'success',
