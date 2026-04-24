@@ -4,19 +4,31 @@
 {% block content %}
 <div class="container-fluid py-4" style="max-width:780px;">
 
-  <div class="d-flex align-items-center gap-3 mb-4">
-    <div>
-      <h4 class="mb-0 fw-bold">
-        <i data-feather="phone" style="width:18px;height:18px;color:#7c3aed;"></i>
-        Twilio Settings
-      </h4>
-      <small class="text-muted">Per-company Twilio credentials and messaging config</small>
-    </div>
-    <div class="ms-auto d-flex gap-2">
-      <a href="{{ url_for('twilio.inbox') }}" class="btn btn-sm btn-outline-secondary">
-        <i data-feather="inbox" style="width:13px;height:13px;"></i> Inbox
-      </a>
-    </div>
+  <div class="mb-4">
+    <h4 class="mb-1 fw-bold">
+      <i data-feather="phone" style="width:18px;height:18px;color:#7c3aed;"></i>
+      Twilio Settings
+    </h4>
+    <small class="text-muted">Per-company Twilio credentials and messaging config</small>
+  </div>
+
+  <!-- SMS sub-navigation -->
+  <div class="d-flex flex-wrap gap-2 mb-4">
+    <a href="{{ url_for('twilio.inbox') }}" class="btn btn-sm btn-outline-secondary">
+      <i data-feather="inbox" style="width:13px;height:13px;"></i> Inbox
+    </a>
+    <a href="{{ url_for('twilio.rules') }}" class="btn btn-sm btn-outline-secondary">
+      <i data-feather="zap" style="width:13px;height:13px;"></i> Auto-Reply Rules
+    </a>
+    <a href="{{ url_for('twilio.business_hours') }}" class="btn btn-sm btn-outline-secondary">
+      <i data-feather="clock" style="width:13px;height:13px;"></i> Business Hours
+    </a>
+    <a href="{{ url_for('twilio.calls') }}" class="btn btn-sm btn-outline-secondary">
+      <i data-feather="phone-call" style="width:13px;height:13px;"></i> Call Log
+    </a>
+    <a href="{{ url_for('twilio.analytics') }}" class="btn btn-sm btn-outline-secondary">
+      <i data-feather="bar-chart-2" style="width:13px;height:13px;"></i> Analytics
+    </a>
   </div>
 
   {% with messages = get_flashed_messages(with_categories=true) %}

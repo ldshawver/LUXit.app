@@ -4,7 +4,7 @@
 {% block content %}
 <div class="container-fluid py-4" style="max-width:960px;">
 
-  <div class="d-flex align-items-center gap-3 mb-4">
+  <div class="d-flex align-items-center gap-3 mb-3">
     <div>
       <h4 class="mb-0 fw-bold">
         <i data-feather="zap" style="width:18px;height:18px;color:#7c3aed;"></i>
@@ -12,14 +12,30 @@
       </h4>
       <small class="text-muted">Rules fire in priority order — highest priority first</small>
     </div>
-    <div class="ms-auto d-flex gap-2">
-      <a href="{{ url_for('twilio.inbox') }}" class="btn btn-sm btn-outline-secondary">
-        <i data-feather="inbox" style="width:13px;height:13px;"></i> Inbox
-      </a>
+    <div class="ms-auto">
       <button class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#newRuleModal">
         <i data-feather="plus" style="width:13px;height:13px;"></i> New Rule
       </button>
     </div>
+  </div>
+
+  <!-- SMS sub-navigation -->
+  <div class="d-flex flex-wrap gap-2 mb-4">
+    <a href="{{ url_for('twilio.inbox') }}" class="btn btn-sm btn-outline-secondary">
+      <i data-feather="inbox" style="width:13px;height:13px;"></i> Inbox
+    </a>
+    <a href="{{ url_for('twilio.settings') }}" class="btn btn-sm btn-outline-secondary">
+      <i data-feather="settings" style="width:13px;height:13px;"></i> Settings
+    </a>
+    <a href="{{ url_for('twilio.business_hours') }}" class="btn btn-sm btn-outline-secondary">
+      <i data-feather="clock" style="width:13px;height:13px;"></i> Business Hours
+    </a>
+    <a href="{{ url_for('twilio.calls') }}" class="btn btn-sm btn-outline-secondary">
+      <i data-feather="phone-call" style="width:13px;height:13px;"></i> Call Log
+    </a>
+    <a href="{{ url_for('twilio.analytics') }}" class="btn btn-sm btn-outline-secondary">
+      <i data-feather="bar-chart-2" style="width:13px;height:13px;"></i> Analytics
+    </a>
   </div>
 
   {% with messages = get_flashed_messages(with_categories=true) %}
