@@ -28,6 +28,7 @@ import logging
 import os
 import re
 from datetime import datetime, timezone, timedelta
+from zoneinfo import ZoneInfo
 
 from flask import (
     Blueprint, abort, flash, jsonify, redirect,
@@ -78,22 +79,85 @@ def _build_client(ta):
         return None
 
 
+_LA = ZoneInfo("America/Los_Angeles")
+
+# System-level keyword responses (always fire regardless of auto-reply rules)
+_STOP_REPLY = "You have been unsubscribed. Reply START to opt back in."
+_START_REPLY = "You have been subscribed. Thanks for joining LUXit SMS updates."
+_HELP_REPLY  = "LUXit SMS Support: Reply STOP to opt out. For help, contact support@luxit.app."
+
+TWILIO_WEBHOOK_PUBLIC_URL = os.environ.get(
+    "TWILIO_WEBHOOK_PUBLIC_URL", "https://luxit.app/twilio/sms/inbound"
+)
+
+
+def _twiml_message(text: str):
+    """Return a TwiML <Response><Message> reply."""
+    safe = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    xml = f'<?xml version="1.0" encoding="UTF-8"?><Response><Message>{safe}</Message></Response>'
+    return xml, 200, {"Content-Type": "text/xml"}
+
+
+def _validate_twilio_signature(ta) -> bool:
+    """
+    Validate the X-Twilio-Signature header.
+    Always passes on Replit dev (no real Twilio traffic).
+    Returns True if valid or if validation cannot be performed.
+    """
+    is_replit = bool(os.environ.get("REPL_ID") or os.environ.get("REPLIT_DEV_DOMAIN"))
+    if is_replit:
+        return True
+
+    try:
+        from twilio.request_validator import RequestValidator
+    except ImportError:
+        return True
+
+    token = (ta.get_auth_token() if ta else None) or os.environ.get("TWILIO_AUTH_TOKEN")
+    if not token:
+        logger.warning("Twilio signature validation skipped: no auth token configured")
+        return True
+
+    signature = request.headers.get("X-Twilio-Signature", "")
+    if not signature:
+        logger.warning("Inbound SMS rejected: missing X-Twilio-Signature header")
+        return False
+
+    # Determine canonical webhook URL
+    if ta and ta.webhook_base_url:
+        url = ta.webhook_base_url.rstrip("/") + "/twilio/sms/inbound"
+    else:
+        url = TWILIO_WEBHOOK_PUBLIC_URL
+
+    validator = RequestValidator(token)
+    valid = validator.validate(url, request.form, signature)
+    if not valid:
+        logger.warning("Inbound SMS rejected: invalid signature (url=%s)", url)
+    return valid
+
+
 def _is_business_hours(company_id: int) -> bool:
-    """Return True if current UTC time falls within business hours for the company."""
+    """
+    Return True if the current local time (America/Los_Angeles) falls within
+    the configured business hours for the company.
+    Handles midnight-crossing schedules (e.g. open_time=11:00, close_time=01:00).
+    """
     from models import BusinessHours
-    now_utc = datetime.now(timezone.utc)
-    day = now_utc.weekday()   # 0=Mon … 6=Sun
+    now_la = datetime.now(timezone.utc).astimezone(_LA)
+    day = now_la.weekday()   # 0=Mon … 6=Sun
     bh = BusinessHours.query.filter_by(company_id=company_id, day_of_week=day).first()
     if not bh or not bh.is_open:
         return False
     try:
         open_h,  open_m  = [int(x) for x in bh.open_time.split(":")]
         close_h, close_m = [int(x) for x in bh.close_time.split(":")]
-        # Simple UTC comparison (full timezone support can be added with pytz later)
-        current_minutes = now_utc.hour * 60 + now_utc.minute
-        open_minutes    = open_h  * 60 + open_m
-        close_minutes   = close_h * 60 + close_m
-        return open_minutes <= current_minutes < close_minutes
+        current  = now_la.hour * 60 + now_la.minute
+        opens    = open_h  * 60 + open_m
+        closes   = close_h * 60 + close_m
+        if closes <= opens:
+            # Midnight-crossing (e.g. 23:00 – 01:00 or 11:00 – 01:00 next day)
+            return current >= opens or current < closes
+        return opens <= current < closes
     except Exception:
         return True
 
@@ -336,7 +400,12 @@ def _seed_default_rules(company_id: int):
 
 
 def _seed_default_hours(company_id: int):
-    """Seed Mon-Sun business hours for a new company."""
+    """
+    Seed business hours for a new company: 11:00 AM – 1:00 AM (next day),
+    America/Los_Angeles, every day of the week.
+    Times are stored in local LA time; _is_business_hours() handles the
+    midnight-crossing comparison correctly.
+    """
     from models import BusinessHours
     existing = BusinessHours.query.filter_by(company_id=company_id).count()
     if existing > 0:
@@ -345,12 +414,13 @@ def _seed_default_hours(company_id: int):
         bh = BusinessHours(
             company_id=company_id,
             day_of_week=day,
-            is_open=(day < 5),
-            open_time="09:00",
-            close_time="17:00",
+            is_open=True,
+            open_time="11:00",
+            close_time="01:00",   # 1 AM next day — midnight-crossing
         )
         db.session.add(bh)
     db.session.commit()
+    logger.info("Seeded default business hours (11 AM–1 AM LA) for company %s", company_id)
 
 
 # ---------------------------------------------------------------------------
@@ -363,38 +433,47 @@ def inbound_sms():
     """
     Twilio inbound SMS webhook.
     Set this URL in your Twilio Messaging Service or phone number config.
-    Returns TwiML (200 OK with empty <Response> — replies are sent via API).
+
+    Flow:
+      1. Identify TwilioAccount by To number / MessagingServiceSid
+      2. Validate Twilio signature (skipped on Replit dev)
+      3. Log inbound message
+      4. Handle STOP / START / HELP system keywords (always, regardless of rules)
+      5. Run auto-reply rule engine for all other messages
     """
     from models import TwilioAccount, TwilioConversation, TwilioMessage
 
-    # Validate Twilio signature in production
-    # Skipped here for initial testing; add RequestValidator when webhook URL is stable.
+    data            = request.form
+    from_number     = data.get("From", "").strip()
+    to_number       = data.get("To",   "").strip()
+    body            = (data.get("Body") or "").strip()
+    twilio_sid      = data.get("MessageSid", "")
+    msg_service_sid = data.get("MessagingServiceSid", "")
+    num_media       = int(data.get("NumMedia", 0))
 
-    data        = request.form
-    from_number = data.get("From", "").strip()
-    to_number   = data.get("To",   "").strip()
-    body        = (data.get("Body") or "").strip()
-    twilio_sid  = data.get("MessageSid", "")
-    num_media   = int(data.get("NumMedia", 0))
+    logger.info(
+        "Inbound SMS: from=%s to=%s sid=%s msgsvc=%s body=%.60r",
+        from_number, to_number, twilio_sid, msg_service_sid, body,
+    )
 
-    logger.info("Inbound SMS: from=%s to=%s sid=%s body=%.60r", from_number, to_number, twilio_sid, body)
-
-    # Find which company owns this destination number / messaging service
+    # ── 1. Find TwilioAccount ──────────────────────────────────────────────
     ta = TwilioAccount.query.filter(
         (TwilioAccount.from_phone == to_number) |
-        (TwilioAccount.messaging_service_sid == data.get("MessagingServiceSid"))
+        (TwilioAccount.messaging_service_sid == msg_service_sid)
     ).first()
-
     if not ta:
-        # Fallback: use the first active account
         ta = TwilioAccount.query.filter_by(is_active=True).first()
 
     if not ta:
         logger.warning("Inbound SMS: no TwilioAccount found for to=%s", to_number)
         return '<Response></Response>', 200, {"Content-Type": "text/xml"}
 
+    # ── 2. Validate Twilio signature ───────────────────────────────────────
+    if not _validate_twilio_signature(ta):
+        abort(403)
+
     try:
-        # Get or create conversation thread
+        # ── 3a. Get or create conversation thread ──────────────────────────
         conv = _get_or_create_conversation(ta.company_id, from_number, to_number)
 
         # Idempotency: skip if already processed
@@ -402,14 +481,11 @@ def inbound_sms():
             return '<Response></Response>', 200, {"Content-Type": "text/xml"}
 
         # Collect media URLs
-        media_urls = []
-        for i in range(num_media):
-            url = data.get(f"MediaUrl{i}")
-            if url:
-                media_urls.append(url)
+        media_urls = [data.get(f"MediaUrl{i}") for i in range(num_media)
+                      if data.get(f"MediaUrl{i}")]
 
-        # Save the inbound message
-        msg = TwilioMessage(
+        # ── 3b. Save the inbound message ───────────────────────────────────
+        msg_record = TwilioMessage(
             conversation_id=conv.id,
             company_id=ta.company_id,
             twilio_sid=twilio_sid,
@@ -421,33 +497,55 @@ def inbound_sms():
             media_urls=media_urls or None,
             raw_payload=dict(data),
         )
-        db.session.add(msg)
+        db.session.add(msg_record)
 
-        # Update conversation
-        conv.is_read = False
+        # Update conversation metadata
+        conv.is_read              = False
         conv.last_message_at      = datetime.utcnow()
         conv.last_message_preview = body[:200] if body else "(media)"
         conv.message_count        = (conv.message_count or 0) + 1
         db.session.commit()
 
+        # ── 4. System-level keyword handling ──────────────────────────────
+        # These always fire and return a TwiML reply immediately.
+        kw = body.upper().strip()
+
+        if kw == "STOP":
+            conv.is_opted_out = True
+            db.session.commit()
+            logger.info("STOP received: opted out %s", from_number)
+            return _twiml_message(_STOP_REPLY)
+
+        if kw == "START":
+            conv.is_opted_out = False
+            db.session.commit()
+            logger.info("START received: opted in %s", from_number)
+            return _twiml_message(_START_REPLY)
+
+        if kw == "HELP":
+            logger.info("HELP received from %s", from_number)
+            return _twiml_message(_HELP_REPLY)
+
+        # ── 5. Auto-reply rule engine ──────────────────────────────────────
         # Auto-capture lead on first contact
         if conv.is_first_contact:
             _capture_lead(conv, body, ta.company_id)
 
-        # Run auto-reply rules if not opted out
+        # Run rules only if not opted out
         if not conv.is_opted_out:
             _apply_auto_reply_rules(conv, body, ta)
 
         # SMS forwarding — send a copy to the forwarding number
         if ta.sms_forward_to:
             try:
-                fwd_body = f"FWD from {from_number}: {body}" if body else f"FWD from {from_number}: (media)"
+                fwd_body = (f"FWD from {from_number}: {body}"
+                            if body else f"FWD from {from_number}: (media)")
                 _send_sms(ta, ta.sms_forward_to, fwd_body)
                 logger.info("SMS forwarded from %s to %s", from_number, ta.sms_forward_to)
             except Exception as fwd_exc:
                 logger.warning("SMS forward failed: %s", fwd_exc)
 
-        # Mark that we've now received at least one message
+        # Clear first-contact flag after first processed message
         if conv.is_first_contact:
             conv.is_first_contact = False
             db.session.commit()
