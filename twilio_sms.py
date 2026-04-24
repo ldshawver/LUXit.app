@@ -35,7 +35,7 @@ from flask import (
 )
 from flask_login import current_user, login_required
 
-from extensions import db
+from extensions import db, csrf
 
 logger = logging.getLogger(__name__)
 
@@ -358,6 +358,7 @@ def _seed_default_hours(company_id: int):
 # ---------------------------------------------------------------------------
 
 @twilio_bp.route("/sms/inbound", methods=["POST"])
+@csrf.exempt
 def inbound_sms():
     """
     Twilio inbound SMS webhook.
@@ -458,6 +459,7 @@ def inbound_sms():
 
 
 @twilio_bp.route("/sms/status", methods=["POST"])
+@csrf.exempt
 def sms_status():
     """Twilio delivery status callback — updates message status."""
     from models import TwilioMessage
@@ -483,6 +485,7 @@ def sms_status():
 
 
 @twilio_bp.route("/voice/inbound", methods=["POST"])
+@csrf.exempt
 def inbound_call():
     """Twilio voice webhook — logs the call and sends a missed-call text if unanswered."""
     from models import TwilioAccount, TwilioCallLog
