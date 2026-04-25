@@ -295,7 +295,7 @@
     {% set _p = request.path %}
 
     {# ── Section detection ── #}
-    {% set _sec_core     = _p.startswith('/campaign-hub') or _p.startswith('/newsletters') or _p.startswith('/email') or _p.startswith('/sms') or _p.startswith('/social') or _p.startswith('/ads') or _p.startswith('/press') %}
+    {% set _sec_core     = _p.startswith('/campaign-hub') or _p.startswith('/newsletters') or _p.startswith('/email') or _p.startswith('/sms') or _p.startswith('/twilio') or _p.startswith('/social') or _p.startswith('/ads') or _p.startswith('/press') %}
     {% set _sec_content  = _p.startswith('/blog') or _p.startswith('/seo') or _p.startswith('/marketing-calendar') %}
     {% set _sec_intel    = _p.startswith('/analytics') or _p.startswith('/competitor') or _p.startswith('/agents') or _p.startswith('/chatbot') %}
     {% set _sec_audience = _p.startswith('/contacts') or _p.startswith('/segments') or _p.startswith('/audience') %}
