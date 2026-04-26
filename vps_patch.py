@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-LUXit VPS patch script — applies all Twilio routing changes.
+LUXit VPS patch script — applies all routing changes + Company secret encryption.
 Run from inside the app directory:
     cd /var/www/luxit-marketing
     python3 vps_patch.py
@@ -57,68 +57,121 @@ patch(
     "sidebar Auto-Reply Rules + SMS Settings links",
 )
 
-# ── 3. Fix set_secret in ai_action_executor.py ──────────────────────────────
+# ── 3. models.py — add set_secret / get_secret / delete_secret to Company ────
 patch(
-    "ai_action_executor.py",
-    """            for secret_key in secrets_list:
-                value = os.getenv(secret_key)
-                if value:
-                    company.set_secret(secret_key, value)
-                    added.append(secret_key)
-                else:
-                    skipped.append(secret_key)""",
-    """            for secret_key in secrets_list:
-                value = os.getenv(secret_key)
-                if value:
-                    secret = CompanySecret.query.filter_by(
-                        company_id=company.id, key=secret_key
-                    ).first()
-                    if secret:
-                        secret.value = value
-                    else:
-                        secret = CompanySecret(
-                            company_id=company.id,
-                            key=secret_key,
-                            value=value,
-                        )
-                        db.session.add(secret)
-                    added.append(secret_key)
-                else:
-                    skipped.append(secret_key)
-            db.session.commit()""",
-    "ai_action_executor set_secret → CompanySecret ORM",
+    "models.py",
+    """    industry = db.Column(db.String(100))
+    description = db.Column(Text)
+
+
+class Contact(db.Model):""",
+    """    industry = db.Column(db.String(100))
+    description = db.Column(Text)
+
+    # ── Secret helpers ──────────────────────────────────────────────────────
+    def set_secret(self, key_or_provider, key_or_value=None, value=None):
+        \"\"\"
+        Store/update an encrypted secret.
+
+        Two call styles:
+          company.set_secret("OPENAI_API_KEY", "sk-123")          # key, value
+          company.set_secret("twilio", "auth_token", "tok123")    # provider, key, value
+        \"\"\"
+        from services.secret_vault import vault
+
+        if value is not None:
+            full_key   = f"{key_or_provider}_{key_or_value}"
+            plain_value = value
+        else:
+            full_key   = key_or_provider
+            plain_value = key_or_value
+
+        if not plain_value:
+            return
+
+        try:
+            enc_value = vault.encrypt(str(plain_value))
+        except Exception:
+            enc_value = str(plain_value)
+
+        secret = CompanySecret.query.filter_by(
+            company_id=self.id, key=full_key
+        ).first()
+        if secret:
+            secret.value      = enc_value
+            secret.updated_at = datetime.utcnow()
+        else:
+            secret = CompanySecret(
+                company_id=self.id, key=full_key, value=enc_value
+            )
+            db.session.add(secret)
+        db.session.commit()
+
+    def get_secret(self, key_or_provider, sub_key=None):
+        \"\"\"
+        Retrieve and decrypt a secret. Returns None if not found.
+
+          company.get_secret("OPENAI_API_KEY")
+          company.get_secret("twilio", "auth_token")
+        \"\"\"
+        from services.secret_vault import vault
+
+        full_key = (f"{key_or_provider}_{sub_key}" if sub_key
+                    else key_or_provider)
+        secret = CompanySecret.query.filter_by(
+            company_id=self.id, key=full_key
+        ).first()
+        if not secret or not secret.value:
+            return None
+        try:
+            return vault.decrypt(secret.value)
+        except Exception:
+            return secret.value   # Fallback for legacy unencrypted values
+
+    def delete_secret(self, key_or_provider, sub_key=None):
+        \"\"\"Delete a secret for this company.\"\"\"
+        full_key = (f"{key_or_provider}_{sub_key}" if sub_key
+                    else key_or_provider)
+        secret = CompanySecret.query.filter_by(
+            company_id=self.id, key=full_key
+        ).first()
+        if secret:
+            db.session.delete(secret)
+            db.session.commit()
+
+
+class Contact(db.Model):""",
+    "models.py Company.set_secret / get_secret / delete_secret",
 )
 
-# ── 4. Fix set_secret in populate_secrets.py ────────────────────────────────
+# ── 4. models.py — upgrade CompanySecret (updated_at + unique constraint) ────
 patch(
-    "populate_secrets.py",
-    """        for key, value in SECRETS.items():
-            if value:  # Only add if value exists
-                company.set_secret(key, value)
-                print(f"✓ Added {key}")
-                count += 1
-            else:
-                print(f"⊘ Skipped {key} (not in environment)")""",
-    """        for key, value in SECRETS.items():
-            if value:  # Only add if value exists
-                secret = CompanySecret.query.filter_by(
-                    company_id=company.id, key=key
-                ).first()
-                if secret:
-                    secret.value = value
-                else:
-                    secret = CompanySecret(
-                        company_id=company.id,
-                        key=key,
-                        value=value,
-                    )
-                    db.session.add(secret)
-                print(f"✓ Added {key}")
-                count += 1
-            else:
-                print(f"⊘ Skipped {key} (not in environment)")
-        db.session.commit()""",
-    "populate_secrets set_secret → CompanySecret ORM",
+    "models.py",
+    """class CompanySecret(db.Model):
+    __tablename__ = "company_secret"
+
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=True)
+    key = db.Column(db.String(255))
+    value = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)""",
+    """class CompanySecret(db.Model):
+    \"\"\"Encrypted per-company API secrets (multi-tenant safe).\"\"\"
+    __tablename__ = "company_secret"
+
+    id         = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=True, index=True)
+    key        = db.Column(db.String(255), nullable=False)
+    value      = db.Column(db.Text)          # stored encrypted via services.secret_vault
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    company = db.relationship("Company", backref="secrets")
+
+    __table_args__ = (
+        db.UniqueConstraint("company_id", "key", name="uq_company_secret_key"),
+    )""",
+    "models.py CompanySecret updated_at + unique constraint",
 )
 
 # ── 5. models.py — add routing toggles + voicemail columns ──────────────────
@@ -668,7 +721,146 @@ patch(
     "twilio_sms settings POST saves new routing fields",
 )
 
-# ── 15. Database migration for new columns ──────────────────────────────────
+# ── 15a. routes.py — get_company_secrets returns masked values ───────────────
+patch(
+    "routes.py",
+    """@main_bp.route('/api/company/<int:company_id>/secrets', methods=['GET'])
+@login_required
+def get_company_secrets(company_id):
+    \"\"\"Get all secrets for a company\"\"\"
+    try:
+        from models import CompanySecret
+        company = Company.query.get(company_id)
+        if not company:
+            return jsonify({'success': False, 'error': 'Company not found'}), 404
+        
+        secrets = CompanySecret.query.filter_by(company_id=company_id).all()
+        return jsonify({
+            'success': True,
+            'company': company.name,
+            'secrets': [{'key': s.key, 'created_at': s.created_at.isoformat()} for s in secrets]
+        })
+    except Exception as e:
+        logger.error(f"Get secrets error: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500""",
+    """@main_bp.route('/api/company/<int:company_id>/secrets', methods=['GET'])
+@login_required
+def get_company_secrets(company_id):
+    \"\"\"Get configured secrets for a company (masked — never returns plaintext).\"\"\"
+    try:
+        from models import CompanySecret
+        from services.secret_vault import vault
+        company = Company.query.get(company_id)
+        if not company:
+            return jsonify({'success': False, 'error': 'Company not found'}), 404
+
+        if not current_user.can_edit_company(company_id):
+            return jsonify({'success': False, 'error': 'Permission denied'}), 403
+
+        secrets = CompanySecret.query.filter_by(company_id=company_id).all()
+        result = []
+        for s in secrets:
+            masked = None
+            try:
+                plain = vault.decrypt(s.value) if s.value else None
+                if plain:
+                    masked = vault.mask_secret(plain)
+            except Exception:
+                if s.value:
+                    masked = "****" + s.value[-4:] if len(s.value) > 4 else "****"
+            result.append({
+                'key':        s.key,
+                'masked':     masked,
+                'configured': bool(s.value),
+                'created_at': s.created_at.isoformat() if s.created_at else None,
+                'updated_at': s.updated_at.isoformat() if getattr(s, 'updated_at', None) else None,
+            })
+
+        return jsonify({'success': True, 'company': company.name, 'secrets': result})
+    except Exception as e:
+        logger.error(f"Get secrets error: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500""",
+    "routes.py get_company_secrets returns masked values",
+)
+
+# ── 15b. routes.py — save_company_secrets uses company.set_secret ─────────────
+patch(
+    "routes.py",
+    """@main_bp.route('/api/company/<int:company_id>/secrets/save', methods=['POST'])
+@login_required
+def save_company_secrets(company_id):
+    \"\"\"Save/update secrets for a company\"\"\"
+    try:
+        from models import CompanySecret
+        company = Company.query.get(company_id)
+        if not company:
+            return jsonify({'success': False, 'error': 'Company not found'}), 404
+        
+        if not current_user.can_edit_company(company_id):
+            return jsonify({'success': False, 'error': 'You do not have permission to edit this company'}), 403
+        
+        data = request.get_json()
+        saved = 0
+
+        for key, value in data.items():
+            if value:  # Only save if value is provided
+                secret = CompanySecret.query.filter_by(
+                    company_id=company_id, key=key
+                ).first()
+                if secret:
+                    secret.value = value
+                else:
+                    secret = CompanySecret(
+                        company_id=company_id,
+                        key=key,
+                        value=value
+                    )
+                    db.session.add(secret)
+                saved += 1
+
+        db.session.commit()
+
+        return jsonify({
+            'success': True,
+            'company': company.name,
+            'secrets_saved': saved
+        })
+    except Exception as e:
+        logger.error(f"Save secrets error: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500""",
+    """@main_bp.route('/api/company/<int:company_id>/secrets/save', methods=['POST'])
+@login_required
+def save_company_secrets(company_id):
+    \"\"\"Save/update encrypted secrets for a company.\"\"\"
+    try:
+        company = Company.query.get(company_id)
+        if not company:
+            return jsonify({'success': False, 'error': 'Company not found'}), 404
+
+        if not current_user.can_edit_company(company_id):
+            return jsonify({'success': False, 'error': 'Permission denied'}), 403
+
+        data = request.get_json() or {}
+        saved = []
+
+        for key, value in data.items():
+            if value:
+                company.set_secret(key, value)   # encrypts + upserts
+                saved.append(key)
+
+        return jsonify({
+            'success': True,
+            'company': company.name,
+            'secrets_saved': len(saved),
+            'saved_keys': saved,
+        })
+    except Exception as e:
+        logger.error(f"Save secrets error: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500""",
+    "routes.py save_company_secrets uses company.set_secret",
+)
+
+# ── 16. Database migration for new columns ──────────────────────────────────
 print("\n=== Running DB column migration ===")
 try:
     import os, sys
@@ -680,23 +872,35 @@ try:
     from extensions import db as _db
     app = create_app()
     with app.app_context():
-        new_cols = [
-            ("sms_forwarding_enabled",        "BOOLEAN DEFAULT TRUE"),
-            ("voice_forwarding_enabled",       "BOOLEAN DEFAULT TRUE"),
-            ("after_hours_sms_enabled",        "BOOLEAN DEFAULT TRUE"),
-            ("after_hours_voicemail_enabled",  "BOOLEAN DEFAULT TRUE"),
-            ("voicemail_greeting_text",        "TEXT"),
-            ("voicemail_greeting_audio_url",   "VARCHAR(500)"),
+        migrations = [
+            # Table,             column name,                   SQL type
+            ("twilio_account",   "sms_forwarding_enabled",        "BOOLEAN DEFAULT TRUE"),
+            ("twilio_account",   "voice_forwarding_enabled",       "BOOLEAN DEFAULT TRUE"),
+            ("twilio_account",   "after_hours_sms_enabled",        "BOOLEAN DEFAULT TRUE"),
+            ("twilio_account",   "after_hours_voicemail_enabled",  "BOOLEAN DEFAULT TRUE"),
+            ("twilio_account",   "voicemail_greeting_text",        "TEXT"),
+            ("twilio_account",   "voicemail_greeting_audio_url",   "VARCHAR(500)"),
+            # company_secret — add updated_at for encrypted secret tracking
+            ("company_secret",   "updated_at",                     "TIMESTAMP WITHOUT TIME ZONE"),
         ]
         conn = _db.engine.connect()
-        for col, coltype in new_cols:
+        for tbl, col, coltype in migrations:
             try:
                 conn.execute(_db.text(
-                    f"ALTER TABLE twilio_account ADD COLUMN IF NOT EXISTS {col} {coltype}"
+                    f"ALTER TABLE {tbl} ADD COLUMN IF NOT EXISTS {col} {coltype}"
                 ))
-                print(f"  ✓ column twilio_account.{col}")
+                print(f"  ✓ column {tbl}.{col}")
             except Exception as ce:
-                print(f"  – already exists or error: {col} ({ce})")
+                print(f"  – already exists or error: {tbl}.{col} ({ce})")
+        # Unique constraint on company_secret(company_id, key)
+        try:
+            conn.execute(_db.text(
+                "ALTER TABLE company_secret ADD CONSTRAINT uq_company_secret_key "
+                "UNIQUE (company_id, key)"
+            ))
+            print("  ✓ constraint uq_company_secret_key")
+        except Exception as ce:
+            print(f"  – constraint already exists or error: {ce}")
         conn.commit()
         conn.close()
     print("  DB migration complete.")

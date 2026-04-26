@@ -17,7 +17,7 @@ The platform is built around a tile-based dashboard with 11 AI agents, leveragin
 Key architectural decisions and features include:
 - **Admin Approval Queue System**: Mandatory approval workflow for marketing content with status tracking, feature toggles, and an immutable audit log.
 - **Social Media Integrations**: Full OAuth 2.0 implementations for various platforms supporting publishing, media listing, insights, and secure token management.
-- **Centralized API Keys & Secrets Management**: Dedicated section for secure, encrypted storage and management of API keys and secrets per company.
+- **Centralized API Keys & Secrets Management**: Dedicated section for secure, encrypted storage and management of API keys and secrets per company. Company model has `set_secret(key, value)` / `get_secret(key)` / `delete_secret(key)` methods that encrypt/decrypt via `services.secret_vault.vault` (Fernet). Supports 2-arg `(key, value)` and 3-arg `(provider, sub_key, value)` call styles. CompanySecret table has a unique constraint on `(company_id, key)` and stores Fernet-encrypted values. The `/api/company/<id>/secrets` GET returns masked values only; POST `/secrets/save` encrypts before storing.
 - **Contact Management**: Zapier webhook integration for authenticated contact capture, auto-segmentation, comprehensive customer profiles with lead scoring, activity timelines, and bidirectional sync with newsletter subscribers.
 - **Error Logging & Diagnostics**: Robust system for logging application errors to a database with detailed diagnostics.
 - **AI Chatbot with Auto-Repair**: Marketing assistant and troubleshooter analyzing server logs and triggering automated error repair.

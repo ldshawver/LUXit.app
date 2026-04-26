@@ -334,6 +334,77 @@ class Company(db.Model):
     industry = db.Column(db.String(100))
     description = db.Column(Text)
 
+    # ── Secret helpers ──────────────────────────────────────────────────────
+    def set_secret(self, key_or_provider, key_or_value=None, value=None):
+        """
+        Store/update an encrypted secret.
+
+        Two call styles:
+          company.set_secret("OPENAI_API_KEY", "sk-123")          # key, value
+          company.set_secret("twilio", "auth_token", "tok123")    # provider, key, value
+        """
+        from services.secret_vault import vault
+
+        if value is not None:
+            full_key   = f"{key_or_provider}_{key_or_value}"
+            plain_value = value
+        else:
+            full_key   = key_or_provider
+            plain_value = key_or_value
+
+        if not plain_value:
+            return
+
+        try:
+            enc_value = vault.encrypt(str(plain_value))
+        except Exception:
+            enc_value = str(plain_value)
+
+        secret = CompanySecret.query.filter_by(
+            company_id=self.id, key=full_key
+        ).first()
+        if secret:
+            secret.value      = enc_value
+            secret.updated_at = datetime.utcnow()
+        else:
+            secret = CompanySecret(
+                company_id=self.id, key=full_key, value=enc_value
+            )
+            db.session.add(secret)
+        db.session.commit()
+
+    def get_secret(self, key_or_provider, sub_key=None):
+        """
+        Retrieve and decrypt a secret. Returns None if not found.
+
+          company.get_secret("OPENAI_API_KEY")
+          company.get_secret("twilio", "auth_token")
+        """
+        from services.secret_vault import vault
+
+        full_key = (f"{key_or_provider}_{sub_key}" if sub_key
+                    else key_or_provider)
+        secret = CompanySecret.query.filter_by(
+            company_id=self.id, key=full_key
+        ).first()
+        if not secret or not secret.value:
+            return None
+        try:
+            return vault.decrypt(secret.value)
+        except Exception:
+            return secret.value   # Fallback for legacy unencrypted values
+
+    def delete_secret(self, key_or_provider, sub_key=None):
+        """Delete a secret for this company."""
+        full_key = (f"{key_or_provider}_{sub_key}" if sub_key
+                    else key_or_provider)
+        secret = CompanySecret.query.filter_by(
+            company_id=self.id, key=full_key
+        ).first()
+        if secret:
+            db.session.delete(secret)
+            db.session.commit()
+
 
 class Contact(db.Model):
     __tablename__ = "contact"
@@ -413,13 +484,21 @@ class BlogPost(db.Model):
 
 
 class CompanySecret(db.Model):
+    """Encrypted per-company API secrets (multi-tenant safe)."""
     __tablename__ = "company_secret"
 
-    id = db.Column(db.Integer, primary_key=True)
-    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=True)
-    key = db.Column(db.String(255))
-    value = db.Column(db.Text)
+    id         = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=True, index=True)
+    key        = db.Column(db.String(255), nullable=False)
+    value      = db.Column(db.Text)          # stored encrypted via services.secret_vault
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    company = db.relationship("Company", backref="secrets")
+
+    __table_args__ = (
+        db.UniqueConstraint("company_id", "key", name="uq_company_secret_key"),
+    )
 
 
 class ContactActivity(db.Model):

@@ -5906,61 +5906,67 @@ def delete_quick_link(link_id):
 @main_bp.route('/api/company/<int:company_id>/secrets', methods=['GET'])
 @login_required
 def get_company_secrets(company_id):
-    """Get all secrets for a company"""
+    """Get configured secrets for a company (masked — never returns plaintext)."""
     try:
         from models import CompanySecret
+        from services.secret_vault import vault
         company = Company.query.get(company_id)
         if not company:
             return jsonify({'success': False, 'error': 'Company not found'}), 404
-        
+
+        if not current_user.can_edit_company(company_id):
+            return jsonify({'success': False, 'error': 'Permission denied'}), 403
+
         secrets = CompanySecret.query.filter_by(company_id=company_id).all()
-        return jsonify({
-            'success': True,
-            'company': company.name,
-            'secrets': [{'key': s.key, 'created_at': s.created_at.isoformat()} for s in secrets]
-        })
+        result = []
+        for s in secrets:
+            masked = None
+            try:
+                plain = vault.decrypt(s.value) if s.value else None
+                if plain:
+                    masked = vault.mask_secret(plain)
+            except Exception:
+                if s.value:
+                    masked = "****" + s.value[-4:] if len(s.value) > 4 else "****"
+            result.append({
+                'key':        s.key,
+                'masked':     masked,
+                'configured': bool(s.value),
+                'created_at': s.created_at.isoformat() if s.created_at else None,
+                'updated_at': s.updated_at.isoformat() if getattr(s, 'updated_at', None) else None,
+            })
+
+        return jsonify({'success': True, 'company': company.name, 'secrets': result})
     except Exception as e:
         logger.error(f"Get secrets error: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
+
 @main_bp.route('/api/company/<int:company_id>/secrets/save', methods=['POST'])
 @login_required
 def save_company_secrets(company_id):
-    """Save/update secrets for a company"""
+    """Save/update encrypted secrets for a company."""
     try:
-        from models import CompanySecret
         company = Company.query.get(company_id)
         if not company:
             return jsonify({'success': False, 'error': 'Company not found'}), 404
-        
+
         if not current_user.can_edit_company(company_id):
-            return jsonify({'success': False, 'error': 'You do not have permission to edit this company'}), 403
-        
-        data = request.get_json()
-        saved = 0
+            return jsonify({'success': False, 'error': 'Permission denied'}), 403
+
+        data = request.get_json() or {}
+        saved = []
 
         for key, value in data.items():
-            if value:  # Only save if value is provided
-                secret = CompanySecret.query.filter_by(
-                    company_id=company_id, key=key
-                ).first()
-                if secret:
-                    secret.value = value
-                else:
-                    secret = CompanySecret(
-                        company_id=company_id,
-                        key=key,
-                        value=value
-                    )
-                    db.session.add(secret)
-                saved += 1
-
-        db.session.commit()
+            if value:
+                company.set_secret(key, value)   # encrypts + upserts
+                saved.append(key)
 
         return jsonify({
             'success': True,
             'company': company.name,
-            'secrets_saved': saved
+            'secrets_saved': len(saved),
+            'saved_keys': saved,
         })
     except Exception as e:
         logger.error(f"Save secrets error: {e}")
