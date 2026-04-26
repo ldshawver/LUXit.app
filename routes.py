@@ -5908,11 +5908,9 @@ def delete_quick_link(link_id):
 def get_company_secrets(company_id):
     """Get configured secrets for a company (masked — never returns plaintext)."""
     try:
-        from models import CompanySecret
+        from models import Company, CompanySecret
         from services.secret_vault import vault
-        company = Company.query.get(company_id)
-        if not company:
-            return jsonify({'success': False, 'error': 'Company not found'}), 404
+        company = Company.query.get_or_404(company_id)
 
         if not current_user.can_edit_company(company_id):
             return jsonify({'success': False, 'error': 'Permission denied'}), 403
@@ -5947,12 +5945,14 @@ def get_company_secrets(company_id):
 def save_company_secrets(company_id):
     """Save/update encrypted secrets for a company."""
     try:
-        company = Company.query.get(company_id)
-        if not company:
-            return jsonify({'success': False, 'error': 'Company not found'}), 404
+        from models import Company, CompanySecret
+        company = Company.query.get_or_404(company_id)
+
+        logger.info(f"Secret save company class: {type(company)}")
+        logger.info(f"Secret save has set_secret: {hasattr(company, 'set_secret')}")
 
         if not current_user.can_edit_company(company_id):
-            return jsonify({'success': False, 'error': 'Permission denied'}), 403
+            return jsonify({'success': False, 'error': 'You do not have permission to edit this company'}), 403
 
         data = request.get_json() or {}
         saved = []
