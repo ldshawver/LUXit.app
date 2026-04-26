@@ -1,26 +1,25 @@
 #!/usr/bin/env python3
 """
-vps_twilio_deploy.py - Deploy Twilio webhook routes to the VPS.
+vps_twilio_deploy.py  --  Deploy Twilio SMS/Voice to the LUXit VPS.
 
-Run from the app directory:
-    cd /var/www/luxit-marketing
-    python3 vps_twilio_deploy.py
+  cd /var/www/luxit-marketing
+  python3 vps_twilio_deploy.py
+  sudo systemctl restart luxit
 
 What this does:
-  1. Writes the complete twilio_sms.py (all 6 webhook routes + inbox UI)
-  2. Patches app.py to import and register the Twilio Blueprint
-  3. Prints route verification summary
+  1. Writes complete twilio_sms.py (1215 lines)
+  2. Patches app.py: import + register twilio_bp (multiple fallback anchors)
+  3. Runs DB migration: creates all missing Twilio tables
 """
-import base64
-import shutil
+import base64, shutil, subprocess, sys
 from pathlib import Path
 
 APP = Path("/var/www/luxit-marketing")
-ok   = []
-skip = []
-fail = []
+ok = []; skip = []; fail = []
 
-# Base64-encoded twilio_sms.py — avoids all string/shell escaping issues
+# ======================================================================
+# STEP 1: Write twilio_sms.py (base64-encoded to avoid escaping issues)
+# ======================================================================
 _B64 = (
     "IiIiCk11bHRpLXRlbmFudCBUd2lsaW8gU01TICYgQ2FsbCBQbGF0Zm9ybSDigJQgTFVYaXQKQmx1ZXBy"
     "aW50OiB0d2lsaW9fYnAgICh1cmxfcHJlZml4PS90d2lsaW8pCgpQdWJsaWMgd2ViaG9vayBlbmRwb2lu"
@@ -798,83 +797,255 @@ _B64 = (
     "Y2VzcyI6IFRydWV9KQo="
 )
 
-# Step 1: Write twilio_sms.py
 def write_twilio_sms():
     dest = APP / "twilio_sms.py"
     content = base64.b64decode(_B64.strip()).decode("utf-8")
     if dest.exists():
         shutil.copy(dest, str(dest) + ".bak")
-        print("  - backed up existing twilio_sms.py")
+        print("  backed up twilio_sms.py -> twilio_sms.py.bak")
     dest.write_text(content)
-    ok.append("twilio_sms.py written (" + str(len(content.splitlines())) + " lines)")
+    n = len(content.splitlines())
+    ok.append("twilio_sms.py written (" + str(n) + " lines)")
 
 write_twilio_sms()
 
-# Step 2: patch() helper
-def patch(rel, old, new, label):
+# ======================================================================
+# STEP 2: patch() helper with multiple fallback anchors
+# ======================================================================
+def patch(rel, candidates, new_suffix, label):
+    """Try each (old, new) candidate in order; apply the first match."""
     p = APP / rel
     if not p.exists():
         fail.append("FILE NOT FOUND -- " + rel)
         return
     src = p.read_text()
-    if new.strip() in src:
+    # Check if already applied
+    if new_suffix.strip() in src:
         skip.append("already applied -- " + label)
         return
-    if old not in src:
-        fail.append("anchor not found -- " + label)
+    for old in candidates:
+        if old in src:
+            shutil.copy(p, str(p) + ".bak")
+            p.write_text(src.replace(old, old + new_suffix, 1))
+            ok.append("patched -- " + label + " (anchor: " + repr(old[:40]) + ")")
+            return
+    fail.append("no anchor matched -- " + label + ". Tried: " + str(candidates))
+
+# ======================================================================
+# STEP 3: Patch app.py -- import twilio_bp
+# ======================================================================
+patch(
+    "app.py",
+    [
+        "    from x_auth import x_bp, x_api_bp",
+        "    from advanced_config import advanced_config_bp",
+        "    from legal import legal_bp",
+        "    from marketing import marketing_bp",
+        "    from routes import main_bp",
+    ],
+    "\n    from twilio_sms import twilio_bp",
+    "app.py -- import twilio_bp",
+)
+
+# ======================================================================
+# STEP 4: Patch app.py -- register twilio_bp
+# ======================================================================
+patch(
+    "app.py",
+    [
+        "    app.register_blueprint(x_api_bp)",
+        "    app.register_blueprint(x_bp)",
+        "    app.register_blueprint(advanced_config_bp)",
+        "    app.register_blueprint(legal_bp)",
+        "    app.register_blueprint(marketing_bp)",
+    ],
+    "\n    app.register_blueprint(twilio_bp)",
+    "app.py -- register_blueprint(twilio_bp)",
+)
+
+# ======================================================================
+# STEP 5: DB migration -- create missing Twilio tables
+# ======================================================================
+MIGRATION_SQL = """
+CREATE TABLE IF NOT EXISTS twilio_account (
+    id            SERIAL PRIMARY KEY,
+    company_id    INTEGER NOT NULL UNIQUE REFERENCES company(id),
+    account_sid   TEXT,
+    auth_token    TEXT,
+    messaging_service_sid VARCHAR(60),
+    from_phone    VARCHAR(20),
+    webhook_base_url VARCHAR(500),
+    is_active     BOOLEAN DEFAULT TRUE,
+    automation_enabled BOOLEAN DEFAULT TRUE,
+    ai_mode       VARCHAR(20) DEFAULT 'off',
+    ai_system_prompt TEXT,
+    missed_call_text  TEXT DEFAULT 'Sorry we missed your call! Reply to schedule a callback.',
+    after_hours_text  TEXT DEFAULT 'Thanks for reaching out! Our team is currently away.',
+    sms_forward_to    VARCHAR(20),
+    call_forward_to   VARCHAR(20),
+    sms_forwarding_enabled       BOOLEAN DEFAULT TRUE,
+    voice_forwarding_enabled     BOOLEAN DEFAULT TRUE,
+    after_hours_sms_enabled      BOOLEAN DEFAULT TRUE,
+    after_hours_voicemail_enabled BOOLEAN DEFAULT TRUE,
+    voicemail_greeting_text      TEXT,
+    voicemail_greeting_audio_url VARCHAR(500),
+    created_at    TIMESTAMP DEFAULT NOW(),
+    updated_at    TIMESTAMP DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS twilio_conversation (
+    id              SERIAL PRIMARY KEY,
+    company_id      INTEGER NOT NULL REFERENCES company(id),
+    contact_id      INTEGER REFERENCES contact(id),
+    from_number     VARCHAR(20) NOT NULL,
+    to_number       VARCHAR(20),
+    contact_name    VARCHAR(200),
+    is_read         BOOLEAN DEFAULT FALSE,
+    is_opted_out    BOOLEAN DEFAULT FALSE,
+    is_first_contact BOOLEAN DEFAULT TRUE,
+    lead_captured   BOOLEAN DEFAULT FALSE,
+    tags            JSONB DEFAULT '[]',
+    notes           TEXT,
+    assigned_user_id INTEGER REFERENCES "user"(id),
+    last_message_at TIMESTAMP,
+    last_message_preview VARCHAR(200),
+    message_count   INTEGER DEFAULT 0,
+    created_at      TIMESTAMP DEFAULT NOW(),
+    updated_at      TIMESTAMP DEFAULT NOW(),
+    CONSTRAINT uq_twilio_conv_company_from UNIQUE (company_id, from_number)
+);
+
+CREATE TABLE IF NOT EXISTS twilio_message (
+    id              SERIAL PRIMARY KEY,
+    conversation_id INTEGER NOT NULL REFERENCES twilio_conversation(id),
+    company_id      INTEGER NOT NULL REFERENCES company(id),
+    twilio_sid      VARCHAR(100) UNIQUE,
+    direction       VARCHAR(10) NOT NULL,
+    from_number     VARCHAR(20),
+    to_number       VARCHAR(20),
+    body            TEXT,
+    status          VARCHAR(50) DEFAULT 'received',
+    num_segments    INTEGER DEFAULT 1,
+    media_urls      JSONB,
+    is_auto_reply   BOOLEAN DEFAULT FALSE,
+    rule_id         INTEGER,
+    error_code      VARCHAR(20),
+    error_message   TEXT,
+    raw_payload     JSONB,
+    created_at      TIMESTAMP DEFAULT NOW(),
+    updated_at      TIMESTAMP DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS auto_reply_rule (
+    id              SERIAL PRIMARY KEY,
+    company_id      INTEGER NOT NULL REFERENCES company(id),
+    name            VARCHAR(200) NOT NULL,
+    trigger_type    VARCHAR(50),
+    keywords        JSONB DEFAULT '[]',
+    response        TEXT,
+    is_active       BOOLEAN DEFAULT TRUE,
+    priority        INTEGER DEFAULT 0,
+    action          VARCHAR(50) DEFAULT 'reply',
+    forward_to      VARCHAR(200),
+    tag_value       VARCHAR(100),
+    match_count     INTEGER DEFAULT 0,
+    active_days     JSONB,
+    active_hours_start VARCHAR(5),
+    active_hours_end   VARCHAR(5),
+    created_at      TIMESTAMP DEFAULT NOW(),
+    updated_at      TIMESTAMP DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS business_hours (
+    id              SERIAL PRIMARY KEY,
+    company_id      INTEGER NOT NULL REFERENCES company(id),
+    day_of_week     INTEGER,
+    is_open         BOOLEAN DEFAULT TRUE,
+    open_time       VARCHAR(5) DEFAULT '09:00',
+    close_time      VARCHAR(5) DEFAULT '17:00',
+    timezone        VARCHAR(50) DEFAULT 'America/Chicago',
+    CONSTRAINT uq_biz_hours_company_day UNIQUE (company_id, day_of_week)
+);
+
+CREATE TABLE IF NOT EXISTS twilio_call_log (
+    id              SERIAL PRIMARY KEY,
+    company_id      INTEGER NOT NULL REFERENCES company(id),
+    twilio_sid      VARCHAR(100) UNIQUE,
+    direction       VARCHAR(10),
+    from_number     VARCHAR(20),
+    to_number       VARCHAR(20),
+    status          VARCHAR(50),
+    duration        INTEGER DEFAULT 0,
+    caller_name     VARCHAR(200),
+    missed_text_sent BOOLEAN DEFAULT FALSE,
+    notes           TEXT,
+    raw_payload     JSONB,
+    created_at      TIMESTAMP DEFAULT NOW(),
+    updated_at      TIMESTAMP DEFAULT NOW()
+);
+"""
+
+def run_migration():
+    # Try to read DATABASE_URL from .env or environment
+    import os
+    db_url = os.environ.get("DATABASE_URL", "")
+    if not db_url:
+        env_file = APP / ".env"
+        if env_file.exists():
+            for line in env_file.read_text().splitlines():
+                if line.startswith("DATABASE_URL="):
+                    db_url = line.split("=", 1)[1].strip().strip('"')
+                    break
+    if not db_url:
+        fail.append("DB migration skipped -- DATABASE_URL not found")
         return
-    shutil.copy(p, str(p) + ".bak")
-    p.write_text(src.replace(old, new, 1))
-    ok.append("patched -- " + label)
+    try:
+        import psycopg2
+        conn = psycopg2.connect(db_url)
+        conn.autocommit = True
+        cur = conn.cursor()
+        for stmt in MIGRATION_SQL.split(";"):
+            stmt = stmt.strip()
+            if stmt:
+                cur.execute(stmt)
+        cur.close(); conn.close()
+        ok.append("DB migration complete (all Twilio tables created/verified)")
+    except Exception as e:
+        fail.append("DB migration error: " + str(e))
 
-# Step 3: app.py - import twilio_bp
-patch(
-    "app.py",
-    "    from x_auth import x_bp, x_api_bp",
-    "    from x_auth import x_bp, x_api_bp\n    from twilio_sms import twilio_bp",
-    "app.py - import twilio_bp",
-)
+run_migration()
 
-# Step 4: app.py - register twilio_bp
-patch(
-    "app.py",
-    "    app.register_blueprint(x_api_bp)",
-    "    app.register_blueprint(x_api_bp)\n    app.register_blueprint(twilio_bp)",
-    "app.py - register_blueprint(twilio_bp)",
-)
-
-# Step 5: Verification
+# ======================================================================
+# STEP 6: Verification
+# ======================================================================
 print("\n=== Route verification ===")
 tw = APP / "twilio_sms.py"
 if tw.exists():
     src = tw.read_text()
     for route in ["/sms/inbound", "/sms/status", "/voice/inbound",
                   "/voice/no-answer", "/voice/recording", "/voice/status"]:
-        ok_s = "OK" if route in src else "MISSING"
-        print("  [" + ok_s + "]  /twilio" + route)
+        s = "OK" if route in src else "MISSING"
+        print("  [" + s + "]  /twilio" + route)
 else:
-    print("  [MISSING] twilio_sms.py was not written")
+    print("  [MISSING] twilio_sms.py")
 
 app_src = (APP / "app.py").read_text() if (APP / "app.py").exists() else ""
 for chk in ["from twilio_sms import twilio_bp", "register_blueprint(twilio_bp)"]:
-    ok_s = "OK" if chk in app_src else "MISSING"
-    print("  [" + ok_s + "]  app.py: " + chk)
+    s = "OK" if chk in app_src else "MISSING"
+    print("  [" + s + "]  app.py: " + chk)
 
 print("\n=== Results ===")
-for m in ok:
-    print("  OK:", m)
-for m in skip:
-    print("  --:", m)
-for m in fail:
-    print("  XX:", m)
+for m in ok:   print("  OK:", m)
+for m in skip: print("  --:", m)
+for m in fail: print("  XX:", m)
 
 if fail:
-    print("\nSome steps failed -- see XX items above.")
+    print("\nSome steps FAILED -- fix XX items then restart.")
+    sys.exit(1)
 else:
-    print("\nAll steps completed.")
-
-print("\nRestart service:")
-print("  sudo systemctl restart luxit")
-print("\nVerify routes (should return 200, not 404):")
-print("  curl -s -o /dev/null -w '%{http_code}' -X POST https://luxit.app/twilio/sms/inbound")
-print("  curl -s -o /dev/null -w '%{http_code}' -X POST https://luxit.app/twilio/voice/inbound")
+    print("\nAll steps OK. Now run:")
+    print("  sudo systemctl restart luxit")
+    print()
+    print("Verify (expect 200 or 403, NOT 404):")
+    print("  curl -s -o /dev/null -w '%{http_code}' -X POST https://luxit.app/twilio/sms/inbound")
+    print("  curl -s -o /dev/null -w '%{http_code}' -X POST https://luxit.app/twilio/voice/inbound")
