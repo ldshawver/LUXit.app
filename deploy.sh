@@ -40,9 +40,21 @@ else
   ok "Updated to ${REMOTE:0:8} on $BRANCH"
 fi
 
-# ── 2. Install / update dependencies ─────────────────────────────────────────
+# ── 2. System build deps (Debian/Ubuntu) ─────────────────────────────────────
 echo ""
-echo "── 2. Dependencies ──"
+echo "── 2. System dependencies ──"
+if command -v apt-get &>/dev/null; then
+  apt-get install -y --no-install-recommends \
+      libpq-dev python3-dev build-essential gcc 2>/dev/null \
+    && ok "System deps: libpq-dev gcc python3-dev" \
+    || warn "apt-get install failed — psycopg2-binary may not build"
+else
+  warn "apt-get not found — skipping system dep install"
+fi
+
+# ── 3. Install / update Python dependencies ───────────────────────────────────
+echo ""
+echo "── 3. Python dependencies ──"
 if [ ! -x "$GUNICORN" ]; then
   warn "Gunicorn not found — rebuilding venv"
   python3 -m venv "$VENV"
@@ -55,9 +67,9 @@ else
   warn "requirements.txt not found"
 fi
 
-# ── 3. Python syntax check ────────────────────────────────────────────────────
+# ── 4. Python syntax check ────────────────────────────────────────────────────
 echo ""
-echo "── 3. Syntax check ──"
+echo "── 4. Syntax check ──"
 ERRORS=0
 for f in app.py models.py routes.py twilio_sms.py legal.py; do
   [ -f "$APP_DIR/$f" ] || continue
