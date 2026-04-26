@@ -2,7 +2,7 @@
 """
 vps_twilio_deploy.py  --  Deploy Twilio SMS/Voice to the LUXit VPS.
 
-  cd /var/www/luxit-marketing
+  cd /root/lux-email-bot
   python3 vps_twilio_deploy.py
   sudo systemctl restart luxit
 
@@ -14,7 +14,7 @@ What this does:
 import base64, shutil, subprocess, sys
 from pathlib import Path
 
-APP = Path("/var/www/luxit-marketing")
+APP = Path("/root/lux-email-bot")
 ok = []; skip = []; fail = []
 
 # ======================================================================

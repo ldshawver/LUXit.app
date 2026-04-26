@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """
 vps_fix_twilio.py  --  Find the Flask app, patch it, run DB migration.
-  python3 /var/www/luxit-marketing/vps_fix_twilio.py
+  python3 /root/lux-email-bot/vps_fix_twilio.py
 """
 import os, shutil, sys
 from pathlib import Path
 
 ok = []; skip = []; fail = []; info = []
 
-TWILIO_SMS_ORIGIN = Path("/var/www/luxit-marketing/twilio_sms.py")
+TWILIO_SMS_ORIGIN = Path("/root/lux-email-bot/twilio_sms.py")
 
 # ===== STEP 1: Find real app.py =====
 def find_app_py():
@@ -93,7 +93,7 @@ def find_db_url():
     if v: return v
     dirs = []
     if APP_DIR: dirs.append(APP_DIR)
-    dirs += [Path("/var/www/luxit-marketing"), Path("/root"), Path("/etc")]
+    dirs += [Path("/root/lux-email-bot"), Path("/root"), Path("/etc")]
     for d in dirs:
         if not d or not d.exists(): continue
         for name in [".env", ".env.production", "config.env"]:
