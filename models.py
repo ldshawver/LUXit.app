@@ -2213,6 +2213,16 @@ class TwilioAccount(db.Model):
     sms_forward_to       = db.Column(db.String(20))   # Forward all inbound SMS to this number
     call_forward_to      = db.Column(db.String(20))   # Forward all inbound calls to this number
 
+    # Routing feature toggles
+    sms_forwarding_enabled       = db.Column(db.Boolean, default=True,  server_default="true")
+    voice_forwarding_enabled     = db.Column(db.Boolean, default=True,  server_default="true")
+    after_hours_sms_enabled      = db.Column(db.Boolean, default=True,  server_default="true")
+    after_hours_voicemail_enabled = db.Column(db.Boolean, default=True, server_default="true")
+
+    # Voicemail
+    voicemail_greeting_text      = db.Column(db.Text)
+    voicemail_greeting_audio_url = db.Column(db.String(500), nullable=True)
+
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
