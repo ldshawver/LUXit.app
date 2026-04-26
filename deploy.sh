@@ -1,190 +1,124 @@
 #!/bin/bash
+# LUXit.app — Git-to-VPS deploy script
+# Run from /root/lux-email-bot as root
+# Usage: bash deploy.sh [branch]   (default branch: main)
 
-# Email Marketing Automation App - Deployment Script for Debian 12
-# Run this script as root or with sudo
+set -euo pipefail
 
-set -e
+APP_DIR="/root/lux-email-bot"
+VENV="$APP_DIR/.venv"
+GUNICORN="$VENV/bin/gunicorn"
+SERVICE="luxit"
+SITE="https://luxit.app"
+BRANCH="${1:-main}"
+BIND="127.0.0.1:8001"
 
-APP_NAME="email-marketing"
-APP_USER="email-marketing"
-APP_DIR="/opt/$APP_NAME"
-VENV_DIR="$APP_DIR/venv"
-LOG_DIR="/var/log/$APP_NAME"
+GREEN='\033[0;32m'; YELLOW='\033[1;33m'; RED='\033[0;31m'; NC='\033[0m'
+ok()   { echo -e "${GREEN}✓${NC}  $*"; }
+warn() { echo -e "${YELLOW}⚠${NC}  $*"; }
+fail() { echo -e "${RED}✗${NC}  $*"; exit 1; }
 
-echo "=== Email Marketing App Deployment Script ==="
-echo "Setting up application on Debian 12..."
+echo "════════════════════════════════════════════"
+echo "  LUXit Deploy  →  branch: $BRANCH"
+echo "════════════════════════════════════════════"
 
-# Update system packages
-echo "Updating system packages..."
-apt update && apt upgrade -y
+# ── Guards ────────────────────────────────────────────────────────────────────
+[ "$(id -u)" -eq 0 ] || fail "Must run as root: sudo bash deploy.sh"
+[ -d "$APP_DIR/.git" ] || fail "$APP_DIR is not a git repo — run vps_setup_service.sh first"
 
-# Install required system packages
-echo "Installing system dependencies..."
-apt install -y python3 python3-pip python3-venv nginx postgresql postgresql-contrib supervisor git curl
-
-# Create application user
-echo "Creating application user..."
-if ! id "$APP_USER" &>/dev/null; then
-    adduser --system --group --home "$APP_DIR" --disabled-password "$APP_USER"
+# ── 1. Pull latest code ───────────────────────────────────────────────────────
+echo ""
+echo "── 1. Pull latest code ──"
+cd "$APP_DIR"
+git fetch origin
+LOCAL=$(git rev-parse HEAD)
+REMOTE=$(git rev-parse "origin/$BRANCH")
+if [ "$LOCAL" = "$REMOTE" ]; then
+  ok "Already up to date ($BRANCH @ ${LOCAL:0:8})"
+else
+  git pull --ff-only origin "$BRANCH"
+  ok "Updated to ${REMOTE:0:8} on $BRANCH"
 fi
 
-# Create directories
-echo "Creating directories..."
-mkdir -p "$APP_DIR" "$LOG_DIR"
-chown "$APP_USER:$APP_USER" "$APP_DIR" "$LOG_DIR"
-
-# Setup PostgreSQL database
-echo "Setting up PostgreSQL database..."
-sudo -u postgres psql -c "CREATE USER $APP_USER WITH PASSWORD 'secure_password_change_me';" || true
-sudo -u postgres psql -c "CREATE DATABASE ${APP_NAME}_db OWNER $APP_USER;" || true
-sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE ${APP_NAME}_db TO $APP_USER;" || true
-
-# Copy application files (assumes files are in current directory)
-echo "Copying application files..."
-cp -r ./* "$APP_DIR/"
-chown -R "$APP_USER:$APP_USER" "$APP_DIR"
-
-# Create Python virtual environment
-echo "Setting up Python virtual environment..."
-sudo -u "$APP_USER" python3 -m venv "$VENV_DIR"
-sudo -u "$APP_USER" "$VENV_DIR/bin/pip" install --upgrade pip
-
-# Install Python dependencies
-echo "Installing Python dependencies..."
-sudo -u "$APP_USER" "$VENV_DIR/bin/pip" install -r "$APP_DIR/deploy_requirements.txt"
-
-# Create environment configuration
-echo "Creating environment configuration..."
-cat > "$APP_DIR/.env" << EOL
-# Production Environment Configuration
-FLASK_ENV=production
-DATABASE_URL=postgresql://$APP_USER:secure_password_change_me@localhost/${APP_NAME}_db
-SESSION_SECRET=$(openssl rand -hex 32)
-
-# Microsoft Graph API Configuration (Update these with your values)
-MS_CLIENT_ID=your_client_id_here
-MS_CLIENT_SECRET=your_client_secret_here
-MS_TENANT_ID=your_tenant_id_here
-
-# OpenAI Configuration (Optional)
-OPENAI_API_KEY=your_openai_api_key_here
-EOL
-
-chown "$APP_USER:$APP_USER" "$APP_DIR/.env"
-chmod 600 "$APP_DIR/.env"
-
-echo "=== IMPORTANT: Update the .env file with your actual credentials ==="
-echo "Edit $APP_DIR/.env and add your:"
-echo "  - Microsoft Graph API credentials"
-echo "  - OpenAI API key (optional)"
-echo "  - Change the PostgreSQL password"
+# ── 2. Install / update dependencies ─────────────────────────────────────────
 echo ""
+echo "── 2. Dependencies ──"
+if [ ! -x "$GUNICORN" ]; then
+  warn "Gunicorn not found — rebuilding venv"
+  python3 -m venv "$VENV"
+fi
+"$VENV/bin/pip" install --quiet --upgrade pip
+if [ -f "$APP_DIR/requirements.txt" ]; then
+  "$VENV/bin/pip" install --quiet -r "$APP_DIR/requirements.txt"
+  ok "requirements.txt installed"
+else
+  warn "requirements.txt not found"
+fi
 
-# Create systemd service
-echo "Creating systemd service..."
-cat > /etc/systemd/system/$APP_NAME.service << EOL
-[Unit]
-Description=Email Marketing Automation App
-After=network.target postgresql.service
+# ── 3. Python syntax check ────────────────────────────────────────────────────
+echo ""
+echo "── 3. Syntax check ──"
+ERRORS=0
+for f in app.py models.py routes.py twilio_sms.py legal.py; do
+  [ -f "$APP_DIR/$f" ] || continue
+  if python3 -m py_compile "$APP_DIR/$f" 2>/dev/null; then
+    ok "$f"
+  else
+    warn "SYNTAX ERROR: $f"
+    python3 -m py_compile "$APP_DIR/$f" || true
+    ERRORS=$((ERRORS + 1))
+  fi
+done
+[ "$ERRORS" -eq 0 ] || fail "Syntax errors — aborting deploy"
 
-[Service]
-Type=exec
-User=$APP_USER
-Group=$APP_USER
-WorkingDirectory=$APP_DIR
-Environment=PATH=$VENV_DIR/bin
-EnvironmentFile=$APP_DIR/.env
-ExecStart=$VENV_DIR/bin/gunicorn --config gunicorn.conf.py wsgi:app
-ExecReload=/bin/kill -s HUP \$MAINPID
-Restart=always
-RestartSec=3
+# ── 4. Confirm .env is preserved ──────────────────────────────────────────────
+echo ""
+echo "── 4. Environment file ──"
+if [ -f "$APP_DIR/.env" ]; then
+  ok ".env present ($(wc -l < "$APP_DIR/.env") lines)"
+else
+  warn ".env not found — app will likely fail to start"
+fi
 
-[Install]
-WantedBy=multi-user.target
-EOL
+# ── 5. Kill stale Gunicorn on 8000 (if any) ───────────────────────────────────
+pkill -f "gunicorn.*127\.0\.0\.1:8000" 2>/dev/null \
+  && warn "Killed stale gunicorn on port 8000" || true
 
-# Configure Nginx
-echo "Configuring Nginx..."
-cat > /etc/nginx/sites-available/$APP_NAME << EOL
-server {
-    listen 80;
-    server_name your_domain.com www.your_domain.com;
-
-    # Security headers
-    add_header X-Frame-Options "SAMEORIGIN" always;
-    add_header X-XSS-Protection "1; mode=block" always;
-    add_header X-Content-Type-Options "nosniff" always;
-    add_header Referrer-Policy "no-referrer-when-downgrade" always;
-    add_header Content-Security-Policy "default-src 'self' http: https: data: blob: 'unsafe-inline'" always;
-
-    # Static files
-    location /static {
-        alias $APP_DIR/static;
-        expires 1y;
-        add_header Cache-Control "public, immutable";
-    }
-
-    # Application
-    location / {
-        proxy_pass http://127.0.0.1:5000;
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
-        proxy_connect_timeout 60s;
-        proxy_send_timeout 60s;
-        proxy_read_timeout 60s;
-    }
-
-    # Health check endpoint
-    location /health {
-        access_log off;
-        proxy_pass http://127.0.0.1:5000/health;
-    }
-}
-EOL
-
-# Enable Nginx site
-ln -sf /etc/nginx/sites-available/$APP_NAME /etc/nginx/sites-enabled/
-rm -f /etc/nginx/sites-enabled/default
-
-# Test Nginx configuration
-nginx -t
-
-# Initialize database
-echo "Initializing database..."
-cd "$APP_DIR"
-sudo -u "$APP_USER" bash -c "source $VENV_DIR/bin/activate && source .env && python3 -c 'from app import app, db; app.app_context().push(); db.create_all()'"
-
-# Enable and start services
-echo "Starting services..."
+# ── 6. Restart service ────────────────────────────────────────────────────────
+echo ""
+echo "── 5. Restart luxit service ──"
 systemctl daemon-reload
-systemctl enable $APP_NAME
-systemctl start $APP_NAME
-systemctl enable nginx
-systemctl restart nginx
+systemctl restart "$SERVICE"
+sleep 3
+if systemctl is-active --quiet "$SERVICE"; then
+  ok "$SERVICE active on $BIND"
+else
+  echo ""
+  journalctl -u "$SERVICE" -n 30 --no-pager
+  fail "$SERVICE failed to start"
+fi
 
+# ── 7. Health check ───────────────────────────────────────────────────────────
 echo ""
-echo "=== Deployment Complete! ==="
+echo "── 6. Health check ──"
+sleep 2
+HTTP=$(curl -s -o /dev/null -w '%{http_code}' -L --max-time 15 "$SITE/" 2>/dev/null || echo "000")
+if [[ "$HTTP" =~ ^(200|301|302)$ ]]; then
+  ok "GET $SITE/ → HTTP $HTTP"
+else
+  warn "GET $SITE/ → HTTP $HTTP — check Nginx and service logs"
+fi
+
+# ── Summary ───────────────────────────────────────────────────────────────────
 echo ""
-echo "Your email marketing app is now running!"
+echo "════════════════════════════════════════════"
+echo " Deploy complete  (branch: $BRANCH)"
 echo ""
-echo "Next steps:"
-echo "1. Update $APP_DIR/.env with your API credentials"
-echo "2. Update /etc/nginx/sites-available/$APP_NAME with your domain"
-echo "3. Restart services: systemctl restart $APP_NAME nginx"
-echo "4. Set up SSL certificate with certbot (recommended)"
+echo " Gunicorn processes:"
+ps aux | grep gunicorn | grep -v grep | awk '{print "   "$11,$12,$13}' || echo "   (none)"
 echo ""
-echo "Default admin login:"
-echo "  Username: admin"
-echo "  Password: admin123"
+echo " Nginx proxy_pass:"
+nginx -T 2>/dev/null | grep "proxy_pass" | grep "800" | sed 's/^[[:space:]]*/   /' || echo "   (none found)"
 echo ""
-echo "Service management:"
-echo "  Start: systemctl start $APP_NAME"
-echo "  Stop: systemctl stop $APP_NAME"
-echo "  Restart: systemctl restart $APP_NAME"
-echo "  Status: systemctl status $APP_NAME"
-echo "  Logs: journalctl -u $APP_NAME -f"
-echo ""
-echo "Application logs: $LOG_DIR/"
-echo ""
+echo " Logs:  sudo journalctl -u $SERVICE -n 80 --no-pager"
+echo "════════════════════════════════════════════"
