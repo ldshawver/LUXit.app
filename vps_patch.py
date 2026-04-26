@@ -721,6 +721,23 @@ patch(
     "twilio_sms settings POST saves new routing fields",
 )
 
+# ── 0. app.py — import twilio_bp ─────────────────────────────────────────────
+# This is the primary fix for 404 on /twilio/* routes.
+patch(
+    "app.py",
+    "    from x_auth import x_bp, x_api_bp",
+    "    from x_auth import x_bp, x_api_bp\n    from twilio_sms import twilio_bp",
+    "app.py - import twilio_bp",
+)
+
+# ── 0b. app.py — register twilio_bp blueprint ─────────────────────────────────
+patch(
+    "app.py",
+    "    app.register_blueprint(x_api_bp)",
+    "    app.register_blueprint(x_api_bp)\n    app.register_blueprint(twilio_bp)",
+    "app.py - register_blueprint(twilio_bp)",
+)
+
 # ── 15a. routes.py — get_company_secrets returns masked values ───────────────
 patch(
     "routes.py",
