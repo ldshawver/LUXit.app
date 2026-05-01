@@ -77,7 +77,7 @@ Wants=network.target
 Type=exec
 User=root
 WorkingDirectory=/root/lux-email-bot
-EnvironmentFile=/root/lux-email-bot/.env
+EnvironmentFile=-/root/lux-email-bot/.env
 ExecStart=/root/lux-email-bot/.venv/bin/gunicorn \
     --workers 3 \
     --bind 127.0.0.1:8001 \
