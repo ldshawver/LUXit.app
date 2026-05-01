@@ -22,9 +22,19 @@ def privacy():
     return render_template("legal/privacy.html", updated=LAST_UPDATED)
 
 
+@legal_bp.get("/privacy-policy")
+def privacy_policy():
+    return render_template("legal/privacy.html", updated=LAST_UPDATED)
+
+
 @legal_bp.get("/terms")
 def terms():
     return render_template("legal/terms.html", updated=LAST_UPDATED)
+
+
+@legal_bp.get("/sms-consent")
+def sms_consent():
+    return render_template("legal/sms_consent.html", updated=LAST_UPDATED)
 
 
 @legal_bp.route("/data-deletion", methods=["GET", "POST"])
