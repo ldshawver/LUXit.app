@@ -169,8 +169,8 @@
     <div class="meta">Last Updated: {{ updated }}</div>
 
     <p>
-      LUX uses SMS messaging to send account notifications, customer support responses,
-      appointment confirmations, and service-related alerts to users who have opted in.
+      LUX sends SMS messages for account notifications, customer support, scheduling,
+      reminders, marketing, and service updates to users who have opted in.
     </p>
 
     <div class="form-card">
@@ -190,15 +190,17 @@
         <div class="checkbox-group">
           <input type="checkbox" id="smsConsent" name="smsConsent" required>
           <span class="checkbox-label" id="consentLabel">
-            I agree to receive SMS messages from LUX for account notifications, customer support,
-            appointment confirmations, and service-related communications. Message frequency varies.
-            Message and data rates may apply. Reply STOP to opt out or HELP for assistance.
+            I agree to receive SMS messages from LUX. Message frequency varies.
+            Message &amp; data rates may apply. Reply STOP to opt out.
           </span>
         </div>
 
         <p class="disclaimer">
-          Consent is not a condition of purchase. SMS consent is not shared with third parties or
-          affiliates for marketing purposes.
+          Reply HELP for help. Consent is not a condition of purchase.
+          SMS consent is not shared with third parties or affiliates for marketing purposes.<br>
+          <a href="/privacy-policy" style="color:var(--lux-accent);font-size:0.8rem;">Privacy Policy</a>
+          &nbsp;&bull;&nbsp;
+          <a href="/terms" style="color:var(--lux-accent);font-size:0.8rem;">Terms &amp; Conditions</a>
         </p>
 
         <button type="submit" class="btn-submit">Submit Consent</button>
