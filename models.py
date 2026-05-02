@@ -338,13 +338,50 @@ class Company(db.Model):
     stripe_customer_id         = db.Column(db.String(100))
     stripe_subscription_id     = db.Column(db.String(100))
     stripe_subscription_status = db.Column(db.String(50), default='none')
+    stripe_price_lookup_key    = db.Column(db.String(100))
     supabase_tenant_id         = db.Column(db.String(100))
     mypaylink_id               = db.Column(db.String(100))
     n8n_contact_id             = db.Column(db.String(100))
     subscription_tier          = db.Column(db.String(50), default='free')
+    billing_tier               = db.Column(db.String(50), default='free')
+    billing_status             = db.Column(db.String(50), default='none')
+    max_team_members           = db.Column(db.Integer, nullable=True)  # NULL = unlimited
+    grace_period_ends_at       = db.Column(db.DateTime, nullable=True)
+    current_period_start       = db.Column(db.DateTime, nullable=True)
+    current_period_end         = db.Column(db.DateTime, nullable=True)
+    cancel_at_period_end       = db.Column(db.Boolean, default=False)
     onboarding_status          = db.Column(db.String(50), default='pending')
     implementation_status      = db.Column(db.String(50), default='none')
     saas_notes                 = db.Column(Text)
+
+    # ── Team-seat helpers ───────────────────────────────────────────────────
+    @property
+    def team_member_count(self):
+        """Number of distinct users currently attached to this company.
+
+        Counts a union of: users with ``default_company_id == self.id`` and
+        users joined via the ``UserCompanyAccess`` table.
+        """
+        from sqlalchemy import or_
+        via_access = db.session.query(UserCompanyAccess.user_id) \
+            .filter(UserCompanyAccess.company_id == self.id)
+        via_default = db.session.query(User.id) \
+            .filter(User.default_company_id == self.id)
+        ids = {r[0] for r in via_access.all()} | {r[0] for r in via_default.all()}
+        return len(ids)
+
+    @property
+    def team_seats_available(self):
+        """Remaining seats. ``None`` means unlimited (Professional/Enterprise)."""
+        if self.max_team_members is None:
+            return None
+        return max(0, self.max_team_members - self.team_member_count)
+
+    def can_add_team_member(self) -> bool:
+        """True if a new user can be added without exceeding ``max_team_members``."""
+        if self.max_team_members is None:
+            return True
+        return self.team_member_count < self.max_team_members
 
     # ── Secret helpers ──────────────────────────────────────────────────────
     def set_secret(self, key_or_provider, key_or_value=None, value=None):

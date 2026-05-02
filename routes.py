@@ -1979,6 +1979,91 @@ def health_check():
 
     return jsonify(payload), 200 if db_ok else 503
 
+
+@main_bp.route('/ready')
+def readiness_check():
+    """Production readiness probe.
+
+    Returns 200 only if every prerequisite for taking real traffic is
+    satisfied: database reachable, both Stripe keys configured, and the
+    Stripe webhook route registered. Returns 503 with a list of missing
+    requirements otherwise. Never echoes secret values.
+    """
+    checks = {}
+    failed = []
+
+    # Database
+    try:
+        db.session.execute(db.text("SELECT 1"))
+        checks["database"] = True
+    except Exception as exc:
+        checks["database"] = False
+        failed.append(f"database: {str(exc)[:120]}")
+
+    # Stripe secrets — boolean only, no values.
+    secret_key = bool(os.getenv("STRIPE_SECRET_KEY"))
+    webhook_secret = bool(os.getenv("STRIPE_WEBHOOK_SECRET"))
+    checks["stripe_secret_key"] = secret_key
+    checks["stripe_webhook_secret"] = webhook_secret
+    if not secret_key:
+        failed.append("STRIPE_SECRET_KEY missing")
+    if not webhook_secret:
+        failed.append("STRIPE_WEBHOOK_SECRET missing")
+
+    # Webhook route registered?
+    has_webhook_route = any(
+        str(rule) == "/api/stripe/webhook"
+        for rule in current_app.url_map.iter_rules()
+    )
+    checks["stripe_webhook_route"] = has_webhook_route
+    if not has_webhook_route:
+        failed.append("/api/stripe/webhook route not registered")
+
+    ready = not failed
+    payload = {
+        "ready": ready,
+        "checks": checks,
+        "missing": failed,
+        "timestamp": datetime.utcnow().isoformat(),
+    }
+    return jsonify(payload), 200 if ready else 503
+
+
+@main_bp.route('/app/billing')
+@main_bp.route('/billing')
+@login_required
+def billing_page():
+    """Customer-facing billing page: current plan, usage, upgrade buttons."""
+    company = None
+    if current_user.default_company_id:
+        company = Company.query.get(current_user.default_company_id)
+    if not company:
+        from models import UserCompanyAccess
+        access = UserCompanyAccess.query.filter_by(user_id=current_user.id).first()
+        if access:
+            company = Company.query.get(access.company_id)
+    return render_template("billing/billing.html", company=company)
+
+
+@main_bp.route('/billing/success')
+@login_required
+def billing_success():
+    """Stripe Checkout success landing page."""
+    return render_template("billing/billing.html",
+                           company=Company.query.get(current_user.default_company_id) if current_user.default_company_id else None,
+                           checkout_session_id=request.args.get("session_id"),
+                           checkout_outcome="success")
+
+
+@main_bp.route('/billing/cancel')
+@login_required
+def billing_cancel():
+    """Stripe Checkout cancel landing page."""
+    return render_template("billing/billing.html",
+                           company=Company.query.get(current_user.default_company_id) if current_user.default_company_id else None,
+                           checkout_outcome="cancel")
+
+
 @main_bp.route('/segments/<int:segment_id>/refresh', methods=['POST'])
 @login_required
 def refresh_segment(segment_id):

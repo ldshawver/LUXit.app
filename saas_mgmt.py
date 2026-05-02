@@ -452,6 +452,150 @@ def automation_log_api():
 stripe_webhook_bp = Blueprint("stripe_webhook", __name__)
 
 
+# ---------------------------------------------------------------------------
+# Stripe Checkout & Customer Portal — public-facing API
+# ---------------------------------------------------------------------------
+
+def _user_can_access_company(user, company):
+    """Authorization check: does the current user have access to a company?"""
+    if not user or not user.is_authenticated or not company:
+        return False
+    if getattr(user, "is_admin", False):
+        return True
+    if user.default_company_id == company.id:
+        return True
+    from models import UserCompanyAccess
+    return UserCompanyAccess.query.filter_by(
+        user_id=user.id, company_id=company.id
+    ).first() is not None
+
+
+@stripe_webhook_bp.route("/api/stripe/create-checkout-session", methods=["POST"])
+@login_required
+def create_checkout_session():
+    """Create a Stripe Checkout Session for a subscription.
+
+    Request JSON: ``{"lookup_key": "...", "company_id": "...", "user_id": "..."}``
+
+    Security:
+      - Auth required.
+      - Frontend supplies ``lookup_key`` only — never a price ID or amount.
+      - Caller must have access to ``company_id`` (admin or via membership).
+    """
+    from models import Company
+    from services.stripe_billing import (
+        create_checkout_session as _mk_session,
+        ALL_KNOWN_LOOKUP_KEYS,
+    )
+
+    body = request.get_json(silent=True) or {}
+    lookup_key  = (body.get("lookup_key") or "").strip()
+    company_id  = body.get("company_id")
+    user_id     = body.get("user_id") or current_user.id
+
+    # Reject any attempt to bypass lookup_key with a raw price/amount.
+    for forbidden in ("price_id", "price", "amount", "unit_amount"):
+        if forbidden in body:
+            return jsonify({
+                "error": "frontend-supplied price IDs/amounts are not allowed; use lookup_key",
+                "field": forbidden,
+            }), 400
+
+    if not lookup_key:
+        return jsonify({"error": "lookup_key is required"}), 400
+    if lookup_key not in ALL_KNOWN_LOOKUP_KEYS:
+        return jsonify({"error": f"unknown lookup_key: {lookup_key}"}), 400
+
+    # Resolve company: explicit company_id wins, else fall back to user's default.
+    company = None
+    if company_id:
+        try:
+            company = Company.query.get(int(company_id))
+        except (TypeError, ValueError):
+            return jsonify({"error": "invalid company_id"}), 400
+    if not company and current_user.default_company_id:
+        company = Company.query.get(current_user.default_company_id)
+    if not company:
+        return jsonify({"error": "company not found"}), 404
+    if not _user_can_access_company(current_user, company):
+        return jsonify({"error": "forbidden"}), 403
+
+    try:
+        session = _mk_session(
+            lookup_key,
+            company_id=company.id,
+            user_id=user_id,
+            customer_id=company.stripe_customer_id or None,
+            customer_email=getattr(current_user, "email", None) if not company.stripe_customer_id else None,
+        )
+    except RuntimeError as exc:
+        logger.error("Stripe checkout failed (config): %s", exc)
+        return jsonify({"error": str(exc)}), 503
+    except ValueError as exc:
+        logger.warning("Stripe checkout rejected: %s", exc)
+        return jsonify({"error": str(exc)}), 400
+    except Exception as exc:
+        logger.exception("Stripe checkout session creation failed")
+        return jsonify({"error": "checkout session creation failed"}), 502
+
+    _log("checkout.session.created", "stripe",
+         company_id=company.id,
+         payload={"lookup_key": lookup_key, "session_id": getattr(session, "id", None)},
+         customer_id=company.stripe_customer_id)
+    return jsonify({
+        "url":         getattr(session, "url", None),
+        "session_id":  getattr(session, "id", None),
+        "lookup_key":  lookup_key,
+    }), 200
+
+
+@stripe_webhook_bp.route("/api/stripe/create-portal-session", methods=["POST"])
+@login_required
+def create_portal_session():
+    """Create a Stripe Customer Portal session for the company's customer.
+
+    Request JSON: ``{"company_id": "..."}``
+    """
+    from models import Company
+    from services.stripe_billing import create_billing_portal_session
+
+    body = request.get_json(silent=True) or {}
+    company_id = body.get("company_id")
+
+    company = None
+    if company_id:
+        try:
+            company = Company.query.get(int(company_id))
+        except (TypeError, ValueError):
+            return jsonify({"error": "invalid company_id"}), 400
+    if not company and current_user.default_company_id:
+        company = Company.query.get(current_user.default_company_id)
+    if not company:
+        return jsonify({"error": "company not found"}), 404
+    if not _user_can_access_company(current_user, company):
+        return jsonify({"error": "forbidden"}), 403
+    if not company.stripe_customer_id:
+        return jsonify({"error": "no stripe customer on file for this company"}), 400
+
+    try:
+        session = create_billing_portal_session(company.stripe_customer_id)
+    except RuntimeError as exc:
+        logger.error("Stripe portal failed (config): %s", exc)
+        return jsonify({"error": str(exc)}), 503
+    except Exception as exc:
+        logger.exception("Stripe portal session creation failed")
+        return jsonify({"error": "portal session creation failed"}), 502
+
+    _log("portal.session.created", "stripe",
+         company_id=company.id,
+         payload={"session_id": getattr(session, "id", None)},
+         customer_id=company.stripe_customer_id)
+    return jsonify({
+        "url":        getattr(session, "url", None),
+        "session_id": getattr(session, "id", None),
+    }), 200
+
+
 @stripe_webhook_bp.route("/api/stripe/webhook", methods=["POST"])
 def stripe_webhook():
     """Stripe webhook receiver.
@@ -662,13 +806,44 @@ def stripe_webhook():
         elif ev_type == "checkout.session.completed":
             sub_id = obj.get("subscription")
             prev_status = company.stripe_subscription_status if company else None
+            metadata = obj.get("metadata") or {}
+            lookup_key = metadata.get("lookup_key")
+            client_ref = obj.get("client_reference_id")
+            # If we couldn't route by stripe_customer_id but client_reference_id
+            # carries a company_id, recover the company here.
+            if not company and client_ref:
+                try:
+                    cid_int = int(client_ref)
+                    company = Company.query.get(cid_int)
+                    if company:
+                        company_id = company.id
+                        if stripe_cid and not company.stripe_customer_id:
+                            company.stripe_customer_id = stripe_cid
+                except (TypeError, ValueError):
+                    pass
             logger.info(
-                "Stripe[%s] checkout.session.completed cid=%s subscription=%s prev_status=%s",
-                ev_id, stripe_cid, sub_id, prev_status,
+                "Stripe[%s] checkout.session.completed cid=%s subscription=%s lookup_key=%s prev_status=%s",
+                ev_id, stripe_cid, sub_id, lookup_key, prev_status,
             )
             if company and sub_id:
+                from services.stripe_billing import (
+                    tier_for_lookup_key, TIER_BY_LOOKUP_KEY,
+                )
                 company.stripe_subscription_id     = sub_id
                 company.stripe_subscription_status = "active"
+                company.billing_status             = "active"
+                company.grace_period_ends_at       = None
+                # Only apply tier+seats when the lookup_key is a real tier.
+                # Add-on lookup keys (luxit_additional_account_monthly) are
+                # not tiers and would corrupt billing_tier/max_team_members
+                # if applied. The authoritative source for seats including
+                # add-ons is the customer.subscription.updated handler.
+                if lookup_key and lookup_key in TIER_BY_LOOKUP_KEY:
+                    tier, seats = tier_for_lookup_key(lookup_key)
+                    company.stripe_price_lookup_key = lookup_key
+                    company.billing_tier            = tier
+                    company.subscription_tier       = tier
+                    company.max_team_members        = seats  # None = unlimited
                 db.session.commit()
                 logger.info(
                     "Stripe[%s] company %s billing_status: %s → active",
@@ -705,6 +880,8 @@ def stripe_webhook():
             sub_id_inv = obj.get("subscription")
             if company:
                 company.stripe_subscription_status = "active"
+                company.billing_status             = "active"
+                company.grace_period_ends_at       = None  # clear any prior dunning window
                 db.session.commit()
                 logger.info("Stripe[%s] company %s billing_status: %s → active", ev_id, company.id, prev_status)
                 _fire_n8n("invoice_paid", company.id, {"invoice_id": inv_id, "amount": amount})
@@ -723,10 +900,16 @@ def stripe_webhook():
                 # Failed payment moves the tenant into the dunning/grace window
                 # rather than instant suspension. Stripe Smart Retries plus
                 # subscription.deleted will eventually finalize cancellation.
+                from services.stripe_billing import grace_period_end
                 company.stripe_subscription_status = "grace_period"
+                company.billing_status             = "grace_period"
+                # Only set grace_period_ends_at on the first failed attempt
+                # so retries don't keep extending the deadline.
+                if not company.grace_period_ends_at:
+                    company.grace_period_ends_at = grace_period_end()
                 db.session.commit()
-                logger.info("Stripe[%s] company %s billing_status: %s → grace_period",
-                            ev_id, company.id, prev_status)
+                logger.info("Stripe[%s] company %s billing_status: %s → grace_period (until %s)",
+                            ev_id, company.id, prev_status, company.grace_period_ends_at)
                 _fire_n8n("payment_failed", company.id, {"invoice_id": inv_id, "attempt": attempt})
             _finalize("success", subscription_id=sub_id_inv)
 
@@ -739,11 +922,38 @@ def stripe_webhook():
                 ev_id, sub_id, new_status, stripe_cid, prev_status,
             )
             if company:
+                from services.stripe_billing import compute_seats_from_subscription, stripe_ts_to_dt
                 company.stripe_subscription_status = new_status
                 if sub_id:
                     company.stripe_subscription_id = sub_id
+                # Sync billing period + cancel-at-period-end so the UI can
+                # show renewal date and "scheduled to cancel" notices.
+                company.current_period_start = stripe_ts_to_dt(obj.get("current_period_start"))
+                company.current_period_end   = stripe_ts_to_dt(obj.get("current_period_end"))
+                company.cancel_at_period_end = bool(obj.get("cancel_at_period_end"))
+                # Recompute tier + seat allowance from the current set of
+                # subscription items (handles add-on quantity changes).
+                tier, seats, primary_lookup = compute_seats_from_subscription(obj)
+                if primary_lookup:
+                    company.stripe_price_lookup_key = primary_lookup
+                    company.billing_tier            = tier
+                    company.subscription_tier       = tier
+                    company.max_team_members        = seats
+                # Map Stripe sub status → our billing_status.
+                if new_status in ("active", "trialing"):
+                    company.billing_status = "active"
+                    company.grace_period_ends_at = None
+                elif new_status == "past_due":
+                    company.billing_status = "grace_period"
+                elif new_status in ("canceled", "unpaid", "incomplete_expired"):
+                    company.billing_status = "canceled"
+                elif new_status == "incomplete":
+                    company.billing_status = "incomplete"
                 db.session.commit()
-                logger.info("Stripe[%s] company %s billing_status: %s → %s", ev_id, company.id, prev_status, new_status)
+                logger.info("Stripe[%s] company %s status: %s → %s (tier=%s, seats=%s, periods=%s..%s, cancel_at_end=%s)",
+                            ev_id, company.id, prev_status, new_status, tier, seats,
+                            company.current_period_start, company.current_period_end,
+                            company.cancel_at_period_end)
                 if new_status == "canceled":
                     _fire_n8n("customer_canceled", company.id, {"subscription_id": sub_id})
                 elif new_status == "past_due":
@@ -758,9 +968,14 @@ def stripe_webhook():
                 ev_id, sub_id, stripe_cid, prev_status,
             )
             if company:
+                # Set "suspended" so the UI can distinguish a deleted
+                # subscription from a status='canceled' that's still in its
+                # paid-through window. Data is preserved.
                 company.stripe_subscription_status = "canceled"
+                company.billing_status             = "suspended"
+                company.cancel_at_period_end       = False
                 db.session.commit()
-                logger.info("Stripe[%s] company %s billing_status: %s → canceled", ev_id, company.id, prev_status)
+                logger.info("Stripe[%s] company %s billing_status: %s → suspended", ev_id, company.id, prev_status)
                 _fire_n8n("customer_canceled", company.id, {"subscription_id": sub_id})
             _finalize("success", subscription_id=sub_id)
 

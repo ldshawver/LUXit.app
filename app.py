@@ -19,7 +19,7 @@ except ImportError:
 from flask import Flask, g, has_request_context, request
 from flask_login import LoginManager
 from werkzeug.middleware.proxy_fix import ProxyFix
-from extensions import db, csrf
+from extensions import db, csrf  # csrf used below to exempt Stripe routes
 
 
 # ============================================================
@@ -225,7 +225,12 @@ def create_app() -> Flask:
     app.register_blueprint(twilio_bp)
     app.register_blueprint(saas_bp)
     app.register_blueprint(stripe_webhook_bp)
-    print("✓ SaaS Command Center routes loaded: /saas, /api/stripe/webhook")
+    # Stripe webhook deliveries from Stripe's edge servers will never carry
+    # a CSRF token; the billing endpoints accept JSON from a Fetch call that
+    # likewise does not include the form CSRF cookie. Both routes have their
+    # own auth/signature/allowlist controls, so we exempt the whole blueprint.
+    csrf.exempt(stripe_webhook_bp)
+    print("✓ SaaS Command Center routes loaded: /saas, /api/stripe/webhook (CSRF-exempt)")
 
     from utils import get_campaign_status_color
     app.jinja_env.filters['campaign_status_color'] = get_campaign_status_color
