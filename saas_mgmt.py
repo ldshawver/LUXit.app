@@ -489,9 +489,13 @@ def create_checkout_session():
     )
 
     body = request.get_json(silent=True) or {}
-    lookup_key  = (body.get("lookup_key") or "").strip()
-    company_id  = body.get("company_id")
-    user_id     = body.get("user_id") or current_user.id
+    lookup_key       = (body.get("lookup_key") or "").strip()
+    company_id       = body.get("company_id")
+    user_id          = body.get("user_id") or current_user.id
+    # Optional: include the one-time setup fee as a second line item. The
+    # frontend may request it but the server is the final authority — if the
+    # company already paid the setup fee we silently drop the request.
+    include_setup_fee = bool(body.get("include_setup_fee", False))
 
     # Reject any attempt to bypass lookup_key with a raw price/amount.
     for forbidden in ("price_id", "price", "amount", "unit_amount"):
@@ -520,6 +524,10 @@ def create_checkout_session():
     if not _user_can_access_company(current_user, company):
         return jsonify({"error": "forbidden"}), 403
 
+    # Server-side guard: if this company has already paid the one-time setup
+    # fee, never attach it again, no matter what the frontend asks for.
+    apply_setup_fee = include_setup_fee and not bool(getattr(company, "setup_fee_paid", False))
+
     try:
         session = _mk_session(
             lookup_key,
@@ -527,6 +535,7 @@ def create_checkout_session():
             user_id=user_id,
             customer_id=company.stripe_customer_id or None,
             customer_email=getattr(current_user, "email", None) if not company.stripe_customer_id else None,
+            include_setup_fee=apply_setup_fee,
         )
     except RuntimeError as exc:
         logger.error("Stripe checkout failed (config): %s", exc)
@@ -540,12 +549,17 @@ def create_checkout_session():
 
     _log("checkout.session.created", "stripe",
          company_id=company.id,
-         payload={"lookup_key": lookup_key, "session_id": getattr(session, "id", None)},
+         payload={
+             "lookup_key": lookup_key,
+             "session_id": getattr(session, "id", None),
+             "include_setup_fee": apply_setup_fee,
+         },
          customer_id=company.stripe_customer_id)
     return jsonify({
-        "url":         getattr(session, "url", None),
-        "session_id":  getattr(session, "id", None),
-        "lookup_key":  lookup_key,
+        "url":               getattr(session, "url", None),
+        "session_id":        getattr(session, "id", None),
+        "lookup_key":        lookup_key,
+        "include_setup_fee": apply_setup_fee,
     }), 200
 
 
@@ -844,6 +858,25 @@ def stripe_webhook():
                     company.billing_tier            = tier
                     company.subscription_tier       = tier
                     company.max_team_members        = seats  # None = unlimited
+
+                # ── One-time setup fee fulfillment ─────────────────────────
+                # The session metadata (set server-side at create time) is
+                # the authoritative record of whether the setup fee line
+                # item was attached. We mark setup_fee_paid exactly once;
+                # idempotency on stripe_event_id (claim_row above) prevents
+                # double-processing if Stripe retries this event.
+                if (
+                    metadata.get("include_setup_fee") == "true"
+                    and not getattr(company, "setup_fee_paid", False)
+                ):
+                    from datetime import datetime as _dt
+                    company.setup_fee_paid                = True
+                    company.setup_fee_paid_at             = _dt.utcnow()
+                    company.setup_fee_checkout_session_id = obj.get("id")
+                    logger.info(
+                        "Stripe[%s] company %s setup_fee_paid=True session=%s",
+                        ev_id, company.id, obj.get("id"),
+                    )
                 db.session.commit()
                 logger.info(
                     "Stripe[%s] company %s billing_status: %s → active",

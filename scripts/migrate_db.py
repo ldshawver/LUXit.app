@@ -78,6 +78,10 @@ MIGRATIONS = [
     ("company", "current_period_start",       "DATETIME",     "DEFAULT NULL"),
     ("company", "current_period_end",         "DATETIME",     "DEFAULT NULL"),
     ("company", "cancel_at_period_end",       "BOOLEAN",      "DEFAULT 0"),
+    # One-time setup/onboarding fee tracking
+    ("company", "setup_fee_paid",                "BOOLEAN",      "DEFAULT 0"),
+    ("company", "setup_fee_paid_at",             "DATETIME",     "DEFAULT NULL"),
+    ("company", "setup_fee_checkout_session_id", "VARCHAR(120)", "DEFAULT NULL"),
     ("company", "onboarding_status",          "VARCHAR(50)",  "DEFAULT 'pending'"),
     ("company", "implementation_status",      "VARCHAR(50)",  "DEFAULT 'none'"),
     ("company", "saas_notes",                 "TEXT",         "DEFAULT NULL"),

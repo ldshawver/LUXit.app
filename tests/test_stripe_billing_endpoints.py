@@ -187,6 +187,169 @@ def test_checkout_completed_with_addon_lookup_key_does_not_corrupt_tier(app, cli
         assert c.billing_status == "active"
 
 
+def test_create_checkout_rejects_setup_fee_lookup_key(client, company_user):
+    """The one-time setup fee lookup_key must NOT be the primary lookup_key.
+    It is only valid as a secondary line item via include_setup_fee=True."""
+    company, user = company_user
+    _login(client, user.id)
+    resp = client.post(
+        "/api/stripe/create-checkout-session",
+        json={"lookup_key": "luxit_setup_fee_once", "company_id": company.id},
+    )
+    assert resp.status_code == 400
+    body = resp.get_json()
+    assert "include_setup_fee" in (body.get("error") or "")
+
+
+def test_create_checkout_passes_include_setup_fee_when_unpaid(app, client, company_user):
+    """Starter checkout with include_setup_fee=true and unpaid setup fee
+    must call the service with include_setup_fee=True."""
+    company, user = company_user
+    _login(client, user.id)
+    fake = SimpleNamespace(id="cs_with_fee", url="https://stripe.test/cs_with_fee")
+    with patch("services.stripe_billing.create_checkout_session", return_value=fake) as mk:
+        resp = client.post(
+            "/api/stripe/create-checkout-session",
+            json={"lookup_key": "luxit_starter_monthly",
+                  "company_id": company.id,
+                  "include_setup_fee": True},
+        )
+    assert resp.status_code == 200
+    body = resp.get_json()
+    assert body["include_setup_fee"] is True
+    assert mk.call_args.kwargs["include_setup_fee"] is True
+
+
+def test_create_checkout_drops_setup_fee_when_already_paid(app, client):
+    """If company.setup_fee_paid is already True, the server must override
+    the frontend's request and pass include_setup_fee=False to Stripe.
+
+    We build the fixture inline (with ``setup_fee_paid=True`` from creation)
+    rather than using ``company_user`` because the shared fixture commits
+    a Company with the default ``False`` first and then mutating it post-
+    yield interacts badly with Flask-SQLAlchemy's identity map across
+    nested app contexts.
+    """
+    cid = uid = None
+    try:
+        with app.app_context():
+            c = Company(name="Paid Setup Co",
+                        stripe_customer_id="cus_paid_setup",
+                        billing_status="none", billing_tier="free",
+                        setup_fee_paid=True)
+            _db.session.add(c)
+            _db.session.flush()
+            u = User(username="paidsetup", email="paid@setup.com",
+                     password_hash="x", is_admin=True, default_company_id=c.id)
+            _db.session.add(u)
+            _db.session.commit()
+            cid, uid = c.id, u.id
+
+        _login(client, uid)
+        fake = SimpleNamespace(id="cs_no_fee", url="https://stripe.test/cs_no_fee")
+        with patch("services.stripe_billing.create_checkout_session", return_value=fake) as mk:
+            resp = client.post(
+                "/api/stripe/create-checkout-session",
+                json={"lookup_key": "luxit_professional_monthly",
+                      "company_id": cid,
+                      "include_setup_fee": True},
+            )
+        assert resp.status_code == 200, resp.data
+        body = resp.get_json()
+        # Server-side guard kicked in: include_setup_fee was forced to False.
+        assert body["include_setup_fee"] is False
+        assert mk.call_args.kwargs["include_setup_fee"] is False
+    finally:
+        with app.app_context():
+            if uid:
+                User.query.filter_by(id=uid).delete()
+            if cid:
+                Company.query.filter_by(id=cid).delete()
+            _db.session.commit()
+
+
+def test_create_checkout_omits_setup_fee_by_default(client, company_user):
+    """If the frontend doesn't ask for the setup fee, it isn't attached."""
+    company, user = company_user
+    _login(client, user.id)
+    fake = SimpleNamespace(id="cs_default", url="https://stripe.test/cs_default")
+    with patch("services.stripe_billing.create_checkout_session", return_value=fake) as mk:
+        resp = client.post(
+            "/api/stripe/create-checkout-session",
+            json={"lookup_key": "luxit_starter_monthly",
+                  "company_id": company.id},
+        )
+    assert resp.status_code == 200
+    assert mk.call_args.kwargs["include_setup_fee"] is False
+
+
+def test_checkout_completed_marks_setup_fee_paid(app, client, company_user):
+    """checkout.session.completed with metadata.include_setup_fee='true'
+    must mark the company setup_fee_paid + record the session id + timestamp."""
+    company, _ = company_user
+    event = _make_event("checkout.session.completed", {
+        "id": "cs_setup_fee_paid_001",
+        "customer": company.stripe_customer_id,
+        "subscription": "sub_with_setup_001",
+        "metadata": {
+            "lookup_key":        "luxit_starter_monthly",
+            "include_setup_fee": "true",
+        },
+    }, event_id="evt_setup_fee_001")
+    resp = _signed_post(client, event)
+    assert resp.status_code == 200
+
+    with app.app_context():
+        c = Company.query.get(company.id)
+        assert c.setup_fee_paid is True
+        assert c.setup_fee_paid_at is not None
+        assert c.setup_fee_checkout_session_id == "cs_setup_fee_paid_001"
+        # Tier still applied alongside setup fee.
+        assert c.billing_tier == "starter"
+        assert c.max_team_members == 5
+
+
+def test_checkout_completed_without_setup_fee_flag_does_not_mark_paid(app, client, company_user):
+    """checkout.session.completed without the setup-fee metadata must NOT
+    set setup_fee_paid (e.g. an upgrade after fee was already paid)."""
+    company, _ = company_user
+    event = _make_event("checkout.session.completed", {
+        "id": "cs_no_setup_001",
+        "customer": company.stripe_customer_id,
+        "subscription": "sub_no_setup_001",
+        "metadata": {
+            "lookup_key":        "luxit_professional_monthly",
+            "include_setup_fee": "false",
+        },
+    }, event_id="evt_no_setup_001")
+    resp = _signed_post(client, event)
+    assert resp.status_code == 200
+    with app.app_context():
+        c = Company.query.get(company.id)
+        assert c.setup_fee_paid is False
+        assert c.setup_fee_paid_at is None
+        assert c.setup_fee_checkout_session_id is None
+
+
+def test_invoice_payment_succeeded_does_not_mark_setup_fee_paid(app, client, company_user):
+    """Renewal invoices must never flip setup_fee_paid — only the initial
+    checkout.session.completed handler is allowed to do so. This guards
+    against accidental re-charging via recurring-invoice logic."""
+    company, _ = company_user
+    event = _make_event("invoice.payment_succeeded", {
+        "id":           "in_renewal_001",
+        "customer":     company.stripe_customer_id,
+        "subscription": "sub_renewal_001",
+        "amount_paid":  19900,
+    }, event_id="evt_renewal_001")
+    resp = _signed_post(client, event)
+    assert resp.status_code == 200
+    with app.app_context():
+        c = Company.query.get(company.id)
+        assert c.setup_fee_paid is False  # unchanged
+        assert c.setup_fee_paid_at is None
+
+
 def test_create_checkout_happy_path(app, client, company_user):
     """Valid lookup_key + auth → 200 with checkout URL."""
     company, user = company_user

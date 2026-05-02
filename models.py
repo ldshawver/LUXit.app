@@ -350,6 +350,13 @@ class Company(db.Model):
     current_period_start       = db.Column(db.DateTime, nullable=True)
     current_period_end         = db.Column(db.DateTime, nullable=True)
     cancel_at_period_end       = db.Column(db.Boolean, default=False)
+    # ── One-time setup / onboarding fee ─────────────────────────────────────
+    # Charged exactly once per company on the very first Checkout Session.
+    # Once paid, future Checkout Sessions for this company must NOT include
+    # the setup-fee line item again.
+    setup_fee_paid                = db.Column(db.Boolean, default=False, nullable=False)
+    setup_fee_paid_at             = db.Column(db.DateTime, nullable=True)
+    setup_fee_checkout_session_id = db.Column(db.String(120), nullable=True)
     onboarding_status          = db.Column(db.String(50), default='pending')
     implementation_status      = db.Column(db.String(50), default='none')
     saas_notes                 = db.Column(Text)

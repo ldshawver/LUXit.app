@@ -56,6 +56,21 @@
             {% endif %}
           </div>
           <div class="text-end">
+            <div class="text-muted small text-uppercase">Setup fee</div>
+            <h5 class="mb-1">
+              {% if company.setup_fee_paid %}
+                <span class="badge bg-success">Paid</span>
+              {% else %}
+                <span class="badge bg-warning text-dark">Due on first checkout</span>
+              {% endif %}
+            </h5>
+            {% if company.setup_fee_paid and company.setup_fee_paid_at %}
+              <div class="small text-muted">
+                Charged {{ company.setup_fee_paid_at.strftime('%Y-%m-%d') }}
+              </div>
+            {% endif %}
+          </div>
+          <div class="text-end">
             <div class="text-muted small text-uppercase">Team seats</div>
             <h3 class="mb-1">
               {{ company.team_member_count }}
@@ -79,17 +94,37 @@
     <div class="card">
       <div class="card-body">
         <h5 class="card-title mb-3">Manage subscription</h5>
+        <ul class="small text-muted mb-3 ps-3">
+          <li>Starter — $199/month (includes 5 seats)</li>
+          <li>Professional — $499/month (unlimited seats, all 11 AI agents)</li>
+          <li>Setup &amp; Onboarding Fee — one-time charge on initial checkout</li>
+          <li>Additional Account License — $25/account/month (managed in portal)</li>
+        </ul>
         <div class="d-flex flex-wrap gap-2">
+          {# data-include-setup-fee tells the JS to ask the backend to
+             attach the one-time setup fee. The backend will silently drop
+             it if company.setup_fee_paid is already true, so this is
+             advisory only. #}
+          {% set needs_setup = not company.setup_fee_paid %}
           {% if not company.stripe_subscription_id %}
-            <button class="btn btn-primary" data-lookup="luxit_starter_monthly" data-action="checkout">
-              Subscribe — Starter ($25/mo, 5 seats)
+            <button class="btn btn-primary"
+                    data-lookup="luxit_starter_monthly"
+                    data-action="checkout"
+                    data-include-setup-fee="{{ 'true' if needs_setup else 'false' }}">
+              Subscribe — Starter ($199/mo, 5 seats{% if needs_setup %} + setup fee{% endif %})
             </button>
-            <button class="btn btn-primary" data-lookup="luxit_professional_monthly" data-action="checkout">
-              Subscribe — Professional (unlimited seats)
+            <button class="btn btn-primary"
+                    data-lookup="luxit_professional_monthly"
+                    data-action="checkout"
+                    data-include-setup-fee="{{ 'true' if needs_setup else 'false' }}">
+              Subscribe — Professional ($499/mo, unlimited{% if needs_setup %} + setup fee{% endif %})
             </button>
           {% else %}
             {% if (company.billing_tier or '') != 'professional' %}
-              <button class="btn btn-success" data-lookup="luxit_professional_monthly" data-action="checkout">
+              <button class="btn btn-success"
+                      data-lookup="luxit_professional_monthly"
+                      data-action="checkout"
+                      data-include-setup-fee="{{ 'true' if needs_setup else 'false' }}">
                 Upgrade to Professional
               </button>
             {% endif %}
@@ -144,8 +179,9 @@
       btn.disabled = true;
       try {
         const data = await postJSON("/api/stripe/create-checkout-session", {
-          lookup_key: btn.dataset.lookup,
-          company_id: companyId,
+          lookup_key:        btn.dataset.lookup,
+          company_id:        companyId,
+          include_setup_fee: btn.dataset.includeSetupFee === "true",
         });
         if (data.url) window.location.href = data.url;
         else showError("No checkout URL returned.");

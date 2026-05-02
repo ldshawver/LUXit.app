@@ -25,8 +25,21 @@ TIER_BY_LOOKUP_KEY = {
 # Per-account add-on: each unit grants one additional team seat.
 ADDITIONAL_ACCOUNT_LOOKUP_KEY = "luxit_additional_account_monthly"
 
+# One-time onboarding/setup fee — a non-recurring price attached as a second
+# line item on the very first subscription Checkout. Charged exactly once per
+# company; subsequent renewals only bill the recurring subscription price.
+SETUP_FEE_LOOKUP_KEY = "luxit_setup_fee_once"
+
+# Lookup keys that can never start a Checkout Session on their own. They are
+# either applied through the Customer Portal (seat add-on) or only valid as a
+# secondary line item on a real subscription (one-time setup fee).
+NON_PRIMARY_LOOKUP_KEYS = {ADDITIONAL_ACCOUNT_LOOKUP_KEY, SETUP_FEE_LOOKUP_KEY}
+
 # All lookup keys we recognise — anything else is rejected at checkout.
-ALL_KNOWN_LOOKUP_KEYS = set(TIER_BY_LOOKUP_KEY.keys()) | {ADDITIONAL_ACCOUNT_LOOKUP_KEY}
+ALL_KNOWN_LOOKUP_KEYS = (
+    set(TIER_BY_LOOKUP_KEY.keys())
+    | {ADDITIONAL_ACCOUNT_LOOKUP_KEY, SETUP_FEE_LOOKUP_KEY}
+)
 
 # Days of access after a failed invoice payment before the company is suspended.
 DEFAULT_GRACE_DAYS = int(os.environ.get("BILLING_GRACE_DAYS", "14"))
@@ -148,6 +161,7 @@ def create_checkout_session(
     success_url: Optional[str] = None,
     cancel_url: Optional[str] = None,
     quantity: int = 1,
+    include_setup_fee: bool = False,
 ):
     """Create a Stripe Checkout Session in subscription mode.
 
@@ -157,35 +171,56 @@ def create_checkout_session(
     """
     if lookup_key not in ALL_KNOWN_LOOKUP_KEYS:
         raise ValueError(f"Unknown lookup_key: {lookup_key}")
-    # The per-seat add-on must be added to the existing subscription as an
-    # extra item (or quantity bump) — it is NOT a standalone subscription.
-    # Forcing customers through the Customer Portal for seat changes keeps
-    # billing on a single subscription record and avoids polluting the tier
-    # detection logic with add-on-only sessions.
+    # Add-on / setup-fee lookup keys cannot start their own subscription —
+    # the add-on belongs on the existing subscription via the Customer Portal,
+    # and the setup fee is only valid as a secondary line item attached to a
+    # real tier checkout (see ``include_setup_fee`` below).
     if lookup_key == ADDITIONAL_ACCOUNT_LOOKUP_KEY:
         raise ValueError(
             "luxit_additional_account_monthly cannot start a new subscription; "
             "use the Customer Portal to add seats to your existing subscription"
         )
+    if lookup_key == SETUP_FEE_LOOKUP_KEY:
+        raise ValueError(
+            "luxit_setup_fee_once is a one-time fee and cannot be the primary "
+            "lookup_key; pass include_setup_fee=True alongside a tier lookup_key"
+        )
 
     stripe = get_stripe()
     price = resolve_price_by_lookup_key(lookup_key)
 
+    line_items = [{"price": price.id, "quantity": int(quantity)}]
+    setup_fee_included = False
+
+    # Optionally attach the one-time setup fee as a second line item. Stripe
+    # Checkout in subscription mode permits mixing a non-recurring price with
+    # the recurring subscription price; the one-off charge appears on the
+    # first invoice only and never recurs on renewal.
+    if include_setup_fee:
+        setup_price = resolve_price_by_lookup_key(SETUP_FEE_LOOKUP_KEY)
+        line_items.append({"price": setup_price.id, "quantity": 1})
+        setup_fee_included = True
+
     kwargs = {
         "mode": "subscription",
-        "line_items": [{"price": price.id, "quantity": int(quantity)}],
+        "line_items": line_items,
         "automatic_tax": {"enabled": True},
         "success_url": success_url or DEFAULT_SUCCESS_URL,
         "cancel_url":  cancel_url  or DEFAULT_CANCEL_URL,
         "client_reference_id": str(company_id) if company_id is not None else None,
         "metadata": {
-            "company_id":  str(company_id) if company_id is not None else "",
-            "user_id":     str(user_id)    if user_id    is not None else "",
-            "lookup_key":  lookup_key,
-            "app":         "luxit",
+            "company_id":         str(company_id) if company_id is not None else "",
+            "user_id":            str(user_id)    if user_id    is not None else "",
+            "lookup_key":         lookup_key,
+            "app":                "luxit",
+            # Authoritative flag the webhook reads to decide whether to mark
+            # ``company.setup_fee_paid`` on checkout.session.completed.
+            "include_setup_fee":  "true" if setup_fee_included else "false",
         },
         # Carry the same metadata onto the resulting subscription so future
-        # webhook events (sub.updated / sub.deleted) can reconcile too.
+        # webhook events (sub.updated / sub.deleted) can reconcile too. The
+        # setup fee flag is intentionally NOT mirrored here — it's a session-
+        # level concern, not a subscription-level one.
         "subscription_data": {
             "metadata": {
                 "company_id":  str(company_id) if company_id is not None else "",
