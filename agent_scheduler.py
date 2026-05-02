@@ -499,6 +499,7 @@ def initialize_agent_scheduler():
         scheduler.schedule_creative_agent()
         scheduler.schedule_additional_agents()
         scheduler.schedule_app_agent()
+        scheduler.schedule_yearly_reports()
         
         # Start scheduler
         if scheduler.agents:

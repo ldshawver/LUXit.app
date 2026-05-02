@@ -83,22 +83,9 @@ def _log(event_type, source, company_id=None, payload=None, status="success", er
 
 
 def _fire_n8n(event_type: str, company_id: int, payload: dict):
-    """POST event to n8n webhook URL stored in company secrets."""
-    from models import Company
-    company = Company.query.get(company_id)
-    n8n_url = (company.get_secret("n8n_webhook_url") if company else None) or os.environ.get("N8N_WEBHOOK_URL")
-    if not n8n_url:
-        logger.info("n8n webhook URL not configured — skipping trigger for %s", event_type)
-        return
-    try:
-        resp = requests.post(n8n_url, json={"event": event_type, "company_id": company_id, **payload}, timeout=10)
-        _log(event_type, "n8n", company_id=company_id, payload=payload,
-             status="success" if resp.ok else "failed",
-             error=None if resp.ok else resp.text[:500])
-        logger.info("n8n trigger %s → %s", event_type, resp.status_code)
-    except Exception as exc:
-        _log(event_type, "n8n", company_id=company_id, payload=payload, status="failed", error=str(exc))
-        logger.warning("n8n trigger failed: %s", exc)
+    """POST event to n8n webhook URL — delegates to shared n8n_service."""
+    from services.n8n_service import fire_n8n
+    fire_n8n(event_type, company_id, payload)
 
 
 # ---------------------------------------------------------------------------

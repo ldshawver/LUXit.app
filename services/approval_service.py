@@ -661,7 +661,7 @@ class FeatureToggleService:
     def resume_all(company_id: int, user_id: int) -> Dict[str, Any]:
         """Resume all automation (clear emergency stops)"""
         from models import FeatureToggle, db
-        
+
         try:
             FeatureToggle.query.filter_by(
                 company_id=company_id
@@ -669,17 +669,112 @@ class FeatureToggleService:
                 'emergency_stop': False,
                 'last_modified_by': user_id
             })
-            
+
             db.session.commit()
-            
+
             logger.info(f"Emergency stop cleared for company {company_id} by user {user_id}")
-            
+
             return {'success': True, 'message': 'Emergency stop cleared'}
-            
+
         except Exception as e:
             db.session.rollback()
             logger.error(f"Error clearing emergency stop: {e}")
             return {'success': False, 'error': str(e)}
+
+    @staticmethod
+    def _dispatch_approved_content(item) -> None:
+        """Auto-publish approved content by content_type.
+
+        Dispatches:
+          email_campaign → set Campaign.status = 'approved'
+          social_post    → set SocialPost.status = 'approved'
+          blog_post      → set BlogPost.status = 'approved'
+
+        Only updates the status field; actual sending/publishing
+        is handled by the respective campaign/post workflow.
+        """
+        from extensions import db
+
+        content_type = getattr(item, 'content_type', None)
+        content_id = getattr(item, 'content_id', None)
+
+        if not content_id:
+            return
+
+        try:
+            if content_type == 'email_campaign':
+                from models import Campaign
+                record = Campaign.query.get(content_id)
+                if record and record.status not in ('sending', 'sent'):
+                    record.status = 'approved'
+                    db.session.commit()
+                    logger.info("Campaign %s marked approved via approval dispatch", content_id)
+
+            elif content_type == 'social_post':
+                try:
+                    from models import SocialPost
+                    record = SocialPost.query.get(content_id)
+                    if record:
+                        record.status = 'approved'
+                        db.session.commit()
+                        logger.info("SocialPost %s marked approved via approval dispatch", content_id)
+                except ImportError:
+                    pass
+
+            elif content_type == 'blog_post':
+                try:
+                    from models import BlogPost
+                    record = BlogPost.query.get(content_id)
+                    if record:
+                        record.status = 'approved'
+                        db.session.commit()
+                        logger.info("BlogPost %s marked approved via approval dispatch", content_id)
+                except ImportError:
+                    pass
+
+            elif content_type == 'sms_campaign':
+                from models import Campaign
+                record = Campaign.query.get(content_id)
+                if record and record.status not in ('sending', 'sent'):
+                    record.status = 'approved'
+                    db.session.commit()
+                    logger.info("SMS Campaign %s marked approved via approval dispatch", content_id)
+
+        except Exception as exc:
+            try:
+                db.session.rollback()
+            except Exception:
+                pass
+            logger.warning("_dispatch_approved_content failed for %s %s: %s", content_type, content_id, exc)
+
+    @staticmethod
+    def _store_rejection_lesson(item, reason: str) -> None:
+        """Store rejection feedback so agent learns from it.
+
+        Writes a memory note tied to the agent and company so future
+        generation tasks can reference past rejections.
+        """
+        try:
+            from models import AgentMemory, db
+            note = AgentMemory(
+                company_id=item.company_id,
+                agent_type=item.created_by_agent,
+                memory_type='rejection_lesson',
+                content={
+                    'approval_id': item.id,
+                    'content_type': item.content_type,
+                    'title': item.title,
+                    'rejection_reason': reason,
+                    'rejected_at': datetime.utcnow().isoformat(),
+                    'content_preview': item.content_preview,
+                },
+                importance=0.8,
+            )
+            db.session.add(note)
+            db.session.commit()
+            logger.info("Rejection lesson stored for agent %s, approval %s", item.created_by_agent, item.id)
+        except Exception as exc:
+            logger.debug("_store_rejection_lesson skipped: %s", exc)
     
     @staticmethod
     def initialize_toggles(company_id: int):
