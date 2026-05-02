@@ -31,6 +31,10 @@ email_marketing.db
 services/dev_*.py
 templates/dev_*.html
 
+# VPS deploy/patch scripts (run locally, not committed)
+vps_*.py
+patch_*.py
+
 # User uploads (not tracked)
 static/uploads/
 

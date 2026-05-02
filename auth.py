@@ -364,11 +364,19 @@ def logout():
 @auth_bp.route("/debug-session")
 @csrf.exempt
 def debug_session():
-    """Temporary endpoint to diagnose session/cookie issues."""
-    from flask import session, jsonify
+    """Session diagnostics — restricted to local/dev environments only."""
+    import os
+    from flask import session, jsonify, abort
     from flask_login import current_user
-    from extensions import db as _db
     from models import User
+
+    is_dev = os.environ.get("FLASK_ENV") == "development" or os.environ.get("REPLIT_DEPLOYMENT") or os.environ.get("REPL_ID")
+    remote_addr = request.headers.get("X-Forwarded-For", request.remote_addr or "").split(",")[0].strip()
+    is_local = remote_addr in ("127.0.0.1", "::1", "localhost")
+
+    if not is_dev and not is_local:
+        abort(404)
+
     try:
         uid = session.get('_user_id')
         user_from_loader = None

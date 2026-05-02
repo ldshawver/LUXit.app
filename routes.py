@@ -356,27 +356,27 @@ def dashboard():
     meetings = [{'title': m.title, 'time': m.start_time.strftime('%I:%M %p') if m.start_time else 'TBD', 'type': m.meeting_type or 'video'} for m in upcoming_meetings]
     
     stats = {
-        'new_leads': new_leads_count if new_leads_count else 24,
-        'open_deals': len(open_deals) if open_deals else 12,
+        'new_leads': new_leads_count if new_leads_count else 0,
+        'open_deals': len(open_deals) if open_deals else 0,
         'pipeline_value': f'{pipeline_value/1000:.1f}K' if pipeline_value > 1000 else f'{pipeline_value:.0f}',
-        'tasks_due': tasks_due if tasks_due else 7,
-        'meetings_today': meetings_today if meetings_today else 3,
-        'win_rate': '32%',
-        'revenue': '82K'
+        'tasks_due': tasks_due if tasks_due else 0,
+        'meetings_today': meetings_today if meetings_today else 0,
+        'win_rate': '0%',
+        'revenue': '0'
     }
-    
+
     try:
         touchpoints = {
-            'website': TouchpointEvent.query.filter_by(company_id=company_id, touchpoint_type='website').count() if company_id else 142,
-            'social': TouchpointEvent.query.filter_by(company_id=company_id, touchpoint_type='social').count() if company_id else 89,
-            'forms': TouchpointEvent.query.filter_by(company_id=company_id, touchpoint_type='form').count() if company_id else 67,
-            'email': TouchpointEvent.query.filter_by(company_id=company_id, touchpoint_type='email').count() if company_id else 234,
-            'calls': TouchpointEvent.query.filter_by(company_id=company_id, touchpoint_type='call').count() if company_id else 45,
-            'referral': TouchpointEvent.query.filter_by(company_id=company_id, touchpoint_type='referral').count() if company_id else 28
+            'website': TouchpointEvent.query.filter_by(company_id=company_id, touchpoint_type='website').count() if company_id else 0,
+            'social': TouchpointEvent.query.filter_by(company_id=company_id, touchpoint_type='social').count() if company_id else 0,
+            'forms': TouchpointEvent.query.filter_by(company_id=company_id, touchpoint_type='form').count() if company_id else 0,
+            'email': TouchpointEvent.query.filter_by(company_id=company_id, touchpoint_type='email').count() if company_id else 0,
+            'calls': TouchpointEvent.query.filter_by(company_id=company_id, touchpoint_type='call').count() if company_id else 0,
+            'referral': TouchpointEvent.query.filter_by(company_id=company_id, touchpoint_type='referral').count() if company_id else 0
         }
     except Exception:
         db.session.rollback()
-        touchpoints = {'website': 142, 'social': 89, 'forms': 67, 'email': 234, 'calls': 45, 'referral': 28}
+        touchpoints = {'website': 0, 'social': 0, 'forms': 0, 'email': 0, 'calls': 0, 'referral': 0}
     
     pipeline_deals = []
     for d in open_deals[:10]:
