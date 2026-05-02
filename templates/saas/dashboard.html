@@ -1,0 +1,770 @@
+{% extends "base.html" %}
+{% block title %}SaaS Command Center — LUXit{% endblock %}
+{% block page_title %}SaaS Command Center{% endblock %}
+{% block content %}
+<style>
+/* ─── Layout ────────────────────────────────────────────────────── */
+.saas-wrap { max-width: 100%; }
+.saas-header { background: linear-gradient(135deg, rgba(188,0,237,.15), rgba(0,255,180,.05)); border-bottom: 2px solid var(--lux-primary,#bc00ed); padding: 1.25rem 0 1rem; margin-bottom: 1.5rem; }
+.saas-title { font-size: 1.4rem; font-weight: 700; color: #fff; }
+.saas-title span { color: var(--lux-secondary,#00ffb4); }
+
+/* ─── Stat cards ─────────────────────────────────────────────────── */
+.stat-row { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 1.5rem; }
+.stat-card { flex: 1 1 180px; background: rgba(188,0,237,.08); border: 1px solid rgba(188,0,237,.25); border-radius: 10px; padding: 1rem 1.25rem; }
+.stat-val { font-size: 1.8rem; font-weight: 700; color: var(--lux-secondary,#00ffb4); line-height: 1; }
+.stat-lbl { color: #999; font-size: .72rem; text-transform: uppercase; letter-spacing: .5px; margin-top: 4px; }
+
+/* ─── Tabs ───────────────────────────────────────────────────────── */
+.cmd-tabs { display: flex; gap: 4px; background: rgba(0,0,0,.3); border-radius: 8px; padding: 4px; margin-bottom: 1.5rem; overflow-x: auto; }
+.cmd-tab { padding: 8px 18px; border: none; background: none; color: #999; cursor: pointer; border-radius: 6px; font-weight: 500; font-size: .85rem; transition: all .2s; white-space: nowrap; }
+.cmd-tab.active { background: rgba(188,0,237,.3); color: var(--lux-secondary,#00ffb4); }
+.cmd-tab:hover:not(.active) { color: #eee; background: rgba(188,0,237,.12); }
+.cmd-section { display: none; }
+.cmd-section.active { display: block; }
+
+/* ─── Tables ─────────────────────────────────────────────────────── */
+.saas-table { width: 100%; border-collapse: collapse; font-size: .85rem; }
+.saas-table th { color: #aaa; font-weight: 600; font-size: .72rem; text-transform: uppercase; letter-spacing: .5px; padding: 8px 12px; border-bottom: 1px solid rgba(188,0,237,.2); text-align: left; }
+.saas-table td { padding: 10px 12px; border-bottom: 1px solid rgba(255,255,255,.04); vertical-align: middle; color: #ddd; }
+.saas-table tr:hover td { background: rgba(188,0,237,.06); }
+
+/* ─── Badges ─────────────────────────────────────────────────────── */
+.badge { display: inline-block; padding: 2px 9px; border-radius: 20px; font-size: .7rem; font-weight: 600; letter-spacing: .3px; }
+.badge-active, .badge-completed  { background: rgba(0,255,180,.15); color: #00ffb4; border: 1px solid rgba(0,255,180,.3); }
+.badge-trial                     { background: rgba(188,0,237,.15); color: #d580ff; border: 1px solid rgba(188,0,237,.3); }
+.badge-past_due, .badge-blocked  { background: rgba(255,80,80,.15);  color: #ff7070; border: 1px solid rgba(255,80,80,.3); }
+.badge-pending                   { background: rgba(255,180,0,.12);  color: #ffb400; border: 1px solid rgba(255,180,0,.3); }
+.badge-in_progress               { background: rgba(0,160,255,.12);  color: #4db8ff; border: 1px solid rgba(0,160,255,.3); }
+.badge-canceled, .badge-none     { background: rgba(120,120,120,.15);color: #888;    border: 1px solid rgba(120,120,120,.3); }
+.badge-suspended                 { background: rgba(255,140,0,.15);  color: #ffaa33; border: 1px solid rgba(255,140,0,.3); }
+
+/* ─── Buttons ────────────────────────────────────────────────────── */
+.btn-lux { display: inline-flex; align-items: center; gap: 5px; padding: 7px 16px; background: rgba(188,0,237,.15); border: 1px solid rgba(188,0,237,.35); border-radius: 7px; color: #ccc; font-size: .82rem; font-weight: 500; cursor: pointer; text-decoration: none; transition: all .2s; }
+.btn-lux:hover { background: rgba(188,0,237,.3); color: var(--lux-secondary,#00ffb4); border-color: var(--lux-primary,#bc00ed); }
+.btn-sm { padding: 4px 10px; font-size: .75rem; }
+.btn-danger { border-color: rgba(255,80,80,.4); color: #ff8080; }
+.btn-danger:hover { background: rgba(255,80,80,.2); border-color: #ff4040; color: #ff4040; }
+.btn-success { border-color: rgba(0,255,180,.4); color: #00ffb4; }
+.btn-success:hover { background: rgba(0,255,180,.2); }
+
+/* ─── Section header ─────────────────────────────────────────────── */
+.section-hdr { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; }
+.section-hdr h3 { color: #eee; font-size: 1rem; font-weight: 600; margin: 0; }
+
+/* ─── Modals ─────────────────────────────────────────────────────── */
+.lux-modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.75); z-index: 9999; justify-content: center; align-items: flex-start; padding-top: 80px; }
+.lux-modal.open { display: flex; }
+.modal-box { background: #12121a; border: 1px solid rgba(188,0,237,.3); border-radius: 14px; padding: 2rem; width: 100%; max-width: 560px; max-height: 80vh; overflow-y: auto; position: relative; }
+.modal-close { position: absolute; top: 1rem; right: 1rem; background: none; border: none; color: #888; font-size: 1.4rem; cursor: pointer; line-height: 1; }
+.modal-title { font-size: 1.1rem; font-weight: 700; color: #eee; margin-bottom: 1.5rem; }
+.form-row { margin-bottom: 1rem; }
+.form-row label { display: block; color: #aaa; font-size: .78rem; font-weight: 500; margin-bottom: 4px; }
+.form-row input, .form-row select, .form-row textarea { width: 100%; background: rgba(0,0,0,.4); border: 1px solid rgba(188,0,237,.25); border-radius: 7px; padding: 8px 12px; color: #eee; font-size: .85rem; }
+.form-row input:focus, .form-row select:focus, .form-row textarea:focus { outline: none; border-color: rgba(188,0,237,.6); }
+.form-row textarea { resize: vertical; min-height: 80px; }
+.form-row select option { background: #1a1a2e; }
+
+/* ─── Pipeline board ─────────────────────────────────────────────── */
+.pipeline-board { display: flex; gap: 12px; overflow-x: auto; padding-bottom: 1rem; min-height: 300px; }
+.pipe-col { min-width: 200px; max-width: 240px; flex: 1 0 200px; background: rgba(0,0,0,.3); border-radius: 12px; border: 1px solid rgba(188,0,237,.2); overflow: hidden; }
+.pipe-hdr { padding: 10px 14px; border-bottom: 1px solid rgba(188,0,237,.2); font-size: .78rem; font-weight: 600; color: #aaa; display: flex; justify-content: space-between; }
+.pipe-body { padding: 10px; min-height: 100px; }
+.deal-card { background: rgba(188,0,237,.07); border: 1px solid rgba(188,0,237,.18); border-radius: 8px; padding: 10px 12px; margin-bottom: 8px; cursor: pointer; transition: all .2s; }
+.deal-card:hover { background: rgba(188,0,237,.15); border-color: rgba(188,0,237,.4); }
+.deal-name { font-size: .82rem; font-weight: 600; color: #ddd; }
+.deal-val  { font-size: .75rem; color: #00ffb4; margin-top: 2px; }
+
+/* ─── Task checklist ─────────────────────────────────────────────── */
+.task-row { display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-radius: 7px; cursor: pointer; transition: background .15s; }
+.task-row:hover { background: rgba(188,0,237,.08); }
+.task-check { width: 18px; height: 18px; border-radius: 50%; border: 2px solid rgba(188,0,237,.5); flex-shrink: 0; display: flex; align-items: center; justify-content: center; transition: all .2s; }
+.task-check.done { background: #00ffb4; border-color: #00ffb4; }
+.task-check.done::after { content: '✓'; color: #000; font-size: .7rem; font-weight: 900; }
+.task-text { font-size: .82rem; color: #ccc; flex: 1; }
+.task-text.done { text-decoration: line-through; color: #555; }
+
+/* ─── Log table colors ───────────────────────────────────────────── */
+.log-success { color: #00ffb4; }
+.log-failed  { color: #ff7070; }
+.log-skipped { color: #888; }
+
+/* ─── Search input ───────────────────────────────────────────────── */
+.search-box { background: rgba(0,0,0,.3); border: 1px solid rgba(188,0,237,.2); border-radius: 7px; padding: 6px 12px; color: #ddd; font-size: .82rem; min-width: 220px; }
+.search-box:focus { outline: none; border-color: rgba(188,0,237,.5); }
+
+/* ─── Inline edit form ───────────────────────────────────────────── */
+.inline-edit { display: none; }
+.inline-edit.open { display: block; }
+</style>
+
+<div class="saas-wrap">
+  <!-- Header -->
+  <div class="saas-header">
+    <div class="saas-title">SaaS <span>Command Center</span></div>
+    <div style="color:#888;font-size:.82rem;margin-top:4px;">Accounts · Licenses · Onboarding · Pipeline · Automation</div>
+  </div>
+
+  <!-- Stats row -->
+  <div class="stat-row">
+    <div class="stat-card">
+      <div class="stat-val">{{ stats.total_accounts }}</div>
+      <div class="stat-lbl">Total Accounts</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-val">{{ stats.active_licenses }}</div>
+      <div class="stat-lbl">Active Licenses</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-val">{{ stats.pending_onboarding }}</div>
+      <div class="stat-lbl">Pending Onboarding</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-val">{{ stats.total_deals }}</div>
+      <div class="stat-lbl">Deals in Pipeline</div>
+    </div>
+  </div>
+
+  <!-- Flash messages -->
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% for cat, msg in messages %}
+      <div style="padding:10px 14px;border-radius:8px;margin-bottom:1rem;background:rgba({% if cat=='success' %}0,255,180{% else %}255,80,80{% endif %},.12);border:1px solid rgba({% if cat=='success' %}0,255,180{% else %}255,80,80{% endif %},.3);color:{% if cat=='success' %}#00ffb4{% else %}#ff7070{% endif %};">{{ msg }}</div>
+    {% endfor %}
+  {% endwith %}
+
+  <!-- Tabs -->
+  <div class="cmd-tabs">
+    <button class="cmd-tab active" onclick="showTab('accounts',this)">Accounts</button>
+    <button class="cmd-tab" onclick="showTab('licenses',this)">Licenses</button>
+    <button class="cmd-tab" onclick="showTab('onboarding',this)">Onboarding</button>
+    <button class="cmd-tab" onclick="showTab('pipeline',this)">Pipeline</button>
+    <button class="cmd-tab" onclick="showTab('log',this)">Automation Log</button>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════════ -->
+  <!-- ACCOUNTS TAB -->
+  <!-- ═══════════════════════════════════════════════════════════════ -->
+  <div class="cmd-section active" id="tab-accounts">
+    <div class="section-hdr">
+      <h3>Accounts</h3>
+      <input class="search-box" id="acct-search" placeholder="Search accounts…" oninput="filterTable('acct-tbl',this.value)">
+    </div>
+    <div style="overflow-x:auto">
+    <table class="saas-table" id="acct-tbl">
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Tier</th>
+          <th>Sub Status</th>
+          <th>Onboarding</th>
+          <th>Implementation</th>
+          <th>Stripe ID</th>
+          <th>Supabase</th>
+          <th>MyPayLink</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for acct in accounts %}
+        <tr>
+          <td><strong style="color:#eee">{{ acct.name or '—' }}</strong></td>
+          <td><span class="badge badge-{{ acct.subscription_tier or 'none' }}">{{ acct.subscription_tier or 'free' }}</span></td>
+          <td><span class="badge badge-{{ acct.stripe_subscription_status or 'none' }}">{{ acct.stripe_subscription_status or 'none' }}</span></td>
+          <td><span class="badge badge-{{ acct.onboarding_status or 'none' }}">{{ acct.onboarding_status or 'pending' }}</span></td>
+          <td><span class="badge badge-{{ acct.implementation_status or 'none' }}">{{ acct.implementation_status or 'none' }}</span></td>
+          <td style="font-size:.75rem;color:#888">{{ acct.stripe_customer_id or '—' }}</td>
+          <td style="font-size:.75rem;color:#888">{{ acct.supabase_tenant_id or '—' }}</td>
+          <td style="font-size:.75rem;color:#888">{{ acct.mypaylink_id or '—' }}</td>
+          <td>
+            <button class="btn-lux btn-sm" onclick="openEditAccount({{ acct.id }}, '{{ acct.stripe_customer_id or '' }}', '{{ acct.stripe_subscription_id or '' }}', '{{ acct.stripe_subscription_status or 'none' }}', '{{ acct.supabase_tenant_id or '' }}', '{{ acct.mypaylink_id or '' }}', '{{ acct.n8n_contact_id or '' }}', '{{ acct.subscription_tier or 'free' }}', '{{ acct.onboarding_status or 'pending' }}', '{{ acct.implementation_status or 'none' }}')">Edit</button>
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="9" style="text-align:center;color:#555;padding:2rem">No accounts yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════════ -->
+  <!-- LICENSES TAB -->
+  <!-- ═══════════════════════════════════════════════════════════════ -->
+  <div class="cmd-section" id="tab-licenses">
+    <div class="section-hdr">
+      <h3>Licenses</h3>
+      <button class="btn-lux btn-success" onclick="openModal('modal-add-license')">+ New License</button>
+    </div>
+    <div style="overflow-x:auto">
+    <table class="saas-table">
+      <thead>
+        <tr>
+          <th>Account</th>
+          <th>App</th>
+          <th>Plan</th>
+          <th>Status</th>
+          <th>Tenant URL</th>
+          <th>Start</th>
+          <th>Renewal</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for lic in licenses %}
+        <tr>
+          <td>{{ lic.company.name if lic.company else '—' }}</td>
+          <td><strong style="color:#eee">{{ lic.app_name }}</strong></td>
+          <td>{{ lic.plan or '—' }}</td>
+          <td><span class="badge badge-{{ lic.status }}">{{ lic.status }}</span></td>
+          <td>{% if lic.tenant_url %}<a href="{{ lic.tenant_url }}" target="_blank" style="color:#4db8ff;font-size:.78rem">{{ lic.tenant_url }}</a>{% else %}—{% endif %}</td>
+          <td style="font-size:.78rem;color:#888">{{ lic.start_date.strftime('%b %d, %Y') if lic.start_date else '—' }}</td>
+          <td style="font-size:.78rem;color:#888">{{ lic.renewal_date.strftime('%b %d, %Y') if lic.renewal_date else '—' }}</td>
+          <td style="display:flex;gap:6px">
+            <button class="btn-lux btn-sm" onclick="openEditLicense({{ lic.id }})">Edit</button>
+            <form method="POST" action="{{ url_for('saas.delete_license', lic_id=lic.id) }}" onsubmit="return confirm('Delete this license?')">
+              <button type="submit" class="btn-lux btn-sm btn-danger">Del</button>
+            </form>
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="8" style="text-align:center;color:#555;padding:2rem">No licenses yet. Create one above.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════════ -->
+  <!-- ONBOARDING TAB -->
+  <!-- ═══════════════════════════════════════════════════════════════ -->
+  <div class="cmd-section" id="tab-onboarding">
+    <div class="section-hdr">
+      <h3>Onboarding Projects</h3>
+      <button class="btn-lux btn-success" onclick="openModal('modal-add-project')">+ New Project</button>
+    </div>
+
+    {% for proj in projects %}
+    <div style="background:rgba(0,0,0,.25);border:1px solid rgba(188,0,237,.2);border-radius:12px;padding:1.25rem;margin-bottom:1rem;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem;flex-wrap:wrap;gap:8px">
+        <div>
+          <span style="font-weight:700;color:#eee">{{ proj.title or 'Onboarding Project' }}</span>
+          <span style="color:#888;font-size:.78rem;margin-left:10px">{{ proj.company_ref.name if proj.company_ref else '' }}</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <span class="badge badge-{{ proj.status }}">{{ proj.status }}</span>
+          <form method="POST" action="{{ url_for('saas.update_project_status', proj_id=proj.id) }}" style="display:inline-flex;gap:4px">
+            <select name="status" style="background:rgba(0,0,0,.4);border:1px solid rgba(188,0,237,.25);border-radius:6px;padding:3px 8px;color:#ccc;font-size:.75rem">
+              {% for s in ['pending','in_progress','completed','blocked'] %}
+              <option value="{{ s }}" {% if proj.status==s %}selected{% endif %}>{{ s.replace('_',' ').title() }}</option>
+              {% endfor %}
+            </select>
+            <button type="submit" class="btn-lux btn-sm">Update</button>
+          </form>
+        </div>
+      </div>
+
+      <!-- Task checklist -->
+      <div>
+        {% for task in proj.tasks | sort(attribute='sort_order') %}
+        <div class="task-row" onclick="toggleTask({{ task.id }}, this)">
+          <div class="task-check {% if task.status=='completed' %}done{% endif %}" id="chk-{{ task.id }}"></div>
+          <div class="task-text {% if task.status=='completed' %}done{% endif %}" id="txt-{{ task.id }}">{{ task.title }}</div>
+          {% if task.assigned_to %}<span style="font-size:.7rem;color:#888">{{ task.assigned_to }}</span>{% endif %}
+        </div>
+        {% else %}
+        <div style="color:#555;font-size:.82rem;padding:.5rem">No tasks yet.</div>
+        {% endfor %}
+      </div>
+
+      <!-- Progress bar -->
+      {% set total_tasks = proj.tasks | length %}
+      {% set done_tasks  = proj.tasks | selectattr('status','equalto','completed') | list | length %}
+      {% if total_tasks > 0 %}
+      {% set pct = (done_tasks / total_tasks * 100) | int %}
+      <div style="margin-top:.75rem">
+        <div style="display:flex;justify-content:space-between;font-size:.72rem;color:#888;margin-bottom:4px">
+          <span>{{ done_tasks }}/{{ total_tasks }} tasks</span><span>{{ pct }}%</span>
+        </div>
+        <div style="height:5px;background:rgba(255,255,255,.08);border-radius:3px;overflow:hidden">
+          <div style="height:100%;width:{{ pct }}%;background:linear-gradient(90deg,#bc00ed,#00ffb4);border-radius:3px;transition:width .4s"></div>
+        </div>
+      </div>
+      {% endif %}
+    </div>
+    {% else %}
+    <div style="text-align:center;color:#555;padding:3rem">No onboarding projects yet. Create one above.</div>
+    {% endfor %}
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════════ -->
+  <!-- PIPELINE TAB -->
+  <!-- ═══════════════════════════════════════════════════════════════ -->
+  <div class="cmd-section" id="tab-pipeline">
+    <div class="section-hdr">
+      <h3>SaaS Pipeline</h3>
+      <button class="btn-lux btn-success" onclick="openModal('modal-add-deal')">+ New Deal</button>
+    </div>
+
+    {% set saas_stages = ['Lead','Demo Requested','Proposal Sent','Contract Signed','Paid','Implementation Started','Active Customer'] %}
+    <div class="pipeline-board">
+      {% for stage in saas_stages %}
+      {% set stage_deals = deals | selectattr('stage','equalto',stage) | list %}
+      <div class="pipe-col">
+        <div class="pipe-hdr">
+          <span>{{ stage }}</span>
+          <span style="background:rgba(188,0,237,.25);color:#d580ff;border-radius:20px;padding:1px 8px;font-size:.7rem">{{ stage_deals | length }}</span>
+        </div>
+        <div class="pipe-body">
+          {% for deal in stage_deals %}
+          <div class="deal-card" onclick="openDealStageModal({{ deal.id }}, '{{ deal.name | replace("'","") }}', '{{ deal.stage }}')">
+            <div class="deal-name">{{ deal.name }}</div>
+            {% if deal.value %}<div class="deal-val">${{ '{:,.0f}'.format(deal.value) }}</div>{% endif %}
+            {% if deal.contact %}<div style="font-size:.72rem;color:#888;margin-top:3px">{{ deal.contact.first_name }} {{ deal.contact.last_name }}</div>{% endif %}
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════════ -->
+  <!-- AUTOMATION LOG TAB -->
+  <!-- ═══════════════════════════════════════════════════════════════ -->
+  <div class="cmd-section" id="tab-log">
+    <div class="section-hdr">
+      <h3>Automation Log</h3>
+      <button class="btn-lux btn-sm" onclick="loadLog()">Refresh</button>
+    </div>
+    <div id="log-table-wrap" style="overflow-x:auto">
+    <table class="saas-table" id="log-tbl">
+      <thead>
+        <tr>
+          <th>Time</th>
+          <th>Event</th>
+          <th>Source</th>
+          <th>Account</th>
+          <th>Status</th>
+          <th>Error</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for entry in recent_log %}
+        <tr>
+          <td style="font-size:.75rem;color:#888;white-space:nowrap">{{ entry.created_at.strftime('%b %d %H:%M') }}</td>
+          <td style="font-size:.8rem">{{ entry.event_type }}</td>
+          <td><span style="font-size:.72rem;color:#aaa">{{ entry.source }}</span></td>
+          <td style="font-size:.78rem;color:#888">{{ entry.company.name if entry.company else '—' }}</td>
+          <td><span class="log-{{ entry.status }}">{{ entry.status }}</span></td>
+          <td style="font-size:.72rem;color:#ff9090;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ entry.error or '' }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="6" style="text-align:center;color:#555;padding:2rem">No automation events logged yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+  </div>
+</div><!-- /saas-wrap -->
+
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<!-- MODALS -->
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+
+<!-- Edit Account -->
+<div class="lux-modal" id="modal-edit-account">
+  <div class="modal-box">
+    <button class="modal-close" onclick="closeModal('modal-edit-account')">×</button>
+    <div class="modal-title">Edit Account SaaS Fields</div>
+    <form id="form-edit-account" method="POST">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div class="form-row">
+          <label>Stripe Customer ID</label>
+          <input type="text" name="stripe_customer_id" id="ea-stripe-cid" placeholder="cus_…">
+        </div>
+        <div class="form-row">
+          <label>Stripe Subscription ID</label>
+          <input type="text" name="stripe_subscription_id" id="ea-stripe-sid" placeholder="sub_…">
+        </div>
+        <div class="form-row">
+          <label>Stripe Sub Status</label>
+          <select name="stripe_subscription_status" id="ea-stripe-status">
+            {% for s in ['none','trialing','active','past_due','canceled','suspended'] %}
+            <option value="{{ s }}">{{ s }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="form-row">
+          <label>Subscription Tier</label>
+          <select name="subscription_tier" id="ea-tier">
+            {% for t in ['free','starter','pro','enterprise'] %}
+            <option value="{{ t }}">{{ t }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="form-row">
+          <label>Supabase Tenant ID</label>
+          <input type="text" name="supabase_tenant_id" id="ea-supa" placeholder="uuid or org slug">
+        </div>
+        <div class="form-row">
+          <label>MyPayLink ID</label>
+          <input type="text" name="mypaylink_id" id="ea-mpl">
+        </div>
+        <div class="form-row">
+          <label>n8n Contact ID</label>
+          <input type="text" name="n8n_contact_id" id="ea-n8n">
+        </div>
+        <div class="form-row">
+          <label>Onboarding Status</label>
+          <select name="onboarding_status" id="ea-onboard">
+            {% for s in ['pending','in_progress','completed'] %}
+            <option value="{{ s }}">{{ s }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="form-row">
+          <label>Implementation Status</label>
+          <select name="implementation_status" id="ea-impl">
+            {% for s in ['none','scheduled','in_progress','completed'] %}
+            <option value="{{ s }}">{{ s }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+      <div class="form-row">
+        <label>Internal SaaS Notes</label>
+        <textarea name="saas_notes" id="ea-notes" rows="3"></textarea>
+      </div>
+      <button type="submit" class="btn-lux btn-success" style="width:100%;justify-content:center">Save Changes</button>
+    </form>
+  </div>
+</div>
+
+<!-- Add License -->
+<div class="lux-modal" id="modal-add-license">
+  <div class="modal-box">
+    <button class="modal-close" onclick="closeModal('modal-add-license')">×</button>
+    <div class="modal-title">Create License</div>
+    <form method="POST" action="{{ url_for('saas.create_license') }}">
+      <div class="form-row">
+        <label>Account</label>
+        <select name="company_id" required>
+          {% for acct in accounts %}
+          <option value="{{ acct.id }}">{{ acct.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div class="form-row">
+          <label>App</label>
+          <select name="app_name">
+            {% for app in ['LUXit','MyPayLink','MyOrder','LUX SMS','Custom'] %}
+            <option>{{ app }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="form-row">
+          <label>Plan</label>
+          <select name="plan">
+            {% for p in ['trial','starter','pro','enterprise'] %}
+            <option>{{ p }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="form-row">
+          <label>Status</label>
+          <select name="status">
+            {% for s in ['trial','active','past_due','suspended','canceled'] %}
+            <option>{{ s }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="form-row">
+          <label>Tenant URL</label>
+          <input type="url" name="tenant_url" placeholder="https://…">
+        </div>
+        <div class="form-row">
+          <label>Start Date</label>
+          <input type="date" name="start_date">
+        </div>
+        <div class="form-row">
+          <label>Renewal Date</label>
+          <input type="date" name="renewal_date">
+        </div>
+        <div class="form-row">
+          <label>Stripe Product ID</label>
+          <input type="text" name="stripe_product_id" placeholder="prod_…">
+        </div>
+        <div class="form-row">
+          <label>Stripe Price ID</label>
+          <input type="text" name="stripe_price_id" placeholder="price_…">
+        </div>
+      </div>
+      <div class="form-row">
+        <label>Notes</label>
+        <textarea name="notes"></textarea>
+      </div>
+      <button type="submit" class="btn-lux btn-success" style="width:100%;justify-content:center">Create License</button>
+    </form>
+  </div>
+</div>
+
+<!-- Add Onboarding Project -->
+<div class="lux-modal" id="modal-add-project">
+  <div class="modal-box">
+    <button class="modal-close" onclick="closeModal('modal-add-project')">×</button>
+    <div class="modal-title">Create Onboarding Project</div>
+    <form method="POST" action="{{ url_for('saas.create_onboarding_project') }}">
+      <div class="form-row">
+        <label>Account *</label>
+        <select name="company_id" required>
+          {% for acct in accounts %}
+          <option value="{{ acct.id }}">{{ acct.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-row">
+        <label>Project Title</label>
+        <input type="text" name="title" placeholder="Onboarding — Acme Corp" value="">
+      </div>
+      <div class="form-row">
+        <label>Notes</label>
+        <textarea name="notes" placeholder="Context, special requirements…"></textarea>
+      </div>
+      <div style="color:#888;font-size:.78rem;margin-bottom:1rem">8 default checklist tasks will be added automatically.</div>
+      <button type="submit" class="btn-lux btn-success" style="width:100%;justify-content:center">Create Project</button>
+    </form>
+  </div>
+</div>
+
+<!-- Add Deal -->
+<div class="lux-modal" id="modal-add-deal">
+  <div class="modal-box">
+    <button class="modal-close" onclick="closeModal('modal-add-deal')">×</button>
+    <div class="modal-title">New Deal</div>
+    <form method="POST" action="{{ url_for('saas.create_deal') }}">
+      <div class="form-row">
+        <label>Account</label>
+        <select name="company_id">
+          {% for acct in accounts %}
+          <option value="{{ acct.id }}">{{ acct.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-row">
+        <label>Deal Name *</label>
+        <input type="text" name="name" required placeholder="Acme Corp — LUXit Pro">
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div class="form-row">
+          <label>Stage</label>
+          <select name="stage">
+            {% for s in ['Lead','Demo Requested','Proposal Sent','Contract Signed','Paid','Implementation Started','Active Customer'] %}
+            <option>{{ s }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="form-row">
+          <label>Value ($)</label>
+          <input type="number" name="value" placeholder="0" min="0" step="0.01">
+        </div>
+      </div>
+      <div class="form-row">
+        <label>Notes</label>
+        <textarea name="notes"></textarea>
+      </div>
+      <button type="submit" class="btn-lux btn-success" style="width:100%;justify-content:center">Create Deal</button>
+    </form>
+  </div>
+</div>
+
+<!-- Move Deal Stage -->
+<div class="lux-modal" id="modal-deal-stage">
+  <div class="modal-box" style="max-width:380px">
+    <button class="modal-close" onclick="closeModal('modal-deal-stage')">×</button>
+    <div class="modal-title" id="deal-stage-title">Move Deal</div>
+    <form id="form-deal-stage" method="POST">
+      <div class="form-row">
+        <label>New Stage</label>
+        <select name="stage" id="deal-stage-select">
+          {% for s in ['Lead','Demo Requested','Proposal Sent','Contract Signed','Paid','Implementation Started','Active Customer'] %}
+          <option>{{ s }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <button type="submit" class="btn-lux btn-success" style="width:100%;justify-content:center;margin-top:.5rem">Update Stage</button>
+    </form>
+  </div>
+</div>
+
+<!-- Edit License -->
+<div class="lux-modal" id="modal-edit-license">
+  <div class="modal-box">
+    <button class="modal-close" onclick="closeModal('modal-edit-license')">×</button>
+    <div class="modal-title">Edit License</div>
+    <form id="form-edit-license" method="POST">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div class="form-row">
+          <label>App</label>
+          <select name="app_name" id="el-app">
+            {% for app in ['LUXit','MyPayLink','MyOrder','LUX SMS','Custom'] %}
+            <option>{{ app }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="form-row">
+          <label>Plan</label>
+          <select name="plan" id="el-plan">
+            {% for p in ['trial','starter','pro','enterprise'] %}
+            <option>{{ p }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="form-row">
+          <label>Status</label>
+          <select name="status" id="el-status">
+            {% for s in ['trial','active','past_due','suspended','canceled'] %}
+            <option>{{ s }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="form-row">
+          <label>Tenant URL</label>
+          <input type="url" name="tenant_url" id="el-url">
+        </div>
+        <div class="form-row">
+          <label>Start Date</label>
+          <input type="date" name="start_date" id="el-start">
+        </div>
+        <div class="form-row">
+          <label>Renewal Date</label>
+          <input type="date" name="renewal_date" id="el-renew">
+        </div>
+        <div class="form-row">
+          <label>Stripe Product ID</label>
+          <input type="text" name="stripe_product_id" id="el-prod">
+        </div>
+        <div class="form-row">
+          <label>Stripe Price ID</label>
+          <input type="text" name="stripe_price_id" id="el-price">
+        </div>
+      </div>
+      <div class="form-row">
+        <label>Notes</label>
+        <textarea name="notes" id="el-notes"></textarea>
+      </div>
+      <button type="submit" class="btn-lux btn-success" style="width:100%;justify-content:center">Save Changes</button>
+    </form>
+  </div>
+</div>
+
+<script>
+/* ─── Tab switching ───────────────────────────────────────── */
+function showTab(name, el) {
+  document.querySelectorAll('.cmd-section').forEach(s => s.classList.remove('active'));
+  document.querySelectorAll('.cmd-tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('tab-' + name).classList.add('active');
+  el.classList.add('active');
+  location.hash = name;
+}
+
+/* Auto-activate tab from URL hash */
+(function() {
+  const hash = location.hash.replace('#', '');
+  if (hash) {
+    const tab = document.querySelector(`.cmd-tab[onclick*="'${hash}'"]`);
+    if (tab) tab.click();
+  }
+})();
+
+/* ─── Modal helpers ───────────────────────────────────────── */
+function openModal(id) { document.getElementById(id).classList.add('open'); }
+function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+document.querySelectorAll('.lux-modal').forEach(m => {
+  m.addEventListener('click', e => { if (e.target === m) m.classList.remove('open'); });
+});
+
+/* ─── Edit Account modal ──────────────────────────────────── */
+function openEditAccount(id, stCid, stSid, stStatus, supa, mpl, n8n, tier, onboard, impl) {
+  document.getElementById('form-edit-account').action = `/saas/accounts/${id}/edit`;
+  document.getElementById('ea-stripe-cid').value    = stCid;
+  document.getElementById('ea-stripe-sid').value    = stSid;
+  setSelect('ea-stripe-status', stStatus);
+  setSelect('ea-tier', tier);
+  document.getElementById('ea-supa').value = supa;
+  document.getElementById('ea-mpl').value  = mpl;
+  document.getElementById('ea-n8n').value  = n8n;
+  setSelect('ea-onboard', onboard);
+  setSelect('ea-impl', impl);
+  openModal('modal-edit-account');
+}
+
+/* ─── Edit License modal ──────────────────────────────────── */
+function openEditLicense(id) {
+  document.getElementById('form-edit-license').action = `/saas/licenses/${id}/edit`;
+  openModal('modal-edit-license');
+}
+
+/* ─── Deal stage modal ────────────────────────────────────── */
+function openDealStageModal(id, name, stage) {
+  document.getElementById('deal-stage-title').textContent = `Move: ${name}`;
+  document.getElementById('form-deal-stage').action = `/saas/deals/${id}/stage`;
+  setSelect('deal-stage-select', stage);
+  openModal('modal-deal-stage');
+}
+
+/* ─── Task toggle ─────────────────────────────────────────── */
+function toggleTask(taskId, row) {
+  fetch(`/saas/onboarding/task/${taskId}/toggle`, { method: 'POST',
+    headers: { 'X-CSRFToken': getCsrf() }
+  })
+  .then(r => r.json())
+  .then(data => {
+    const chk  = document.getElementById('chk-' + taskId);
+    const txt  = document.getElementById('txt-' + taskId);
+    const done = data.status === 'completed';
+    chk.classList.toggle('done', done);
+    txt.classList.toggle('done', done);
+  });
+}
+
+function getCsrf() {
+  const m = document.cookie.match(/csrf_token=([^;]+)/);
+  return m ? m[1] : '';
+}
+
+/* ─── Table search ────────────────────────────────────────── */
+function filterTable(tblId, q) {
+  const rows = document.querySelectorAll(`#${tblId} tbody tr`);
+  q = q.toLowerCase();
+  rows.forEach(r => {
+    r.style.display = r.textContent.toLowerCase().includes(q) ? '' : 'none';
+  });
+}
+
+/* ─── Automation log refresh ──────────────────────────────── */
+function loadLog() {
+  fetch('/saas/automation-log').then(r => r.json()).then(logs => {
+    const tbody = document.querySelector('#log-tbl tbody');
+    if (!logs.length) return;
+    tbody.innerHTML = logs.map(l => `
+      <tr>
+        <td style="font-size:.75rem;color:#888;white-space:nowrap">${l.created_at.replace('T',' ').slice(0,16)}</td>
+        <td style="font-size:.8rem">${l.event_type}</td>
+        <td><span style="font-size:.72rem;color:#aaa">${l.source}</span></td>
+        <td style="font-size:.78rem;color:#888">${l.company_id || '—'}</td>
+        <td><span class="log-${l.status}">${l.status}</span></td>
+        <td style="font-size:.72rem;color:#ff9090;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${l.error || ''}</td>
+      </tr>
+    `).join('');
+  });
+}
+
+/* ─── Select helper ───────────────────────────────────────── */
+function setSelect(id, val) {
+  const s = document.getElementById(id);
+  if (!s) return;
+  Array.from(s.options).forEach(o => { o.selected = o.value === val; });
+}
+</script>
+{% endblock %}

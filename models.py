@@ -334,6 +334,18 @@ class Company(db.Model):
     industry = db.Column(db.String(100))
     description = db.Column(Text)
 
+    # ── SaaS / Billing Integration ───────────────────────────────────────────
+    stripe_customer_id         = db.Column(db.String(100))
+    stripe_subscription_id     = db.Column(db.String(100))
+    stripe_subscription_status = db.Column(db.String(50), default='none')
+    supabase_tenant_id         = db.Column(db.String(100))
+    mypaylink_id               = db.Column(db.String(100))
+    n8n_contact_id             = db.Column(db.String(100))
+    subscription_tier          = db.Column(db.String(50), default='free')
+    onboarding_status          = db.Column(db.String(50), default='pending')
+    implementation_status      = db.Column(db.String(50), default='none')
+    saas_notes                 = db.Column(Text)
+
     # ── Secret helpers ──────────────────────────────────────────────────────
     def set_secret(self, key_or_provider, key_or_value=None, value=None):
         """
@@ -2476,3 +2488,86 @@ class TwilioCallLog(db.Model):
     created_at   = db.Column(db.DateTime, default=datetime.utcnow)
 
     company = db.relationship("Company", backref="twilio_call_logs")
+
+
+# ---------------------------------------------------------------------------
+# SaaS Command Center
+# ---------------------------------------------------------------------------
+
+class SaasLicense(db.Model):
+    """One license record per app per company (LUXit, MyPayLink, MyOrder, etc.)."""
+    __tablename__ = "saas_license"
+
+    id                = db.Column(db.Integer, primary_key=True)
+    company_id        = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=False)
+    app_name          = db.Column(db.String(100), nullable=False)
+    plan              = db.Column(db.String(50))
+    status            = db.Column(db.String(50), default="trial")   # trial | active | past_due | suspended | canceled
+    start_date        = db.Column(db.DateTime)
+    renewal_date      = db.Column(db.DateTime)
+    tenant_url        = db.Column(db.String(255))
+    enabled_features  = db.Column(JSON)
+    stripe_product_id = db.Column(db.String(100))
+    stripe_price_id   = db.Column(db.String(100))
+    notes             = db.Column(db.Text)
+    created_at        = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at        = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    company = db.relationship("Company", backref="saas_licenses")
+
+
+class CustomerOnboardingProject(db.Model):
+    """Customer-facing onboarding project created when a deal is won."""
+    __tablename__ = "customer_onboarding_project"
+
+    id           = db.Column(db.Integer, primary_key=True)
+    company_id   = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=False)
+    contact_id   = db.Column(db.Integer, db.ForeignKey("contact.id"), nullable=True)
+    deal_id      = db.Column(db.Integer, db.ForeignKey("deal.id"),    nullable=True)
+    title        = db.Column(db.String(255))
+    status       = db.Column(db.String(50), default="pending")   # pending | in_progress | completed | blocked
+    due_date     = db.Column(db.DateTime)
+    completed_at = db.Column(db.DateTime)
+    notes        = db.Column(db.Text)
+    created_at   = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at   = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    company_ref = db.relationship("Company", backref="onboarding_projects")
+    contact     = db.relationship("Contact", backref="onboarding_projects")
+    deal        = db.relationship("Deal",    backref="onboarding_projects")
+
+
+class CustomerOnboardingTask(db.Model):
+    """Individual checklist task inside a CustomerOnboardingProject."""
+    __tablename__ = "customer_onboarding_task"
+
+    id           = db.Column(db.Integer, primary_key=True)
+    project_id   = db.Column(db.Integer, db.ForeignKey("customer_onboarding_project.id"), nullable=False)
+    company_id   = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=False)
+    title        = db.Column(db.String(255), nullable=False)
+    description  = db.Column(db.Text)
+    status       = db.Column(db.String(50), default="pending")
+    assigned_to  = db.Column(db.String(100))
+    due_date     = db.Column(db.DateTime)
+    completed_at = db.Column(db.DateTime)
+    sort_order   = db.Column(db.Integer, default=0)
+    notes        = db.Column(db.Text)
+    created_at   = db.Column(db.DateTime, default=datetime.utcnow)
+
+    project = db.relationship("CustomerOnboardingProject", backref="tasks")
+
+
+class SaasAutomationLog(db.Model):
+    """Audit trail for Stripe webhooks, n8n triggers, and manual actions."""
+    __tablename__ = "saas_automation_log"
+
+    id         = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=True)
+    event_type = db.Column(db.String(100))
+    source     = db.Column(db.String(50))   # stripe | n8n | manual | system
+    payload    = db.Column(JSON)
+    status     = db.Column(db.String(50), default="success")   # success | failed | skipped
+    error      = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    company = db.relationship("Company", backref="automation_logs")

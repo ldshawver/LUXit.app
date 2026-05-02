@@ -305,6 +305,7 @@
     {% set _sec_auto     = _p.startswith('/automations') or _p.startswith('/automation-t') %}
     {% set _sec_engage   = _p.startswith('/events') %}
     {% set _sec_home     = _p == '/marketing-hub' or _p == '/crm-hub' or _p == '/dashboard' %}
+    {% set _sec_saas     = _p.startswith('/saas') %}
 
     <div class="app-shell">
 
@@ -397,6 +398,10 @@
                 <a href="{{ url_for('main.crm_hub') }}" class="catbar-sw{% if _p.startswith('/crm') or _p.startswith('/leads') or _p.startswith('/deals') or _p.startswith('/pipeline') or _p == '/dashboard' %} active{% endif %}">
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
                     Sales
+                </a>
+                <a href="{{ url_for('saas.dashboard') }}" class="catbar-sw{% if _sec_saas %} active{% endif %}">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+                    SaaS
                 </a>
             </div>
             <div class="cat-tabs">
@@ -516,6 +521,28 @@
                         <i data-feather="map-pin"></i> Events
                     </a>
                 </div>
+
+                {# SaaS Command Center — shown when on /saas routes #}
+                {% if _sec_saas %}
+                <div class="sidebar-section">
+                    <p class="sidebar-section-label">SaaS Command Center</p>
+                    <a href="{{ url_for('saas.dashboard') }}#accounts" class="sidebar-nav-item{% if _p.startswith('/saas') %} active{% endif %}">
+                        <i data-feather="briefcase"></i> Accounts
+                    </a>
+                    <a href="{{ url_for('saas.dashboard') }}#licenses" class="sidebar-nav-item">
+                        <i data-feather="key"></i> Licenses
+                    </a>
+                    <a href="{{ url_for('saas.dashboard') }}#onboarding" class="sidebar-nav-item">
+                        <i data-feather="check-square"></i> Onboarding
+                    </a>
+                    <a href="{{ url_for('saas.dashboard') }}#pipeline" class="sidebar-nav-item">
+                        <i data-feather="trending-up"></i> Pipeline
+                    </a>
+                    <a href="{{ url_for('saas.dashboard') }}#log" class="sidebar-nav-item">
+                        <i data-feather="activity"></i> Automation Log
+                    </a>
+                </div>
+                {% endif %}
 
                 <div class="sidebar-spacer"></div>
             </nav>

@@ -62,6 +62,18 @@ MIGRATIONS = [
     ("twilio_conversation", "sms_opt_in_at",  "DATETIME", "DEFAULT NULL"),
     ("twilio_conversation", "sms_opt_out_at", "DATETIME", "DEFAULT NULL"),
 
+    # company SaaS billing fields
+    ("company", "stripe_customer_id",         "VARCHAR(100)", "DEFAULT NULL"),
+    ("company", "stripe_subscription_id",     "VARCHAR(100)", "DEFAULT NULL"),
+    ("company", "stripe_subscription_status", "VARCHAR(50)",  "DEFAULT 'none'"),
+    ("company", "supabase_tenant_id",         "VARCHAR(100)", "DEFAULT NULL"),
+    ("company", "mypaylink_id",               "VARCHAR(100)", "DEFAULT NULL"),
+    ("company", "n8n_contact_id",             "VARCHAR(100)", "DEFAULT NULL"),
+    ("company", "subscription_tier",          "VARCHAR(50)",  "DEFAULT 'free'"),
+    ("company", "onboarding_status",          "VARCHAR(50)",  "DEFAULT 'pending'"),
+    ("company", "implementation_status",      "VARCHAR(50)",  "DEFAULT 'none'"),
+    ("company", "saas_notes",                 "TEXT",         "DEFAULT NULL"),
+
     # company extras sometimes missing
     ("company", "logo_path",          "VARCHAR(255)", "DEFAULT NULL"),
     ("company", "icon_path",          "VARCHAR(255)", "DEFAULT NULL"),
