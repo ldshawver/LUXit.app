@@ -585,16 +585,8 @@ def inbound_sms():
             logger.info("HELP received from %s", from_number)
             return _twiml_message(_HELP_REPLY)
 
-        # ── 5. Auto-reply rule engine ──────────────────────────────────────
-        # Auto-capture lead on first contact
-        if conv.is_first_contact:
-            _capture_lead(conv, body, ta.company_id)
-
-        # Run rules only if not opted out
-        if not conv.is_opted_out:
-            _apply_auto_reply_rules(conv, body, ta)
-
-        # SMS forwarding — send a copy to the owner's forwarding number
+        # ── 5. SMS forwarding — always runs before auto-reply so exceptions
+        #       in rule processing can never suppress the forward ────────────
         if ta.sms_forward_to and ta.sms_forwarding_enabled:
             try:
                 company_name = (ta.company.name if ta.company else "LUXit")
@@ -609,6 +601,18 @@ def inbound_sms():
                 logger.info("SMS forwarded from %s to %s", from_number, ta.sms_forward_to)
             except Exception as fwd_exc:
                 logger.warning("SMS forward failed: %s", fwd_exc)
+
+        # ── 6. Auto-reply rule engine ──────────────────────────────────────
+        try:
+            # Auto-capture lead on first contact
+            if conv.is_first_contact:
+                _capture_lead(conv, body, ta.company_id)
+
+            # Run rules only if not opted out
+            if not conv.is_opted_out:
+                _apply_auto_reply_rules(conv, body, ta)
+        except Exception as rule_exc:
+            logger.exception("Error in auto-reply rule engine: %s", rule_exc)
 
         # Clear first-contact flag after first processed message
         if conv.is_first_contact:
