@@ -65,9 +65,20 @@ def _get_company():
     return Company.query.get(access.company_id) if access else None
 
 
-def _log(event_type, source, company_id=None, payload=None, status="success", error=None):
+def _log(event_type, source, company_id=None, payload=None, status="success", error=None, stripe_event_id=None):
+    """Write an audit row to SaasAutomationLog.
+
+    Wraps stripe payloads with their `id` and `livemode` so the row is fully
+    auditable without re-fetching from Stripe. `stripe_event_id` is also stored
+    inside the payload JSON under `_stripe_event_id` for queryability.
+    """
     from models import SaasAutomationLog
     try:
+        if source == "stripe" and stripe_event_id:
+            if not isinstance(payload, dict):
+                payload = {"object": payload}
+            payload = dict(payload)
+            payload["_stripe_event_id"] = stripe_event_id
         entry = SaasAutomationLog(
             company_id=company_id,
             event_type=event_type,
@@ -402,51 +413,103 @@ stripe_webhook_bp = Blueprint("stripe_webhook", __name__)
 
 @stripe_webhook_bp.route("/api/stripe/webhook", methods=["POST"])
 def stripe_webhook():
+    """Stripe webhook receiver.
+
+    Security:
+      - Only accepts POST (enforced by route declaration).
+      - When `STRIPE_WEBHOOK_SECRET` is set, verifies `Stripe-Signature`
+        via the Stripe SDK. Rejects with 400 if invalid.
+      - When the secret is NOT set, only allows unsigned webhooks in
+        development mode (FLASK_ENV=development or DEBUG=true). Production
+        with no secret returns 503 to prevent silent acceptance of forged
+        events.
+
+    Audit:
+      - Every received event (success / skipped / failed) is written to
+        `SaasAutomationLog` with event_type, company_id, payload, and the
+        Stripe event_id.
+
+    Lifecycle wiring (5 events):
+      - checkout.session.completed   → status=active, create onboarding
+      - invoice.payment_succeeded    → status=active
+      - invoice.payment_failed       → status=past_due
+      - customer.subscription.updated→ status=<stripe status>
+      - customer.subscription.deleted→ status=canceled
+    """
     from models import Company, SaasLicense, CustomerOnboardingProject, CustomerOnboardingTask
 
-    payload   = request.get_data()
-    sig       = request.headers.get("Stripe-Signature", "")
-    secret    = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
+    payload = request.get_data()
+    sig     = request.headers.get("Stripe-Signature", "")
+    secret  = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
+
+    is_dev = (
+        os.environ.get("FLASK_ENV") == "development"
+        or os.environ.get("DEBUG", "").lower() == "true"
+        or os.environ.get("REPLIT_DEPLOYMENT") != "1"
+    )
 
     if secret:
         try:
             import stripe as stripe_lib
             event = stripe_lib.Webhook.construct_event(payload, sig, secret)
         except Exception as exc:
-            logger.warning("Stripe webhook signature failed: %s", exc)
+            logger.warning("Stripe webhook signature verification failed: %s", exc)
+            _log("signature_invalid", "stripe", payload={"error": str(exc)[:300]},
+                 status="failed", error="signature verification failed")
             abort(400)
     else:
+        if not is_dev:
+            logger.error("Stripe webhook received but STRIPE_WEBHOOK_SECRET is not set in production — rejecting")
+            _log("missing_secret", "stripe", payload=None, status="failed",
+                 error="STRIPE_WEBHOOK_SECRET not configured")
+            return jsonify({"error": "webhook secret not configured"}), 503
         try:
             event = json.loads(payload)
         except Exception:
+            logger.warning("Stripe webhook payload is not valid JSON")
             abort(400)
 
+    ev_id   = event.get("id", "")
     ev_type = event.get("type", "")
-    obj     = event.get("data", {}).get("object", {})
-    logger.info("Stripe webhook: %s", ev_type)
+    livemode = event.get("livemode", False)
+    obj     = event.get("data", {}).get("object", {}) or {}
 
     company    = None
     company_id = None
-
     stripe_cid = obj.get("customer")
     if stripe_cid:
         company = Company.query.filter_by(stripe_customer_id=stripe_cid).first()
         if company:
             company_id = company.id
 
+    logger.info(
+        "Stripe webhook received: type=%s event_id=%s livemode=%s customer=%s company_id=%s",
+        ev_type, ev_id, livemode, stripe_cid, company_id,
+    )
+
+    if not company and stripe_cid:
+        logger.warning("Stripe webhook %s for unknown customer %s — logging only", ev_type, stripe_cid)
+
     try:
         if ev_type == "customer.created":
-            if company:
-                pass  # already linked
-            _log(ev_type, "stripe", company_id=company_id, payload=obj)
+            logger.info("Stripe[%s] customer.created cid=%s", ev_id, stripe_cid)
+            _log(ev_type, "stripe", company_id=company_id, payload=obj, stripe_event_id=ev_id)
 
         elif ev_type == "checkout.session.completed":
             sub_id = obj.get("subscription")
+            prev_status = company.stripe_subscription_status if company else None
+            logger.info(
+                "Stripe[%s] checkout.session.completed cid=%s subscription=%s prev_status=%s",
+                ev_id, stripe_cid, sub_id, prev_status,
+            )
             if company and sub_id:
                 company.stripe_subscription_id     = sub_id
                 company.stripe_subscription_status = "active"
                 db.session.commit()
-                # Create onboarding project if none exists
+                logger.info(
+                    "Stripe[%s] company %s billing_status: %s → active",
+                    ev_id, company.id, prev_status,
+                )
                 existing = CustomerOnboardingProject.query.filter_by(company_id=company.id).first()
                 if not existing:
                     proj = CustomerOnboardingProject(
@@ -462,46 +525,88 @@ def stripe_webhook():
                             title=t, sort_order=i,
                         ))
                     db.session.commit()
+                    logger.info("Stripe[%s] onboarding project %s created for company %s", ev_id, proj.id, company.id)
                     _fire_n8n("onboarding_started", company.id, {"project_id": proj.id})
-                _fire_n8n("subscription_activated", company.id, {"stripe_event": ev_type})
-            _log(ev_type, "stripe", company_id=company_id, payload=obj)
+                _fire_n8n("subscription_activated", company.id, {"stripe_event": ev_type, "subscription_id": sub_id})
+            _log(ev_type, "stripe", company_id=company_id, payload=obj, stripe_event_id=ev_id)
 
         elif ev_type == "invoice.payment_succeeded":
+            inv_id = obj.get("id")
+            amount = obj.get("amount_paid")
+            prev_status = company.stripe_subscription_status if company else None
+            logger.info(
+                "Stripe[%s] invoice.payment_succeeded invoice=%s amount=%s cid=%s prev_status=%s",
+                ev_id, inv_id, amount, stripe_cid, prev_status,
+            )
             if company:
                 company.stripe_subscription_status = "active"
                 db.session.commit()
-                _fire_n8n("invoice_paid", company.id, {"invoice_id": obj.get("id")})
-            _log(ev_type, "stripe", company_id=company_id, payload=obj)
+                logger.info("Stripe[%s] company %s billing_status: %s → active", ev_id, company.id, prev_status)
+                _fire_n8n("invoice_paid", company.id, {"invoice_id": inv_id, "amount": amount})
+            _log(ev_type, "stripe", company_id=company_id, payload=obj, stripe_event_id=ev_id)
 
         elif ev_type == "invoice.payment_failed":
+            inv_id = obj.get("id")
+            attempt = obj.get("attempt_count")
+            prev_status = company.stripe_subscription_status if company else None
+            logger.warning(
+                "Stripe[%s] invoice.payment_failed invoice=%s attempt=%s cid=%s prev_status=%s",
+                ev_id, inv_id, attempt, stripe_cid, prev_status,
+            )
             if company:
                 company.stripe_subscription_status = "past_due"
                 db.session.commit()
-                _fire_n8n("payment_failed", company.id, {"invoice_id": obj.get("id")})
-            _log(ev_type, "stripe", company_id=company_id, payload=obj)
+                logger.info("Stripe[%s] company %s billing_status: %s → past_due", ev_id, company.id, prev_status)
+                _fire_n8n("payment_failed", company.id, {"invoice_id": inv_id, "attempt": attempt})
+            _log(ev_type, "stripe", company_id=company_id, payload=obj, stripe_event_id=ev_id)
 
         elif ev_type == "customer.subscription.updated":
-            status = obj.get("status", "")
+            sub_id = obj.get("id")
+            new_status = obj.get("status", "")
+            prev_status = company.stripe_subscription_status if company else None
+            logger.info(
+                "Stripe[%s] customer.subscription.updated subscription=%s new_status=%s cid=%s prev_status=%s",
+                ev_id, sub_id, new_status, stripe_cid, prev_status,
+            )
             if company:
-                company.stripe_subscription_status = status
-                company.stripe_subscription_id     = obj.get("id", company.stripe_subscription_id)
+                company.stripe_subscription_status = new_status
+                if sub_id:
+                    company.stripe_subscription_id = sub_id
                 db.session.commit()
-                if status == "canceled":
-                    _fire_n8n("customer_canceled", company.id, {"subscription_id": obj.get("id")})
-            _log(ev_type, "stripe", company_id=company_id, payload=obj)
+                logger.info("Stripe[%s] company %s billing_status: %s → %s", ev_id, company.id, prev_status, new_status)
+                if new_status == "canceled":
+                    _fire_n8n("customer_canceled", company.id, {"subscription_id": sub_id})
+                elif new_status == "past_due":
+                    _fire_n8n("subscription_past_due", company.id, {"subscription_id": sub_id})
+            _log(ev_type, "stripe", company_id=company_id, payload=obj, stripe_event_id=ev_id)
 
         elif ev_type == "customer.subscription.deleted":
+            sub_id = obj.get("id")
+            prev_status = company.stripe_subscription_status if company else None
+            logger.info(
+                "Stripe[%s] customer.subscription.deleted subscription=%s cid=%s prev_status=%s",
+                ev_id, sub_id, stripe_cid, prev_status,
+            )
             if company:
                 company.stripe_subscription_status = "canceled"
                 db.session.commit()
-                _fire_n8n("customer_canceled", company.id, {"subscription_id": obj.get("id")})
-            _log(ev_type, "stripe", company_id=company_id, payload=obj)
+                logger.info("Stripe[%s] company %s billing_status: %s → canceled", ev_id, company.id, prev_status)
+                _fire_n8n("customer_canceled", company.id, {"subscription_id": sub_id})
+            _log(ev_type, "stripe", company_id=company_id, payload=obj, stripe_event_id=ev_id)
 
         else:
-            _log(ev_type, "stripe", company_id=company_id, payload={"event_type": ev_type}, status="skipped")
+            logger.info("Stripe[%s] unhandled event type=%s — logging as skipped", ev_id, ev_type)
+            _log(ev_type, "stripe", company_id=company_id,
+                 payload={"event_type": ev_type, "object_id": obj.get("id")},
+                 status="skipped", stripe_event_id=ev_id)
 
     except Exception as exc:
-        logger.exception("Stripe webhook processing error: %s", exc)
-        _log(ev_type, "stripe", company_id=company_id, payload=obj, status="failed", error=str(exc))
+        logger.exception("Stripe webhook processing error for event %s (%s): %s", ev_id, ev_type, exc)
+        try:
+            db.session.rollback()
+        except Exception:
+            pass
+        _log(ev_type, "stripe", company_id=company_id, payload=obj,
+             status="failed", error=str(exc)[:500], stripe_event_id=ev_id)
 
-    return jsonify({"received": True}), 200
+    return jsonify({"received": True, "event_id": ev_id, "type": ev_type}), 200

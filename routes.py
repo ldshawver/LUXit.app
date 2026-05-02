@@ -1953,16 +1953,30 @@ def health_check():
             return False, str(e)
 
     db_ok, db_error = _db_status()
+    stripe_secret_key = bool(os.getenv("STRIPE_SECRET_KEY"))
+    stripe_webhook_secret = bool(os.getenv("STRIPE_WEBHOOK_SECRET"))
+    if stripe_secret_key and stripe_webhook_secret:
+        stripe_status = "configured"
+    elif stripe_secret_key or stripe_webhook_secret:
+        stripe_status = "partial"
+    else:
+        stripe_status = "disabled"
+
     payload = {
         "status": "ok" if db_ok else "degraded",
         "db": "connected" if db_ok else "error",
         "auth": "ready" if "auth" in current_app.blueprints else "unavailable",
         "ai": "enabled" if os.getenv("OPENAI_API_KEY") else "disabled",
         "scheduler": _scheduler_status(),
+        "stripe": stripe_status,
+        "stripe_details": {
+            "secret_key": stripe_secret_key,
+            "webhook_secret": stripe_webhook_secret,
+        },
         "version": get_app_version(),
         "timestamp": datetime.utcnow().isoformat(),
     }
-    
+
     return jsonify(payload), 200 if db_ok else 503
 
 @main_bp.route('/segments/<int:segment_id>/refresh', methods=['POST'])
@@ -5437,6 +5451,8 @@ def _feature_config_summary():
             and os.getenv("TWILIO_PHONE_NUMBER")
         ),
         "stripe": bool(os.getenv("STRIPE_SECRET_KEY")),
+        "stripe_webhook": bool(os.getenv("STRIPE_WEBHOOK_SECRET")),
+        "stripe_publishable": bool(os.getenv("STRIPE_PUBLISHABLE_KEY")),
         "woocommerce": bool(
             os.getenv("WC_STORE_URL")
             and os.getenv("WC_CONSUMER_KEY")
