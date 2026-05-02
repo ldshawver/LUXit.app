@@ -39,6 +39,25 @@ MIGRATIONS = [
     ("user", "created_at",       "DATETIME",      "DEFAULT (CURRENT_TIMESTAMP)"),
     ("user", "updated_at",       "DATETIME",      "DEFAULT (CURRENT_TIMESTAMP)"),
 
+    # twilio_account
+    ("twilio_account", "sms_forward_to",              "VARCHAR(20)",  "DEFAULT NULL"),
+    ("twilio_account", "call_forward_to",             "VARCHAR(20)",  "DEFAULT NULL"),
+    ("twilio_account", "sms_forwarding_enabled",      "BOOLEAN",      "DEFAULT 1"),
+    ("twilio_account", "voice_forwarding_enabled",    "BOOLEAN",      "DEFAULT 1"),
+    ("twilio_account", "after_hours_sms_enabled",     "BOOLEAN",      "DEFAULT 1"),
+    ("twilio_account", "after_hours_voicemail_enabled","BOOLEAN",     "DEFAULT 1"),
+    ("twilio_account", "voicemail_greeting_text",     "TEXT",         "DEFAULT NULL"),
+    ("twilio_account", "voicemail_greeting_audio_url","VARCHAR(500)", "DEFAULT NULL"),
+    ("twilio_account", "missed_call_text",            "TEXT",         "DEFAULT NULL"),
+    ("twilio_account", "after_hours_text",            "TEXT",         "DEFAULT NULL"),
+    ("twilio_account", "ai_mode",                     "VARCHAR(20)",  "DEFAULT 'off'"),
+    ("twilio_account", "ai_system_prompt",            "TEXT",         "DEFAULT NULL"),
+    ("twilio_account", "webhook_base_url",            "VARCHAR(500)", "DEFAULT NULL"),
+    ("twilio_account", "automation_enabled",          "BOOLEAN",      "DEFAULT 1"),
+    ("twilio_account", "is_active",                   "BOOLEAN",      "DEFAULT 1"),
+    ("twilio_account", "created_at",                  "DATETIME",     "DEFAULT (CURRENT_TIMESTAMP)"),
+    ("twilio_account", "updated_at",                  "DATETIME",     "DEFAULT (CURRENT_TIMESTAMP)"),
+
     # twilio_conversation
     ("twilio_conversation", "sms_opt_in_at",  "DATETIME", "DEFAULT NULL"),
     ("twilio_conversation", "sms_opt_out_at", "DATETIME", "DEFAULT NULL"),
