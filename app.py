@@ -9,6 +9,13 @@ from datetime import timedelta
 from typing import cast
 from uuid import uuid4
 
+# Load .env before anything reads os.environ
+try:
+    from dotenv import load_dotenv as _load_dotenv
+    _load_dotenv(os.path.join(os.path.dirname(__file__), ".env"), override=False)
+except ImportError:
+    pass
+
 from flask import Flask, g, has_request_context, request
 from flask_login import LoginManager
 from werkzeug.middleware.proxy_fix import ProxyFix
