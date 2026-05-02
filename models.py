@@ -2363,6 +2363,8 @@ class TwilioConversation(db.Model):
     contact_name    = db.Column(db.String(200))
     is_read         = db.Column(db.Boolean, default=False)
     is_opted_out    = db.Column(db.Boolean, default=False)
+    sms_opt_in_at   = db.Column(db.DateTime, nullable=True)
+    sms_opt_out_at  = db.Column(db.DateTime, nullable=True)
     is_first_contact = db.Column(db.Boolean, default=True)
     lead_captured   = db.Column(db.Boolean, default=False)
     tags            = db.Column(JSON, default=list)

@@ -82,9 +82,14 @@ def _build_client(ta):
 _LA = ZoneInfo("America/Los_Angeles")
 
 # System-level keyword responses (always fire regardless of auto-reply rules)
-_STOP_REPLY = "You have been unsubscribed. Reply START to opt back in."
-_START_REPLY = "You have been subscribed. Thanks for joining LUXit SMS updates."
-_HELP_REPLY  = "LUXit SMS Support: Reply STOP to opt out. For help, contact support@luxit.app."
+_STOP_REPLY  = "You have been unsubscribed from LUX messages. Reply START to re-subscribe."
+_START_REPLY = ("LUX: You are now subscribed to receive messages. Message frequency varies. "
+                "Reply HELP for help or STOP to opt out. Msg & data rates may apply.")
+_HELP_REPLY  = "LUX: Reply STOP to opt out. Msg frequency varies. Msg & data rates may apply."
+
+# All recognised opt-out / opt-in keyword variants (per CTIA / Twilio guidelines)
+_STOP_KEYWORDS  = {"stop", "stopall", "unsubscribe", "cancel", "end", "quit"}
+_START_KEYWORDS = {"start", "subscribe", "join"}
 
 TWILIO_WEBHOOK_PUBLIC_URL = os.environ.get(
     "TWILIO_WEBHOOK_PUBLIC_URL", "https://luxit.app/twilio/sms/inbound"
@@ -250,8 +255,7 @@ def _match_keywords(body: str, keywords: list, match_type: str) -> bool:
 
 
 def _is_stop_message(body: str) -> bool:
-    stop_words = {"stop", "unsubscribe", "cancel", "quit", "end", "stopall"}
-    return body.lower().strip() in stop_words
+    return body.lower().strip() in _STOP_KEYWORDS
 
 
 def _apply_auto_reply_rules(conv, body: str, ta) -> bool:
@@ -563,16 +567,18 @@ def inbound_sms():
         # These always fire and return a TwiML reply immediately.
         kw = body.upper().strip()
 
-        if kw == "STOP":
-            conv.is_opted_out = True
+        if kw in _STOP_KEYWORDS:
+            conv.is_opted_out   = True
+            conv.sms_opt_out_at = datetime.utcnow()
             db.session.commit()
-            logger.info("STOP received: opted out %s", from_number)
+            logger.info("Opt-out keyword '%s' received: opted out %s", kw, from_number)
             return _twiml_message(_STOP_REPLY)
 
-        if kw == "START":
-            conv.is_opted_out = False
+        if kw in _START_KEYWORDS:
+            conv.is_opted_out  = False
+            conv.sms_opt_in_at = datetime.utcnow()
             db.session.commit()
-            logger.info("START received: opted in %s", from_number)
+            logger.info("Opt-in keyword '%s' received: opted in %s", kw, from_number)
             return _twiml_message(_START_REPLY)
 
         if kw == "HELP":
