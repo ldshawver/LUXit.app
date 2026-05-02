@@ -1039,10 +1039,70 @@ def settings():
         _seed_default_rules(company.id)
         _seed_default_hours(company.id)
 
+        # Auto-configure Twilio Messaging Service webhook
+        _auto_configure_twilio_webhook(ta)
+
         flash("Twilio settings saved successfully!", "success")
         return redirect(url_for("twilio.settings"))
 
     return render_template("twilio/settings.html", ta=ta, company=company)
+
+
+@twilio_bp.route("/settings/upload-voicemail", methods=["POST"])
+@login_required
+def upload_voicemail():
+    """Upload an MP3 for the voicemail greeting and return its public URL."""
+    import uuid, os
+    from flask import current_app
+    company = _get_company()
+    if company is None:
+        return jsonify({"error": "No company"}), 400
+
+    f = request.files.get("audio")
+    if not f or not f.filename:
+        return jsonify({"error": "No file provided"}), 400
+
+    allowed = {".mp3", ".wav", ".ogg", ".m4a"}
+    ext = os.path.splitext(f.filename)[1].lower()
+    if ext not in allowed:
+        return jsonify({"error": f"File type {ext} not allowed"}), 400
+
+    audio_dir = os.path.join(current_app.root_path, "static", "audio")
+    os.makedirs(audio_dir, exist_ok=True)
+    filename = f"voicemail-{company.id}-{uuid.uuid4().hex[:8]}{ext}"
+    save_path = os.path.join(audio_dir, filename)
+    f.save(save_path)
+
+    base = request.host_url.rstrip("/")
+    public_url = f"{base}/static/audio/{filename}"
+    return jsonify({"url": public_url})
+
+
+def _auto_configure_twilio_webhook(ta):
+    """Push the inbound SMS webhook URL to Twilio Messaging Service via REST API."""
+    try:
+        if not ta or not ta.messaging_service_sid:
+            return
+        sid = ta.get_account_sid()
+        token = ta.get_auth_token()
+        if not sid or not token:
+            return
+
+        base = (ta.webhook_base_url or "https://luxit.app").rstrip("/")
+        inbound_url  = f"{base}/twilio/sms/inbound"
+        status_url   = f"{base}/twilio/sms/status"
+
+        from twilio.rest import Client
+        client = Client(sid, token)
+        client.messaging.v1.services(ta.messaging_service_sid).update(
+            inbound_request_url=inbound_url,
+            inbound_method="POST",
+            status_callback=status_url,
+            use_inbound_webhook_on_number=False,
+        )
+        logger.info("Auto-configured Twilio webhook → %s", inbound_url)
+    except Exception as exc:
+        logger.warning("Could not auto-configure Twilio webhook: %s", exc)
 
 
 @twilio_bp.route("/rules")

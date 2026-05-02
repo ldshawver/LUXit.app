@@ -209,15 +209,32 @@
           <textarea name="voicemail_greeting_text" class="form-control" rows="3"
                     style="background:#0b0d14;border-color:#1e2535;color:#f7f7fb;"
                     placeholder="Thanks for calling. You have reached us after business hours. Please leave your name, number, and a message after the tone.">{{ ta.voicemail_greeting_text or '' if ta else '' }}</textarea>
-          <small class="text-muted">Read aloud by Twilio TTS when caller reaches voicemail</small>
+          <small class="text-muted">Read aloud by Twilio TTS if no audio file is set</small>
         </div>
         <div class="mb-3">
-          <label class="form-label" style="font-size:.85rem;">Voicemail Greeting Audio URL <span class="text-muted">(optional)</span></label>
-          <input type="url" name="voicemail_greeting_audio_url" class="form-control"
-                 placeholder="https://example.com/greeting.mp3"
-                 value="{{ ta.voicemail_greeting_audio_url or '' if ta else '' }}"
-                 style="background:#0b0d14;border-color:#1e2535;color:#f7f7fb;">
-          <small class="text-muted">If set, plays this audio instead of TTS greeting. Must be publicly accessible.</small>
+          <label class="form-label" style="font-size:.85rem;">Voicemail Greeting Audio</label>
+          {% set default_audio = request.host_url.rstrip('/') + '/static/audio/alavont-voicemail-default.mp3' %}
+          {% set current_audio = (ta.voicemail_greeting_audio_url if ta and ta.voicemail_greeting_audio_url else default_audio) %}
+          <div class="mb-2 p-2 rounded" style="background:#0b0d14;border:1px solid #1e2535;">
+            <small class="text-muted d-block mb-1">Current greeting:</small>
+            <audio id="voicemailPlayer" controls style="width:100%;height:36px;" src="{{ current_audio }}"></audio>
+          </div>
+          <div class="d-flex gap-2 mb-2">
+            <label class="btn btn-sm btn-outline-secondary mb-0" style="cursor:pointer;">
+              <i data-feather="upload" style="width:13px;height:13px;"></i> Upload MP3/WAV
+              <input type="file" id="voicemailUpload" accept=".mp3,.wav,.ogg,.m4a" style="display:none;">
+            </label>
+            <button type="button" class="btn btn-sm btn-outline-secondary"
+                    onclick="document.getElementById('voicemail_greeting_audio_url').value='{{ default_audio }}';document.getElementById('voicemailPlayer').src='{{ default_audio }}';">
+              Use Default (Alavont)
+            </button>
+          </div>
+          <input type="url" name="voicemail_greeting_audio_url" id="voicemail_greeting_audio_url"
+                 class="form-control"
+                 placeholder="{{ default_audio }}"
+                 value="{{ ta.voicemail_greeting_audio_url or default_audio if ta else default_audio }}"
+                 style="background:#0b0d14;border-color:#1e2535;color:#f7f7fb;font-size:.8rem;">
+          <small class="text-muted">Public URL of greeting MP3. Upload above or paste a URL. Default is the Alavont greeting.</small>
         </div>
         <div class="mb-0">
           <label class="form-label" style="font-size:.85rem;">Missed Call Text</label>
@@ -267,5 +284,39 @@
     </div>
   </form>
 </div>
-<script>feather.replace();</script>
+<script>
+feather.replace();
+
+// Voicemail audio upload
+document.getElementById('voicemailUpload').addEventListener('change', function() {
+  const file = this.files[0];
+  if (!file) return;
+  const btn = this.closest('label');
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Uploading…';
+
+  const fd = new FormData();
+  fd.append('audio', file);
+  fd.append('csrf_token', document.querySelector('[name=csrf_token]').value);
+
+  fetch('{{ url_for("twilio.upload_voicemail") }}', { method: 'POST', body: fd })
+    .then(r => r.json())
+    .then(data => {
+      if (data.url) {
+        document.getElementById('voicemail_greeting_audio_url').value = data.url;
+        document.getElementById('voicemailPlayer').src = data.url;
+        btn.innerHTML = '<i data-feather="check" style="width:13px;height:13px;"></i> Uploaded';
+        feather.replace();
+      } else {
+        btn.innerHTML = '<i data-feather="upload" style="width:13px;height:13px;"></i> Upload MP3/WAV';
+        alert('Upload failed: ' + (data.error || 'Unknown error'));
+        feather.replace();
+      }
+    })
+    .catch(() => {
+      btn.innerHTML = '<i data-feather="upload" style="width:13px;height:13px;"></i> Upload MP3/WAV';
+      alert('Upload failed — check console');
+      feather.replace();
+    });
+});
+</script>
 {% endblock %}
