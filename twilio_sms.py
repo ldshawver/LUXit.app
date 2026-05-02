@@ -976,8 +976,14 @@ def send_message():
 @twilio_bp.route("/settings", methods=["GET", "POST"])
 @login_required
 def settings():
+    import traceback
     from models import TwilioAccount
     company = _get_company()
+    if company is None:
+        flash("No company found. Please contact your administrator.", "danger")
+        logger.error("SMS settings: no company for user %s\n%s",
+                     current_user.id, traceback.format_stack())
+        return redirect(url_for("main.dashboard") if "main" in current_app.blueprints else "/")
     ta = _get_twilio_account(company.id)
 
     if request.method == "POST":
