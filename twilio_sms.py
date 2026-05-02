@@ -597,7 +597,7 @@ def inbound_sms():
                     f"New {company_name} SMS from {from_number}: (media)\n\n"
                     f"Reply: reply {from_number} <msg>  or  r <msg> (last sender)"
                 )
-                _send_sms(ta, ta.sms_forward_to, fwd_body)
+                _send_sms(ta, ta.sms_forward_to, fwd_body, conversation_id=conv.id)
                 logger.info("SMS forwarded from %s to %s", from_number, ta.sms_forward_to)
             except Exception as fwd_exc:
                 logger.warning("SMS forward failed: %s", fwd_exc)
