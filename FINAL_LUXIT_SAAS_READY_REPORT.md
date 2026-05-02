@@ -221,3 +221,37 @@ Previously blocked auto-publish hook — now fixed.
 3. Build Stripe billing admin routes — required for subscription management UI
 
 The platform core (CRM, campaigns, analytics, SMS, social, approval workflows, SaaS management) is **production-quality and fully operational**. The SaaS Command Center, multi-tenant isolation, encrypted secrets, and deployment infrastructure are all solid.
+
+---
+
+## STRIPE WEBHOOK HARDENING — COMPLETE
+
+`POST /api/stripe/webhook` now meets the full 12-criterion spec.
+
+| Criterion | Status |
+|-----------|--------|
+| 1. Locate webhook handler | ✓ `saas_mgmt.py` |
+| 2. Raw body for signature | ✓ `request.get_data()` |
+| 3. HMAC verify w/ `STRIPE_WEBHOOK_SECRET` | ✓ `stripe.WebhookSignature.verify_header` |
+| 4. Structured per-event logging | ✓ event_id, customer_id, prev→new status |
+| 5. 5 events wired | ✓ checkout / invoice paid / invoice failed / sub updated / sub deleted |
+| 6. Subscription status updates | ✓ active / grace_period / canceled / mirror |
+| 7. Audit log w/ all required cols | ✓ `SaasAutomationLog` extended (5 new cols + unique index) |
+| 8. Idempotency | ✓ Atomic claim via unique-constraint, race-safe; failed/stale rows reclaimed for retry |
+| 9. Tests for all events + duplicate + sig | ✓ **14 passing** in `tests/test_stripe_webhook.py` |
+| 10. `/health` exposes Stripe config (no values) | ✓ `stripe`, `stripe_details`, `features.stripe_webhook` |
+| 11. No unrelated refactor | ✓ |
+| 12. No secret leakage | ✓ `_sanitize_payload` redacts client_secret/card/cvc |
+
+**Bonus hardening:** 5xx response on processing failure (Stripe retries), strict prod mode (rejects unsigned events with 503 unless `FLASK_ENV=development`), payload sanitization in audit log.
+
+**Architect review verdict:** PASS.
+
+### Deploy to VPS
+```bash
+cd /root/lux-email-bot && git pull \
+  && .venv/bin/pip install -r requirements.txt -q \
+  && .venv/bin/python3 scripts/migrate_db.py \
+  && systemctl restart lux-email-bot
+```
+Then register the webhook at https://dashboard.stripe.com → `https://luxit.app/api/stripe/webhook` (5 events) and add `STRIPE_WEBHOOK_SECRET=whsec_…` to `/root/lux-email-bot/.env`.

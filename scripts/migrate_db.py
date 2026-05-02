@@ -85,6 +85,21 @@ MIGRATIONS = [
     ("company", "apply_brand_colors", "BOOLEAN",      "DEFAULT 0"),
     ("company", "industry",           "VARCHAR(100)", "DEFAULT NULL"),
     ("company", "description",        "TEXT",         "DEFAULT NULL"),
+
+    # saas_automation_log — Stripe webhook audit columns
+    ("saas_automation_log", "stripe_event_id", "VARCHAR(120)", "DEFAULT NULL"),
+    ("saas_automation_log", "customer_id",     "VARCHAR(120)", "DEFAULT NULL"),
+    ("saas_automation_log", "subscription_id", "VARCHAR(120)", "DEFAULT NULL"),
+    ("saas_automation_log", "received_at",     "DATETIME",     "DEFAULT (CURRENT_TIMESTAMP)"),
+    ("saas_automation_log", "processed_at",    "DATETIME",     "DEFAULT NULL"),
+]
+
+# Indexes — created idempotently after column adds.
+INDEXES = [
+    # (index_name, table, column, unique?)
+    ("ux_saas_automation_log_stripe_event_id", "saas_automation_log", "stripe_event_id", True),
+    ("ix_saas_automation_log_customer_id",     "saas_automation_log", "customer_id",     False),
+    ("ix_saas_automation_log_subscription_id", "saas_automation_log", "subscription_id", False),
 ]
 
 def run():
@@ -125,6 +140,28 @@ def run():
             OK("db.create_all() complete")
         except Exception as exc:
             ERR(f"db.create_all() failed: {exc}")
+
+        # Indexes — best-effort, safe to skip on existing.
+        print("\n── Ensuring indexes ──")
+        existing_tables = inspector.get_table_names()
+        for idx_name, table, column, unique in INDEXES:
+            if table not in existing_tables:
+                SKP(f"{idx_name}  (table missing)")
+                continue
+            try:
+                existing_idx = {i["name"] for i in inspector.get_indexes(table)}
+                if idx_name in existing_idx:
+                    SKP(f"{idx_name}  (already exists)")
+                    continue
+                uniq = "UNIQUE " if unique else ""
+                db.session.execute(text(
+                    f'CREATE {uniq}INDEX IF NOT EXISTS "{idx_name}" ON "{table}" ("{column}")'
+                ))
+                db.session.commit()
+                OK(f"{idx_name}  ({'unique ' if unique else ''}index)")
+            except Exception as exc:
+                db.session.rollback()
+                ERR(f"{idx_name}  — {exc}")
 
         print(f"\nDone — {added} column(s) added.\n")
 

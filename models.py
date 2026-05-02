@@ -2558,16 +2558,25 @@ class CustomerOnboardingTask(db.Model):
 
 
 class SaasAutomationLog(db.Model):
-    """Audit trail for Stripe webhooks, n8n triggers, and manual actions."""
+    """Audit trail for Stripe webhooks, n8n triggers, and manual actions.
+
+    For Stripe events, `stripe_event_id` is unique and indexed so we can
+    reject duplicate webhook deliveries idempotently.
+    """
     __tablename__ = "saas_automation_log"
 
-    id         = db.Column(db.Integer, primary_key=True)
-    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=True)
-    event_type = db.Column(db.String(100))
-    source     = db.Column(db.String(50))   # stripe | n8n | manual | system
-    payload    = db.Column(JSON)
-    status     = db.Column(db.String(50), default="success")   # success | failed | skipped
-    error      = db.Column(db.Text)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    id              = db.Column(db.Integer, primary_key=True)
+    company_id      = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=True)
+    event_type      = db.Column(db.String(100))
+    source          = db.Column(db.String(50))   # stripe | n8n | manual | system
+    stripe_event_id = db.Column(db.String(120), unique=True, index=True, nullable=True)
+    customer_id     = db.Column(db.String(120), index=True, nullable=True)
+    subscription_id = db.Column(db.String(120), index=True, nullable=True)
+    payload         = db.Column(JSON)
+    status          = db.Column(db.String(50), default="success")   # success | failed | skipped | duplicate
+    error           = db.Column(db.Text)
+    received_at     = db.Column(db.DateTime, default=datetime.utcnow)
+    processed_at    = db.Column(db.DateTime, nullable=True)
+    created_at      = db.Column(db.DateTime, default=datetime.utcnow)
 
     company = db.relationship("Company", backref="automation_logs")

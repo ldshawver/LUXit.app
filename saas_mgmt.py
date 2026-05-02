@@ -27,11 +27,12 @@ import hmac
 import json
 import logging
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import requests
 from flask import Blueprint, abort, flash, jsonify, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
+from sqlalchemy.exc import IntegrityError
 
 from extensions import db
 
@@ -65,31 +66,71 @@ def _get_company():
     return Company.query.get(access.company_id) if access else None
 
 
-def _log(event_type, source, company_id=None, payload=None, status="success", error=None, stripe_event_id=None):
+_REDACT_KEYS = {
+    "client_secret", "setup_secret", "secret", "api_key",
+    "card", "cvc", "cvv", "number", "iban", "account_number",
+}
+
+
+def _sanitize_payload(value, depth=0):
+    """Recursively redact secret-bearing fields from a Stripe payload.
+
+    Stripe events typically do NOT contain raw card numbers (only last4),
+    but we still strip any field name in `_REDACT_KEYS` as defense in depth
+    so secrets never land in the audit log or application logs.
+    """
+    if depth > 10:
+        return "<truncated>"
+    if isinstance(value, dict):
+        out = {}
+        for k, v in value.items():
+            if isinstance(k, str) and k.lower() in _REDACT_KEYS:
+                out[k] = "<redacted>"
+            else:
+                out[k] = _sanitize_payload(v, depth + 1)
+        return out
+    if isinstance(value, list):
+        return [_sanitize_payload(v, depth + 1) for v in value]
+    return value
+
+
+def _log(event_type, source, company_id=None, payload=None, status="success",
+         error=None, stripe_event_id=None, customer_id=None, subscription_id=None,
+         processed_at=None):
     """Write an audit row to SaasAutomationLog.
 
-    Wraps stripe payloads with their `id` and `livemode` so the row is fully
-    auditable without re-fetching from Stripe. `stripe_event_id` is also stored
-    inside the payload JSON under `_stripe_event_id` for queryability.
+    For Stripe events, dedicated columns (stripe_event_id, customer_id,
+    subscription_id, received_at, processed_at) are populated so they're
+    queryable without scanning the JSON payload.
     """
     from models import SaasAutomationLog
+
+    sanitized = _sanitize_payload(payload) if payload is not None else None
+    if source == "stripe" and stripe_event_id and isinstance(sanitized, dict):
+        sanitized = dict(sanitized)
+        sanitized["_stripe_event_id"] = stripe_event_id
+
     try:
-        if source == "stripe" and stripe_event_id:
-            if not isinstance(payload, dict):
-                payload = {"object": payload}
-            payload = dict(payload)
-            payload["_stripe_event_id"] = stripe_event_id
         entry = SaasAutomationLog(
             company_id=company_id,
             event_type=event_type,
             source=source,
-            payload=payload,
+            stripe_event_id=stripe_event_id,
+            customer_id=customer_id,
+            subscription_id=subscription_id,
+            payload=sanitized,
             status=status,
             error=error,
+            received_at=datetime.utcnow(),
+            processed_at=processed_at or (datetime.utcnow() if status != "failed" else None),
         )
         db.session.add(entry)
         db.session.commit()
     except Exception as exc:
+        try:
+            db.session.rollback()
+        except Exception:
+            pass
         logger.warning("SaasAutomationLog write failed: %s", exc)
 
 
@@ -436,26 +477,37 @@ def stripe_webhook():
       - customer.subscription.updated→ status=<stripe status>
       - customer.subscription.deleted→ status=canceled
     """
-    from models import Company, SaasLicense, CustomerOnboardingProject, CustomerOnboardingTask
+    from models import Company, SaasLicense, CustomerOnboardingProject, CustomerOnboardingTask, SaasAutomationLog
 
     payload = request.get_data()
     sig     = request.headers.get("Stripe-Signature", "")
     secret  = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
 
+    # Strict by default: only allow unsigned webhooks when the operator has
+    # explicitly opted into dev mode. We do NOT key off REPLIT_DEPLOYMENT
+    # because LUXit also runs on a VPS where that variable is never set.
     is_dev = (
         os.environ.get("FLASK_ENV") == "development"
         or os.environ.get("DEBUG", "").lower() == "true"
-        or os.environ.get("REPLIT_DEPLOYMENT") != "1"
     )
 
     if secret:
         try:
             import stripe as stripe_lib
-            event = stripe_lib.Webhook.construct_event(payload, sig, secret)
+            # Stripe SDK v15's verify_header expects a *string* payload — passing
+            # raw bytes silently produces a non-matching HMAC. Decode once here
+            # (the raw bytes are still what we use for json parsing).
+            payload_str = payload.decode("utf-8") if isinstance(payload, (bytes, bytearray)) else payload
+            stripe_lib.WebhookSignature.verify_header(payload_str, sig, secret, tolerance=300)
         except Exception as exc:
             logger.warning("Stripe webhook signature verification failed: %s", exc)
             _log("signature_invalid", "stripe", payload={"error": str(exc)[:300]},
                  status="failed", error="signature verification failed")
+            abort(400)
+        try:
+            event = json.loads(payload)
+        except Exception:
+            logger.warning("Stripe webhook payload signed but not valid JSON")
             abort(400)
     else:
         if not is_dev:
@@ -487,13 +539,125 @@ def stripe_webhook():
         ev_type, ev_id, livemode, stripe_cid, company_id,
     )
 
+    # Atomic idempotency claim: insert a placeholder audit row keyed on the
+    # unique stripe_event_id BEFORE any side effects. Two concurrent deliveries
+    # cannot both pass this gate — the second one hits IntegrityError and is
+    # treated as a duplicate. This avoids the race-window of a SELECT-then-INSERT
+    # pattern.
+    claim_row = None
+    if ev_id:
+        sanitized_initial = _sanitize_payload(obj)
+        if isinstance(sanitized_initial, dict):
+            sanitized_initial = dict(sanitized_initial)
+            sanitized_initial["_stripe_event_id"] = ev_id
+        try:
+            claim_row = SaasAutomationLog(
+                company_id=company_id,
+                event_type=ev_type,
+                source="stripe",
+                stripe_event_id=ev_id,
+                customer_id=stripe_cid,
+                payload=sanitized_initial,
+                status="processing",
+                received_at=datetime.utcnow(),
+            )
+            db.session.add(claim_row)
+            db.session.commit()
+        except IntegrityError:
+            db.session.rollback()
+            # Look up the existing claim. If it represents a prior FAILED attempt
+            # — or a 'processing' row that's gone stale (worker crashed mid-event)
+            # — we should let Stripe's retry actually reprocess instead of
+            # short-circuiting. Only completed states (success/skipped/duplicate)
+            # are treated as true duplicates.
+            existing = SaasAutomationLog.query.filter_by(stripe_event_id=ev_id).first()
+            STALE_THRESHOLD = timedelta(minutes=5)
+            now = datetime.utcnow()
+            is_retryable = False
+            if existing is not None:
+                if existing.status == "failed":
+                    is_retryable = True
+                elif existing.status == "processing":
+                    started = existing.received_at or existing.created_at
+                    if started and (now - started) > STALE_THRESHOLD:
+                        is_retryable = True
+
+            if is_retryable:
+                logger.info(
+                    "Stripe[%s] previous attempt status=%s — taking over for reprocessing",
+                    ev_id, existing.status,
+                )
+                try:
+                    existing.status = "processing"
+                    existing.error = None
+                    existing.received_at = now
+                    existing.processed_at = None
+                    db.session.commit()
+                    claim_row = existing
+                except Exception as exc:
+                    db.session.rollback()
+                    logger.warning("Failed to reclaim row for retry, continuing without claim: %s", exc)
+                    claim_row = None
+                # fall through to event processing below
+            else:
+                logger.info(
+                    "Stripe[%s] duplicate event (prior status=%s) — acknowledging without reprocessing",
+                    ev_id, existing.status if existing else "unknown",
+                )
+                # Audit the duplicate delivery itself with a non-conflicting row.
+                try:
+                    dup = SaasAutomationLog(
+                        company_id=company_id,
+                        event_type=ev_type,
+                        source="stripe",
+                        stripe_event_id=None,  # avoid unique conflict on retries
+                        customer_id=stripe_cid,
+                        payload={"_duplicate_of": ev_id, "event_type": ev_type},
+                        status="duplicate",
+                        received_at=now,
+                        processed_at=now,
+                    )
+                    db.session.add(dup)
+                    db.session.commit()
+                except Exception as exc:
+                    db.session.rollback()
+                    logger.warning("Failed to write duplicate audit row: %s", exc)
+                return jsonify({"received": True, "event_id": ev_id, "duplicate": True}), 200
+        except Exception as exc:
+            db.session.rollback()
+            logger.warning("Idempotency claim insert failed (continuing without claim): %s", exc)
+            claim_row = None
+
+    def _finalize(status, error=None, subscription_id=None):
+        """Update the claim row in-place to reflect final outcome.
+
+        Falls back to a fresh _log() write if no claim row was created
+        (e.g. when stripe_event_id is missing or the claim insert itself
+        crashed for non-uniqueness reasons).
+        """
+        if claim_row is not None:
+            try:
+                claim_row.status = status
+                claim_row.error = (error or "")[:500] if error else None
+                claim_row.processed_at = datetime.utcnow()
+                if subscription_id:
+                    claim_row.subscription_id = subscription_id
+                db.session.commit()
+                return
+            except Exception as exc:
+                db.session.rollback()
+                logger.warning("Failed to update claim row, falling back to new audit row: %s", exc)
+        _log(ev_type, "stripe", company_id=company_id, payload=obj,
+             status=status, error=error, stripe_event_id=ev_id,
+             customer_id=stripe_cid, subscription_id=subscription_id)
+
     if not company and stripe_cid:
         logger.warning("Stripe webhook %s for unknown customer %s — logging only", ev_type, stripe_cid)
 
     try:
         if ev_type == "customer.created":
             logger.info("Stripe[%s] customer.created cid=%s", ev_id, stripe_cid)
-            _log(ev_type, "stripe", company_id=company_id, payload=obj, stripe_event_id=ev_id)
+            _finalize("success")
 
         elif ev_type == "checkout.session.completed":
             sub_id = obj.get("subscription")
@@ -528,7 +692,7 @@ def stripe_webhook():
                     logger.info("Stripe[%s] onboarding project %s created for company %s", ev_id, proj.id, company.id)
                     _fire_n8n("onboarding_started", company.id, {"project_id": proj.id})
                 _fire_n8n("subscription_activated", company.id, {"stripe_event": ev_type, "subscription_id": sub_id})
-            _log(ev_type, "stripe", company_id=company_id, payload=obj, stripe_event_id=ev_id)
+            _finalize("success", subscription_id=sub_id)
 
         elif ev_type == "invoice.payment_succeeded":
             inv_id = obj.get("id")
@@ -538,27 +702,33 @@ def stripe_webhook():
                 "Stripe[%s] invoice.payment_succeeded invoice=%s amount=%s cid=%s prev_status=%s",
                 ev_id, inv_id, amount, stripe_cid, prev_status,
             )
+            sub_id_inv = obj.get("subscription")
             if company:
                 company.stripe_subscription_status = "active"
                 db.session.commit()
                 logger.info("Stripe[%s] company %s billing_status: %s → active", ev_id, company.id, prev_status)
                 _fire_n8n("invoice_paid", company.id, {"invoice_id": inv_id, "amount": amount})
-            _log(ev_type, "stripe", company_id=company_id, payload=obj, stripe_event_id=ev_id)
+            _finalize("success", subscription_id=sub_id_inv)
 
         elif ev_type == "invoice.payment_failed":
             inv_id = obj.get("id")
             attempt = obj.get("attempt_count")
+            sub_id_inv = obj.get("subscription")
             prev_status = company.stripe_subscription_status if company else None
             logger.warning(
                 "Stripe[%s] invoice.payment_failed invoice=%s attempt=%s cid=%s prev_status=%s",
                 ev_id, inv_id, attempt, stripe_cid, prev_status,
             )
             if company:
-                company.stripe_subscription_status = "past_due"
+                # Failed payment moves the tenant into the dunning/grace window
+                # rather than instant suspension. Stripe Smart Retries plus
+                # subscription.deleted will eventually finalize cancellation.
+                company.stripe_subscription_status = "grace_period"
                 db.session.commit()
-                logger.info("Stripe[%s] company %s billing_status: %s → past_due", ev_id, company.id, prev_status)
+                logger.info("Stripe[%s] company %s billing_status: %s → grace_period",
+                            ev_id, company.id, prev_status)
                 _fire_n8n("payment_failed", company.id, {"invoice_id": inv_id, "attempt": attempt})
-            _log(ev_type, "stripe", company_id=company_id, payload=obj, stripe_event_id=ev_id)
+            _finalize("success", subscription_id=sub_id_inv)
 
         elif ev_type == "customer.subscription.updated":
             sub_id = obj.get("id")
@@ -578,7 +748,7 @@ def stripe_webhook():
                     _fire_n8n("customer_canceled", company.id, {"subscription_id": sub_id})
                 elif new_status == "past_due":
                     _fire_n8n("subscription_past_due", company.id, {"subscription_id": sub_id})
-            _log(ev_type, "stripe", company_id=company_id, payload=obj, stripe_event_id=ev_id)
+            _finalize("success", subscription_id=sub_id)
 
         elif ev_type == "customer.subscription.deleted":
             sub_id = obj.get("id")
@@ -592,13 +762,11 @@ def stripe_webhook():
                 db.session.commit()
                 logger.info("Stripe[%s] company %s billing_status: %s → canceled", ev_id, company.id, prev_status)
                 _fire_n8n("customer_canceled", company.id, {"subscription_id": sub_id})
-            _log(ev_type, "stripe", company_id=company_id, payload=obj, stripe_event_id=ev_id)
+            _finalize("success", subscription_id=sub_id)
 
         else:
             logger.info("Stripe[%s] unhandled event type=%s — logging as skipped", ev_id, ev_type)
-            _log(ev_type, "stripe", company_id=company_id,
-                 payload={"event_type": ev_type, "object_id": obj.get("id")},
-                 status="skipped", stripe_event_id=ev_id)
+            _finalize("skipped")
 
     except Exception as exc:
         logger.exception("Stripe webhook processing error for event %s (%s): %s", ev_id, ev_type, exc)
@@ -606,7 +774,13 @@ def stripe_webhook():
             db.session.rollback()
         except Exception:
             pass
-        _log(ev_type, "stripe", company_id=company_id, payload=obj,
-             status="failed", error=str(exc)[:500], stripe_event_id=ev_id)
+        _finalize("failed", error=str(exc))
+        # Return 5xx so Stripe will retry the delivery on transient errors.
+        return jsonify({
+            "received": False,
+            "event_id": ev_id,
+            "type": ev_type,
+            "error": "processing failed",
+        }), 500
 
     return jsonify({"received": True, "event_id": ev_id, "type": ev_type}), 200
