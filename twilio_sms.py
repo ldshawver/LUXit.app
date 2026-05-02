@@ -389,7 +389,7 @@ def _seed_default_rules(company_id: int):
              priority=5, action="tag", tag_value="new-lead"),
         dict(name="After Hours",         trigger_type="after_hours",
              keywords=[],
-             response="Thanks for your message! Our team is currently away. We'll reply during business hours (Mon-Fri 9am-5pm).",
+             response="Thanks for reaching out to Alavont Therapeutics. You messaged us after business hours. Please reach back during business hours: 11 AM to 1 AM, Sunday\u2013Saturday.\n\nThank you!",
              priority=1, action="reply"),
     ]
     for d in defaults:
@@ -473,8 +473,12 @@ def inbound_sms():
         abort(403)
 
     # ── 2b. Owner reply relay ──────────────────────────────────────────────
-    # If the message comes FROM the forwarding number and starts with
-    # "reply +1XXXXXXXXXX <message>", relay that message to the customer.
+    # All messages FROM the forwarding number are relay commands — never
+    # treat them as customer inbound messages.
+    #
+    # Supported formats:
+    #   reply +1XXXXXXXXXX <message>   → send to specific customer
+    #   r <message>                    → send to most-recent customer
     if ta.sms_forward_to and from_number == ta.sms_forward_to:
         relay_match = re.match(
             r'^reply\s+(\+?1?\d{10,15})\s+(.+)$', body, re.IGNORECASE | re.DOTALL
@@ -490,6 +494,36 @@ def inbound_sms():
                 "Owner relay: %s → %s (success=%s)", from_number, target_number, result.get("success")
             )
             return '<Response></Response>', 200, {"Content-Type": "text/xml"}
+
+        # r <message> — reply to the most recent customer conversation
+        r_match = re.match(r'^r\s+(.+)$', body.strip(), re.IGNORECASE | re.DOTALL)
+        if r_match:
+            from models import TwilioConversation
+            relay_body = r_match.group(1).strip()
+            last_conv = (
+                TwilioConversation.query
+                .filter_by(company_id=ta.company_id)
+                .filter(TwilioConversation.from_number != ta.sms_forward_to)
+                .filter(TwilioConversation.is_opted_out.isnot(True))
+                .order_by(TwilioConversation.last_message_at.desc())
+                .first()
+            )
+            if last_conv:
+                result = _send_sms(ta, last_conv.from_number, relay_body,
+                                   conversation_id=last_conv.id)
+                logger.info(
+                    "Owner 'r' relay → %s (success=%s)",
+                    last_conv.from_number, result.get("success"),
+                )
+            else:
+                logger.warning("Owner 'r' relay: no recent conversation found")
+            return '<Response></Response>', 200, {"Content-Type": "text/xml"}
+
+        # Unrecognised command from forwarding number — ignore silently
+        logger.info(
+            "Forwarding-number message not matched as relay command (body=%.40r); ignoring.", body
+        )
+        return '<Response></Response>', 200, {"Content-Type": "text/xml"}
 
     try:
         # ── 3a. Get or create conversation thread ──────────────────────────
@@ -560,10 +594,10 @@ def inbound_sms():
                 company_name = (ta.company.name if ta.company else "LUXit")
                 fwd_body = (
                     f"New {company_name} SMS from {from_number}: {body}\n\n"
-                    f"Reply format: reply {from_number} your message"
+                    f"Reply: reply {from_number} <msg>  or  r <msg> (last sender)"
                     if body else
                     f"New {company_name} SMS from {from_number}: (media)\n\n"
-                    f"Reply format: reply {from_number} your message"
+                    f"Reply: reply {from_number} <msg>  or  r <msg> (last sender)"
                 )
                 _send_sms(ta, ta.sms_forward_to, fwd_body)
                 logger.info("SMS forwarded from %s to %s", from_number, ta.sms_forward_to)
