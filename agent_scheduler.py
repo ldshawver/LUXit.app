@@ -317,6 +317,35 @@ class AgentScheduler:
         
         logger.info("APP Agent scheduled")
     
+    def schedule_yearly_reports(self):
+        """Schedule yearly recap reports for all agents — fires Jan 1 at 10:00 AM."""
+        yearly_tasks = {
+            'brand_strategy': {'task_type': 'yearly_recap', 'period_days': 365, 'report_type': 'brand_year_in_review'},
+            'content_seo':    {'task_type': 'yearly_recap', 'period_days': 365, 'report_type': 'content_year_in_review'},
+            'analytics':      {'task_type': 'performance_summary', 'period_days': 365, 'report_type': 'annual_analytics'},
+            'creative_design':{'task_type': 'yearly_recap', 'period_days': 365, 'report_type': 'creative_year_in_review'},
+            'advertising':    {'task_type': 'yearly_recap', 'period_days': 365, 'report_type': 'advertising_year_in_review'},
+            'social_media':   {'task_type': 'yearly_recap', 'period_days': 365, 'report_type': 'social_year_in_review'},
+            'email_crm':      {'task_type': 'yearly_recap', 'period_days': 365, 'report_type': 'email_year_in_review'},
+            'sales_enablement': {'task_type': 'yearly_recap', 'period_days': 365, 'report_type': 'sales_year_in_review'},
+            'retention':      {'task_type': 'yearly_recap', 'period_days': 365, 'report_type': 'retention_year_in_review'},
+            'operations':     {'task_type': 'yearly_recap', 'period_days': 365, 'report_type': 'ops_year_in_review'},
+            'app_intelligence': {'task_type': 'yearly_recap', 'period_days': 365, 'report_type': 'app_year_in_review'},
+        }
+        for agent_key, task_data in yearly_tasks.items():
+            if agent_key not in self.agents:
+                continue
+            agent = self.agents[agent_key]
+            job_id = f'{agent_key}_yearly_recap'
+            self.scheduler.add_job(
+                func=lambda a=agent, td=task_data: self._run_agent_task_with_context(a, td),
+                trigger=CronTrigger(month=1, day=1, hour=10),
+                id=job_id,
+                name=f'{agent_key.replace("_", " ").title()} - Yearly Recap',
+                replace_existing=True,
+            )
+        logger.info("Yearly recap reports scheduled for all agents")
+
     def _run_agent_task(self, agent, task_data: dict):
         """Execute an agent task and log results"""
         try:

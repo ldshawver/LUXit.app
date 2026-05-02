@@ -194,15 +194,18 @@ class ApprovalService:
             db.session.add(audit_log)
             
             db.session.commit()
-            
+
             logger.info(f"Content approved: {item.content_type} ID {approval_id}")
-            
+
+            if item.status == 'approved':
+                ApprovalService._dispatch_approved_content(item)
+
             return {
                 'success': True,
                 'status': item.status,
                 'item': item.to_dict()
             }
-            
+
         except Exception as e:
             db.session.rollback()
             logger.error(f"Error approving content: {e}")
@@ -250,15 +253,18 @@ class ApprovalService:
             db.session.add(audit_log)
             
             db.session.commit()
-            
+
             logger.info(f"Content rejected: {item.content_type} ID {approval_id}")
-            
+
+            if item.created_by_agent:
+                ApprovalService._store_rejection_lesson(item, reason)
+
             return {
                 'success': True,
                 'status': 'rejected',
                 'request_regeneration': request_regeneration
             }
-            
+
         except Exception as e:
             db.session.rollback()
             logger.error(f"Error rejecting content: {e}")

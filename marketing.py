@@ -592,6 +592,22 @@ def book_demo():
             )
             db.session.add(demo)
             db.session.commit()
+            try:
+                import os
+                n8n_url = os.environ.get("N8N_WEBHOOK_URL")
+                if n8n_url:
+                    import requests as _req
+                    _req.post(n8n_url, json={
+                        "event": "demo_requested",
+                        "email": email,
+                        "name": f"{first_name} {last_name}".strip(),
+                        "company_name": company_name,
+                        "phone": phone,
+                        "team_size": team_size,
+                        "source_page": source_page,
+                    }, timeout=8)
+            except Exception:
+                pass
             return render_template("marketing/demo_success.html", active_page="demo", demo=demo)
         except Exception as e:
             logger.error("Demo request save failed: %s", e)

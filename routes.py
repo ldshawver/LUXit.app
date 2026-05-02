@@ -355,14 +355,28 @@ def dashboard():
     
     meetings = [{'title': m.title, 'time': m.start_time.strftime('%I:%M %p') if m.start_time else 'TBD', 'type': m.meeting_type or 'video'} for m in upcoming_meetings]
     
+    try:
+        closed_deals = Deal.query.filter(
+            Deal.company_id == company_id,
+            Deal.stage.in_(['Closed Won', 'Closed Lost'])
+        ).all() if company_id else []
+        closed_won = [d for d in closed_deals if d.stage == 'Closed Won']
+        total_closed = len(closed_deals)
+        win_rate_pct = round(len(closed_won) / total_closed * 100) if total_closed else 0
+        revenue_total = sum(d.value or 0 for d in closed_won)
+    except Exception:
+        db.session.rollback()
+        win_rate_pct = 0
+        revenue_total = 0
+
     stats = {
         'new_leads': new_leads_count if new_leads_count else 0,
         'open_deals': len(open_deals) if open_deals else 0,
         'pipeline_value': f'{pipeline_value/1000:.1f}K' if pipeline_value > 1000 else f'{pipeline_value:.0f}',
         'tasks_due': tasks_due if tasks_due else 0,
         'meetings_today': meetings_today if meetings_today else 0,
-        'win_rate': '0%',
-        'revenue': '0'
+        'win_rate': f'{win_rate_pct}%',
+        'revenue': f'{revenue_total/1000:.1f}K' if revenue_total > 1000 else f'{revenue_total:.0f}'
     }
 
     try:
@@ -9979,6 +9993,16 @@ def add_contact():
         db.session.add(contact)
         db.session.commit()
         log_activity(current_user.id, 'Added contact', f'{contact.first_name} {contact.last_name}'.strip() or contact.email, 'user-plus', company_id)
+        if company_id:
+            try:
+                from services.n8n_service import fire_n8n
+                fire_n8n('lead_created', company_id, {
+                    'contact_id': contact.id,
+                    'email': contact.email,
+                    'name': f'{contact.first_name} {contact.last_name}'.strip(),
+                })
+            except Exception:
+                pass
         flash('Contact added successfully!', 'success')
     except Exception as e:
         db.session.rollback()
