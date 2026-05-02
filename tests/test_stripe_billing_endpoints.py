@@ -583,3 +583,271 @@ def test_ready_endpoint_missing_secret(client, monkeypatch):
     assert body["ready"] is False
     assert body["checks"]["stripe_webhook_secret"] is False
     assert any("STRIPE_WEBHOOK_SECRET" in m for m in body["missing"])
+
+
+# =============================================================================
+# Contact-usage / metered billing
+# =============================================================================
+
+def test_compute_contacts_overage_under_limit():
+    from services.stripe_billing import compute_contacts_overage
+    assert compute_contacts_overage(0, 2500) == 0
+    assert compute_contacts_overage(2500, 2500) == 0
+    assert compute_contacts_overage(2499, 2500) == 0
+
+
+def test_compute_contacts_overage_over_limit():
+    from services.stripe_billing import compute_contacts_overage
+    assert compute_contacts_overage(2501, 2500) == 1
+    assert compute_contacts_overage(60_000, 50_000) == 10_000
+
+
+def test_compute_contacts_overage_never_negative():
+    """Negative inputs and a None allowance must clamp to zero — we never
+    push a negative usage record to Stripe."""
+    from services.stripe_billing import compute_contacts_overage
+    assert compute_contacts_overage(-100, 2500) == 0
+    assert compute_contacts_overage(10_000, None) == 0
+    assert compute_contacts_overage(None, 2500) == 0
+
+
+def test_included_contacts_for_tier_table():
+    from services.stripe_billing import included_contacts_for_tier
+    assert included_contacts_for_tier("starter") == 2_500
+    assert included_contacts_for_tier("professional") == 50_000
+    assert included_contacts_for_tier("free") is None
+    assert included_contacts_for_tier(None) is None
+
+
+def test_find_contacts_usage_item_id_present():
+    from services.stripe_billing import find_contacts_usage_item_id
+    sub = {"items": {"data": [
+        {"id": "si_tier",  "price": {"lookup_key": "luxit_starter_monthly"}},
+        {"id": "si_usage", "price": {"lookup_key": "luxit_contacts_usage_monthly"}},
+    ]}}
+    assert find_contacts_usage_item_id(sub) == "si_usage"
+
+
+def test_find_contacts_usage_item_id_absent():
+    from services.stripe_billing import find_contacts_usage_item_id
+    sub = {"items": {"data": [
+        {"id": "si_tier", "price": {"lookup_key": "luxit_starter_monthly"}},
+    ]}}
+    assert find_contacts_usage_item_id(sub) is None
+    assert find_contacts_usage_item_id({}) is None
+
+
+def test_report_contact_usage_no_subscription_item(app, company_user):
+    """If the company has no metered usage subscription item, the helper
+    must return reported=False and skip the Stripe call (never raises),
+    while still refreshing the locally-cached overage for the UI."""
+    from services.stripe_billing import report_contact_usage
+    company, _ = company_user
+    with app.app_context():
+        c = Company.query.get(company.id)
+        c.contacts_used = 9999
+        c.included_contacts = 2500
+        _db.session.commit()
+        # No stripe_contact_usage_subscription_item_id set → must skip
+        result = report_contact_usage(c)
+        c2 = Company.query.get(company.id)
+    assert result["reported"] is False
+    assert result["skipped_reason"] == "no_usage_subscription_item"
+    # Locally-computed overage echoed back & persisted so UI matches.
+    assert result["quantity"] == 7499  # 9999 - 2500
+    assert c2.contacts_overage == 7499
+
+
+def test_report_contact_usage_set_action_with_overage(app, company_user):
+    """With usage item + overage, helper calls Stripe with action=set and
+    persists last_reported_contact_usage / last_usage_reported_at."""
+    from services.stripe_billing import report_contact_usage
+    company, _ = company_user
+    with app.app_context():
+        c = Company.query.get(company.id)
+        c.contacts_used = 3000
+        c.included_contacts = 2500
+        c.stripe_contact_usage_subscription_item_id = "si_test_meter"
+        _db.session.commit()
+
+        with patch("services.stripe_billing.get_stripe") as mk_get:
+            fake_stripe = SimpleNamespace(
+                SubscriptionItem=SimpleNamespace(create_usage_record=lambda *a, **kw: None)
+            )
+            create_record_mock = patch.object(
+                fake_stripe.SubscriptionItem, "create_usage_record",
+            ).start()
+            mk_get.return_value = fake_stripe
+            try:
+                result = report_contact_usage(c)
+            finally:
+                patch.stopall()
+
+        assert result["reported"] is True
+        assert result["quantity"] == 500   # 3000 - 2500
+        assert result["subscription_item"] == "si_test_meter"
+        # Verify Stripe was called with action="set" and quantity=500
+        kwargs = create_record_mock.call_args.kwargs
+        args   = create_record_mock.call_args.args
+        assert args[0] == "si_test_meter"
+        assert kwargs.get("action") == "set"
+        assert kwargs.get("quantity") == 500
+
+        c2 = Company.query.get(company.id)
+        assert c2.last_reported_contact_usage == 500
+        assert c2.last_usage_reported_at is not None
+        assert c2.contacts_overage == 500
+
+
+def test_report_contact_usage_under_limit_reports_zero(app, company_user):
+    """Under-limit usage must still send action=set with quantity=0 so
+    Stripe's recorded period total is correct."""
+    from services.stripe_billing import report_contact_usage
+    company, _ = company_user
+    with app.app_context():
+        c = Company.query.get(company.id)
+        c.contacts_used = 1000
+        c.included_contacts = 2500
+        c.stripe_contact_usage_subscription_item_id = "si_test_meter"
+        _db.session.commit()
+
+        with patch("services.stripe_billing.get_stripe") as mk_get:
+            create_record_mock = SimpleNamespace(call_args=None)
+            def _create(*a, **kw):
+                create_record_mock.call_args = SimpleNamespace(args=a, kwargs=kw)
+            mk_get.return_value = SimpleNamespace(
+                SubscriptionItem=SimpleNamespace(create_usage_record=_create)
+            )
+            result = report_contact_usage(c)
+
+        assert result["reported"] is True
+        assert result["quantity"] == 0
+        assert create_record_mock.call_args.kwargs["action"] == "set"
+        assert create_record_mock.call_args.kwargs["quantity"] == 0
+
+
+def test_report_contact_usage_endpoint_requires_auth(client):
+    resp = client.post("/api/stripe/report-contact-usage", json={})
+    assert resp.status_code in (302, 401)
+
+
+def test_report_contact_usage_endpoint_forbidden_for_other_company(app, client, company_user):
+    """A logged-in user who doesn't own the requested company must get 403."""
+    company, _ = company_user
+    with app.app_context():
+        other = Company(name="Other Co", stripe_customer_id="cus_other_test",
+                        billing_status="none", billing_tier="free")
+        _db.session.add(other)
+        _db.session.flush()
+        outsider = User(username="outsider", email="out@test.com",
+                        password_hash="x", is_admin=False, default_company_id=other.id)
+        _db.session.add(outsider)
+        _db.session.commit()
+        outsider_id = outsider.id
+        target_company_id = company.id
+    try:
+        _login(client, outsider_id)
+        resp = client.post("/api/stripe/report-contact-usage",
+                           json={"company_id": target_company_id})
+        assert resp.status_code == 403
+    finally:
+        with app.app_context():
+            User.query.filter_by(username="outsider").delete()
+            Company.query.filter_by(stripe_customer_id="cus_other_test").delete()
+            _db.session.commit()
+
+
+def test_subscription_updated_persists_usage_subscription_item(client, company_user):
+    """customer.subscription.updated must re-sync the metered usage item id
+    from the subscription's items list (no Stripe round-trip needed)."""
+    company, _ = company_user
+    sub_obj = {
+        "id": "sub_upd_meter",
+        "object": "subscription",
+        "customer": "cus_billing_test",
+        "status": "active",
+        "current_period_start": int(time.time()),
+        "current_period_end":   int(time.time()) + 30 * 86400,
+        "cancel_at_period_end": False,
+        "items": {"data": [
+            {"id": "si_pro2",   "quantity": 1,
+             "price": {"lookup_key": "luxit_professional_monthly", "recurring": {"interval": "month"}}},
+            {"id": "si_meter2", "quantity": 1,
+             "price": {"lookup_key": "luxit_contacts_usage_monthly", "recurring": {"interval": "month"}}},
+        ]},
+    }
+    event = _make_event("customer.subscription.updated", sub_obj, "evt_sub_upd_meter")
+    resp = _signed_post(client, event)
+    assert resp.status_code == 200
+    c = Company.query.get(company.id)
+    assert c.stripe_contact_usage_subscription_item_id == "si_meter2"
+    assert c.included_contacts == 50_000
+
+
+def test_report_contact_usage_endpoint_skips_without_meter(client, company_user):
+    """Endpoint round-trips the helper's skipped_reason payload."""
+    company, user = company_user
+    _login(client, user.id)
+    resp = client.post("/api/stripe/report-contact-usage",
+                       json={"company_id": company.id})
+    assert resp.status_code == 200
+    body = resp.get_json()
+    assert body["reported"] is False
+    assert body["skipped_reason"] == "no_usage_subscription_item"
+
+
+def test_checkout_completed_sets_included_contacts_for_starter(client, company_user):
+    """checkout.session.completed for Starter must populate
+    company.included_contacts = 2500."""
+    company, _ = company_user
+    event = _make_event("checkout.session.completed", {
+        "id": "cs_set_inc_starter",
+        "object": "checkout.session",
+        "customer": "cus_billing_test",
+        "subscription": "sub_inc_starter",
+        "client_reference_id": str(company.id),
+        "metadata": {"lookup_key": "luxit_starter_monthly",
+                     "company_id": str(company.id),
+                     "include_setup_fee": "false"},
+    }, "evt_inc_starter")
+    # Stub Subscription.retrieve so the usage-item lookup doesn't fail.
+    with patch("services.stripe_billing.get_stripe") as mk_get:
+        mk_get.return_value = SimpleNamespace(
+            Subscription=SimpleNamespace(retrieve=lambda *a, **kw: {"items": {"data": []}})
+        )
+        resp = _signed_post(client, event)
+    assert resp.status_code == 200
+    from app import create_app  # noqa: F401  (just to be explicit)
+    c = Company.query.get(company.id)
+    assert c.included_contacts == 2500
+    assert c.billing_tier == "starter"
+
+
+def test_checkout_completed_persists_usage_subscription_item(client, company_user):
+    """When the Stripe subscription has a metered usage item, the webhook
+    persists its si_… on the company so later report_contact_usage calls
+    don't need a Stripe round-trip."""
+    company, _ = company_user
+    event = _make_event("checkout.session.completed", {
+        "id": "cs_persist_meter",
+        "object": "checkout.session",
+        "customer": "cus_billing_test",
+        "subscription": "sub_with_meter",
+        "client_reference_id": str(company.id),
+        "metadata": {"lookup_key": "luxit_professional_monthly",
+                     "company_id": str(company.id),
+                     "include_setup_fee": "false"},
+    }, "evt_persist_meter")
+    fake_sub = {"items": {"data": [
+        {"id": "si_pro",   "price": {"lookup_key": "luxit_professional_monthly"}},
+        {"id": "si_meter", "price": {"lookup_key": "luxit_contacts_usage_monthly"}},
+    ]}}
+    with patch("services.stripe_billing.get_stripe") as mk_get:
+        mk_get.return_value = SimpleNamespace(
+            Subscription=SimpleNamespace(retrieve=lambda *a, **kw: fake_sub)
+        )
+        resp = _signed_post(client, event)
+    assert resp.status_code == 200
+    c = Company.query.get(company.id)
+    assert c.stripe_contact_usage_subscription_item_id == "si_meter"
+    assert c.included_contacts == 50_000

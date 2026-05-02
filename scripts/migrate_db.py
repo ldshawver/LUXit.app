@@ -82,6 +82,13 @@ MIGRATIONS = [
     ("company", "setup_fee_paid",                "BOOLEAN",      "DEFAULT 0"),
     ("company", "setup_fee_paid_at",             "DATETIME",     "DEFAULT NULL"),
     ("company", "setup_fee_checkout_session_id", "VARCHAR(120)", "DEFAULT NULL"),
+    # Contact-usage / metered billing
+    ("company", "included_contacts",                         "INTEGER",      "DEFAULT NULL"),
+    ("company", "contacts_used",                             "INTEGER",      "DEFAULT 0"),
+    ("company", "contacts_overage",                          "INTEGER",      "DEFAULT 0"),
+    ("company", "stripe_contact_usage_subscription_item_id", "VARCHAR(120)", "DEFAULT NULL"),
+    ("company", "last_reported_contact_usage",               "INTEGER",      "DEFAULT 0"),
+    ("company", "last_usage_reported_at",                    "DATETIME",     "DEFAULT NULL"),
     ("company", "onboarding_status",          "VARCHAR(50)",  "DEFAULT 'pending'"),
     ("company", "implementation_status",      "VARCHAR(50)",  "DEFAULT 'none'"),
     ("company", "saas_notes",                 "TEXT",         "DEFAULT NULL"),

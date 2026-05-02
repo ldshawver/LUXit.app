@@ -90,6 +90,43 @@
       </div>
     </div>
 
+    {# ── Contact usage ────────────────────────────────────────────────── #}
+    <div class="card mb-4">
+      <div class="card-body">
+        <h5 class="card-title mb-3">Contact usage</h5>
+        <div class="row text-center">
+          <div class="col">
+            <div class="text-muted small text-uppercase">Used</div>
+            <h4 class="mb-0">{{ company.contacts_used or 0 }}</h4>
+          </div>
+          <div class="col">
+            <div class="text-muted small text-uppercase">Included</div>
+            <h4 class="mb-0">
+              {% if company.included_contacts is not none %}
+                {{ company.included_contacts }}
+              {% else %}—{% endif %}
+            </h4>
+          </div>
+          <div class="col">
+            <div class="text-muted small text-uppercase">Overage</div>
+            <h4 class="mb-0">
+              <span class="badge {% if (company.contacts_overage or 0) > 0 %}bg-warning text-dark{% else %}bg-secondary{% endif %}">
+                {{ company.contacts_overage or 0 }}
+              </span>
+            </h4>
+          </div>
+        </div>
+        {% if company.last_usage_reported_at %}
+          <div class="small text-muted mt-2">
+            Last reported {{ company.last_reported_contact_usage or 0 }}
+            on {{ company.last_usage_reported_at.strftime('%Y-%m-%d %H:%M') }} UTC
+          </div>
+        {% else %}
+          <div class="small text-muted mt-2">No usage records reported yet.</div>
+        {% endif %}
+      </div>
+    </div>
+
     {# ── Actions ─────────────────────────────────────────────────────── #}
     <div class="card">
       <div class="card-body">

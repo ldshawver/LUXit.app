@@ -610,6 +610,45 @@ def create_portal_session():
     }), 200
 
 
+@stripe_webhook_bp.route("/api/stripe/report-contact-usage", methods=["POST"])
+@login_required
+def report_contact_usage_endpoint():
+    """Manual trigger for the ``contacts_usage`` metered usage record.
+
+    Body: ``{"company_id": "..."}``. Authorization is the same as
+    ``create-checkout-session``: the caller must be admin or attached to the
+    company. Intended for an admin-only "Recompute usage now" button or a
+    scheduled job hitting it as the admin user; a real cron should call the
+    underlying ``services.stripe_billing.report_contact_usage`` directly.
+    """
+    from models import Company
+    from services.stripe_billing import report_contact_usage as _report
+
+    body = request.get_json(silent=True) or {}
+    company_id = body.get("company_id")
+    company = None
+    if company_id:
+        try:
+            company = Company.query.get(int(company_id))
+        except (TypeError, ValueError):
+            return jsonify({"error": "invalid company_id"}), 400
+    if not company and current_user.default_company_id:
+        company = Company.query.get(current_user.default_company_id)
+    if not company:
+        return jsonify({"error": "company not found"}), 404
+    if not _user_can_access_company(current_user, company):
+        return jsonify({"error": "forbidden"}), 403
+
+    try:
+        result = _report(company)
+    except RuntimeError as exc:
+        return jsonify({"error": str(exc)}), 503
+    except Exception as exc:
+        logger.exception("report_contact_usage failed for company %s", company.id)
+        return jsonify({"error": "usage reporting failed", "detail": str(exc)[:200]}), 502
+    return jsonify(result), 200
+
+
 @stripe_webhook_bp.route("/api/stripe/webhook", methods=["POST"])
 def stripe_webhook():
     """Stripe webhook receiver.
@@ -853,11 +892,31 @@ def stripe_webhook():
                 # if applied. The authoritative source for seats including
                 # add-ons is the customer.subscription.updated handler.
                 if lookup_key and lookup_key in TIER_BY_LOOKUP_KEY:
+                    from services.stripe_billing import included_contacts_for_tier
                     tier, seats = tier_for_lookup_key(lookup_key)
                     company.stripe_price_lookup_key = lookup_key
                     company.billing_tier            = tier
                     company.subscription_tier       = tier
                     company.max_team_members        = seats  # None = unlimited
+                    company.included_contacts       = included_contacts_for_tier(tier)
+
+                # Discover the metered ``contacts_usage`` subscription item
+                # (if Stripe attached one) and persist it so future usage
+                # reporting calls don't need a round-trip. Best-effort: we
+                # expand subscription.items so we can read lookup_keys.
+                try:
+                    from services.stripe_billing import (
+                        get_stripe, find_contacts_usage_item_id,
+                    )
+                    sub_full = get_stripe().Subscription.retrieve(
+                        sub_id, expand=["items.data.price"],
+                    )
+                    usage_item = find_contacts_usage_item_id(sub_full)
+                    if usage_item:
+                        company.stripe_contact_usage_subscription_item_id = usage_item
+                except Exception as exc:
+                    logger.warning("Stripe[%s] could not look up usage subscription item: %s",
+                                   ev_id, exc)
 
                 # ── One-time setup fee fulfillment ─────────────────────────
                 # The session metadata (set server-side at create time) is
@@ -968,10 +1027,19 @@ def stripe_webhook():
                 # subscription items (handles add-on quantity changes).
                 tier, seats, primary_lookup = compute_seats_from_subscription(obj)
                 if primary_lookup:
+                    from services.stripe_billing import (
+                        included_contacts_for_tier, find_contacts_usage_item_id,
+                    )
                     company.stripe_price_lookup_key = primary_lookup
                     company.billing_tier            = tier
                     company.subscription_tier       = tier
                     company.max_team_members        = seats
+                    company.included_contacts       = included_contacts_for_tier(tier)
+                    # Re-sync the metered usage item id so it tracks any
+                    # mid-cycle subscription mutation done in the portal.
+                    usage_item = find_contacts_usage_item_id(obj)
+                    if usage_item:
+                        company.stripe_contact_usage_subscription_item_id = usage_item
                 # Map Stripe sub status → our billing_status.
                 if new_status in ("active", "trialing"):
                     company.billing_status = "active"

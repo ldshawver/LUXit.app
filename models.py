@@ -357,6 +357,18 @@ class Company(db.Model):
     setup_fee_paid                = db.Column(db.Boolean, default=False, nullable=False)
     setup_fee_paid_at             = db.Column(db.DateTime, nullable=True)
     setup_fee_checkout_session_id = db.Column(db.String(120), nullable=True)
+    # ── Contact-usage / metered billing ─────────────────────────────────────
+    # ``included_contacts`` is the per-plan allowance baked into the tier
+    # (Starter=2,500 / Professional=50,000). ``contacts_used`` is the live
+    # tenant count refreshed by the contact pipeline. ``contacts_overage``
+    # is the surplus we report to Stripe via the metered subscription item
+    # identified by ``stripe_contact_usage_subscription_item_id``.
+    included_contacts                          = db.Column(db.Integer, nullable=True)
+    contacts_used                              = db.Column(db.Integer, default=0, nullable=False)
+    contacts_overage                           = db.Column(db.Integer, default=0, nullable=False)
+    stripe_contact_usage_subscription_item_id  = db.Column(db.String(120), nullable=True)
+    last_reported_contact_usage                = db.Column(db.Integer, default=0, nullable=False)
+    last_usage_reported_at                     = db.Column(db.DateTime, nullable=True)
     onboarding_status          = db.Column(db.String(50), default='pending')
     implementation_status      = db.Column(db.String(50), default='none')
     saas_notes                 = db.Column(Text)
