@@ -2010,6 +2010,12 @@ def readiness_check():
     if not webhook_secret:
         failed.append("STRIPE_WEBHOOK_SECRET missing")
 
+    # OpenAI key — required by AI agents.
+    openai_key = bool(os.getenv("OPENAI_API_KEY"))
+    checks["openai_api_key"] = openai_key
+    if not openai_key:
+        failed.append("OPENAI_API_KEY missing")
+
     # Webhook route registered?
     has_webhook_route = any(
         str(rule) == "/api/stripe/webhook"
@@ -2018,6 +2024,18 @@ def readiness_check():
     checks["stripe_webhook_route"] = has_webhook_route
     if not has_webhook_route:
         failed.append("/api/stripe/webhook route not registered")
+
+    # Agent scheduler running?
+    scheduler_ok = False
+    try:
+        from agent_scheduler import scheduler as _sched  # type: ignore
+        scheduler_ok = bool(getattr(_sched, "running", False))
+    except Exception:
+        scheduler_ok = False
+    checks["agent_scheduler"] = scheduler_ok
+    # Scheduler is informational — don't fail readiness on it (e.g. tests
+    # spin up the app without the background scheduler).
+
 
     ready = not failed
     payload = {

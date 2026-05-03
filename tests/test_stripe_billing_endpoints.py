@@ -559,19 +559,34 @@ def test_can_add_team_member_limit_reached(app, company_user):
 # /ready endpoint
 # =============================================================================
 
-def test_ready_endpoint_ok(client):
-    """Both Stripe envs are set in the test fixture → 200 ready."""
+def test_ready_endpoint_ok(client, monkeypatch):
+    """All required envs set in the test fixture → 200 ready, with the
+    spec-mandated boolean keys (db, stripe_secret_key, stripe_webhook_secret,
+    openai_api_key, stripe_webhook_route, agent_scheduler)."""
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test-openai")
     resp = client.get("/ready")
     assert resp.status_code == 200
     body = resp.get_json()
     assert body["ready"] is True
-    assert body["checks"]["database"] is True
-    assert body["checks"]["stripe_secret_key"] is True
-    assert body["checks"]["stripe_webhook_secret"] is True
-    assert body["checks"]["stripe_webhook_route"] is True
+    for k in ("database", "stripe_secret_key", "stripe_webhook_secret",
+              "openai_api_key", "stripe_webhook_route"):
+        assert body["checks"][k] is True, f"missing/false check: {k}"
+    # agent_scheduler is reported but not fail-gating
+    assert "agent_scheduler" in body["checks"]
     # Never echoes the secret values
     assert "sk_test_dummy" not in resp.data.decode()
     assert WEBHOOK_SECRET not in resp.data.decode()
+    assert "sk-test-openai" not in resp.data.decode()
+
+
+def test_ready_endpoint_missing_openai(client, monkeypatch):
+    """Missing OPENAI_API_KEY → 503 with explicit `missing` list."""
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    resp = client.get("/ready")
+    assert resp.status_code == 503
+    body = resp.get_json()
+    assert body["checks"]["openai_api_key"] is False
+    assert any("OPENAI_API_KEY" in m for m in body["missing"])
 
 
 def test_ready_endpoint_missing_secret(client, monkeypatch):
