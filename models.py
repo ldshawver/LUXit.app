@@ -2713,6 +2713,74 @@ class CustomerOnboardingTask(db.Model):
     project = db.relationship("CustomerOnboardingProject", backref="tasks")
 
 
+# ============================================================
+# Integration Layer Models
+# ============================================================
+
+class IntegrationConnection(db.Model):
+    """Platform-level or company-level integration connection record."""
+    __tablename__ = "integration_connection"
+
+    id             = db.Column(db.Integer, primary_key=True)
+    company_id     = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=True, index=True)
+    provider       = db.Column(db.String(50), nullable=False, index=True)
+    status         = db.Column(db.String(30), default="unknown")  # connected|missing_config|error|disabled
+    enabled        = db.Column(db.Boolean, default=True)
+    config_json    = db.Column(db.Text)
+    last_tested_at = db.Column(db.DateTime, nullable=True)
+    last_success_at= db.Column(db.DateTime, nullable=True)
+    last_error     = db.Column(db.Text, nullable=True)
+    created_at     = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at     = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    __table_args__ = (
+        db.UniqueConstraint("company_id", "provider", name="uq_integration_connection_company_provider"),
+    )
+
+
+class IntegrationEvent(db.Model):
+    """Log of inbound/outbound integration events (webhooks, API calls)."""
+    __tablename__ = "integration_event"
+
+    id           = db.Column(db.Integer, primary_key=True)
+    company_id   = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=True, index=True)
+    provider     = db.Column(db.String(50), nullable=False, index=True)
+    event_type   = db.Column(db.String(100))
+    external_id  = db.Column(db.String(255), nullable=True)
+    payload_json = db.Column(db.Text)
+    status       = db.Column(db.String(30), default="received")  # received|processed|failed
+    created_at   = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class IntegrationErrorLog(db.Model):
+    """Safe error log — never stores secrets, only sanitised details."""
+    __tablename__ = "integration_error_log"
+
+    id               = db.Column(db.Integer, primary_key=True)
+    company_id       = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=True, index=True)
+    provider         = db.Column(db.String(50), nullable=False, index=True)
+    endpoint         = db.Column(db.String(255))
+    error_message    = db.Column(db.Text)
+    safe_details_json= db.Column(db.Text)
+    created_at       = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class ExternalSyncRecord(db.Model):
+    """Tracks bidirectional sync state between LUXit entities and external systems."""
+    __tablename__ = "external_sync_record"
+
+    id                = db.Column(db.Integer, primary_key=True)
+    company_id        = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=True, index=True)
+    provider          = db.Column(db.String(50), nullable=False, index=True)
+    local_entity_type = db.Column(db.String(100))
+    local_entity_id   = db.Column(db.String(100))
+    external_entity_id= db.Column(db.String(255))
+    last_synced_at    = db.Column(db.DateTime, nullable=True)
+    sync_status       = db.Column(db.String(30), default="pending")  # pending|synced|failed
+    metadata_json     = db.Column(db.Text)
+    created_at        = db.Column(db.DateTime, default=datetime.utcnow)
+
+
 class SaasAutomationLog(db.Model):
     """Audit trail for Stripe webhooks, n8n triggers, and manual actions.
 

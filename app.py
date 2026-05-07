@@ -340,6 +340,11 @@ def create_app() -> Flask:
         app.register_blueprint(feedback_bp)
     except Exception as exc:
         app.logger.warning("Failed to register feedback blueprint: %s", exc)
+    try:
+        from integrations_bp import integrations_bp
+        app.register_blueprint(integrations_bp)
+    except Exception as exc:
+        app.logger.warning("Failed to register integrations blueprint: %s", exc)
     # Stripe webhook deliveries from Stripe's edge servers will never carry
     # a CSRF token; the billing endpoints accept JSON from a Fetch call that
     # likewise does not include the form CSRF cookie. Both routes have their

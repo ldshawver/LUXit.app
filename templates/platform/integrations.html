@@ -1,0 +1,167 @@
+{% extends "base.html" %}
+{% block title %}Platform Integrations — LUXit{% endblock %}
+
+{% block content %}
+<style>
+  .int-grid      { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 1.25rem; }
+  .int-card      { background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.1);
+                   border-radius: 14px; padding: 1.4rem; display: flex; flex-direction: column; gap: .9rem; }
+  .int-card-head { display: flex; align-items: center; gap: .75rem; }
+  .int-icon      { width: 40px; height: 40px; border-radius: 10px;
+                   background: rgba(139,92,246,0.15); display: flex; align-items: center; justify-content: center;
+                   color: var(--lux-primary); flex-shrink: 0; }
+  .int-name      { font-weight: 700; font-size: 1.05rem; }
+  .int-badge     { display: inline-flex; align-items: center; gap: .3rem; font-size: .72rem;
+                   font-weight: 600; padding: .18rem .55rem; border-radius: 20px; }
+  .badge-connected     { background: rgba(16,185,129,.15); color: #10b981; border: 1px solid rgba(16,185,129,.3); }
+  .badge-missing_config{ background: rgba(245,158,11,.15); color: #f59e0b; border: 1px solid rgba(245,158,11,.3); }
+  .badge-error         { background: rgba(239,68,68,.15);  color: #ef4444; border: 1px solid rgba(239,68,68,.3);  }
+  .badge-unknown       { background: rgba(255,255,255,.08); color: #9ca3af; border: 1px solid rgba(255,255,255,.15); }
+  .badge-disabled      { background: rgba(107,114,128,.15); color: #9ca3af; border: 1px solid rgba(107,114,128,.3); }
+  .int-desc      { font-size: .85rem; color: rgba(255,255,255,.65); line-height: 1.5; }
+  .int-uses      { display: flex; flex-wrap: wrap; gap: .35rem; }
+  .int-use-chip  { font-size: .7rem; background: rgba(255,255,255,.06); border-radius: 6px;
+                   padding: .2rem .5rem; color: rgba(255,255,255,.5); }
+  .int-meta      { font-size: .75rem; color: rgba(255,255,255,.35); }
+  .int-error-txt { font-size: .72rem; color: #ef4444; background: rgba(239,68,68,.08);
+                   border-radius: 6px; padding: .35rem .6rem; word-break: break-all; }
+  .int-actions   { display: flex; gap: .6rem; margin-top: auto; padding-top: .4rem; }
+  .platform-only-badge { font-size: .65rem; background: rgba(139,92,246,.18);
+                          color: #a78bfa; border-radius: 4px; padding: .1rem .4rem; margin-left: .4rem; }
+</style>
+
+<div class="app-page-header d-flex align-items-center justify-content-between mb-4">
+  <div>
+    <h1 class="page-title mb-1">Platform Integrations</h1>
+    <p class="page-subtitle text-muted mb-0">Active connections powering LUXit automation</p>
+  </div>
+  <button class="btn btn-outline-secondary btn-sm" id="refreshAll" onclick="refreshAllStatuses()">
+    <i data-feather="refresh-cw" style="width:14px;height:14px;margin-right:4px;"></i> Refresh All
+  </button>
+</div>
+
+<div class="int-grid" id="integrationGrid">
+  {% for p in providers %}
+  <div class="int-card" id="card-{{ p.slug }}">
+    <div class="int-card-head">
+      <div class="int-icon">
+        <i data-feather="{{ p.icon }}" style="width:20px;height:20px;"></i>
+      </div>
+      <div>
+        <div class="int-name">
+          {{ p.name }}
+          {% if p.get('platform_only') %}
+          <span class="platform-only-badge">Platform admin</span>
+          {% endif %}
+        </div>
+        <span class="int-badge badge-{{ p.status }}" id="badge-{{ p.slug }}">
+          <span id="dot-{{ p.slug }}">●</span>
+          <span id="status-label-{{ p.slug }}">{{ p.status | replace('_', ' ') | title }}</span>
+        </span>
+      </div>
+    </div>
+
+    <p class="int-desc">{{ p.description }}</p>
+
+    <div class="int-uses">
+      {% for uc in p.use_cases %}
+      <span class="int-use-chip">{{ uc }}</span>
+      {% endfor %}
+    </div>
+
+    <div class="int-meta" id="meta-{{ p.slug }}">
+      {% if p.last_success_at %}
+        Last connected: {{ p.last_success_at.strftime('%b %d, %Y %H:%M UTC') }}
+      {% elif p.last_tested_at %}
+        Last tested: {{ p.last_tested_at.strftime('%b %d, %Y %H:%M UTC') }}
+      {% else %}
+        Never tested
+      {% endif %}
+    </div>
+
+    {% if p.last_error %}
+    <div class="int-error-txt" id="error-{{ p.slug }}">{{ p.last_error }}</div>
+    {% else %}
+    <div id="error-{{ p.slug }}"></div>
+    {% endif %}
+
+    <div class="int-actions">
+      <button class="btn btn-sm btn-outline-secondary flex-fill" onclick="testConnection('{{ p.slug }}')">
+        <i data-feather="zap" style="width:12px;height:12px;margin-right:3px;"></i>
+        Test Connection
+      </button>
+      {% if is_platform_admin %}
+      <button class="btn btn-sm btn-outline-danger" onclick="toggleIntegration('{{ p.slug }}', {{ 'false' if p.enabled else 'true' }})">
+        {{ 'Disable' if p.enabled else 'Enable' }}
+      </button>
+      {% endif %}
+    </div>
+  </div>
+  {% endfor %}
+</div>
+
+<script>
+const STATUS_CLASSES = ['badge-connected','badge-missing_config','badge-error','badge-unknown','badge-disabled'];
+
+function updateCard(slug, result) {
+  const status = result.status || 'error';
+  const badge  = document.getElementById('badge-' + slug);
+  const label  = document.getElementById('status-label-' + slug);
+  const errBox = document.getElementById('error-' + slug);
+
+  if (badge) {
+    STATUS_CLASSES.forEach(c => badge.classList.remove(c));
+    badge.classList.add('badge-' + status);
+  }
+  if (label) label.textContent = status.replace(/_/g,' ').replace(/\b\w/g, c => c.toUpperCase());
+  if (errBox) errBox.textContent = result.detail || '';
+}
+
+async function testConnection(slug) {
+  const btn = event.target.closest('button');
+  const orig = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Testing…';
+
+  try {
+    const r = await fetch(`/api/integrations/health/${slug}/test`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      credentials: 'same-origin',
+    });
+    const data = await r.json();
+    updateCard(slug, data);
+  } catch (e) {
+    updateCard(slug, {status: 'error', detail: 'Request failed'});
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = orig;
+    feather.replace();
+  }
+}
+
+async function refreshAllStatuses() {
+  const btn = document.getElementById('refreshAll');
+  btn.disabled = true;
+  try {
+    const r = await fetch('/api/integrations/health', {credentials: 'same-origin'});
+    const data = await r.json();
+    Object.entries(data).forEach(([slug, info]) => updateCard(slug, info));
+  } catch(e) {
+    console.error('Refresh failed', e);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function toggleIntegration(slug, enable) {
+  // Placeholder — full enable/disable via IntegrationConnection.enabled
+  alert(`${enable ? 'Enable' : 'Disable'} for ${slug} — coming soon.`);
+}
+
+// Auto-refresh on load
+window.addEventListener('DOMContentLoaded', () => {
+  setTimeout(refreshAllStatuses, 600);
+});
+</script>
+{% endblock %}

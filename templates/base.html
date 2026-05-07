@@ -403,6 +403,10 @@
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
                     SaaS
                 </a>
+                <a href="/platform/integrations" class="catbar-sw{% if _p.startswith('/platform') %} active{% endif %}">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+                    Platform
+                </a>
             </div>
             <div class="cat-tabs">
                 <a href="{{ url_for('main.campaign_hub') }}" class="cat-tab{% if _sec_core %} active{% endif %}">Core Marketing</a>
@@ -543,6 +547,16 @@
                     </a>
                     <a href="{{ url_for('saas.dashboard') }}#log" class="sidebar-nav-item">
                         <i data-feather="activity"></i> Automation Log
+                    </a>
+                </div>
+                {% endif %}
+
+                {# Platform Integrations — shown when on /platform routes #}
+                {% if _p.startswith('/platform') %}
+                <div class="sidebar-section">
+                    <p class="sidebar-section-label">Platform</p>
+                    <a href="/platform/integrations" class="sidebar-nav-item{% if _p == '/platform/integrations' %} active{% endif %}">
+                        <i data-feather="zap"></i> Integrations
                     </a>
                 </div>
                 {% endif %}
