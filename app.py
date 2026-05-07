@@ -225,6 +225,11 @@ def create_app() -> Flask:
     app.register_blueprint(twilio_bp)
     app.register_blueprint(saas_bp)
     app.register_blueprint(stripe_webhook_bp)
+    try:
+        from feedback import feedback_bp
+        app.register_blueprint(feedback_bp)
+    except Exception as exc:
+        app.logger.warning("Failed to register feedback blueprint: %s", exc)
     # Stripe webhook deliveries from Stripe's edge servers will never carry
     # a CSRF token; the billing endpoints accept JSON from a Fetch call that
     # likewise does not include the form CSRF cookie. Both routes have their

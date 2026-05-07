@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}My Feedback · LUX{% endblock %}
+{% block content %}
+<div class="container py-4">
+  <div class="d-flex align-items-center mb-3">
+    <h3 class="mb-0">My feedback submissions</h3>
+    <div class="ms-auto d-flex gap-2">
+      {% if is_any_admin %}
+        <a href="{{ url_for('feedback.admin_dashboard') }}" class="btn btn-sm btn-outline-info">Admin dashboard</a>
+      {% endif %}
+      <button class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#feedbackModal">New feedback</button>
+    </div>
+  </div>
+
+  {% if not tickets %}
+    <div class="card"><div class="card-body text-center text-muted">
+      You haven't submitted any feedback yet. Use the floating "Feedback" button to start.
+    </div></div>
+  {% else %}
+    <div class="card"><div class="card-body p-0">
+      <table class="table table-dark table-hover mb-0 small">
+        <thead><tr>
+          <th>#</th><th>Type</th><th>Title</th><th>Severity</th>
+          <th>Status</th><th>Submitted</th><th></th>
+        </tr></thead>
+        <tbody>
+          {% for t in tickets %}
+            <tr>
+              <td class="text-muted">#{{ t.id }}</td>
+              <td><span class="badge bg-secondary">{{ t.ticket_type.replace('_', ' ') }}</span></td>
+              <td>{{ t.title }}</td>
+              <td>
+                <span class="badge {% if t.severity == 'critical' %}bg-danger{% elif t.severity == 'high' %}bg-warning text-dark{% elif t.severity == 'low' %}bg-secondary{% else %}bg-info text-dark{% endif %}">
+                  {{ t.severity }}
+                </span>
+              </td>
+              <td>
+                <span class="badge {% if t.status in ('closed','rejected') %}bg-secondary{% elif t.status == 'priority_fix' %}bg-danger{% elif t.status == 'in_progress' %}bg-info text-dark{% else %}bg-primary{% endif %}">
+                  {{ t.status.replace('_', ' ') }}
+                </span>
+              </td>
+              <td class="text-muted">{{ t.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+              <td><a href="{{ url_for('feedback.ticket_detail', ticket_id=t.id) }}" class="btn btn-sm btn-outline-light">Open</a></td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div></div>
+  {% endif %}
+</div>
+{% endblock %}

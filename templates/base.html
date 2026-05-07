@@ -520,6 +520,9 @@
                     <a href="{{ url_for('main.events_dashboard') }}" class="sidebar-nav-item{% if _p.startswith('/events') %} active{% endif %}">
                         <i data-feather="map-pin"></i> Events
                     </a>
+                    <a href="{{ url_for('feedback.my_tickets') }}" class="sidebar-nav-item{% if _p.startswith('/feedback') %} active{% endif %}">
+                        <i data-feather="message-circle"></i> Feedback
+                    </a>
                 </div>
 
                 {# SaaS Command Center — shown when on /saas routes #}
@@ -683,6 +686,7 @@
     <script src="{{ url_for('static', filename='js/analytics.js') }}"></script>
     {% endif %}
     {% include 'partials/help_drawer.html' %}
+    {% include 'partials/feedback_widget.html' %}
     <script src="{{ url_for('static', filename='js/walkthrough.js') }}"></script>
     {% block scripts %}{% endblock %}
     <script>if (typeof feather !== 'undefined') feather.replace();</script>

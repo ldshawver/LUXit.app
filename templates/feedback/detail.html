@@ -1,0 +1,170 @@
+{% extends "base.html" %}
+{% block title %}Ticket #{{ ticket.id }} · LUX{% endblock %}
+{% block content %}
+<div class="container py-4">
+  <a href="{% if can_admin %}{{ url_for('feedback.admin_dashboard') }}{% else %}{{ url_for('feedback.my_tickets') }}{% endif %}"
+     class="small text-muted text-decoration-none">&larr; Back</a>
+
+  <div class="d-flex align-items-start mt-2 mb-3">
+    <div>
+      <h3 class="mb-1">
+        {{ ticket.title }}
+        {% if ticket.priority_fix %}<span class="badge bg-danger ms-2">PRIORITY</span>{% endif %}
+      </h3>
+      <div class="small text-muted">
+        #{{ ticket.id }} · {{ ticket.ticket_type.replace('_', ' ') }} ·
+        Submitted {{ ticket.created_at.strftime('%Y-%m-%d %H:%M') }} UTC
+        {% if ticket.user %} by {{ ticket.user.username or ticket.user.email }}{% endif %}
+        {% if ticket.company %} · Tenant: {{ ticket.company.name }}{% endif %}
+      </div>
+    </div>
+    <div class="ms-auto d-flex gap-2 flex-wrap">
+      <span class="badge {% if ticket.severity == 'critical' %}bg-danger{% elif ticket.severity == 'high' %}bg-warning text-dark{% elif ticket.severity == 'low' %}bg-secondary{% else %}bg-info text-dark{% endif %}">
+        {{ ticket.severity }}
+      </span>
+      <span class="badge {% if ticket.status in ('closed','rejected') %}bg-secondary{% elif ticket.status == 'priority_fix' %}bg-danger{% elif ticket.status == 'in_progress' %}bg-info text-dark{% else %}bg-primary{% endif %}">
+        {{ ticket.status.replace('_', ' ') }}
+      </span>
+    </div>
+  </div>
+
+  <div class="row">
+    <div class="col-lg-8">
+      <div class="card mb-3"><div class="card-body">
+        <div class="small text-uppercase text-muted mb-1">Description</div>
+        <div style="white-space:pre-wrap;">{{ ticket.description }}</div>
+        {% if ticket.page_url %}
+          <div class="small text-muted mt-3">Page: <code>{{ ticket.page_url }}</code></div>
+        {% endif %}
+        {% if ticket.user_agent %}
+          <div class="small text-muted">UA: <code style="font-size:0.7rem;">{{ ticket.user_agent[:300] }}</code></div>
+        {% endif %}
+        {% if ticket.screenshot_path %}
+          {% set _ss = url_for('feedback.screenshot', ticket_id=ticket.id) %}
+          <div class="mt-3">
+            <a href="{{ _ss }}" target="_blank">
+              <img src="{{ _ss }}" alt="screenshot"
+                   style="max-width:100%;max-height:360px;border:1px solid rgba(255,255,255,0.1);border-radius:6px;">
+            </a>
+          </div>
+        {% endif %}
+      </div></div>
+
+      {# ── Comments ──────────────────────────────────────────────────── #}
+      <div class="card"><div class="card-body">
+        <h6 class="mb-3">Comments</h6>
+        {% if not comments %}
+          <div class="text-muted small">No comments yet.</div>
+        {% else %}
+          {% for c in comments %}
+            <div class="mb-3 pb-3" style="border-bottom:1px solid rgba(255,255,255,0.06);">
+              <div class="small text-muted mb-1">
+                {% if c.author %}{{ c.author.username or c.author.email }}{% else %}user #{{ c.author_user_id }}{% endif %}
+                · {{ c.created_at.strftime('%Y-%m-%d %H:%M') }} UTC
+                {% if c.is_internal %}<span class="badge bg-warning text-dark ms-1">internal note</span>{% endif %}
+              </div>
+              <div style="white-space:pre-wrap;">{{ c.body }}</div>
+            </div>
+          {% endfor %}
+        {% endif %}
+        <form id="commentForm" class="mt-3">
+          <textarea name="body" class="form-control form-control-sm" rows="3"
+                    placeholder="Add a comment…" required></textarea>
+          {% if can_admin %}
+            <div class="form-check mt-2">
+              <input class="form-check-input" type="checkbox" name="is_internal" value="1" id="intnote">
+              <label class="form-check-label small" for="intnote">Internal note (admins only)</label>
+            </div>
+          {% endif %}
+          <button class="btn btn-sm btn-primary mt-2">Post comment</button>
+          <span id="commentStatus" class="small ms-2"></span>
+        </form>
+      </div></div>
+    </div>
+
+    {# ── Admin sidebar ────────────────────────────────────────────────── #}
+    {% if can_admin %}
+    <div class="col-lg-4">
+      <div class="card mb-3"><div class="card-body">
+        <h6 class="mb-3">Admin actions</h6>
+        <div class="mb-3">
+          <label class="form-label small text-uppercase text-muted mb-1">Status</label>
+          <select id="statusSelect" class="form-select form-select-sm">
+            {% for s in statuses %}
+              <option value="{{ s }}" {% if ticket.status == s %}selected{% endif %}>{{ s.replace('_',' ') }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="mb-3">
+          <label class="form-label small text-uppercase text-muted mb-1">Assignee</label>
+          <select id="assignSelect" class="form-select form-select-sm">
+            <option value="0">— Unassigned —</option>
+            {% for u in assignable %}
+              <option value="{{ u.id }}" {% if ticket.assigned_to_user_id == u.id %}selected{% endif %}>
+                {{ u.username or u.email }}
+              </option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="form-check mb-3">
+          <input class="form-check-input" type="checkbox" id="priCheck"
+                 {% if ticket.priority_fix %}checked{% endif %}>
+          <label class="form-check-label small" for="priCheck">Mark as Priority Fix</label>
+        </div>
+        <span id="adminStatus" class="small text-muted"></span>
+      </div></div>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<script>
+(function() {
+  var token = (document.querySelector('meta[name="csrf-token"]') || {}).content || '';
+  function post(url, body) {
+    return fetch(url, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json', 'X-CSRFToken': token},
+      body: JSON.stringify(body || {}),
+    }).then(function(r) { return r.json().then(function(j) { return {ok:r.ok, body:j}; }); });
+  }
+  var cf = document.getElementById('commentForm');
+  if (cf) {
+    cf.addEventListener('submit', function(e) {
+      e.preventDefault();
+      var fd = new FormData(cf);
+      var status = document.getElementById('commentStatus');
+      status.textContent = 'Sending…';
+      post('{{ url_for("feedback.add_comment", ticket_id=ticket.id) }}',
+           {body: fd.get('body'), is_internal: fd.get('is_internal') ? true : false})
+        .then(function(res) {
+          if (res.ok) { window.location.reload(); }
+          else { status.textContent = (res.body && res.body.error) || 'Failed.'; }
+        });
+    });
+  }
+  {% if can_admin %}
+  function flash(msg, ok) {
+    var s = document.getElementById('adminStatus');
+    s.style.color = ok ? '#00ffb4' : '#ff6b9c'; s.textContent = msg;
+    setTimeout(function() { s.textContent = ''; }, 1800);
+  }
+  document.getElementById('statusSelect').addEventListener('change', function(e) {
+    post('{{ url_for("feedback.change_status", ticket_id=ticket.id) }}',
+         {status: e.target.value})
+      .then(function(r) { flash(r.ok ? 'Status updated' : (r.body.error || 'Failed'), r.ok); });
+  });
+  document.getElementById('assignSelect').addEventListener('change', function(e) {
+    post('{{ url_for("feedback.assign_ticket", ticket_id=ticket.id) }}',
+         {assigned_to_user_id: e.target.value})
+      .then(function(r) { flash(r.ok ? 'Assignee updated' : (r.body.error || 'Failed'), r.ok); });
+  });
+  document.getElementById('priCheck').addEventListener('change', function(e) {
+    post('{{ url_for("feedback.toggle_priority", ticket_id=ticket.id) }}',
+         {priority_fix: e.target.checked})
+      .then(function(r) { flash(r.ok ? 'Priority updated' : (r.body.error || 'Failed'), r.ok); });
+  });
+  {% endif %}
+})();
+</script>
+{% endblock %}

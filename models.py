@@ -2017,6 +2017,106 @@ class Notification(db.Model):
     user = db.relationship('User', backref=db.backref('notifications', lazy='dynamic'))
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Feedback / Bug Reporting
+# ─────────────────────────────────────────────────────────────────────────────
+class FeedbackTicket(db.Model):
+    """A user-submitted feedback / bug / UX / feature item.
+
+    Tenant scoping: ``company_id`` is set from the submitting user's default
+    company at submission time. All listing/detail endpoints enforce that
+    regular users only see their own submissions; company admins see their
+    company's submissions; platform admins (``User.is_admin``) see all.
+    """
+    __tablename__ = "feedback_ticket"
+
+    # Allowed values — kept loose (strings) to avoid migrations on enum changes.
+    TYPES = ("bug", "ux_issue", "feature_request", "general")
+    SEVERITIES = ("low", "medium", "high", "critical")
+    STATUSES = (
+        "new", "reviewed", "priority_fix", "in_progress",
+        "waiting_on_user", "closed", "rejected",
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    ticket_type = db.Column(db.String(30), default="general", nullable=False)
+    title = db.Column(db.String(200), nullable=False)
+    description = db.Column(db.Text, nullable=False)
+    page_url = db.Column(db.String(500))
+    user_agent = db.Column(db.Text)
+    severity = db.Column(db.String(20), default="medium", nullable=False)
+    status = db.Column(db.String(30), default="new", nullable=False)
+    priority_fix = db.Column(db.Boolean, default=False, nullable=False)
+    screenshot_path = db.Column(db.String(500))
+
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=True)
+    assigned_to_user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True)
+
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False, index=True)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    closed_at = db.Column(db.DateTime, nullable=True)
+
+    user = db.relationship("User", foreign_keys=[user_id],
+                           backref=db.backref("feedback_tickets", lazy="dynamic"))
+    company = db.relationship("Company",
+                              backref=db.backref("feedback_tickets", lazy="dynamic"))
+    assigned_to = db.relationship("User", foreign_keys=[assigned_to_user_id])
+    comments = db.relationship(
+        "FeedbackTicketComment",
+        backref="ticket", cascade="all, delete-orphan",
+        order_by="FeedbackTicketComment.created_at",
+    )
+
+    __table_args__ = (
+        db.Index("ix_feedback_ticket_company_status", "company_id", "status"),
+        db.Index("ix_feedback_ticket_user", "user_id"),
+    )
+
+    def to_dict(self, include_user=True):
+        d = {
+            "id": self.id,
+            "ticket_type": self.ticket_type,
+            "title": self.title,
+            "description": self.description,
+            "page_url": self.page_url,
+            "severity": self.severity,
+            "status": self.status,
+            "priority_fix": self.priority_fix,
+            "screenshot_url": (f"/{self.screenshot_path}" if self.screenshot_path else None),
+            "company_id": self.company_id,
+            "assigned_to_user_id": self.assigned_to_user_id,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+            "closed_at": self.closed_at.isoformat() if self.closed_at else None,
+        }
+        if include_user and self.user:
+            d["user"] = {
+                "id": self.user.id,
+                "username": getattr(self.user, "username", None),
+                "email": getattr(self.user, "email", None),
+            }
+        return d
+
+
+class FeedbackTicketComment(db.Model):
+    """A comment on a feedback ticket. ``is_internal`` notes are admin-only."""
+    __tablename__ = "feedback_ticket_comment"
+
+    id = db.Column(db.Integer, primary_key=True)
+    ticket_id = db.Column(db.Integer, db.ForeignKey("feedback_ticket.id"), nullable=False)
+    author_user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    body = db.Column(db.Text, nullable=False)
+    is_internal = db.Column(db.Boolean, default=False, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+    author = db.relationship("User")
+
+    __table_args__ = (
+        db.Index("ix_feedback_comment_ticket", "ticket_id"),
+    )
+
+
 class InboxMessage(db.Model):
     __tablename__ = "inbox_message"
 
