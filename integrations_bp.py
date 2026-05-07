@@ -14,10 +14,16 @@ Endpoints:
   GET  /api/outlook/calendar/events
   POST /api/outlook/calendar/events
 
+  GET  /api/airtable/health
   GET  /api/airtable/records
   POST /api/airtable/records
   PATCH /api/airtable/records/<record_id>
   DELETE /api/airtable/records/<record_id>
+  POST /api/airtable/sync/lead/<int:contact_id>
+  POST /api/airtable/sync/onboarding/<int:project_id>
+  POST /api/airtable/sync/support/<int:ticket_id>
+  GET  /api/airtable/sync/logs
+  GET  /api/airtable/sync/stats
 
   GET  /api/github/repos
   GET  /api/github/<owner>/<repo>/issues
@@ -27,7 +33,8 @@ Endpoints:
 
   POST /api/webhooks/revenuecat
 
-  GET  /platform/integrations  (admin UI)
+  GET  /platform/integrations           (admin UI — all providers)
+  GET  /platform/integrations/airtable  (admin UI — Airtable detail + sync)
 """
 import json
 import logging
@@ -272,6 +279,119 @@ def airtable_delete_record(record_id):
     from services.integrations.airtable_service import delete_record
     result = delete_record(base_id, table_name, record_id, company_id=_company_id())
     return jsonify(result), 200 if result.get("ok") else 422
+
+
+# ============================================================
+# Airtable — dedicated health endpoint
+# ============================================================
+
+@integrations_bp.route("/api/airtable/health")
+@login_required
+def airtable_health():
+    from services.integrations.airtable_service import health_check
+    result = health_check()
+    code = 200 if result.get("status") == "connected" else 503
+    return jsonify(result), code
+
+
+# ============================================================
+# Airtable — sync endpoints
+# ============================================================
+
+@integrations_bp.route("/api/airtable/sync/lead/<int:contact_id>", methods=["POST"])
+@login_required
+def airtable_sync_lead(contact_id):
+    """Sync a single Contact (lead) to the Airtable Leads table."""
+    cid = _company_id()
+    from services.integrations.airtable_service import sync_lead_to_airtable
+    result = sync_lead_to_airtable(contact_id, cid)
+    return jsonify(result), 200 if result.get("ok") else 422
+
+
+@integrations_bp.route("/api/airtable/sync/onboarding/<int:project_id>", methods=["POST"])
+@login_required
+def airtable_sync_onboarding(project_id):
+    """Sync a CustomerOnboardingProject to the Airtable Onboarding Pipeline table."""
+    cid = _company_id()
+    from services.integrations.airtable_service import sync_onboarding_to_airtable
+    result = sync_onboarding_to_airtable(project_id, cid)
+    return jsonify(result), 200 if result.get("ok") else 422
+
+
+@integrations_bp.route("/api/airtable/sync/support/<int:ticket_id>", methods=["POST"])
+@login_required
+def airtable_sync_support(ticket_id):
+    """Sync a FeedbackTicket (support note) to the Airtable Support table."""
+    cid = _company_id()
+    from services.integrations.airtable_service import sync_support_note_to_airtable
+    result = sync_support_note_to_airtable(ticket_id, cid)
+    return jsonify(result), 200 if result.get("ok") else 422
+
+
+@integrations_bp.route("/api/airtable/sync/logs")
+@login_required
+def airtable_sync_logs():
+    """Return recent ExternalSyncRecord rows for this user's company."""
+    cid         = _company_id()
+    entity_type = request.args.get("entity_type")
+    limit       = min(int(request.args.get("limit", 50)), 200)
+    from services.integrations.airtable_service import get_sync_logs
+    logs = get_sync_logs(company_id=cid, entity_type=entity_type, limit=limit)
+    return jsonify({"logs": logs})
+
+
+@integrations_bp.route("/api/airtable/sync/stats")
+@login_required
+def airtable_sync_stats():
+    """Return counts of synced/failed/pending for this company."""
+    cid = _company_id()
+    from services.integrations.airtable_service import get_sync_stats
+    return jsonify(get_sync_stats(company_id=cid))
+
+
+# ============================================================
+# Airtable — admin UI detail page
+# ============================================================
+
+@integrations_bp.route("/platform/integrations/airtable")
+@login_required
+def airtable_admin_panel():
+    import os
+    from services.integrations.airtable_service import get_sync_logs, get_sync_stats, health_check
+    from models import IntegrationConnection
+
+    # Live health check (quick)
+    health = health_check()
+
+    # Sync stats for current company
+    cid   = _company_id()
+    stats = get_sync_stats(company_id=cid)
+    logs  = get_sync_logs(company_id=cid, limit=30)
+
+    # Last connection record
+    conn_row = IntegrationConnection.query.filter_by(
+        provider="airtable", company_id=None
+    ).first()
+
+    tables_configured = {
+        "Leads":          bool(os.environ.get("AIRTABLE_LEADS_TABLE")),
+        "Onboarding":     bool(os.environ.get("AIRTABLE_ONBOARDING_TABLE")),
+        "Implementation": bool(os.environ.get("AIRTABLE_IMPLEMENTATION_TABLE")),
+        "Licenses":       bool(os.environ.get("AIRTABLE_LICENSES_TABLE")),
+        "Support":        bool(os.environ.get("AIRTABLE_SUPPORT_TABLE")),
+        "Sync Metadata":  bool(os.environ.get("AIRTABLE_SYNC_TABLE")),
+    }
+
+    return render_template(
+        "platform/airtable.html",
+        health=health,
+        stats=stats,
+        logs=logs,
+        conn_row=conn_row,
+        tables_configured=tables_configured,
+        sync_enabled=os.environ.get("AIRTABLE_SYNC_ENABLED", "false").strip().lower() in ("true", "1"),
+        is_platform_admin=current_user.is_admin,
+    )
 
 
 # ============================================================

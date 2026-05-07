@@ -90,6 +90,12 @@
         <i data-feather="zap" style="width:12px;height:12px;margin-right:3px;"></i>
         Test Connection
       </button>
+      {% if p.slug == 'airtable' %}
+      <a href="/platform/integrations/airtable" class="btn btn-sm btn-outline-primary">
+        <i data-feather="external-link" style="width:12px;height:12px;margin-right:3px;"></i>
+        Sync Panel
+      </a>
+      {% endif %}
       {% if is_platform_admin %}
       <button class="btn btn-sm btn-outline-danger" onclick="toggleIntegration('{{ p.slug }}', {{ 'false' if p.enabled else 'true' }})">
         {{ 'Disable' if p.enabled else 'Enable' }}
