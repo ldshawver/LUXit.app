@@ -74,6 +74,121 @@ configure_logging()
 
 
 # ============================================================
+# Database URL Resolution
+# ============================================================
+
+_resolved_db_url_cache: str | None = None
+
+
+def _resolve_db_url() -> str:
+    """Determine the database URL to use at startup.
+
+    Resolution order:
+    1. ``DEV_DATABASE_URL`` env var – explicit dev override (highest priority).
+    2. ``DATABASE_URL`` env / secret – the configured database.
+       * If it's a Postgres URL, we probe the TCP port (2 s timeout).
+         - Reachable  → use it as-is.
+         - Unreachable + running inside Replit → warn and fall back to SQLite.
+         - Unreachable + NOT Replit (VPS/prod) → raise RuntimeError with a
+           clear message so the process exits instead of silently corrupting.
+    3. Default SQLite (``sqlite:///lux_marketing_dev.db``) when DATABASE_URL is
+       not set at all.
+
+    MySQL driver shim is applied before returning.
+    Result is cached so repeated calls (e.g. from tests) skip the network probe.
+    """
+    global _resolved_db_url_cache
+    if _resolved_db_url_cache is not None:
+        return _resolved_db_url_cache
+
+    import socket
+    import urllib.parse
+
+    _SQLITE_FALLBACK = "sqlite:///lux_marketing_dev.db"
+    _is_replit = bool(os.environ.get("REPL_ID") or os.environ.get("REPLIT_DEV_DOMAIN"))
+
+    # ── 1. Explicit dev override ────────────────────────────────────────────
+    dev_override = os.environ.get("DEV_DATABASE_URL", "").strip()
+    if dev_override:
+        logging.info("DB: using DEV_DATABASE_URL override → %s",
+                     dev_override.split("@")[-1] if "@" in dev_override else dev_override)
+        return _apply_mysql_shim(dev_override)
+
+    # ── 2. Configured DATABASE_URL ──────────────────────────────────────────
+    raw = os.environ.get("DATABASE_URL", "").strip()
+
+    if not raw:
+        if _is_replit:
+            logging.warning(
+                "DATABASE_URL is not set. Falling back to SQLite for "
+                "Replit development: %s", _SQLITE_FALLBACK
+            )
+            return _SQLITE_FALLBACK
+        raise RuntimeError(
+            "\n\n"
+            "  ❌  DATABASE_URL is not configured.\n"
+            "  Set DATABASE_URL in your environment to a valid PostgreSQL\n"
+            "  connection string, e.g.:\n"
+            "    postgresql://user:password@localhost:5432/lux_marketing\n"
+        )
+
+    # Probe Postgres/MySQL with a real protocol-level connection attempt.
+    # A plain TCP socket check is NOT sufficient — Neon proxies accept TCP
+    # but then reject at the Postgres protocol level when compute is disabled.
+    parsed = urllib.parse.urlparse(raw)
+    if parsed.scheme.startswith(("postgres", "postgresql", "mysql")):
+        host = parsed.hostname or ""
+        port = parsed.port or (5432 if "postgres" in parsed.scheme else 3306)
+        db_ok = False
+        probe_error = ""
+        try:
+            import psycopg2
+            conn = psycopg2.connect(raw, connect_timeout=5)
+            conn.close()
+            db_ok = True
+        except Exception as exc:
+            probe_error = str(exc)
+
+        if not db_ok:
+            if _is_replit:
+                logging.warning(
+                    "\n"
+                    "  ⚠️  DATABASE_URL points to %s:%s but the database is\n"
+                    "     not accepting connections (%s).\n"
+                    "  Falling back to SQLite for Replit development: %s\n"
+                    "  To connect to your VPS Postgres instead, set:\n"
+                    "    DEV_DATABASE_URL=postgresql://user:pass@<vps-ip>:5432/lux_marketing\n"
+                    "  in the Replit Secrets panel (Settings → Secrets).\n",
+                    host, port, probe_error.split("\n")[0], _SQLITE_FALLBACK
+                )
+                return _SQLITE_FALLBACK
+            raise RuntimeError(
+                "\n\n"
+                f"  ❌  Database at {host}:{port} is not accepting connections.\n"
+                f"  Error: {probe_error.split(chr(10))[0]}\n"
+                "  Check that your database server is running and that\n"
+                "  DATABASE_URL is correct. On Hostinger VPS:\n"
+                "    sudo systemctl status postgresql\n"
+                "    sudo systemctl start postgresql\n"
+            )
+
+        logging.info("DB: connection probe OK → %s:%s/%s",
+                     host, port, parsed.path.lstrip("/"))
+
+    _resolved_db_url_cache = _apply_mysql_shim(raw)
+    return _resolved_db_url_cache
+
+
+def _apply_mysql_shim(url: str) -> str:
+    """Swap mysql:// → mysql+pymysql:// when MySQLdb is not installed."""
+    if url.startswith("mysql") and importlib.util.find_spec("MySQLdb") is None:
+        if importlib.util.find_spec("pymysql") is not None:
+            url = url.replace("mysql://", "mysql+pymysql://", 1)
+            logging.warning("MySQLdb missing; using PyMySQL driver instead.")
+    return url
+
+
+# ============================================================
 # Application Factory
 # ============================================================
 
@@ -96,12 +211,7 @@ def create_app() -> Flask:
     # --------------------------------------------------------
     # Database Configuration
     # --------------------------------------------------------
-    db_url = os.environ.get("DATABASE_URL", "sqlite:///email_marketing.db")
-
-    if db_url.startswith("mysql") and importlib.util.find_spec("MySQLdb") is None:
-        if importlib.util.find_spec("pymysql") is not None:
-            db_url = db_url.replace("mysql://", "mysql+pymysql://", 1)
-            logging.warning("MySQLdb missing; using PyMySQL.")
+    db_url = _resolve_db_url()
 
     app.config["SQLALCHEMY_DATABASE_URI"] = db_url
     app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
