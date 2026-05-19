@@ -65,7 +65,7 @@
             <th>Action</th>
             <th style="width:60px;">Fired</th>
             <th style="width:90px;">Status</th>
-            <th style="width:80px;"></th>
+            <th style="width:110px;"></th>
           </tr>
         </thead>
         <tbody>
@@ -107,13 +107,21 @@
               </div>
             </td>
             <td>
-              <form method="POST" action="{{ url_for('twilio.delete_rule', rule_id=rule.id) }}"
-                    onsubmit="return confirm('Delete rule {{ rule.name }}?');">
-                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                <button type="submit" class="btn btn-xs btn-outline-danger" style="padding:2px 8px;font-size:.75rem;">
-                  <i data-feather="trash-2" style="width:11px;height:11px;"></i>
+              <div class="d-flex gap-1">
+                <button type="button" class="btn btn-xs btn-outline-secondary"
+                        style="padding:2px 8px;font-size:.75rem;"
+                        onclick="openEditModal({{ rule.id }})"
+                        title="Edit rule">
+                  <i data-feather="edit-2" style="width:11px;height:11px;"></i>
                 </button>
-              </form>
+                <form method="POST" action="{{ url_for('twilio.delete_rule', rule_id=rule.id) }}"
+                      onsubmit="return confirm('Delete rule {{ rule.name }}?');">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <button type="submit" class="btn btn-xs btn-outline-danger" style="padding:2px 8px;font-size:.75rem;">
+                    <i data-feather="trash-2" style="width:11px;height:11px;"></i>
+                  </button>
+                </form>
+              </div>
             </td>
           </tr>
           {% if rule.response %}
@@ -140,7 +148,7 @@
 
 </div>
 
-<!-- New Rule Modal -->
+<!-- ── New Rule Modal ──────────────────────────────────────────────────── -->
 <div class="modal fade" id="newRuleModal" tabindex="-1">
   <div class="modal-dialog modal-lg modal-dialog-centered">
     <div class="modal-content" style="background:#0f1117;border:1px solid #1e2535;">
@@ -188,8 +196,7 @@
             <div class="col-md-6" id="keywords-field">
               <label class="form-label" style="font-size:.85rem;">Keywords <small class="text-muted">(comma-separated)</small></label>
               <input type="text" name="keywords" class="form-control"
-                     style="background:#0b0d14;border-color:#1e2535;color:#f7f7fb;"
-                     placeholder="price, pricing, cost">
+                     style="background:#0b0d14;border-color:#1e2535;color:#f7f7fb;" placeholder="price, pricing, cost">
             </div>
             <div class="col-12">
               <label class="form-label" style="font-size:.85rem;">Response Message</label>
@@ -239,27 +246,253 @@
   </div>
 </div>
 
+<!-- ── Edit Rule Modal ────────────────────────────────────────────────── -->
+<div class="modal fade" id="editRuleModal" tabindex="-1">
+  <div class="modal-dialog modal-lg modal-dialog-centered">
+    <div class="modal-content" style="background:#0f1117;border:1px solid #1e2535;">
+      <form id="editRuleForm">
+        <input type="hidden" name="csrf_token" id="editCsrf" value="{{ csrf_token() }}">
+        <div class="modal-header" style="border-bottom:1px solid #1e2535;">
+          <h5 class="modal-title">Edit Auto-Reply Rule</h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body" id="editRuleBody">
+          <div class="text-center py-4 text-muted">
+            <div class="spinner-border spinner-border-sm me-2"></div> Loading rule…
+          </div>
+        </div>
+        <div class="modal-footer" style="border-top:1px solid #1e2535;">
+          <div id="editRuleError" class="text-danger small me-auto" style="display:none;"></div>
+          <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-sm btn-primary" id="editRuleSaveBtn">
+            <span class="spinner-border spinner-border-sm me-1" style="display:none;" id="editSaveSpinner"></span>
+            Save Changes
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- ── Toast container ────────────────────────────────────────────────── -->
+<div class="position-fixed bottom-0 end-0 p-3" style="z-index:9999;">
+  <div id="ruleToast" class="toast align-items-center border-0" role="alert" aria-live="assertive">
+    <div class="d-flex">
+      <div class="toast-body fw-semibold" id="ruleToastBody"></div>
+      <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+    </div>
+  </div>
+</div>
+
 <script>
 feather.replace();
 const CSRF = '{{ csrf_token() }}';
 
-function toggleKeywords(type) {
-  const show = ['keyword_contains','keyword_exact','regex'].includes(type);
-  document.getElementById('keywords-field').style.display = show ? '' : 'none';
-}
-
-function toggleAction(action) {
-  document.getElementById('tag-field').style.display     = action === 'tag'     ? '' : 'none';
-  document.getElementById('forward-field').style.display = action === 'forward' ? '' : 'none';
-}
-
+/* ── Toggle active/inactive ──────────────────────────────────────────── */
 async function toggleRule(ruleId, checkbox) {
   const r    = await fetch(`/twilio/rules/${ruleId}/toggle`, {
     method: 'POST',
     headers: { 'X-CSRFToken': CSRF },
   });
   const data = await r.json();
-  if (!data.success) { checkbox.checked = !checkbox.checked; alert('Toggle failed.'); }
+  if (!data.success) { checkbox.checked = !checkbox.checked; showToast('Toggle failed.', 'danger'); }
+}
+
+/* ── Toast helper ────────────────────────────────────────────────────── */
+function showToast(msg, type = 'success') {
+  const el   = document.getElementById('ruleToast');
+  const body = document.getElementById('ruleToastBody');
+  el.className = `toast align-items-center border-0 text-bg-${type}`;
+  body.textContent = msg;
+  bootstrap.Toast.getOrCreateInstance(el, { delay: 3500 }).show();
+}
+
+/* ── Field HTML builder (mirrors new-rule form) ──────────────────────── */
+function buildRuleFields(r) {
+  const days = [['Mon',0],['Tue',1],['Wed',2],['Thu',3],['Fri',4],['Sat',5],['Sun',6]];
+  const activeDays = r.active_days || [];
+
+  const dayCheckboxes = days.map(([label, i]) => `
+    <div class="form-check form-check-inline">
+      <input class="form-check-input" type="checkbox" name="active_days" value="${i}"
+             id="eday${i}" ${activeDays.includes(i) ? 'checked' : ''}>
+      <label class="form-check-label" for="eday${i}" style="font-size:.82rem;">${label}</label>
+    </div>`).join('');
+
+  const triggerOptions = [
+    ['keyword_contains','Keyword Contains'],
+    ['keyword_exact','Keyword Exact Match'],
+    ['regex','Regex Pattern'],
+    ['first_contact','First Contact'],
+    ['after_hours','After Hours'],
+    ['stop_keyword','Stop / Unsubscribe'],
+    ['always','Always (every message)'],
+  ].map(([v,l]) => `<option value="${v}" ${r.trigger_type===v?'selected':''}>${l}</option>`).join('');
+
+  const actionOptions = [
+    ['reply','Reply'],
+    ['tag','Tag Contact'],
+    ['opt_out','Opt Out'],
+    ['forward','Forward'],
+  ].map(([v,l]) => `<option value="${v}" ${r.action===v?'selected':''}>${l}</option>`).join('');
+
+  const kwVisible = ['keyword_contains','keyword_exact','regex'].includes(r.trigger_type);
+  const tagVisible   = r.action === 'tag';
+  const fwdVisible   = r.action === 'forward';
+
+  return `
+    <div class="row g-3">
+      <div class="col-md-6">
+        <label class="form-label" style="font-size:.85rem;">Rule Name</label>
+        <input type="text" name="name" class="form-control" required value="${_esc(r.name)}"
+               style="background:#0b0d14;border-color:#1e2535;color:#f7f7fb;">
+      </div>
+      <div class="col-md-3">
+        <label class="form-label" style="font-size:.85rem;">Priority</label>
+        <input type="number" name="priority" class="form-control" min="0" max="100" value="${r.priority}"
+               style="background:#0b0d14;border-color:#1e2535;color:#f7f7fb;">
+      </div>
+      <div class="col-md-3">
+        <label class="form-label" style="font-size:.85rem;">Action</label>
+        <select name="action" class="form-select" id="eaction-sel"
+                style="background:#0b0d14;border-color:#1e2535;color:#f7f7fb;"
+                onchange="eToggleAction(this.value)">
+          ${actionOptions}
+        </select>
+      </div>
+      <div class="col-md-6">
+        <label class="form-label" style="font-size:.85rem;">Trigger Type</label>
+        <select name="trigger_type" class="form-select" id="etrigger-sel"
+                style="background:#0b0d14;border-color:#1e2535;color:#f7f7fb;"
+                onchange="eToggleKeywords(this.value)">
+          ${triggerOptions}
+        </select>
+      </div>
+      <div class="col-md-6" id="ekeywords-field" style="display:${kwVisible?'':'none'};">
+        <label class="form-label" style="font-size:.85rem;">Keywords <small class="text-muted">(comma-separated)</small></label>
+        <input type="text" name="keywords" class="form-control" value="${_esc(r.keywords)}"
+               style="background:#0b0d14;border-color:#1e2535;color:#f7f7fb;" placeholder="price, pricing, cost">
+      </div>
+      <div class="col-12">
+        <label class="form-label" style="font-size:.85rem;">Response Message</label>
+        <textarea name="response" class="form-control" rows="3"
+                  style="background:#0b0d14;border-color:#1e2535;color:#f7f7fb;"
+                  placeholder="Our pricing starts at…">${_esc(r.response)}</textarea>
+      </div>
+      <div class="col-md-6" id="etag-field" style="display:${tagVisible?'':'none'};">
+        <label class="form-label" style="font-size:.85rem;">Tag Value</label>
+        <input type="text" name="tag_value" class="form-control" value="${_esc(r.tag_value)}"
+               style="background:#0b0d14;border-color:#1e2535;color:#f7f7fb;" placeholder="hot-lead">
+      </div>
+      <div class="col-md-6" id="eforward-field" style="display:${fwdVisible?'':'none'};">
+        <label class="form-label" style="font-size:.85rem;">Forward To (phone / email)</label>
+        <input type="text" name="forward_to" class="form-control" value="${_esc(r.forward_to)}"
+               style="background:#0b0d14;border-color:#1e2535;color:#f7f7fb;" placeholder="+15551234567">
+      </div>
+      <div class="col-12">
+        <label class="form-label" style="font-size:.85rem;">Active Days <small class="text-muted">(optional — leave blank for all days)</small></label>
+        <div class="d-flex gap-2 flex-wrap">${dayCheckboxes}</div>
+      </div>
+      <div class="col-md-6">
+        <label class="form-label" style="font-size:.85rem;">Active From</label>
+        <input type="time" name="active_hours_start" class="form-control" value="${_esc(r.active_hours_start)}"
+               style="background:#0b0d14;border-color:#1e2535;color:#f7f7fb;">
+      </div>
+      <div class="col-md-6">
+        <label class="form-label" style="font-size:.85rem;">Active Until</label>
+        <input type="time" name="active_hours_end" class="form-control" value="${_esc(r.active_hours_end)}"
+               style="background:#0b0d14;border-color:#1e2535;color:#f7f7fb;">
+      </div>
+    </div>`;
+}
+
+function _esc(s) {
+  return String(s ?? '').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+/* ── Edit modal — open & populate ───────────────────────────────────── */
+let _editRuleId = null;
+
+async function openEditModal(ruleId) {
+  _editRuleId = ruleId;
+  const body = document.getElementById('editRuleBody');
+  const err  = document.getElementById('editRuleError');
+  err.style.display = 'none';
+  body.innerHTML = '<div class="text-center py-4 text-muted"><div class="spinner-border spinner-border-sm me-2"></div> Loading rule…</div>';
+  bootstrap.Modal.getOrCreateInstance(document.getElementById('editRuleModal')).show();
+
+  try {
+    const res  = await fetch(`/twilio/rules/${ruleId}`, { headers: { 'X-CSRFToken': CSRF } });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const rule = await res.json();
+    body.innerHTML = buildRuleFields(rule);
+    feather.replace();
+  } catch (e) {
+    body.innerHTML = `<div class="alert alert-danger">Failed to load rule: ${e.message}</div>`;
+  }
+}
+
+/* ── Edit modal — dynamic field toggles ─────────────────────────────── */
+function eToggleKeywords(type) {
+  const show = ['keyword_contains','keyword_exact','regex'].includes(type);
+  const el = document.getElementById('ekeywords-field');
+  if (el) el.style.display = show ? '' : 'none';
+}
+function eToggleAction(action) {
+  const tag = document.getElementById('etag-field');
+  const fwd = document.getElementById('eforward-field');
+  if (tag) tag.style.display = action === 'tag'     ? '' : 'none';
+  if (fwd) fwd.style.display = action === 'forward' ? '' : 'none';
+}
+
+/* ── Edit modal — submit ─────────────────────────────────────────────── */
+document.getElementById('editRuleForm').addEventListener('submit', async function(e) {
+  e.preventDefault();
+  if (!_editRuleId) return;
+
+  const btn     = document.getElementById('editRuleSaveBtn');
+  const spinner = document.getElementById('editSaveSpinner');
+  const errEl   = document.getElementById('editRuleError');
+  btn.disabled    = true;
+  spinner.style.display = '';
+  errEl.style.display   = 'none';
+
+  const fd = new FormData(this);
+  try {
+    const res  = await fetch(`/twilio/rules/${_editRuleId}/edit`, {
+      method:  'POST',
+      headers: { 'X-CSRFToken': CSRF },
+      body:    fd,
+    });
+    const data = await res.json();
+
+    if (data.success) {
+      bootstrap.Modal.getInstance(document.getElementById('editRuleModal')).hide();
+      showToast(`Auto-reply rule "${data.name}" updated.`, 'success');
+      setTimeout(() => location.reload(), 800);
+    } else {
+      errEl.textContent   = data.error || 'Failed to update rule.';
+      errEl.style.display = '';
+      if (!data.warning) showToast('Failed to update auto-reply rule.', 'danger');
+    }
+  } catch (err) {
+    errEl.textContent   = 'Network error — please try again.';
+    errEl.style.display = '';
+    showToast('Failed to update auto-reply rule.', 'danger');
+  } finally {
+    btn.disabled          = false;
+    spinner.style.display = 'none';
+  }
+});
+
+/* ── New rule modal — dynamic field toggles ─────────────────────────── */
+function toggleKeywords(type) {
+  const show = ['keyword_contains','keyword_exact','regex'].includes(type);
+  document.getElementById('keywords-field').style.display = show ? '' : 'none';
+}
+function toggleAction(action) {
+  document.getElementById('tag-field').style.display     = action === 'tag'     ? '' : 'none';
+  document.getElementById('forward-field').style.display = action === 'forward' ? '' : 'none';
 }
 </script>
 {% endblock %}

@@ -482,21 +482,34 @@ def inbound_sms():
     #
     # Supported formats:
     #   reply +1XXXXXXXXXX <message>   → send to specific customer
+    #   r +1XXXXXXXXXX <message>       → shorthand for specific customer
     #   r <message>                    → send to most-recent customer
     if ta.sms_forward_to and from_number == ta.sms_forward_to:
+        company_name = ta.company.name if ta.company else "LUXit"
+
+        # reply +1XXX message  OR  r +1XXX message
         relay_match = re.match(
-            r'^reply\s+(\+?1?\d{10,15})\s+(.+)$', body, re.IGNORECASE | re.DOTALL
+            r'^(?:reply|r)\s+(\+?1?\d{10,15})\s+(.+)$', body, re.IGNORECASE | re.DOTALL
         )
         if relay_match:
             target_number = relay_match.group(1).strip()
             if not target_number.startswith("+"):
                 target_number = "+" + target_number
             relay_body = relay_match.group(2).strip()
+            if not relay_body:
+                logger.warning("Owner relay: empty message body to %s — ignored", target_number)
+                _send_sms(ta, ta.sms_forward_to,
+                          f"[{company_name}] Reply not sent — message was empty.")
+                return '<Response></Response>', 200, {"Content-Type": "text/xml"}
             target_conv = _get_or_create_conversation(ta.company_id, target_number, to_number)
             result = _send_sms(ta, target_number, relay_body, conversation_id=target_conv.id)
             logger.info(
-                "Owner relay: %s → %s (success=%s)", from_number, target_number, result.get("success")
+                "Owner relay: %s → %s (success=%s err=%s)",
+                from_number, target_number, result.get("success"), result.get("error")
             )
+            if not result.get("success"):
+                _send_sms(ta, ta.sms_forward_to,
+                          f"[{company_name}] Failed to send to {target_number}: {result.get('error')}")
             return '<Response></Response>', 200, {"Content-Type": "text/xml"}
 
         # r <message> — reply to the most recent customer conversation
@@ -516,17 +529,32 @@ def inbound_sms():
                 result = _send_sms(ta, last_conv.from_number, relay_body,
                                    conversation_id=last_conv.id)
                 logger.info(
-                    "Owner 'r' relay → %s (success=%s)",
-                    last_conv.from_number, result.get("success"),
+                    "Owner 'r' relay → %s (success=%s err=%s)",
+                    last_conv.from_number, result.get("success"), result.get("error"),
                 )
+                if not result.get("success"):
+                    _send_sms(ta, ta.sms_forward_to,
+                              f"[{company_name}] Failed to reply to {last_conv.from_number}: {result.get('error')}")
             else:
                 logger.warning("Owner 'r' relay: no recent conversation found")
+                _send_sms(ta, ta.sms_forward_to,
+                          f"[{company_name}] No recent customer conversation found to reply to.")
             return '<Response></Response>', 200, {"Content-Type": "text/xml"}
 
-        # Unrecognised command from forwarding number — ignore silently
+        # Unrecognised command — send help back to admin
         logger.info(
-            "Forwarding-number message not matched as relay command (body=%.40r); ignoring.", body
+            "Forwarding-number message not matched as relay command (body=%.40r); sending help.", body
         )
+        help_msg = (
+            f"[{company_name} SMS Commands]\n"
+            f"reply +1XXXXXXXXXX your message\n"
+            f"  → Reply to a specific customer\n\n"
+            f"r your message\n"
+            f"  → Reply to the most recent customer\n\n"
+            f"r +1XXXXXXXXXX your message\n"
+            f"  → Shorthand reply to specific customer"
+        )
+        _send_sms(ta, ta.sms_forward_to, help_msg)
         return '<Response></Response>', 200, {"Content-Type": "text/xml"}
 
     try:
@@ -590,15 +618,24 @@ def inbound_sms():
         if ta.sms_forward_to and ta.sms_forwarding_enabled:
             try:
                 company_name = (ta.company.name if ta.company else "LUXit")
+                sender_label = conv.contact_name if conv.contact_name else from_number
+                if conv.contact_name:
+                    sender_label = f"{conv.contact_name} ({from_number})"
+                else:
+                    sender_label = from_number
+                msg_text = body if body else "(media message)"
                 fwd_body = (
-                    f"New {company_name} SMS from {from_number}: {body}\n\n"
-                    f"Reply: reply {from_number} <msg>  or  r <msg> (last sender)"
-                    if body else
-                    f"New {company_name} SMS from {from_number}: (media)\n\n"
-                    f"Reply: reply {from_number} <msg>  or  r <msg> (last sender)"
+                    f"New SMS for {company_name}\n"
+                    f"From: {sender_label}\n"
+                    f"Message:\n{msg_text}\n\n"
+                    f"Reply using:\n"
+                    f"reply {from_number} your message"
                 )
                 _send_sms(ta, ta.sms_forward_to, fwd_body, conversation_id=conv.id)
-                logger.info("SMS forwarded from %s to %s", from_number, ta.sms_forward_to)
+                logger.info(
+                    "SMS forwarded: customer=%s → admin=%s company=%s",
+                    from_number, ta.sms_forward_to, company_name,
+                )
             except Exception as fwd_exc:
                 logger.warning("SMS forward failed: %s", fwd_exc)
 
@@ -1156,6 +1193,89 @@ def create_rule():
     db.session.commit()
     flash(f'Rule "{rule.name}" created.', "success")
     return redirect(url_for("twilio.rules"))
+
+
+@twilio_bp.route("/rules/<int:rule_id>", methods=["GET"])
+@login_required
+def get_rule(rule_id):
+    """Return rule fields as JSON for the edit modal."""
+    from models import AutoReplyRule
+    company = _get_company()
+    rule = AutoReplyRule.query.filter_by(id=rule_id, company_id=company.id).first_or_404()
+    return jsonify({
+        "id":                rule.id,
+        "name":              rule.name,
+        "trigger_type":      rule.trigger_type,
+        "keywords":          ", ".join(rule.keywords) if rule.keywords else "",
+        "response":          rule.response or "",
+        "action":            rule.action,
+        "forward_to":        rule.forward_to or "",
+        "tag_value":         rule.tag_value or "",
+        "priority":          rule.priority,
+        "active_days":       rule.active_days or [],
+        "active_hours_start": rule.active_hours_start or "",
+        "active_hours_end":   rule.active_hours_end or "",
+        "is_active":         rule.is_active,
+    })
+
+
+@twilio_bp.route("/rules/<int:rule_id>/edit", methods=["POST"])
+@login_required
+def edit_rule(rule_id):
+    """Update an existing auto-reply rule."""
+    from models import AutoReplyRule
+    company = _get_company()
+    rule = AutoReplyRule.query.filter_by(id=rule_id, company_id=company.id).first_or_404()
+    f = request.form
+
+    response_text = f.get("response", "").strip()
+    action = f.get("action", "reply")
+    if action == "reply" and not response_text:
+        logger.warning("Edit rule %d failed: response message is blank", rule_id)
+        return jsonify({"success": False, "error": "Response message cannot be blank for Reply action."}), 400
+
+    keywords_raw = f.get("keywords", "").strip()
+    keywords = [k.strip() for k in keywords_raw.split(",") if k.strip()]
+
+    # Duplicate keyword check (same trigger type, different rule, active)
+    trigger_type = f.get("trigger_type", rule.trigger_type)
+    if keywords and trigger_type in ("keyword_contains", "keyword_exact"):
+        for kw in keywords:
+            conflict = (
+                AutoReplyRule.query
+                .filter_by(company_id=company.id, trigger_type=trigger_type, is_active=True)
+                .filter(AutoReplyRule.id != rule_id)
+                .all()
+            )
+            for other in conflict:
+                if other.keywords and kw.lower() in [k.lower() for k in other.keywords]:
+                    logger.warning(
+                        "Edit rule %d: duplicate keyword '%s' conflicts with rule %d", rule_id, kw, other.id
+                    )
+                    return jsonify({
+                        "success": False,
+                        "error": f"Keyword '{kw}' already used in active rule \"{other.name}\".",
+                        "warning": True,
+                    }), 409
+
+    active_days_raw = request.form.getlist("active_days")
+    active_days = [int(d) for d in active_days_raw] if active_days_raw else None
+
+    rule.name               = f.get("name", rule.name).strip() or rule.name
+    rule.trigger_type       = trigger_type
+    rule.keywords           = keywords
+    rule.response           = response_text
+    rule.action             = action
+    rule.forward_to         = f.get("forward_to", "").strip()
+    rule.tag_value          = f.get("tag_value", "").strip()
+    rule.priority           = int(f.get("priority") or rule.priority)
+    rule.active_days        = active_days
+    rule.active_hours_start = f.get("active_hours_start") or None
+    rule.active_hours_end   = f.get("active_hours_end") or None
+
+    db.session.commit()
+    logger.info("Auto-reply rule %d (%s) updated by user", rule_id, rule.name)
+    return jsonify({"success": True, "name": rule.name})
 
 
 @twilio_bp.route("/rules/<int:rule_id>/toggle", methods=["POST"])
