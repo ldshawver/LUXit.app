@@ -656,12 +656,22 @@ def inbound_sms():
             conv.is_first_contact = False
             db.session.commit()
 
-        # Fire push notification to subscribed users
+        # Fire real-time SSE event + Web Push notification to subscribed users
         try:
-            from inbox_pwa import _fire_push_notification
+            from inbox_pwa import _fire_push_notification, _push_sse_event
+            sender = conv.contact_name or from_number
+            _push_sse_event(ta.company_id, "new_message", {
+                "conversation_id":      conv.id,
+                "from_number":          from_number,
+                "contact_name":         conv.contact_name or "",
+                "body":                 (body or "(media)")[:200],
+                "has_media":            num_media > 0,
+                "last_message_at":      conv.last_message_at.isoformat() if conv.last_message_at else None,
+                "last_message_preview": conv.last_message_preview or "",
+            })
             _fire_push_notification(ta.company_id, conv, body or "(media)")
         except Exception as push_exc:
-            logger.debug("Push notification skipped: %s", push_exc)
+            logger.debug("Push/SSE notification skipped: %s", push_exc)
 
     except Exception as exc:
         logger.exception("Error processing inbound SMS: %s", exc)

@@ -54,17 +54,36 @@
     .sidebar-head {
       display: flex;
       align-items: center;
-      gap: 10px;
-      padding: 14px 16px 10px;
+      gap: 8px;
+      padding: 14px 12px 10px;
       border-bottom: 1px solid var(--border);
     }
-    .sidebar-head h1 { font-size: 1.15rem; font-weight: 700; flex: 1; }
-    .sidebar-head .badge-unread {
+    .sidebar-head h1 { font-size: 1.05rem; font-weight: 700; flex: 1; }
+    .badge-unread {
       background: var(--purple); color: #fff;
       border-radius: 20px; font-size: .7rem; padding: 2px 8px; min-width: 24px; text-align: center;
       display: none;
     }
-    .sidebar-head .badge-unread.show { display: inline-block; }
+    .badge-unread.show { display: inline-block; }
+
+    /* Live indicator */
+    .live-dot {
+      width: 7px; height: 7px; border-radius: 50%;
+      background: var(--muted); flex-shrink: 0;
+      transition: background .4s;
+    }
+    .live-dot.live { background: var(--green); box-shadow: 0 0 6px rgba(34,197,94,.6); }
+    .live-dot.polling { background: var(--cyan); }
+
+    .btn-icon {
+      width: 28px; height: 28px; border-radius: 50%;
+      background: none; border: 1px solid var(--border); color: var(--text-dim);
+      display: flex; align-items: center; justify-content: center;
+      cursor: pointer; font-size: .85rem; flex-shrink: 0;
+      transition: border-color .15s, color .15s;
+    }
+    .btn-icon:hover  { border-color: var(--purple); color: var(--purple-l); }
+    .btn-icon.active { border-color: var(--purple); color: var(--purple-l); background: rgba(124,58,237,.15); }
     .btn-compose {
       width: 32px; height: 32px; border-radius: 50%;
       background: var(--purple); border: none; color: #fff;
@@ -94,11 +113,22 @@
     #convList::-webkit-scrollbar { width: 4px; }
     #convList::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
 
-    /* Conversation row */
+    /* Conversation row + swipe */
+    .conv-item-wrap { position: relative; overflow: hidden; }
+    .conv-swipe-bg {
+      position: absolute; inset: 0; background: var(--red);
+      display: flex; align-items: center; justify-content: flex-end;
+      padding-right: 20px; color: #fff; font-size: .8rem; gap: 6px;
+      opacity: 0; transition: opacity .15s;
+      pointer-events: none;
+    }
+    .conv-swipe-bg.show { opacity: 1; }
     .conv-item {
       display: flex; align-items: center; gap: 12px;
       padding: 12px 14px; cursor: pointer; border-bottom: 1px solid var(--border);
-      transition: background .15s;
+      transition: background .15s, transform .2s ease;
+      position: relative; background: var(--surface);
+      touch-action: pan-y;
     }
     .conv-item:hover { background: rgba(255,255,255,.03); }
     .conv-item.active { background: rgba(124,58,237,.12); border-left: 3px solid var(--purple); }
@@ -157,7 +187,6 @@
     }
     #messages::-webkit-scrollbar { width: 4px; }
     #messages::-webkit-scrollbar-thumb { background: var(--border); }
-    .msg-group { display: flex; flex-direction: column; gap: 3px; }
     .msg-row { display: flex; }
     .msg-row.out { justify-content: flex-end; }
     .msg-row.in  { justify-content: flex-start; }
@@ -165,16 +194,10 @@
       max-width: 72%; padding: 9px 14px; border-radius: 16px;
       font-size: .88rem; line-height: 1.45; word-break: break-word;
     }
-    .bubble.out {
-      background: var(--purple); color: #fff;
-      border-bottom-right-radius: 4px;
-    }
-    .bubble.in {
-      background: #1e2535; color: var(--text);
-      border-bottom-left-radius: 4px;
-    }
+    .bubble.out { background: var(--purple); color: #fff; border-bottom-right-radius: 4px; }
+    .bubble.in  { background: #1e2535; color: var(--text); border-bottom-left-radius: 4px; }
     .bubble.auto-reply { background: rgba(6,182,212,.15); color: var(--cyan); border: 1px solid rgba(6,182,212,.25); }
-    .msg-meta { font-size: .68rem; color: var(--muted); margin: 0 4px; }
+    .msg-meta { font-size: .68rem; color: var(--muted); margin: 2px 4px 0; }
     .msg-meta.out { text-align: right; }
     .msg-status { font-size: .65rem; color: var(--muted); }
     .msg-status.delivered { color: var(--cyan); }
@@ -184,6 +207,37 @@
       color: var(--muted); font-size: .72rem; margin: 8px 0;
     }
     .date-divider::before, .date-divider::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+
+    /* MMS images */
+    .msg-media { display: flex; flex-direction: column; gap: 6px; margin-bottom: 4px; }
+    .msg-img {
+      max-width: 260px; max-height: 260px; border-radius: 12px;
+      object-fit: cover; cursor: pointer; display: block;
+    }
+    .msg-img:hover { opacity: .9; }
+    .msg-file-link {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 6px 12px; border-radius: 8px;
+      background: rgba(255,255,255,.08); color: var(--cyan);
+      font-size: .8rem; text-decoration: none; border: 1px solid var(--border);
+    }
+
+    /* Quick reply chips */
+    #quickReplies {
+      display: none; padding: 6px 12px 2px; gap: 6px;
+      overflow-x: auto; scrollbar-width: none;
+      border-top: 1px solid var(--border);
+      background: var(--surface);
+    }
+    #quickReplies.show { display: flex; }
+    #quickReplies::-webkit-scrollbar { display: none; }
+    .qr-chip {
+      white-space: nowrap; font-size: .78rem; padding: 5px 14px;
+      border-radius: 20px; border: 1px solid rgba(124,58,237,.4);
+      background: rgba(124,58,237,.1); color: var(--purple-l);
+      cursor: pointer; flex-shrink: 0; transition: background .15s;
+    }
+    .qr-chip:hover { background: rgba(124,58,237,.25); }
 
     /* Composer */
     .composer {
@@ -216,7 +270,7 @@
       color: var(--red); font-size: .8rem;
     }
 
-    /* ── Contact sidebar (desktop-only detail panel) ── */
+    /* ── Contact sidebar ────────────────────────────── */
     #contactPanel {
       width: 260px; border-left: 1px solid var(--border); background: var(--surface);
       display: none; flex-direction: column; overflow-y: auto;
@@ -233,8 +287,7 @@
     .notes-area {
       width: 100%; background: #111827; border: 1px solid var(--border);
       color: var(--text); border-radius: 8px; padding: 8px; font-size: .82rem;
-      resize: vertical; min-height: 80px; margin-top: 6px; font-family: inherit;
-      outline: none;
+      resize: vertical; min-height: 80px; margin-top: 6px; font-family: inherit; outline: none;
     }
     .notes-area:focus { border-color: var(--purple); }
     .btn-small {
@@ -268,9 +321,22 @@
     }
     .pwa-field input:focus, .pwa-field textarea:focus { border-color: var(--purple); }
     .modal-actions { display: flex; gap: 8px; justify-content: flex-end; }
-    .btn-cancel { background: none; border: 1px solid var(--border); color: var(--text-dim); border-radius: 8px; padding: 8px 18px; cursor: pointer; font-size: .85rem; }
+    .btn-cancel  { background: none; border: 1px solid var(--border); color: var(--text-dim); border-radius: 8px; padding: 8px 18px; cursor: pointer; font-size: .85rem; }
     .btn-primary { background: var(--purple); border: none; color: #fff; border-radius: 8px; padding: 8px 18px; cursor: pointer; font-size: .85rem; }
     .btn-primary:disabled { background: var(--muted); cursor: not-allowed; }
+
+    /* ── Lightbox ────────────────────────────────────── */
+    #lightbox {
+      display: none; position: fixed; inset: 0; background: rgba(0,0,0,.92);
+      z-index: 2000; align-items: center; justify-content: center;
+    }
+    #lightbox.show { display: flex; }
+    #lightboxImg { max-width: 95vw; max-height: 90vh; border-radius: 8px; object-fit: contain; }
+    #lightboxClose {
+      position: fixed; top: 16px; right: 16px; background: rgba(255,255,255,.12);
+      border: none; color: #fff; border-radius: 50%; width: 36px; height: 36px;
+      font-size: 1.2rem; cursor: pointer; display: flex; align-items: center; justify-content: center;
+    }
 
     /* ── Toast ──────────────────────────────────────── */
     #toast {
@@ -293,10 +359,15 @@
     #notifBanner.show { display: flex; }
     #notifBanner span { flex: 1; }
 
-    /* ── Mobile responsiveness ──────────────────────── */
-    @media (min-width: 900px) {
-      #contactPanel { display: flex; }
+    /* ── New message flash ───────────────────────────── */
+    @keyframes flash-in {
+      from { background: rgba(124,58,237,.3); }
+      to   { background: transparent; }
     }
+    .conv-item.new-flash { animation: flash-in 1s ease-out; }
+
+    /* ── Mobile ─────────────────────────────────────── */
+    @media (min-width: 900px) { #contactPanel { display: flex; } }
     @media (max-width: 640px) {
       #sidebar { width: 100%; max-width: 100%; border-right: none; }
       #main { display: none; }
@@ -304,9 +375,7 @@
       #shell.thread-open #main  { display: flex; }
       .btn-back { display: flex; }
     }
-    @media (min-width: 641px) {
-      #thread { display: flex !important; }
-    }
+    @media (min-width: 641px) { #thread { display: flex !important; } }
   </style>
 </head>
 <body>
@@ -316,41 +385,37 @@
 
   <!-- ── Sidebar: conversation list ───────────────────────────────── -->
   <div id="sidebar">
-    <!-- Header -->
     <div class="sidebar-head">
       <h1>📨 Inbox</h1>
       <span class="badge-unread" id="unreadBadge">0</span>
+      <div class="live-dot" id="liveDot" title="Connecting…"></div>
       <a href="/dashboard" style="color:var(--muted);font-size:.72rem;text-decoration:none;" title="Back to dashboard">⬡</a>
+      <button class="btn-icon" id="soundBtn" onclick="toggleSound()" title="Toggle notification sound">🔔</button>
       <button class="btn-compose" onclick="openCompose()" title="New Message">+</button>
     </div>
 
-    <!-- Notification banner -->
     <div id="notifBanner">
       <span>Enable push notifications for new messages</span>
       <button class="btn-small" onclick="requestPush()">Enable</button>
       <button class="btn-small" onclick="document.getElementById('notifBanner').classList.remove('show')" style="font-size:.7rem;">✕</button>
     </div>
 
-    <!-- Search -->
     <div class="search-wrap">
       <input type="search" id="searchInput" placeholder="Search conversations…" oninput="onSearch(this.value)">
     </div>
 
-    <!-- Filters -->
     <div class="filter-tabs">
-      <button class="ftab active" data-filter="all"    onclick="setFilter('all',   this)">All</button>
-      <button class="ftab"        data-filter="unread" onclick="setFilter('unread',this)">Unread</button>
-      <button class="ftab"        data-filter="mine"   onclick="setFilter('mine',  this)">Assigned to Me</button>
-      <button class="ftab"        data-filter="archived" onclick="setFilter('archived',this)">Archived</button>
+      <button class="ftab active" onclick="setFilter('all',   this)">All</button>
+      <button class="ftab"        onclick="setFilter('unread',this)">Unread</button>
+      <button class="ftab"        onclick="setFilter('mine',  this)">Mine</button>
+      <button class="ftab"        onclick="setFilter('archived',this)">Archived</button>
     </div>
 
-    <!-- List -->
     <div id="convList"></div>
   </div>
 
   <!-- ── Main: thread ──────────────────────────────────────────────── -->
   <div id="main">
-    <!-- Placeholder when nothing selected -->
     <div id="threadPlaceholder">
       <svg width="56" height="56" fill="none" viewBox="0 0 24 24" stroke="#7c3aed" stroke-width="1.2">
         <path stroke-linecap="round" stroke-linejoin="round"
@@ -360,34 +425,40 @@
       <button class="btn-small" onclick="openCompose()">+ New message</button>
     </div>
 
-    <!-- Thread (shown when a conversation is selected) -->
     <div id="thread">
-      <!-- Thread header -->
       <div class="thread-head">
         <button class="btn-back" onclick="closeThread()">‹</button>
         <div class="thread-info">
-          <div class="thread-name" id="threadName">—</div>
+          <div class="thread-name"   id="threadName">—</div>
           <div class="thread-number" id="threadNumber"></div>
         </div>
         <div class="thread-actions">
           <button onclick="markCurrentRead(false)" title="Mark unread">◎</button>
-          <button onclick="archiveCurrent()"      title="Archive">⊡</button>
-          <button onclick="toggleContactPanel()"  title="Contact info">👤</button>
-          <button onclick="openRename()"          title="Rename">✏</button>
+          <button onclick="archiveCurrent()"       title="Archive">⊡</button>
+          <button onclick="toggleContactPanel()"   title="Contact info">👤</button>
+          <button onclick="openRename()"           title="Rename">✏</button>
         </div>
       </div>
 
-      <!-- Opted-out warning -->
       <div id="optOutBanner">This contact has opted out of SMS messages.</div>
 
-      <!-- Messages -->
       <div id="messages"></div>
 
-      <!-- Composer -->
+      <!-- Quick reply chips -->
+      <div id="quickReplies">
+        <button class="qr-chip" onclick="useChip('On my way!')">On my way!</button>
+        <button class="qr-chip" onclick="useChip('Thanks for reaching out!')">Thanks for reaching out!</button>
+        <button class="qr-chip" onclick="useChip('I\\'ll get back to you shortly.')">I'll get back to you shortly.</button>
+        <button class="qr-chip" onclick="useChip('Can you call us at your convenience?')">Can you call us?</button>
+        <button class="qr-chip" onclick="useChip('Your appointment is confirmed!')">Appointment confirmed!</button>
+        <button class="qr-chip" onclick="useChip('Please visit our website for more info.')">Visit our website</button>
+      </div>
+
       <div class="composer">
         <div class="composer-wrap">
           <textarea id="msgInput" placeholder="Type a message…" rows="1"
             oninput="autoResize(this);updateChar(this)"
+            onfocus="showChips()" onblur="hideChipsDelayed()"
             onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendMsg();}"></textarea>
           <span id="charCount"></span>
         </div>
@@ -399,7 +470,6 @@
       </div>
     </div>
 
-    <!-- Contact panel (desktop sidebar) -->
     <div id="contactPanel">
       <div class="contact-panel-head">Contact Info</div>
       <div id="cpContent"></div>
@@ -407,7 +477,7 @@
   </div>
 </div>
 
-<!-- ── Compose modal ─────────────────────────────────────────────── -->
+<!-- ── Modals ─────────────────────────────────────────────────────── -->
 <div class="pwa-modal-overlay" id="composeModal">
   <div class="pwa-modal">
     <div class="modal-title">New Message</div>
@@ -420,13 +490,12 @@
       <textarea id="composeBody" rows="4" placeholder="Type your message…"></textarea>
     </div>
     <div class="modal-actions">
-      <button class="btn-cancel" onclick="closeModal('composeModal')">Cancel</button>
+      <button class="btn-cancel"  onclick="closeModal('composeModal')">Cancel</button>
       <button class="btn-primary" id="composeSendBtn" onclick="sendNewMsg()">Send</button>
     </div>
   </div>
 </div>
 
-<!-- ── Rename modal ──────────────────────────────────────────────── -->
 <div class="pwa-modal-overlay" id="renameModal">
   <div class="pwa-modal">
     <div class="modal-title">Rename Contact</div>
@@ -435,20 +504,31 @@
       <input type="text" id="renameInput" placeholder="John Smith">
     </div>
     <div class="modal-actions">
-      <button class="btn-cancel" onclick="closeModal('renameModal')">Cancel</button>
+      <button class="btn-cancel"  onclick="closeModal('renameModal')">Cancel</button>
       <button class="btn-primary" onclick="submitRename()">Save</button>
     </div>
   </div>
 </div>
 
+<!-- ── Lightbox ────────────────────────────────────────────────────── -->
+<div id="lightbox" onclick="closeLightbox()">
+  <button id="lightboxClose" onclick="closeLightbox()">✕</button>
+  <img id="lightboxImg" src="" alt="">
+</div>
+
 <!-- ── Toast ─────────────────────────────────────────────────────── -->
 <div id="toast"></div>
 
+<!-- ── Notification sound ─────────────────────────────────────────── -->
+<audio id="notifSound" preload="auto">
+  <source src="data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJiVkHBiYGiIjoxzXVppkpuTc11cZouVkHBdW2iMl5BxXVtlj5eQcV1baJCXjnNfXW2OmI9yYGBwjpWNcmFhco6VjHJiY3SNlYxwY2R0jZWLcGRkdo2Ui25lZXaNlItsZWZ2jZSKbGZnd46UiWtnZ3iOlIhraGh5jpOHa2lqe46ShWtraHyQkoNsamd+kJGBamtpgJCPf2lsaYCPjn5pbmuAj419aW5sgo+MfGlvboOPi3tpcG+Dj4p7anBwhI+JemtxcoWOiHlrcHOFjoZ4bHJ0ho6FdW1zdIeNhXRtc3OHjYRzbnN1iIyEcm5zdIiMg3Fuczb" type="audio/wav">
+</audio>
+
 <script>
 /* ═══════════════════════════════════════════════════════════════
-   LUXit Inbox PWA — main.js
+   LUXit Inbox PWA — Real-time SSE + full feature set
 ═══════════════════════════════════════════════════════════════ */
-const CSRF = '{{ csrf_token() }}';
+const CSRF        = '{{ csrf_token() }}';
 const VAPID_PUBLIC = document.documentElement.dataset.vapid ?? '';
 
 let state = {
@@ -457,18 +537,23 @@ let state = {
   activeConvId:  null,
   conversations: [],
   messages:      [],
+  lastMsgCount:  0,
+  isSending:     false,
+  sseSource:     null,
+  sseConnected:  false,
   pollConvTimer: null,
   pollMsgTimer:  null,
-  isSending:     false,
+  soundEnabled:  localStorage.getItem('sndEnabled') !== 'false',
 };
 
 /* ── Init ─────────────────────────────────────────────────────── */
 window.addEventListener('DOMContentLoaded', () => {
+  updateSoundBtn();
   loadConversations();
-  startConvPolling();
+  connectSSE();
   registerSW();
   checkNotifPrompt();
-  // Re-open last conversation on PWA launch
+  setupSwipeGestures();
   const params = new URLSearchParams(location.search);
   const convId = params.get('conv');
   if (convId) openConversation(parseInt(convId));
@@ -479,6 +564,28 @@ function registerSW() {
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('/static/sw.js').catch(e => console.warn('SW:', e));
   }
+}
+
+/* ── Sound toggle ─────────────────────────────────────────────── */
+function toggleSound() {
+  state.soundEnabled = !state.soundEnabled;
+  localStorage.setItem('sndEnabled', state.soundEnabled);
+  updateSoundBtn();
+  toast(state.soundEnabled ? 'Sound on' : 'Sound off');
+}
+function updateSoundBtn() {
+  const btn = document.getElementById('soundBtn');
+  if (!btn) return;
+  btn.textContent = state.soundEnabled ? '🔔' : '🔕';
+  btn.classList.toggle('active', state.soundEnabled);
+}
+function playSound() {
+  if (!state.soundEnabled) return;
+  try {
+    const a = document.getElementById('notifSound');
+    a.currentTime = 0;
+    a.play().catch(() => {});
+  } catch (e) {}
 }
 
 /* ── Push notifications ───────────────────────────────────────── */
@@ -515,14 +622,89 @@ function urlBase64ToUint8Array(b64) {
   return Uint8Array.from([...raw].map(c => c.charCodeAt(0)));
 }
 
-/* ── Polling ──────────────────────────────────────────────────── */
-function startConvPolling() {
-  clearInterval(state.pollConvTimer);
-  state.pollConvTimer = setInterval(loadConversations, 10000);
+/* ── SSE real-time connection ─────────────────────────────────── */
+function setLiveDot(mode) {
+  const dot = document.getElementById('liveDot');
+  if (!dot) return;
+  dot.className = 'live-dot ' + (mode || '');
+  dot.title = mode === 'live' ? 'Live — real-time' : mode === 'polling' ? 'Polling (fallback)' : 'Connecting…';
 }
+
+function connectSSE() {
+  if (state.sseSource) return;
+  try {
+    const src = new EventSource('/api/inbox/stream');
+    state.sseSource = src;
+
+    src.addEventListener('connected', () => {
+      state.sseConnected = true;
+      setLiveDot('live');
+      // Cancel polling fallback if SSE worked
+      clearInterval(state.pollConvTimer);
+      state.pollConvTimer = null;
+    });
+
+    src.onmessage = (e) => {
+      let data;
+      try { data = JSON.parse(e.data); } catch { return; }
+      handleSSEEvent(data);
+    };
+
+    src.onerror = () => {
+      state.sseConnected = false;
+      src.close();
+      state.sseSource = null;
+      setLiveDot('polling');
+      // Fall back to polling
+      if (!state.pollConvTimer) {
+        state.pollConvTimer = setInterval(loadConversations, 8000);
+      }
+      // Try to reconnect SSE in 15 s
+      setTimeout(connectSSE, 15000);
+    };
+  } catch (e) {
+    setLiveDot('polling');
+    if (!state.pollConvTimer) {
+      state.pollConvTimer = setInterval(loadConversations, 8000);
+    }
+  }
+}
+
+function handleSSEEvent(data) {
+  if (data.type === 'new_message') {
+    // Vibrate on new inbound message
+    if (navigator.vibrate) navigator.vibrate([80, 40, 80]);
+    playSound();
+
+    // Flash the conversation row if visible
+    const ci = document.getElementById('ci-' + data.conversation_id);
+    if (ci) {
+      ci.classList.remove('new-flash');
+      void ci.offsetWidth;
+      ci.classList.add('new-flash');
+    }
+
+    // Refresh conversations list
+    loadConversations();
+
+    // If we're in this conversation, append the message immediately
+    if (state.activeConvId === data.conversation_id) {
+      refreshMessages(data.conversation_id);
+    }
+  } else if (data.type === 'message_status') {
+    if (state.activeConvId === data.conversation_id) {
+      refreshMessages(data.conversation_id);
+    }
+  }
+}
+
+/* ── Polling (fallback only) ──────────────────────────────────── */
 function startMsgPolling(convId) {
   clearInterval(state.pollMsgTimer);
-  state.pollMsgTimer = setInterval(() => refreshMessages(convId), 5000);
+  // Only poll messages if SSE not connected
+  if (!state.sseConnected) {
+    state.pollMsgTimer = setInterval(() => refreshMessages(convId), 5000);
+  }
 }
 function stopMsgPolling() {
   clearInterval(state.pollMsgTimer);
@@ -540,7 +722,7 @@ async function apiFetch(url, method = 'GET', body = null) {
 
 /* ── Conversation list ────────────────────────────────────────── */
 async function loadConversations() {
-  const qs  = `?filter=${state.filter}&q=${encodeURIComponent(state.search)}`;
+  const qs   = `?filter=${state.filter}&q=${encodeURIComponent(state.search)}`;
   const data = await apiFetch('/api/inbox/conversations' + qs);
   if (!data) return;
   state.conversations = data.conversations;
@@ -560,19 +742,29 @@ function renderConvList(convs) {
     const unread   = !c.is_read;
     const active   = c.id === state.activeConvId ? 'active' : '';
     const optOut   = c.is_opted_out ? 'opted-out' : '';
-    return `<div class="conv-item ${unread?'unread':''} ${active}"
-                 id="ci-${c.id}" onclick="openConversation(${c.id})">
-      <div class="conv-avatar ${optOut}">${initials}</div>
-      <div class="conv-meta">
-        <div class="conv-name">${esc(c.display_name)}</div>
-        <div class="conv-preview">${esc(c.last_message_preview||'—')}</div>
+    return `
+    <div class="conv-item-wrap" id="wrap-${c.id}">
+      <div class="conv-swipe-bg" id="swipebg-${c.id}">
+        <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/></svg>
+        Archive
       </div>
-      <div class="conv-right">
-        <span class="conv-time">${time}</span>
-        ${unread ? '<span class="conv-dot"></span>' : ''}
+      <div class="conv-item ${unread?'unread':''} ${active}"
+           id="ci-${c.id}" onclick="openConversation(${c.id})">
+        <div class="conv-avatar ${optOut}">${initials}</div>
+        <div class="conv-meta">
+          <div class="conv-name">${esc(c.display_name)}</div>
+          <div class="conv-preview">${esc(c.last_message_preview||'—')}</div>
+        </div>
+        <div class="conv-right">
+          <span class="conv-time">${time}</span>
+          ${unread ? '<span class="conv-dot"></span>' : ''}
+        </div>
       </div>
     </div>`;
   }).join('');
+
+  // Re-attach swipe gestures to new elements
+  setupSwipeGestures();
 }
 
 function updateUnreadBadge(count) {
@@ -581,15 +773,60 @@ function updateUnreadBadge(count) {
   el.classList.toggle('show', count > 0);
 }
 
+/* ── Swipe-to-archive ─────────────────────────────────────────── */
+function setupSwipeGestures() {
+  document.querySelectorAll('.conv-item[id^="ci-"]').forEach(el => {
+    if (el.dataset.swipeInit) return;
+    el.dataset.swipeInit = '1';
+    let startX = 0, dx = 0, swiping = false;
+    const THRESHOLD = 80;
+
+    el.addEventListener('touchstart', e => {
+      startX  = e.touches[0].clientX;
+      dx      = 0;
+      swiping = true;
+    }, { passive: true });
+
+    el.addEventListener('touchmove', e => {
+      if (!swiping) return;
+      dx = e.touches[0].clientX - startX;
+      if (dx < 0) {
+        el.style.transform = `translateX(${Math.max(dx, -THRESHOLD * 1.5)}px)`;
+        const bg = document.getElementById('swipebg-' + el.id.replace('ci-', ''));
+        if (bg) bg.classList.toggle('show', dx < -40);
+      }
+    }, { passive: true });
+
+    el.addEventListener('touchend', () => {
+      swiping = false;
+      const convId = parseInt(el.id.replace('ci-', ''));
+      if (dx < -THRESHOLD) {
+        el.style.transform = 'translateX(-100%)';
+        setTimeout(() => archiveConv(convId), 250);
+      } else {
+        el.style.transform = '';
+        const bg = document.getElementById('swipebg-' + el.id.replace('ci-', ''));
+        if (bg) bg.classList.remove('show');
+      }
+    });
+  });
+}
+
+async function archiveConv(convId) {
+  await apiFetch(`/api/inbox/conversations/${convId}/archive`, 'PATCH', { archived: true });
+  if (navigator.vibrate) navigator.vibrate(60);
+  toast('Archived.', 'success');
+  if (state.activeConvId === convId) closeThread();
+  loadConversations();
+}
+
 /* ── Open conversation ────────────────────────────────────────── */
 async function openConversation(convId) {
   state.activeConvId = convId;
-  // highlight active in list
   document.querySelectorAll('.conv-item').forEach(el => el.classList.remove('active'));
   const ci = document.getElementById('ci-' + convId);
   if (ci) { ci.classList.add('active'); ci.classList.remove('unread'); ci.querySelector('.conv-dot')?.remove(); }
 
-  // Mobile: show thread panel
   document.getElementById('shell').classList.add('thread-open');
   document.getElementById('threadPlaceholder').style.display = 'none';
   document.getElementById('thread').style.display = 'flex';
@@ -598,7 +835,8 @@ async function openConversation(convId) {
   if (!data) return;
 
   const c = data.conversation;
-  state.messages = data.messages;
+  state.messages   = data.messages;
+  state.lastMsgCount = data.messages.length;
 
   document.getElementById('threadName').textContent   = c.display_name || c.from_number;
   document.getElementById('threadNumber').textContent = c.from_number !== c.display_name ? c.from_number : '';
@@ -615,12 +853,12 @@ async function refreshMessages(convId) {
   if (convId !== state.activeConvId) return;
   const data = await apiFetch(`/api/inbox/conversations/${convId}`);
   if (!data) return;
-  if (data.messages.length !== state.messages.length) {
-    state.messages = data.messages;
+  if (data.messages.length !== state.lastMsgCount) {
+    state.messages    = data.messages;
+    state.lastMsgCount = data.messages.length;
     renderMessages(data.messages);
   }
-  // Update unread in conv list
-  loadConversations();
+  updateUnreadBadge(data.unread_count ?? 0);
 }
 
 function closeThread() {
@@ -631,31 +869,60 @@ function closeThread() {
   stopMsgPolling();
 }
 
-/* ── Render messages ──────────────────────────────────────────── */
+/* ── Render messages with MMS support ────────────────────────── */
 function renderMessages(msgs) {
-  const el   = document.getElementById('messages');
-  if (!msgs.length) { el.innerHTML = '<div style="text-align:center;color:var(--muted);font-size:.8rem;padding-top:40px;">No messages yet</div>'; return; }
+  const el = document.getElementById('messages');
+  if (!msgs.length) {
+    el.innerHTML = '<div style="text-align:center;color:var(--muted);font-size:.8rem;padding-top:40px;">No messages yet</div>';
+    return;
+  }
 
   let html = '';
   let lastDate = '';
   msgs.forEach(m => {
-    const d    = new Date(m.created_at + 'Z');
-    const ds   = d.toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'});
+    const d  = new Date(m.created_at + (m.created_at.endsWith('Z') ? '' : 'Z'));
+    const ds = d.toLocaleDateString('en-US', {month:'short',day:'numeric',year:'numeric'});
     if (ds !== lastDate) {
       html += `<div class="date-divider">${ds}</div>`;
       lastDate = ds;
     }
-    const dir   = m.direction === 'outbound' ? 'out' : 'in';
-    const ar    = m.is_auto_reply ? 'auto-reply' : '';
-    const time  = d.toLocaleTimeString('en-US', {hour:'numeric', minute:'2-digit'});
-    const status= m.direction === 'outbound' ? statusLabel(m.status) : '';
+    const dir  = m.direction === 'outbound' ? 'out' : 'in';
+    const ar   = m.is_auto_reply ? 'auto-reply' : '';
+    const time = d.toLocaleTimeString('en-US', {hour:'numeric', minute:'2-digit'});
+    const statusHtml = m.direction === 'outbound' ? statusLabel(m.status) : '';
+
+    // MMS media
+    let mediaHtml = '';
+    if (m.media_urls && m.media_urls.length) {
+      mediaHtml = '<div class="msg-media">';
+      m.media_urls.forEach(url => {
+        if (!url) return;
+        const lc = url.toLowerCase().split('?')[0];
+        if (/\.(jpg|jpeg|png|gif|webp)$/.test(lc) || url.includes('image')) {
+          mediaHtml += `<img class="msg-img" src="${url}" alt="MMS image" loading="lazy"
+                             onclick="openLightbox('${url.replace(/'/g,"\\'")}')">`;
+        } else {
+          const name = url.split('/').pop().split('?')[0] || 'Attachment';
+          mediaHtml += `<a class="msg-file-link" href="${url}" target="_blank" rel="noopener">📎 ${esc(name)}</a>`;
+        }
+      });
+      mediaHtml += '</div>';
+    }
+
+    // If text-only and media present, skip empty text bubble
+    const bodyHtml = (m.body || '').trim()
+      ? `<div class="bubble ${dir} ${ar}">${esc(m.body)}</div>`
+      : '';
+
     html += `<div class="msg-row ${dir}">
       <div>
-        <div class="bubble ${dir} ${ar}">${esc(m.body)}</div>
-        <div class="msg-meta ${dir}">${time}${m.is_auto_reply ? ' · auto-reply' : ''}${status}</div>
+        ${mediaHtml}
+        ${bodyHtml}
+        <div class="msg-meta ${dir}">${time}${m.is_auto_reply ? ' · auto' : ''}${statusHtml}</div>
       </div>
     </div>`;
   });
+
   el.innerHTML = html;
   el.scrollTop = el.scrollHeight;
 }
@@ -666,9 +933,36 @@ function statusLabel(status) {
   return ` · <span class="msg-status ${cls}">${status}</span>`;
 }
 
+/* ── Lightbox ─────────────────────────────────────────────────── */
+function openLightbox(src) {
+  document.getElementById('lightboxImg').src = src;
+  document.getElementById('lightbox').classList.add('show');
+}
+function closeLightbox() {
+  document.getElementById('lightbox').classList.remove('show');
+  document.getElementById('lightboxImg').src = '';
+}
+
+/* ── Quick reply chips ────────────────────────────────────────── */
+function showChips() {
+  if (state.activeConvId) document.getElementById('quickReplies').classList.add('show');
+}
+let chipsTimer;
+function hideChipsDelayed() {
+  chipsTimer = setTimeout(() => document.getElementById('quickReplies').classList.remove('show'), 300);
+}
+function useChip(text) {
+  clearTimeout(chipsTimer);
+  const inp = document.getElementById('msgInput');
+  inp.value = text;
+  inp.focus();
+  autoResize(inp);
+  updateChar(inp);
+}
+
 /* ── Contact panel ────────────────────────────────────────────── */
 function renderContactPanel(c, contact) {
-  const el = document.getElementById('cpContent');
+  const el   = document.getElementById('cpContent');
   const tags = (c.tags||[]).filter(t=>t!=='archived').map(t=>`<span class="cp-tag">${esc(t)}</span>`).join('');
   el.innerHTML = `
     <div class="cp-section">
@@ -692,16 +986,11 @@ function renderContactPanel(c, contact) {
     ${tags ? `<div class="cp-section"><div class="cp-label">Tags</div><div class="cp-tags">${tags}</div></div>` : ''}
     <div class="cp-section">
       <div class="cp-label">Internal Notes</div>
-      <textarea class="notes-area" id="notesArea" placeholder="Add notes…" onchange="saveNotes(this.value)">${esc(c.notes||'')}</textarea>
+      <textarea class="notes-area" id="notesArea" placeholder="Add notes…">${esc(c.notes||'')}</textarea>
       <button class="btn-small" style="margin-top:6px;" onclick="saveNotes(document.getElementById('notesArea').value)">Save Notes</button>
     </div>
     <div class="cp-section" style="display:flex;flex-direction:column;gap:6px;">
-      <button class="btn-small danger" onclick="archiveCurrent()">Archive</button>
-    </div>
-    <div class="cp-section" style="text-align:center;color:var(--muted);font-size:.75rem;">
-      <button class="btn-small" onclick="alert('Google Contacts sync coming soon.')">
-        🔄 Sync Google Contacts
-      </button>
+      <button class="btn-small danger" onclick="archiveCurrent()">Archive Conversation</button>
     </div>`;
 }
 
@@ -717,7 +1006,6 @@ async function sendMsg() {
   const body  = input.value.trim();
   if (!body) return;
 
-  // Optimistic
   state.isSending = true;
   document.getElementById('sendBtn').disabled = true;
   addOptimisticMsg(body);
@@ -733,7 +1021,6 @@ async function sendMsg() {
     toast(data?.error || 'Failed to send message.', 'error');
     return;
   }
-  // Replace optimistic with real message
   await refreshMessages(state.activeConvId);
   loadConversations();
 }
@@ -750,22 +1037,17 @@ function addOptimisticMsg(body) {
   el.scrollTop = el.scrollHeight;
 }
 
-/* ── New conversation (compose) ───────────────────────────────── */
+/* ── New conversation ─────────────────────────────────────────── */
 function openCompose() { openModal('composeModal'); }
 
 async function sendNewMsg() {
   const to   = document.getElementById('composeTo').value.trim();
   const body = document.getElementById('composeBody').value.trim();
   if (!to || !body) { toast('Phone number and message are required.', 'error'); return; }
-
   const btn = document.getElementById('composeSendBtn');
-  btn.disabled = true;
-  btn.textContent = 'Sending…';
-
+  btn.disabled = true; btn.textContent = 'Sending…';
   const data = await apiFetch('/api/inbox/conversations', 'POST', { to, body });
-  btn.disabled = false;
-  btn.textContent = 'Send';
-
+  btn.disabled = false; btn.textContent = 'Send';
   if (!data || !data.success) { toast(data?.error || 'Send failed.', 'error'); return; }
   closeModal('composeModal');
   document.getElementById('composeTo').value   = '';
@@ -784,11 +1066,13 @@ async function markCurrentRead(isRead = true) {
 
 async function archiveCurrent() {
   if (!state.activeConvId) return;
-  const data = await apiFetch(`/api/inbox/conversations/${state.activeConvId}/archive`, 'PATCH', { archived: true });
-  if (data?.success) { toast('Conversation archived.', 'success'); closeThread(); loadConversations(); }
+  await archiveConv(state.activeConvId);
 }
 
-function openRename() { openModal('renameModal'); document.getElementById('renameInput').value = document.getElementById('threadName').textContent; }
+function openRename() {
+  openModal('renameModal');
+  document.getElementById('renameInput').value = document.getElementById('threadName').textContent;
+}
 
 async function submitRename() {
   const name = document.getElementById('renameInput').value.trim();
@@ -826,7 +1110,7 @@ function onSearch(val) {
 function autoResize(el) {
   el.style.height = 'auto';
   el.style.height = Math.min(el.scrollHeight, 120) + 'px';
-  document.getElementById('sendBtn').disabled = !el.value.trim();
+  document.getElementById('sendBtn').disabled = !el.value.trim() || document.getElementById('msgInput').disabled;
 }
 
 function updateChar(el) {
@@ -834,10 +1118,10 @@ function updateChar(el) {
   const el2 = document.getElementById('charCount');
   if (len > 130) {
     el2.textContent = len + '/160';
-    el2.className = len > 160 ? 'over' : 'warn';
+    el2.className   = len > 160 ? 'over' : 'warn';
   } else {
     el2.textContent = '';
-    el2.className = '';
+    el2.className   = '';
   }
 }
 
@@ -846,9 +1130,9 @@ function formatTime(iso) {
   const d   = new Date(iso + (iso.endsWith('Z') ? '' : 'Z'));
   const now = new Date();
   const diff = (now - d) / 1000;
-  if (diff < 60)    return 'now';
-  if (diff < 3600)  return Math.floor(diff/60) + 'm';
-  if (diff < 86400) return d.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
+  if (diff < 60)     return 'now';
+  if (diff < 3600)   return Math.floor(diff/60) + 'm';
+  if (diff < 86400)  return d.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
   if (diff < 604800) return d.toLocaleDateString('en-US',{weekday:'short'});
   return d.toLocaleDateString('en-US',{month:'short',day:'numeric'});
 }
@@ -860,7 +1144,6 @@ function esc(str) {
 function openModal(id)  { document.getElementById(id).classList.add('show'); }
 function closeModal(id) { document.getElementById(id).classList.remove('show'); }
 
-// Close modals on overlay click
 document.querySelectorAll('.pwa-modal-overlay').forEach(el => {
   el.addEventListener('click', e => { if (e.target === el) el.classList.remove('show'); });
 });

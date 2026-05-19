@@ -19,9 +19,11 @@ Routes:
 
 import logging
 import os
+import queue as _queue_module
+import threading
 from datetime import datetime, timezone
 
-from flask import (Blueprint, abort, current_app, g, jsonify,
+from flask import (Blueprint, Response, abort, current_app, g, jsonify,
                    render_template, request, session)
 
 from extensions import db
@@ -29,6 +31,12 @@ from extensions import db
 logger = logging.getLogger(__name__)
 
 inbox_pwa_bp = Blueprint("inbox_pwa", __name__)
+
+# ── SSE Event Bus ──────────────────────────────────────────────────────────────
+# Keyed by company_id → list of Queue objects (one per connected SSE client).
+# Works with gunicorn gthread workers (--worker-class gthread --threads N).
+_sse_lock:      threading.Lock              = threading.Lock()
+_sse_listeners: dict[int, list]             = {}
 
 # ── Auth helpers ──────────────────────────────────────────────────────────────
 
@@ -497,6 +505,70 @@ def push_test():
     if sent:
         return jsonify({"success": True, "sent": sent})
     return jsonify({"success": False, "error": errors[0] if errors else "Unknown error"})
+
+
+# ── SSE helpers ───────────────────────────────────────────────────────────────
+
+def _push_sse_event(company_id: int, event_type: str, data: dict):
+    """Broadcast a JSON event to every SSE listener for a company."""
+    import json
+    payload = json.dumps({"type": event_type, **data})
+    with _sse_lock:
+        listeners = _sse_listeners.get(company_id, [])
+        dead = []
+        for q in listeners:
+            try:
+                q.put_nowait(payload)
+            except _queue_module.Full:
+                dead.append(q)
+        for q in dead:
+            try:
+                listeners.remove(q)
+            except ValueError:
+                pass
+
+
+@inbox_pwa_bp.route("/api/inbox/stream")
+def sse_stream():
+    """
+    Server-Sent Events stream — real-time message delivery.
+    Requires gthread gunicorn workers (--worker-class gthread --threads N).
+    Each connected client holds one thread; heartbeats every 25 s keep it alive.
+    """
+    user    = _require_auth()
+    company = _get_company(user)
+    if not company:
+        return jsonify({"error": "No company"}), 400
+
+    def generate():
+        q = _queue_module.Queue(maxsize=100)
+        with _sse_lock:
+            _sse_listeners.setdefault(company.id, []).append(q)
+        try:
+            yield "event: connected\ndata: {}\n\n"
+            while True:
+                try:
+                    payload = q.get(timeout=25)
+                    yield f"data: {payload}\n\n"
+                except _queue_module.Empty:
+                    yield ": heartbeat\n\n"
+        finally:
+            with _sse_lock:
+                lst = _sse_listeners.get(company.id, [])
+                try:
+                    lst.remove(q)
+                except ValueError:
+                    pass
+
+    return Response(
+        generate(),
+        mimetype="text/event-stream",
+        headers={
+            "Cache-Control":     "no-cache",
+            "X-Accel-Buffering": "no",
+            "Connection":        "keep-alive",
+        },
+    )
 
 
 # ── Internal helper: fire push for new inbound message ───────────────────────
