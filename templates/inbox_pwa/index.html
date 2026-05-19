@@ -1,0 +1,878 @@
+<!DOCTYPE html>
+<html lang="en" data-vapid="{{ vapid_public }}">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="LUXit Inbox">
+  <meta name="theme-color" content="#7c3aed">
+  <title>LUXit Inbox</title>
+  <link rel="manifest" href="/static/manifest.json">
+  <link rel="apple-touch-icon" href="/static/favicon.png">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css">
+  <style>
+    :root {
+      --bg:       #000;
+      --surface:  #0b0d14;
+      --border:   #1e2535;
+      --purple:   #7c3aed;
+      --purple-l: #a78bfa;
+      --cyan:     #06b6d4;
+      --pink:     #ec4899;
+      --muted:    #64748b;
+      --text:     #f1f5f9;
+      --text-dim: #94a3b8;
+      --green:    #22c55e;
+      --red:      #ef4444;
+      --safe-top: env(safe-area-inset-top, 0px);
+      --safe-bot: env(safe-area-inset-bottom, 0px);
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; overflow: hidden; }
+
+    /* ── Shell ──────────────────────────────────────── */
+    #shell {
+      display: flex;
+      height: 100dvh;
+      padding-top: var(--safe-top);
+      padding-bottom: var(--safe-bot);
+    }
+
+    /* ── Sidebar ────────────────────────────────────── */
+    #sidebar {
+      width: 340px;
+      min-width: 280px;
+      max-width: 340px;
+      display: flex;
+      flex-direction: column;
+      border-right: 1px solid var(--border);
+      background: var(--surface);
+      flex-shrink: 0;
+    }
+    .sidebar-head {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 14px 16px 10px;
+      border-bottom: 1px solid var(--border);
+    }
+    .sidebar-head h1 { font-size: 1.15rem; font-weight: 700; flex: 1; }
+    .sidebar-head .badge-unread {
+      background: var(--purple); color: #fff;
+      border-radius: 20px; font-size: .7rem; padding: 2px 8px; min-width: 24px; text-align: center;
+      display: none;
+    }
+    .sidebar-head .badge-unread.show { display: inline-block; }
+    .btn-compose {
+      width: 32px; height: 32px; border-radius: 50%;
+      background: var(--purple); border: none; color: #fff;
+      display: flex; align-items: center; justify-content: center;
+      cursor: pointer; font-size: 1.1rem; flex-shrink: 0;
+    }
+    .search-wrap { padding: 10px 12px; border-bottom: 1px solid var(--border); }
+    .search-wrap input {
+      width: 100%; background: #111827; border: 1px solid var(--border);
+      border-radius: 8px; color: var(--text); padding: 7px 12px; font-size: .85rem;
+      outline: none;
+    }
+    .search-wrap input:focus { border-color: var(--purple); }
+    .filter-tabs {
+      display: flex; gap: 4px; padding: 8px 12px;
+      overflow-x: auto; border-bottom: 1px solid var(--border);
+      scrollbar-width: none;
+    }
+    .filter-tabs::-webkit-scrollbar { display: none; }
+    .ftab {
+      white-space: nowrap; font-size: .75rem; padding: 4px 12px;
+      border-radius: 20px; border: 1px solid var(--border);
+      background: transparent; color: var(--text-dim); cursor: pointer;
+    }
+    .ftab.active { background: rgba(124,58,237,.2); border-color: var(--purple); color: var(--purple-l); }
+    #convList { flex: 1; overflow-y: auto; }
+    #convList::-webkit-scrollbar { width: 4px; }
+    #convList::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+    /* Conversation row */
+    .conv-item {
+      display: flex; align-items: center; gap: 12px;
+      padding: 12px 14px; cursor: pointer; border-bottom: 1px solid var(--border);
+      transition: background .15s;
+    }
+    .conv-item:hover { background: rgba(255,255,255,.03); }
+    .conv-item.active { background: rgba(124,58,237,.12); border-left: 3px solid var(--purple); }
+    .conv-item.unread .conv-name { color: #fff; font-weight: 600; }
+    .conv-item.unread .conv-preview { color: var(--text); }
+    .conv-avatar {
+      width: 40px; height: 40px; border-radius: 50%; flex-shrink: 0;
+      background: rgba(124,58,237,.25); color: var(--purple-l);
+      display: flex; align-items: center; justify-content: center;
+      font-size: .85rem; font-weight: 700;
+    }
+    .conv-avatar.opted-out { background: rgba(239,68,68,.15); color: var(--red); }
+    .conv-meta { flex: 1; min-width: 0; }
+    .conv-name { font-size: .87rem; color: var(--text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .conv-preview { font-size: .78rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px; }
+    .conv-right { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; flex-shrink: 0; }
+    .conv-time { font-size: .7rem; color: var(--muted); }
+    .conv-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--purple); }
+    #convEmpty { padding: 32px 16px; text-align: center; color: var(--muted); font-size: .85rem; }
+
+    /* ── Main thread panel ──────────────────────────── */
+    #main {
+      flex: 1; display: flex; flex-direction: column; min-width: 0; background: var(--bg);
+    }
+    #threadPlaceholder {
+      flex: 1; display: flex; flex-direction: column;
+      align-items: center; justify-content: center; gap: 12px; color: var(--muted);
+    }
+    #threadPlaceholder svg { opacity: .2; }
+    #thread { flex: 1; display: flex; flex-direction: column; display: none; }
+
+    /* Thread header */
+    .thread-head {
+      display: flex; align-items: center; gap: 10px;
+      padding: 12px 16px; border-bottom: 1px solid var(--border);
+      background: var(--surface); flex-shrink: 0;
+    }
+    .btn-back {
+      display: none; background: none; border: none; color: var(--text-dim);
+      cursor: pointer; padding: 4px; font-size: 1.2rem;
+    }
+    .thread-info { flex: 1; min-width: 0; }
+    .thread-name { font-weight: 600; font-size: .95rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .thread-number { font-size: .75rem; color: var(--muted); }
+    .thread-actions { display: flex; gap: 6px; }
+    .thread-actions button {
+      background: none; border: 1px solid var(--border); color: var(--text-dim);
+      border-radius: 6px; padding: 4px 10px; font-size: .75rem; cursor: pointer;
+    }
+    .thread-actions button:hover { border-color: var(--purple); color: var(--purple-l); }
+
+    /* Messages */
+    #messages {
+      flex: 1; overflow-y: auto; padding: 16px;
+      display: flex; flex-direction: column; gap: 10px;
+    }
+    #messages::-webkit-scrollbar { width: 4px; }
+    #messages::-webkit-scrollbar-thumb { background: var(--border); }
+    .msg-group { display: flex; flex-direction: column; gap: 3px; }
+    .msg-row { display: flex; }
+    .msg-row.out { justify-content: flex-end; }
+    .msg-row.in  { justify-content: flex-start; }
+    .bubble {
+      max-width: 72%; padding: 9px 14px; border-radius: 16px;
+      font-size: .88rem; line-height: 1.45; word-break: break-word;
+    }
+    .bubble.out {
+      background: var(--purple); color: #fff;
+      border-bottom-right-radius: 4px;
+    }
+    .bubble.in {
+      background: #1e2535; color: var(--text);
+      border-bottom-left-radius: 4px;
+    }
+    .bubble.auto-reply { background: rgba(6,182,212,.15); color: var(--cyan); border: 1px solid rgba(6,182,212,.25); }
+    .msg-meta { font-size: .68rem; color: var(--muted); margin: 0 4px; }
+    .msg-meta.out { text-align: right; }
+    .msg-status { font-size: .65rem; color: var(--muted); }
+    .msg-status.delivered { color: var(--cyan); }
+    .msg-status.failed    { color: var(--red); }
+    .date-divider {
+      display: flex; align-items: center; gap: 10px;
+      color: var(--muted); font-size: .72rem; margin: 8px 0;
+    }
+    .date-divider::before, .date-divider::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+
+    /* Composer */
+    .composer {
+      padding: 10px 12px; border-top: 1px solid var(--border);
+      background: var(--surface); flex-shrink: 0;
+      display: flex; gap: 8px; align-items: flex-end;
+    }
+    .composer-wrap { flex: 1; position: relative; }
+    #msgInput {
+      width: 100%; background: #111827; border: 1px solid var(--border);
+      border-radius: 12px; color: var(--text); padding: 10px 14px;
+      font-size: .88rem; outline: none; resize: none; min-height: 42px;
+      max-height: 120px; line-height: 1.4; overflow-y: auto; font-family: inherit;
+    }
+    #msgInput:focus { border-color: var(--purple); }
+    #charCount { position: absolute; bottom: 6px; right: 10px; font-size: .65rem; color: var(--muted); }
+    #charCount.warn { color: #f97316; }
+    #charCount.over { color: var(--red); }
+    #sendBtn {
+      width: 42px; height: 42px; border-radius: 50%; border: none;
+      background: var(--purple); color: #fff; cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0; transition: background .15s;
+    }
+    #sendBtn:hover { background: #6d28d9; }
+    #sendBtn:disabled { background: var(--muted); cursor: not-allowed; }
+    #optOutBanner {
+      display: none; padding: 8px 16px; text-align: center;
+      background: rgba(239,68,68,.1); border-top: 1px solid rgba(239,68,68,.3);
+      color: var(--red); font-size: .8rem;
+    }
+
+    /* ── Contact sidebar (desktop-only detail panel) ── */
+    #contactPanel {
+      width: 260px; border-left: 1px solid var(--border); background: var(--surface);
+      display: none; flex-direction: column; overflow-y: auto;
+    }
+    .contact-panel-head {
+      padding: 14px 14px 10px; border-bottom: 1px solid var(--border);
+      font-size: .8rem; font-weight: 600; color: var(--text-dim); text-transform: uppercase; letter-spacing: .05em;
+    }
+    .cp-section { padding: 12px 14px; border-bottom: 1px solid var(--border); }
+    .cp-label { font-size: .72rem; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; margin-bottom: 4px; }
+    .cp-value { font-size: .84rem; color: var(--text); word-break: break-all; }
+    .cp-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+    .cp-tag { font-size: .7rem; padding: 2px 8px; border-radius: 20px; background: rgba(124,58,237,.2); color: var(--purple-l); }
+    .notes-area {
+      width: 100%; background: #111827; border: 1px solid var(--border);
+      color: var(--text); border-radius: 8px; padding: 8px; font-size: .82rem;
+      resize: vertical; min-height: 80px; margin-top: 6px; font-family: inherit;
+      outline: none;
+    }
+    .notes-area:focus { border-color: var(--purple); }
+    .btn-small {
+      font-size: .75rem; padding: 5px 12px; border-radius: 8px;
+      background: rgba(124,58,237,.2); border: 1px solid rgba(124,58,237,.3);
+      color: var(--purple-l); cursor: pointer; transition: background .15s;
+    }
+    .btn-small:hover { background: rgba(124,58,237,.35); }
+    .btn-small.danger { background: rgba(239,68,68,.15); border-color: rgba(239,68,68,.3); color: var(--red); }
+
+    /* ── Modals ─────────────────────────────────────── */
+    .pwa-modal-overlay {
+      position: fixed; inset: 0; background: rgba(0,0,0,.7);
+      display: flex; align-items: flex-end; justify-content: center;
+      z-index: 1000; opacity: 0; pointer-events: none; transition: opacity .2s;
+    }
+    .pwa-modal-overlay.show { opacity: 1; pointer-events: all; }
+    .pwa-modal {
+      background: #0f1117; border: 1px solid var(--border);
+      border-radius: 20px 20px 0 0; width: 100%; max-width: 480px;
+      padding: 20px; max-height: 80vh; overflow-y: auto;
+      transform: translateY(100%); transition: transform .25s ease;
+    }
+    .pwa-modal-overlay.show .pwa-modal { transform: translateY(0); }
+    .modal-title { font-weight: 700; margin-bottom: 16px; }
+    .pwa-field label { font-size: .8rem; color: var(--text-dim); display: block; margin-bottom: 4px; }
+    .pwa-field input, .pwa-field textarea {
+      width: 100%; background: #111827; border: 1px solid var(--border);
+      color: var(--text); border-radius: 8px; padding: 9px 12px;
+      font-size: .88rem; outline: none; margin-bottom: 10px; font-family: inherit;
+    }
+    .pwa-field input:focus, .pwa-field textarea:focus { border-color: var(--purple); }
+    .modal-actions { display: flex; gap: 8px; justify-content: flex-end; }
+    .btn-cancel { background: none; border: 1px solid var(--border); color: var(--text-dim); border-radius: 8px; padding: 8px 18px; cursor: pointer; font-size: .85rem; }
+    .btn-primary { background: var(--purple); border: none; color: #fff; border-radius: 8px; padding: 8px 18px; cursor: pointer; font-size: .85rem; }
+    .btn-primary:disabled { background: var(--muted); cursor: not-allowed; }
+
+    /* ── Toast ──────────────────────────────────────── */
+    #toast {
+      position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+      background: #1e2535; color: var(--text); padding: 10px 20px;
+      border-radius: 20px; font-size: .83rem; z-index: 9999;
+      opacity: 0; transition: opacity .2s; pointer-events: none;
+      max-width: 90%; text-align: center;
+    }
+    #toast.show { opacity: 1; }
+    #toast.success { border: 1px solid rgba(34,197,94,.4); color: var(--green); }
+    #toast.error   { border: 1px solid rgba(239,68,68,.4); color: var(--red); }
+
+    /* ── Notification prompt ────────────────────────── */
+    #notifBanner {
+      display: none; align-items: center; gap: 10px;
+      padding: 8px 12px; background: rgba(124,58,237,.12);
+      border-bottom: 1px solid rgba(124,58,237,.25); font-size: .8rem;
+    }
+    #notifBanner.show { display: flex; }
+    #notifBanner span { flex: 1; }
+
+    /* ── Mobile responsiveness ──────────────────────── */
+    @media (min-width: 900px) {
+      #contactPanel { display: flex; }
+    }
+    @media (max-width: 640px) {
+      #sidebar { width: 100%; max-width: 100%; border-right: none; }
+      #main { display: none; }
+      #shell.thread-open #sidebar { display: none; }
+      #shell.thread-open #main  { display: flex; }
+      .btn-back { display: flex; }
+    }
+    @media (min-width: 641px) {
+      #thread { display: flex !important; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ── App Shell ──────────────────────────────────────────────────── -->
+<div id="shell">
+
+  <!-- ── Sidebar: conversation list ───────────────────────────────── -->
+  <div id="sidebar">
+    <!-- Header -->
+    <div class="sidebar-head">
+      <h1>📨 Inbox</h1>
+      <span class="badge-unread" id="unreadBadge">0</span>
+      <a href="/dashboard" style="color:var(--muted);font-size:.72rem;text-decoration:none;" title="Back to dashboard">⬡</a>
+      <button class="btn-compose" onclick="openCompose()" title="New Message">+</button>
+    </div>
+
+    <!-- Notification banner -->
+    <div id="notifBanner">
+      <span>Enable push notifications for new messages</span>
+      <button class="btn-small" onclick="requestPush()">Enable</button>
+      <button class="btn-small" onclick="document.getElementById('notifBanner').classList.remove('show')" style="font-size:.7rem;">✕</button>
+    </div>
+
+    <!-- Search -->
+    <div class="search-wrap">
+      <input type="search" id="searchInput" placeholder="Search conversations…" oninput="onSearch(this.value)">
+    </div>
+
+    <!-- Filters -->
+    <div class="filter-tabs">
+      <button class="ftab active" data-filter="all"    onclick="setFilter('all',   this)">All</button>
+      <button class="ftab"        data-filter="unread" onclick="setFilter('unread',this)">Unread</button>
+      <button class="ftab"        data-filter="mine"   onclick="setFilter('mine',  this)">Assigned to Me</button>
+      <button class="ftab"        data-filter="archived" onclick="setFilter('archived',this)">Archived</button>
+    </div>
+
+    <!-- List -->
+    <div id="convList"></div>
+  </div>
+
+  <!-- ── Main: thread ──────────────────────────────────────────────── -->
+  <div id="main">
+    <!-- Placeholder when nothing selected -->
+    <div id="threadPlaceholder">
+      <svg width="56" height="56" fill="none" viewBox="0 0 24 24" stroke="#7c3aed" stroke-width="1.2">
+        <path stroke-linecap="round" stroke-linejoin="round"
+          d="M8 10h.01M12 10h.01M16 10h.01M21 12c0 4.418-4.03 8-9 8a9.9 9.9 0 01-4-.8L3 20l.9-3.6A7.9 7.9 0 013 12C3 7.582 7.03 4 12 4s9 3.582 9 8z"/>
+      </svg>
+      <p style="color:var(--muted);font-size:.9rem;">Select a conversation</p>
+      <button class="btn-small" onclick="openCompose()">+ New message</button>
+    </div>
+
+    <!-- Thread (shown when a conversation is selected) -->
+    <div id="thread">
+      <!-- Thread header -->
+      <div class="thread-head">
+        <button class="btn-back" onclick="closeThread()">‹</button>
+        <div class="thread-info">
+          <div class="thread-name" id="threadName">—</div>
+          <div class="thread-number" id="threadNumber"></div>
+        </div>
+        <div class="thread-actions">
+          <button onclick="markCurrentRead(false)" title="Mark unread">◎</button>
+          <button onclick="archiveCurrent()"      title="Archive">⊡</button>
+          <button onclick="toggleContactPanel()"  title="Contact info">👤</button>
+          <button onclick="openRename()"          title="Rename">✏</button>
+        </div>
+      </div>
+
+      <!-- Opted-out warning -->
+      <div id="optOutBanner">This contact has opted out of SMS messages.</div>
+
+      <!-- Messages -->
+      <div id="messages"></div>
+
+      <!-- Composer -->
+      <div class="composer">
+        <div class="composer-wrap">
+          <textarea id="msgInput" placeholder="Type a message…" rows="1"
+            oninput="autoResize(this);updateChar(this)"
+            onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendMsg();}"></textarea>
+          <span id="charCount"></span>
+        </div>
+        <button id="sendBtn" onclick="sendMsg()" disabled>
+          <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+
+    <!-- Contact panel (desktop sidebar) -->
+    <div id="contactPanel">
+      <div class="contact-panel-head">Contact Info</div>
+      <div id="cpContent"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Compose modal ─────────────────────────────────────────────── -->
+<div class="pwa-modal-overlay" id="composeModal">
+  <div class="pwa-modal">
+    <div class="modal-title">New Message</div>
+    <div class="pwa-field">
+      <label>To (phone number)</label>
+      <input type="tel" id="composeTo" placeholder="+19165551234">
+    </div>
+    <div class="pwa-field">
+      <label>Message</label>
+      <textarea id="composeBody" rows="4" placeholder="Type your message…"></textarea>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeModal('composeModal')">Cancel</button>
+      <button class="btn-primary" id="composeSendBtn" onclick="sendNewMsg()">Send</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Rename modal ──────────────────────────────────────────────── -->
+<div class="pwa-modal-overlay" id="renameModal">
+  <div class="pwa-modal">
+    <div class="modal-title">Rename Contact</div>
+    <div class="pwa-field">
+      <label>Display Name</label>
+      <input type="text" id="renameInput" placeholder="John Smith">
+    </div>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeModal('renameModal')">Cancel</button>
+      <button class="btn-primary" onclick="submitRename()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Toast ─────────────────────────────────────────────────────── -->
+<div id="toast"></div>
+
+<script>
+/* ═══════════════════════════════════════════════════════════════
+   LUXit Inbox PWA — main.js
+═══════════════════════════════════════════════════════════════ */
+const CSRF = '{{ csrf_token() }}';
+const VAPID_PUBLIC = document.documentElement.dataset.vapid ?? '';
+
+let state = {
+  filter:        'all',
+  search:        '',
+  activeConvId:  null,
+  conversations: [],
+  messages:      [],
+  pollConvTimer: null,
+  pollMsgTimer:  null,
+  isSending:     false,
+};
+
+/* ── Init ─────────────────────────────────────────────────────── */
+window.addEventListener('DOMContentLoaded', () => {
+  loadConversations();
+  startConvPolling();
+  registerSW();
+  checkNotifPrompt();
+  // Re-open last conversation on PWA launch
+  const params = new URLSearchParams(location.search);
+  const convId = params.get('conv');
+  if (convId) openConversation(parseInt(convId));
+});
+
+/* ── Service Worker ───────────────────────────────────────────── */
+function registerSW() {
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('/static/sw.js').catch(e => console.warn('SW:', e));
+  }
+}
+
+/* ── Push notifications ───────────────────────────────────────── */
+function checkNotifPrompt() {
+  if (!VAPID_PUBLIC) return;
+  if (!('Notification' in window)) return;
+  if (Notification.permission === 'default') {
+    document.getElementById('notifBanner').classList.add('show');
+  }
+}
+
+async function requestPush() {
+  if (!VAPID_PUBLIC) { toast('Push notifications not configured on server.', 'error'); return; }
+  const perm = await Notification.requestPermission();
+  if (perm !== 'granted') { toast('Notification permission denied.', 'error'); return; }
+  document.getElementById('notifBanner').classList.remove('show');
+  try {
+    const reg = await navigator.serviceWorker.ready;
+    const sub = await reg.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC),
+    });
+    await apiFetch('/api/inbox/push/subscribe', 'POST', sub.toJSON());
+    toast('Push notifications enabled!', 'success');
+  } catch (e) {
+    toast('Could not enable notifications: ' + e.message, 'error');
+  }
+}
+
+function urlBase64ToUint8Array(b64) {
+  const padding = '='.repeat((4 - b64.length % 4) % 4);
+  const base64  = (b64 + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const raw     = atob(base64);
+  return Uint8Array.from([...raw].map(c => c.charCodeAt(0)));
+}
+
+/* ── Polling ──────────────────────────────────────────────────── */
+function startConvPolling() {
+  clearInterval(state.pollConvTimer);
+  state.pollConvTimer = setInterval(loadConversations, 10000);
+}
+function startMsgPolling(convId) {
+  clearInterval(state.pollMsgTimer);
+  state.pollMsgTimer = setInterval(() => refreshMessages(convId), 5000);
+}
+function stopMsgPolling() {
+  clearInterval(state.pollMsgTimer);
+  state.pollMsgTimer = null;
+}
+
+/* ── API helper ───────────────────────────────────────────────── */
+async function apiFetch(url, method = 'GET', body = null) {
+  const opts = { method, headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF } };
+  if (body) opts.body = JSON.stringify(body);
+  const res = await fetch(url, opts);
+  if (res.status === 401) { location.href = '/auth/login?next=/app/inbox'; return null; }
+  return res.json();
+}
+
+/* ── Conversation list ────────────────────────────────────────── */
+async function loadConversations() {
+  const qs  = `?filter=${state.filter}&q=${encodeURIComponent(state.search)}`;
+  const data = await apiFetch('/api/inbox/conversations' + qs);
+  if (!data) return;
+  state.conversations = data.conversations;
+  renderConvList(data.conversations);
+  updateUnreadBadge(data.unread_count);
+}
+
+function renderConvList(convs) {
+  const el = document.getElementById('convList');
+  if (!convs.length) {
+    el.innerHTML = '<div id="convEmpty">No conversations found.</div>';
+    return;
+  }
+  el.innerHTML = convs.map(c => {
+    const initials = (c.display_name || c.from_number).slice(0,2).toUpperCase();
+    const time     = formatTime(c.last_message_at);
+    const unread   = !c.is_read;
+    const active   = c.id === state.activeConvId ? 'active' : '';
+    const optOut   = c.is_opted_out ? 'opted-out' : '';
+    return `<div class="conv-item ${unread?'unread':''} ${active}"
+                 id="ci-${c.id}" onclick="openConversation(${c.id})">
+      <div class="conv-avatar ${optOut}">${initials}</div>
+      <div class="conv-meta">
+        <div class="conv-name">${esc(c.display_name)}</div>
+        <div class="conv-preview">${esc(c.last_message_preview||'—')}</div>
+      </div>
+      <div class="conv-right">
+        <span class="conv-time">${time}</span>
+        ${unread ? '<span class="conv-dot"></span>' : ''}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function updateUnreadBadge(count) {
+  const el = document.getElementById('unreadBadge');
+  el.textContent = count;
+  el.classList.toggle('show', count > 0);
+}
+
+/* ── Open conversation ────────────────────────────────────────── */
+async function openConversation(convId) {
+  state.activeConvId = convId;
+  // highlight active in list
+  document.querySelectorAll('.conv-item').forEach(el => el.classList.remove('active'));
+  const ci = document.getElementById('ci-' + convId);
+  if (ci) { ci.classList.add('active'); ci.classList.remove('unread'); ci.querySelector('.conv-dot')?.remove(); }
+
+  // Mobile: show thread panel
+  document.getElementById('shell').classList.add('thread-open');
+  document.getElementById('threadPlaceholder').style.display = 'none';
+  document.getElementById('thread').style.display = 'flex';
+
+  const data = await apiFetch(`/api/inbox/conversations/${convId}`);
+  if (!data) return;
+
+  const c = data.conversation;
+  state.messages = data.messages;
+
+  document.getElementById('threadName').textContent   = c.display_name || c.from_number;
+  document.getElementById('threadNumber').textContent = c.from_number !== c.display_name ? c.from_number : '';
+  document.getElementById('optOutBanner').style.display = c.is_opted_out ? '' : 'none';
+  document.getElementById('msgInput').disabled = c.is_opted_out;
+  document.getElementById('sendBtn').disabled  = c.is_opted_out;
+
+  renderMessages(data.messages);
+  renderContactPanel(c, data.contact);
+  startMsgPolling(convId);
+}
+
+async function refreshMessages(convId) {
+  if (convId !== state.activeConvId) return;
+  const data = await apiFetch(`/api/inbox/conversations/${convId}`);
+  if (!data) return;
+  if (data.messages.length !== state.messages.length) {
+    state.messages = data.messages;
+    renderMessages(data.messages);
+  }
+  // Update unread in conv list
+  loadConversations();
+}
+
+function closeThread() {
+  state.activeConvId = null;
+  document.getElementById('shell').classList.remove('thread-open');
+  document.getElementById('thread').style.display = 'none';
+  document.getElementById('threadPlaceholder').style.display = 'flex';
+  stopMsgPolling();
+}
+
+/* ── Render messages ──────────────────────────────────────────── */
+function renderMessages(msgs) {
+  const el   = document.getElementById('messages');
+  if (!msgs.length) { el.innerHTML = '<div style="text-align:center;color:var(--muted);font-size:.8rem;padding-top:40px;">No messages yet</div>'; return; }
+
+  let html = '';
+  let lastDate = '';
+  msgs.forEach(m => {
+    const d    = new Date(m.created_at + 'Z');
+    const ds   = d.toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'});
+    if (ds !== lastDate) {
+      html += `<div class="date-divider">${ds}</div>`;
+      lastDate = ds;
+    }
+    const dir   = m.direction === 'outbound' ? 'out' : 'in';
+    const ar    = m.is_auto_reply ? 'auto-reply' : '';
+    const time  = d.toLocaleTimeString('en-US', {hour:'numeric', minute:'2-digit'});
+    const status= m.direction === 'outbound' ? statusLabel(m.status) : '';
+    html += `<div class="msg-row ${dir}">
+      <div>
+        <div class="bubble ${dir} ${ar}">${esc(m.body)}</div>
+        <div class="msg-meta ${dir}">${time}${m.is_auto_reply ? ' · auto-reply' : ''}${status}</div>
+      </div>
+    </div>`;
+  });
+  el.innerHTML = html;
+  el.scrollTop = el.scrollHeight;
+}
+
+function statusLabel(status) {
+  if (!status) return '';
+  const cls = ['delivered','sent'].includes(status) ? 'delivered' : (status==='failed'||status==='undelivered') ? 'failed' : '';
+  return ` · <span class="msg-status ${cls}">${status}</span>`;
+}
+
+/* ── Contact panel ────────────────────────────────────────────── */
+function renderContactPanel(c, contact) {
+  const el = document.getElementById('cpContent');
+  const tags = (c.tags||[]).filter(t=>t!=='archived').map(t=>`<span class="cp-tag">${esc(t)}</span>`).join('');
+  el.innerHTML = `
+    <div class="cp-section">
+      <div class="cp-label">Phone</div>
+      <div class="cp-value">${esc(c.from_number)}</div>
+    </div>
+    ${contact ? `
+    <div class="cp-section">
+      <div class="cp-label">CRM Contact</div>
+      <div class="cp-value"><a href="/contacts/${contact.id}" style="color:var(--cyan);text-decoration:none;">${esc(contact.name||'View')}</a></div>
+      ${contact.email ? `<div class="cp-value" style="margin-top:3px;">${esc(contact.email)}</div>` : ''}
+    </div>` : `
+    <div class="cp-section">
+      <div class="cp-label">CRM Contact</div>
+      <div class="cp-value" style="color:var(--muted);">Unknown</div>
+    </div>`}
+    <div class="cp-section">
+      <div class="cp-label">Status</div>
+      <div class="cp-value">${c.is_opted_out ? '🚫 Opted Out' : '✓ Active'}</div>
+    </div>
+    ${tags ? `<div class="cp-section"><div class="cp-label">Tags</div><div class="cp-tags">${tags}</div></div>` : ''}
+    <div class="cp-section">
+      <div class="cp-label">Internal Notes</div>
+      <textarea class="notes-area" id="notesArea" placeholder="Add notes…" onchange="saveNotes(this.value)">${esc(c.notes||'')}</textarea>
+      <button class="btn-small" style="margin-top:6px;" onclick="saveNotes(document.getElementById('notesArea').value)">Save Notes</button>
+    </div>
+    <div class="cp-section" style="display:flex;flex-direction:column;gap:6px;">
+      <button class="btn-small danger" onclick="archiveCurrent()">Archive</button>
+    </div>
+    <div class="cp-section" style="text-align:center;color:var(--muted);font-size:.75rem;">
+      <button class="btn-small" onclick="alert('Google Contacts sync coming soon.')">
+        🔄 Sync Google Contacts
+      </button>
+    </div>`;
+}
+
+function toggleContactPanel() {
+  const p = document.getElementById('contactPanel');
+  p.style.display = p.style.display === 'flex' ? 'none' : 'flex';
+}
+
+/* ── Send message ─────────────────────────────────────────────── */
+async function sendMsg() {
+  if (state.isSending || !state.activeConvId) return;
+  const input = document.getElementById('msgInput');
+  const body  = input.value.trim();
+  if (!body) return;
+
+  // Optimistic
+  state.isSending = true;
+  document.getElementById('sendBtn').disabled = true;
+  addOptimisticMsg(body);
+  input.value = '';
+  autoResize(input);
+  updateChar(input);
+
+  const data = await apiFetch(`/api/inbox/conversations/${state.activeConvId}/messages`, 'POST', { body });
+  state.isSending = false;
+  document.getElementById('sendBtn').disabled = false;
+
+  if (!data || !data.success) {
+    toast(data?.error || 'Failed to send message.', 'error');
+    return;
+  }
+  // Replace optimistic with real message
+  await refreshMessages(state.activeConvId);
+  loadConversations();
+}
+
+function addOptimisticMsg(body) {
+  const el  = document.getElementById('messages');
+  const now = new Date().toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
+  el.innerHTML += `<div class="msg-row out" id="opt-msg">
+    <div>
+      <div class="bubble out">${esc(body)}</div>
+      <div class="msg-meta out">${now} · <span class="msg-status">sending…</span></div>
+    </div>
+  </div>`;
+  el.scrollTop = el.scrollHeight;
+}
+
+/* ── New conversation (compose) ───────────────────────────────── */
+function openCompose() { openModal('composeModal'); }
+
+async function sendNewMsg() {
+  const to   = document.getElementById('composeTo').value.trim();
+  const body = document.getElementById('composeBody').value.trim();
+  if (!to || !body) { toast('Phone number and message are required.', 'error'); return; }
+
+  const btn = document.getElementById('composeSendBtn');
+  btn.disabled = true;
+  btn.textContent = 'Sending…';
+
+  const data = await apiFetch('/api/inbox/conversations', 'POST', { to, body });
+  btn.disabled = false;
+  btn.textContent = 'Send';
+
+  if (!data || !data.success) { toast(data?.error || 'Send failed.', 'error'); return; }
+  closeModal('composeModal');
+  document.getElementById('composeTo').value   = '';
+  document.getElementById('composeBody').value = '';
+  toast('Message sent.', 'success');
+  await loadConversations();
+  openConversation(data.conversation_id);
+}
+
+/* ── Actions ──────────────────────────────────────────────────── */
+async function markCurrentRead(isRead = true) {
+  if (!state.activeConvId) return;
+  const data = await apiFetch(`/api/inbox/conversations/${state.activeConvId}/read`, 'PATCH', { is_read: isRead });
+  if (data?.success) { toast(isRead ? 'Marked as read.' : 'Marked as unread.'); loadConversations(); }
+}
+
+async function archiveCurrent() {
+  if (!state.activeConvId) return;
+  const data = await apiFetch(`/api/inbox/conversations/${state.activeConvId}/archive`, 'PATCH', { archived: true });
+  if (data?.success) { toast('Conversation archived.', 'success'); closeThread(); loadConversations(); }
+}
+
+function openRename() { openModal('renameModal'); document.getElementById('renameInput').value = document.getElementById('threadName').textContent; }
+
+async function submitRename() {
+  const name = document.getElementById('renameInput').value.trim();
+  if (!name || !state.activeConvId) return;
+  const data = await apiFetch(`/api/inbox/conversations/${state.activeConvId}/rename`, 'PATCH', { name });
+  if (data?.success) {
+    document.getElementById('threadName').textContent = data.contact_name;
+    closeModal('renameModal');
+    toast('Contact renamed.', 'success');
+    loadConversations();
+  }
+}
+
+async function saveNotes(notes) {
+  if (!state.activeConvId) return;
+  const data = await apiFetch(`/api/inbox/conversations/${state.activeConvId}/notes`, 'POST', { notes });
+  if (data?.success) toast('Notes saved.', 'success');
+}
+
+/* ── Filters & search ─────────────────────────────────────────── */
+function setFilter(f, btn) {
+  state.filter = f;
+  document.querySelectorAll('.ftab').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  loadConversations();
+}
+
+let searchTimer;
+function onSearch(val) {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(() => { state.search = val; loadConversations(); }, 300);
+}
+
+/* ── UI helpers ───────────────────────────────────────────────── */
+function autoResize(el) {
+  el.style.height = 'auto';
+  el.style.height = Math.min(el.scrollHeight, 120) + 'px';
+  document.getElementById('sendBtn').disabled = !el.value.trim();
+}
+
+function updateChar(el) {
+  const len = el.value.length;
+  const el2 = document.getElementById('charCount');
+  if (len > 130) {
+    el2.textContent = len + '/160';
+    el2.className = len > 160 ? 'over' : 'warn';
+  } else {
+    el2.textContent = '';
+    el2.className = '';
+  }
+}
+
+function formatTime(iso) {
+  if (!iso) return '';
+  const d   = new Date(iso + (iso.endsWith('Z') ? '' : 'Z'));
+  const now = new Date();
+  const diff = (now - d) / 1000;
+  if (diff < 60)    return 'now';
+  if (diff < 3600)  return Math.floor(diff/60) + 'm';
+  if (diff < 86400) return d.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
+  if (diff < 604800) return d.toLocaleDateString('en-US',{weekday:'short'});
+  return d.toLocaleDateString('en-US',{month:'short',day:'numeric'});
+}
+
+function esc(str) {
+  return String(str || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/\n/g,'<br>');
+}
+
+function openModal(id)  { document.getElementById(id).classList.add('show'); }
+function closeModal(id) { document.getElementById(id).classList.remove('show'); }
+
+// Close modals on overlay click
+document.querySelectorAll('.pwa-modal-overlay').forEach(el => {
+  el.addEventListener('click', e => { if (e.target === el) el.classList.remove('show'); });
+});
+
+let toastTimer;
+function toast(msg, type = '') {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className   = `show ${type}`;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { el.className = ''; }, 3000);
+}
+</script>
+</body>
+</html>

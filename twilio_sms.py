@@ -656,6 +656,13 @@ def inbound_sms():
             conv.is_first_contact = False
             db.session.commit()
 
+        # Fire push notification to subscribed users
+        try:
+            from inbox_pwa import _fire_push_notification
+            _fire_push_notification(ta.company_id, conv, body or "(media)")
+        except Exception as push_exc:
+            logger.debug("Push notification skipped: %s", push_exc)
+
     except Exception as exc:
         logger.exception("Error processing inbound SMS: %s", exc)
 

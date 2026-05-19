@@ -451,6 +451,10 @@
                     <a href="{{ url_for('twilio.inbox') }}" class="sidebar-nav-item{% if _p.startswith('/twilio/inbox') or _p.startswith('/twilio/conversation') %} active{% endif %}">
                         <i data-feather="message-square"></i> SMS Inbox
                     </a>
+                    <a href="/app/inbox" class="sidebar-nav-item{% if _p.startswith('/app/inbox') %} active{% endif %}" title="Mobile-friendly PWA inbox">
+                        <i data-feather="smartphone"></i> Mobile Inbox
+                        <span style="font-size:.6rem;padding:1px 6px;border-radius:10px;background:rgba(124,58,237,.3);color:#a78bfa;margin-left:4px;">PWA</span>
+                    </a>
                     <a href="{{ url_for('twilio.rules') }}" class="sidebar-nav-item{% if _p.startswith('/twilio/rules') %} active{% endif %}">
                         <i data-feather="zap"></i> Auto-Reply Rules
                     </a>

@@ -345,6 +345,12 @@ def create_app() -> Flask:
         app.register_blueprint(integrations_bp)
     except Exception as exc:
         app.logger.warning("Failed to register integrations blueprint: %s", exc)
+    try:
+        from inbox_pwa import inbox_pwa_bp
+        app.register_blueprint(inbox_pwa_bp)
+        print("✓ PWA Inbox loaded: /app/inbox")
+    except Exception as exc:
+        app.logger.warning("Failed to register inbox_pwa blueprint: %s", exc)
     # Stripe webhook deliveries from Stripe's edge servers will never carry
     # a CSRF token; the billing endpoints accept JSON from a Fetch call that
     # likewise does not include the form CSRF cookie. Both routes have their

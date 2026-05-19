@@ -2804,3 +2804,19 @@ class SaasAutomationLog(db.Model):
     created_at      = db.Column(db.DateTime, default=datetime.utcnow)
 
     company = db.relationship("Company", backref="automation_logs")
+
+
+class PushSubscription(db.Model):
+    """Web Push API subscription per user/device for inbox notifications."""
+    __tablename__ = "push_subscription"
+
+    id         = db.Column(db.Integer, primary_key=True)
+    user_id    = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=False)
+    endpoint   = db.Column(db.Text, nullable=False, unique=True)
+    p256dh     = db.Column(db.Text)
+    auth_key   = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    user    = db.relationship("User",    backref="push_subscriptions")
+    company = db.relationship("Company", backref="push_subscriptions")
