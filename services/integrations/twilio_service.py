@@ -15,6 +15,18 @@ logger = logging.getLogger(__name__)
 STOP_WORDS  = {"stop", "unsubscribe", "cancel", "end", "quit", "optout"}
 START_WORDS = {"start", "subscribe", "yes"}
 
+_UNICODE_REPLACEMENTS = str.maketrans({
+    "\u2026": "...", "\u2018": "'", "\u2019": "'", "\u201c": '"', "\u201d": '"',
+    "\u2013": "-",   "\u2014": "--", "\u2022": "*", "\u00a0": " ",
+    "\u2122": "(TM)", "\u00ae": "(R)", "\u00a9": "(C)",
+})
+
+def _sanitize_body(text: str) -> str:
+    if not text:
+        return text
+    text = text.translate(_UNICODE_REPLACEMENTS)
+    return text.encode("latin-1", errors="replace").decode("latin-1")
+
 
 # ---------------------------------------------------------------------------
 # Health
@@ -89,6 +101,7 @@ def send_sms(to_number: str, body: str, company_id: int | None = None,
 
     try:
         from twilio.rest import Client
+        body = _sanitize_body(body)
         client = Client(sid, token)
         msg = client.messages.create(body=body, from_=from_phone, to=to_number)
         _log_event(company_id, "sms_sent", {"to": to_number, "sid": msg.sid})

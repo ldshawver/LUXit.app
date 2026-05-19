@@ -6,6 +6,18 @@ from twilio.base.exceptions import TwilioRestException
 
 logger = logging.getLogger(__name__)
 
+_UNICODE_REPLACEMENTS = str.maketrans({
+    "\u2026": "...", "\u2018": "'", "\u2019": "'", "\u201c": '"', "\u201d": '"',
+    "\u2013": "-",   "\u2014": "--", "\u2022": "*", "\u00a0": " ",
+    "\u2122": "(TM)", "\u00ae": "(R)", "\u00a9": "(C)",
+})
+
+def _sanitize_body(text: str) -> str:
+    if not text:
+        return text
+    text = text.translate(_UNICODE_REPLACEMENTS)
+    return text.encode("latin-1", errors="replace").decode("latin-1")
+
 
 class SMSService:
     """Service to handle SMS operations via Twilio."""
@@ -55,6 +67,7 @@ class SMSService:
                 clean_number = '1' + clean_number
             formatted_number = '+' + clean_number
             
+            message = _sanitize_body(message)
             message_obj = self.client.messages.create(
                 body=message,
                 from_=self.phone_number,
