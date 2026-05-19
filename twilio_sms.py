@@ -103,6 +103,33 @@ def _twiml_message(text: str):
     return xml, 200, {"Content-Type": "text/xml"}
 
 
+_UNICODE_REPLACEMENTS = str.maketrans({
+    "\u2026": "...",   # …  ellipsis
+    "\u2019": "'",     # '  right single quotation mark
+    "\u2018": "'",     # '  left single quotation mark
+    "\u201c": '"',     # "  left double quotation mark
+    "\u201d": '"',     # "  right double quotation mark
+    "\u2013": "-",     # –  en dash
+    "\u2014": "--",    # —  em dash
+    "\u2022": "*",     # •  bullet
+    "\u00a0": " ",     # non-breaking space
+    "\u2122": "(TM)",  # ™
+    "\u00ae": "(R)",   # ®
+    "\u00a9": "(C)",   # ©
+})
+
+def _sanitize_body(text: str) -> str:
+    """
+    Replace common non-latin-1 Unicode characters with ASCII equivalents so
+    the Twilio SDK / underlying HTTP stack never raises a codec error.
+    Any remaining non-latin-1 codepoints are dropped rather than crashing.
+    """
+    if not text:
+        return text
+    text = text.translate(_UNICODE_REPLACEMENTS)
+    return text.encode("latin-1", errors="replace").decode("latin-1")
+
+
 def _validate_twilio_signature(ta, endpoint_path: str = "/twilio/sms/inbound") -> bool:
     """
     Validate the X-Twilio-Signature header for any Twilio webhook endpoint.
@@ -200,6 +227,7 @@ def _send_sms(ta, to_number: str, body: str,
     client = _build_client(ta)
     if not client:
         return {"success": False, "error": "Twilio client could not be created."}
+    body = _sanitize_body(body)
     try:
         kwargs = {
             "body": body,

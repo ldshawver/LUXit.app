@@ -70,9 +70,33 @@ def _get_twilio_account(company_id):
     return TwilioAccount.query.filter_by(company_id=company_id, is_active=True).first()
 
 
+_UNICODE_REPLACEMENTS = str.maketrans({
+    "\u2026": "...",   # …  ellipsis
+    "\u2019": "'",     # '  right single quotation mark
+    "\u2018": "'",     # '  left single quotation mark
+    "\u201c": '"',     # "  left double quotation mark
+    "\u201d": '"',     # "  right double quotation mark
+    "\u2013": "-",     # –  en dash
+    "\u2014": "--",    # —  em dash
+    "\u2022": "*",     # •  bullet
+    "\u00a0": " ",     # non-breaking space
+    "\u2122": "(TM)",  # ™
+    "\u00ae": "(R)",   # ®
+    "\u00a9": "(C)",   # ©
+})
+
+def _sanitize_body(text: str) -> str:
+    """Replace common non-latin-1 Unicode chars before sending via Twilio."""
+    if not text:
+        return text
+    text = text.translate(_UNICODE_REPLACEMENTS)
+    return text.encode("latin-1", errors="replace").decode("latin-1")
+
+
 def _send_sms_internal(ta, to_number: str, body: str, conversation_id=None):
     """Send SMS via Twilio — mirrors twilio_sms._send_sms."""
     from models import TwilioMessage
+    body = _sanitize_body(body)
     try:
         from twilio.rest import Client
         sid = ta.get_account_sid() if hasattr(ta, 'get_account_sid') else ta._account_sid
