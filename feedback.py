@@ -271,6 +271,28 @@ def submit_ticket():
     page_url = (body.get("page_url") or "").strip() or None
     user_agent = (request.headers.get("User-Agent") or body.get("user_agent") or "").strip() or None
 
+    # Optional enrichment fields
+    try:
+        rating = int(body.get("rating") or 0)
+        rating = rating if 1 <= rating <= 5 else None
+    except (TypeError, ValueError):
+        rating = None
+
+    allow_follow_up = str(body.get("allow_follow_up", "true")).lower() not in ("false", "0", "no")
+
+    try:
+        screen_width = int(body.get("screen_width") or 0) or None
+    except (TypeError, ValueError):
+        screen_width = None
+    try:
+        screen_height = int(body.get("screen_height") or 0) or None
+    except (TypeError, ValueError):
+        screen_height = None
+
+    posthog_session_id = (body.get("posthog_session_id") or "").strip()[:100] or None
+    posthog_distinct_id = (body.get("posthog_distinct_id") or "").strip()[:100] or None
+    posthog_replay_url = (body.get("posthog_replay_url") or "").strip()[:500] or None
+
     company = None
     try:
         company = current_user.get_default_company()
@@ -282,6 +304,13 @@ def submit_ticket():
         title=title, description=description,
         page_url=page_url, user_agent=user_agent,
         severity=severity, status="new",
+        rating=rating,
+        allow_follow_up=allow_follow_up,
+        screen_width=screen_width,
+        screen_height=screen_height,
+        posthog_session_id=posthog_session_id,
+        posthog_distinct_id=posthog_distinct_id,
+        posthog_replay_url=posthog_replay_url,
         user_id=current_user.id,
         company_id=(company.id if company else None),
     )
@@ -298,6 +327,37 @@ def submit_ticket():
 
     db.session.commit()
     _notify_admins_on_submit(ticket)
+
+    # ── PostHog events (fire-and-forget — never crash on failure) ──────────
+    try:
+        from services.posthog_client import track_event
+        distinct_id = posthog_distinct_id or str(current_user.id)
+        base_props = {
+            "feedback_type":      ticket_type,
+            "severity":           severity,
+            "rating":             rating,
+            "current_url":        page_url,
+            "company_id":         str(company.id) if company else None,
+            "tenant_id":          str(company.id) if company else None,
+            "user_role":          "admin" if getattr(current_user, "is_admin", False) else "member",
+            "posthog_session_id": posthog_session_id,
+            "source":             "luxit_feedback_widget",
+            "allow_follow_up":    allow_follow_up,
+            "ticket_id":          ticket.id,
+        }
+        track_event(distinct_id, "feedback_submitted", base_props)
+        type_event_map = {
+            "bug":              "bug_report_submitted",
+            "feature_request":  "feature_request_submitted",
+            "ux_issue":         "ux_feedback_submitted",
+            "confused":         "confusion_reported",
+        }
+        specific_event = type_event_map.get(ticket_type)
+        if specific_event:
+            track_event(distinct_id, specific_event, base_props)
+    except Exception:
+        logger.debug("feedback.submit: PostHog event failed (non-fatal)", exc_info=True)
+
     return jsonify({"ok": True, "ticket": ticket.to_dict()}), 201
 
 
@@ -537,6 +597,30 @@ def assign_ticket(ticket_id):
                 url_for("feedback.ticket_detail", ticket_id=t.id),
                 company_id=t.company_id)
     return jsonify({"ok": True, "assigned_to_user_id": t.assigned_to_user_id}), 200
+
+
+@feedback_bp.route("/api/feedback/<int:ticket_id>/notes", methods=["POST"])
+@login_required
+def save_notes(ticket_id):
+    """Admin-only: save/update admin notes on a ticket."""
+    t, err = _get_or_403(ticket_id)
+    if err is not None:
+        return err
+    if not _can_admin_ticket(current_user, t):
+        return jsonify({"error": "admin only"}), 403
+    body = request.get_json(silent=True) or request.form.to_dict()
+    notes = (body.get("admin_notes") or "").strip()
+    t.admin_notes = notes or None
+    t.updated_at = datetime.utcnow()
+    db.session.commit()
+    return jsonify({"ok": True, "admin_notes": t.admin_notes}), 200
+
+
+@feedback_bp.route("/admin/feedback")
+@login_required
+def admin_feedback_alias():
+    """Alias so /admin/feedback also works (spec requires it)."""
+    return admin_dashboard()
 
 
 @feedback_bp.route("/api/feedback/<int:ticket_id>/priority", methods=["POST"])

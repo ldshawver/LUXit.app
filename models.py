@@ -2031,7 +2031,7 @@ class FeedbackTicket(db.Model):
     __tablename__ = "feedback_ticket"
 
     # Allowed values — kept loose (strings) to avoid migrations on enum changes.
-    TYPES = ("bug", "ux_issue", "feature_request", "general")
+    TYPES = ("bug", "ux_issue", "feature_request", "general", "confused")
     SEVERITIES = ("low", "medium", "high", "critical")
     STATUSES = (
         "new", "reviewed", "priority_fix", "in_progress",
@@ -2048,6 +2048,15 @@ class FeedbackTicket(db.Model):
     status = db.Column(db.String(30), default="new", nullable=False)
     priority_fix = db.Column(db.Boolean, default=False, nullable=False)
     screenshot_path = db.Column(db.String(500))
+
+    rating = db.Column(db.SmallInteger, nullable=True)
+    allow_follow_up = db.Column(db.Boolean, default=True, nullable=False)
+    screen_width = db.Column(db.Integer, nullable=True)
+    screen_height = db.Column(db.Integer, nullable=True)
+    posthog_session_id = db.Column(db.String(100), nullable=True)
+    posthog_distinct_id = db.Column(db.String(100), nullable=True)
+    posthog_replay_url = db.Column(db.String(500), nullable=True)
+    admin_notes = db.Column(db.Text, nullable=True)
 
     user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
     company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=True)
@@ -2084,6 +2093,14 @@ class FeedbackTicket(db.Model):
             "status": self.status,
             "priority_fix": self.priority_fix,
             "screenshot_url": (f"/{self.screenshot_path}" if self.screenshot_path else None),
+            "rating": self.rating,
+            "allow_follow_up": self.allow_follow_up,
+            "screen_width": self.screen_width,
+            "screen_height": self.screen_height,
+            "posthog_session_id": self.posthog_session_id,
+            "posthog_distinct_id": self.posthog_distinct_id,
+            "posthog_replay_url": self.posthog_replay_url,
+            "admin_notes": self.admin_notes,
             "company_id": self.company_id,
             "assigned_to_user_id": self.assigned_to_user_id,
             "created_at": self.created_at.isoformat() if self.created_at else None,

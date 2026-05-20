@@ -1,71 +1,135 @@
 {# Floating "Feedback" button + submit modal — included from base.html for
-   authenticated users only. Pure Bootstrap 5; vanilla JS. #}
+   authenticated users only. Enhanced with: rating, confused type, PostHog
+   session capture, screen dimensions, allow_follow_up. Pure Bootstrap 5;
+   vanilla JS only. Never captures passwords, tokens, banking info, or
+   full SMS bodies. #}
 {% if current_user.is_authenticated %}
 <button id="feedbackFab" type="button" class="btn"
         title="Send feedback"
         data-bs-toggle="modal" data-bs-target="#feedbackModal"
         style="position:fixed;right:18px;bottom:18px;z-index:1040;
                background:linear-gradient(135deg,var(--lux-primary,#bc00ed),var(--lux-secondary,#00ffb4));
-               color:#fff;border:none;border-radius:999px;padding:10px 16px;
+               color:#fff;border:none;border-radius:999px;padding:10px 18px;
                font-weight:600;font-size:0.85rem;
-               box-shadow:0 6px 20px rgba(0,0,0,0.4),0 0 0 1px rgba(255,255,255,0.08);">
+               box-shadow:0 6px 20px rgba(0,0,0,0.4),0 0 0 1px rgba(255,255,255,0.08);
+               transition:transform .15s,box-shadow .15s;">
   <i data-feather="message-circle" style="width:14px;height:14px;vertical-align:-2px;"></i>
   Feedback
 </button>
 
 <div class="modal fade" id="feedbackModal" tabindex="-1" aria-hidden="true">
-  <div class="modal-dialog modal-dialog-centered">
+  <div class="modal-dialog modal-dialog-centered" style="max-width:520px;">
     <div class="modal-content"
          style="background:var(--lux-modal-bg,#16113a);border:1px solid var(--lux-modal-border,rgba(255,255,255,0.1));">
       <div class="modal-header" style="border-bottom:1px solid rgba(255,255,255,0.07);">
-        <h5 class="modal-title">Send feedback</h5>
+        <h5 class="modal-title" style="font-size:.95rem;">
+          <i data-feather="message-circle" style="width:15px;height:15px;vertical-align:-2px;margin-right:6px;"></i>
+          Send Feedback
+        </h5>
         <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
       </div>
-      <div class="modal-body">
-        <form id="feedbackForm" enctype="multipart/form-data">
-          <div class="mb-3">
-            <label class="form-label small text-uppercase text-muted mb-1">Type</label>
-            <select name="ticket_type" class="form-select form-select-sm" required>
-              <option value="bug">Bug Report</option>
-              <option value="ux_issue">UX Issue</option>
-              <option value="feature_request">Feature Request</option>
-              <option value="general" selected>General Feedback</option>
-            </select>
+
+      <div class="modal-body" style="padding:1.25rem;">
+        {# ── Step 1: type picker ─────────────────────────────────── #}
+        <div id="fbStep1">
+          <p class="small text-muted mb-3">What would you like to share?</p>
+          <div class="d-grid gap-2">
+            <button class="btn btn-outline-secondary text-start fb-type-btn" data-type="bug">
+              <i data-feather="alert-triangle" style="width:14px;height:14px;color:#ff6b9c;"></i>
+              <strong style="margin-left:6px;">Report a Bug</strong>
+              <span class="text-muted small d-block" style="margin-left:20px;">Something isn't working right</span>
+            </button>
+            <button class="btn btn-outline-secondary text-start fb-type-btn" data-type="feature_request">
+              <i data-feather="star" style="width:14px;height:14px;color:#a78bfa;"></i>
+              <strong style="margin-left:6px;">Suggest a Feature</strong>
+              <span class="text-muted small d-block" style="margin-left:20px;">I have an idea to make this better</span>
+            </button>
+            <button class="btn btn-outline-secondary text-start fb-type-btn" data-type="ux_issue">
+              <i data-feather="layout" style="width:14px;height:14px;color:#06b6d4;"></i>
+              <strong style="margin-left:6px;">UX Feedback</strong>
+              <span class="text-muted small d-block" style="margin-left:20px;">Usability, design, or flow issue</span>
+            </button>
+            <button class="btn btn-outline-secondary text-start fb-type-btn" data-type="confused">
+              <i data-feather="help-circle" style="width:14px;height:14px;color:#fbbf24;"></i>
+              <strong style="margin-left:6px;">I'm Confused / Need Help</strong>
+              <span class="text-muted small d-block" style="margin-left:20px;">Something doesn't make sense</span>
+            </button>
           </div>
-          <div class="mb-3">
-            <label class="form-label small text-uppercase text-muted mb-1">Severity</label>
-            <select name="severity" class="form-select form-select-sm">
-              <option value="low">Low</option>
-              <option value="medium" selected>Medium</option>
-              <option value="high">High</option>
-              <option value="critical">Critical</option>
-            </select>
+        </div>
+
+        {# ── Step 2: detail form ──────────────────────────────────── #}
+        <div id="fbStep2" style="display:none;">
+          <button type="button" id="fbBack" class="btn btn-sm btn-link p-0 mb-3 text-muted">
+            <i data-feather="arrow-left" style="width:13px;height:13px;"></i> Back
+          </button>
+          <form id="feedbackForm" enctype="multipart/form-data">
+            <input type="hidden" name="ticket_type" id="fbTypeField">
+
+            <div class="mb-3">
+              <label class="form-label small text-uppercase text-muted mb-1">Title <span class="text-danger">*</span></label>
+              <input type="text" name="title" class="form-control form-control-sm"
+                     id="fbTitle" placeholder="One-line summary" maxlength="200" required>
+            </div>
+
+            <div class="mb-3">
+              <label class="form-label small text-uppercase text-muted mb-1">Description <span class="text-danger">*</span></label>
+              <textarea name="description" class="form-control form-control-sm" id="fbDesc"
+                        rows="4" placeholder="What happened? What did you expect?" required></textarea>
+            </div>
+
+            <div class="row g-2 mb-3">
+              <div class="col-6">
+                <label class="form-label small text-uppercase text-muted mb-1">Severity</label>
+                <select name="severity" class="form-select form-select-sm">
+                  <option value="low">Low</option>
+                  <option value="medium" selected>Medium</option>
+                  <option value="high">High</option>
+                  <option value="critical">Critical</option>
+                </select>
+              </div>
+              <div class="col-6">
+                <label class="form-label small text-uppercase text-muted mb-1">Rating (optional)</label>
+                <div id="fbStars" class="d-flex gap-1 align-items-center" style="margin-top:6px;">
+                  {% for n in range(1,6) %}
+                  <button type="button" class="fb-star btn p-0" data-val="{{ n }}"
+                          style="font-size:1.3rem;background:none;border:none;color:#4b5563;
+                                 transition:color .1s;cursor:pointer;">★</button>
+                  {% endfor %}
+                  <input type="hidden" name="rating" id="fbRatingInput" value="">
+                </div>
+              </div>
+            </div>
+
+            <div class="mb-3">
+              <label class="form-label small text-uppercase text-muted mb-1">Screenshot (optional)</label>
+              <input type="file" name="screenshot" class="form-control form-control-sm"
+                     accept="image/png,image/jpeg,image/gif,image/webp">
+              <div class="form-text small">Max 5 MB. PNG, JPG, GIF or WebP.</div>
+            </div>
+
+            <div class="form-check mb-3">
+              <input class="form-check-input" type="checkbox" name="allow_follow_up"
+                     id="fbFollowUp" value="true" checked>
+              <label class="form-check-label small" for="fbFollowUp">
+                Team may follow up with me about this
+              </label>
+            </div>
+
+            {# Hidden auto-capture fields #}
+            <input type="hidden" name="page_url"           id="fbPageUrl">
+            <input type="hidden" name="screen_width"       id="fbScreenW">
+            <input type="hidden" name="screen_height"      id="fbScreenH">
+            <input type="hidden" name="posthog_session_id"  id="fbPhSession">
+            <input type="hidden" name="posthog_distinct_id" id="fbPhDistinct">
+            <input type="hidden" name="posthog_replay_url"  id="fbPhReplay">
+
+            <div id="feedbackStatus" class="small mt-1"></div>
+          </form>
+          <div class="d-flex justify-content-end gap-2 mt-3">
+            <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Cancel</button>
+            <button type="button" class="btn btn-sm btn-primary" id="feedbackSubmitBtn">Submit</button>
           </div>
-          <div class="mb-3">
-            <label class="form-label small text-uppercase text-muted mb-1">Title</label>
-            <input type="text" name="title" class="form-control form-control-sm"
-                   placeholder="One-line summary" maxlength="200" required>
-          </div>
-          <div class="mb-3">
-            <label class="form-label small text-uppercase text-muted mb-1">Description</label>
-            <textarea name="description" class="form-control form-control-sm" rows="5"
-                      placeholder="What happened? What did you expect?" required></textarea>
-          </div>
-          <div class="mb-3">
-            <label class="form-label small text-uppercase text-muted mb-1">Screenshot (optional)</label>
-            <input type="file" name="screenshot" class="form-control form-control-sm"
-                   accept="image/png,image/jpeg,image/gif,image/webp">
-            <div class="form-text small">Max 5 MB. PNG, JPG, GIF or WebP.</div>
-          </div>
-          <input type="hidden" name="page_url" id="feedbackPageUrl">
-          <div id="feedbackStatus" class="small mt-2"></div>
-        </form>
-      </div>
-      <div class="modal-footer" style="border-top:1px solid rgba(255,255,255,0.07);">
-        <a href="{{ url_for('feedback.my_tickets') }}"
-           class="btn btn-sm btn-outline-secondary me-auto">My submissions</a>
-        <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Cancel</button>
-        <button type="button" class="btn btn-sm btn-primary" id="feedbackSubmitBtn">Submit</button>
+        </div>
       </div>
     </div>
   </div>
@@ -73,23 +137,92 @@
 
 <script>
 (function() {
-  var modal = document.getElementById('feedbackModal');
+  var modal    = document.getElementById('feedbackModal');
+  var step1    = document.getElementById('fbStep1');
+  var step2    = document.getElementById('fbStep2');
+  var backBtn  = document.getElementById('fbBack');
+  var submitBtn= document.getElementById('feedbackSubmitBtn');
+  var form     = document.getElementById('feedbackForm');
+  var statusEl = document.getElementById('feedbackStatus');
   if (!modal) return;
-  modal.addEventListener('show.bs.modal', function() {
-    var url = document.getElementById('feedbackPageUrl');
-    if (url) url.value = window.location.pathname + window.location.search;
-    var status = document.getElementById('feedbackStatus');
-    if (status) status.textContent = '';
+
+  /* ── Type selection ── */
+  document.querySelectorAll('.fb-type-btn').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var t = this.dataset.type;
+      document.getElementById('fbTypeField').value = t;
+      var placeholders = {
+        bug:             'Describe the bug. What did you expect vs what happened?',
+        feature_request: 'Describe the feature and why it would help.',
+        ux_issue:        'Describe the usability or design issue.',
+        confused:        "What are you trying to do? Where did you get stuck?",
+      };
+      document.getElementById('fbDesc').placeholder = placeholders[t] || 'Describe your feedback…';
+      step1.style.display = 'none';
+      step2.style.display = '';
+    });
   });
-  var btn = document.getElementById('feedbackSubmitBtn');
-  if (!btn) return;
-  btn.addEventListener('click', function() {
-    var form = document.getElementById('feedbackForm');
+
+  backBtn && backBtn.addEventListener('click', function() {
+    step2.style.display = 'none';
+    step1.style.display = '';
+    statusEl.textContent = '';
+  });
+
+  /* ── Star rating ── */
+  var stars = document.querySelectorAll('.fb-star');
+  var ratingInput = document.getElementById('fbRatingInput');
+  stars.forEach(function(s) {
+    s.addEventListener('click', function() {
+      var v = parseInt(this.dataset.val);
+      ratingInput.value = v;
+      stars.forEach(function(x) {
+        x.style.color = parseInt(x.dataset.val) <= v ? '#fbbf24' : '#4b5563';
+      });
+    });
+    s.addEventListener('mouseover', function() {
+      var v = parseInt(this.dataset.val);
+      stars.forEach(function(x) {
+        x.style.color = parseInt(x.dataset.val) <= v ? '#fde68a' : '#4b5563';
+      });
+    });
+    s.addEventListener('mouseout', function() {
+      var cur = parseInt(ratingInput.value) || 0;
+      stars.forEach(function(x) {
+        x.style.color = parseInt(x.dataset.val) <= cur ? '#fbbf24' : '#4b5563';
+      });
+    });
+  });
+
+  /* ── Auto-capture on modal open ── */
+  modal.addEventListener('show.bs.modal', function() {
+    step1.style.display = '';
+    step2.style.display = 'none';
+    statusEl.textContent = '';
+    form.reset();
+    ratingInput.value = '';
+    stars.forEach(function(x) { x.style.color = '#4b5563'; });
+
+    document.getElementById('fbPageUrl').value   = window.location.pathname + window.location.search;
+    document.getElementById('fbScreenW').value   = screen.width  || '';
+    document.getElementById('fbScreenH').value   = screen.height || '';
+
+    /* PostHog session data — safe no-op if PostHog isn't loaded */
+    try {
+      if (window.posthog) {
+        document.getElementById('fbPhSession').value  = (posthog.get_session_id  && posthog.get_session_id())  || '';
+        document.getElementById('fbPhDistinct').value = (posthog.get_distinct_id && posthog.get_distinct_id()) || '';
+        document.getElementById('fbPhReplay').value   = (posthog.get_session_replay_url && posthog.get_session_replay_url()) || '';
+      }
+    } catch(e) {}
+  });
+
+  /* ── Submit ── */
+  submitBtn && submitBtn.addEventListener('click', function() {
     if (!form.reportValidity()) return;
-    var status = document.getElementById('feedbackStatus');
-    btn.disabled = true;
-    status.style.color = '';
-    status.textContent = 'Sending…';
+    submitBtn.disabled = true;
+    statusEl.style.color = '';
+    statusEl.textContent = 'Sending…';
     var token = (document.querySelector('meta[name="csrf-token"]') || {}).content || '';
     fetch('{{ url_for("feedback.submit_ticket") }}', {
       method: 'POST',
@@ -98,23 +231,22 @@
     }).then(function(r) { return r.json().then(function(j) { return {ok: r.ok, body: j}; }); })
       .then(function(res) {
         if (res.ok) {
-          status.style.color = '#00ffb4';
-          status.textContent = 'Thanks — submitted!';
-          form.reset();
+          statusEl.style.color = '#00ffb4';
+          statusEl.textContent = 'Thanks — submitted! ✓';
           setTimeout(function() {
             var inst = bootstrap.Modal.getInstance(modal);
             if (inst) inst.hide();
-          }, 800);
+          }, 900);
         } else {
-          status.style.color = '#ff6b9c';
-          status.textContent = (res.body && res.body.error) || 'Submission failed.';
+          statusEl.style.color = '#ff6b9c';
+          statusEl.textContent = (res.body && res.body.error) || 'Submission failed.';
         }
       })
       .catch(function() {
-        status.style.color = '#ff6b9c';
-        status.textContent = 'Network error — please retry.';
+        statusEl.style.color = '#ff6b9c';
+        statusEl.textContent = 'Network error — please retry.';
       })
-      .finally(function() { btn.disabled = false; });
+      .finally(function() { submitBtn.disabled = false; });
   });
 })();
 </script>
