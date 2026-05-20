@@ -257,9 +257,32 @@ def _send_sms(ta, to_number: str, body: str,
         db.session.add(record)
         db.session.commit()
         logger.info("Outbound SMS sent: sid=%s to=%s", msg.sid, to_number)
+        try:
+            from utils.posthog_client import track_event
+            track_event(f"company_{ta.company_id}", 'sms_sent', {
+                'company_id':    ta.company_id,
+                'tenant_id':     ta.company_id,
+                'is_auto_reply': is_auto_reply,
+                'message_length': len(body),
+                'source':        'twilio',
+                'success':       True,
+            })
+        except Exception:
+            pass
         return {"success": True, "sid": msg.sid, "status": msg.status}
     except Exception as exc:
         logger.error("SMS send error: %s", exc)
+        try:
+            from utils.posthog_client import track_event
+            track_event(f"company_{ta.company_id}", 'sms_failed', {
+                'company_id': ta.company_id,
+                'tenant_id':  ta.company_id,
+                'error_code': type(exc).__name__,
+                'source':     'twilio',
+                'success':    False,
+            })
+        except Exception:
+            pass
         return {"success": False, "error": str(exc)}
 
 
@@ -684,6 +707,22 @@ def inbound_sms():
             conv.is_first_contact = False
             db.session.commit()
 
+        # PostHog — sms_received (safe metadata only, no message body)
+        try:
+            from utils.posthog_client import track_event
+            has_contact = bool(conv.contact_name)
+            track_event(f"company_{ta.company_id}", 'sms_received', {
+                'company_id':       ta.company_id,
+                'tenant_id':        ta.company_id,
+                'direction':        'inbound',
+                'has_contact_match': has_contact,
+                'message_length':   len(body) if body else 0,
+                'has_media':        num_media > 0,
+                'source':           'twilio',
+            })
+        except Exception:
+            pass
+
         # Fire real-time SSE event + Web Push notification to subscribed users
         try:
             from inbox_pwa import _fire_push_notification, _push_sse_event
@@ -729,6 +768,18 @@ def sms_status():
             msg.error_message  = error_msg
             msg.updated_at     = datetime.utcnow()
             db.session.commit()
+            try:
+                from utils.posthog_client import track_event
+                track_event(f"company_{msg.company_id}", 'sms_delivery_status_updated', {
+                    'company_id':    msg.company_id,
+                    'tenant_id':     msg.company_id,
+                    'twilio_status': status,
+                    'error_code':    error_code or None,
+                    'source':        'twilio',
+                    'success':       status in ('delivered', 'sent', 'read'),
+                })
+            except Exception:
+                pass
 
     return "", 204
 
@@ -840,6 +891,18 @@ def inbound_call():
         "Voice inbound: from=%s to=%s in_hours=%s fwd=%s",
         from_number, to_number, in_hours, ta.call_forward_to,
     )
+    try:
+        from utils.posthog_client import track_event
+        track_event(f"company_{ta.company_id}", 'call_received', {
+            'company_id':  ta.company_id,
+            'tenant_id':   ta.company_id,
+            'in_hours':    in_hours,
+            'forwarded':   bool(ta.call_forward_to and ta.voice_forwarding_enabled),
+            'voicemail':   not (ta.call_forward_to and ta.voice_forwarding_enabled),
+            'source':      'twilio',
+        })
+    except Exception:
+        pass
     return twiml, 200, {"Content-Type": "text/xml"}
 
 

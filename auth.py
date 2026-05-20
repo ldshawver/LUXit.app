@@ -146,12 +146,25 @@ def login():
             pass
 
         try:
-            from services.posthog_analytics import capture, identify
-            identify(user.id, {
-                'email': user.email,
-                'name': f"{user.first_name or ''} {user.last_name or ''}".strip(),
+            from utils.posthog_client import track_event, identify_user, group_company
+            company = user.get_default_company() if hasattr(user, 'get_default_company') else None
+            identify_user(user.id, {
+                'email':      user.email,
+                'name':       f"{user.first_name or ''} {user.last_name or ''}".strip(),
+                'role':       'admin' if user.is_admin else 'member',
+                'company':    company.name if company else None,
+                'company_id': company.id   if company else None,
+                'tenant_id':  company.id   if company else None,
+                'plan':       getattr(company, 'billing_tier', None) if company else None,
             })
-            capture(user.id, 'user_logged_in', {'method': 'password'})
+            track_event(user.id, 'user_login', {
+                'method':     'password',
+                'company_id': company.id   if company else None,
+                'tenant_id':  company.id   if company else None,
+            })
+            if company:
+                group_company(user.id, company.id, company.name,
+                              getattr(company, 'billing_tier', None))
         except Exception:
             pass
 
@@ -349,6 +362,15 @@ def register():
             _db.session.commit()
 
             login_user(user, remember=True)
+            try:
+                from utils.posthog_client import track_event, identify_user
+                identify_user(user.id, {'email': user.email, 'role': 'admin'})
+                track_event(user.id, 'user_registered', {
+                    'method': 'password',
+                    'company_name': company_name or None,
+                })
+            except Exception:
+                pass
             flash("Admin account created successfully!", "success")
             return redirect(url_for("auth.login"))
         except SQLAlchemyError:
@@ -363,6 +385,13 @@ def register():
 @auth_bp.route("/logout")
 @login_required
 def logout():
+    try:
+        from flask_login import current_user as _cu
+        if _cu.is_authenticated:
+            from utils.posthog_client import track_event
+            track_event(_cu.id, 'user_logout', {})
+    except Exception:
+        pass
     logout_user()
     return redirect(url_for("auth.login", _external=False))
 

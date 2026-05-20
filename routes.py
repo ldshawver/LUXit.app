@@ -179,6 +179,7 @@ def inject_company_context():
         unread_inbox=unread_inbox,
         posthog_api_key=os.environ.get("POSTHOG_API_KEY", ""),
         posthog_host=os.environ.get("POSTHOG_HOST", "https://us.i.posthog.com"),
+        posthog_frontend_host=os.environ.get("POSTHOG_FRONTEND_HOST", "https://p.luxit.app"),
     )
 
 
@@ -7854,6 +7855,28 @@ def wordpress_webhook():
 print("✓ WordPress user import routes loaded")
 
 # ============= TEST WORDPRESS IMPORT (AUTO-DEMO) =============
+@main_bp.route('/admin/posthog-test', methods=['GET'])
+@login_required
+def posthog_test():
+    """Admin-only: fire a test event to verify PostHog server-side tracking."""
+    if not current_user.is_admin:
+        return jsonify({'error': 'Admin access required'}), 403
+    try:
+        from utils.posthog_client import track_event
+        track_event(
+            str(current_user.id),
+            'posthog_server_test',
+            {
+                'source':      'luxit_backend',
+                'environment': os.environ.get('FLASK_ENV', 'production'),
+                'user_id':     current_user.id,
+            }
+        )
+        return jsonify({'success': True, 'message': 'posthog_server_test event sent', 'user_id': current_user.id})
+    except Exception as exc:
+        return jsonify({'success': False, 'error': str(exc)}), 500
+
+
 @main_bp.route('/admin/test-wordpress-import', methods=['GET'])
 @login_required
 def test_wordpress_import():
@@ -10124,6 +10147,15 @@ def add_contact():
                 })
             except Exception:
                 pass
+        try:
+            from utils.posthog_client import track_event
+            track_event(current_user.id, 'contact_created', {
+                'company_id': company_id,
+                'tenant_id':  company_id,
+                'source':     'manual',
+            })
+        except Exception:
+            pass
         flash('Contact added successfully!', 'success')
     except Exception as e:
         db.session.rollback()

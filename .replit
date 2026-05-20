@@ -39,3 +39,4 @@ externalPort = 80
 [userenv.shared]
 POSTHOG_API_KEY = "phc_ru95nA6YWQxhWAtw8AHvjYoKb9mTrH9MVpbUavsEdF5h"
 POSTHOG_HOST = "https://us.i.posthog.com"
+POSTHOG_FRONTEND_HOST = "https://p.luxit.app"
