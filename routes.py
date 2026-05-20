@@ -177,6 +177,8 @@ def inject_company_context():
         usage_sms=usage_sms,
         unread_notifications=unread_notifications,
         unread_inbox=unread_inbox,
+        posthog_api_key=os.environ.get("POSTHOG_API_KEY", ""),
+        posthog_host=os.environ.get("POSTHOG_HOST", "https://us.i.posthog.com"),
     )
 
 
