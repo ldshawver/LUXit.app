@@ -2820,3 +2820,19 @@ class PushSubscription(db.Model):
 
     user    = db.relationship("User",    backref="push_subscriptions")
     company = db.relationship("Company", backref="push_subscriptions")
+
+
+class GoogleOAuthToken(db.Model):
+    """Stores Google OAuth tokens per user for Contacts sync."""
+    __tablename__ = "google_oauth_token"
+
+    id             = db.Column(db.Integer, primary_key=True)
+    user_id        = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, unique=True)
+    access_token   = db.Column(db.Text)
+    refresh_token  = db.Column(db.Text)
+    token_expiry   = db.Column(db.DateTime, nullable=True)
+    last_sync_at   = db.Column(db.DateTime, nullable=True)
+    contacts_synced = db.Column(db.Integer, default=0)
+    created_at     = db.Column(db.DateTime, default=datetime.utcnow)
+
+    user = db.relationship("User", backref=db.backref("google_oauth_token", uselist=False))

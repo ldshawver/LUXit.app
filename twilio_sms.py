@@ -1487,3 +1487,86 @@ def save_note(conv_id):
     conv.notes = (request.get_json() or {}).get("notes", "")
     db.session.commit()
     return jsonify({"success": True})
+
+
+# ── Google Contacts sync ──────────────────────────────────────────────────
+
+@twilio_bp.route("/google-contacts/connect")
+@login_required
+def google_contacts_connect():
+    """Redirect user to Google OAuth consent screen."""
+    from flask_login import current_user
+    from services.google_contacts import get_auth_url
+    import os
+    if not os.environ.get("GOOGLE_CLIENT_ID"):
+        flash("GOOGLE_CLIENT_ID is not configured. Add it in Settings → Secrets.", "danger")
+        return redirect(url_for("twilio.inbox"))
+    return redirect(get_auth_url(state=str(current_user.id)))
+
+
+@twilio_bp.route("/google-contacts/callback")
+@login_required
+def google_contacts_callback():
+    """Handle Google OAuth callback, exchange code, run initial sync."""
+    from flask_login import current_user
+    from services.google_contacts import exchange_code, sync_contacts
+    code  = request.args.get("code")
+    error = request.args.get("error")
+    if error or not code:
+        flash(f"Google sign-in was cancelled or failed: {error or 'no code'}", "warning")
+        return redirect(url_for("twilio.inbox"))
+    try:
+        exchange_code(current_user.id, code)
+    except Exception as exc:
+        flash(f"Google Contacts connection failed: {exc}", "danger")
+        return redirect(url_for("twilio.inbox"))
+    # Run first sync immediately
+    company = _get_company()
+    result  = sync_contacts(current_user.id, company.id)
+    if result.get("error"):
+        flash(f"Connected but sync failed: {result['error']}", "warning")
+    else:
+        flash(
+            f"Google Contacts connected. {result['synced']} contacts fetched, "
+            f"{result['matched']} inbox names updated.",
+            "success",
+        )
+    return redirect(url_for("twilio.inbox"))
+
+
+@twilio_bp.route("/google-contacts/sync", methods=["POST"])
+@login_required
+def google_contacts_sync():
+    """Manually trigger a contact sync. Returns JSON."""
+    from flask_login import current_user
+    from services.google_contacts import sync_contacts
+    company = _get_company()
+    result  = sync_contacts(current_user.id, company.id)
+    return jsonify(result)
+
+
+@twilio_bp.route("/google-contacts/status")
+@login_required
+def google_contacts_status():
+    """Return connection status as JSON."""
+    from flask_login import current_user
+    from services.google_contacts import get_token
+    tok = get_token(current_user.id)
+    if not tok:
+        return jsonify({"connected": False})
+    return jsonify({
+        "connected":       True,
+        "last_sync_at":    tok.last_sync_at.strftime("%b %-d %H:%M") if tok.last_sync_at else None,
+        "contacts_synced": tok.contacts_synced or 0,
+    })
+
+
+@twilio_bp.route("/google-contacts/disconnect", methods=["POST"])
+@login_required
+def google_contacts_disconnect():
+    """Revoke and delete Google token."""
+    from flask_login import current_user
+    from services.google_contacts import disconnect
+    disconnect(current_user.id)
+    flash("Google Contacts disconnected.", "info")
+    return redirect(url_for("twilio.inbox"))

@@ -40,6 +40,34 @@
   </div>
   {% endif %}
 
+  <!-- Google Contacts sync bar -->
+  <div id="gc-bar" class="d-flex align-items-center gap-2 mb-2 px-3 py-2 rounded"
+       style="background:#0f1117;border:1px solid #1e2535;font-size:.82rem;display:none!important;">
+    <img src="https://www.gstatic.com/images/branding/product/1x/contacts_2022_16dp.png"
+         alt="" width="16" height="16" style="opacity:.85;">
+    <span id="gc-status-text" class="text-muted">Checking Google Contacts…</span>
+    <div class="ms-auto d-flex gap-2 align-items-center">
+      <button id="gc-sync-btn" class="btn btn-xs btn-outline-secondary" style="font-size:.75rem;padding:2px 8px;display:none;"
+              onclick="gcSync()">
+        <span id="gc-sync-spinner" class="spinner-border spinner-border-sm me-1" style="display:none;"></span>
+        <i data-feather="refresh-cw" style="width:11px;height:11px;"></i> Sync Now
+      </button>
+      <a href="{{ url_for('twilio.google_contacts_connect') }}" id="gc-connect-btn"
+         class="btn btn-xs btn-outline-secondary" style="font-size:.75rem;padding:2px 8px;display:none;">
+        <i data-feather="link" style="width:11px;height:11px;"></i> Connect Google Contacts
+      </a>
+      <form id="gc-disconnect-form" method="POST" action="{{ url_for('twilio.google_contacts_disconnect') }}"
+            style="display:none;">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button type="submit" class="btn btn-xs btn-outline-danger"
+                style="font-size:.75rem;padding:2px 8px;"
+                onclick="return confirm('Disconnect Google Contacts?')">
+          <i data-feather="x" style="width:11px;height:11px;"></i>
+        </button>
+      </form>
+    </div>
+  </div>
+
   <!-- Sub-nav + Search -->
   <div class="d-flex align-items-center gap-2 mb-3 flex-wrap">
     <a href="{{ url_for('twilio.inbox') }}" class="btn btn-sm {% if status_filter == 'all' %}btn-primary{% else %}btn-outline-secondary{% endif %}">All</a>
@@ -159,6 +187,70 @@
 <script>
 feather.replace();
 const CSRF = document.querySelector('meta[name="csrf-token"]')?.content || '{{ csrf_token() }}';
+
+/* ── Google Contacts bar ──────────────────────────────────────────────── */
+(async function initGcBar() {
+  const bar        = document.getElementById('gc-bar');
+  const statusText = document.getElementById('gc-status-text');
+  const syncBtn    = document.getElementById('gc-sync-btn');
+  const connectBtn = document.getElementById('gc-connect-btn');
+  const disconnForm= document.getElementById('gc-disconnect-form');
+
+  // Show the bar immediately while we check
+  bar.style.setProperty('display', 'flex', 'important');
+
+  try {
+    const r    = await fetch('/twilio/google-contacts/status');
+    const data = await r.json();
+
+    if (data.connected) {
+      const lastSync = data.last_sync_at ? `Last sync ${data.last_sync_at}` : 'Never synced';
+      statusText.innerHTML =
+        `<span style="color:#4ade80;font-weight:600;">●</span>&nbsp;Google Contacts connected
+         &nbsp;<span class="text-muted">— ${data.contacts_synced} contacts · ${lastSync}</span>`;
+      syncBtn.style.display      = '';
+      disconnForm.style.display  = '';
+    } else {
+      statusText.innerHTML =
+        `<span style="color:#6b7280;">●</span>&nbsp;Google Contacts not connected
+         &nbsp;<span class="text-muted">— connect to show names from your contacts</span>`;
+      connectBtn.style.display = '';
+    }
+    feather.replace();
+  } catch (e) {
+    bar.style.setProperty('display', 'none', 'important');
+  }
+})();
+
+async function gcSync() {
+  const btn     = document.getElementById('gc-sync-btn');
+  const spinner = document.getElementById('gc-sync-spinner');
+  const status  = document.getElementById('gc-status-text');
+  btn.disabled = true;
+  spinner.style.display = '';
+
+  try {
+    const r    = await fetch('/twilio/google-contacts/sync', {
+      method: 'POST',
+      headers: { 'X-CSRFToken': CSRF },
+    });
+    const data = await r.json();
+    if (data.error) {
+      status.innerHTML = `<span style="color:#f87171;">Sync failed: ${data.error}</span>`;
+    } else {
+      status.innerHTML =
+        `<span style="color:#4ade80;font-weight:600;">●</span>&nbsp;Google Contacts connected
+         &nbsp;<span class="text-muted">— ${data.synced} contacts · Synced just now · ${data.matched} names updated</span>`;
+      if (data.matched > 0) setTimeout(() => location.reload(), 1200);
+    }
+  } catch (e) {
+    status.textContent = 'Sync failed — network error.';
+  } finally {
+    btn.disabled = false;
+    spinner.style.display = 'none';
+    feather.replace();
+  }
+}
 
 async function sendNewMessage() {
   const to   = document.getElementById('new-to').value.trim();
