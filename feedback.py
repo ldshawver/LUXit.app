@@ -397,17 +397,20 @@ def admin_dashboard():
         q = q.filter(FeedbackTicket.company_id.in_(admin_company_ids))
 
     # Filters
-    f_type    = request.args.get("type")
-    f_status  = request.args.get("status")
-    f_company = request.args.get("company_id", type=int)
-    f_owner   = request.args.get("assigned_to", type=int)
-    f_pri     = request.args.get("priority")  # "1" → priority_fix=True
-    f_date    = request.args.get("since")     # ISO date YYYY-MM-DD
+    f_type     = request.args.get("type")
+    f_status   = request.args.get("status")
+    f_severity = request.args.get("severity")
+    f_company  = request.args.get("company_id", type=int)
+    f_owner    = request.args.get("assigned_to", type=int)
+    f_pri      = request.args.get("priority")  # "1" → priority_fix=True
+    f_date     = request.args.get("since")     # ISO date YYYY-MM-DD
 
     if f_type and f_type in FeedbackTicket.TYPES:
         q = q.filter(FeedbackTicket.ticket_type == f_type)
     if f_status and f_status in FeedbackTicket.STATUSES:
         q = q.filter(FeedbackTicket.status == f_status)
+    if f_severity and f_severity in FeedbackTicket.SEVERITIES:
+        q = q.filter(FeedbackTicket.severity == f_severity)
     if f_company:
         if is_platform or f_company in admin_company_ids:
             q = q.filter(FeedbackTicket.company_id == f_company)
@@ -440,6 +443,7 @@ def admin_dashboard():
         statuses=FeedbackTicket.STATUSES,
         filters={
             "type": f_type or "", "status": f_status or "",
+            "severity": f_severity or "",
             "company_id": f_company or "", "assigned_to": f_owner or "",
             "priority": f_pri or "", "since": f_date or "",
         },

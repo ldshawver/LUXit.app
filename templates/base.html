@@ -334,8 +334,12 @@
     /* Stop session replay on sensitive pages */
     (function() {
       var path = window.location.pathname;
-      var sensitive = ['/payroll','/billing','/settings/banking','/stripe',
-                       '/treasury','/admin/secrets','/api-keys','/adult','/explicit'];
+      var sensitive = [
+        '/payroll','/billing','/settings/banking','/stripe',
+        '/treasury','/admin/secrets','/api-keys','/adult','/explicit',
+        '/api-keys','/settings/api','/company/secrets','/twilio/settings',
+        '/auth','/login','/register','/password','/reset-password'
+      ];
       for (var i = 0; i < sensitive.length; i++) {
         if (path.includes(sensitive[i])) {
           posthog.stopSessionRecording();
@@ -756,6 +760,7 @@
     {% endif %}
     {% include 'partials/help_drawer.html' %}
     {% include 'partials/feedback_widget.html' %}
+    {% include 'partials/micro_survey.html' %}
     <script src="{{ url_for('static', filename='js/walkthrough.js') }}"></script>
     {% block scripts %}{% endblock %}
     <script>if (typeof feather !== 'undefined') feather.replace();</script>

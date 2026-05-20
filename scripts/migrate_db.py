@@ -105,6 +105,16 @@ MIGRATIONS = [
     ("company", "industry",           "VARCHAR(100)", "DEFAULT NULL"),
     ("company", "description",        "TEXT",         "DEFAULT NULL"),
 
+    # feedback_ticket — extended fields (PostHog, rating, screen, follow-up, admin notes)
+    ("feedback_ticket", "rating",             "SMALLINT",     "DEFAULT NULL"),
+    ("feedback_ticket", "allow_follow_up",    "BOOLEAN",      "DEFAULT 1"),
+    ("feedback_ticket", "screen_width",       "INTEGER",      "DEFAULT NULL"),
+    ("feedback_ticket", "screen_height",      "INTEGER",      "DEFAULT NULL"),
+    ("feedback_ticket", "posthog_session_id", "VARCHAR(100)", "DEFAULT NULL"),
+    ("feedback_ticket", "posthog_distinct_id","VARCHAR(100)", "DEFAULT NULL"),
+    ("feedback_ticket", "posthog_replay_url", "VARCHAR(500)", "DEFAULT NULL"),
+    ("feedback_ticket", "admin_notes",        "TEXT",         "DEFAULT NULL"),
+
     # saas_automation_log — Stripe webhook audit columns
     ("saas_automation_log", "stripe_event_id", "VARCHAR(120)", "DEFAULT NULL"),
     ("saas_automation_log", "customer_id",     "VARCHAR(120)", "DEFAULT NULL"),
