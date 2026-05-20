@@ -1,6 +1,10 @@
 """
-Canonical PostHog backend helper for LUXit.
-All server-side event tracking routes through track_event() / identify_user().
+PostHog backend helper for LUXit — posthog SDK v7.x compatible.
+
+posthog 7.x API changes from 3.x:
+  capture(event, distinct_id=..., properties={})   <-- event is FIRST arg
+  set(distinct_id=..., properties={})              <-- replaces identify()
+  group_identify(group_type, group_key, properties={}, distinct_id=...)
 """
 import os
 import logging
@@ -37,24 +41,24 @@ def track_event(distinct_id, event, properties=None):
     if not c:
         return
     try:
-        c.capture(distinct_id=str(distinct_id), event=event, properties=properties or {})
+        c.capture(event, distinct_id=str(distinct_id), properties=properties or {})
         c.flush()
     except Exception as exc:
-        logger.warning("PostHog tracking failed: %s", exc)
+        logger.warning("PostHog track_event failed: %s", exc)
 
 
 def identify_user(distinct_id, traits=None):
-    """Attach traits to a user profile."""
+    """Attach traits to a user profile (v7: uses set())."""
     if not os.getenv("POSTHOG_API_KEY"):
         return
     c = _get_client()
     if not c:
         return
     try:
-        c.identify(str(distinct_id), traits or {})
+        c.set(distinct_id=str(distinct_id), properties=traits or {})
         c.flush()
     except Exception as exc:
-        logger.warning("PostHog identify failed: %s", exc)
+        logger.warning("PostHog identify_user failed: %s", exc)
 
 
 def group_company(distinct_id, company_id, company_name=None, plan=None):
@@ -70,7 +74,7 @@ def group_company(distinct_id, company_id, company_name=None, plan=None):
             props["name"] = company_name
         if plan:
             props["plan"] = plan
-        c.group_identify("company", str(company_id), props)
+        c.group_identify("company", str(company_id), props, distinct_id=str(distinct_id))
         c.flush()
     except Exception as exc:
-        logger.warning("PostHog group failed: %s", exc)
+        logger.warning("PostHog group_company failed: %s", exc)

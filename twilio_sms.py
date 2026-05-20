@@ -258,7 +258,7 @@ def _send_sms(ta, to_number: str, body: str,
         db.session.commit()
         logger.info("Outbound SMS sent: sid=%s to=%s", msg.sid, to_number)
         try:
-            from utils.posthog_client import track_event
+            from services.posthog_client import track_event
             track_event(f"company_{ta.company_id}", 'sms_sent', {
                 'company_id':    ta.company_id,
                 'tenant_id':     ta.company_id,
@@ -273,7 +273,7 @@ def _send_sms(ta, to_number: str, body: str,
     except Exception as exc:
         logger.error("SMS send error: %s", exc)
         try:
-            from utils.posthog_client import track_event
+            from services.posthog_client import track_event
             track_event(f"company_{ta.company_id}", 'sms_failed', {
                 'company_id': ta.company_id,
                 'tenant_id':  ta.company_id,
@@ -709,7 +709,7 @@ def inbound_sms():
 
         # PostHog — sms_received (safe metadata only, no message body)
         try:
-            from utils.posthog_client import track_event
+            from services.posthog_client import track_event
             has_contact = bool(conv.contact_name)
             track_event(f"company_{ta.company_id}", 'sms_received', {
                 'company_id':       ta.company_id,
@@ -769,7 +769,7 @@ def sms_status():
             msg.updated_at     = datetime.utcnow()
             db.session.commit()
             try:
-                from utils.posthog_client import track_event
+                from services.posthog_client import track_event
                 track_event(f"company_{msg.company_id}", 'sms_delivery_status_updated', {
                     'company_id':    msg.company_id,
                     'tenant_id':     msg.company_id,
@@ -892,7 +892,7 @@ def inbound_call():
         from_number, to_number, in_hours, ta.call_forward_to,
     )
     try:
-        from utils.posthog_client import track_event
+        from services.posthog_client import track_event
         track_event(f"company_{ta.company_id}", 'call_received', {
             'company_id':  ta.company_id,
             'tenant_id':   ta.company_id,

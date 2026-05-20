@@ -1,7 +1,7 @@
 """
-Thin shim — delegates to utils.posthog_client so existing call-sites keep working.
+Thin shim — delegates to services.posthog_client so existing call-sites keep working.
 """
-from utils.posthog_client import track_event, identify_user, group_company, _get_client
+from services.posthog_client import track_event, identify_user, group_company, _get_client
 
 
 def capture(distinct_id, event, properties=None):

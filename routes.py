@@ -7862,7 +7862,7 @@ def posthog_test():
     if not current_user.is_admin:
         return jsonify({'error': 'Admin access required'}), 403
     try:
-        from utils.posthog_client import track_event
+        from services.posthog_client import track_event
         track_event(
             str(current_user.id),
             'posthog_server_test',
@@ -10148,7 +10148,7 @@ def add_contact():
             except Exception:
                 pass
         try:
-            from utils.posthog_client import track_event
+            from services.posthog_client import track_event
             track_event(current_user.id, 'contact_created', {
                 'company_id': company_id,
                 'tenant_id':  company_id,

@@ -146,7 +146,7 @@ def login():
             pass
 
         try:
-            from utils.posthog_client import track_event, identify_user, group_company
+            from services.posthog_client import track_event, identify_user, group_company
             company = user.get_default_company() if hasattr(user, 'get_default_company') else None
             identify_user(user.id, {
                 'email':      user.email,
@@ -363,7 +363,7 @@ def register():
 
             login_user(user, remember=True)
             try:
-                from utils.posthog_client import track_event, identify_user
+                from services.posthog_client import track_event, identify_user
                 identify_user(user.id, {'email': user.email, 'role': 'admin'})
                 track_event(user.id, 'user_registered', {
                     'method': 'password',
@@ -388,7 +388,7 @@ def logout():
     try:
         from flask_login import current_user as _cu
         if _cu.is_authenticated:
-            from utils.posthog_client import track_event
+            from services.posthog_client import track_event
             track_event(_cu.id, 'user_logout', {})
     except Exception:
         pass
