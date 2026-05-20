@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}SMS Features Unavailable — LUX IT{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-column align-items-center justify-content-center" style="min-height:60vh;text-align:center;padding:2rem;">
+
+  <div style="width:72px;height:72px;border-radius:50%;background:rgba(124,58,237,.15);border:2px solid rgba(124,58,237,.4);display:flex;align-items:center;justify-content:center;margin-bottom:1.5rem;">
+    <i data-feather="smartphone" style="width:32px;height:32px;color:#a78bfa;"></i>
+  </div>
+
+  <h2 style="color:#e2e8f0;font-weight:700;margin-bottom:.5rem;">SMS Features Not Enabled</h2>
+  <p class="text-muted" style="max-width:420px;line-height:1.6;">
+    SMS features are not enabled for your account. Contact your administrator or upgrade your plan to unlock SMS Inbox, Auto-Reply Rules, SMS Campaigns, and more.
+  </p>
+
+  <div class="d-flex gap-3 mt-4">
+    <a href="{{ url_for('main.dashboard') }}" class="btn btn-outline-secondary">
+      <i data-feather="home" style="width:14px;height:14px;"></i> Back to Dashboard
+    </a>
+    {% if current_user.is_admin %}
+    <a href="{{ url_for('main.settings_integrations') }}" class="btn btn-outline-primary">
+      <i data-feather="settings" style="width:14px;height:14px;"></i> Settings
+    </a>
+    <a href="{{ url_for('main.posthog_flag_debug') }}" class="btn btn-outline-secondary" style="font-size:.8rem;">
+      <i data-feather="flag" style="width:13px;height:13px;"></i> Flag Debug
+    </a>
+    {% endif %}
+  </div>
+
+  {% if current_user.is_admin %}
+  <div class="mt-4 p-3 rounded" style="background:#0f1117;border:1px solid #1e2535;font-size:.8rem;color:#6b7280;max-width:420px;">
+    <strong style="color:#a78bfa;">Admin note:</strong> Enable the
+    <code style="color:#4ade80;">SMS-features</code> flag in your PostHog project to grant access to this company/user.
+  </div>
+  {% endif %}
+
+</div>
+<script>feather.replace();</script>
+{% endblock %}

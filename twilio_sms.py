@@ -42,6 +42,19 @@ logger = logging.getLogger(__name__)
 
 twilio_bp = Blueprint("twilio", __name__, url_prefix="/twilio")
 
+
+@twilio_bp.before_request
+def _guard_sms_feature():
+    """Block all non-webhook Twilio routes unless SMS-features flag is on."""
+    try:
+        from services.feature_flags import sms_blueprint_guard
+        result = sms_blueprint_guard()
+        if result is not None:
+            return result
+    except Exception as exc:
+        logger.warning("SMS feature flag guard error: %s", exc)
+
+
 DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 
 

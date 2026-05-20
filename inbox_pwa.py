@@ -32,6 +32,23 @@ logger = logging.getLogger(__name__)
 
 inbox_pwa_bp = Blueprint("inbox_pwa", __name__)
 
+
+@inbox_pwa_bp.before_request
+def _guard_sms_feature():
+    """Block PWA inbox unless SMS-features flag is on."""
+    try:
+        from flask_login import current_user
+        if not current_user.is_authenticated:
+            return None   # let login redirect handle it
+        from services.feature_flags import sms_blueprint_guard
+        result = sms_blueprint_guard()
+        if result is not None:
+            return result
+    except Exception as exc:
+        import logging
+        logging.getLogger(__name__).warning("SMS feature flag guard error: %s", exc)
+
+
 # ── SSE Event Bus ──────────────────────────────────────────────────────────────
 # Keyed by company_id → list of Queue objects (one per connected SSE client).
 # Works with gunicorn gthread workers (--worker-class gthread --threads N).
