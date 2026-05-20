@@ -75,8 +75,11 @@ def check_flag(flag: str, user, company=None) -> bool:
     Return True if `flag` is enabled for this user/company.
 
     Fail-safe rules:
-      - PostHog unavailable → False (disabled) UNLESS user is platform admin.
-      - Flag value None/missing → False.
+      - PostHog unavailable / not configured → True (allow through).
+        Features that were working before this flag was introduced must keep
+        working if PostHog is not set up yet.
+      - Flag explicitly set to False in PostHog → False (blocked).
+      - Flag value None/missing (not set at all) → True (allow through).
     """
     if user is None:
         return False
@@ -90,10 +93,9 @@ def check_flag(flag: str, user, company=None) -> bool:
 
     ph = _posthog_client()
     if ph is None:
-        # No PostHog — admins get pass-through; everyone else blocked
-        result = bool(getattr(user, "is_admin", False))
-        _cache_set(ckey, result)
-        return result
+        # PostHog not configured — allow everyone through (fail open)
+        _cache_set(ckey, True)
+        return True
 
     try:
         person_props = {
@@ -109,10 +111,14 @@ def check_flag(flag: str, user, company=None) -> bool:
             })
 
         raw = ph.get_feature_flag(flag, distinct_id, person_properties=person_props)
-        result = raw is True or (isinstance(raw, str) and raw.lower() == "true")
+        # raw=False → explicitly disabled; raw=None/missing → not set → allow
+        if raw is False:
+            result = False
+        else:
+            result = True   # True, string "true", None (not set) all allow through
     except Exception as exc:
-        logger.warning("PostHog flag check failed (%s): %s", flag, exc)
-        result = bool(getattr(user, "is_admin", False))
+        logger.warning("PostHog flag check failed (%s): %s — defaulting to allow", flag, exc)
+        result = True  # fail open: never break working features due to PostHog issues
 
     _cache_set(ckey, result)
 

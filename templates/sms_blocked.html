@@ -17,20 +17,13 @@
     <a href="{{ url_for('main.dashboard') }}" class="btn btn-outline-secondary">
       <i data-feather="home" style="width:14px;height:14px;"></i> Back to Dashboard
     </a>
-    {% if current_user.is_admin %}
-    <a href="{{ url_for('main.settings_integrations') }}" class="btn btn-outline-primary">
-      <i data-feather="settings" style="width:14px;height:14px;"></i> Settings
-    </a>
-    <a href="{{ url_for('main.posthog_flag_debug') }}" class="btn btn-outline-secondary" style="font-size:.8rem;">
-      <i data-feather="flag" style="width:13px;height:13px;"></i> Flag Debug
-    </a>
-    {% endif %}
   </div>
 
   {% if current_user.is_admin %}
   <div class="mt-4 p-3 rounded" style="background:#0f1117;border:1px solid #1e2535;font-size:.8rem;color:#6b7280;max-width:420px;">
     <strong style="color:#a78bfa;">Admin note:</strong> Enable the
     <code style="color:#4ade80;">SMS-features</code> flag in your PostHog project to grant access to this company/user.
+    Make sure a <code style="color:#4ade80;">POSTHOG_PERSONAL_API_KEY</code> secret is set — the project key alone cannot evaluate feature flags server-side.
   </div>
   {% endif %}
 
