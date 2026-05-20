@@ -967,6 +967,7 @@ def voice_status():
 @twilio_bp.route("/inbox")
 @login_required
 def inbox():
+    from flask_login import current_user
     from models import TwilioConversation
     company = _get_company()
     if not company:
@@ -993,6 +994,20 @@ def inbox():
     conversations = q.order_by(TwilioConversation.last_message_at.desc()).limit(100).all()
     unread_count  = TwilioConversation.query.filter_by(company_id=company.id, is_read=False).count()
 
+    # Google Contacts status — server-side so bar always renders
+    gc_connected = False
+    gc_last_sync = None
+    gc_contacts  = 0
+    try:
+        from services.google_contacts import get_token
+        tok = get_token(current_user.id)
+        if tok and tok.access_token:
+            gc_connected = True
+            gc_contacts  = tok.contacts_synced or 0
+            gc_last_sync = tok.last_sync_at.strftime("%-d %b %H:%M") if tok.last_sync_at else None
+    except Exception:
+        pass
+
     return render_template(
         "twilio/inbox.html",
         conversations=conversations,
@@ -1000,6 +1015,9 @@ def inbox():
         ta=ta,
         status_filter=status_filter,
         search=search,
+        gc_connected=gc_connected,
+        gc_last_sync=gc_last_sync,
+        gc_contacts=gc_contacts,
     )
 
 
