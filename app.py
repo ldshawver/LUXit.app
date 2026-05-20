@@ -369,6 +369,13 @@ def create_app() -> Flask:
 
         db.create_all()
 
+        # PostHog — initialise client eagerly so first events aren't dropped
+        try:
+            from services.posthog_analytics import _get_client
+            _get_client()
+        except Exception:
+            pass
+
         # Apply any missing columns to existing tables (safe migrations)
         try:
             from sqlalchemy import inspect, text

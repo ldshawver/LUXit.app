@@ -145,6 +145,16 @@ def login():
         except Exception:
             pass
 
+        try:
+            from services.posthog_analytics import capture, identify
+            identify(user.id, {
+                'email': user.email,
+                'name': f"{user.first_name or ''} {user.last_name or ''}".strip(),
+            })
+            capture(user.id, 'user_logged_in', {'method': 'password'})
+        except Exception:
+            pass
+
         nxt = request.args.get("next")
         hub_roots = {"/dashboard", "/marketing-hub"}
         if nxt and _is_safe_next(nxt) and nxt.rstrip("/") not in {h.rstrip("/") for h in hub_roots}:
