@@ -199,7 +199,8 @@ class User(UserMixin, db.Model):
             if access:
                 return access.company
 
-            return Company.query.filter_by(is_active=True).order_by(Company.id.asc()).first()
+            user_companies = self.get_all_companies()
+            return user_companies[0] if user_companies else None
         except Exception as exc:
             try:
                 db.session.rollback()
@@ -217,13 +218,37 @@ class User(UserMixin, db.Model):
 
     def get_all_companies(self):
         try:
-            return (
+            companies_by_access = (
                 Company.query
-                .join(user_company, (user_company.c.company_id == Company.id) & (user_company.c.user_id == self.id))
-                .filter(Company.is_active == True)
-                .order_by(Company.name)
+                .join(UserCompanyAccess, UserCompanyAccess.company_id == Company.id)
+                .filter(
+                    UserCompanyAccess.user_id == self.id,
+                    Company.is_active == True,
+                )
                 .all()
             )
+
+            companies_by_legacy_link = (
+                Company.query
+                .join(
+                    user_company,
+                    (user_company.c.company_id == Company.id)
+                    & (user_company.c.user_id == self.id),
+                )
+                .filter(Company.is_active == True)
+                .all()
+            )
+
+            merged = {c.id: c for c in companies_by_access + companies_by_legacy_link}
+
+            if self.default_company_id:
+                default_company = Company.query.filter_by(
+                    id=self.default_company_id, is_active=True
+                ).first()
+                if default_company:
+                    merged[default_company.id] = default_company
+
+            return sorted(merged.values(), key=lambda c: (c.name or "").lower())
         except Exception:
             return list(self.companies)
 
