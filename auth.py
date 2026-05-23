@@ -145,6 +145,47 @@ def login():
         except Exception:
             pass
 
+        # Ensure user is linked to a company (guards against post-DB-reset orphan accounts)
+        try:
+            from extensions import db as _db
+            from models import Company, UserCompanyAccess, user_company as _uc
+            from sqlalchemy import text as _sql
+            linked = _db.session.execute(
+                _sql("SELECT company_id FROM user_company WHERE user_id = :uid LIMIT 1"),
+                {"uid": user.id},
+            ).fetchone()
+            if not linked:
+                first_co = Company.query.filter_by(is_active=True).order_by(Company.id.asc()).first()
+                if first_co:
+                    try:
+                        _db.session.execute(
+                            _sql("INSERT OR IGNORE INTO user_company (user_id, company_id) VALUES (:uid, :cid)"),
+                            {"uid": user.id, "cid": first_co.id},
+                        )
+                    except Exception:
+                        try:
+                            _db.session.execute(
+                                _sql("INSERT INTO user_company (user_id, company_id) VALUES (:uid, :cid) ON CONFLICT DO NOTHING"),
+                                {"uid": user.id, "cid": first_co.id},
+                            )
+                        except Exception:
+                            pass
+                    if not user.default_company_id:
+                        user.default_company_id = first_co.id
+                    if not UserCompanyAccess.query.filter_by(user_id=user.id, company_id=first_co.id).first():
+                        _db.session.add(UserCompanyAccess(
+                            user_id=user.id, company_id=first_co.id, role='admin', is_default=True
+                        ))
+                    _db.session.commit()
+                    logger.info("LOGIN: auto-linked user %s to company %s (%s)", user.id, first_co.id, first_co.name)
+        except Exception as _exc:
+            logger.warning("LOGIN: company auto-link failed: %s", _exc)
+            try:
+                from extensions import db as _db2
+                _db2.session.rollback()
+            except Exception:
+                pass
+
         try:
             from services.posthog_client import track_event, identify_user, group_company
             company = user.get_default_company() if hasattr(user, 'get_default_company') else None

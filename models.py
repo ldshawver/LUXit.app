@@ -174,11 +174,20 @@ class User(UserMixin, db.Model):
         logger = logging.getLogger(__name__)
 
         try:
-            # 1) Explicit default_company_id
+            # 1) Explicit default_company_id (fall through if company was deleted)
             if self.default_company_id:
                 if hasattr(self, "default_company") and self.default_company is not None:
                     return self.default_company
-                return Company.query.get(self.default_company_id)
+                found = Company.query.get(self.default_company_id)
+                if found:
+                    return found
+                # Company was deleted — clear stale FK and fall through to fallbacks
+                logger.warning("User %s default_company_id=%s not found, clearing", self.id, self.default_company_id)
+                self.default_company_id = None
+                try:
+                    db.session.commit()
+                except Exception:
+                    db.session.rollback()
 
             access = (
                 UserCompanyAccess.query

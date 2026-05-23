@@ -11,6 +11,12 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+# Suppress the noisy "You have to specify a personal_api_key to use feature
+# flags" warning that the PostHog SDK emits every poll cycle (30 s) when no
+# personal API key is configured.  We intentionally run without one and use
+# fail-open logic instead, so this is expected noise, not an error.
+logging.getLogger("posthog").setLevel(logging.ERROR)
+
 _client = None
 
 
