@@ -32,6 +32,10 @@ def _get_client():
         from posthog import Posthog
         _client = Posthog(project_api_key=api_key, host=host)
         _client.debug = False
+        # PostHog SDK sets self.log.setLevel(WARNING) inside __init__ — override it
+        # here so the repetitive "no personal_api_key" poller warning is suppressed.
+        import logging as _logging
+        _logging.getLogger("posthog").setLevel(_logging.ERROR)
         logger.info("PostHog client ready (host=%s)", host)
     except Exception as exc:
         logger.warning("PostHog init failed: %s", exc)

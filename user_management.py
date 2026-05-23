@@ -118,8 +118,15 @@ def add_user():
             user.default_company_id = current_user.default_company_id
         
         db.session.add(user)
-        db.session.commit()
-        
+        try:
+            db.session.commit()
+        except Exception as exc:
+            db.session.rollback()
+            import logging as _log
+            _log.getLogger(__name__).error("add_user commit failed: %s", exc)
+            flash('Error creating user — please try again.', 'error')
+            return render_template('add_user.html')
+
         flash(f'User "{username}" created successfully', 'success')
         return redirect(url_for('user.manage_users'))
     
