@@ -729,8 +729,10 @@ function toggleTask(taskId, row) {
 }
 
 function getCsrf() {
+  const meta = document.querySelector('meta[name="csrf-token"]');
+  if (meta && meta.content) return meta.content;
   const m = document.cookie.match(/csrf_token=([^;]+)/);
-  return m ? m[1] : '';
+  return m ? decodeURIComponent(m[1]) : '';
 }
 
 /* ─── Table search ────────────────────────────────────────── */

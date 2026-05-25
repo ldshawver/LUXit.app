@@ -11409,6 +11409,27 @@ def api_help_content(screen_key):
         return jsonify({'help': [], 'walkthroughs': []})
 
 
+def _walkthrough_access_ok(wt, company):
+    """Return True when the current user may record progress on a walkthrough.
+
+    Rules (walkthroughs are training content, not company data):
+    - Global walkthroughs (wt.company_id is NULL) → always allowed.
+    - Company-specific walkthroughs:
+        - Platform admins    → always allowed.
+        - Users with no company yet (still onboarding) → allowed so the
+          walkthrough can guide them through setup.
+        - Users whose company matches → allowed.
+        - Any other authenticated user → denied (company explicitly wrong).
+    """
+    if not wt.company_id:
+        return True
+    if getattr(current_user, 'is_admin', False):
+        return True
+    if company is None:
+        return True
+    return wt.company_id == company.id
+
+
 @main_bp.route('/api/walkthroughs/<int:wt_id>/step', methods=['POST'])
 @login_required
 def api_walkthrough_step(wt_id):
@@ -11418,7 +11439,14 @@ def api_walkthrough_step(wt_id):
         if not wt or not wt.is_active:
             return jsonify({'success': False, 'error': 'Walkthrough not found'}), 404
         company = current_user.get_default_company()
-        if wt.company_id and (not company or wt.company_id != company.id):
+        if not _walkthrough_access_ok(wt, company):
+            logger.warning(
+                "Walkthrough step denied: user=%s (company=%s) wt_id=%s wt.company_id=%s",
+                current_user.id,
+                company.id if company else None,
+                wt_id,
+                wt.company_id,
+            )
             return jsonify({'success': False, 'error': 'Unauthorized'}), 403
         data = request.get_json() or {}
         step_index = data.get('step_index', 0)
@@ -11428,7 +11456,7 @@ def api_walkthrough_step(wt_id):
         if not progress:
             progress = WalkthroughProgress(user_id=current_user.id, walkthrough_id=wt_id, completed_steps=[])
             db.session.add(progress)
-        completed = progress.completed_steps or []
+        completed = list(progress.completed_steps or [])
         if step_index not in completed:
             completed.append(step_index)
             progress.completed_steps = completed
@@ -11449,7 +11477,14 @@ def api_walkthrough_complete(wt_id):
         if not wt or not wt.is_active:
             return jsonify({'success': False, 'error': 'Walkthrough not found'}), 404
         company = current_user.get_default_company()
-        if wt.company_id and (not company or wt.company_id != company.id):
+        if not _walkthrough_access_ok(wt, company):
+            logger.warning(
+                "Walkthrough complete denied: user=%s (company=%s) wt_id=%s wt.company_id=%s",
+                current_user.id,
+                company.id if company else None,
+                wt_id,
+                wt.company_id,
+            )
             return jsonify({'success': False, 'error': 'Unauthorized'}), 403
         progress = WalkthroughProgress.query.filter_by(
             user_id=current_user.id, walkthrough_id=wt_id
