@@ -350,6 +350,73 @@
     #toast.success { border: 1px solid rgba(34,197,94,.4); color: var(--green); }
     #toast.error   { border: 1px solid rgba(239,68,68,.4); color: var(--red); }
 
+    /* ── PWA header action icons ────────────────────── */
+    .pwa-head-actions {
+      display: flex; align-items: center; gap: 4px; flex: 1; justify-content: flex-end;
+    }
+    .pwa-head-icon {
+      position: relative;
+      width: 32px; height: 32px;
+      display: flex; align-items: center; justify-content: center;
+      border-radius: 8px; border: 1px solid var(--border);
+      background: rgba(255,255,255,.05);
+      color: var(--text-dim); cursor: pointer;
+      transition: background .15s, color .15s;
+      text-decoration: none; flex-shrink: 0;
+    }
+    .pwa-head-icon:hover { background: rgba(255,255,255,.1); color: var(--text); }
+    .pwa-head-badge {
+      position: absolute; top: -5px; right: -5px;
+      min-width: 16px; height: 16px; border-radius: 8px;
+      background: var(--red); color: #fff;
+      font-size: .6rem; font-weight: 700;
+      display: flex; align-items: center; justify-content: center;
+      padding: 0 3px; line-height: 1;
+    }
+
+    /* ── Settings sheet links ──────────────────────── */
+    .settings-link-row {
+      display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px;
+    }
+    .settings-link {
+      display: flex; align-items: center; gap: 10px;
+      padding: 12px 14px; border-radius: 10px;
+      background: rgba(255,255,255,.05); border: 1px solid var(--border);
+      color: var(--text); text-decoration: none; font-size: .87rem;
+      transition: background .15s;
+    }
+    .settings-link:hover { background: rgba(255,255,255,.09); color: #fff; text-decoration: none; }
+    .settings-link svg { width: 17px; height: 17px; flex-shrink: 0; stroke: var(--cyan); }
+
+    /* ── Compose contact search ─────────────────────── */
+    .compose-search-results {
+      display: none; position: relative; z-index: 10;
+      background: #111827; border: 1px solid var(--border);
+      border-radius: 8px; margin-top: 4px;
+      max-height: 180px; overflow-y: auto;
+    }
+    .csr-item {
+      padding: 10px 12px; cursor: pointer; font-size: .84rem;
+      border-bottom: 1px solid var(--border); display: flex;
+      flex-direction: column; gap: 2px; transition: background .12s;
+    }
+    .csr-item:last-child { border-bottom: none; }
+    .csr-item:hover { background: rgba(124,58,237,.15); }
+    .csr-item strong { color: var(--text); }
+    .csr-item small { color: var(--muted); font-size: .76rem; }
+    .csr-empty { padding: 10px 12px; font-size: .8rem; color: var(--muted); text-align: center; }
+    .compose-selected-pill {
+      display: flex; align-items: center; gap: 8px;
+      background: rgba(124,58,237,.15); border: 1px solid rgba(124,58,237,.3);
+      border-radius: 8px; padding: 8px 12px; font-size: .84rem;
+    }
+    .compose-selected-pill span { flex: 1; color: var(--text); }
+    .clear-contact-btn {
+      background: none; border: none; color: var(--muted); cursor: pointer;
+      font-size: .9rem; padding: 0 2px; line-height: 1;
+    }
+    .clear-contact-btn:hover { color: var(--red); }
+
     /* ── Notification prompt ────────────────────────── */
     #notifBanner {
       display: none; align-items: center; gap: 10px;
@@ -386,12 +453,26 @@
   <!-- ── Sidebar: conversation list ───────────────────────────────── -->
   <div id="sidebar">
     <div class="sidebar-head">
-      <h1>📨 Inbox</h1>
+      <h1>Messages</h1>
       <span class="badge-unread" id="unreadBadge">0</span>
       <div class="live-dot" id="liveDot" title="Connecting…"></div>
-      <a href="/dashboard" style="color:var(--muted);font-size:.72rem;text-decoration:none;" title="Back to dashboard">⬡</a>
-      <button class="btn-icon" id="soundBtn" onclick="toggleSound()" title="Toggle notification sound">🔔</button>
-      <button class="btn-compose" onclick="openCompose()" title="New Message">+</button>
+      <div class="pwa-head-actions">
+        <a href="/twilio/calls" class="pwa-head-icon" title="Calls &amp; Missed Calls">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 12 19.79 19.79 0 0 1 1.62 3.42 2 2 0 0 1 3.6 1.26h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L7.91 8.83a16 16 0 0 0 6.29 6.29l1.13-.91a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
+          <span class="pwa-head-badge" id="missedCallsBadge" style="display:none;">0</span>
+        </a>
+        <a href="/twilio/calls" class="pwa-head-icon" title="Voicemail" id="vmIconLink">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 18v-6a9 9 0 0 1 18 0v6"/><path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z"/></svg>
+          <span class="pwa-head-badge" id="vmBadge" style="display:none;">0</span>
+        </a>
+        <button class="pwa-head-icon" onclick="openSettingsSheet()" title="SMS Settings">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        </button>
+        <button class="btn-icon" id="soundBtn" onclick="toggleSound()" title="Toggle notification sound">🔔</button>
+      </div>
+      <button class="btn-compose" onclick="openCompose()" title="New Message">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+      </button>
     </div>
 
     <div id="notifBanner">
@@ -401,7 +482,7 @@
     </div>
 
     <div class="search-wrap">
-      <input type="search" id="searchInput" placeholder="Search conversations…" oninput="onSearch(this.value)">
+      <input type="search" id="searchInput" placeholder="Search name or number…" oninput="onSearch(this.value)">
     </div>
 
     <div class="filter-tabs">
@@ -482,8 +563,17 @@
   <div class="pwa-modal">
     <div class="modal-title">New Message</div>
     <div class="pwa-field">
-      <label>To (phone number)</label>
-      <input type="tel" id="composeTo" placeholder="+19165551234">
+      <label>To — search by name or enter number</label>
+      <input type="text" id="composeSearch" placeholder="Search contact or type +1…"
+             oninput="onComposeSearch(this.value)" autocomplete="off">
+      <div id="composeSearchResults" class="compose-search-results"></div>
+      <div id="composeSelectedWrap" style="display:none;margin-top:6px;">
+        <div class="compose-selected-pill">
+          <span id="composeSelectedLabel"></span>
+          <button class="clear-contact-btn" onclick="clearComposeContact()">✕</button>
+        </div>
+      </div>
+      <input type="hidden" id="composeTo">
     </div>
     <div class="pwa-field">
       <label>Message</label>
@@ -492,6 +582,42 @@
     <div class="modal-actions">
       <button class="btn-cancel"  onclick="closeModal('composeModal')">Cancel</button>
       <button class="btn-primary" id="composeSendBtn" onclick="sendNewMsg()">Send</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Settings sheet ─────────────────────────────────────────────── -->
+<div class="pwa-modal-overlay" id="settingsSheet">
+  <div class="pwa-modal">
+    <div class="modal-title">SMS Settings</div>
+    <div class="settings-link-row">
+      <a href="/twilio/rules" class="settings-link">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+        Auto-Reply Rules
+      </a>
+      <a href="/twilio/hours" class="settings-link">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+        Business Hours &amp; After-Hours
+      </a>
+      <a href="/twilio/settings" class="settings-link">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 12 19.79 19.79 0 0 1 1.62 3.42 2 2 0 0 1 3.6 1.26h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L7.91 8.83a16 16 0 0 0 6.29 6.29l1.13-.91a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
+        Twilio Configuration
+      </a>
+      <a href="/twilio/calls" class="settings-link">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+        Call Log &amp; Missed Calls
+      </a>
+      <a href="/twilio/analytics" class="settings-link">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+        SMS Analytics
+      </a>
+      <a href="/dashboard" class="settings-link">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+        Back to Dashboard
+      </a>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeModal('settingsSheet')">Close</button>
     </div>
   </div>
 </div>
@@ -550,6 +676,7 @@ let state = {
 window.addEventListener('DOMContentLoaded', () => {
   updateSoundBtn();
   loadConversations();
+  loadBadgeCounts();
   connectSSE();
   registerSW();
   checkNotifPrompt();
@@ -557,6 +684,8 @@ window.addEventListener('DOMContentLoaded', () => {
   const params = new URLSearchParams(location.search);
   const convId = params.get('conv');
   if (convId) openConversation(parseInt(convId));
+  // Refresh badge counts every 2 minutes
+  setInterval(loadBadgeCounts, 120000);
 });
 
 /* ── Service Worker ───────────────────────────────────────────── */
@@ -1037,13 +1166,95 @@ function addOptimisticMsg(body) {
   el.scrollTop = el.scrollHeight;
 }
 
+/* ── Settings sheet ────────────────────────────────────────────── */
+function openSettingsSheet() { openModal('settingsSheet'); }
+
+/* ── Badge counts (missed calls + voicemail) ───────────────────── */
+async function loadBadgeCounts() {
+  try {
+    const data = await apiFetch('/api/inbox/badge-counts');
+    if (!data) return;
+    const mc = data.missed_calls || 0;
+    const vm = data.voicemails   || 0;
+    const mcBadge = document.getElementById('missedCallsBadge');
+    const vmBadge = document.getElementById('vmBadge');
+    if (mcBadge) { mcBadge.textContent = mc; mcBadge.style.display = mc > 0 ? 'flex' : 'none'; }
+    if (vmBadge) { vmBadge.textContent = vm; vmBadge.style.display = vm > 0 ? 'flex' : 'none'; }
+  } catch (e) {}
+}
+
+/* ── Compose contact search ────────────────────────────────────── */
+let composeSearchTimer = null;
+function onComposeSearch(val) {
+  clearTimeout(composeSearchTimer);
+  const results = document.getElementById('composeSearchResults');
+  if (!val || val.length < 2) { results.style.display = 'none'; return; }
+
+  // If it looks like a phone number, offer direct send
+  if (/^[\+\d\s\-\(\)]{3,}$/.test(val) && /\d{4,}/.test(val)) {
+    const safe = val.replace(/'/g, "\\'");
+    results.innerHTML = `<div class="csr-item" onclick="selectComposeContact('${safe}','${safe}')">Send directly to <strong>${esc(val)}</strong></div>`;
+    results.style.display = 'block';
+    return;
+  }
+
+  composeSearchTimer = setTimeout(async () => {
+    const data = await apiFetch('/api/inbox/contacts/search?q=' + encodeURIComponent(val));
+    if (!data) return;
+    if (!data.contacts || !data.contacts.length) {
+      results.innerHTML = '<div class="csr-empty">No contacts found. Type a full phone number to send anyway.</div>';
+      results.style.display = 'block';
+      return;
+    }
+    results.innerHTML = data.contacts.map(c => {
+      const phone = (c.phone || '').replace(/'/g, "\\'");
+      const name  = (c.name  || '').replace(/'/g, "\\'");
+      return `<div class="csr-item" onclick="selectComposeContact('${phone}','${name || phone}')">
+        <strong>${esc(c.name || c.phone)}</strong>
+        ${c.name && c.phone !== c.name ? `<small>${esc(c.phone)}</small>` : ''}
+      </div>`;
+    }).join('');
+    results.style.display = 'block';
+  }, 300);
+}
+
+function selectComposeContact(phone, label) {
+  document.getElementById('composeTo').value             = phone;
+  document.getElementById('composeSearch').style.display = 'none';
+  document.getElementById('composeSearchResults').style.display = 'none';
+  document.getElementById('composeSelectedLabel').textContent   = label;
+  document.getElementById('composeSelectedWrap').style.display  = 'block';
+}
+
+function clearComposeContact() {
+  document.getElementById('composeTo').value             = '';
+  document.getElementById('composeSearch').value         = '';
+  document.getElementById('composeSearch').style.display = '';
+  document.getElementById('composeSearchResults').style.display = 'none';
+  document.getElementById('composeSelectedWrap').style.display  = 'none';
+  document.getElementById('composeSearch').focus();
+}
+
 /* ── New conversation ─────────────────────────────────────────── */
-function openCompose() { openModal('composeModal'); }
+function openCompose() {
+  document.getElementById('composeTo').value             = '';
+  document.getElementById('composeSearch').value         = '';
+  document.getElementById('composeSearch').style.display = '';
+  document.getElementById('composeSearchResults').style.display = 'none';
+  document.getElementById('composeSelectedWrap').style.display  = 'none';
+  document.getElementById('composeBody').value           = '';
+  openModal('composeModal');
+  setTimeout(() => document.getElementById('composeSearch').focus(), 200);
+}
 
 async function sendNewMsg() {
-  const to   = document.getElementById('composeTo').value.trim();
+  let to = document.getElementById('composeTo').value.trim();
+  if (!to) {
+    const raw = document.getElementById('composeSearch').value.trim();
+    if (/^[\+\d\s\-\(\)]{7,}$/.test(raw) && /\d{7,}/.test(raw)) to = raw;
+  }
   const body = document.getElementById('composeBody').value.trim();
-  if (!to || !body) { toast('Phone number and message are required.', 'error'); return; }
+  if (!to || !body) { toast('Recipient and message are required.', 'error'); return; }
   const btn = document.getElementById('composeSendBtn');
   btn.disabled = true; btn.textContent = 'Sending…';
   const data = await apiFetch('/api/inbox/conversations', 'POST', { to, body });

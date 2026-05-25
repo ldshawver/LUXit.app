@@ -219,6 +219,48 @@
       }
       .topnav-ai-btn:hover { background: linear-gradient(135deg, var(--lux-primary-25), var(--lux-secondary-15)); border-color: color-mix(in srgb, var(--lux-primary), transparent 60%); color: var(--lux-text-primary); text-decoration: none; }
 
+      /* ── Sidebar hamburger toggle ── */
+      .sidebar-toggle-btn {
+        display: none;
+        background: rgba(255,255,255,0.05);
+        border: 1px solid rgba(255,255,255,0.1);
+        border-radius: 7px;
+        width: 30px; height: 30px;
+        align-items: center; justify-content: center;
+        cursor: pointer; color: rgba(255,255,255,0.55);
+        flex-shrink: 0; padding: 0; transition: all 0.15s;
+      }
+      .sidebar-toggle-btn:hover { background: rgba(255,255,255,0.09); color: #fff; }
+      .sidebar-toggle-btn svg { width: 16px; height: 16px; stroke: currentColor; }
+      .sidebar-backdrop {
+        display: none; position: fixed; inset: 0;
+        background: rgba(0,0,0,0.55); z-index: 149;
+        backdrop-filter: blur(2px);
+      }
+      .sidebar-backdrop.show { display: block; }
+
+      /* ── Mobile responsive layout ── */
+      @media (max-width: 900px) {
+        .sidebar-toggle-btn { display: flex; }
+        .user-greeting { display: none; }
+        .working-on { display: none; }
+        .company-icon { display: none; }
+        .app-sidebar {
+          position: fixed; left: 0; top: 52px; bottom: 0;
+          z-index: 150;
+          transform: translateX(-100%);
+          transition: transform 0.25s ease;
+        }
+        .app-sidebar.sidebar-open { transform: translateX(0); }
+        .cat-tabs { display: none !important; }
+        .topnav-ai-btn { display: none; }
+      }
+      @media (max-width: 600px) {
+        .catbar-sw { padding: 4px 8px; font-size: 0.65rem; }
+        .catbar-sw svg { display: none; }
+        .app-page-content { padding: 14px 14px 32px; }
+      }
+
       /* ── App body = sidebar + content ── */
       .app-body {
         display: flex;
@@ -367,6 +409,11 @@
         {# ═══ TOP HEADER ═══ #}
         <header class="app-header">
             <div class="app-header-inner">
+                {% if current_user.is_authenticated %}
+                <button class="sidebar-toggle-btn" id="sidebarToggleBtn" onclick="toggleSidebar()" title="Toggle sidebar" type="button">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+                </button>
+                {% endif %}
                 <div class="brand">
                     <span class="back-arrow-glow" onclick="history.back();" title="Go back">
                         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
@@ -488,8 +535,9 @@
 
         <div class="app-body">
 
+            <div class="sidebar-backdrop" id="sidebarBackdrop" onclick="toggleSidebar()"></div>
             {# ── LEFT SIDEBAR ── #}
-            <nav class="app-sidebar">
+            <nav class="app-sidebar" id="appSidebar">
 
                 {# Core Marketing #}
                 <div class="sidebar-section">
@@ -704,6 +752,18 @@
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script src="{{ url_for('static', filename='js/ui.js') }}"></script>
+    <script>
+    (function() {
+      function toggleSidebar() {
+        const sidebar  = document.getElementById('appSidebar');
+        const backdrop = document.getElementById('sidebarBackdrop');
+        if (!sidebar) return;
+        const open = sidebar.classList.toggle('sidebar-open');
+        if (backdrop) backdrop.classList.toggle('show', open);
+      }
+      window.toggleSidebar = toggleSidebar;
+    })();
+    </script>
     {% if current_user.is_authenticated and current_company is defined %}
     <script>
       window.LUX_COMPANY_ID = {{ current_company.id if current_company else 'null' }};

@@ -614,6 +614,101 @@ def sse_stream():
 
 # ── Internal helper: fire push for new inbound message ───────────────────────
 
+@inbox_pwa_bp.route("/api/inbox/badge-counts")
+def badge_counts():
+    """Return missed-call and unread-voicemail counts for PWA badges."""
+    user, err = _require_auth()
+    if err:
+        return jsonify({"missed_calls": 0, "voicemails": 0})
+    company = _get_company(user)
+    if not company:
+        return jsonify({"missed_calls": 0, "voicemails": 0})
+
+    missed = 0
+    vmails = 0
+    try:
+        from models import TwilioCallLog
+        missed = TwilioCallLog.query.filter(
+            TwilioCallLog.company_id == company.id,
+            TwilioCallLog.direction == "inbound",
+            TwilioCallLog.call_status.in_(["no-answer", "busy", "failed"]),
+        ).count()
+    except Exception:
+        pass
+    try:
+        from models import TwilioVoicemail
+        vmails = TwilioVoicemail.query.filter_by(
+            company_id=company.id, is_read=False
+        ).count()
+    except Exception:
+        pass
+    return jsonify({"missed_calls": missed, "voicemails": vmails})
+
+
+@inbox_pwa_bp.route("/api/inbox/contacts/search")
+def search_contacts():
+    """Search contacts by name or phone for the compose modal autocomplete."""
+    user, err = _require_auth()
+    if err:
+        return jsonify({"contacts": []})
+    company = _get_company(user)
+    if not company:
+        return jsonify({"contacts": []})
+
+    q = request.args.get("q", "").strip()
+    if len(q) < 2:
+        return jsonify({"contacts": []})
+
+    results = []
+    try:
+        from models import Contact
+        like = f"%{q}%"
+        contacts = (
+            Contact.query
+            .filter(
+                Contact.company_id == company.id,
+                db.or_(
+                    Contact.name.ilike(like),
+                    Contact.phone.ilike(like),
+                ),
+            )
+            .limit(8)
+            .all()
+        )
+        for c in contacts:
+            if c.phone:
+                results.append({"name": c.name or c.phone, "phone": c.phone})
+    except Exception:
+        pass
+
+    if not results:
+        try:
+            from models import TwilioConversation
+            like = f"%{q}%"
+            convs = (
+                TwilioConversation.query
+                .filter(
+                    TwilioConversation.company_id == company.id,
+                    db.or_(
+                        TwilioConversation.contact_name.ilike(like),
+                        TwilioConversation.from_number.ilike(like),
+                    ),
+                )
+                .limit(8)
+                .all()
+            )
+            seen = set()
+            for cv in convs:
+                phone = cv.from_number
+                if phone and phone not in seen:
+                    seen.add(phone)
+                    results.append({"name": cv.contact_name or phone, "phone": phone})
+        except Exception:
+            pass
+
+    return jsonify({"contacts": results})
+
+
 def _fire_push_notification(company_id: int, conv, message_body: str):
     """Called from the inbound SMS webhook — fires push to all subscribed users."""
     vapid_private = os.environ.get("VAPID_PRIVATE_KEY", "")
