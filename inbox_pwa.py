@@ -103,11 +103,16 @@ _UNICODE_REPLACEMENTS = str.maketrans({
 })
 
 def _sanitize_body(text: str) -> str:
-    """Replace common non-latin-1 Unicode chars before sending via Twilio."""
+    """
+    Normalise smart punctuation before sending via Twilio.
+    The Twilio Python SDK submits the body as UTF-8, so stripping to latin-1
+    is unnecessary and destroys emoji / accented characters.  Only null bytes
+    (the one codepoint Twilio actively rejects) are removed.
+    """
     if not text:
         return text
     text = text.translate(_UNICODE_REPLACEMENTS)
-    return text.encode("latin-1", errors="replace").decode("latin-1")
+    return text.replace("\x00", "")
 
 
 def _send_sms_internal(ta, to_number: str, body: str, conversation_id=None):

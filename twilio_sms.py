@@ -133,14 +133,17 @@ _UNICODE_REPLACEMENTS = str.maketrans({
 
 def _sanitize_body(text: str) -> str:
     """
-    Replace common non-latin-1 Unicode characters with ASCII equivalents so
-    the Twilio SDK / underlying HTTP stack never raises a codec error.
-    Any remaining non-latin-1 codepoints are dropped rather than crashing.
+    Normalise smart punctuation so Twilio receives clean text.
+    The Twilio Python SDK passes the body as UTF-8 to the REST API, so there
+    is no need to strip to latin-1; doing so only destroys emoji and accented
+    characters that Twilio handles perfectly well.
     """
     if not text:
         return text
     text = text.translate(_UNICODE_REPLACEMENTS)
-    return text.encode("latin-1", errors="replace").decode("latin-1")
+    # Strip null bytes only — the one character Twilio's API actively rejects.
+    # All other Unicode (emoji, accented chars, CJK, etc.) works natively.
+    return text.replace("\x00", "")
 
 
 def _validate_twilio_signature(ta, endpoint_path: str = "/twilio/sms/inbound") -> bool:
@@ -326,19 +329,34 @@ def _apply_auto_reply_rules(conv, body: str, ta) -> bool:
     """
     Evaluate auto-reply rules in priority order.
     Returns True if any rule fired and a reply was sent.
+
+    Special handling: after_hours rules are always evaluated even when a
+    lower-precedence rule (e.g. first_contact tag) has already fired, so a
+    customer texting for the first time outside business hours receives the
+    after-hours message rather than the generic welcome message.
     """
     from models import AutoReplyRule, Contact
     if not ta.automation_enabled:
         return False
 
-    rules = (
+    rules_raw = (
         AutoReplyRule.query
         .filter_by(company_id=ta.company_id, is_active=True)
         .order_by(AutoReplyRule.priority.desc())
         .all()
     )
 
+    # Always evaluate after_hours rules first, then the rest by priority.
+    # This guarantees the after-hours reply fires even on first contact,
+    # regardless of whatever priority value is stored in the database
+    # (legacy records may have priority=1 which would otherwise run last).
+    rules = sorted(
+        rules_raw,
+        key=lambda r: (0 if r.trigger_type == "after_hours" else 1, -r.priority)
+    )
+
     now_utc = datetime.now(timezone.utc)
+    reply_sent = False  # tracks whether a reply-type action already fired
 
     for rule in rules:
         matched = False
@@ -380,7 +398,7 @@ def _apply_auto_reply_rules(conv, body: str, ta) -> bool:
                           conversation_id=conv.id, is_auto_reply=True, rule_id=rule.id)
             rule.match_count = (rule.match_count or 0) + 1
             db.session.commit()
-            return True
+            return True  # hard stop — opted out
 
         elif rule.action == "tag" and rule.tag_value:
             tags = list(conv.tags or [])
@@ -389,20 +407,27 @@ def _apply_auto_reply_rules(conv, body: str, ta) -> bool:
                 conv.tags = tags
             rule.match_count = (rule.match_count or 0) + 1
             db.session.commit()
-            # Tag action may also reply
-            if rule.response:
+            # Send optional reply only if no reply has gone out yet
+            if rule.response and not reply_sent:
                 _send_sms(ta, conv.from_number, rule.response,
                           conversation_id=conv.id, is_auto_reply=True, rule_id=rule.id)
-            return True
+                reply_sent = True
+            # Continue evaluating — after_hours must still have a chance to fire
 
         elif rule.action == "reply" and rule.response:
+            if reply_sent:
+                # Don't send a second reply (e.g. after after_hours already fired)
+                continue
             result = _send_sms(ta, conv.from_number, rule.response,
                                conversation_id=conv.id, is_auto_reply=True, rule_id=rule.id)
             rule.match_count = (rule.match_count or 0) + 1
             db.session.commit()
-            return result.get("success", False)
+            reply_sent = result.get("success", False)
+            # after_hours rules always get a chance; other reply rules stop the loop
+            if rule.trigger_type != "after_hours":
+                return reply_sent
 
-    return False
+    return reply_sent
 
 
 def _capture_lead(conv, body: str, company_id: int):
@@ -457,8 +482,8 @@ def _seed_default_rules(company_id: int):
              priority=5, action="tag", tag_value="new-lead"),
         dict(name="After Hours",         trigger_type="after_hours",
              keywords=[],
-             response="Thanks for reaching out to Alavont Therapeutics. You messaged us after business hours. Please reach back during business hours: 11 AM to 1 AM, Sunday\u2013Saturday.\n\nThank you!",
-             priority=1, action="reply"),
+             response="Thanks for reaching out to Alavont Therapeutics. You messaged us after business hours. Please reach back during business hours: 11 AM to 1 AM, Sunday-Saturday.\n\nThank you!",
+             priority=50, action="reply"),
     ]
     for d in defaults:
         rule = AutoReplyRule(company_id=company_id, **d)
