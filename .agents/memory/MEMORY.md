@@ -1,0 +1,4 @@
+- [Twilio SMS latin-1 bug](twilio-latin1-sanitize.md) — `_sanitize_body` existed in 5 files and used latin-1 encode/decode; all replaced with `.replace("\x00","")`.
+- [After-hours auto-reply engine](twilio-after-hours-rules.md) — rules must be re-sorted with after_hours first before the loop, or priority ordering silences after-hours replies.
+- [PWA bubble multiline rendering](pwa-bubble-whitespace.md) — `white-space: pre-wrap` on `.bubble` + no `\n→<br>` in `esc()` is the correct fix for character-per-line display.
+- [Twilio outbound call flow](twilio-outbound-call.md) — `POST /api/inbox/conversations/<id>/call` in inbox_pwa.py + TwiML bridge at `GET /twilio/voice/outbound-twiml` in twilio_sms.py; forward_to flow calls agent first, TwiML then dials customer.

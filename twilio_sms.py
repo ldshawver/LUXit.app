@@ -822,6 +822,32 @@ def sms_status():
     return "", 204
 
 
+@twilio_bp.route("/voice/outbound-twiml", methods=["GET", "POST"])
+@csrf.exempt
+def outbound_call_twiml():
+    """
+    TwiML served when an outbound call is answered.
+
+    If the call was placed TO the agent (call_forward_to flow), this TwiML
+    greets the agent and dials through to the customer.
+    If the call was placed directly to the customer, this TwiML plays a
+    greeting so the call is not silent.
+    """
+    to_number = request.args.get("to", "")
+    caller    = request.args.get("caller", "")
+    safe_to   = to_number.replace("&", "").replace("<", "").replace(">", "")
+    safe_cal  = caller.replace("&", "").replace("<", "").replace(">", "")
+    twiml = (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        "<Response>\n"
+        "  <Say voice=\"Polly.Joanna\">Connecting your call. Please hold.</Say>\n"
+        f'  <Dial callerId="{safe_cal}" timeout="30">{safe_to}</Dial>\n'
+        "  <Say>The call could not be connected. Goodbye.</Say>\n"
+        "</Response>"
+    )
+    return twiml, 200, {"Content-Type": "text/xml"}
+
+
 @twilio_bp.route("/voice/inbound", methods=["POST"])
 @csrf.exempt
 def inbound_call():

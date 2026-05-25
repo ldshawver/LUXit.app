@@ -15,7 +15,7 @@ def _sanitize_body(text: str) -> str:
     if not text:
         return text
     text = text.translate(_UNICODE_REPLACEMENTS)
-    return text.encode("latin-1", errors="replace").decode("latin-1")
+    return text.replace("\x00", "")
 
 try:
     from twilio.rest import Client

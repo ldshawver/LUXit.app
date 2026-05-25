@@ -714,6 +714,76 @@ def search_contacts():
     return jsonify({"contacts": results})
 
 
+@inbox_pwa_bp.route("/api/inbox/conversations/<int:conv_id>/call", methods=["POST"])
+def place_outbound_call(conv_id):
+    """
+    Initiate a Twilio outbound call to the contact in this conversation.
+
+    If the TwilioAccount has `call_forward_to` set, Twilio first calls that
+    number (the agent's phone); when answered, the call bridges to the customer.
+    Otherwise the call goes directly to the customer (useful for leaving a
+    message or testing).  Requires Twilio to be configured for the company.
+    """
+    user = _require_auth()
+    company = _get_company(user)
+    if not company:
+        return jsonify({"success": False, "error": "No company found."}), 400
+
+    from models import TwilioConversation
+    conv = TwilioConversation.query.filter_by(
+        id=conv_id, company_id=company.id
+    ).first_or_404()
+
+    ta = _get_twilio_account(company.id)
+    if not ta:
+        return jsonify({"success": False, "error": "Twilio is not configured for this account."})
+    if not ta.from_phone:
+        return jsonify({"success": False, "error": "No outbound phone number configured in Twilio settings."})
+
+    try:
+        from twilio.rest import Client
+        from flask import url_for
+        sid = ta.get_account_sid() if hasattr(ta, "get_account_sid") else ta._account_sid
+        tok = ta.get_auth_token()  if hasattr(ta, "get_auth_token")  else ta._auth_token
+        client = Client(sid, tok)
+
+        payload     = request.get_json() or {}
+        forward_to  = payload.get("forward_to") or ta.call_forward_to
+        customer_no = conv.from_number
+
+        # TwiML URL that bridges the call to the customer once the agent picks up
+        twiml_url = url_for(
+            "twilio.outbound_call_twiml",
+            to=customer_no,
+            caller=ta.from_phone,
+            _external=True,
+        )
+
+        if forward_to:
+            # Call the agent first; TwiML dials the customer when agent answers
+            call = client.calls.create(
+                to=forward_to,
+                from_=ta.from_phone,
+                url=twiml_url,
+            )
+            msg = f"Calling your phone ({forward_to}). Answer to be connected to {customer_no}."
+        else:
+            # Call the customer directly (e.g. to leave a voicemail / test)
+            call = client.calls.create(
+                to=customer_no,
+                from_=ta.from_phone,
+                url=twiml_url,
+            )
+            msg = f"Outbound call initiated to {customer_no}."
+
+        logger.info("Outbound call initiated: sid=%s to=%s", call.sid, call.to)
+        return jsonify({"success": True, "call_sid": call.sid, "status": call.status, "message": msg})
+
+    except Exception as exc:
+        logger.error("Outbound call error: %s", exc)
+        return jsonify({"success": False, "error": str(exc)})
+
+
 def _fire_push_notification(company_id: int, conv, message_body: str):
     """Called from the inbound SMS webhook — fires push to all subscribed users."""
     vapid_private = os.environ.get("VAPID_PRIVATE_KEY", "")
