@@ -29,6 +29,7 @@ jobs:
             set -euo pipefail
 
             APP_DIR="/root/lux-email-bot"
+            DB_INSTANCE="$APP_DIR/instance/email_marketing.db"
 
             echo "=== Connected to VPS ==="
             whoami
@@ -39,15 +40,23 @@ jobs:
 
             git config --global --add safe.directory "$APP_DIR"
 
+            # ── Backup production DB (instance/email_marketing.db) ──────────
             echo "=== Backup DB ==="
-            mkdir -p backups
-            cp email_marketing.db backups/email_marketing_$(date +%F_%H%M%S).db 2>/dev/null || true
+            mkdir -p "$APP_DIR/backups"
+            if [ -f "$DB_INSTANCE" ]; then
+              cp "$DB_INSTANCE" "$APP_DIR/backups/email_marketing_$(date +%F_%H%M%S).db"
+              echo "✓ Backed up: $DB_INSTANCE"
+            else
+              echo "⚠  $DB_INSTANCE not found — skipping backup (first deploy?)"
+            fi
 
+            # ── Sync code from GitHub ────────────────────────────────────────
             echo "=== Sync code from GitHub ==="
             git fetch origin main
             git reset --hard origin/main
 
-            echo "=== Clean safely (preserve runtime data) ==="
+            # ── Safe clean: never touch runtime data ─────────────────────────
+            echo "=== Clean safely (preserving runtime data) ==="
             git clean -fd \
               -e .env \
               -e "*.db" \
@@ -56,6 +65,7 @@ jobs:
               -e "uploads/" \
               -e "logs/"
 
+            # ── Dependencies ─────────────────────────────────────────────────
             echo "=== Activate venv ==="
             source .venv/bin/activate
 
@@ -63,12 +73,45 @@ jobs:
             python -m pip install --upgrade pip
             pip install -r requirements.txt --upgrade
 
+            # ── Migrations ───────────────────────────────────────────────────
             echo "=== Run migrations ==="
             python scripts/migrate_db.py
 
+            # ── Compile check ─────────────────────────────────────────────────
             echo "=== Compile key files ==="
             python -m py_compile app.py models.py auth.py twilio_sms.py inbox_pwa.py
 
+            # ── Pre-restart safety check ──────────────────────────────────────
+            echo "=== Pre-restart safety check ==="
+            DB_URL=$(grep -E '^DATABASE_URL=' "$APP_DIR/.env" 2>/dev/null | head -1 | cut -d= -f2- | tr -d '"' | tr -d "'" || true)
+            if echo "$DB_URL" | grep -q "sqlite"; then
+              # Extract file path from sqlite URL
+              # sqlite:////absolute/path  →  /absolute/path
+              # sqlite:///relative/path   →  APP_DIR/relative/path
+              DB_FILE="${DB_URL#sqlite:///}"
+              if [ "${DB_FILE:0:1}" != "/" ]; then
+                DB_FILE="$APP_DIR/$DB_FILE"
+              fi
+              if [ ! -f "$DB_FILE" ]; then
+                echo "❌ ABORT: SQLite file does not exist: $DB_FILE"
+                echo "   Update DATABASE_URL in .env — expected:"
+                echo "     sqlite:////root/lux-email-bot/instance/email_marketing.db"
+                exit 1
+              fi
+              USER_COUNT=$(sqlite3 "$DB_FILE" "SELECT COUNT(*) FROM user;" 2>/dev/null || echo "0")
+              CO_COUNT=$(sqlite3   "$DB_FILE" "SELECT COUNT(*) FROM company;" 2>/dev/null || echo "0")
+              if [ "$USER_COUNT" = "0" ] || [ "$CO_COUNT" = "0" ]; then
+                echo "❌ ABORT: DB at $DB_FILE has $USER_COUNT user(s) and $CO_COUNT company(s)."
+                echo "   This looks like the wrong (empty) database file."
+                echo "   Update DATABASE_URL in .env and re-run deploy."
+                exit 1
+              fi
+              echo "✅ DB OK: $USER_COUNT user(s), $CO_COUNT company(s) at $DB_FILE"
+            else
+              echo "ℹ️  Non-SQLite DATABASE_URL — skipping SQLite count check."
+            fi
+
+            # ── Restart ───────────────────────────────────────────────────────
             echo "=== Restart app ==="
             systemctl restart lux-email-bot
             sleep 4
@@ -77,9 +120,10 @@ jobs:
             systemctl is-active lux-email-bot
             systemctl status lux-email-bot --no-pager | head -25
 
+            # ── Route smoke tests ─────────────────────────────────────────────
             echo "=== Verify routes ==="
             curl -sI https://luxit.app/ | head -5
-            curl -sI https://luxit.app/app/inbox | grep -E "^HTTP|Location" || true
+            curl -sI https://luxit.app/app/inbox   | grep -E "^HTTP|Location" || true
             curl -sI https://luxit.app/twilio/settings | grep -E "^HTTP|Location" || true
 
             echo "=== Production deploy complete ==="
