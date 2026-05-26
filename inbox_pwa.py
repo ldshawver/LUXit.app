@@ -45,8 +45,18 @@ _sse_listeners: dict[int, list]             = {}
 # ── Auth helpers ──────────────────────────────────────────────────────────────
 
 def _current_user():
+    # Flask-Login is the canonical auth provider; use it first.
+    # The app calls login_user() which stores the session key as "_user_id",
+    # NOT "user_id" — so session.get("user_id") always returns None for users
+    # who logged in via auth.py.  This caused the PWA to redirect every user
+    # to /auth/login even when they had a valid session, which then bounced
+    # them to /dashboard via _hub_redirect().
+    from flask_login import current_user as _cu
+    if _cu and _cu.is_authenticated:
+        return _cu
+    # Fallback for any code-path that sets a manual session key
     from models import User
-    uid = session.get("user_id")
+    uid = session.get("user_id") or session.get("_user_id")
     if not uid:
         return None
     return User.query.get(uid)
