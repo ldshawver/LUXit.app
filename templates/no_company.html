@@ -1,0 +1,60 @@
+{% extends "base_simple.html" %}
+{% block title %}No Company Assigned — LUXit{% endblock %}
+
+{% block content %}
+<style>
+  body { background: #000; color: #e2e8f0; }
+  .nc-card {
+    max-width: 480px; margin: 10vh auto; padding: 2.5rem 2rem;
+    background: #0d1117; border: 1px solid #1e2535; border-radius: 16px;
+    text-align: center;
+  }
+  .nc-icon {
+    width: 72px; height: 72px; border-radius: 50%;
+    background: rgba(124,58,237,.15); border: 2px solid rgba(124,58,237,.4);
+    display: flex; align-items: center; justify-content: center;
+    margin: 0 auto 1.5rem;
+  }
+  .nc-icon svg { width: 32px; height: 32px; color: #a78bfa; }
+  h2 { color: #e2e8f0; font-weight: 700; margin-bottom: .5rem; }
+  p { color: #6b7280; line-height: 1.6; }
+  .nc-actions { display: flex; gap: .75rem; justify-content: center; margin-top: 1.5rem; flex-wrap: wrap; }
+</style>
+
+<div class="nc-card">
+  <div class="nc-icon">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+         stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="2" y="7" width="20" height="14" rx="2" ry="2"/>
+      <path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/>
+    </svg>
+  </div>
+
+  <h2>No Company Assigned</h2>
+  <p>
+    Your account ({{ user.email }}) is not linked to a company yet.
+    {% if user.is_admin %}
+      As a platform admin you can create or link a company below.
+    {% else %}
+      Ask your administrator to assign your account to a company before you can use the inbox.
+    {% endif %}
+  </p>
+
+  <div class="nc-actions">
+    {% if user.is_admin %}
+      <a href="/companies" class="btn btn-primary" style="background:#7c3aed;border-color:#7c3aed;">
+        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24"
+             fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/>
+          <line x1="5" y1="12" x2="19" y2="12"/></svg>
+        Manage Companies
+      </a>
+      <a href="/user/manage-users" class="btn btn-outline-secondary" style="border-color:#374151;color:#9ca3af;">
+        Manage Users
+      </a>
+    {% endif %}
+    <a href="/auth/logout" class="btn btn-outline-secondary" style="border-color:#374151;color:#9ca3af;">
+      Log out
+    </a>
+  </div>
+</div>
+{% endblock %}

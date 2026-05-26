@@ -29,6 +29,10 @@ class UserCompanyAccess(db.Model):
     role = db.Column(db.String(20), default="viewer")
     is_default = db.Column(db.Boolean, default=False)
 
+    # Per-user feature access flags (PWA access control — no PostHog required)
+    can_access_mobile_inbox = db.Column(db.Boolean, default=False)
+    can_access_full_app     = db.Column(db.Boolean, default=True)
+
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(
         db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
@@ -40,16 +44,22 @@ class UserCompanyAccess(db.Model):
         db.Index("ix_user_company_access_company", "company_id"),
     )
 
-    ROLE_OWNER = "owner"
-    ROLE_ADMIN = "admin"
-    ROLE_EDITOR = "editor"
-    ROLE_VIEWER = "viewer"
+    ROLE_OWNER      = "owner"
+    ROLE_ADMIN      = "admin"
+    ROLE_MANAGER    = "manager"
+    ROLE_EDITOR     = "editor"
+    ROLE_VIEWER     = "viewer"
+    ROLE_STAFF      = "staff"
+    ROLE_INBOX_ONLY = "inbox_only"
 
     ROLE_HIERARCHY = {
-        ROLE_OWNER: 4,
-        ROLE_ADMIN: 3,
-        ROLE_EDITOR: 2,
-        ROLE_VIEWER: 1,
+        ROLE_OWNER:      5,
+        ROLE_ADMIN:      4,
+        ROLE_MANAGER:    3,
+        ROLE_EDITOR:     2,
+        ROLE_VIEWER:     1,
+        ROLE_STAFF:      1,
+        ROLE_INBOX_ONLY: 0,
     }
 
     user = db.relationship("User", backref=db.backref("company_access", lazy="dynamic"))
@@ -61,13 +71,27 @@ class UserCompanyAccess(db.Model):
         return f"<UserCompanyAccess user={self.user_id} company={self.company_id} role={self.role}>"
 
     def can_edit(self):
-        return self.role in {self.ROLE_OWNER, self.ROLE_ADMIN, self.ROLE_EDITOR}
+        return self.role in {self.ROLE_OWNER, self.ROLE_ADMIN, self.ROLE_MANAGER, self.ROLE_EDITOR}
 
     def can_admin(self):
         return self.role in {self.ROLE_OWNER, self.ROLE_ADMIN}
 
     def can_own(self):
         return self.role == self.ROLE_OWNER
+
+    def has_mobile_inbox_access(self) -> bool:
+        """Owners and admins always have PWA inbox access; other roles need the flag set."""
+        if self.role in (self.ROLE_OWNER, self.ROLE_ADMIN, self.ROLE_INBOX_ONLY):
+            return True
+        return bool(self.can_access_mobile_inbox)
+
+    def has_full_app_access(self) -> bool:
+        """Inbox-only role never gets full app; all other roles default to True."""
+        if self.role == self.ROLE_INBOX_ONLY:
+            return False
+        if self.can_access_full_app is None:
+            return True
+        return bool(self.can_access_full_app)
 
 
 # ============================================================

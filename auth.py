@@ -43,6 +43,14 @@ def _is_safe_next(value: str) -> bool:
 
 def _hub_redirect(user):
     """Return a redirect to the user's preferred hub after login."""
+    # Inbox-only users go directly to the Mobile Inbox PWA — never dashboard
+    try:
+        from models import UserCompanyAccess
+        acc = UserCompanyAccess.query.filter_by(user_id=user.id).first()
+        if acc and not acc.has_full_app_access() and acc.has_mobile_inbox_access():
+            return redirect("/app/inbox")
+    except Exception:
+        pass
     if getattr(user, 'default_hub', 'sales') == 'marketing':
         return redirect("/marketing-hub")
     return redirect("/dashboard")

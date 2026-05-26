@@ -5928,10 +5928,34 @@ def change_password():
 @main_bp.route('/user/manage-users')
 @login_required
 def manage_users():
-    """Manage users page"""
-    from models import User
-    users = User.query.all() if current_user.is_admin else [current_user]
-    return render_template('manage_users.html', users=users)
+    """Manage users page — accessible to platform admins and company admins."""
+    from models import User, UserCompanyAccess
+    try:
+        if current_user.is_admin:
+            users = User.query.order_by(User.username).all()
+        else:
+            company = current_user.get_default_company()
+            if not company or not current_user.can_admin_company(company.id):
+                flash('Access denied. You need admin or company-admin privileges.', 'danger')
+                return redirect(url_for('main.dashboard'))
+            user_ids = [a.user_id for a in UserCompanyAccess.query.filter_by(company_id=company.id).all()]
+            users = User.query.filter(User.id.in_(user_ids)).order_by(User.username).all()
+
+        # Build per-user access map {user_id: access_row} (first row wins)
+        all_access = UserCompanyAccess.query.all()
+        access_by_user = {}
+        for acc in all_access:
+            access_by_user.setdefault(acc.user_id, acc)
+
+        return render_template(
+            'manage_users.html',
+            users=users,
+            access_by_user=access_by_user,
+        )
+    except Exception as e:
+        logger.error("manage_users error: %s", e)
+        flash('Unable to load user list. Please try again.', 'danger')
+        return redirect(url_for('main.dashboard'))
 
 @main_bp.route('/user/edit/<int:user_id>', methods=['GET', 'POST'])
 @login_required
@@ -5971,6 +5995,58 @@ def delete_user(user_id):
     db.session.commit()
     flash(f'User {user.username} deleted.', 'success')
     return redirect(url_for('main.manage_users'))
+
+@main_bp.route('/api/user/<int:user_id>/access', methods=['POST'])
+@login_required
+def update_user_access(user_id):
+    """Toggle per-user PWA / full-app access flags (platform admin or company admin only)."""
+    from models import User, UserCompanyAccess
+    try:
+        if not current_user.is_admin:
+            company = current_user.get_default_company()
+            if not company or not current_user.can_admin_company(company.id):
+                return jsonify({'success': False, 'error': 'Permission denied.'}), 403
+
+        target = User.query.get(user_id)
+        if not target:
+            return jsonify({'success': False, 'error': 'User not found.'}), 404
+
+        payload = request.get_json() or {}
+
+        acc = UserCompanyAccess.query.filter_by(user_id=target.id).first()
+        if not acc:
+            company = current_user.get_default_company()
+            if not company:
+                return jsonify({'success': False, 'error': 'No company context.'}), 400
+            acc = UserCompanyAccess(user_id=target.id, company_id=company.id, role='viewer')
+            db.session.add(acc)
+
+        if 'role' in payload:
+            new_role = payload['role']
+            valid_roles = ('owner', 'admin', 'manager', 'editor', 'viewer', 'staff', 'inbox_only')
+            if new_role not in valid_roles:
+                return jsonify({'success': False, 'error': f'Invalid role. Choose from: {", ".join(valid_roles)}'}), 400
+            acc.role = new_role
+        if 'can_access_mobile_inbox' in payload:
+            acc.can_access_mobile_inbox = bool(payload['can_access_mobile_inbox'])
+        if 'can_access_full_app' in payload:
+            acc.can_access_full_app = bool(payload['can_access_full_app'])
+
+        db.session.commit()
+        return jsonify({
+            'success': True,
+            'user_id': target.id,
+            'role': acc.role,
+            'can_access_mobile_inbox': acc.can_access_mobile_inbox,
+            'can_access_full_app': acc.can_access_full_app,
+            'has_mobile_inbox_access': acc.has_mobile_inbox_access(),
+            'has_full_app_access': acc.has_full_app_access(),
+        })
+    except Exception as e:
+        db.session.rollback()
+        logger.error("update_user_access user=%d: %s", user_id, e)
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 
 @main_bp.route('/api/user/set-default-company', methods=['POST'])
 @login_required

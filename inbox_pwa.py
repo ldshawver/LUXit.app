@@ -33,20 +33,7 @@ logger = logging.getLogger(__name__)
 inbox_pwa_bp = Blueprint("inbox_pwa", __name__)
 
 
-@inbox_pwa_bp.before_request
-def _guard_sms_feature():
-    """Block PWA inbox unless SMS-features flag is on."""
-    try:
-        from flask_login import current_user
-        if not current_user.is_authenticated:
-            return None   # let login redirect handle it
-        from services.feature_flags import sms_blueprint_guard
-        result = sms_blueprint_guard()
-        if result is not None:
-            return result
-    except Exception as exc:
-        import logging
-        logging.getLogger(__name__).warning("SMS feature flag guard error: %s", exc)
+# Access is controlled via UserCompanyAccess.has_mobile_inbox_access() — no PostHog required.
 
 
 # ── SSE Event Bus ──────────────────────────────────────────────────────────────
@@ -73,13 +60,47 @@ def _require_auth():
 
 
 def _get_company(user):
+    """Return the user's active company, or None — never falls back to an arbitrary company."""
     from models import Company, UserCompanyAccess
+    # 1. Prefer the is_default=True access row
+    acc = UserCompanyAccess.query.filter_by(user_id=user.id, is_default=True).first()
+    if acc:
+        c = Company.query.get(acc.company_id)
+        if c:
+            return c
+    # 2. Any access row (first one found)
     acc = UserCompanyAccess.query.filter_by(user_id=user.id).first()
     if acc:
-        return Company.query.get(acc.company_id)
+        c = Company.query.get(acc.company_id)
+        if c:
+            return c
+    # 3. Explicit default_company_id pointer
     if user.default_company_id:
-        return Company.query.get(user.default_company_id)
-    return Company.query.first()
+        c = Company.query.get(user.default_company_id)
+        if c:
+            return c
+    # 4. Platform admins get the first active company as a fallback context
+    if user.is_admin:
+        return Company.query.filter_by(is_active=True).first()
+    return None
+
+
+def _check_mobile_inbox_access(user, company) -> bool:
+    """Return True if the user may access the Mobile Inbox PWA for this company."""
+    if user.is_admin:
+        return True
+    if not company:
+        return False
+    from models import UserCompanyAccess
+    # Check access specifically for this company
+    acc = UserCompanyAccess.query.filter_by(
+        user_id=user.id, company_id=company.id
+    ).first()
+    if acc:
+        return acc.has_mobile_inbox_access()
+    # Check any company access row (user linked to a different company)
+    any_acc = UserCompanyAccess.query.filter_by(user_id=user.id).first()
+    return bool(any_acc and any_acc.has_mobile_inbox_access())
 
 
 def _get_twilio_account(company_id):
@@ -196,11 +217,19 @@ def _msg_to_dict(m):
 
 @inbox_pwa_bp.route("/app/inbox")
 def pwa_index():
-    from flask import redirect, url_for as _url_for
+    from flask import redirect
     user = _current_user()
     if not user:
         return redirect("/auth/login?next=/app/inbox")
     company = _get_company(user)
+    # No company assigned → show setup page
+    if not company:
+        return render_template("no_company.html", user=user)
+    # Access gate — role/flag based, not PostHog
+    if not _check_mobile_inbox_access(user, company):
+        return render_template(
+            "inbox_access_denied.html", user=user, company=company
+        ), 403
     vapid_public = os.environ.get("VAPID_PUBLIC_KEY", "")
     return render_template(
         "inbox_pwa/index.html",

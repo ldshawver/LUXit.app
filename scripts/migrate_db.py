@@ -115,6 +115,10 @@ MIGRATIONS = [
     ("feedback_ticket", "posthog_replay_url", "VARCHAR(500)", "DEFAULT NULL"),
     ("feedback_ticket", "admin_notes",        "TEXT",         "DEFAULT NULL"),
 
+    # user_company_access — per-user PWA & full-app access control (PostHog-free)
+    ("user_company_access", "can_access_mobile_inbox", "BOOLEAN", "DEFAULT 0"),
+    ("user_company_access", "can_access_full_app",     "BOOLEAN", "DEFAULT 1"),
+
     # saas_automation_log — Stripe webhook audit columns
     ("saas_automation_log", "stripe_event_id", "VARCHAR(120)", "DEFAULT NULL"),
     ("saas_automation_log", "customer_id",     "VARCHAR(120)", "DEFAULT NULL"),
