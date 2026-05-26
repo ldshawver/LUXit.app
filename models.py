@@ -80,10 +80,25 @@ class UserCompanyAccess(db.Model):
         return self.role == self.ROLE_OWNER
 
     def has_mobile_inbox_access(self) -> bool:
-        """Owners and admins always have PWA inbox access; other roles need the flag set."""
+        """Any user with a company link can use the Mobile Inbox PWA.
+
+        Access is ON by default for every role.  The ``can_access_mobile_inbox``
+        column is an explicit *revoke* flag — it only blocks when an admin has
+        deliberately set it to False for a non-privileged role.  Because the
+        migration added this column with DEFAULT 0 we cannot use the raw column
+        value as a gate; instead we only honour a False value when the role
+        is not already privileged AND the flag is explicitly False *and* the
+        full-app flag is also False (i.e. a truly restricted account).
+
+        In practice: owner / admin / inbox_only always have access; every other
+        role has access unless both access flags are False simultaneously.
+        """
         if self.role in (self.ROLE_OWNER, self.ROLE_ADMIN, self.ROLE_INBOX_ONLY):
             return True
-        return bool(self.can_access_mobile_inbox)
+        # Explicitly restricted: admin turned off both flags on this account
+        if self.can_access_mobile_inbox is False and self.can_access_full_app is False:
+            return False
+        return True  # default — all roles can reach the PWA
 
     def has_full_app_access(self) -> bool:
         """Inbox-only role never gets full app; all other roles default to True."""
