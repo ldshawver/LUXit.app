@@ -312,12 +312,28 @@ def send_message(conv_id):
         return jsonify({"success": False, "error": "Message body is required."}), 400
 
     ta = _get_twilio_account(company.id)
-    if not ta or not ta.is_configured:
-        return jsonify({"success": False, "error": "Twilio not configured for this company."}), 400
+    if not ta:
+        logger.warning("send_message: no Twilio account for company=%d user=%d conv=%d",
+                       company.id, user.id, conv_id)
+        return jsonify({
+            "success": False,
+            "error": "Twilio is not configured for this account. Add your Twilio credentials in SMS Settings."
+        }), 400
+    if not ta.is_configured:
+        logger.warning("send_message: Twilio account incomplete for company=%d user=%d conv=%d",
+                       company.id, user.id, conv_id)
+        return jsonify({
+            "success": False,
+            "error": "Twilio credentials are incomplete. Check your Account SID, Auth Token, and phone number in SMS Settings."
+        }), 400
+
+    if not conv.from_number:
+        return jsonify({"success": False, "error": "Conversation has no destination phone number."}), 400
 
     record, err = _send_sms_internal(ta, conv.from_number, body, conversation_id=conv.id)
     if err:
-        logger.error("PWA inbox send failed conv=%d: %s", conv_id, err)
+        logger.error("send_message failed: user=%d company=%d conv=%d to=%s error=%s",
+                     user.id, company.id, conv_id, conv.from_number, err)
         return jsonify({"success": False, "error": err}), 500
 
     # Update conversation preview
@@ -327,7 +343,22 @@ def send_message(conv_id):
     conv.is_read              = True
     db.session.commit()
 
+    logger.info("send_message: user=%d company=%d conv=%d to=%s sid=%s",
+                user.id, company.id, conv_id, conv.from_number, record.twilio_sid)
     return jsonify({"success": True, "message": _msg_to_dict(record)})
+
+
+def _normalize_phone(raw: str) -> str:
+    """Normalise a phone number to E.164 (+1XXXXXXXXXX for US numbers)."""
+    import re
+    digits = re.sub(r"\D", "", raw)
+    if len(digits) == 10:
+        return f"+1{digits}"
+    if len(digits) == 11 and digits[0] == "1":
+        return f"+{digits}"
+    if raw.startswith("+"):
+        return raw.strip()
+    return f"+{digits}" if digits else raw.strip()
 
 
 # ── API: start new conversation ───────────────────────────────────────────────
@@ -337,19 +368,31 @@ def new_conversation():
     user    = _require_auth()
     company = _get_company(user)
     payload = request.get_json() or {}
-    to_num  = (payload.get("to") or "").strip()
+    to_raw  = (payload.get("to") or "").strip()
     body    = (payload.get("body") or "").strip()
-    if not to_num or not body:
-        return jsonify({"success": False, "error": "to and body are required."}), 400
+
+    if not to_raw:
+        return jsonify({"success": False, "error": "Recipient phone number is required."}), 400
+    if not body:
+        return jsonify({"success": False, "error": "Message body is required."}), 400
+
+    to_num = _normalize_phone(to_raw)
+    if len(to_num) < 7:
+        return jsonify({"success": False, "error": f"Invalid phone number: {to_raw}"}), 400
 
     ta = _get_twilio_account(company.id)
     if not ta or not ta.is_configured:
-        return jsonify({"success": False, "error": "Twilio not configured."}), 400
+        return jsonify({
+            "success": False,
+            "error": "Twilio is not configured for this account. Add your Twilio credentials in SMS Settings."
+        }), 400
 
     from models import TwilioConversation
-    conv = TwilioConversation.query.filter_by(
-        company_id=company.id, from_number=to_num
-    ).first()
+    # Look up by both the normalised form and the raw form so existing convs are found
+    conv = (
+        TwilioConversation.query.filter_by(company_id=company.id, from_number=to_num).first()
+        or TwilioConversation.query.filter_by(company_id=company.id, from_number=to_raw).first()
+    )
     if not conv:
         conv = TwilioConversation(
             company_id=company.id,
@@ -362,6 +405,8 @@ def new_conversation():
 
     record, err = _send_sms_internal(ta, to_num, body, conversation_id=conv.id)
     if err:
+        logger.error("new_conversation send failed user=%d company=%d to=%s: %s",
+                     user.id, company.id, to_num, err)
         return jsonify({"success": False, "error": err}), 500
 
     conv.last_message_at      = datetime.utcnow()
@@ -369,6 +414,8 @@ def new_conversation():
     conv.message_count        = (conv.message_count or 0) + 1
     db.session.commit()
 
+    logger.info("new_conversation: user=%d company=%d to=%s conv=%d sid=%s",
+                user.id, company.id, to_num, conv.id, record.twilio_sid)
     return jsonify({"success": True, "conversation_id": conv.id, "message": _msg_to_dict(record)})
 
 

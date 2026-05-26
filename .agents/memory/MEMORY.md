@@ -2,3 +2,4 @@
 - [After-hours auto-reply engine](twilio-after-hours-rules.md) — rules must be re-sorted with after_hours first before the loop, or priority ordering silences after-hours replies.
 - [PWA bubble multiline rendering](pwa-bubble-whitespace.md) — `white-space: pre-wrap` on `.bubble` + no `\n→<br>` in `esc()` is the correct fix for character-per-line display.
 - [Twilio outbound call flow](twilio-outbound-call.md) — `POST /api/inbox/conversations/<id>/call` in inbox_pwa.py + TwiML bridge at `GET /twilio/voice/outbound-twiml` in twilio_sms.py; forward_to flow calls agent first, TwiML then dials customer.
+- [PWA apiFetch silent failure pattern](pwa-apifetch-silent-failure.md) — missing try/catch in apiFetch + sendMsg causes permanent disabled send button when server returns non-JSON; always wrap fetch + res.json() in try/catch with finally to reset state.

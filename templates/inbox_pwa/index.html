@@ -158,7 +158,7 @@
       align-items: center; justify-content: center; gap: 12px; color: var(--muted);
     }
     #threadPlaceholder svg { opacity: .2; }
-    #thread { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; display: none; }
+    #thread { flex: 1 1 0; min-height: 0; height: 100%; display: flex; flex-direction: column; overflow: hidden; display: none; }
 
     /* Thread header */
     .thread-head {
@@ -182,8 +182,10 @@
 
     /* Messages */
     #messages {
-      flex: 1; overflow-y: auto; padding: 16px;
+      flex: 1 1 0; overflow-y: auto; padding: 16px;
       display: flex; flex-direction: column; gap: 10px;
+      -webkit-overflow-scrolling: touch;
+      overscroll-behavior-y: contain;
     }
     #messages::-webkit-scrollbar { width: 4px; }
     #messages::-webkit-scrollbar-thumb { background: var(--border); }
@@ -245,6 +247,8 @@
       padding: 10px 12px; border-top: 1px solid var(--border);
       background: var(--surface); flex-shrink: 0;
       display: flex; gap: 8px; align-items: flex-end;
+      /* keep above keyboard on iOS; safe-area-inset handled by #shell padding */
+      position: sticky; bottom: 0; z-index: 20;
     }
     .composer-wrap { flex: 1; position: relative; }
     #msgInput {
@@ -860,11 +864,32 @@ function stopMsgPolling() {
 
 /* ── API helper ───────────────────────────────────────────────── */
 async function apiFetch(url, method = 'GET', body = null) {
-  const opts = { method, headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF } };
-  if (body) opts.body = JSON.stringify(body);
-  const res = await fetch(url, opts);
+  const opts = {
+    method,
+    credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF },
+  };
+  if (body !== null) opts.body = JSON.stringify(body);
+  let res;
+  try {
+    res = await fetch(url, opts);
+  } catch (networkErr) {
+    return { success: false, error: 'Network error — check your connection and try again.' };
+  }
   if (res.status === 401) { location.href = '/auth/login?next=/app/inbox'; return null; }
-  return res.json();
+  if (res.status === 403) return { success: false, error: 'Permission denied.' };
+  // Parse JSON safely — server may return HTML on uncaught exceptions
+  let data;
+  try {
+    data = await res.json();
+  } catch {
+    return { success: false, error: `Server error (${res.status}). Please try again.` };
+  }
+  // Promote non-OK HTTP responses that have JSON bodies
+  if (!res.ok && data.error === undefined) {
+    return { success: false, error: `Request failed (${res.status}).` };
+  }
+  return data;
 }
 
 /* ── Conversation list ────────────────────────────────────────── */
@@ -997,6 +1022,13 @@ async function openConversation(convId) {
   renderMessages(data.messages);
   renderContactPanel(c, data.contact);
   startMsgPolling(convId);
+  // Input should always be ready when a non-opted-out conversation opens
+  if (!c.is_opted_out) {
+    setTimeout(() => {
+      const inp = document.getElementById('msgInput');
+      if (inp && !inp.disabled) inp.focus();
+    }, 150);
+  }
 }
 
 async function refreshMessages(convId) {
@@ -1074,7 +1106,9 @@ function renderMessages(msgs) {
   });
 
   el.innerHTML = html;
-  el.scrollTop = el.scrollHeight;
+  // Allow images to load then re-scroll
+  scrollThreadToBottom();
+  setTimeout(scrollThreadToBottom, 120);
 }
 
 function statusLabel(status) {
@@ -1153,38 +1187,72 @@ function toggleContactPanel() {
 async function sendMsg() {
   if (state.isSending || !state.activeConvId) return;
   const input = document.getElementById('msgInput');
-  const body  = input.value.trim();
-  if (!body) return;
+  const body  = (input.value || '').trim();
+  if (!body) { toast('Type a message first.', 'error'); return; }
 
   state.isSending = true;
-  document.getElementById('sendBtn').disabled = true;
-  addOptimisticMsg(body);
+  const btn = document.getElementById('sendBtn');
+  btn.disabled = true;
+  const optId = addOptimisticMsg(body);
   input.value = '';
   autoResize(input);
   updateChar(input);
+  input.focus();
 
-  const data = await apiFetch(`/api/inbox/conversations/${state.activeConvId}/messages`, 'POST', { body });
-  state.isSending = false;
-  document.getElementById('sendBtn').disabled = false;
-
-  if (!data || !data.success) {
-    toast(data?.error || 'Failed to send message.', 'error');
-    return;
+  try {
+    const data = await apiFetch(
+      `/api/inbox/conversations/${state.activeConvId}/messages`, 'POST', { body }
+    );
+    if (!data || !data.success) {
+      // Remove the optimistic bubble and restore the draft
+      removeOptimisticMsg(optId);
+      input.value = body;
+      autoResize(input);
+      updateChar(input);
+      const errMsg = data?.error || 'Failed to send. Please try again.';
+      toast(errMsg, 'error');
+      logger_warn('sendMsg failed:', errMsg);
+    } else {
+      await refreshMessages(state.activeConvId);
+      loadConversations();
+    }
+  } catch (err) {
+    removeOptimisticMsg(optId);
+    input.value = body;
+    autoResize(input);
+    toast('Send error: ' + (err.message || 'Unknown error.'), 'error');
+  } finally {
+    state.isSending = false;
+    btn.disabled = !input.value.trim();
   }
-  await refreshMessages(state.activeConvId);
-  loadConversations();
 }
 
+function logger_warn(...args) { try { console.warn('[PWA]', ...args); } catch {} }
+
+let _optMsgSeq = 0;
 function addOptimisticMsg(body) {
   const el  = document.getElementById('messages');
   const now = new Date().toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
-  el.innerHTML += `<div class="msg-row out" id="opt-msg">
-    <div>
+  const uid = 'opt-' + (++_optMsgSeq);
+  const div = document.createElement('div');
+  div.className = 'msg-row out';
+  div.id = uid;
+  div.innerHTML = `<div>
       <div class="bubble out">${esc(body)}</div>
       <div class="msg-meta out">${now} · <span class="msg-status">sending…</span></div>
-    </div>
-  </div>`;
-  el.scrollTop = el.scrollHeight;
+    </div>`;
+  el.appendChild(div);
+  scrollThreadToBottom();
+  return uid;
+}
+function removeOptimisticMsg(uid) {
+  const el = uid ? document.getElementById(uid) : null;
+  if (el) el.remove();
+}
+
+function scrollThreadToBottom() {
+  const el = document.getElementById('messages');
+  if (el) el.scrollTop = el.scrollHeight;
 }
 
 /* ── Settings sheet ────────────────────────────────────────────── */
@@ -1275,18 +1343,27 @@ async function sendNewMsg() {
     if (/^[\+\d\s\-\(\)]{7,}$/.test(raw) && /\d{7,}/.test(raw)) to = raw;
   }
   const body = document.getElementById('composeBody').value.trim();
-  if (!to || !body) { toast('Recipient and message are required.', 'error'); return; }
+  if (!to)   { toast('Enter a recipient phone number.', 'error'); return; }
+  if (!body) { toast('Type a message first.', 'error'); return; }
   const btn = document.getElementById('composeSendBtn');
   btn.disabled = true; btn.textContent = 'Sending…';
-  const data = await apiFetch('/api/inbox/conversations', 'POST', { to, body });
-  btn.disabled = false; btn.textContent = 'Send';
-  if (!data || !data.success) { toast(data?.error || 'Send failed.', 'error'); return; }
-  closeModal('composeModal');
-  document.getElementById('composeTo').value   = '';
-  document.getElementById('composeBody').value = '';
-  toast('Message sent.', 'success');
-  await loadConversations();
-  openConversation(data.conversation_id);
+  try {
+    const data = await apiFetch('/api/inbox/conversations', 'POST', { to, body });
+    if (!data || !data.success) {
+      toast(data?.error || 'Send failed. Check your Twilio settings.', 'error');
+      return;
+    }
+    closeModal('composeModal');
+    document.getElementById('composeTo').value   = '';
+    document.getElementById('composeBody').value = '';
+    toast('Message sent!', 'success');
+    await loadConversations();
+    openConversation(data.conversation_id);
+  } catch (err) {
+    toast('Send error: ' + (err.message || 'Unknown error.'), 'error');
+  } finally {
+    btn.disabled = false; btn.textContent = 'Send';
+  }
 }
 
 /* ── Actions ──────────────────────────────────────────────────── */
