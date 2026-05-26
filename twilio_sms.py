@@ -45,14 +45,36 @@ twilio_bp = Blueprint("twilio", __name__, url_prefix="/twilio")
 
 @twilio_bp.before_request
 def _guard_sms_feature():
-    """Block all non-webhook Twilio routes unless SMS-features flag is on."""
+    """Allow authenticated users with full-app access through Twilio routes.
+    Twilio webhook callbacks are always permitted (no auth required).
+    Inbox-only users are redirected to the Mobile Inbox PWA instead."""
+    from flask import request, redirect, render_template
+
+    # Twilio server-to-server webhooks — never require auth or feature flags
+    _WEBHOOK_PATHS = {
+        "/twilio/sms/inbound",
+        "/twilio/sms/status",
+        "/twilio/voice/inbound",
+        "/twilio/voice/no-answer",
+        "/twilio/voice/recording",
+        "/twilio/voice/status",
+    }
+    if request.path in _WEBHOOK_PATHS:
+        return None
+
+    if not current_user.is_authenticated:
+        return None  # login_required on individual routes handles the redirect
+
+    # Role-based gate: inbox_only users belong in the PWA, not the desktop app
     try:
-        from services.feature_flags import sms_blueprint_guard
-        result = sms_blueprint_guard()
-        if result is not None:
-            return result
+        from models import UserCompanyAccess
+        acc = UserCompanyAccess.query.filter_by(user_id=current_user.id).first()
+        if acc and not acc.has_full_app_access():
+            return redirect("/app/inbox")
     except Exception as exc:
-        logger.warning("SMS feature flag guard error: %s", exc)
+        logger.warning("SMS access check error: %s", exc)
+
+    return None  # allow through
 
 
 DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
