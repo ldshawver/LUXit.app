@@ -369,6 +369,42 @@ def create_app() -> Flask:
 
         db.create_all()
 
+        # ── DB startup report (never logs secrets) ─────────────────────────
+        try:
+            from models import User, Company
+            import re as _re
+            _user_count    = User.query.count()
+            _company_count = Company.query.count()
+            _active_names  = [
+                c.name for c in Company.query.filter_by(is_active=True).limit(20).all()
+            ]
+            # Mask credentials in any connection string
+            _safe_url = _re.sub(r"://[^@]+@", "://***@", db_url)
+            logging.info(
+                "\n"
+                "  ── DB STARTUP REPORT ──────────────────────────────────\n"
+                "  DB resolved to : %s\n"
+                "  Users          : %d\n"
+                "  Companies      : %d\n"
+                "  Active names   : %s\n"
+                "  ───────────────────────────────────────────────────────",
+                _safe_url,
+                _user_count,
+                _company_count,
+                ", ".join(_active_names) if _active_names else "(none)",
+            )
+            if _user_count == 0:
+                logging.warning(
+                    "\n"
+                    "  ⚠️  Zero users found in database — the wrong DB file may be configured.\n"
+                    "  Current DATABASE_URL: %s\n"
+                    "  Production correct path:\n"
+                    "    DATABASE_URL=sqlite:////root/lux-email-bot/instance/email_marketing.db",
+                    _safe_url,
+                )
+        except Exception as _diag_exc:
+            logging.warning("DB startup report failed: %s", _diag_exc)
+
         # PostHog — initialise client eagerly so first events aren't dropped
         try:
             from services.posthog_analytics import _get_client

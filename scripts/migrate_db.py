@@ -6,8 +6,66 @@ Usage (run from /root/lux-email-bot):
   python3 scripts/migrate_db.py
 """
 import sys, os
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-os.chdir(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+# ── Locate project root ─────────────────────────────────────────────────────
+_PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, _PROJECT_ROOT)
+os.chdir(_PROJECT_ROOT)
+
+
+# ── Load .env before importing app (so DATABASE_URL is available) ───────────
+def _load_dotenv():
+    """Parse .env in the project root and populate os.environ for missing keys."""
+    env_path = os.path.join(_PROJECT_ROOT, ".env")
+    if not os.path.exists(env_path):
+        return
+    with open(env_path) as _f:
+        for _line in _f:
+            _line = _line.strip()
+            if not _line or _line.startswith("#") or "=" not in _line:
+                continue
+            _key, _, _val = _line.partition("=")
+            _key = _key.strip()
+            _val = _val.strip().strip('"').strip("'")
+            if _key and _key not in os.environ:
+                os.environ[_key] = _val
+
+_load_dotenv()
+
+
+# ── SQLite path safety check ─────────────────────────────────────────────────
+def _check_sqlite_exists():
+    """If DATABASE_URL points to a SQLite file, abort if the file does not exist.
+
+    This prevents migrate_db.py from silently creating a new empty database
+    (e.g. /root/lux-email-bot/email_marketing.db) while the real data lives
+    in instance/email_marketing.db.
+    """
+    raw = os.environ.get("DATABASE_URL", "").strip()
+    if not raw or not raw.startswith("sqlite:"):
+        return  # Postgres / not set — let app.py handle it
+
+    # Extract filesystem path from sqlite URL:
+    #   sqlite:////absolute/path  →  /absolute/path
+    #   sqlite:///relative/path   →  <cwd>/relative/path
+    path = raw[len("sqlite:///"):]          # strip "sqlite:///"
+    if not os.path.isabs(path):
+        path = os.path.join(_PROJECT_ROOT, path)
+
+    if not os.path.exists(path):
+        print(
+            f"\n  ✗  FATAL: DATABASE_URL points to a SQLite file that does not exist:\n"
+            f"       {path}\n\n"
+            f"  This would create a brand-new empty database and lose all production data.\n"
+            f"  Update DATABASE_URL in your .env to the correct path, e.g.:\n"
+            f"    DATABASE_URL=sqlite:////root/lux-email-bot/instance/email_marketing.db\n",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    print(f"  ✓  SQLite file verified: {path}")
+
+_check_sqlite_exists()
 
 from app import create_app
 from extensions import db
