@@ -5,18 +5,19 @@ on:
 
 jobs:
   deploy-to-vps:
+    name: Deploy to VPS
     runs-on: ubuntu-latest
 
     steps:
-      - name: Deploy to VPS
-        uses: appleboy/ssh-action@v1.0.3
+      - name: SSH deploy
+        uses: appleboy/ssh-action@v1.2.0
         with:
           host: 194.195.92.52
           username: root
           key: ${{ secrets.VPS_LUXIT }}
           port: 2222
-          timeout: 60s
-          command_timeout: 10m
+          timeout: 120s
+          command_timeout: 20m
           debug: true
           script_stop: true
           script: |
@@ -27,46 +28,74 @@ jobs:
             hostname
             date
 
-            cd /root/lux-email-bot
+            APP_DIR="/root/lux-email-bot"
+            SERVICE_NAME="lux-email-bot"
 
-            git config --global --add safe.directory /root/lux-email-bot
+            cd "$APP_DIR"
 
-            echo "Backing up database..."
+            git config --global --add safe.directory "$APP_DIR"
+
+            echo "Checking repo status..."
+            git remote -v
+            git status --short || true
+
+            echo "Backing up SQLite database if present..."
             mkdir -p backups
-            cp email_marketing.db backups/email_marketing_$(date +%F_%H%M%S).db 2>/dev/null || true
+            if [ -f email_marketing.db ]; then
+              cp email_marketing.db "backups/email_marketing_$(date +%F_%H%M%S).db"
+            fi
 
             echo "Pulling latest from GitHub..."
             git fetch origin main
             git reset --hard origin/main
 
-            echo "Cleaning code directory but preserving runtime data..."
+            echo "Cleaning code directory while preserving runtime data..."
             git clean -fd \
               -e .env \
               -e "*.db" \
               -e "instance/" \
               -e "backups/" \
               -e "uploads/" \
-              -e "logs/"
+              -e "logs/" \
+              -e ".venv/"
 
-            echo "Installing dependencies..."
+            echo "Preparing Python environment..."
+            if [ ! -d ".venv" ]; then
+              python3 -m venv .venv
+            fi
+
             source .venv/bin/activate
-            python -m pip install --upgrade pip
-            pip install -r requirements.txt --upgrade
+            python -m pip install --upgrade pip setuptools wheel
 
-            echo "Running migrations..."
-            python scripts/migrate_db.py
+            if [ -f requirements.txt ]; then
+              pip install -r requirements.txt --upgrade
+            else
+              echo "ERROR: requirements.txt not found"
+              exit 1
+            fi
 
-            echo "Compiling key files..."
-            python -m py_compile app.py models.py auth.py twilio_sms.py inbox_pwa.py
+            echo "Running migrations if migration script exists..."
+            if [ -f scripts/migrate_db.py ]; then
+              python scripts/migrate_db.py
+            else
+              echo "No scripts/migrate_db.py found, skipping migration."
+            fi
+
+            echo "Compiling Python files..."
+            python -m compileall -q .
 
             echo "Restarting service..."
-            systemctl restart lux-email-bot
+            systemctl restart "$SERVICE_NAME"
 
-            sleep 4
+            echo "Waiting for service..."
+            sleep 5
 
-            echo "Checking service..."
-            systemctl is-active lux-email-bot
-            curl -sI https://luxit.app/app/inbox | grep -E "^HTTP|Location" || true
-            curl -sI https://luxit.app/twilio/settings | grep -E "^HTTP|Location" || true
+            echo "Checking service status..."
+            systemctl is-active --quiet "$SERVICE_NAME"
+            systemctl status "$SERVICE_NAME" --no-pager -l | head -80
+
+            echo "Checking endpoints..."
+            curl -fsSIL https://luxit.app/app/inbox | grep -E "^HTTP|Location" || true
+            curl -fsSIL https://luxit.app/twilio/settings | grep -E "^HTTP|Location" || true
 
             echo "DEPLOY COMPLETE"
