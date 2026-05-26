@@ -1,25 +1,72 @@
-name: Test VPS SSH
+name: Deploy LUXit to VPS
 
 on:
   workflow_dispatch:
 
 jobs:
-  test-ssh:
+  deploy-to-vps:
     runs-on: ubuntu-latest
+
     steps:
-      - name: Test SSH connection
+      - name: Deploy to VPS
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: 194.195.92.52
           username: root
-          key: ${{ secrets.VPS_SSH_KEY }}
+          key: ${{ secrets.VPS_LUXIT }}
           port: 2222
           timeout: 60s
-          command_timeout: 5m
+          command_timeout: 10m
           debug: true
           script_stop: true
           script: |
+            set -euo pipefail
+
             echo "CONNECTED"
             whoami
             hostname
             date
+
+            cd /root/lux-email-bot
+
+            git config --global --add safe.directory /root/lux-email-bot
+
+            echo "Backing up database..."
+            mkdir -p backups
+            cp email_marketing.db backups/email_marketing_$(date +%F_%H%M%S).db 2>/dev/null || true
+
+            echo "Pulling latest from GitHub..."
+            git fetch origin main
+            git reset --hard origin/main
+
+            echo "Cleaning code directory but preserving runtime data..."
+            git clean -fd \
+              -e .env \
+              -e "*.db" \
+              -e "instance/" \
+              -e "backups/" \
+              -e "uploads/" \
+              -e "logs/"
+
+            echo "Installing dependencies..."
+            source .venv/bin/activate
+            python -m pip install --upgrade pip
+            pip install -r requirements.txt --upgrade
+
+            echo "Running migrations..."
+            python scripts/migrate_db.py
+
+            echo "Compiling key files..."
+            python -m py_compile app.py models.py auth.py twilio_sms.py inbox_pwa.py
+
+            echo "Restarting service..."
+            systemctl restart lux-email-bot
+
+            sleep 4
+
+            echo "Checking service..."
+            systemctl is-active lux-email-bot
+            curl -sI https://luxit.app/app/inbox | grep -E "^HTTP|Location" || true
+            curl -sI https://luxit.app/twilio/settings | grep -E "^HTTP|Location" || true
+
+            echo "DEPLOY COMPLETE"
