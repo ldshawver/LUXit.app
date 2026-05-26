@@ -9187,34 +9187,47 @@ def get_agent_suggestions(agent_type):
         
         api_key = os.environ.get("OPENAI_API_KEY")
         if not api_key:
-            logger.warning("Agent suggestions disabled: missing OPENAI_API_KEY.")
-            return jsonify({'success': True, 'suggestions': []})
-        
+            return jsonify({
+                'success': False,
+                'error': 'OpenAI API key not configured. Add OPENAI_API_KEY in Settings → API Keys.',
+                'suggestions': []
+            }), 503
+
         client = OpenAI(api_key=api_key)
-        
-        response = client.chat.completions.create(
-            model="gpt-4o",
-            messages=[
-                {"role": "system", "content": f"You are a marketing AI agent. Provide actionable suggestions in JSON format. Return a JSON object with a 'suggestions' array, where each item has 'title', 'description', 'priority' (high/medium/low), and 'impact' fields."},
-                {"role": "user", "content": prompt}
-            ],
-            temperature=0.8,
-            response_format={"type": "json_object"}
-        )
-        
-        import json
-        result = json.loads(response.choices[0].message.content)
+
+        try:
+            response = client.chat.completions.create(
+                model="gpt-4o",
+                messages=[
+                    {"role": "system", "content": "You are a marketing AI agent. Provide actionable suggestions in JSON format. Return a JSON object with a 'suggestions' array, where each item has 'title', 'description', 'priority' (high/medium/low), and 'impact' fields."},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.8,
+                response_format={"type": "json_object"}
+            )
+        except Exception as openai_err:
+            err_str = str(openai_err)
+            if '401' in err_str or 'invalid_api_key' in err_str or 'Incorrect API key' in err_str:
+                msg = 'OpenAI API key is invalid or expired. Update it in Settings → API Keys.'
+            elif '429' in err_str:
+                msg = 'OpenAI rate limit reached. Please wait a moment and try again.'
+            else:
+                msg = f'OpenAI error: {err_str[:120]}'
+            logger.error(f"Agent suggestions OpenAI error: {openai_err}")
+            return jsonify({'success': False, 'error': msg, 'suggestions': []}), 503
+
+        import json as _json
+        result = _json.loads(response.choices[0].message.content)
         suggestions = result.get('suggestions', [])
-        
-        # Add IDs to suggestions
+
         for i, s in enumerate(suggestions):
             s['id'] = f"sug_{agent_type}_{i+1}"
-        
+
         return jsonify({'success': True, 'suggestions': suggestions})
-        
+
     except Exception as e:
         logger.error(f"Agent suggestions error: {e}")
-        return jsonify({'success': True, 'suggestions': []})
+        return jsonify({'success': False, 'error': str(e), 'suggestions': []}), 500
 
 @main_bp.route('/api/agents/<agent_type>/reports', methods=['GET'])
 @login_required

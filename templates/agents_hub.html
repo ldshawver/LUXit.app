@@ -1035,7 +1035,9 @@ async function loadTasks(key) {
 
   try {
     const res = await fetch(`/api/agents/${key}/tasks`);
-    const data = await res.json();
+    if (res.status === 401) { list.innerHTML = sessionExpiredHtml(); if (typeof feather !== 'undefined') feather.replace(); return; }
+    const data = await safeJson(res);
+    if (!data) { list.innerHTML = sessionExpiredHtml(); if (typeof feather !== 'undefined') feather.replace(); return; }
     if (data.tasks && data.tasks.length > 0) {
       list.innerHTML = data.tasks.map(t => `
         <div class="task-row ${t.enabled ? 'task-on' : 'task-off'}">
@@ -1118,6 +1120,32 @@ async function deleteTask(key, id) {
   } catch { /* silent */ }
 }
 
+/* ─── Helpers ─── */
+async function safeJson(res) {
+  /* Return parsed JSON or null if the response is HTML / not JSON.
+     This prevents raw HTML (login redirects, 404 pages) from bleeding
+     into the UI when a session expires or a route doesn't exist. */
+  const ct = res.headers.get('content-type') || '';
+  if (!ct.includes('application/json')) return null;
+  try { return await res.json(); } catch { return null; }
+}
+
+function sessionExpiredHtml() {
+  return `<div class="empty-state">
+    <svg data-feather="log-in"></svg>
+    <p style="color:#fbbf24;">Session expired.<br>
+      <a href="/login" style="color:#00e5ff;">Log in again</a> to continue.
+    </p>
+  </div>`;
+}
+
+function apiErrorHtml(msg) {
+  return `<div class="empty-state">
+    <svg data-feather="alert-circle"></svg>
+    <p style="color:#f87171;">${msg}</p>
+  </div>`;
+}
+
 /* ─── Reports ─── */
 async function loadReports(key) {
   const list = document.getElementById('reportsList');
@@ -1126,7 +1154,9 @@ async function loadReports(key) {
 
   try {
     const res = await fetch(`/api/agents/${key}/reports`);
-    const data = await res.json();
+    if (res.status === 401 || res.status === 302) { list.innerHTML = sessionExpiredHtml(); if (typeof feather !== 'undefined') feather.replace(); return; }
+    const data = await safeJson(res);
+    if (!data) { list.innerHTML = sessionExpiredHtml(); if (typeof feather !== 'undefined') feather.replace(); return; }
     if (data.reports && data.reports.length > 0) {
       list.innerHTML = data.reports.map(r => `
         <div class="report-row" onclick="viewReport('${key}', ${r.id})">
@@ -1149,7 +1179,7 @@ async function loadReports(key) {
         </div>`;
     }
   } catch {
-    list.innerHTML = `<div class="empty-state"><svg data-feather="alert-circle"></svg><p>Error loading reports.</p></div>`;
+    list.innerHTML = apiErrorHtml('Could not load reports. Check your connection.');
   }
   if (typeof feather !== 'undefined') feather.replace();
 }
@@ -1227,7 +1257,9 @@ async function loadDeliverables(key) {
 
   try {
     const res = await fetch(`/api/agents/${key}/deliverables`);
-    const data = await res.json();
+    if (res.status === 401) { list.innerHTML = sessionExpiredHtml(); if (typeof feather !== 'undefined') feather.replace(); return; }
+    const data = await safeJson(res);
+    if (!data) { list.innerHTML = sessionExpiredHtml(); if (typeof feather !== 'undefined') feather.replace(); return; }
     if (data.deliverables && data.deliverables.length > 0) {
       list.innerHTML = data.deliverables.map(d => `
         <div class="deliverable-row">
@@ -1266,9 +1298,20 @@ async function getSuggestions() {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-CSRFToken': '{{ csrf_token() }}' }
     });
-    const data = await res.json();
 
-    if (data.suggestions && data.suggestions.length > 0) {
+    if (res.status === 401) { list.innerHTML = sessionExpiredHtml(); btn.disabled = false; btn.innerHTML = '<svg data-feather="refresh-cw"></svg> Generate'; if (typeof feather !== 'undefined') feather.replace(); return; }
+
+    const data = await safeJson(res);
+    if (!data) { list.innerHTML = sessionExpiredHtml(); btn.disabled = false; btn.innerHTML = '<svg data-feather="refresh-cw"></svg> Generate'; if (typeof feather !== 'undefined') feather.replace(); return; }
+
+    if (!data.success && data.error) {
+      list.innerHTML = `
+        <div class="empty-state">
+          <svg data-feather="alert-triangle" style="stroke:#fbbf24;"></svg>
+          <p style="color:#fbbf24;max-width:320px;">${data.error}</p>
+          ${data.error.includes('API key') ? '<p style="font-size:0.78rem;color:#555;">Go to <strong style="color:#00e5ff;">Settings → API Keys</strong> to update your OpenAI key.</p>' : ''}
+        </div>`;
+    } else if (data.suggestions && data.suggestions.length > 0) {
       list.innerHTML = data.suggestions.map((s, i) => `
         <div class="suggestion-row">
           <div class="suggestion-num">${i + 1}</div>
@@ -1285,7 +1328,7 @@ async function getSuggestions() {
       list.innerHTML = `<div class="empty-state"><svg data-feather="check-circle"></svg><p>No new suggestions — your marketing looks strong.</p></div>`;
     }
   } catch {
-    list.innerHTML = `<div class="empty-state"><svg data-feather="alert-circle"></svg><p>Error generating suggestions.</p></div>`;
+    list.innerHTML = apiErrorHtml('Could not connect to the suggestions service. Check your connection.');
   }
 
   btn.disabled = false;

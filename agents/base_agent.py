@@ -202,22 +202,48 @@ class BaseAgent:
             logger.error(f"{self.agent_name} logging error: {e}")
     
     def create_task(self, task_name: str, task_data: Dict[str, Any], 
-                   scheduled_at: Optional[datetime] = None) -> Optional[int]:
+                   scheduled_at: Optional[datetime] = None,
+                   company_id: Optional[int] = None,
+                   user_id: Optional[int] = None) -> Optional[int]:
         """
         Create a task for this agent
-        
+
         Args:
             task_name: Name/description of task
             task_data: Task configuration and parameters
             scheduled_at: When to execute (None = now)
-            
+            company_id: Company context (falls back to first active company)
+            user_id: User context (optional)
+
         Returns:
             Task ID or None on error
         """
         try:
-            from models import AgentTask, db
-            
+            from models import AgentTask, Company, db
+
+            # Resolve company_id — required by the NOT NULL constraint.
+            # Scheduled agents run outside any request context, so we fall
+            # back to the first active company rather than crashing.
+            resolved_company_id = company_id
+            if resolved_company_id is None:
+                try:
+                    first_company = Company.query.filter_by(is_active=True).first()
+                    if first_company is None:
+                        first_company = Company.query.first()
+                    resolved_company_id = first_company.id if first_company else None
+                except Exception:
+                    resolved_company_id = None
+
+            if resolved_company_id is None:
+                logger.warning(
+                    f"{self.agent_name} skipping task creation — no company found "
+                    f"(task: {task_name})"
+                )
+                return None
+
             task = AgentTask(
+                company_id=resolved_company_id,
+                user_id=user_id,
                 agent_type=self.agent_type,
                 agent_name=self.agent_name,
                 task_name=task_name,
@@ -234,6 +260,7 @@ class BaseAgent:
             
         except Exception as e:
             logger.error(f"{self.agent_name} task creation error: {e}")
+            db.session.rollback()
             return None
     
     def get_pending_tasks(self) -> List:
