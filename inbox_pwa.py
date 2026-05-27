@@ -98,10 +98,8 @@ def _get_company(user):
 def _check_mobile_inbox_access(user, company) -> bool:
     """Return True if the user may access the Mobile Inbox PWA.
 
-    Any authenticated user who belongs to a company is allowed by default.
-    Access is only denied when an admin has explicitly restricted the account
-    (both can_access_mobile_inbox AND can_access_full_app set to False).
-    Platform admins always pass regardless of access rows.
+    Access requires explicit admin approval per-user via
+    UserCompanyAccess.can_access_mobile_inbox. Platform admins always pass.
     """
     if user.is_admin:
         return True
@@ -117,8 +115,16 @@ def _check_mobile_inbox_access(user, company) -> bool:
     any_acc = UserCompanyAccess.query.filter_by(user_id=user.id).first()
     if any_acc:
         return any_acc.has_mobile_inbox_access()
-    # Has a company (via default_company_id) but no access row yet — allow through
-    return True
+    # No access row means not approved yet.
+    return False
+
+
+def _require_company(user):
+    """Resolve company context for APIs and avoid None.id crashes."""
+    company = _get_company(user)
+    if not company:
+        abort(409, "No company configured for this user.")
+    return company
 
 
 def _get_twilio_account(company_id):
@@ -716,12 +722,8 @@ def sse_stream():
 @inbox_pwa_bp.route("/api/inbox/badge-counts")
 def badge_counts():
     """Return missed-call and unread-voicemail counts for PWA badges."""
-    user, err = _require_auth()
-    if err:
-        return jsonify({"missed_calls": 0, "voicemails": 0})
-    company = _get_company(user)
-    if not company:
-        return jsonify({"missed_calls": 0, "voicemails": 0})
+    user = _require_auth()
+    company = _require_company(user)
 
     missed = 0
     vmails = 0
@@ -747,12 +749,8 @@ def badge_counts():
 @inbox_pwa_bp.route("/api/inbox/contacts/search")
 def search_contacts():
     """Search contacts by name or phone for the compose modal autocomplete."""
-    user, err = _require_auth()
-    if err:
-        return jsonify({"contacts": []})
-    company = _get_company(user)
-    if not company:
-        return jsonify({"contacts": []})
+    user = _require_auth()
+    company = _require_company(user)
 
     q = request.args.get("q", "").strip()
     if len(q) < 2:

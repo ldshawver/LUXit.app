@@ -96,9 +96,24 @@ fi
 pkill -f "gunicorn.*127\.0\.0\.1:8000" 2>/dev/null \
   && warn "Killed stale gunicorn on port 8000" || true
 
-# ── 6. Restart service ────────────────────────────────────────────────────────
+# ── 6. Database migration + tenant sync ──────────────────────────────────────
 echo ""
-echo "── 5. Restart luxit service ──"
+echo "── 5. Database migration + tenant sync ──"
+if "$VENV/bin/python3" "$APP_DIR/scripts/migrate_db.py"; then
+  ok "migrate_db.py complete"
+else
+  fail "migrate_db.py failed"
+fi
+
+if "$VENV/bin/python3" "$APP_DIR/scripts/create_company.py"; then
+  ok "create_company.py complete"
+else
+  fail "create_company.py failed"
+fi
+
+# ── 7. Restart service ────────────────────────────────────────────────────────
+echo ""
+echo "── 6. Restart luxit service ──"
 systemctl daemon-reload
 systemctl restart "$SERVICE"
 sleep 3
@@ -110,9 +125,9 @@ else
   fail "$SERVICE failed to start"
 fi
 
-# ── 7. Health check ───────────────────────────────────────────────────────────
+# ── 8. Health check ───────────────────────────────────────────────────────────
 echo ""
-echo "── 6. Health check ──"
+echo "── 7. Health check ──"
 sleep 2
 HTTP=$(curl -s -o /dev/null -w '%{http_code}' -L --max-time 15 "$SITE/" 2>/dev/null || echo "000")
 if [[ "$HTTP" =~ ^(200|301|302)$ ]]; then
