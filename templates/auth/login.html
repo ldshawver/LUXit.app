@@ -131,6 +131,11 @@
 
         <button type="submit">Sign in</button>
       </form>
+      <div style="text-align:center;margin-top:18px;display:flex;align-items:center;justify-content:center;gap:0;flex-wrap:wrap;">
+        <a href="{{ url_for('auth.forgot_password') }}" style="font-size:0.83rem;color:#6b7280;text-decoration:none;" onmouseover="this.style.color='#00e5ff'" onmouseout="this.style.color='#6b7280'">Forgot password?</a>
+        <span style="color:#374151;margin:0 10px;">·</span>
+        <a href="{{ url_for('auth.forgot_username') }}" style="font-size:0.83rem;color:#6b7280;text-decoration:none;" onmouseover="this.style.color='#00e5ff'" onmouseout="this.style.color='#6b7280'">Forgot username?</a>
+      </div>
     </div>
   </body>
 </html>

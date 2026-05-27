@@ -1,0 +1,131 @@
+{% extends "base.html" %}
+{% block title %}Inbox — LUX IT{% endblock %}
+
+{% block content %}
+<style>
+  .inbox-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:24px; flex-wrap:wrap; gap:12px; }
+  .inbox-header h1 { font-size:1.5rem; font-weight:700; color:#fff; margin:0; }
+  .inbox-header .badge-count { background:rgba(0,229,255,0.15); color:#00e5ff; padding:4px 12px; border-radius:20px; font-size:0.8rem; margin-left:10px; }
+  .inbox-actions { display:flex; gap:8px; }
+  .inbox-actions form button { font-size:0.78rem; padding:6px 14px; border-radius:8px; border:1px solid rgba(255,255,255,0.1); background:rgba(255,255,255,0.04); color:rgba(255,255,255,0.7); cursor:pointer; transition:all .2s; }
+  .inbox-actions form button:hover { background:rgba(255,255,255,0.08); color:#fff; }
+  .inbox-filters { display:flex; gap:6px; margin-bottom:20px; flex-wrap:wrap; }
+  .inbox-filters a { font-size:0.78rem; padding:5px 14px; border-radius:20px; border:1px solid rgba(255,255,255,0.08); background:rgba(255,255,255,0.03); color:rgba(255,255,255,0.6); text-decoration:none; transition:all .2s; }
+  .inbox-filters a:hover { background:rgba(255,255,255,0.07); color:#fff; }
+  .inbox-filters a.active { background:rgba(0,229,255,0.12); border-color:rgba(0,229,255,0.25); color:#00e5ff; }
+  .inbox-list { display:flex; flex-direction:column; gap:2px; }
+  .inbox-row { display:flex; align-items:center; gap:14px; padding:12px 18px; border-radius:10px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.06); transition:all .2s; text-decoration:none; color:inherit; cursor:pointer; }
+  .inbox-row:hover { background:rgba(255,255,255,0.06); border-color:rgba(255,255,255,0.1); }
+  .inbox-row.unread { background:rgba(0,229,255,0.04); border-color:rgba(0,229,255,0.12); }
+  .inbox-row.unread .inbox-subject { color:#fff; font-weight:600; }
+  .inbox-star { flex-shrink:0; }
+  .inbox-star button { background:none; border:none; cursor:pointer; padding:2px; color:rgba(255,255,255,0.2); transition:color .15s; }
+  .inbox-star button:hover { color:#fbbf24; }
+  .inbox-star button.starred { color:#fbbf24; }
+  .inbox-avatar { width:34px; height:34px; border-radius:50%; display:flex; align-items:center; justify-content:center; flex-shrink:0; font-size:0.8rem; font-weight:700; color:#fff; }
+  .inbox-avatar.general { background:rgba(0,229,255,0.18); color:#00e5ff; }
+  .inbox-avatar.campaign { background:rgba(168,85,247,0.18); color:#a855f7; }
+  .inbox-avatar.system { background:rgba(0,255,180,0.18); color:#00ffb4; }
+  .inbox-avatar.team { background:rgba(251,191,36,0.18); color:#fbbf24; }
+  .inbox-sender { width:140px; flex-shrink:0; font-size:0.82rem; color:rgba(255,255,255,0.7); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .inbox-row.unread .inbox-sender { color:#fff; font-weight:600; }
+  .inbox-content { flex:1; min-width:0; display:flex; flex-direction:column; gap:2px; }
+  .inbox-subject { font-size:0.85rem; color:rgba(255,255,255,0.85); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .inbox-preview { font-size:0.75rem; color:rgba(255,255,255,0.4); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .inbox-time { flex-shrink:0; font-size:0.72rem; color:rgba(255,255,255,0.35); white-space:nowrap; }
+  .inbox-row-actions { display:flex; gap:4px; flex-shrink:0; }
+  .inbox-row-actions form button { background:none; border:none; color:rgba(255,255,255,0.25); cursor:pointer; padding:4px; border-radius:6px; transition:all .15s; }
+  .inbox-row-actions form button:hover { color:#fff; background:rgba(255,255,255,0.08); }
+  .inbox-row-actions .btn-del:hover { color:#ff5050; background:rgba(255,80,80,0.1); }
+  .inbox-empty { text-align:center; padding:60px 20px; }
+  .inbox-empty i { width:48px; height:48px; color:rgba(255,255,255,0.15); margin-bottom:16px; }
+  .inbox-empty h3 { font-size:1.1rem; color:rgba(255,255,255,0.5); margin-bottom:6px; }
+  .inbox-empty p { font-size:0.82rem; color:rgba(255,255,255,0.3); }
+  .unread-dot { width:8px; height:8px; border-radius:50%; background:#00e5ff; flex-shrink:0; }
+</style>
+
+<div class="inbox-header">
+  <div style="display:flex;align-items:center;">
+    <h1>Inbox</h1>
+    {% if unread_count > 0 %}
+      <span class="badge-count">{{ unread_count }} unread</span>
+    {% endif %}
+  </div>
+  <div class="inbox-actions">
+    {% if unread_count > 0 %}
+    <form method="post" action="{{ url_for('main.mark_inbox_read') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="message_id" value="all">
+      <button type="submit"><i data-feather="check-circle" style="width:12px;height:12px;"></i> Mark all read</button>
+    </form>
+    {% endif %}
+  </div>
+</div>
+
+<div class="inbox-filters">
+  <a href="{{ url_for('main.inbox_page') }}" class="{% if filter_type == 'all' %}active{% endif %}">All</a>
+  <a href="{{ url_for('main.inbox_page', filter='unread') }}" class="{% if filter_type == 'unread' %}active{% endif %}">Unread</a>
+  <a href="{{ url_for('main.inbox_page', filter='starred') }}" class="{% if filter_type == 'starred' %}active{% endif %}">Starred</a>
+  <a href="{{ url_for('main.inbox_page', filter='campaign') }}" class="{% if filter_type == 'campaign' %}active{% endif %}">Campaigns</a>
+  <a href="{{ url_for('main.inbox_page', filter='system') }}" class="{% if filter_type == 'system' %}active{% endif %}">System</a>
+  <a href="{{ url_for('main.inbox_page', filter='team') }}" class="{% if filter_type == 'team' %}active{% endif %}">Team</a>
+</div>
+
+{% if messages.items %}
+<div class="inbox-list">
+  {% for m in messages.items %}
+  <div class="inbox-row{% if not m.is_read %} unread{% endif %}" onclick="window.location='{{ url_for('main.inbox_message_detail', message_id=m.id) }}'">
+    <div class="inbox-star" onclick="event.stopPropagation()">
+      <form method="post" action="{{ url_for('main.toggle_star_message') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="message_id" value="{{ m.id }}">
+        <button type="submit" class="{% if m.is_starred %}starred{% endif %}" title="{% if m.is_starred %}Unstar{% else %}Star{% endif %}">
+          <i data-feather="star" style="width:14px;height:14px;{% if m.is_starred %}fill:#fbbf24;{% endif %}"></i>
+        </button>
+      </form>
+    </div>
+    {% if not m.is_read %}
+      <div class="unread-dot"></div>
+    {% endif %}
+    <div class="inbox-avatar {{ m.category }}">{{ m.sender_name[:2]|upper }}</div>
+    <div class="inbox-sender">{{ m.sender_name }}</div>
+    <div class="inbox-content">
+      <div class="inbox-subject">{{ m.subject }}</div>
+      {% if m.body %}
+        <div class="inbox-preview">{{ m.body[:100] }}</div>
+      {% endif %}
+    </div>
+    <div class="inbox-time">{{ m.created_at.strftime('%b %d') }}</div>
+    <div class="inbox-row-actions" onclick="event.stopPropagation()">
+      <form method="post" action="{{ url_for('main.delete_inbox_message') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="message_id" value="{{ m.id }}">
+        <button type="submit" class="btn-del" title="Delete"><i data-feather="trash-2" style="width:13px;height:13px;"></i></button>
+      </form>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+
+{% if messages.pages > 1 %}
+<div style="display:flex;justify-content:center;gap:6px;margin-top:24px;">
+  {% for p in messages.iter_pages(left_edge=1, right_edge=1, left_current=2, right_current=2) %}
+    {% if p %}
+      <a href="{{ url_for('main.inbox_page', page=p, filter=filter_type) }}"
+         style="padding:6px 12px;border-radius:8px;font-size:0.78rem;text-decoration:none;
+         {% if p == messages.page %}background:rgba(0,229,255,0.15);color:#00e5ff;border:1px solid rgba(0,229,255,0.25);{% else %}background:rgba(255,255,255,0.04);color:rgba(255,255,255,0.5);border:1px solid rgba(255,255,255,0.08);{% endif %}">{{ p }}</a>
+    {% else %}
+      <span style="color:rgba(255,255,255,0.3);padding:6px 4px;">…</span>
+    {% endif %}
+  {% endfor %}
+</div>
+{% endif %}
+
+{% else %}
+<div class="inbox-empty">
+  <i data-feather="inbox"></i>
+  <h3>Your inbox is empty{% if filter_type != 'all' %} for this filter{% endif %}</h3>
+  <p>Messages from campaigns, system updates, and team members will appear here.</p>
+</div>
+{% endif %}
+{% endblock %}

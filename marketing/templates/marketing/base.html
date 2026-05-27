@@ -594,22 +594,72 @@
     /* Footer */
     .footer { padding: 40px 24px; text-align: center; color: var(--text-secondary); font-size: 0.85rem; border-top: 1px solid rgba(255,255,255,0.05); }
 
+    /* Hide mobile-only elements on desktop */
+    .mobile-close-btn { display: none; }
+
+    /* Hamburger button */
+    .mobile-menu-btn {
+      display: none;
+      background: none;
+      border: 1px solid rgba(255,255,255,0.15);
+      color: rgba(255,255,255,0.85);
+      font-size: 1.25rem;
+      cursor: pointer;
+      padding: 7px 11px;
+      border-radius: 8px;
+      line-height: 1;
+      z-index: 1001;
+      transition: background 0.15s;
+    }
+    .mobile-menu-btn:hover { background: rgba(255,255,255,0.08); }
+
     /* Mobile */
     @media (max-width: 900px) {
       .nav { padding: 14px 20px; }
-      .nav-links a:not(.btn-nav) { display: none; }
+      .mobile-menu-btn { display: block; }
+      .nav-links {
+        display: none;
+        position: fixed;
+        top: 0; left: 0; right: 0; bottom: 0;
+        background: rgba(3,0,20,0.98);
+        backdrop-filter: blur(24px);
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        gap: 28px;
+        z-index: 1000;
+      }
+      .nav-links.open { display: flex; }
+      .nav-links a {
+        font-size: 1.15rem;
+        color: rgba(255,255,255,0.8) !important;
+      }
+      .nav-links a:hover { color: #fff !important; }
+      .nav-links a.btn-secondary-sm,
+      .nav-links a.btn-get-started {
+        width: 240px;
+        text-align: center;
+        justify-content: center;
+        display: flex;
+      }
+      .mobile-close-btn {
+        position: absolute;
+        top: 20px; right: 20px;
+        background: none;
+        border: 1px solid rgba(255,255,255,0.15);
+        color: rgba(255,255,255,0.7);
+        font-size: 1.4rem;
+        width: 36px; height: 36px;
+        border-radius: 8px;
+        cursor: pointer;
+        display: flex; align-items: center; justify-content: center;
+        line-height: 1;
+      }
       .feature-grid { grid-template-columns: 1fr; }
       .pricing-grid { grid-template-columns: 1fr; }
       .stats-row { gap: 40px; }
       .comparison-table { font-size: 0.8rem; }
       .comparison-table th, .comparison-table td { padding: 12px 8px; }
-
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 24px 48px;
-      max-width: 1400px;
-      margin: 0 auto;
     }
     .nav-logo {
       display: flex;
@@ -1024,13 +1074,10 @@
 
     /* Mobile */
     @media (max-width: 768px) {
-      .nav { padding: 20px; flex-wrap: wrap; gap: 20px; justify-content: center; }
-      .nav-links { gap: 20px; flex-wrap: wrap; justify-content: center; }
       .hero { padding: 80px 20px 60px; }
       .hero-buttons { flex-direction: column; align-items: center; }
       .btn-primary, .btn-secondary { width: 100%; max-width: 320px; justify-content: center; }
       .section { padding: 60px 20px; }
-
     }
   </style>
 </head>
@@ -1064,14 +1111,17 @@
         <span class="it-stack"><span class="it">IT</span><span class="app">.app</span></span>
       </a>
 
-      <div class="nav-links">
-        <a href="/products">Products</a>
-        <a href="/solutions">Solutions</a>
-        <a href="/industries">Industries</a>
-        <a href="/pricing">Pricing</a>
-        <a href="/auth/login">Sign In</a>
-        <a class="btn-secondary-sm" href="/book-demo">Request Demo</a>
-        <a class="btn-get-started" href="/auth/login">Start Free</a>
+      <button class="mobile-menu-btn" aria-label="Open menu" onclick="openMobileMenu()">&#9776;</button>
+
+      <div class="nav-links" id="main-nav-links">
+        <button class="mobile-close-btn" aria-label="Close menu" onclick="closeMobileMenu()">&#x2715;</button>
+        <a href="/products" onclick="closeMobileMenu()">Products</a>
+        <a href="/solutions" onclick="closeMobileMenu()">Solutions</a>
+        <a href="/industries" onclick="closeMobileMenu()">Industries</a>
+        <a href="/pricing" onclick="closeMobileMenu()">Pricing</a>
+        <a href="/auth/login" onclick="closeMobileMenu()">Sign In</a>
+        <a class="btn-secondary-sm" href="/book-demo" onclick="closeMobileMenu()">Request Demo</a>
+        <a class="btn-get-started" href="/auth/login" onclick="closeMobileMenu()">Start Free</a>
       </div>
     </nav>
 
@@ -1079,10 +1129,26 @@
 
     <footer class="footer">
       <div>&copy; 2026 LUX IT. Revenue operations, reimagined.</div>
+      <div style="margin-top:12px;display:flex;gap:20px;justify-content:center;flex-wrap:wrap;">
+        <a href="/sms-consent" style="color:var(--text-secondary);text-decoration:none;font-size:0.85rem;transition:color 0.2s;" onmouseover="this.style.color='#f7f7fb'" onmouseout="this.style.color=''">SMS Consent</a>
+        <a href="/privacy-policy" style="color:var(--text-secondary);text-decoration:none;font-size:0.85rem;transition:color 0.2s;" onmouseover="this.style.color='#f7f7fb'" onmouseout="this.style.color=''">Privacy Policy</a>
+        <a href="/terms" style="color:var(--text-secondary);text-decoration:none;font-size:0.85rem;transition:color 0.2s;" onmouseover="this.style.color='#f7f7fb'" onmouseout="this.style.color=''">Terms &amp; Conditions</a>
+      </div>
     </footer>
   </div>
 
   <script>
+    function openMobileMenu() {
+      document.getElementById('main-nav-links').classList.add('open');
+      document.body.style.overflow = 'hidden';
+    }
+    function closeMobileMenu() {
+      document.getElementById('main-nav-links').classList.remove('open');
+      document.body.style.overflow = '';
+    }
+    document.addEventListener('keydown', function(e) {
+      if (e.key === 'Escape') closeMobileMenu();
+    });
 
     document.addEventListener('DOMContentLoaded', function() {
       // Particles (reduced count)

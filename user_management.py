@@ -93,17 +93,40 @@ def add_user():
         if User.query.filter_by(email=email).first():
             flash('Email already exists', 'error')
             return render_template('add_user.html')
-        
+
+        # Enforce billing tier seat limit when the current admin is
+        # operating within a billed company context.
+        if current_user.is_authenticated and getattr(current_user, "default_company_id", None):
+            from models import Company
+            home_company = Company.query.get(current_user.default_company_id)
+            if home_company and not home_company.can_add_team_member():
+                limit = home_company.max_team_members
+                flash(
+                    f'Team seat limit reached ({limit}). Upgrade your plan or '
+                    f'add accounts at /app/billing before adding more users.',
+                    'error',
+                )
+                return redirect(url_for('user.manage_users'))
+
         # Create new user
         user = User()
         user.username = username
         user.email = email
         user.password_hash = generate_password_hash(password)
         user.is_admin = is_admin
+        if current_user.is_authenticated and getattr(current_user, "default_company_id", None):
+            user.default_company_id = current_user.default_company_id
         
         db.session.add(user)
-        db.session.commit()
-        
+        try:
+            db.session.commit()
+        except Exception as exc:
+            db.session.rollback()
+            import logging as _log
+            _log.getLogger(__name__).error("add_user commit failed: %s", exc)
+            flash('Error creating user — please try again.', 'error')
+            return render_template('add_user.html')
+
         flash(f'User "{username}" created successfully', 'success')
         return redirect(url_for('user.manage_users'))
     

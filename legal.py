@@ -14,7 +14,7 @@ legal_bp = Blueprint("legal", __name__)
 
 logger = logging.getLogger(__name__)
 
-LAST_UPDATED = "2026-02-27"
+LAST_UPDATED = "April 26, 2026"
 
 
 @legal_bp.get("/privacy")
@@ -22,9 +22,19 @@ def privacy():
     return render_template("legal/privacy.html", updated=LAST_UPDATED)
 
 
+@legal_bp.get("/privacy-policy")
+def privacy_policy():
+    return render_template("legal/privacy.html", updated=LAST_UPDATED)
+
+
 @legal_bp.get("/terms")
 def terms():
     return render_template("legal/terms.html", updated=LAST_UPDATED)
+
+
+@legal_bp.get("/sms-consent")
+def sms_consent():
+    return render_template("legal/sms_consent.html", updated=LAST_UPDATED)
 
 
 @legal_bp.route("/data-deletion", methods=["GET", "POST"])

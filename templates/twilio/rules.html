@@ -1,0 +1,489 @@
+{% extends "base.html" %}
+{% block title %}Auto-Reply Rules — LUXit{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4" style="max-width:960px;">
+
+  <div class="d-flex align-items-center gap-3 mb-3">
+    <div>
+      <h4 class="mb-0 fw-bold">
+        <i data-feather="zap" style="width:18px;height:18px;color:#7c3aed;"></i>
+        Auto-Reply Rules
+      </h4>
+      <small class="text-muted">Rules fire in priority order — highest priority first</small>
+    </div>
+    <div class="ms-auto">
+      <button class="btn btn-sm btn-primary" data-bs-toggle="collapse" data-bs-target="#newRulePanel" aria-expanded="false">
+        <i data-feather="plus" style="width:13px;height:13px;"></i> New Rule
+      </button>
+    </div>
+  </div>
+
+  <!-- SMS sub-navigation -->
+  <div class="d-flex flex-wrap gap-2 mb-4">
+    <a href="{{ url_for('twilio.inbox') }}" class="btn btn-sm btn-outline-secondary">
+      <i data-feather="inbox" style="width:13px;height:13px;"></i> Inbox
+    </a>
+    <a href="{{ url_for('twilio.settings') }}" class="btn btn-sm btn-outline-secondary">
+      <i data-feather="settings" style="width:13px;height:13px;"></i> Settings
+    </a>
+    <a href="{{ url_for('twilio.business_hours') }}" class="btn btn-sm btn-outline-secondary">
+      <i data-feather="clock" style="width:13px;height:13px;"></i> Business Hours
+    </a>
+    <a href="{{ url_for('twilio.calls') }}" class="btn btn-sm btn-outline-secondary">
+      <i data-feather="phone-call" style="width:13px;height:13px;"></i> Call Log
+    </a>
+    <a href="{{ url_for('twilio.analytics') }}" class="btn btn-sm btn-outline-secondary">
+      <i data-feather="bar-chart-2" style="width:13px;height:13px;"></i> Analytics
+    </a>
+  </div>
+
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}{% for c,m in messages %}
+    <div class="alert alert-{{ 'danger' if c=='error' else c }} alert-dismissible fade show">
+      {{ m }}<button class="btn-close" data-bs-dismiss="alert"></button>
+    </div>{% endfor %}{% endif %}
+  {% endwith %}
+
+  {% if not ta or not ta.automation_enabled %}
+  <div class="alert alert-warning d-flex gap-3 align-items-center">
+    <i data-feather="alert-triangle" style="width:18px;height:18px;"></i>
+    <span>Automation is disabled. <a href="{{ url_for('twilio.settings') }}" class="alert-link">Enable it in Settings →</a></span>
+  </div>
+  {% endif %}
+
+  <!-- ── New Rule Panel (inline collapse) ────────────────────────────── -->
+  <div class="collapse mb-3" id="newRulePanel">
+    <div class="card" style="background:#0f1117;border:1px solid #7c3aed;">
+      <div class="card-header d-flex align-items-center" style="background:#13003a;border-bottom:1px solid #7c3aed;">
+        <span class="fw-semibold" style="color:#a78bfa;">
+          <i data-feather="plus-circle" style="width:14px;height:14px;"></i> New Auto-Reply Rule
+        </span>
+        <button class="btn-close btn-close-white ms-auto" data-bs-toggle="collapse" data-bs-target="#newRulePanel"></button>
+      </div>
+      <div class="card-body">
+        <form method="POST" action="{{ url_for('twilio.create_rule') }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <div class="row g-3">
+            <div class="col-md-6">
+              <label class="form-label" style="font-size:.82rem;color:#9aa4b2;">Rule Name</label>
+              <input type="text" name="name" class="form-control form-control-sm" required
+                     style="background:#0b0d14;border-color:#1e2535;color:#f7f7fb;" placeholder="e.g. Pricing Inquiry">
+            </div>
+            <div class="col-md-3">
+              <label class="form-label" style="font-size:.82rem;color:#9aa4b2;">Priority</label>
+              <input type="number" name="priority" class="form-control form-control-sm" value="5" min="0" max="100"
+                     style="background:#0b0d14;border-color:#1e2535;color:#f7f7fb;">
+            </div>
+            <div class="col-md-3">
+              <label class="form-label" style="font-size:.82rem;color:#9aa4b2;">Action</label>
+              <select name="action" class="form-select form-select-sm"
+                      style="background:#0b0d14;border-color:#1e2535;color:#f7f7fb;" onchange="toggleAction(this.value)">
+                <option value="reply">Reply</option>
+                <option value="tag">Tag Contact</option>
+                <option value="opt_out">Opt Out</option>
+                <option value="forward">Forward</option>
+              </select>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label" style="font-size:.82rem;color:#9aa4b2;">Trigger Type</label>
+              <select name="trigger_type" class="form-select form-select-sm"
+                      style="background:#0b0d14;border-color:#1e2535;color:#f7f7fb;" onchange="toggleKeywords(this.value)">
+                <option value="keyword_contains">Keyword Contains</option>
+                <option value="keyword_exact">Keyword Exact Match</option>
+                <option value="regex">Regex Pattern</option>
+                <option value="first_contact">First Contact</option>
+                <option value="after_hours">After Hours</option>
+                <option value="stop_keyword">Stop / Unsubscribe</option>
+                <option value="always">Always (every message)</option>
+              </select>
+            </div>
+            <div class="col-md-6" id="keywords-field">
+              <label class="form-label" style="font-size:.82rem;color:#9aa4b2;">Keywords <small>(comma-separated)</small></label>
+              <input type="text" name="keywords" class="form-control form-control-sm"
+                     style="background:#0b0d14;border-color:#1e2535;color:#f7f7fb;" placeholder="price, pricing, cost">
+            </div>
+            <div class="col-12">
+              <label class="form-label" style="font-size:.82rem;color:#9aa4b2;">Response Message</label>
+              <textarea name="response" class="form-control form-control-sm" rows="3"
+                        style="background:#0b0d14;border-color:#1e2535;color:#f7f7fb;"
+                        placeholder="Your auto-reply text…"></textarea>
+            </div>
+            <div class="col-md-6" id="tag-field" style="display:none;">
+              <label class="form-label" style="font-size:.82rem;color:#9aa4b2;">Tag Value</label>
+              <input type="text" name="tag_value" class="form-control form-control-sm"
+                     style="background:#0b0d14;border-color:#1e2535;color:#f7f7fb;" placeholder="hot-lead">
+            </div>
+            <div class="col-md-6" id="forward-field" style="display:none;">
+              <label class="form-label" style="font-size:.82rem;color:#9aa4b2;">Forward To</label>
+              <input type="text" name="forward_to" class="form-control form-control-sm"
+                     style="background:#0b0d14;border-color:#1e2535;color:#f7f7fb;" placeholder="+15551234567">
+            </div>
+            <div class="col-12">
+              <label class="form-label" style="font-size:.82rem;color:#9aa4b2;">Active Days <small>(leave all checked for every day)</small></label>
+              <div class="d-flex gap-3 flex-wrap">
+                {% for i, day in [(0,'Mon'),(1,'Tue'),(2,'Wed'),(3,'Thu'),(4,'Fri'),(5,'Sat'),(6,'Sun')] %}
+                <div class="form-check form-check-inline mb-0">
+                  <input class="form-check-input" type="checkbox" name="active_days" value="{{ i }}" id="nday{{ i }}" checked>
+                  <label class="form-check-label" for="nday{{ i }}" style="font-size:.82rem;">{{ day }}</label>
+                </div>
+                {% endfor %}
+              </div>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label" style="font-size:.82rem;color:#9aa4b2;">Active From</label>
+              <input type="time" name="active_hours_start" class="form-control form-control-sm"
+                     style="background:#0b0d14;border-color:#1e2535;color:#f7f7fb;">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label" style="font-size:.82rem;color:#9aa4b2;">Active Until</label>
+              <input type="time" name="active_hours_end" class="form-control form-control-sm"
+                     style="background:#0b0d14;border-color:#1e2535;color:#f7f7fb;">
+            </div>
+          </div>
+          <div class="d-flex gap-2 mt-3">
+            <button type="submit" class="btn btn-sm btn-primary">
+              <i data-feather="save" style="width:13px;height:13px;"></i> Create Rule
+            </button>
+            <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-toggle="collapse" data-bs-target="#newRulePanel">Cancel</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Global save toast ───────────────────────────────────────────── -->
+  <div class="position-fixed bottom-0 end-0 p-3" style="z-index:9999;">
+    <div id="ruleToast" class="toast align-items-center border-0" role="alert">
+      <div class="d-flex">
+        <div class="toast-body fw-semibold" id="ruleToastBody"></div>
+        <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Rules list ──────────────────────────────────────────────────── -->
+  {% if rules %}
+  <div class="d-flex flex-column gap-2" id="rulesList">
+    {% for rule in rules %}
+    <div class="card rule-card" id="rule-card-{{ rule.id }}" style="background:#0f1117;border:1px solid #1e2535;">
+
+      <!-- ── Summary row (always visible) ───────────────────────────── -->
+      <div class="card-header d-flex align-items-center gap-2 px-3 py-2"
+           style="background:#0b0d14;border-bottom:1px solid #1e2535;cursor:pointer;"
+           onclick="toggleEdit({{ rule.id }})">
+
+        <!-- Priority badge -->
+        <span class="badge" style="background:#1e2535;color:#9aa4b2;min-width:32px;font-size:.75rem;">{{ rule.priority }}</span>
+
+        <!-- Trigger badge -->
+        <span class="badge" style="font-size:.72rem;background:
+          {% if rule.trigger_type == 'keyword_contains' %}rgba(124,58,237,.3);color:#a78bfa
+          {% elif rule.trigger_type == 'keyword_exact' %}rgba(6,182,212,.3);color:#06b6d4
+          {% elif rule.trigger_type == 'after_hours' %}rgba(249,115,22,.3);color:#fb923c
+          {% elif rule.trigger_type == 'first_contact' %}rgba(34,197,94,.3);color:#4ade80
+          {% elif rule.trigger_type == 'stop_keyword' %}rgba(239,68,68,.3);color:#f87171
+          {% else %}rgba(107,114,128,.3);color:#9ca3af{% endif %};">
+          {{ rule.trigger_type | replace('_', ' ') | title }}
+        </span>
+
+        <!-- Name -->
+        <span class="fw-semibold" style="font-size:.9rem;">{{ rule.name }}</span>
+
+        <!-- Keywords preview -->
+        {% if rule.keywords %}
+        <span class="text-muted d-none d-md-inline" style="font-size:.8rem;">
+          — {{ rule.keywords[:3] | join(', ') }}{% if rule.keywords|length > 3 %}…{% endif %}
+        </span>
+        {% endif %}
+
+        <!-- Fired count -->
+        <span class="text-muted ms-1 d-none d-sm-inline" style="font-size:.78rem;">{{ rule.match_count or 0 }} fired</span>
+
+        <!-- Spacer -->
+        <div class="ms-auto d-flex align-items-center gap-2">
+          <!-- Active toggle -->
+          <div class="form-check form-switch mb-0" onclick="event.stopPropagation()">
+            <input type="checkbox" class="form-check-input" role="switch"
+                   {% if rule.is_active %}checked{% endif %}
+                   onchange="toggleRule({{ rule.id }}, this)">
+          </div>
+          <!-- Expand chevron -->
+          <i data-feather="chevron-down" class="rule-chevron" id="chevron-{{ rule.id }}"
+             style="width:14px;height:14px;color:#9aa4b2;transition:transform .2s;"></i>
+        </div>
+      </div>
+
+      <!-- ── Inline edit panel (collapsed by default) ────────────────── -->
+      <div class="rule-edit-panel" id="edit-panel-{{ rule.id }}" style="display:none;">
+        <div class="card-body pb-3">
+
+          <!-- Response preview (shown only when collapsed; hidden via JS when expanded) -->
+          {% if rule.response %}
+          <div class="rule-response-preview mb-3 px-1" style="font-size:.82rem;color:#9aa4b2;font-style:italic;border-left:2px solid #1e2535;padding-left:10px;">
+            "{{ rule.response[:180] }}{% if rule.response|length > 180 %}…{% endif %}"
+          </div>
+          {% endif %}
+
+          <form class="rule-edit-form" data-rule-id="{{ rule.id }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div class="row g-3">
+              <div class="col-md-6">
+                <label class="form-label" style="font-size:.82rem;color:#9aa4b2;">Rule Name</label>
+                <input type="text" name="name" class="form-control form-control-sm" required value="{{ rule.name }}"
+                       style="background:#0b0d14;border-color:#1e2535;color:#f7f7fb;">
+              </div>
+              <div class="col-md-3">
+                <label class="form-label" style="font-size:.82rem;color:#9aa4b2;">Priority</label>
+                <input type="number" name="priority" class="form-control form-control-sm" min="0" max="100" value="{{ rule.priority }}"
+                       style="background:#0b0d14;border-color:#1e2535;color:#f7f7fb;">
+              </div>
+              <div class="col-md-3">
+                <label class="form-label" style="font-size:.82rem;color:#9aa4b2;">Action</label>
+                <select name="action" class="form-select form-select-sm action-sel"
+                        style="background:#0b0d14;border-color:#1e2535;color:#f7f7fb;"
+                        onchange="toggleActionFields(this)">
+                  {% for val, label in [('reply','Reply'),('tag','Tag Contact'),('opt_out','Opt Out'),('forward','Forward')] %}
+                  <option value="{{ val }}" {% if rule.action == val %}selected{% endif %}>{{ label }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+              <div class="col-md-6">
+                <label class="form-label" style="font-size:.82rem;color:#9aa4b2;">Trigger Type</label>
+                <select name="trigger_type" class="form-select form-select-sm trigger-sel"
+                        style="background:#0b0d14;border-color:#1e2535;color:#f7f7fb;"
+                        onchange="toggleKeywordField(this)">
+                  {% for val, label in [
+                    ('keyword_contains','Keyword Contains'),
+                    ('keyword_exact','Keyword Exact Match'),
+                    ('regex','Regex Pattern'),
+                    ('first_contact','First Contact'),
+                    ('after_hours','After Hours'),
+                    ('stop_keyword','Stop / Unsubscribe'),
+                    ('always','Always (every message)'),
+                  ] %}
+                  <option value="{{ val }}" {% if rule.trigger_type == val %}selected{% endif %}>{{ label }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+              <div class="col-md-6 keywords-field"
+                   style="display:{% if rule.trigger_type in ['keyword_contains','keyword_exact','regex'] %}block{% else %}none{% endif %};">
+                <label class="form-label" style="font-size:.82rem;color:#9aa4b2;">Keywords <small>(comma-separated)</small></label>
+                <input type="text" name="keywords" class="form-control form-control-sm"
+                       style="background:#0b0d14;border-color:#1e2535;color:#f7f7fb;"
+                       value="{{ rule.keywords | join(', ') if rule.keywords else '' }}"
+                       placeholder="price, pricing, cost">
+              </div>
+              <div class="col-12">
+                <label class="form-label" style="font-size:.82rem;color:#9aa4b2;">Response Message</label>
+                <textarea name="response" class="form-control form-control-sm" rows="3"
+                          style="background:#0b0d14;border-color:#1e2535;color:#f7f7fb;"
+                          placeholder="Your auto-reply text…">{{ rule.response or '' }}</textarea>
+              </div>
+              <div class="col-md-6 tag-field" style="display:{% if rule.action == 'tag' %}block{% else %}none{% endif %};">
+                <label class="form-label" style="font-size:.82rem;color:#9aa4b2;">Tag Value</label>
+                <input type="text" name="tag_value" class="form-control form-control-sm"
+                       style="background:#0b0d14;border-color:#1e2535;color:#f7f7fb;"
+                       value="{{ rule.tag_value or '' }}" placeholder="hot-lead">
+              </div>
+              <div class="col-md-6 forward-field" style="display:{% if rule.action == 'forward' %}block{% else %}none{% endif %};">
+                <label class="form-label" style="font-size:.82rem;color:#9aa4b2;">Forward To</label>
+                <input type="text" name="forward_to" class="form-control form-control-sm"
+                       style="background:#0b0d14;border-color:#1e2535;color:#f7f7fb;"
+                       value="{{ rule.forward_to or '' }}" placeholder="+15551234567">
+              </div>
+              <div class="col-12">
+                <label class="form-label" style="font-size:.82rem;color:#9aa4b2;">Active Days <small>(leave all checked for every day)</small></label>
+                <div class="d-flex gap-3 flex-wrap">
+                  {% for i, day in [(0,'Mon'),(1,'Tue'),(2,'Wed'),(3,'Thu'),(4,'Fri'),(5,'Sat'),(6,'Sun')] %}
+                  <div class="form-check form-check-inline mb-0">
+                    <input class="form-check-input" type="checkbox" name="active_days" value="{{ i }}"
+                           id="day-{{ rule.id }}-{{ i }}"
+                           {% if not rule.active_days or i in rule.active_days %}checked{% endif %}>
+                    <label class="form-check-label" for="day-{{ rule.id }}-{{ i }}" style="font-size:.82rem;">{{ day }}</label>
+                  </div>
+                  {% endfor %}
+                </div>
+              </div>
+              <div class="col-md-6">
+                <label class="form-label" style="font-size:.82rem;color:#9aa4b2;">Active From</label>
+                <input type="time" name="active_hours_start" class="form-control form-control-sm"
+                       style="background:#0b0d14;border-color:#1e2535;color:#f7f7fb;"
+                       value="{{ rule.active_hours_start or '' }}">
+              </div>
+              <div class="col-md-6">
+                <label class="form-label" style="font-size:.82rem;color:#9aa4b2;">Active Until</label>
+                <input type="time" name="active_hours_end" class="form-control form-control-sm"
+                       style="background:#0b0d14;border-color:#1e2535;color:#f7f7fb;"
+                       value="{{ rule.active_hours_end or '' }}">
+              </div>
+            </div>
+
+            <!-- Error message -->
+            <div class="rule-err text-danger mt-2" style="display:none;font-size:.82rem;"></div>
+
+            <!-- Action buttons -->
+            <div class="d-flex gap-2 align-items-center mt-3">
+              <button type="submit" class="btn btn-sm btn-primary save-btn">
+                <span class="spinner-border spinner-border-sm me-1 d-none save-spinner"></span>
+                <i data-feather="save" style="width:12px;height:12px;"></i> Save Changes
+              </button>
+              <button type="button" class="btn btn-sm btn-outline-secondary" onclick="toggleEdit({{ rule.id }})">
+                Cancel
+              </button>
+              <div class="ms-auto">
+                <form method="POST" action="{{ url_for('twilio.delete_rule', rule_id=rule.id) }}"
+                      onsubmit="return confirm('Delete rule &quot;{{ rule.name }}&quot;?');"
+                      style="display:inline;">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <button type="submit" class="btn btn-sm btn-outline-danger">
+                    <i data-feather="trash-2" style="width:12px;height:12px;"></i> Delete
+                  </button>
+                </form>
+              </div>
+            </div>
+          </form>
+        </div>
+      </div>
+
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="card text-center py-5" style="background:#0f1117;border:1px solid #1e2535;">
+    <div class="card-body">
+      <i data-feather="zap" style="width:40px;height:40px;opacity:.3;"></i>
+      <p class="text-muted mt-3">No rules yet. Create your first rule or save Twilio settings to seed defaults.</p>
+      <button class="btn btn-primary" data-bs-toggle="collapse" data-bs-target="#newRulePanel">Create Rule</button>
+    </div>
+  </div>
+  {% endif %}
+
+</div>
+
+<script>
+feather.replace();
+const CSRF = '{{ csrf_token() }}';
+
+/* ── Toggle expand/collapse ──────────────────────────────────────────── */
+function toggleEdit(ruleId) {
+  const panel   = document.getElementById(`edit-panel-${ruleId}`);
+  const chevron = document.getElementById(`chevron-${ruleId}`);
+  const card    = document.getElementById(`rule-card-${ruleId}`);
+  const isOpen  = panel.style.display !== 'none';
+
+  if (isOpen) {
+    panel.style.display = 'none';
+    chevron.style.transform = '';
+    card.style.borderColor = '#1e2535';
+  } else {
+    panel.style.display = 'block';
+    chevron.style.transform = 'rotate(180deg)';
+    card.style.borderColor = '#7c3aed';
+    feather.replace();
+  }
+}
+
+/* ── Toggle active/inactive ──────────────────────────────────────────── */
+async function toggleRule(ruleId, checkbox) {
+  const r = await fetch(`/twilio/rules/${ruleId}/toggle`, {
+    method: 'POST',
+    headers: { 'X-CSRFToken': CSRF },
+  });
+  const data = await r.json();
+  if (!data.success) {
+    checkbox.checked = !checkbox.checked;
+    showToast('Toggle failed.', 'danger');
+  }
+}
+
+/* ── Inline form: toggle keyword/tag/forward fields ─────────────────── */
+function toggleKeywordField(sel) {
+  const row   = sel.closest('.rule-edit-form') || sel.closest('.card-body');
+  const kwEl  = row.querySelector('.keywords-field');
+  const show  = ['keyword_contains','keyword_exact','regex'].includes(sel.value);
+  if (kwEl) kwEl.style.display = show ? '' : 'none';
+}
+
+function toggleActionFields(sel) {
+  const row    = sel.closest('.rule-edit-form') || sel.closest('.card-body');
+  const tagEl  = row.querySelector('.tag-field');
+  const fwdEl  = row.querySelector('.forward-field');
+  if (tagEl) tagEl.style.display = sel.value === 'tag'     ? '' : 'none';
+  if (fwdEl) fwdEl.style.display = sel.value === 'forward' ? '' : 'none';
+}
+
+/* ── Inline form: save ───────────────────────────────────────────────── */
+document.querySelectorAll('.rule-edit-form').forEach(form => {
+  form.addEventListener('submit', async function(e) {
+    e.preventDefault();
+    const ruleId  = this.dataset.ruleId;
+    const btn     = this.querySelector('.save-btn');
+    const spinner = this.querySelector('.save-spinner');
+    const errEl   = this.querySelector('.rule-err');
+
+    btn.disabled = true;
+    spinner.classList.remove('d-none');
+    errEl.style.display = 'none';
+
+    const fd = new FormData(this);
+    /* active_days: if none checked, send no values (server treats as all days) */
+
+    try {
+      const r    = await fetch(`/twilio/rules/${ruleId}/edit`, {
+        method: 'POST',
+        headers: { 'X-CSRFToken': CSRF },
+        body: fd,
+      });
+      const data = await r.json();
+
+      if (data.success) {
+        showToast(`Rule "${data.name}" saved.`, 'success');
+        /* Collapse the panel and update name in header */
+        toggleEdit(ruleId);
+        const card = document.getElementById(`rule-card-${ruleId}`);
+        const nameEl = card.querySelector('.fw-semibold');
+        if (nameEl) nameEl.textContent = data.name;
+
+        /* Update response preview if present */
+        const responseTA = form.querySelector('textarea[name="response"]');
+        const preview    = card.querySelector('.rule-response-preview');
+        if (preview && responseTA) {
+          const txt = responseTA.value.trim();
+          preview.textContent = txt ? `"${txt.substring(0,180)}${txt.length>180?'…':''}"` : '';
+          preview.style.display = txt ? '' : 'none';
+        }
+      } else {
+        errEl.textContent  = data.error || 'Save failed.';
+        errEl.style.display = '';
+      }
+    } catch (ex) {
+      errEl.textContent  = 'Network error — please try again.';
+      errEl.style.display = '';
+    } finally {
+      btn.disabled = false;
+      spinner.classList.add('d-none');
+    }
+  });
+});
+
+/* ── Toast ───────────────────────────────────────────────────────────── */
+function showToast(msg, type = 'success') {
+  const el   = document.getElementById('ruleToast');
+  const body = document.getElementById('ruleToastBody');
+  el.className = `toast align-items-center border-0 text-bg-${type}`;
+  body.textContent = msg;
+  bootstrap.Toast.getOrCreateInstance(el, { delay: 3500 }).show();
+}
+
+/* ── New-rule form: field toggles (for #newRulePanel) ────────────────── */
+function toggleAction(val) {
+  document.getElementById('tag-field').style.display     = val === 'tag'     ? '' : 'none';
+  document.getElementById('forward-field').style.display = val === 'forward' ? '' : 'none';
+}
+function toggleKeywords(val) {
+  const show = ['keyword_contains','keyword_exact','regex'].includes(val);
+  document.getElementById('keywords-field').style.display = show ? '' : 'none';
+}
+</script>
+{% endblock %}

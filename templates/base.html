@@ -19,223 +19,414 @@
           --lux-primary: {{ brand.primary_color if brand and brand.primary_color else '#bc00ed' }};
           --lux-secondary: {{ brand.secondary_color if brand and brand.secondary_color else '#00ffb4' }};
           --lux-accent: {{ brand.accent_color if brand and brand.accent_color else '#e4055c' }};
-          --lux-font: {{ brand.font_family if brand and brand.font_family else 'Inter, sans-serif' }};
+          {% if brand and brand.font_family %}
+          --lux-font: {{ brand.font_family }};
+          {% endif %}
         {% else %}
           --lux-primary: #bc00ed;
           --lux-secondary: #00ffb4;
           --lux-accent: #e4055c;
-          --lux-font: Inter, sans-serif;
         {% endif %}
+        --lux-primary-glow: color-mix(in srgb, var(--lux-primary), transparent 60%);
+        --lux-secondary-glow: color-mix(in srgb, var(--lux-secondary), transparent 60%);
+        --lux-accent-glow: color-mix(in srgb, var(--lux-accent), transparent 60%);
         --lux-primary-10: color-mix(in srgb, var(--lux-primary), transparent 90%);
+        --lux-primary-15: color-mix(in srgb, var(--lux-primary), transparent 85%);
+        --lux-primary-25: color-mix(in srgb, var(--lux-primary), transparent 75%);
         --lux-secondary-10: color-mix(in srgb, var(--lux-secondary), transparent 90%);
+        --lux-secondary-15: color-mix(in srgb, var(--lux-secondary), transparent 85%);
+        --lux-secondary-25: color-mix(in srgb, var(--lux-secondary), transparent 75%);
         --lux-accent-10: color-mix(in srgb, var(--lux-accent), transparent 90%);
-      }
-      html[data-bs-theme="dark"] {
-        --bs-primary: {{ current_company.secondary_color or '#00ffb4' }} !important;
-        --bs-secondary: {{ current_company.primary_color or '#bc00ed' }} !important;
-        --bs-link-color: {{ current_company.secondary_color or '#00ffb4' }} !important;
-        --bs-link-hover-color: {{ current_company.secondary_color or '#00ffb4' }}cc !important;
+        --lux-btn-primary-bg: linear-gradient(135deg, var(--lux-primary), var(--lux-secondary));
+        --lux-btn-primary-border: var(--lux-primary);
+        --lux-border-focus: var(--lux-secondary);
+        --lux-focus-ring: color-mix(in srgb, var(--lux-secondary), transparent 75%);
+        --lux-focus-ring-color: var(--lux-secondary);
+        --lux-sidebar-active-text: var(--lux-secondary);
+        --lux-table-header-text: var(--lux-secondary);
+        --bs-primary: var(--lux-secondary);
+        --bs-secondary: var(--lux-primary);
+        --bs-link-color: var(--lux-secondary);
+        --bs-link-hover-color: var(--lux-secondary);
       }
       body {
-        background: radial-gradient(circle at top, {{ current_company.secondary_color or '#00ffb4' }}14, transparent 45%),
-          radial-gradient(circle at 20% 20%, {{ current_company.primary_color or '#bc00ed' }}14, transparent 40%),
-          radial-gradient(circle at bottom right, {{ current_company.accent_color or '#e4055c' }}1a, transparent 45%),
-          var(--lux-bg) !important;
-        color: #ffffff;
-        font-family: var(--lux-font);
+        font-family: var(--lux-font, "Inter", "Segoe UI", system-ui, -apple-system, sans-serif);
       }
-      .btn-primary, .btn-lux-primary {
-        background: linear-gradient(135deg, {{ current_company.primary_color or '#bc00ed' }}, {{ current_company.secondary_color or '#00ffb4' }}) !important;
-        border-color: {{ current_company.primary_color or '#bc00ed' }} !important;
-      }
-      .btn-outline-primary {
-        color: {{ current_company.secondary_color or '#00ffb4' }} !important;
-        border-color: {{ current_company.secondary_color or '#00ffb4' }} !important;
-      }
-      .btn-outline-primary:hover {
-        background: {{ current_company.secondary_color or '#00ffb4' }} !important;
-        color: #000 !important;
-      }
-      .app-header {
-        border-bottom-color: {{ current_company.primary_color or '#bc00ed' }} !important;
-      }
-      .tile-icon, .stat-badge, .quick-action-btn i {
-        background: linear-gradient(135deg, {{ current_company.primary_color or '#bc00ed' }}, {{ current_company.secondary_color or '#00ffb4' }}) !important;
-        -webkit-background-clip: text !important;
-        -webkit-text-fill-color: transparent !important;
-      }
-      .metric-value {
-        background: linear-gradient(135deg, {{ current_company.secondary_color or '#00ffb4' }}, {{ current_company.primary_color or '#bc00ed' }}) !important;
-        -webkit-background-clip: text !important;
-        -webkit-text-fill-color: transparent !important;
-      }
-      .nav-link.active, .nav-link:hover {
-        color: {{ current_company.secondary_color or '#00ffb4' }} !important;
-      }
-      .sidebar-item.active {
-        border-left-color: {{ current_company.secondary_color or '#00ffb4' }} !important;
-      }
-      .text-success, .text-primary {
-        color: {{ current_company.secondary_color or '#00ffb4' }} !important;
-      }
-      .badge.bg-primary {
-        background: {{ current_company.primary_color or '#bc00ed' }} !important;
-      }
-      a:not(.btn):not(.nav-link):not(.brand-link) {
-        color: {{ current_company.secondary_color or '#00ffb4' }};
-      }
-      .action-card:hover {
-        border-color: {{ current_company.secondary_color or '#00ffb4' }}66 !important;
-        box-shadow: 0 8px 32px {{ current_company.secondary_color or '#00ffb4' }}26 !important;
-      }
-      .hub-btn.active {
-        background: linear-gradient(135deg, {{ current_company.secondary_color or '#00ffb4' }}, {{ current_company.primary_color or '#bc00ed' }}) !important;
-      }
-      .progress-bar, .bg-success {
-        background-color: {{ current_company.secondary_color or '#00ffb4' }} !important;
-      }
-      .form-check-input:checked {
-        background-color: {{ current_company.primary_color or '#bc00ed' }} !important;
-        border-color: {{ current_company.primary_color or '#bc00ed' }} !important;
-      }
-      .brand-it { color: {{ current_company.secondary_color or '#00ffb4' }} !important; }
-      .brand-app { color: {{ current_company.secondary_color or '#00ffb4' }} !important; }
-      .company-initial {
-        background: linear-gradient(135deg, {{ current_company.primary_color or '#bc00ed' }}, {{ current_company.secondary_color or '#00ffb4' }}) !important;
-      }
-      .sidebar-item:hover, .sidebar-item.active {
-        background: {{ current_company.secondary_color or '#00ffb4' }}26 !important;
-        border-color: {{ current_company.secondary_color or '#00ffb4' }}59 !important;
-      }
-      .tile:hover {
-        border-color: {{ current_company.secondary_color or '#00ffb4' }}66 !important;
-        box-shadow: var(--lux-shadow), 0 0 28px {{ current_company.secondary_color or '#00ffb4' }}47 !important;
-      }
-      .tile .tile-icon svg {
-        stroke: {{ current_company.secondary_color or '#00ffb4' }} !important;
-      }
-      .form-control:focus, .form-select:focus {
-        border-color: {{ current_company.secondary_color or '#00ffb4' }}59 !important;
-        box-shadow: 0 0 0 0.25rem {{ current_company.secondary_color or '#00ffb4' }}26 !important;
-      }
-      .quick-action-btn {
-        background: linear-gradient(135deg, {{ current_company.secondary_color or '#00ffb4' }}26, {{ current_company.primary_color or '#bc00ed' }}1a) !important;
-        border-color: {{ current_company.secondary_color or '#00ffb4' }}4d !important;
-      }
-      .quick-action-btn:hover {
-        background: linear-gradient(135deg, {{ current_company.secondary_color or '#00ffb4' }}4d, {{ current_company.primary_color or '#bc00ed' }}33) !important;
-        border-color: {{ current_company.secondary_color or '#00ffb4' }} !important;
-      }
-      .quick-action-btn i, .channel-card:hover { color: {{ current_company.secondary_color or '#00ffb4' }} !important; }
-      .ai-badge {
-        background: linear-gradient(135deg, {{ current_company.secondary_color or '#00ffb4' }}, {{ current_company.primary_color or '#bc00ed' }}) !important;
-      }
-      {% if current_company.font_family %}
-      body { font-family: {{ current_company.font_family }} !important; }
-      {% endif %}
     </style>
     {% endif %}
     <style>
-      /* ── Hub Switcher ── */
-      .hub-switcher {
-        display: flex;
-        align-items: center;
-        gap: 3px;
-        background: rgba(255,255,255,0.05);
-        border: 1px solid rgba(255,255,255,0.1);
-        border-radius: 10px;
-        padding: 3px;
+      *, *::before, *::after { box-sizing: border-box; }
+      body { margin: 0; background: var(--lux-dark-bg); }
+
+      .app-shell { display: flex; flex-direction: column; min-height: 100vh; }
+
+      /* ── Header ── */
+      .app-header {
+        height: 52px;
+        background: rgba(3,0,20,0.95);
+        border-bottom: 1px solid rgba(255,255,255,0.07);
+        backdrop-filter: blur(20px);
+        position: sticky; top: 0; z-index: 100;
         flex-shrink: 0;
       }
-      .hub-pill {
+      .app-header-inner {
+        display: flex; align-items: center; gap: 12px;
+        height: 100%; padding: 0 18px;
+      }
+      .brand { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+      .back-arrow-glow {
+        cursor: pointer; width: 28px; height: 28px;
+        display: flex; align-items: center; justify-content: center;
+        border-radius: 7px; color: rgba(255,255,255,0.3);
+        transition: all 0.15s; border: 1px solid transparent;
+      }
+      .back-arrow-glow:hover { color: var(--lux-secondary); border-color: color-mix(in srgb, var(--lux-secondary), transparent 80%); background: color-mix(in srgb, var(--lux-secondary), transparent 93%); }
+      .back-arrow-glow svg { width: 16px; height: 16px; }
+      .brand-link { text-decoration: none; display: flex; align-items: center; gap: 4px; }
+      .brand-logo { display: flex; align-items: center; gap: 4px; }
+      .brand-lux-img { height: 32px !important; max-height: 32px !important; width: auto !important; }
+      .brand-stack { display: flex; flex-direction: column; line-height: 1; }
+      .brand-it { font-size: 0.65rem; font-weight: 800; color: var(--lux-secondary); letter-spacing: 0.05em; }
+      .brand-app { font-size: 0.55rem; color: rgba(255,255,255,0.4); }
+      .header-spacer { flex: 1; }
+      .header-actions { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+      .user-greeting { font-size: 0.78rem; color: rgba(255,255,255,0.45); }
+      .user-greeting strong { color: rgba(255,255,255,0.75); }
+      .working-on { font-size: 0.72rem; color: rgba(255,255,255,0.3); margin-left: 4px; }
+      .company-icon { width: 28px; height: 28px; border-radius: 7px; overflow: hidden; border: 1px solid rgba(255,255,255,0.12); }
+      .company-icon img { width: 100%; height: 100%; object-fit: cover; }
+      .company-initial { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; font-size: 0.72rem; font-weight: 700; background: linear-gradient(135deg, var(--lux-primary), var(--lux-teal)); color: #000; }
+      .gear-btn {
+        background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1);
+        color: rgba(255,255,255,0.5); border-radius: 8px; width: 32px; height: 32px;
+        display: flex; align-items: center; justify-content: center; cursor: pointer;
+        transition: all 0.15s; padding: 0;
+      }
+      .gear-btn:hover { background: rgba(255,255,255,0.09); color: #fff; border-color: rgba(255,255,255,0.18); }
+      .gear-btn svg { width: 15px; height: 15px; }
+      .dropdown-menu { background: rgba(10,12,24,0.97); border: 1px solid rgba(255,255,255,0.1); }
+      .dropdown-item { color: rgba(255,255,255,0.75); font-size: 0.83rem; }
+      .dropdown-item:hover { background: rgba(255,255,255,0.07); color: #fff; }
+      .dropdown-item svg { width: 14px; height: 14px; margin-right: 8px; }
+
+      /* ── Category Tab Bar (below header) ── */
+      .app-category-bar {
+        display: flex;
+        align-items: center;
+        gap: 0;
+        height: 38px;
+        background: rgba(6,8,20,0.88);
+        border-bottom: 1px solid rgba(255,255,255,0.06);
+        backdrop-filter: blur(24px);
+        -webkit-backdrop-filter: blur(24px);
+        flex-shrink: 0;
+        padding: 0 14px;
+        position: sticky;
+        top: 52px;
+        z-index: 95;
+      }
+      .catbar-switcher {
+        display: flex; gap: 2px; padding: 2px;
+        background: linear-gradient(270deg, var(--lux-primary), var(--lux-secondary), var(--lux-teal), var(--lux-primary), var(--lux-primary));
+        background-size: 400% 400%;
+        animation: switcher-glow 6s ease infinite;
+        border-radius: 7px; flex-shrink: 0;
+        margin-right: 10px;
+        box-shadow: 0 0 8px var(--lux-primary-glow), 0 0 12px var(--lux-secondary-glow);
+      }
+      .catbar-sw {
+        display: flex; align-items: center; justify-content: center;
+        gap: 4px; padding: 4px 12px;
+        border-radius: 5px; font-size: 0.7rem; font-weight: 700;
+        color: rgba(255,255,255,0.6); text-decoration: none;
+        transition: all 0.2s ease; white-space: nowrap;
+        background: rgba(3,0,20,0.85); letter-spacing: 0.02em;
+      }
+      .catbar-sw svg { width: 12px; height: 12px; stroke: rgba(255,255,255,0.4); flex-shrink: 0; }
+      .catbar-sw:hover { color: #fff; background: rgba(3,0,20,0.7); text-decoration: none; }
+      .catbar-sw:hover svg { stroke: #fff; }
+      .catbar-sw.active { color: #fff; background: rgba(0,0,0,0.7); text-shadow: 0 0 10px rgba(255,255,255,0.3); }
+      .catbar-sw.active svg { stroke: #fff; }
+      .cat-tabs {
+        display: flex;
+        align-items: center;
+        gap: 0;
+        height: 100%;
+        overflow-x: auto;
+        scrollbar-width: none;
+        flex: 1;
+        justify-content: flex-end;
+      }
+      .cat-tabs::-webkit-scrollbar { display: none; }
+      .cat-tab {
+        display: flex;
+        align-items: center;
+        height: 38px;
+        padding: 0 16px;
+        font-size: 0.76rem;
+        font-weight: 500;
+        color: rgba(255,255,255,0.4);
+        text-decoration: none;
+        border-bottom: 2px solid transparent;
+        white-space: nowrap;
+        transition: all 0.15s;
+        letter-spacing: 0.01em;
+      }
+      .cat-tab:hover { color: rgba(255,255,255,0.85); text-decoration: none; }
+      .cat-tab.active {
+        color: var(--lux-secondary);
+        border-bottom-color: var(--lux-secondary);
+        font-weight: 600;
+      }
+      .cat-right {
         display: flex;
         align-items: center;
         gap: 6px;
-        padding: 6px 14px;
+        flex-shrink: 0;
+        margin-left: 8px;
+      }
+      .app-topbar-icon {
+        position: relative;
+        width: 30px; height: 30px;
+        display: flex; align-items: center; justify-content: center;
         border-radius: 7px;
-        font-size: 0.78rem;
-        font-weight: 600;
-        color: rgba(255,255,255,0.4);
+        background: rgba(255,255,255,0.05);
+        border: 1px solid rgba(255,255,255,0.08);
+        color: rgba(255,255,255,0.5);
         text-decoration: none;
-        letter-spacing: 0.01em;
-        transition: all 0.18s ease;
-        white-space: nowrap;
+        transition: all 0.15s;
+        flex-shrink: 0;
       }
-      .hub-pill svg { flex-shrink: 0; stroke: currentColor; }
-      .hub-pill:hover {
-        color: rgba(255,255,255,0.8);
-        background: rgba(255,255,255,0.06);
-        text-decoration: none;
+      .app-topbar-icon:hover { background: rgba(255,255,255,0.09); border-color: rgba(255,255,255,0.15); color: #fff; text-decoration: none; }
+      .app-topbar-icon svg { width: 14px; height: 14px; stroke: currentColor; }
+      .app-topbar-badge {
+        position: absolute; top: -4px; right: -4px;
+        min-width: 15px; height: 15px; border-radius: 8px;
+        font-size: 0.55rem; font-weight: 700;
+        display: flex; align-items: center; justify-content: center;
+        padding: 0 3px; line-height: 1;
       }
-      .hub-pill--active {
-        color: #fff !important;
+      .badge-red { background: var(--lux-status-danger); color: #fff; }
+      .badge-amber { background: var(--lux-status-warning); color: #000; }
+      .topnav-ai-btn {
+        display: flex; align-items: center; gap: 5px;
+        padding: 4px 10px; border-radius: 7px;
+        background: linear-gradient(135deg, var(--lux-primary-10), var(--lux-secondary-10));
+        border: 1px solid color-mix(in srgb, var(--lux-primary), transparent 78%);
+        color: var(--lux-text-secondary); font-size: 0.73rem; font-weight: 600;
+        cursor: pointer; transition: all 0.2s; text-decoration: none;
+        white-space: nowrap; flex-shrink: 0;
       }
-      .hub-pill--sales.hub-pill--active {
-        background: linear-gradient(135deg, rgba(79,142,247,0.25), rgba(59,111,212,0.2));
-        box-shadow: 0 0 0 1px rgba(79,142,247,0.3) inset;
-      }
-      .hub-pill--sales.hub-pill--active svg { stroke: #4f8ef7; }
-      .hub-pill--mkt.hub-pill--active {
-        background: linear-gradient(135deg, rgba(0,229,255,0.18), rgba(168,85,247,0.15));
-        box-shadow: 0 0 0 1px rgba(0,229,255,0.25) inset;
-      }
-      .hub-pill--mkt.hub-pill--active svg { stroke: #00e5ff; }
+      .topnav-ai-btn:hover { background: linear-gradient(135deg, var(--lux-primary-25), var(--lux-secondary-15)); border-color: color-mix(in srgb, var(--lux-primary), transparent 60%); color: var(--lux-text-primary); text-decoration: none; }
 
-      /* Ensure header-inner lays out correctly with the switcher */
-      .app-header-inner {
-        display: flex !important;
-        align-items: center !important;
-        gap: 16px !important;
+      /* ── Sidebar hamburger toggle ── */
+      .sidebar-toggle-btn {
+        display: none;
+        background: rgba(255,255,255,0.05);
+        border: 1px solid rgba(255,255,255,0.1);
+        border-radius: 7px;
+        width: 30px; height: 30px;
+        align-items: center; justify-content: center;
+        cursor: pointer; color: rgba(255,255,255,0.55);
+        flex-shrink: 0; padding: 0; transition: all 0.15s;
       }
-      .header-title { flex: 1; min-width: 0; }
-      .header-title h1 {
-        font-size: 0.9rem !important;
-        font-weight: 500 !important;
-        color: rgba(255,255,255,0.45) !important;
-        margin: 0 !important;
-        white-space: nowrap;
+      .sidebar-toggle-btn:hover { background: rgba(255,255,255,0.09); color: #fff; }
+      .sidebar-toggle-btn svg { width: 16px; height: 16px; stroke: currentColor; }
+      .sidebar-backdrop {
+        display: none; position: fixed; inset: 0;
+        background: rgba(0,0,0,0.55); z-index: 149;
+        backdrop-filter: blur(2px);
+      }
+      .sidebar-backdrop.show { display: block; }
+
+      /* ── Mobile responsive layout ── */
+      @media (max-width: 900px) {
+        .sidebar-toggle-btn { display: flex; }
+        .user-greeting { display: none; }
+        .working-on { display: none; }
+        .company-icon { display: none; }
+        .app-sidebar {
+          position: fixed; left: 0; top: 52px; bottom: 0;
+          z-index: 150;
+          transform: translateX(-100%);
+          transition: transform 0.25s ease;
+        }
+        .app-sidebar.sidebar-open { transform: translateX(0); }
+        .cat-tabs { display: none !important; }
+        .topnav-ai-btn { display: none; }
+      }
+      @media (max-width: 600px) {
+        .catbar-sw { padding: 4px 8px; font-size: 0.65rem; }
+        .catbar-sw svg { display: none; }
+        .app-page-content { padding: 14px 14px 32px; }
+      }
+
+      /* ── App body = sidebar + content ── */
+      .app-body {
+        display: flex;
+        flex: 1;
         overflow: hidden;
-        text-overflow: ellipsis;
       }
+
+      /* ── LEFT SIDEBAR ── */
+      .app-sidebar {
+        width: 224px;
+        flex-shrink: 0;
+        background: rgba(6,8,20,0.7);
+        border-right: 1px solid rgba(255,255,255,0.06);
+        backdrop-filter: blur(20px);
+        display: flex;
+        flex-direction: column;
+        overflow-y: auto;
+        overflow-x: hidden;
+        scrollbar-width: thin;
+        scrollbar-color: rgba(255,255,255,0.08) transparent;
+      }
+      .app-sidebar::-webkit-scrollbar { width: 4px; }
+      .app-sidebar::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 2px; }
+
+      @keyframes switcher-glow {
+        0%   { background-position: 0% 50%; }
+        50%  { background-position: 100% 50%; }
+        100% { background-position: 0% 50%; }
+      }
+      .sidebar-section { padding: 6px 10px; }
+      .sidebar-section-label {
+        font-size: 0.6rem; font-weight: 700; letter-spacing: 0.08em;
+        text-transform: uppercase; color: rgba(255,255,255,0.22);
+        padding: 8px 8px 4px; margin: 0;
+      }
+      .sidebar-nav-item {
+        display: flex; align-items: center; gap: 8px;
+        padding: 7px 12px; border-radius: 8px;
+        color: rgba(255,255,255,0.6); text-decoration: none;
+        font-size: 0.8rem; font-weight: 500;
+        transition: all 0.15s; margin: 2px 0;
+        background: rgba(255,255,255,0.03);
+        border: 1px solid rgba(255,255,255,0.06);
+      }
+      .sidebar-nav-item svg, .sidebar-nav-item i { width: 15px; height: 15px; flex-shrink: 0; }
+      .sidebar-nav-item:hover { color: #fff; background: rgba(255,255,255,0.08); border-color: rgba(255,255,255,0.12); text-decoration: none; }
+      .sidebar-nav-item.active { color: var(--lux-sidebar-active-text); background: var(--lux-secondary-10); border-color: var(--lux-secondary-25); font-weight: 600; }
+      .sidebar-nav-item.active svg, .sidebar-nav-item.active i { color: var(--lux-sidebar-active-text); }
+      .sidebar-spacer { flex: 1; }
+
+      /* ── Content area ── */
+      .app-content {
+        flex: 1; min-width: 0;
+        display: flex; flex-direction: column;
+        overflow: hidden;
+      }
+      .app-page-content {
+        flex: 1;
+        padding: 20px 28px 40px;
+        overflow-y: auto;
+        overflow-x: hidden;
+      }
+
+      /* Flash messages */
+      .app-flash { padding: 0 28px; padding-top: 12px; }
+      .app-flash .alert { margin-bottom: 8px; }
+
+      /* No sidebar pages (login, register, etc.) */
+      .app-main-plain { flex: 1; }
+      .app-main-plain .container { max-width: 100%; }
     </style>
+    <meta name="jam:team" content="e371c281-6b97-4710-9633-a082e113df3f" />
+    <script type="module" src="https://js.jam.dev/recorder.js"></script>
+    <script type="module" src="https://js.jam.dev/capture.js"></script>
+
+    <!-- PostHog analytics -->
+    <script>
+    !function(t,e){var o,n,p,r;e.__SV||(window.posthog=e,e._i=[],e.init=function(i,s,a){function g(t,e){var o=e.split(".");2==o.length&&(t=t[o[0]],e=o[1]);t[e]=function(){t.push([e].concat(Array.prototype.slice.call(arguments,0)))}}(p=t.createElement("script")).type="text/javascript",p.crossOrigin="anonymous",p.async=!0,p.src=s.api_host.replace(".i.posthog.com","-assets.i.posthog.com")+"/static/array.js",(r=t.getElementsByTagName("script")[0]).parentNode.insertBefore(p,r);var u=e;for(void 0!==a?u=e[a]=[]:a="posthog",u.people=u.people||[],u.toString=function(t){var e="posthog";return"posthog"!==a&&(e+="."+a),t||(e+=" (stub)"),e},u.people.toString=function(){return u.toString(1)+" (stub)"},o="init bs ws ge fs capture De register register_once register_for_session unregister unregister_for_session getFeatureFlag getFeatureFlagPayload isFeatureEnabled reloadFeatureFlags updateEarlyAccessFeatureEnrollment getEarlyAccessFeatures on onFeatureFlags onSessionId getSurveys getActiveMatchingSurveys renderSurvey canRenderSurvey getNextSurveyStep identify setPersonProperties group resetGroups setPersonPropertiesForFlags resetPersonPropertiesForFlags setGroupPropertiesForFlags resetGroupPropertiesForFlags reset get_distinct_id getGroups get_session_id get_session_replay_url alias set_config startSessionRecording stopSessionRecording sessionRecordingStarted captureException loadToolbar get_property getSessionProperty createPersonProfile opt_in_capturing opt_out_capturing has_opted_in_capturing has_opted_out_capturing clear_opt_in_out_capturing debug".split(" "),n=0;n<o.length;n++)g(u,o[n]);e._i.push([i,s,a])},e.__SV=1)}(document,window.posthog||[]);
+
+    posthog.init('{{ posthog_api_key|default("") }}', {
+      api_host:        '{{ posthog_frontend_host|default("https://p.luxit.app") }}',
+      defaults:        '2026-01-30',
+      person_profiles: 'identified_only',
+      capture_pageview: true,
+      capture_pageleave: true,
+      autocapture: true,
+      session_recording: {
+        maskAllInputs: true,
+        maskInputOptions: { password: true },
+      },
+    });
+
+    {% if current_user is defined and current_user.is_authenticated %}
+    posthog.identify('{{ current_user.id }}', {
+      email:        '{{ current_user.email|default("") }}',
+      name:         '{{ ((current_user.first_name or "") + " " + (current_user.last_name or "")).strip() }}',
+      role:         '{{ "admin" if current_user.is_admin else "member" }}',
+      {% if current_company %}
+      company:      '{{ current_company.name|default("") }}',
+      company_id:   '{{ current_company.id }}',
+      tenant_id:    '{{ current_company.id }}',
+      plan:         '{{ current_company.billing_tier|default("") }}',
+      {% endif %}
+    });
+    {% if current_company %}
+    posthog.group('company', '{{ current_company.id }}', {
+      name: '{{ current_company.name|default("") }}',
+      plan: '{{ current_company.billing_tier|default("") }}',
+    });
+    {% endif %}
+    {% endif %}
+
+    /* Stop session replay on sensitive pages */
+    (function() {
+      var path = window.location.pathname;
+      var sensitive = [
+        '/payroll','/billing','/settings/banking','/stripe',
+        '/treasury','/admin/secrets','/api-keys','/adult','/explicit',
+        '/api-keys','/settings/api','/company/secrets','/twilio/settings',
+        '/auth','/login','/register','/password','/reset-password'
+      ];
+      for (var i = 0; i < sensitive.length; i++) {
+        if (path.includes(sensitive[i])) {
+          posthog.stopSessionRecording();
+          break;
+        }
+      }
+    })();
+    </script>
 </head>
 <body>
-    <div class="app-shell">
-        {% set _mkt_paths = ['/marketing-hub', '/campaigns', '/newsletters', '/sms', '/social-media', '/blog', '/segments', '/agents-hub', '/automations', '/press-releases', '/analytics', '/web-forms', '/landing-pages', '/approval-queue'] %}
-        {% set _is_mkt = request.path == '/marketing-hub' or request.path.startswith('/marketing-hub') or request.path.split('?')[0] in _mkt_paths or (request.path.startswith('/newsletters') or request.path.startswith('/campaigns') or request.path.startswith('/blog') or request.path.startswith('/social') or request.path.startswith('/agents-hub') or request.path.startswith('/automations') or request.path.startswith('/analytics') or request.path.startswith('/press-release') or request.path.startswith('/segments') or request.path.startswith('/approval')) %}
+    {% set _p = request.path %}
 
+    {# ── Section detection ── #}
+    {% set _sec_core     = _p.startswith('/campaign-hub') or _p.startswith('/newsletters') or _p.startswith('/email') or _p.startswith('/sms') or _p.startswith('/twilio') or _p.startswith('/social') or _p.startswith('/ads') or _p.startswith('/press') %}
+    {% set _sec_content  = _p.startswith('/blog') or _p.startswith('/seo') or _p.startswith('/marketing-calendar') %}
+    {% set _sec_intel    = _p.startswith('/analytics') or _p.startswith('/competitor') or _p.startswith('/agents') or _p.startswith('/chatbot') %}
+    {% set _sec_audience = _p.startswith('/contacts') or _p.startswith('/segments') or _p.startswith('/audience') %}
+    {% set _sec_auto     = _p.startswith('/automations') or _p.startswith('/automation-t') %}
+    {% set _sec_engage   = _p.startswith('/events') %}
+    {% set _sec_home     = _p == '/marketing-hub' or _p == '/crm-hub' or _p == '/dashboard' %}
+    {% set _sec_saas     = _p.startswith('/saas') %}
+
+    <div class="app-shell">
+
+        {# ═══ TOP HEADER ═══ #}
         <header class="app-header">
             <div class="app-header-inner">
+                {% if current_user.is_authenticated %}
+                <button class="sidebar-toggle-btn" id="sidebarToggleBtn" onclick="toggleSidebar()" title="Toggle sidebar" type="button">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+                </button>
+                {% endif %}
                 <div class="brand">
-                    <span class="back-arrow-glow" onclick="history.back();" title="Go back"><i data-feather="chevron-left"></i></span>
-                    <a href="{{ url_for('main.dashboard') }}" aria-label="Dashboard" class="brand-link">
+                    <span class="back-arrow-glow" onclick="history.back();" title="Go back">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+                    </span>
+                    <a href="{% if current_user.is_authenticated and current_user.preferred_hub == 'sales' %}{{ url_for('main.crm_hub') }}{% else %}{{ url_for('main.marketing_hub') }}{% endif %}" aria-label="Home" class="brand-link">
                         <span class="brand-logo">
-                            <img src="{{ url_for('static', filename='images/lux-chrome.png') }}" alt="LUX" class="brand-lux-img" style="height:38px!important;max-height:38px!important;width:auto!important;"><span class="brand-stack"><span class="brand-it">IT</span><span class="brand-app">.app</span></span>
+                            <img src="{{ url_for('static', filename='images/lux-chrome.png') }}" alt="LUX" class="brand-lux-img">
+                            <span class="brand-stack"><span class="brand-it">IT</span><span class="brand-app">.app</span></span>
                         </span>
                     </a>
                 </div>
 
-                <!-- Hub Switcher -->
-                {% if current_user.is_authenticated %}
-                <div class="hub-switcher">
-                    <a href="{{ url_for('main.dashboard') }}"
-                       class="hub-pill {% if not _is_mkt %}hub-pill--sales hub-pill--active{% endif %}"
-                       title="Sales Hub — CRM, leads, pipeline">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
-                        Sales Hub
-                    </a>
-                    <a href="{{ url_for('main.marketing_hub') }}"
-                       class="hub-pill {% if _is_mkt %}hub-pill--mkt hub-pill--active{% endif %}"
-                       title="Marketing Hub — campaigns, content, AI agents">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
-                        Marketing Hub
-                    </a>
-                </div>
-                {% endif %}
-
-                <div class="header-title">
-                    <h1>{% block page_title %}{% endblock %}</h1>
-                </div>
+                <div class="header-spacer"></div>
 
                 {% if current_user.is_authenticated %}
                 <div class="header-actions">
@@ -249,10 +440,10 @@
                         <span class="greeting-text">Good evening, <strong>{{ current_user.first_name or current_user.username }}</strong></span>
                         {% endif %}
                         {% if current_company %}
-                        <span class="working-on">working on <strong>{{ current_company.name }}</strong></span>
+                        <span class="working-on">· <strong>{{ current_company.name }}</strong></span>
                         {% endif %}
                     </div>
-                    
+
                     {% if current_company %}
                     <div class="company-icon">
                         {% if current_company.logo_path %}
@@ -262,12 +453,12 @@
                         {% endif %}
                     </div>
                     {% endif %}
-                    
+
                     <div class="dropdown">
                         <button class="gear-btn" type="button" id="settingsDropdown" data-bs-toggle="dropdown" aria-expanded="false">
-                            <i data-feather="settings"></i>
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
                         </button>
-                        <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="settingsDropdown" style="min-width: 280px;">
+                        <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="settingsDropdown" style="min-width:280px;">
                             <li><h6 class="dropdown-header">Account</h6></li>
                             <li><a class="dropdown-item" href="{{ url_for('main.user_profile') }}"><i data-feather="user"></i> My Profile</a></li>
                             <li><a class="dropdown-item" href="{{ url_for('main.change_password') }}"><i data-feather="lock"></i> Change Password</a></li>
@@ -275,9 +466,7 @@
                             <li><hr class="dropdown-divider"></li>
                             <li><h6 class="dropdown-header">Company Settings</h6></li>
                             <li><a class="dropdown-item" href="{{ url_for('main.settings_integrations') }}"><i data-feather="sliders"></i> Connections & API Keys</a></li>
-                            {% if current_company %}
-                            <li><a class="dropdown-item" href="{{ url_for('main.edit_company', company_id=current_company.id) }}"><i data-feather="droplet"></i> Brand Kit & Colors</a></li>
-                            {% endif %}
+                            <li><a class="dropdown-item" href="{{ url_for('main.settings_integrations') }}#brand"><i data-feather="droplet"></i> Brand Kit & Colors</a></li>
                             <li><a class="dropdown-item" href="{{ url_for('main.companies_list') }}"><i data-feather="briefcase"></i> Manage Companies</a></li>
                             <li><hr class="dropdown-divider"></li>
                             <li><h6 class="dropdown-header">Switch Company</h6></li>
@@ -298,51 +487,342 @@
             </div>
         </header>
 
-        <main class="container py-4">
-            {% with messages = get_flashed_messages(with_categories=true) %}
-                {% if messages %}
-                    {% for category, message in messages %}
+        {# ═══ AUTHENTICATED LAYOUT ═══ #}
+        {% if current_user.is_authenticated %}
+
+        {# ── CATEGORY TAB BAR ── #}
+        <div class="app-category-bar">
+            <div class="catbar-switcher">
+                <a href="{{ url_for('main.marketing_hub') }}" class="catbar-sw{% if _sec_core or _sec_content or _sec_intel or _sec_audience or _sec_auto or _sec_engage or _p == '/marketing-hub' %} active{% endif %}">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+                    Marketing
+                </a>
+                <a href="{{ url_for('main.crm_hub') }}" class="catbar-sw{% if _p.startswith('/crm') or _p.startswith('/leads') or _p.startswith('/deals') or _p.startswith('/pipeline') or _p == '/dashboard' %} active{% endif %}">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
+                    Sales
+                </a>
+                <a href="{{ url_for('saas.dashboard') }}" class="catbar-sw{% if _sec_saas %} active{% endif %}">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+                    SaaS
+                </a>
+                <a href="/platform/integrations" class="catbar-sw{% if _p.startswith('/platform') %} active{% endif %}">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+                    Platform
+                </a>
+            </div>
+            <div class="cat-tabs">
+                <a href="{{ url_for('main.campaign_hub') }}" class="cat-tab{% if _sec_core %} active{% endif %}">Core Marketing</a>
+                <a href="{{ url_for('main.blog_list') }}" class="cat-tab{% if _sec_content %} active{% endif %}">Content Engine</a>
+                <a href="{{ url_for('main.analytics_hub') }}" class="cat-tab{% if _sec_intel %} active{% endif %}">Intelligence</a>
+                <a href="{{ url_for('main.contacts') }}" class="cat-tab{% if _sec_audience %} active{% endif %}">Customers</a>
+                <a href="{{ url_for('main.automation_dashboard') }}" class="cat-tab{% if _sec_auto %} active{% endif %}">Automations</a>
+                <a href="{{ url_for('main.events_dashboard') }}" class="cat-tab{% if _sec_engage %} active{% endif %}">Engagement</a>
+            </div>
+            <div class="cat-right">
+                <a href="{{ url_for('main.chatbot') }}" class="topnav-ai-btn" title="Ask AI">
+                    <i data-feather="message-circle" style="width:13px;height:13px;"></i> AI
+                </a>
+                <a href="{{ url_for('main.inbox_page') }}" class="app-topbar-icon" title="Inbox">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+                    {% if unread_inbox %}<span class="app-topbar-badge badge-red">{{ unread_inbox }}</span>{% endif %}
+                </a>
+                <a href="{{ url_for('main.notifications_page') }}" class="app-topbar-icon" title="Notifications">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+                    {% if unread_notifications %}<span class="app-topbar-badge badge-amber">{{ unread_notifications }}</span>{% endif %}
+                </a>
+            </div>
+        </div>
+
+        <div class="app-body">
+
+            <div class="sidebar-backdrop" id="sidebarBackdrop" onclick="toggleSidebar()"></div>
+            {# ── LEFT SIDEBAR ── #}
+            <nav class="app-sidebar" id="appSidebar">
+
+                {# Core Marketing #}
+                <div class="sidebar-section">
+                    <p class="sidebar-section-label">Core Marketing</p>
+                    <a href="{{ url_for('main.campaign_hub') }}" class="sidebar-nav-item{% if _p.startswith('/campaign-hub') %} active{% endif %}">
+                        <i data-feather="zap"></i> Campaigns
+                    </a>
+                    <a href="{{ url_for('main.email_hub') }}" class="sidebar-nav-item{% if _p.startswith('/email') %} active{% endif %}">
+                        <i data-feather="mail"></i> Email
+                    </a>
+                    <a href="{{ url_for('main.sms_dashboard') }}" class="sidebar-nav-item{% if _p.startswith('/sms') and not _p.startswith('/twilio') %} active{% endif %}">
+                        <i data-feather="smartphone"></i> SMS Campaigns
+                    </a>
+                    <a href="{{ url_for('twilio.inbox') }}" class="sidebar-nav-item{% if _p.startswith('/twilio/inbox') or _p.startswith('/twilio/conversation') %} active{% endif %}">
+                        <i data-feather="message-square"></i> SMS Inbox
+                    </a>
+                    <a href="/app/inbox" class="sidebar-nav-item{% if _p.startswith('/app/inbox') %} active{% endif %}" title="Mobile-friendly PWA inbox">
+                        <i data-feather="smartphone"></i> Mobile Inbox
+                        <span style="font-size:.6rem;padding:1px 6px;border-radius:10px;background:rgba(124,58,237,.3);color:#a78bfa;margin-left:4px;">PWA</span>
+                    </a>
+                    <a href="{{ url_for('twilio.rules') }}" class="sidebar-nav-item{% if _p.startswith('/twilio/rules') %} active{% endif %}">
+                        <i data-feather="zap"></i> Auto-Reply Rules
+                    </a>
+                    <a href="{{ url_for('twilio.settings') }}" class="sidebar-nav-item{% if _p.startswith('/twilio/settings') or _p.startswith('/twilio/hours') or _p.startswith('/twilio/analytics') or _p.startswith('/twilio/calls') %} active{% endif %}">
+                        <i data-feather="settings"></i> SMS Settings
+                    </a>
+                    <a href="{{ url_for('main.social_media') }}" class="sidebar-nav-item{% if _p.startswith('/social') %} active{% endif %}">
+                        <i data-feather="share-2"></i> Social
+                    </a>
+                    <a href="{{ url_for('main.ads_hub') }}" class="sidebar-nav-item{% if _p.startswith('/ads') %} active{% endif %}">
+                        <i data-feather="target"></i> Ads
+                    </a>
+                </div>
+
+                {# Content Engine #}
+                <div class="sidebar-section">
+                    <p class="sidebar-section-label">Content Engine</p>
+                    <a href="{{ url_for('main.blog_list') }}" class="sidebar-nav-item{% if _p.startswith('/blog') %} active{% endif %}">
+                        <i data-feather="edit-3"></i> Blog
+                    </a>
+                    <a href="{{ url_for('main.seo_dashboard') }}" class="sidebar-nav-item{% if _p.startswith('/seo') %} active{% endif %}">
+                        <i data-feather="search"></i> SEO
+                    </a>
+                    <a href="{{ url_for('main.marketing_calendar') }}" class="sidebar-nav-item{% if _p.startswith('/marketing-calendar') %} active{% endif %}">
+                        <i data-feather="calendar"></i> Calendar
+                    </a>
+                </div>
+
+                {# Intelligence Layer #}
+                <div class="sidebar-section">
+                    <p class="sidebar-section-label">Intelligence</p>
+                    <a href="{{ url_for('main.analytics_hub') }}" class="sidebar-nav-item{% if _p.startswith('/analytics') %} active{% endif %}">
+                        <i data-feather="bar-chart-2"></i> Analytics
+                    </a>
+                    <a href="{{ url_for('main.competitor_analysis') }}" class="sidebar-nav-item{% if _p.startswith('/competitor') %} active{% endif %}">
+                        <i data-feather="award"></i> Competitors
+                    </a>
+                    <a href="{{ url_for('main.chatbot') }}" class="sidebar-nav-item{% if _p.startswith('/chatbot') %} active{% endif %}">
+                        <i data-feather="message-circle"></i> AI
+                    </a>
+                    <a href="{{ url_for('main.agents_hub') }}" class="sidebar-nav-item{% if _p.startswith('/agents') %} active{% endif %}">
+                        <i data-feather="cpu"></i> AI Hub
+                    </a>
+                </div>
+
+                {# Customer Layer #}
+                <div class="sidebar-section">
+                    <p class="sidebar-section-label">Customers</p>
+                    <a href="{{ url_for('main.contacts') }}" class="sidebar-nav-item{% if _p.startswith('/contacts') %} active{% endif %}">
+                        <i data-feather="users"></i> Audience
+                    </a>
+                    <a href="{{ url_for('main.segments') }}" class="sidebar-nav-item{% if _p.startswith('/segments') %} active{% endif %}">
+                        <i data-feather="filter"></i> Segments
+                    </a>
+                </div>
+
+                {# Automation Layer #}
+                <div class="sidebar-section">
+                    <p class="sidebar-section-label">Automations</p>
+                    <a href="{{ url_for('main.automation_dashboard') }}" class="sidebar-nav-item{% if _p.startswith('/automations') and not _p.startswith('/automation-t') %} active{% endif %}">
+                        <i data-feather="repeat"></i> Workflows
+                    </a>
+                    <a href="{{ url_for('main.automation_templates') }}" class="sidebar-nav-item{% if _p.startswith('/automation-templates') %} active{% endif %}">
+                        <i data-feather="layout"></i> Templates
+                    </a>
+                </div>
+
+                {# Engagement #}
+                <div class="sidebar-section">
+                    <p class="sidebar-section-label">Engagement</p>
+                    <a href="{{ url_for('main.events_dashboard') }}" class="sidebar-nav-item{% if _p.startswith('/events') %} active{% endif %}">
+                        <i data-feather="map-pin"></i> Events
+                    </a>
+                    <a href="{{ url_for('feedback.my_tickets') }}" class="sidebar-nav-item{% if _p.startswith('/feedback') %} active{% endif %}">
+                        <i data-feather="message-circle"></i> Feedback
+                    </a>
+                </div>
+
+                {# SaaS Command Center — shown when on /saas routes #}
+                {% if _sec_saas %}
+                <div class="sidebar-section">
+                    <p class="sidebar-section-label">SaaS Command Center</p>
+                    <a href="{{ url_for('saas.dashboard') }}#accounts" class="sidebar-nav-item{% if _p.startswith('/saas') %} active{% endif %}">
+                        <i data-feather="briefcase"></i> Accounts
+                    </a>
+                    <a href="{{ url_for('saas.dashboard') }}#licenses" class="sidebar-nav-item">
+                        <i data-feather="key"></i> Licenses
+                    </a>
+                    <a href="{{ url_for('saas.dashboard') }}#onboarding" class="sidebar-nav-item">
+                        <i data-feather="check-square"></i> Onboarding
+                    </a>
+                    <a href="{{ url_for('saas.dashboard') }}#pipeline" class="sidebar-nav-item">
+                        <i data-feather="trending-up"></i> Pipeline
+                    </a>
+                    <a href="{{ url_for('saas.dashboard') }}#log" class="sidebar-nav-item">
+                        <i data-feather="activity"></i> Automation Log
+                    </a>
+                </div>
+                {% endif %}
+
+                {# Platform Integrations — shown when on /platform routes #}
+                {% if _p.startswith('/platform') %}
+                <div class="sidebar-section">
+                    <p class="sidebar-section-label">Platform</p>
+                    <a href="/platform/integrations" class="sidebar-nav-item{% if _p == '/platform/integrations' %} active{% endif %}">
+                        <i data-feather="zap"></i> Integrations
+                    </a>
+                </div>
+                {% endif %}
+
+                <div class="sidebar-spacer"></div>
+            </nav>
+
+            {# ── CONTENT AREA ── #}
+            <div class="app-content">
+
+                {# Flash messages (authenticated) #}
+                {% with messages = get_flashed_messages(with_categories=true) %}
+                    {% if messages %}
+                    <div class="app-flash">
+                        {% for category, message in messages %}
                         <div class="alert alert-{{ 'danger' if category == 'error' else category }} alert-dismissible fade show" role="alert">
                             {{ message }}
                             <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
                         </div>
-                    {% endfor %}
-                {% endif %}
-            {% endwith %}
+                        {% endfor %}
+                    </div>
+                    {% endif %}
+                {% endwith %}
+                <div class="app-page-content">
+        {% else %}
+        {# ═══ UNAUTHENTICATED LAYOUT ═══ #}
+        <div class="app-main-plain">
+            <main class="container py-4">
+                {% with messages = get_flashed_messages(with_categories=true) %}
+                    {% if messages %}
+                        {% for category, message in messages %}
+                            <div class="alert alert-{{ 'danger' if category == 'error' else category }} alert-dismissible fade show" role="alert">
+                                {{ message }}
+                                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                            </div>
+                        {% endfor %}
+                    {% endif %}
+                {% endwith %}
+        {% endif %}
 
-            {% block content %}{% endblock %}
-        </main>
+        {# ═══ PAGE CONTENT BLOCK (single definition) ═══ #}
+        {% block content %}{% endblock %}
+
+        {# ═══ Conditional closing wrappers ═══ #}
+        {% if current_user.is_authenticated %}
+                </div>{# /app-page-content #}
+            </div>{# /app-content #}
+        </div>{# /app-body #}
+        {% else %}
+            </main>
+        </div>{# /app-main-plain #}
+        <footer style="border-top:1px solid rgba(255,255,255,0.07);padding:20px 32px;text-align:center;font-size:0.8rem;color:rgba(255,255,255,0.35);">
+          &copy; LUX. All rights reserved. &nbsp;&bull;&nbsp;
+          <a href="/sms-consent" style="color:rgba(255,255,255,0.4);text-decoration:none;margin:0 6px;">SMS Consent</a>
+          <a href="/privacy-policy" style="color:rgba(255,255,255,0.4);text-decoration:none;margin:0 6px;">Privacy Policy</a>
+          <a href="/terms" style="color:rgba(255,255,255,0.4);text-decoration:none;margin:0 6px;">Terms &amp; Conditions</a>
+        </footer>
+        {% endif %}
+
+    </div>{# /app-shell #}
+
+    {% if current_user.is_authenticated %}
+    <div class="modal fade" id="quickLinksModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content" style="background: var(--lux-modal-bg); border: 1px solid var(--lux-modal-border);">
+                <div class="modal-header" style="border-bottom: 1px solid var(--lux-border-subtle);">
+                    <h5 class="modal-title" style="color: var(--lux-secondary);">Customize Quick Links</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <p style="font-size:0.82rem;color:var(--lux-text-muted);margin-bottom:12px;">Add shortcuts that appear in your top tab bar. These are personal to your account.</p>
+                    <div id="ql-list"></div>
+                    <div class="d-flex gap-2 mt-3">
+                        <input type="text" id="ql-new-label" class="form-control form-control-sm" placeholder="Label (e.g. Inbox)" style="flex:1;">
+                        <input type="text" id="ql-new-url" class="form-control form-control-sm" placeholder="URL path (e.g. /email-hub)" style="flex:1.5;">
+                        <button class="btn btn-sm btn-outline-info" onclick="addQuickLink()">Add</button>
+                    </div>
+                </div>
+                <div class="modal-footer" style="border-top: 1px solid rgba(255,255,255,0.07);">
+                    <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Close</button>
+                </div>
+            </div>
+        </div>
     </div>
+    {% endif %}
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script src="{{ url_for('static', filename='js/ui.js') }}"></script>
+    <script>
+    (function() {
+      function toggleSidebar() {
+        const sidebar  = document.getElementById('appSidebar');
+        const backdrop = document.getElementById('sidebarBackdrop');
+        if (!sidebar) return;
+        const open = sidebar.classList.toggle('sidebar-open');
+        if (backdrop) backdrop.classList.toggle('show', open);
+      }
+      window.toggleSidebar = toggleSidebar;
+    })();
+    </script>
     {% if current_user.is_authenticated and current_company is defined %}
     <script>
       window.LUX_COMPANY_ID = {{ current_company.id if current_company else 'null' }};
-      
       function switchToCompany(companyId) {
         fetch('/api/user/set-default-company', {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-CSRFToken': document.querySelector('meta[name="csrf-token"]').content
-          },
+          headers: { 'Content-Type': 'application/json', 'X-CSRFToken': document.querySelector('meta[name="csrf-token"]').content },
           body: JSON.stringify({ company_id: companyId })
-        })
-        .then(r => r.json())
-        .then(data => {
-          if (data.success) {
-            window.location.reload();
-          } else {
-            alert('Failed to switch company: ' + (data.error || 'Unknown error'));
-          }
-        })
-        .catch(err => alert('Error: ' + err));
+        }).then(r => r.json()).then(data => {
+          if (data.success) window.location.reload();
+          else alert('Failed to switch company: ' + (data.error || 'Unknown error'));
+        }).catch(err => alert('Error: ' + err));
       }
+      function loadQuickLinks() {
+        fetch('/api/user/quick-links').then(r=>r.json()).then(data => {
+          const list = document.getElementById('ql-list');
+          if (!list) return;
+          if (!data.links || data.links.length === 0) {
+            list.innerHTML = '<p style="color:rgba(255,255,255,0.3);font-size:0.8rem;">No quick links yet.</p>';
+            return;
+          }
+          list.innerHTML = data.links.map(l => `
+            <div class="d-flex align-items-center gap-2 mb-2">
+              <span style="flex:1;font-size:0.84rem;color:#ddd;">${l.label}</span>
+              <span style="flex:1.5;font-size:0.78rem;color:rgba(255,255,255,0.4);">${l.url}</span>
+              <button class="btn btn-sm btn-outline-danger" onclick="removeQuickLink(${l.id})" style="padding:2px 8px;font-size:0.7rem;">&times;</button>
+            </div>
+          `).join('');
+        });
+      }
+      function addQuickLink() {
+        const label = document.getElementById('ql-new-label').value.trim();
+        const url = document.getElementById('ql-new-url').value.trim();
+        if (!label || !url) return;
+        fetch('/api/user/quick-links', {
+          method:'POST',
+          headers:{'Content-Type':'application/json','X-CSRFToken':document.querySelector('meta[name="csrf-token"]').content},
+          body:JSON.stringify({label,url})
+        }).then(r=>r.json()).then(data => {
+          if (data.success) { loadQuickLinks(); document.getElementById('ql-new-label').value=''; document.getElementById('ql-new-url').value=''; window.location.reload(); }
+        });
+      }
+      function removeQuickLink(id) {
+        fetch('/api/user/quick-links/'+id, {
+          method:'DELETE',
+          headers:{'X-CSRFToken':document.querySelector('meta[name="csrf-token"]').content}
+        }).then(r=>r.json()).then(data => {
+          if (data.success) { loadQuickLinks(); window.location.reload(); }
+        });
+      }
+      document.getElementById('quickLinksModal')?.addEventListener('show.bs.modal', loadQuickLinks);
     </script>
     <script src="{{ url_for('static', filename='js/analytics.js') }}"></script>
     {% endif %}
+    {% include 'partials/help_drawer.html' %}
+    {% include 'partials/feedback_widget.html' %}
+    {% include 'partials/micro_survey.html' %}
+    <script src="{{ url_for('static', filename='js/walkthrough.js') }}"></script>
     {% block scripts %}{% endblock %}
-    <script>feather.replace();</script>
+    <script>if (typeof feather !== 'undefined') feather.replace();</script>
 </body>
 </html>

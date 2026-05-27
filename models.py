@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 import logging
 
 from flask_login import UserMixin
@@ -29,6 +29,10 @@ class UserCompanyAccess(db.Model):
     role = db.Column(db.String(20), default="viewer")
     is_default = db.Column(db.Boolean, default=False)
 
+    # Per-user feature access flags (PWA access control — no PostHog required)
+    can_access_mobile_inbox = db.Column(db.Boolean, default=False)
+    can_access_full_app     = db.Column(db.Boolean, default=True)
+
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(
         db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
@@ -40,16 +44,22 @@ class UserCompanyAccess(db.Model):
         db.Index("ix_user_company_access_company", "company_id"),
     )
 
-    ROLE_OWNER = "owner"
-    ROLE_ADMIN = "admin"
-    ROLE_EDITOR = "editor"
-    ROLE_VIEWER = "viewer"
+    ROLE_OWNER      = "owner"
+    ROLE_ADMIN      = "admin"
+    ROLE_MANAGER    = "manager"
+    ROLE_EDITOR     = "editor"
+    ROLE_VIEWER     = "viewer"
+    ROLE_STAFF      = "staff"
+    ROLE_INBOX_ONLY = "inbox_only"
 
     ROLE_HIERARCHY = {
-        ROLE_OWNER: 4,
-        ROLE_ADMIN: 3,
-        ROLE_EDITOR: 2,
-        ROLE_VIEWER: 1,
+        ROLE_OWNER:      5,
+        ROLE_ADMIN:      4,
+        ROLE_MANAGER:    3,
+        ROLE_EDITOR:     2,
+        ROLE_VIEWER:     1,
+        ROLE_STAFF:      1,
+        ROLE_INBOX_ONLY: 0,
     }
 
     user = db.relationship("User", backref=db.backref("company_access", lazy="dynamic"))
@@ -61,13 +71,33 @@ class UserCompanyAccess(db.Model):
         return f"<UserCompanyAccess user={self.user_id} company={self.company_id} role={self.role}>"
 
     def can_edit(self):
-        return self.role in {self.ROLE_OWNER, self.ROLE_ADMIN, self.ROLE_EDITOR}
+        return self.role in {self.ROLE_OWNER, self.ROLE_ADMIN, self.ROLE_MANAGER, self.ROLE_EDITOR}
 
     def can_admin(self):
         return self.role in {self.ROLE_OWNER, self.ROLE_ADMIN}
 
     def can_own(self):
         return self.role == self.ROLE_OWNER
+
+    def has_mobile_inbox_access(self) -> bool:
+        """Mobile Inbox requires explicit admin approval.
+
+        Rules:
+        - owner/admin role: always allowed
+        - inbox_only role: must still be explicitly approved
+        - all other roles: must be explicitly approved
+        """
+        if self.role in (self.ROLE_OWNER, self.ROLE_ADMIN):
+            return True
+        return bool(self.can_access_mobile_inbox)
+
+    def has_full_app_access(self) -> bool:
+        """Inbox-only role never gets full app; all other roles default to True."""
+        if self.role == self.ROLE_INBOX_ONLY:
+            return False
+        if self.can_access_full_app is None:
+            return True
+        return bool(self.can_access_full_app)
 
 
 # ============================================================
@@ -174,11 +204,20 @@ class User(UserMixin, db.Model):
         logger = logging.getLogger(__name__)
 
         try:
-            # 1) Explicit default_company_id
+            # 1) Explicit default_company_id (fall through if company was deleted)
             if self.default_company_id:
                 if hasattr(self, "default_company") and self.default_company is not None:
                     return self.default_company
-                return Company.query.get(self.default_company_id)
+                found = Company.query.get(self.default_company_id)
+                if found:
+                    return found
+                # Company was deleted — clear stale FK and fall through to fallbacks
+                logger.warning("User %s default_company_id=%s not found, clearing", self.id, self.default_company_id)
+                self.default_company_id = None
+                try:
+                    db.session.commit()
+                except Exception:
+                    db.session.rollback()
 
             access = (
                 UserCompanyAccess.query
@@ -190,7 +229,8 @@ class User(UserMixin, db.Model):
             if access:
                 return access.company
 
-            return Company.query.filter_by(is_active=True).order_by(Company.id.asc()).first()
+            user_companies = self.get_all_companies()
+            return user_companies[0] if user_companies else None
         except Exception as exc:
             try:
                 db.session.rollback()
@@ -208,13 +248,37 @@ class User(UserMixin, db.Model):
 
     def get_all_companies(self):
         try:
-            return (
+            companies_by_access = (
                 Company.query
-                .join(user_company, (user_company.c.company_id == Company.id) & (user_company.c.user_id == self.id))
-                .filter(Company.is_active == True)
-                .order_by(Company.name)
+                .join(UserCompanyAccess, UserCompanyAccess.company_id == Company.id)
+                .filter(
+                    UserCompanyAccess.user_id == self.id,
+                    Company.is_active == True,
+                )
                 .all()
             )
+
+            companies_by_legacy_link = (
+                Company.query
+                .join(
+                    user_company,
+                    (user_company.c.company_id == Company.id)
+                    & (user_company.c.user_id == self.id),
+                )
+                .filter(Company.is_active == True)
+                .all()
+            )
+
+            merged = {c.id: c for c in companies_by_access + companies_by_legacy_link}
+
+            if self.default_company_id:
+                default_company = Company.query.filter_by(
+                    id=self.default_company_id, is_active=True
+                ).first()
+                if default_company:
+                    merged[default_company.id] = default_company
+
+            return sorted(merged.values(), key=lambda c: (c.name or "").lower())
         except Exception:
             return list(self.companies)
 
@@ -334,6 +398,145 @@ class Company(db.Model):
     industry = db.Column(db.String(100))
     description = db.Column(Text)
 
+    # ── SaaS / Billing Integration ───────────────────────────────────────────
+    stripe_customer_id         = db.Column(db.String(100))
+    stripe_subscription_id     = db.Column(db.String(100))
+    stripe_subscription_status = db.Column(db.String(50), default='none')
+    stripe_price_lookup_key    = db.Column(db.String(100))
+    supabase_tenant_id         = db.Column(db.String(100))
+    mypaylink_id               = db.Column(db.String(100))
+    n8n_contact_id             = db.Column(db.String(100))
+    subscription_tier          = db.Column(db.String(50), default='free')
+    billing_tier               = db.Column(db.String(50), default='free')
+    billing_status             = db.Column(db.String(50), default='none')
+    max_team_members           = db.Column(db.Integer, nullable=True)  # NULL = unlimited
+    grace_period_ends_at       = db.Column(db.DateTime, nullable=True)
+    current_period_start       = db.Column(db.DateTime, nullable=True)
+    current_period_end         = db.Column(db.DateTime, nullable=True)
+    cancel_at_period_end       = db.Column(db.Boolean, default=False)
+    # ── One-time setup / onboarding fee ─────────────────────────────────────
+    # Charged exactly once per company on the very first Checkout Session.
+    # Once paid, future Checkout Sessions for this company must NOT include
+    # the setup-fee line item again.
+    setup_fee_paid                = db.Column(db.Boolean, default=False, nullable=False)
+    setup_fee_paid_at             = db.Column(db.DateTime, nullable=True)
+    setup_fee_checkout_session_id = db.Column(db.String(120), nullable=True)
+    # ── Contact-usage / metered billing ─────────────────────────────────────
+    # ``included_contacts`` is the per-plan allowance baked into the tier
+    # (Starter=2,500 / Professional=50,000). ``contacts_used`` is the live
+    # tenant count refreshed by the contact pipeline. ``contacts_overage``
+    # is the surplus we report to Stripe via the metered subscription item
+    # identified by ``stripe_contact_usage_subscription_item_id``.
+    included_contacts                          = db.Column(db.Integer, nullable=True)
+    contacts_used                              = db.Column(db.Integer, default=0, nullable=False)
+    contacts_overage                           = db.Column(db.Integer, default=0, nullable=False)
+    stripe_contact_usage_subscription_item_id  = db.Column(db.String(120), nullable=True)
+    last_reported_contact_usage                = db.Column(db.Integer, default=0, nullable=False)
+    last_usage_reported_at                     = db.Column(db.DateTime, nullable=True)
+    onboarding_status          = db.Column(db.String(50), default='pending')
+    implementation_status      = db.Column(db.String(50), default='none')
+    saas_notes                 = db.Column(Text)
+
+    # ── Team-seat helpers ───────────────────────────────────────────────────
+    @property
+    def team_member_count(self):
+        """Number of distinct users currently attached to this company.
+
+        Counts a union of: users with ``default_company_id == self.id`` and
+        users joined via the ``UserCompanyAccess`` table.
+        """
+        from sqlalchemy import or_
+        via_access = db.session.query(UserCompanyAccess.user_id) \
+            .filter(UserCompanyAccess.company_id == self.id)
+        via_default = db.session.query(User.id) \
+            .filter(User.default_company_id == self.id)
+        ids = {r[0] for r in via_access.all()} | {r[0] for r in via_default.all()}
+        return len(ids)
+
+    @property
+    def team_seats_available(self):
+        """Remaining seats. ``None`` means unlimited (Professional/Enterprise)."""
+        if self.max_team_members is None:
+            return None
+        return max(0, self.max_team_members - self.team_member_count)
+
+    def can_add_team_member(self) -> bool:
+        """True if a new user can be added without exceeding ``max_team_members``."""
+        if self.max_team_members is None:
+            return True
+        return self.team_member_count < self.max_team_members
+
+    # ── Secret helpers ──────────────────────────────────────────────────────
+    def set_secret(self, key_or_provider, key_or_value=None, value=None):
+        """
+        Store/update an encrypted secret.
+
+        Two call styles:
+          company.set_secret("OPENAI_API_KEY", "sk-123")          # key, value
+          company.set_secret("twilio", "auth_token", "tok123")    # provider, key, value
+        """
+        from services.secret_vault import vault
+
+        if value is not None:
+            full_key   = f"{key_or_provider}_{key_or_value}"
+            plain_value = value
+        else:
+            full_key   = key_or_provider
+            plain_value = key_or_value
+
+        if not plain_value:
+            return
+
+        try:
+            enc_value = vault.encrypt(str(plain_value))
+        except Exception:
+            enc_value = str(plain_value)
+
+        secret = CompanySecret.query.filter_by(
+            company_id=self.id, key=full_key
+        ).first()
+        if secret:
+            secret.value      = enc_value
+            secret.updated_at = datetime.utcnow()
+        else:
+            secret = CompanySecret(
+                company_id=self.id, key=full_key, value=enc_value
+            )
+            db.session.add(secret)
+        db.session.commit()
+
+    def get_secret(self, key_or_provider, sub_key=None):
+        """
+        Retrieve and decrypt a secret. Returns None if not found.
+
+          company.get_secret("OPENAI_API_KEY")
+          company.get_secret("twilio", "auth_token")
+        """
+        from services.secret_vault import vault
+
+        full_key = (f"{key_or_provider}_{sub_key}" if sub_key
+                    else key_or_provider)
+        secret = CompanySecret.query.filter_by(
+            company_id=self.id, key=full_key
+        ).first()
+        if not secret or not secret.value:
+            return None
+        try:
+            return vault.decrypt(secret.value)
+        except Exception:
+            return secret.value   # Fallback for legacy unencrypted values
+
+    def delete_secret(self, key_or_provider, sub_key=None):
+        """Delete a secret for this company."""
+        full_key = (f"{key_or_provider}_{sub_key}" if sub_key
+                    else key_or_provider)
+        secret = CompanySecret.query.filter_by(
+            company_id=self.id, key=full_key
+        ).first()
+        if secret:
+            db.session.delete(secret)
+            db.session.commit()
+
 
 class Contact(db.Model):
     __tablename__ = "contact"
@@ -359,10 +562,18 @@ class Campaign(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=True)
     name = db.Column(db.String(255))
+    subject = db.Column(db.String(500))
+    template_id = db.Column(db.Integer, db.ForeignKey("email_template.id"), nullable=True)
+    automation_id = db.Column(db.Integer, db.ForeignKey("automation.id"), nullable=True)
+    ab_test_id = db.Column(db.Integer, nullable=True)
     status = db.Column(db.String(50))
     scheduled_at = db.Column(db.DateTime)
     sent_at = db.Column(db.DateTime)
+    revenue_generated = db.Column(db.Float, default=0.0)
+    utm_keyword = db.Column(db.String(255))
+    ai_generated = db.Column(db.Boolean, default=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
 class CampaignRecipient(db.Model):
@@ -405,13 +616,21 @@ class BlogPost(db.Model):
 
 
 class CompanySecret(db.Model):
+    """Encrypted per-company API secrets (multi-tenant safe)."""
     __tablename__ = "company_secret"
 
-    id = db.Column(db.Integer, primary_key=True)
-    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=True)
-    key = db.Column(db.String(255))
-    value = db.Column(db.Text)
+    id         = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=True, index=True)
+    key        = db.Column(db.String(255), nullable=False)
+    value      = db.Column(db.Text)          # stored encrypted via services.secret_vault
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    company = db.relationship("Company", backref="secrets")
+
+    __table_args__ = (
+        db.UniqueConstraint("company_id", "key", name="uq_company_secret_key"),
+    )
 
 
 class ContactActivity(db.Model):
@@ -467,6 +686,18 @@ class ABTest(db.Model):
     __tablename__ = "ab_test"
 
     id = db.Column(db.Integer, primary_key=True)
+    campaign_id = db.Column(db.Integer, db.ForeignKey("campaign.id"), nullable=True)
+    test_type = db.Column(db.String(50))
+    variant_a = db.Column(db.Text)
+    variant_b = db.Column(db.Text)
+    split_ratio = db.Column(db.Float, default=0.5)
+    winner = db.Column(db.String(10))
+    status = db.Column(db.String(50), default='draft')
+    started_at = db.Column(db.DateTime)
+    ended_at = db.Column(db.DateTime)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    campaign = db.relationship("Campaign", backref="ab_tests")
 
 
 class Automation(db.Model):
@@ -477,6 +708,9 @@ class Automation(db.Model):
     is_active = db.Column(db.Boolean, default=True)
     status = db.Column(db.String(50), default='active')
     trigger_type = db.Column(db.String(100))
+    channel_type = db.Column(db.String(50), default='email')
+    description = db.Column(db.Text, nullable=True)
+    trigger_conditions = db.Column(db.JSON, nullable=True)
     company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
@@ -485,29 +719,57 @@ class AutomationStep(db.Model):
     __tablename__ = "automation_step"
 
     id = db.Column(db.Integer, primary_key=True)
+    automation_id = db.Column(db.Integer, db.ForeignKey("automation.id"), nullable=True)
+    step_type = db.Column(db.String(100))
     step_order = db.Column(db.Integer)
+    template_id = db.Column(db.Integer)
+    delay_hours = db.Column(db.Integer, default=0)
+    conditions = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    automation = db.relationship("Automation", backref="steps")
 
 
 class SMSCampaign(db.Model):
     __tablename__ = "sms_campaign"
 
     id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(255))
+    message = db.Column(db.String(1000))
     status = db.Column(db.String(50))
     scheduled_at = db.Column(db.DateTime)
+    sent_at = db.Column(db.DateTime)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    recipients = db.relationship('SMSRecipient', backref='campaign', lazy='dynamic', foreign_keys='SMSRecipient.campaign_id')
 
 
 class SMSRecipient(db.Model):
     __tablename__ = "sms_recipient"
 
     id = db.Column(db.Integer, primary_key=True)
+    campaign_id = db.Column(db.Integer, db.ForeignKey("sms_campaign.id"), nullable=True)
+    contact_id = db.Column(db.Integer, db.ForeignKey("contact.id"), nullable=True)
+    status = db.Column(db.String(50))
+    sent_at = db.Column(db.DateTime)
+    delivered_at = db.Column(db.DateTime)
+    error_message = db.Column(db.Text)
 
 
 class SMSTemplate(db.Model):
     __tablename__ = "sms_template"
 
     id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(255))
+    message = db.Column(db.Text)
+    category = db.Column(db.String(100))
+    tone = db.Column(db.String(50))
+    has_opt_out = db.Column(db.Boolean, default=True)
+    is_compliant = db.Column(db.Boolean, default=True)
+    usage_count = db.Column(db.Integer, default=0)
+    is_active = db.Column(db.Boolean, default=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
 class SocialPost(db.Model):
@@ -518,10 +780,13 @@ class SocialPost(db.Model):
     user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True)
     platform = db.Column(db.String(50))
     content = db.Column(db.Text)
+    platforms = db.Column(db.JSON)
+    media_urls = db.Column(db.JSON)
     image_url = db.Column(db.String(500))
     status = db.Column(db.String(50))
     scheduled_at = db.Column(db.DateTime)
     published_at = db.Column(db.DateTime)
+    engagement_data = db.Column(db.JSON)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 
@@ -567,13 +832,29 @@ class Event(db.Model):
     __tablename__ = "event"
 
     id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(255))
+    description = db.Column(db.Text)
     start_date = db.Column(db.DateTime)
+    end_date = db.Column(db.DateTime)
+    location = db.Column(db.String(255))
+    max_attendees = db.Column(db.Integer)
+    price = db.Column(db.Float, default=0.0)
+    is_active = db.Column(db.Boolean, default=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    registrations = db.relationship('EventRegistration', backref='event', lazy='dynamic')
+    tickets = db.relationship('EventTicket', backref='event', lazy='dynamic')
 
 
 class EventRegistration(db.Model):
     __tablename__ = "event_registration"
 
     id = db.Column(db.Integer, primary_key=True)
+    event_id = db.Column(db.Integer, db.ForeignKey("event.id"), nullable=True)
+    contact_id = db.Column(db.Integer, db.ForeignKey("contact.id"), nullable=True)
+    status = db.Column(db.String(50), default='registered')
+    payment_status = db.Column(db.String(50), default='pending')
+    registered_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 
 class EventTicket(db.Model):
@@ -641,9 +922,13 @@ class NewsletterArchive(db.Model):
     __tablename__ = "newsletter_archive"
 
     id = db.Column(db.Integer, primary_key=True)
+    campaign_id = db.Column(db.Integer, db.ForeignKey("campaign.id"), nullable=True)
     title = db.Column(db.String(255))
+    slug = db.Column(db.String(255))
     html_content = db.Column(db.Text)
     published_at = db.Column(db.DateTime)
+    view_count = db.Column(db.Integer, default=0)
+    is_public = db.Column(db.Boolean, default=True)
 
 
 class NonOpenerResend(db.Model):
@@ -687,13 +972,37 @@ class SEOBacklink(db.Model):
     __tablename__ = "seo_backlink"
 
     id = db.Column(db.Integer, primary_key=True)
+    source_url = db.Column(db.Text)
+    source_domain = db.Column(db.String(255))
+    target_url = db.Column(db.Text)
+    anchor_text = db.Column(db.String(500))
+    link_type = db.Column(db.String(50))
+    status = db.Column(db.String(50), default='active')
     domain_authority = db.Column(db.Float)
+    page_authority = db.Column(db.Float)
+    spam_score = db.Column(db.Float)
+    first_seen = db.Column(db.DateTime)
+    last_seen = db.Column(db.DateTime)
+    lost_at = db.Column(db.DateTime)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 
 class SEOCompetitor(db.Model):
     __tablename__ = "seo_competitor"
 
     id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(255))
+    domain = db.Column(db.String(255))
+    organic_traffic = db.Column(db.Integer, default=0)
+    organic_keywords = db.Column(db.Integer, default=0)
+    backlinks = db.Column(db.Integer, default=0)
+    domain_authority = db.Column(db.Float)
+    page_authority = db.Column(db.Float)
+    notes = db.Column(db.Text)
+    is_active = db.Column(db.Boolean, default=True)
+    last_analyzed = db.Column(db.DateTime)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
 class SEOAudit(db.Model):
@@ -764,10 +1073,12 @@ class SocialMediaAccount(db.Model):
     refresh_token = db.Column(db.Text)
     token_expires_at = db.Column(db.DateTime)
     is_active = db.Column(db.Boolean, default=True)
-    followers_count = db.Column(db.Integer, default=0)
-    last_sync_at = db.Column(db.DateTime)
+    is_verified = db.Column(db.Boolean, default=False)
+    follower_count = db.Column(db.Integer, default=0)
+    last_synced = db.Column(db.DateTime)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
     company = db.relationship("Company", backref="social_media_accounts")
 
 
@@ -842,17 +1153,17 @@ class LeadScore(db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
     contact_id = db.Column(db.Integer, db.ForeignKey("contact.id"), nullable=True)
-    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=True)
-    score = db.Column(db.Integer, default=0)
+    lead_score = db.Column(db.Integer, default=0)
     engagement_score = db.Column(db.Integer, default=0)
+    behavior_score = db.Column(db.Integer, default=0)
     fit_score = db.Column(db.Integer, default=0)
-    intent_score = db.Column(db.Integer, default=0)
-    last_activity_date = db.Column(db.DateTime)
-    scoring_factors = db.Column(JSON)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    last_calculated = db.Column(db.DateTime)
     
     contact = db.relationship("Contact", backref="lead_scores")
+
+    @property
+    def score(self):
+        return self.lead_score or 0
 
 
 class SalesStage(db.Model):
@@ -983,12 +1294,33 @@ class PersonalizationRule(db.Model):
     __tablename__ = "personalization_rule"
 
     id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=True)
+    name = db.Column(db.String(255))
+    segment_criteria = db.Column(db.Text)
+    personalization_config = db.Column(db.Text)
+    priority = db.Column(db.Integer, default=0)
+    is_active = db.Column(db.Boolean, default=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    company = db.relationship("Company", backref="personalization_rules")
 
 
 class KeywordResearch(db.Model):
     __tablename__ = "keyword_research"
 
     id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=True)
+    keyword = db.Column(db.String(255))
+    search_volume = db.Column(db.Integer, default=0)
+    difficulty_score = db.Column(db.Float)
+    competition = db.Column(db.String(50))
+    seasonal_trend = db.Column(db.Text)
+    intent = db.Column(db.String(100))
+    related_keywords = db.Column(db.Text)
+    status = db.Column(db.String(50), default='active')
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    company = db.relationship("Company", backref="keyword_research")
 
 
 class AgentTask(db.Model):
@@ -1024,42 +1356,27 @@ class AgentLog(db.Model):
     __tablename__ = "agent_log"
 
     id = db.Column(db.Integer, primary_key=True)
-    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=False, index=True)
     agent_type = db.Column(db.String(100), nullable=False)
     agent_name = db.Column(db.String(200))
     activity_type = db.Column(db.String(100))
     details = db.Column(db.Text)
     status = db.Column(db.String(50))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    
-    company = db.relationship("Company", backref="agent_logs")
 
 
 class AgentReport(db.Model):
     __tablename__ = "agent_report"
 
     id = db.Column(db.Integer, primary_key=True)
-    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=False, index=True)
     agent_type = db.Column(db.String(100), nullable=False, index=True)
     agent_name = db.Column(db.String(200))
     report_type = db.Column(db.String(50), nullable=False)
-    report_frequency = db.Column(db.String(50))
-    title = db.Column(db.String(500))
-    summary = db.Column(db.Text)
+    report_title = db.Column(db.String(500))
     report_data = db.Column(db.Text)
     insights = db.Column(db.Text)
-    recommendations = db.Column(db.Text)
-    external_factors = db.Column(db.Text)
-    report_period_start = db.Column(db.DateTime)
-    report_period_end = db.Column(db.DateTime)
-    status = db.Column(db.String(50), default='generated')
+    period_start = db.Column(db.DateTime)
+    period_end = db.Column(db.DateTime)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    
-    company = db.relationship("Company", backref="agent_reports")
-    
-    __table_args__ = (
-        db.Index("ix_agent_report_company_agent", "company_id", "agent_type"),
-    )
 
 
 class AgentSchedule(db.Model):
@@ -1086,29 +1403,24 @@ class AgentDeliverable(db.Model):
     __tablename__ = "agent_deliverable"
 
     id = db.Column(db.Integer, primary_key=True)
-    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=False, index=True)
-    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True)
     agent_type = db.Column(db.String(100), nullable=False, index=True)
+    agent_name = db.Column(db.String(200))
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=True, index=True)
     deliverable_type = db.Column(db.String(100))
     title = db.Column(db.String(500))
     description = db.Column(db.Text)
-    request_data = db.Column(db.Text)
-    output_data = db.Column(db.Text)
+    content = db.Column(db.Text)
+    content_format = db.Column(db.String(50))
     file_path = db.Column(db.String(500))
+    extra_data = db.Column(db.Text)
+    prompt_used = db.Column(db.Text)
     status = db.Column(db.String(50), default='requested')
-    priority = db.Column(db.Integer, default=5)
-    due_date = db.Column(db.DateTime)
-    completed_at = db.Column(db.DateTime)
-    feedback = db.Column(db.Text)
-    rating = db.Column(db.Integer)
+    is_starred = db.Column(db.Boolean, default=False)
+    view_count = db.Column(db.Integer, default=0)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
     company = db.relationship("Company", backref="agent_deliverables")
-    user = db.relationship("User", backref="agent_deliverables")
-    
-    __table_args__ = (
-        db.Index("ix_agent_deliverable_company_status", "company_id", "status"),
-    )
 
 
 class AgentPerformance(db.Model):
@@ -1134,19 +1446,26 @@ class AgentMemory(db.Model):
     company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=False, index=True)
     agent_type = db.Column(db.String(100), nullable=False, index=True)
     memory_type = db.Column(db.String(100))
-    memory_key = db.Column(db.String(255))
-    memory_value = db.Column(db.Text)
-    context = db.Column(db.Text)
-    relevance_score = db.Column(db.Float, default=1.0)
+    source = db.Column(db.String(255))
+    category = db.Column(db.String(100))
+    key = db.Column(db.String(255))
+    value = db.Column(db.Text)
+    confidence = db.Column(db.Float)
+    usage_count = db.Column(db.Integer, default=0)
+    success_rate = db.Column(db.Float)
     expires_at = db.Column(db.DateTime)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
     company = db.relationship("Company", backref="agent_memories")
-    
-    __table_args__ = (
-        db.Index("ix_agent_memory_company_agent", "company_id", "agent_type"),
-    )
+
+    @property
+    def memory_key(self):
+        return self.key
+
+    @property
+    def memory_value(self):
+        return self.value
 
 
 class AgentConversation(db.Model):
@@ -1195,21 +1514,53 @@ class MarketSignal(db.Model):
     __tablename__ = "market_signal"
 
     id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=True)
+    source = db.Column(db.String(255))
+    signal_type = db.Column(db.String(100))
+    title = db.Column(db.String(500))
+    summary = db.Column(db.Text)
+    severity = db.Column(db.String(50))
     signal_date = db.Column(db.DateTime)
+    raw_data = db.Column(db.Text)
+    is_actionable = db.Column(db.Boolean, default=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    company = db.relationship("Company", backref="market_signals")
 
 
 class StrategyRecommendation(db.Model):
     __tablename__ = "strategy_recommendation"
 
     id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=True)
+    related_signal_id = db.Column(db.Integer)
+    title = db.Column(db.String(500))
+    recommendation_type = db.Column(db.String(100))
+    priority = db.Column(db.String(50))
+    status = db.Column(db.String(50), default='pending')
+    rationale = db.Column(db.Text)
+    action_steps = db.Column(db.Text)
+    generated_by = db.Column(db.String(100))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    company = db.relationship("Company", backref="strategy_recommendations")
 
 
 class Competitor(db.Model):
     __tablename__ = "competitor"
 
     id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=True)
     name = db.Column(db.String(255))
+    website_url = db.Column(db.String(500))
+    industry = db.Column(db.String(100))
+    status = db.Column(db.String(50))
+    notes = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    company = db.relationship("Company", backref="competitors")
 
 
 class FacebookOAuth(db.Model):
@@ -1275,13 +1626,27 @@ class InstagramOAuth(db.Model):
     __tablename__ = "instagram_oauth"
 
     id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True)
     company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=True)
+    instagram_account_id = db.Column(db.String(255))
+    access_token = db.Column(db.Text)
+    expires_at = db.Column(db.DateTime)
+    username = db.Column(db.String(255))
+    avatar_url = db.Column(db.String(500))
+    status = db.Column(db.String(50), default='active')
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    company = db.relationship("Company", backref="instagram_oauths")
 
 
 class WordPressIntegration(db.Model):
     __tablename__ = "wordpress_integration"
 
     id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=True)
+
+    company = db.relationship("Company", backref="wordpress_integrations")
 
 
 class CompetitorProfile(db.Model):
@@ -1289,49 +1654,90 @@ class CompetitorProfile(db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
     company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=True)
-    name = db.Column(db.String(200))
+    competitor_name = db.Column(db.String(200))
     website_url = db.Column(db.String(255))
-    industry = db.Column(db.String(100))
-    description = db.Column(Text)
     strengths = db.Column(Text)
     weaknesses = db.Column(Text)
-    market_position = db.Column(db.String(50))
-    threat_level = db.Column(db.String(20), default='medium')
+    pricing_model = db.Column(db.String(100))
+    market_share = db.Column(db.String(100))
+    last_analyzed = db.Column(db.DateTime)
+    notes = db.Column(Text)
     is_active = db.Column(db.Boolean, default=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    @property
+    def name(self):
+        return self.competitor_name or ''
 
 
 class MultivariateTest(db.Model):
     __tablename__ = "multivariate_test"
 
     id = db.Column(db.Integer, primary_key=True)
+    campaign_id = db.Column(db.Integer, db.ForeignKey("campaign.id"), nullable=True)
+    name = db.Column(db.String(255))
+    variables = db.Column(db.Text)
+    variants = db.Column(db.Text)
+    sample_size = db.Column(db.Integer)
+    confidence_level = db.Column(db.Float)
+    status = db.Column(db.String(50), default='draft')
+    winner = db.Column(db.String(100))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 
 class CampaignCost(db.Model):
     __tablename__ = "campaign_cost"
 
     id = db.Column(db.Integer, primary_key=True)
+    campaign_id = db.Column(db.Integer, db.ForeignKey("campaign.id"), nullable=True)
+    cost_type = db.Column(db.String(50))
     amount = db.Column(db.Float)
+    currency = db.Column(db.String(10))
+    cost_date = db.Column(db.DateTime)
+
+    campaign = db.relationship("Campaign", backref="costs")
 
 
 class AttributionModel(db.Model):
     __tablename__ = "attribution_model"
 
     id = db.Column(db.Integer, primary_key=True)
+    campaign_id = db.Column(db.Integer, db.ForeignKey("campaign.id"), nullable=True)
+    contact_id = db.Column(db.Integer, db.ForeignKey("contact.id"), nullable=True)
     revenue = db.Column(db.Float)
+    attribution_model = db.Column(db.String(50))
+    confidence_score = db.Column(db.Float)
+
+    campaign = db.relationship("Campaign", backref="attributions")
 
 
 class SurveyResponse(db.Model):
     __tablename__ = "survey_response"
 
     id = db.Column(db.Integer, primary_key=True)
+    contact_id = db.Column(db.Integer, db.ForeignKey("contact.id"), nullable=True)
+    survey_type = db.Column(db.String(50))
+    score = db.Column(db.Integer, default=0)
+    feedback = db.Column(db.Text)
+    sentiment = db.Column(db.String(50))
+    sentiment_score = db.Column(db.Float)
+    topics = db.Column(db.Text)
+    responded_at = db.Column(db.DateTime)
 
 
 class AgentConfiguration(db.Model):
     __tablename__ = "agent_configuration"
 
     id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=True)
+    agent_type = db.Column(db.String(100))
+    is_enabled = db.Column(db.Boolean, default=False)
+    schedule_frequency = db.Column(db.String(50))
+    configuration = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    company = db.relationship("Company", backref="agent_configurations")
 
 
 class CompanyIntegrationConfig(db.Model):
@@ -1340,12 +1746,16 @@ class CompanyIntegrationConfig(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=False, index=True)
     service_slug = db.Column(db.String(100), nullable=False)
-    is_enabled = db.Column(db.Boolean, default=False)
+    is_active = db.Column(db.Boolean, default=False)
     config_json = db.Column(db.Text)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     created_by_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True)
     updated_by_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True)
+
+    @property
+    def is_enabled(self):
+        return self.is_active
 
 
 class IntegrationAuditLog(db.Model):
@@ -1366,7 +1776,14 @@ class AgentAutomation(db.Model):
     __tablename__ = "agent_automation"
 
     id = db.Column(db.Integer, primary_key=True)
+    agent_type = db.Column(db.String(100))
+    name = db.Column(db.String(255))
+    description = db.Column(db.Text)
+    schedule = db.Column(db.String(100))
+    enabled = db.Column(db.Boolean, default=True)
+    last_run = db.Column(db.DateTime)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
 class ApprovalQueue(db.Model):
@@ -1395,9 +1812,10 @@ class ApprovalQueue(db.Model):
     published_at = db.Column(db.DateTime)
     edit_history = db.Column(db.Text)
     version = db.Column(db.Integer, default=1)
-    last_modified_by = db.Column(db.Integer)
+    previous_version_id = db.Column(db.Integer)
     compliance_flags = db.Column(db.Text)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     company = db.relationship("Company", backref="approval_queue_items")
 
@@ -1454,6 +1872,63 @@ class ApprovalAuditLog(db.Model):
             'action_by_agent': self.action_by_agent,
             'notes': self.notes,
             'created_at': self.created_at.isoformat() if self.created_at else None,
+        }
+
+
+class FeatureToggle(db.Model):
+    __tablename__ = "feature_toggle"
+
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=True, index=True)
+    feature_key = db.Column(db.String(255))
+    feature_name = db.Column(db.String(255))
+    feature_category = db.Column(db.String(100))
+    description = db.Column(db.Text)
+    is_enabled = db.Column(db.Boolean, default=False)
+    agent_type = db.Column(db.String(100))
+    allow_automated_creation = db.Column(db.Boolean, default=False)
+    require_approval = db.Column(db.Boolean, default=True)
+    confidence_threshold = db.Column(db.Float)
+    daily_limit = db.Column(db.Integer)
+    budget_ceiling = db.Column(db.Float)
+    risk_tolerance = db.Column(db.String(50))
+    content_aggressiveness = db.Column(db.String(50))
+    brand_strictness = db.Column(db.String(50))
+    platform_rules = db.Column(db.JSON)
+    schedule_frequency = db.Column(db.String(50))
+    active_hours_start = db.Column(db.Integer)
+    active_hours_end = db.Column(db.Integer)
+    emergency_stop = db.Column(db.Boolean, default=False)
+    last_modified_by = db.Column(db.Integer)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    company = db.relationship("Company", backref="feature_toggles")
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'company_id': self.company_id,
+            'feature_key': self.feature_key,
+            'feature_name': self.feature_name,
+            'feature_category': self.feature_category,
+            'description': self.description,
+            'is_enabled': self.is_enabled,
+            'agent_type': self.agent_type,
+            'allow_automated_creation': self.allow_automated_creation,
+            'require_approval': self.require_approval,
+            'confidence_threshold': self.confidence_threshold,
+            'daily_limit': self.daily_limit,
+            'budget_ceiling': self.budget_ceiling,
+            'risk_tolerance': self.risk_tolerance,
+            'content_aggressiveness': self.content_aggressiveness,
+            'brand_strictness': self.brand_strictness,
+            'schedule_frequency': self.schedule_frequency,
+            'active_hours_start': self.active_hours_start,
+            'active_hours_end': self.active_hours_end,
+            'emergency_stop': self.emergency_stop,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None,
         }
 
 
@@ -1543,3 +2018,902 @@ class DeletionRequest(db.Model):
     status = db.Column(db.String(20), default='pending')
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class LicenseRequest(db.Model):
+    __tablename__ = 'license_request'
+
+    id = db.Column(db.Integer, primary_key=True)
+    email = db.Column(db.String(254), nullable=False, index=True)
+    first_name = db.Column(db.String(100))
+    last_name = db.Column(db.String(100))
+    company_name = db.Column(db.String(200))
+    plan = db.Column(db.String(50), nullable=False)
+    message = db.Column(db.Text)
+    status = db.Column(db.String(20), default='new', index=True)
+    ip_address = db.Column(db.String(45))
+    user_agent = db.Column(db.String(512))
+    source_page = db.Column(db.String(200))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+    reviewed_at = db.Column(db.DateTime)
+    reviewed_by = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    admin_notes = db.Column(db.Text)
+
+
+class UserQuickLink(db.Model):
+    __tablename__ = "user_quick_link"
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    label = db.Column(db.String(50), nullable=False)
+    url = db.Column(db.String(500), nullable=False)
+    icon = db.Column(db.String(50), default='link')
+    position = db.Column(db.Integer, default=0)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class ActivityLog(db.Model):
+    __tablename__ = "activity_log"
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=True)
+    action = db.Column(db.String(200), nullable=False)
+    detail = db.Column(db.String(500))
+    icon = db.Column(db.String(50), default='activity')
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class Notification(db.Model):
+    __tablename__ = "notification"
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=True)
+    title = db.Column(db.String(200), nullable=False)
+    message = db.Column(db.Text)
+    category = db.Column(db.String(50), default='system')
+    icon = db.Column(db.String(50), default='bell')
+    link = db.Column(db.String(500))
+    is_read = db.Column(db.Boolean, default=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    user = db.relationship('User', backref=db.backref('notifications', lazy='dynamic'))
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Feedback / Bug Reporting
+# ─────────────────────────────────────────────────────────────────────────────
+class FeedbackTicket(db.Model):
+    """A user-submitted feedback / bug / UX / feature item.
+
+    Tenant scoping: ``company_id`` is set from the submitting user's default
+    company at submission time. All listing/detail endpoints enforce that
+    regular users only see their own submissions; company admins see their
+    company's submissions; platform admins (``User.is_admin``) see all.
+    """
+    __tablename__ = "feedback_ticket"
+
+    # Allowed values — kept loose (strings) to avoid migrations on enum changes.
+    TYPES = ("bug", "ux_issue", "feature_request", "general", "confused")
+    SEVERITIES = ("low", "medium", "high", "critical")
+    STATUSES = (
+        "new", "reviewed", "priority_fix", "in_progress",
+        "waiting_on_user", "closed", "rejected",
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    ticket_type = db.Column(db.String(30), default="general", nullable=False)
+    title = db.Column(db.String(200), nullable=False)
+    description = db.Column(db.Text, nullable=False)
+    page_url = db.Column(db.String(500))
+    user_agent = db.Column(db.Text)
+    severity = db.Column(db.String(20), default="medium", nullable=False)
+    status = db.Column(db.String(30), default="new", nullable=False)
+    priority_fix = db.Column(db.Boolean, default=False, nullable=False)
+    screenshot_path = db.Column(db.String(500))
+
+    rating = db.Column(db.SmallInteger, nullable=True)
+    allow_follow_up = db.Column(db.Boolean, default=True, nullable=False)
+    screen_width = db.Column(db.Integer, nullable=True)
+    screen_height = db.Column(db.Integer, nullable=True)
+    posthog_session_id = db.Column(db.String(100), nullable=True)
+    posthog_distinct_id = db.Column(db.String(100), nullable=True)
+    posthog_replay_url = db.Column(db.String(500), nullable=True)
+    admin_notes = db.Column(db.Text, nullable=True)
+
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=True)
+    assigned_to_user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True)
+
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False, index=True)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    closed_at = db.Column(db.DateTime, nullable=True)
+
+    user = db.relationship("User", foreign_keys=[user_id],
+                           backref=db.backref("feedback_tickets", lazy="dynamic"))
+    company = db.relationship("Company",
+                              backref=db.backref("feedback_tickets", lazy="dynamic"))
+    assigned_to = db.relationship("User", foreign_keys=[assigned_to_user_id])
+    comments = db.relationship(
+        "FeedbackTicketComment",
+        backref="ticket", cascade="all, delete-orphan",
+        order_by="FeedbackTicketComment.created_at",
+    )
+
+    __table_args__ = (
+        db.Index("ix_feedback_ticket_company_status", "company_id", "status"),
+        db.Index("ix_feedback_ticket_user", "user_id"),
+    )
+
+    def to_dict(self, include_user=True):
+        d = {
+            "id": self.id,
+            "ticket_type": self.ticket_type,
+            "title": self.title,
+            "description": self.description,
+            "page_url": self.page_url,
+            "severity": self.severity,
+            "status": self.status,
+            "priority_fix": self.priority_fix,
+            "screenshot_url": (f"/{self.screenshot_path}" if self.screenshot_path else None),
+            "rating": self.rating,
+            "allow_follow_up": self.allow_follow_up,
+            "screen_width": self.screen_width,
+            "screen_height": self.screen_height,
+            "posthog_session_id": self.posthog_session_id,
+            "posthog_distinct_id": self.posthog_distinct_id,
+            "posthog_replay_url": self.posthog_replay_url,
+            "admin_notes": self.admin_notes,
+            "company_id": self.company_id,
+            "assigned_to_user_id": self.assigned_to_user_id,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+            "closed_at": self.closed_at.isoformat() if self.closed_at else None,
+        }
+        if include_user and self.user:
+            d["user"] = {
+                "id": self.user.id,
+                "username": getattr(self.user, "username", None),
+                "email": getattr(self.user, "email", None),
+            }
+        return d
+
+
+class FeedbackTicketComment(db.Model):
+    """A comment on a feedback ticket. ``is_internal`` notes are admin-only."""
+    __tablename__ = "feedback_ticket_comment"
+
+    id = db.Column(db.Integer, primary_key=True)
+    ticket_id = db.Column(db.Integer, db.ForeignKey("feedback_ticket.id"), nullable=False)
+    author_user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    body = db.Column(db.Text, nullable=False)
+    is_internal = db.Column(db.Boolean, default=False, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+    author = db.relationship("User")
+
+    __table_args__ = (
+        db.Index("ix_feedback_comment_ticket", "ticket_id"),
+    )
+
+
+class InboxMessage(db.Model):
+    __tablename__ = "inbox_message"
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=True)
+    sender_name = db.Column(db.String(200), nullable=False)
+    sender_email = db.Column(db.String(200))
+    subject = db.Column(db.String(300), nullable=False)
+    body = db.Column(db.Text)
+    category = db.Column(db.String(50), default='general')
+    is_read = db.Column(db.Boolean, default=False)
+    is_starred = db.Column(db.Boolean, default=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    user = db.relationship('User', backref=db.backref('inbox_messages', lazy='dynamic'))
+
+
+class DashboardStickyNote(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=True)
+    content = db.Column(db.Text, default='')
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    user = db.relationship('User', backref=db.backref('sticky_notes', lazy='dynamic'))
+
+
+class DashboardTask(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=True)
+    title = db.Column(db.String(500), nullable=False)
+    is_completed = db.Column(db.Boolean, default=False)
+    due_date = db.Column(db.String(50))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    user = db.relationship('User', backref=db.backref('dashboard_tasks', lazy='dynamic'))
+
+
+class AffiliateLink(db.Model):
+    __tablename__ = "affiliate_link"
+
+    id = db.Column(db.Integer, primary_key=True)
+    tracking_code = db.Column(db.String(100), unique=True)
+    affiliate_id = db.Column(db.Integer)
+    product_url = db.Column(db.Text)
+    campaign_name = db.Column(db.String(200))
+    commission_rate = db.Column(db.Float, default=10.0)
+    commission_type = db.Column(db.String(20), default='percentage')
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class Influencer(db.Model):
+    __tablename__ = "influencer"
+
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(200), nullable=False)
+    email = db.Column(db.String(200))
+    instagram_handle = db.Column(db.String(100))
+    tiktok_handle = db.Column(db.String(100))
+    youtube_channel = db.Column(db.String(200))
+    twitter_handle = db.Column(db.String(100))
+    niche = db.Column(db.String(100))
+    follower_count = db.Column(db.Integer, default=0)
+    engagement_rate = db.Column(db.Float, default=0.0)
+    tier = db.Column(db.String(20), default='micro')
+    status = db.Column(db.String(20), default='prospect')
+    notes = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class AffiliateClick(db.Model):
+    __tablename__ = "affiliate_click"
+
+    id = db.Column(db.Integer, primary_key=True)
+    tracking_code = db.Column(db.String(100))
+    ip_address = db.Column(db.String(50))
+    user_agent = db.Column(db.Text)
+    referrer = db.Column(db.Text)
+    clicked_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class AffiliateConversion(db.Model):
+    __tablename__ = "affiliate_conversion"
+
+    id = db.Column(db.Integer, primary_key=True)
+    tracking_code = db.Column(db.String(100))
+    affiliate_id = db.Column(db.Integer)
+    sale_amount = db.Column(db.Float, default=0.0)
+    commission_amount = db.Column(db.Float, default=0.0)
+    order_id = db.Column(db.String(100))
+    status = db.Column(db.String(20), default='pending')
+    converted_at = db.Column(db.DateTime, default=datetime.utcnow)
+    paid_at = db.Column(db.DateTime)
+
+
+class UTMLink(db.Model):
+    __tablename__ = "utm_link"
+
+    id = db.Column(db.Integer, primary_key=True)
+    campaign_name = db.Column(db.String(200))
+    base_url = db.Column(db.Text)
+    full_url = db.Column(db.Text)
+    short_url = db.Column(db.String(300))
+    utm_source = db.Column(db.String(100))
+    utm_medium = db.Column(db.String(100))
+    utm_campaign = db.Column(db.String(200))
+    utm_term = db.Column(db.String(200))
+    utm_content = db.Column(db.String(200))
+    clicks = db.Column(db.Integer, default=0)
+    conversions = db.Column(db.Integer, default=0)
+    revenue = db.Column(db.Float, default=0.0)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_by = db.Column(db.Integer)
+
+
+class PressRelease(db.Model):
+    __tablename__ = "press_release"
+
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"))
+    title = db.Column(db.String(300), nullable=False)
+    subtitle = db.Column(db.String(300))
+    content = db.Column(db.Text)
+    status = db.Column(db.String(20), default='draft')
+    release_date = db.Column(db.Date)
+    embargo_until = db.Column(db.DateTime)
+    contact_info = db.Column(db.Text)
+    pickups = db.Column(db.Integer, default=0)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_by = db.Column(db.Integer, db.ForeignKey("user.id"))
+
+
+class MediaContact(db.Model):
+    __tablename__ = "media_contact"
+
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"))
+    name = db.Column(db.String(200), nullable=False)
+    email = db.Column(db.String(200))
+    outlet = db.Column(db.String(200))
+    beat = db.Column(db.String(200))
+    relationship_score = db.Column(db.Integer, default=5)
+    notes = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class Workflow(db.Model):
+    __tablename__ = "workflow"
+
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"))
+    name = db.Column(db.String(200), nullable=False)
+    description = db.Column(db.Text)
+    status = db.Column(db.String(20), default='draft')
+    nodes_data = db.Column(JSON)
+    connections_data = db.Column(JSON)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_by = db.Column(db.Integer, db.ForeignKey("user.id"))
+
+
+class HelpContent(db.Model):
+    __tablename__ = "help_content"
+
+    id = db.Column(db.Integer, primary_key=True)
+    screen_key = db.Column(db.String(100), nullable=False, index=True)
+    title = db.Column(db.String(200), nullable=False)
+    instructions = db.Column(db.Text)
+    video_url = db.Column(db.String(500))
+    pdf_url = db.Column(db.String(500))
+    role_filter = db.Column(db.String(50))
+    product_filter = db.Column(db.String(50))
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"))
+    sort_order = db.Column(db.Integer, default=0)
+    is_active = db.Column(db.Boolean, default=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class WalkthroughDef(db.Model):
+    __tablename__ = "walkthrough_def"
+
+    id = db.Column(db.Integer, primary_key=True)
+    screen_key = db.Column(db.String(100), nullable=False, index=True)
+    name = db.Column(db.String(200), nullable=False)
+    description = db.Column(db.Text)
+    steps = db.Column(JSON, nullable=False, default=list)
+    role_filter = db.Column(db.String(50))
+    product_filter = db.Column(db.String(50))
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"))
+    is_active = db.Column(db.Boolean, default=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class WalkthroughProgress(db.Model):
+    __tablename__ = "walkthrough_progress"
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    walkthrough_id = db.Column(db.Integer, db.ForeignKey("walkthrough_def.id"), nullable=False)
+    completed_steps = db.Column(JSON, default=list)
+    is_complete = db.Column(db.Boolean, default=False)
+    started_at = db.Column(db.DateTime, default=datetime.utcnow)
+    completed_at = db.Column(db.DateTime)
+
+
+class XOAuth(db.Model):
+    """Stores X (Twitter) OAuth 2.0 PKCE tokens per user/company."""
+    __tablename__ = "x_oauth"
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=True)
+
+    x_user_id = db.Column(db.String(255), nullable=False)
+    username = db.Column(db.String(255))
+    display_name = db.Column(db.String(255))
+    profile_image_url = db.Column(db.String(500))
+
+    _access_token = db.Column("access_token", db.Text, nullable=False)
+    _refresh_token = db.Column("refresh_token", db.Text)
+    expires_at = db.Column(db.DateTime)
+    scope = db.Column(db.String(500))
+    token_type = db.Column(db.String(50), default="bearer")
+    status = db.Column(db.String(50), default="active")
+
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    user = db.relationship("User", backref="x_oauths")
+    company = db.relationship("Company", backref="x_oauths")
+
+    def set_access_token(self, token: str):
+        if not token:
+            self._access_token = None
+            return
+        try:
+            from services.secret_vault import vault
+            self._access_token = vault.encrypt(token)
+        except Exception:
+            self._access_token = token
+
+    def get_access_token(self) -> str:
+        if not self._access_token:
+            return None
+        try:
+            from services.secret_vault import vault
+            return vault.decrypt(self._access_token)
+        except Exception:
+            return self._access_token
+
+    def set_refresh_token(self, token: str):
+        if not token:
+            self._refresh_token = None
+            return
+        try:
+            from services.secret_vault import vault
+            self._refresh_token = vault.encrypt(token)
+        except Exception:
+            self._refresh_token = token
+
+    def get_refresh_token(self) -> str:
+        if not self._refresh_token:
+            return None
+        try:
+            from services.secret_vault import vault
+            return vault.decrypt(self._refresh_token)
+        except Exception:
+            return self._refresh_token
+
+    @property
+    def is_expired(self) -> bool:
+        if not self.expires_at:
+            return False
+        return datetime.utcnow() >= self.expires_at
+
+    @property
+    def needs_refresh(self) -> bool:
+        if not self.expires_at:
+            return False
+        return datetime.utcnow() >= self.expires_at - timedelta(minutes=10)
+
+
+class OnboardingProgress(db.Model):
+    __tablename__ = "onboarding_progress"
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=False)
+    setup_pct = db.Column(db.Integer, default=0)
+    training_pct = db.Column(db.Integer, default=0)
+    docs_pct = db.Column(db.Integer, default=0)
+    go_live_ready = db.Column(db.Boolean, default=False)
+    checklist_data = db.Column(JSON, default=dict)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+# ---------------------------------------------------------------------------
+# Password Reset Tokens
+# ---------------------------------------------------------------------------
+
+class PasswordResetToken(db.Model):
+    __tablename__ = "password_reset_token"
+
+    id         = db.Column(db.Integer, primary_key=True)
+    user_id    = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    token      = db.Column(db.String(100), unique=True, nullable=False)
+    expires_at = db.Column(db.DateTime, nullable=False)
+    used       = db.Column(db.Boolean, default=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    user = db.relationship("User", backref=db.backref("reset_tokens", lazy="dynamic"))
+
+
+# ---------------------------------------------------------------------------
+# Twilio Multi-Tenant SMS / Call Platform
+# ---------------------------------------------------------------------------
+
+class TwilioAccount(db.Model):
+    """Per-company Twilio credentials and global settings."""
+    __tablename__ = "twilio_account"
+
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=False, unique=True)
+
+    _account_sid = db.Column("account_sid", db.Text)
+    _auth_token  = db.Column("auth_token",  db.Text)
+    messaging_service_sid = db.Column(db.String(60))
+    from_phone   = db.Column(db.String(20))
+    webhook_base_url = db.Column(db.String(500))
+
+    is_active            = db.Column(db.Boolean, default=True)
+    automation_enabled   = db.Column(db.Boolean, default=True)
+    ai_mode              = db.Column(db.String(20), default="off")   # off | assist | auto
+    ai_system_prompt     = db.Column(db.Text)
+    missed_call_text     = db.Column(db.Text, default="Sorry we missed your call! Reply to schedule a callback.")
+    after_hours_text     = db.Column(db.Text, default="Thanks for reaching out! Our team is currently away. We'll reply during business hours.")
+    sms_forward_to       = db.Column(db.String(20))   # Forward all inbound SMS to this number
+    call_forward_to      = db.Column(db.String(20))   # Forward all inbound calls to this number
+
+    # Routing feature toggles
+    sms_forwarding_enabled       = db.Column(db.Boolean, default=True,  server_default="true")
+    voice_forwarding_enabled     = db.Column(db.Boolean, default=True,  server_default="true")
+    after_hours_sms_enabled      = db.Column(db.Boolean, default=True,  server_default="true")
+    after_hours_voicemail_enabled = db.Column(db.Boolean, default=True, server_default="true")
+
+    # Voicemail
+    voicemail_greeting_text      = db.Column(db.Text)
+    voicemail_greeting_audio_url = db.Column(db.String(500), nullable=True)
+
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    company = db.relationship("Company", backref=db.backref("twilio_account", uselist=False))
+
+    def set_account_sid(self, sid: str):
+        if not sid:
+            self._account_sid = None
+            return
+        try:
+            from services.secret_vault import vault
+            self._account_sid = vault.encrypt(sid)
+        except Exception:
+            self._account_sid = sid
+
+    def get_account_sid(self) -> str:
+        if not self._account_sid:
+            return None
+        try:
+            from services.secret_vault import vault
+            return vault.decrypt(self._account_sid)
+        except Exception:
+            return self._account_sid
+
+    def set_auth_token(self, token: str):
+        if not token:
+            self._auth_token = None
+            return
+        try:
+            from services.secret_vault import vault
+            self._auth_token = vault.encrypt(token)
+        except Exception:
+            self._auth_token = token
+
+    def get_auth_token(self) -> str:
+        if not self._auth_token:
+            return None
+        try:
+            from services.secret_vault import vault
+            return vault.decrypt(self._auth_token)
+        except Exception:
+            return self._auth_token
+
+    @property
+    def is_configured(self) -> bool:
+        return bool(self._account_sid and self._auth_token and
+                    (self.messaging_service_sid or self.from_phone))
+
+
+class TwilioConversation(db.Model):
+    """One thread per (company, external phone number)."""
+    __tablename__ = "twilio_conversation"
+
+    id = db.Column(db.Integer, primary_key=True)
+    company_id      = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=False)
+    contact_id      = db.Column(db.Integer, db.ForeignKey("contact.id"), nullable=True)
+    from_number     = db.Column(db.String(20), nullable=False)
+    to_number       = db.Column(db.String(20))
+    contact_name    = db.Column(db.String(200))
+    is_read         = db.Column(db.Boolean, default=False)
+    is_opted_out    = db.Column(db.Boolean, default=False)
+    sms_opt_in_at   = db.Column(db.DateTime, nullable=True)
+    sms_opt_out_at  = db.Column(db.DateTime, nullable=True)
+    is_first_contact = db.Column(db.Boolean, default=True)
+    lead_captured   = db.Column(db.Boolean, default=False)
+    tags            = db.Column(JSON, default=list)
+    notes           = db.Column(db.Text)
+    assigned_user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True)
+    last_message_at = db.Column(db.DateTime)
+    last_message_preview = db.Column(db.String(200))
+    message_count   = db.Column(db.Integer, default=0)
+    created_at      = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at      = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    messages = db.relationship(
+        "TwilioMessage", backref="conversation", lazy="dynamic",
+        order_by="TwilioMessage.created_at", cascade="all, delete-orphan"
+    )
+    company  = db.relationship("Company", backref="twilio_conversations")
+    contact  = db.relationship("Contact", backref="twilio_conversations")
+
+    __table_args__ = (
+        db.UniqueConstraint("company_id", "from_number", name="uq_twilio_conv_company_from"),
+    )
+
+
+class TwilioMessage(db.Model):
+    """Individual SMS message (inbound or outbound)."""
+    __tablename__ = "twilio_message"
+
+    id              = db.Column(db.Integer, primary_key=True)
+    conversation_id = db.Column(db.Integer, db.ForeignKey("twilio_conversation.id"), nullable=False)
+    company_id      = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=False)
+    twilio_sid      = db.Column(db.String(100), unique=True, nullable=True)
+    direction       = db.Column(db.String(10), nullable=False)   # inbound | outbound
+    from_number     = db.Column(db.String(20))
+    to_number       = db.Column(db.String(20))
+    body            = db.Column(db.Text)
+    status          = db.Column(db.String(50), default="received")
+    num_segments    = db.Column(db.Integer, default=1)
+    media_urls      = db.Column(JSON)
+    is_auto_reply   = db.Column(db.Boolean, default=False)
+    rule_id         = db.Column(db.Integer, db.ForeignKey("auto_reply_rule.id"), nullable=True)
+    error_code      = db.Column(db.String(20))
+    error_message   = db.Column(db.Text)
+    raw_payload     = db.Column(JSON)
+    created_at      = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at      = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class AutoReplyRule(db.Model):
+    """Keyword- and schedule-based auto-reply rules per company."""
+    __tablename__ = "auto_reply_rule"
+
+    id           = db.Column(db.Integer, primary_key=True)
+    company_id   = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=False)
+    name         = db.Column(db.String(200), nullable=False)
+    trigger_type = db.Column(db.String(50))
+    # keyword_contains | keyword_exact | first_contact | after_hours | always | stop_keyword
+    keywords     = db.Column(JSON, default=list)
+    response     = db.Column(db.Text)
+    is_active    = db.Column(db.Boolean, default=True)
+    priority     = db.Column(db.Integer, default=0)
+    action       = db.Column(db.String(50), default="reply")  # reply | forward | opt_out | tag
+    forward_to   = db.Column(db.String(200))
+    tag_value    = db.Column(db.String(100))
+    match_count  = db.Column(db.Integer, default=0)
+    active_days  = db.Column(JSON)           # [0,1,2,3,4] = Mon-Fri
+    active_hours_start = db.Column(db.String(5))   # "09:00"
+    active_hours_end   = db.Column(db.String(5))   # "17:00"
+    created_at   = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at   = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    company = db.relationship("Company", backref="auto_reply_rules")
+
+
+class BusinessHours(db.Model):
+    """Per-company business hours (one row per day of week)."""
+    __tablename__ = "business_hours"
+
+    id           = db.Column(db.Integer, primary_key=True)
+    company_id   = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=False)
+    day_of_week  = db.Column(db.Integer)    # 0=Mon … 6=Sun
+    is_open      = db.Column(db.Boolean, default=True)
+    open_time    = db.Column(db.String(5), default="09:00")
+    close_time   = db.Column(db.String(5), default="17:00")
+    timezone     = db.Column(db.String(50), default="America/Chicago")
+
+    company = db.relationship("Company", backref="business_hours")
+
+    __table_args__ = (
+        db.UniqueConstraint("company_id", "day_of_week", name="uq_biz_hours_company_day"),
+    )
+
+
+class TwilioCallLog(db.Model):
+    """Inbound and outbound call records."""
+    __tablename__ = "twilio_call_log"
+
+    id           = db.Column(db.Integer, primary_key=True)
+    company_id   = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=False)
+    twilio_sid   = db.Column(db.String(100))
+    direction    = db.Column(db.String(20))     # inbound | outbound
+    from_number  = db.Column(db.String(20))
+    to_number    = db.Column(db.String(20))
+    status       = db.Column(db.String(50))     # completed | missed | no-answer | busy | failed
+    duration     = db.Column(db.Integer, default=0)
+    caller_name  = db.Column(db.String(200))
+    notes        = db.Column(db.Text)
+    missed_text_sent = db.Column(db.Boolean, default=False)
+    raw_payload  = db.Column(JSON)
+    created_at   = db.Column(db.DateTime, default=datetime.utcnow)
+
+    company = db.relationship("Company", backref="twilio_call_logs")
+
+
+# ---------------------------------------------------------------------------
+# SaaS Command Center
+# ---------------------------------------------------------------------------
+
+class SaasLicense(db.Model):
+    """One license record per app per company (LUXit, MyPayLink, MyOrder, etc.)."""
+    __tablename__ = "saas_license"
+
+    id                = db.Column(db.Integer, primary_key=True)
+    company_id        = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=False)
+    app_name          = db.Column(db.String(100), nullable=False)
+    plan              = db.Column(db.String(50))
+    status            = db.Column(db.String(50), default="trial")   # trial | active | past_due | suspended | canceled
+    start_date        = db.Column(db.DateTime)
+    renewal_date      = db.Column(db.DateTime)
+    tenant_url        = db.Column(db.String(255))
+    enabled_features  = db.Column(JSON)
+    stripe_product_id = db.Column(db.String(100))
+    stripe_price_id   = db.Column(db.String(100))
+    notes             = db.Column(db.Text)
+    created_at        = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at        = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    company = db.relationship("Company", backref="saas_licenses")
+
+
+class CustomerOnboardingProject(db.Model):
+    """Customer-facing onboarding project created when a deal is won."""
+    __tablename__ = "customer_onboarding_project"
+
+    id           = db.Column(db.Integer, primary_key=True)
+    company_id   = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=False)
+    contact_id   = db.Column(db.Integer, db.ForeignKey("contact.id"), nullable=True)
+    deal_id      = db.Column(db.Integer, db.ForeignKey("deal.id"),    nullable=True)
+    title        = db.Column(db.String(255))
+    status       = db.Column(db.String(50), default="pending")   # pending | in_progress | completed | blocked
+    due_date     = db.Column(db.DateTime)
+    completed_at = db.Column(db.DateTime)
+    notes        = db.Column(db.Text)
+    created_at   = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at   = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    company_ref = db.relationship("Company", backref="onboarding_projects")
+    contact     = db.relationship("Contact", backref="onboarding_projects")
+    deal        = db.relationship("Deal",    backref="onboarding_projects")
+
+
+class CustomerOnboardingTask(db.Model):
+    """Individual checklist task inside a CustomerOnboardingProject."""
+    __tablename__ = "customer_onboarding_task"
+
+    id           = db.Column(db.Integer, primary_key=True)
+    project_id   = db.Column(db.Integer, db.ForeignKey("customer_onboarding_project.id"), nullable=False)
+    company_id   = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=False)
+    title        = db.Column(db.String(255), nullable=False)
+    description  = db.Column(db.Text)
+    status       = db.Column(db.String(50), default="pending")
+    assigned_to  = db.Column(db.String(100))
+    due_date     = db.Column(db.DateTime)
+    completed_at = db.Column(db.DateTime)
+    sort_order   = db.Column(db.Integer, default=0)
+    notes        = db.Column(db.Text)
+    created_at   = db.Column(db.DateTime, default=datetime.utcnow)
+
+    project = db.relationship("CustomerOnboardingProject", backref="tasks")
+
+
+# ============================================================
+# Integration Layer Models
+# ============================================================
+
+class IntegrationConnection(db.Model):
+    """Platform-level or company-level integration connection record."""
+    __tablename__ = "integration_connection"
+
+    id             = db.Column(db.Integer, primary_key=True)
+    company_id     = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=True, index=True)
+    provider       = db.Column(db.String(50), nullable=False, index=True)
+    status         = db.Column(db.String(30), default="unknown")  # connected|missing_config|error|disabled
+    enabled        = db.Column(db.Boolean, default=True)
+    config_json    = db.Column(db.Text)
+    last_tested_at = db.Column(db.DateTime, nullable=True)
+    last_success_at= db.Column(db.DateTime, nullable=True)
+    last_error     = db.Column(db.Text, nullable=True)
+    created_at     = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at     = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    __table_args__ = (
+        db.UniqueConstraint("company_id", "provider", name="uq_integration_connection_company_provider"),
+    )
+
+
+class IntegrationEvent(db.Model):
+    """Log of inbound/outbound integration events (webhooks, API calls)."""
+    __tablename__ = "integration_event"
+
+    id           = db.Column(db.Integer, primary_key=True)
+    company_id   = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=True, index=True)
+    provider     = db.Column(db.String(50), nullable=False, index=True)
+    event_type   = db.Column(db.String(100))
+    external_id  = db.Column(db.String(255), nullable=True)
+    payload_json = db.Column(db.Text)
+    status       = db.Column(db.String(30), default="received")  # received|processed|failed
+    created_at   = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class IntegrationErrorLog(db.Model):
+    """Safe error log — never stores secrets, only sanitised details."""
+    __tablename__ = "integration_error_log"
+
+    id               = db.Column(db.Integer, primary_key=True)
+    company_id       = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=True, index=True)
+    provider         = db.Column(db.String(50), nullable=False, index=True)
+    endpoint         = db.Column(db.String(255))
+    error_message    = db.Column(db.Text)
+    safe_details_json= db.Column(db.Text)
+    created_at       = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class ExternalSyncRecord(db.Model):
+    """Tracks bidirectional sync state between LUXit entities and external systems."""
+    __tablename__ = "external_sync_record"
+
+    id                = db.Column(db.Integer, primary_key=True)
+    company_id        = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=True, index=True)
+    provider          = db.Column(db.String(50), nullable=False, index=True)
+    local_entity_type = db.Column(db.String(100))
+    local_entity_id   = db.Column(db.String(100))
+    external_entity_id= db.Column(db.String(255))
+    last_synced_at    = db.Column(db.DateTime, nullable=True)
+    sync_status       = db.Column(db.String(30), default="pending")  # pending|synced|failed
+    metadata_json     = db.Column(db.Text)
+    created_at        = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class SaasAutomationLog(db.Model):
+    """Audit trail for Stripe webhooks, n8n triggers, and manual actions.
+
+    For Stripe events, `stripe_event_id` is unique and indexed so we can
+    reject duplicate webhook deliveries idempotently.
+    """
+    __tablename__ = "saas_automation_log"
+
+    id              = db.Column(db.Integer, primary_key=True)
+    company_id      = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=True)
+    event_type      = db.Column(db.String(100))
+    source          = db.Column(db.String(50))   # stripe | n8n | manual | system
+    stripe_event_id = db.Column(db.String(120), unique=True, index=True, nullable=True)
+    customer_id     = db.Column(db.String(120), index=True, nullable=True)
+    subscription_id = db.Column(db.String(120), index=True, nullable=True)
+    payload         = db.Column(JSON)
+    status          = db.Column(db.String(50), default="success")   # success | failed | skipped | duplicate
+    error           = db.Column(db.Text)
+    received_at     = db.Column(db.DateTime, default=datetime.utcnow)
+    processed_at    = db.Column(db.DateTime, nullable=True)
+    created_at      = db.Column(db.DateTime, default=datetime.utcnow)
+
+    company = db.relationship("Company", backref="automation_logs")
+
+
+class PushSubscription(db.Model):
+    """Web Push API subscription per user/device for inbox notifications."""
+    __tablename__ = "push_subscription"
+
+    id         = db.Column(db.Integer, primary_key=True)
+    user_id    = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=False)
+    endpoint   = db.Column(db.Text, nullable=False, unique=True)
+    p256dh     = db.Column(db.Text)
+    auth_key   = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    user    = db.relationship("User",    backref="push_subscriptions")
+    company = db.relationship("Company", backref="push_subscriptions")
+
+
+class GoogleOAuthToken(db.Model):
+    """Stores Google OAuth tokens per user for Contacts sync."""
+    __tablename__ = "google_oauth_token"
+
+    id             = db.Column(db.Integer, primary_key=True)
+    user_id        = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, unique=True)
+    access_token   = db.Column(db.Text)
+    refresh_token  = db.Column(db.Text)
+    token_expiry   = db.Column(db.DateTime, nullable=True)
+    last_sync_at   = db.Column(db.DateTime, nullable=True)
+    contacts_synced = db.Column(db.Integer, default=0)
+    created_at     = db.Column(db.DateTime, default=datetime.utcnow)
+
+    user = db.relationship("User", backref=db.backref("google_oauth_token", uselist=False))

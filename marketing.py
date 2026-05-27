@@ -1,12 +1,15 @@
 """Marketing site routes."""
 import logging
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 
-from flask import Blueprint, abort, flash, redirect, render_template, url_for, make_response, request
+from flask import Blueprint, abort, flash, redirect, render_template, url_for, make_response, request, jsonify
 from flask_login import current_user
+from extensions import csrf
 
 logger = logging.getLogger(__name__)
+
+VALID_LICENSE_PLANS = {'starter', 'professional', 'enterprise'}
 
 marketing_bp = Blueprint("marketing", __name__, template_folder="marketing/templates")
 
@@ -398,6 +401,66 @@ INDUSTRIES = [
             {"q": "Can I track which content drives conversions or subscriptions?", "a": "Yes. Every content piece is tracked with UTM parameters and tied back to subscriber acquisition, upgrade, or purchase events."},
         ],
     },
+    {
+        "slug": "customer-service",
+        "name": "Customer Service",
+        "tagline": "Delight customers faster with AI-powered support workflows and proactive outreach.",
+        "bullets": [
+            "AI-powered ticket routing and auto-responses",
+            "Customer health scoring based on support history and sentiment",
+            "Proactive outreach campaigns triggered by negative interactions",
+            "Self-service knowledge base with AI-generated FAQ content",
+            "CSAT, NPS, and first-response-time tracking dashboards",
+            "Escalation workflows with team assignment and SLA alerts",
+        ],
+        "testimonial": "Our average response time dropped from 4 hours to 12 minutes after deploying LUX IT's AI support agent. Customer satisfaction is at an all-time high.",
+        "testimonial_author": "Director of Support, SaaS Platform",
+        "faqs": [
+            {"q": "Can the AI handle customer inquiries automatically?", "a": "Yes. The Customer Support Agent resolves common questions instantly using your knowledge base and past ticket data. Complex issues are escalated to your team with full context."},
+            {"q": "Does it integrate with existing helpdesk tools?", "a": "LUX IT can replace or complement your existing helpdesk. Import tickets via CSV or connect via API for a hybrid approach."},
+            {"q": "How does proactive outreach work?", "a": "When a customer has a negative support interaction, LUX IT automatically triggers a follow-up campaign — apology, discount, or check-in — to recover the relationship."},
+        ],
+    },
+    {
+        "slug": "retail",
+        "name": "Retail",
+        "tagline": "Drive foot traffic, grow online sales, and turn one-time buyers into loyal repeat customers.",
+        "bullets": [
+            "Omnichannel campaigns — email, SMS, social, and in-store promotions",
+            "Loyalty program automation with points, tiers, and rewards",
+            "Seasonal and flash sale campaign builder with AI-generated copy",
+            "Customer segmentation by purchase history, location, and behavior",
+            "Inventory-aware promotions — promote what you need to move",
+            "Store-level analytics with foot traffic and conversion attribution",
+        ],
+        "testimonial": "LUX IT helped us launch a loyalty program in a week that increased repeat purchases by 38%. The seasonal campaign AI saves us days of creative work.",
+        "testimonial_author": "Marketing Manager, Multi-Location Retail Brand",
+        "faqs": [
+            {"q": "Does LUX IT work for brick-and-mortar stores?", "a": "Yes. Run location-targeted SMS and email campaigns, promote in-store events, and track foot traffic attribution alongside digital metrics."},
+            {"q": "Can I run a loyalty program through LUX IT?", "a": "Yes. Build points-based, tier-based, or spend-based loyalty programs. Automate reward emails, birthday offers, and VIP campaigns."},
+            {"q": "How does inventory-aware promotion work?", "a": "Connect your POS or inventory system and LUX IT automatically surfaces products that need movement — then generates promotional campaigns to clear them."},
+        ],
+    },
+    {
+        "slug": "restaurants",
+        "name": "Restaurants",
+        "tagline": "Fill tables, grow online orders, and build a loyal customer base — all on autopilot.",
+        "bullets": [
+            "Automated reservation and booking confirmations via SMS and email",
+            "Loyalty and rewards automation for repeat diners",
+            "Menu promotion campaigns with seasonal and limited-time offers",
+            "Review request automation after dining experiences",
+            "Local SEO optimization for Google Maps and search visibility",
+            "Social media content generation — food photography captions, event promos",
+        ],
+        "testimonial": "Our weekday reservations increased 45% after we started using LUX IT's SMS campaigns and review automation. The local SEO tools put us on the map — literally.",
+        "testimonial_author": "Owner, Multi-Location Restaurant Group",
+        "faqs": [
+            {"q": "Can LUX IT send reservation reminders?", "a": "Yes. Automated SMS and email reminders reduce no-shows. Confirmations, reminders, and follow-ups are all handled automatically."},
+            {"q": "How does review automation work?", "a": "After a visit, LUX IT sends a personalized text or email asking for a Google or Yelp review. Positive experiences get review links; negative ones route to your team for recovery."},
+            {"q": "Does it help with local SEO?", "a": "Yes. The SEO Agent optimizes your Google Business Profile, generates local content, tracks keyword rankings, and monitors your visibility on Google Maps."},
+        ],
+    },
 ]
 
 
@@ -529,6 +592,22 @@ def book_demo():
             )
             db.session.add(demo)
             db.session.commit()
+            try:
+                import os
+                n8n_url = os.environ.get("N8N_WEBHOOK_URL")
+                if n8n_url:
+                    import requests as _req
+                    _req.post(n8n_url, json={
+                        "event": "demo_requested",
+                        "email": email,
+                        "name": f"{first_name} {last_name}".strip(),
+                        "company_name": company_name,
+                        "phone": phone,
+                        "team_size": team_size,
+                        "source_page": source_page,
+                    }, timeout=8)
+            except Exception:
+                pass
             return render_template("marketing/demo_success.html", active_page="demo", demo=demo)
         except Exception as e:
             logger.error("Demo request save failed: %s", e)
@@ -537,6 +616,124 @@ def book_demo():
             return redirect(url_for("marketing.book_demo"))
 
     return render_template("marketing/book_demo.html", active_page="demo")
+
+
+@marketing_bp.route("/api/license-request", methods=["POST"])
+@csrf.exempt
+def api_license_request():
+    from extensions import db
+    from models import LicenseRequest
+
+    data = request.get_json(silent=True) or {}
+
+    email = (data.get("email") or "").strip().lower()[:254]
+    first_name = (data.get("first_name") or "").strip()[:100]
+    last_name = (data.get("last_name") or "").strip()[:100]
+    company_name = (data.get("company_name") or "").strip()[:200]
+    plan = (data.get("plan") or "").strip().lower()[:50]
+    message = (data.get("message") or "").strip()[:2000]
+    source_page = (data.get("source_page") or "").strip()[:200]
+
+    if not email or not re.match(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$", email):
+        return jsonify({"success": False, "message": "Please enter a valid email address."}), 400
+
+    if not first_name:
+        return jsonify({"success": False, "message": "First name is required."}), 400
+
+    if plan not in VALID_LICENSE_PLANS:
+        plan = "starter"
+
+    ip_address = request.headers.get("X-Forwarded-For", request.remote_addr)
+    if ip_address and "," in ip_address:
+        ip_address = ip_address.split(",")[0].strip()
+    ip_address = (ip_address or "")[:45]
+    ua = (request.headers.get("User-Agent") or "")[:512]
+
+    try:
+        cutoff = datetime.utcnow() - timedelta(minutes=5)
+        duplicate = LicenseRequest.query.filter(
+            LicenseRequest.email == email,
+            LicenseRequest.plan == plan,
+            LicenseRequest.created_at >= cutoff,
+        ).first()
+
+        if duplicate:
+            return jsonify({
+                "success": True,
+                "message": "Thank you! Your request has been received. Our team will be in touch shortly.",
+            })
+
+        lr = LicenseRequest(
+            email=email,
+            first_name=first_name,
+            last_name=last_name,
+            company_name=company_name,
+            plan=plan,
+            message=message,
+            ip_address=ip_address,
+            user_agent=ua,
+            source_page=source_page,
+        )
+        db.session.add(lr)
+        db.session.commit()
+
+        _send_license_notification_email(lr)
+
+        return jsonify({
+            "success": True,
+            "message": "Thank you! Your request has been received. Our team will be in touch shortly.",
+        })
+
+    except Exception as e:
+        db.session.rollback()
+        logger.error("License request error: %s", e)
+        return jsonify({
+            "success": False,
+            "message": "Something went wrong. Please try again or contact us directly.",
+        }), 500
+
+
+def _send_license_notification_email(lr):
+    """Best-effort SMTP notification to admin. Failures are logged, not raised."""
+    import os
+    import smtplib
+    from email.mime.text import MIMEText
+
+    smtp_host = os.environ.get("SMTP_HOST")
+    smtp_user = os.environ.get("SMTP_USER")
+    smtp_pass = os.environ.get("SMTP_PASS")
+    notify_to = os.environ.get("LICENSE_NOTIFY_EMAIL", "luke@adiken.com")
+
+    if not all([smtp_host, smtp_user, smtp_pass]):
+        logger.debug("SMTP not configured — skipping license notification email")
+        return
+
+    try:
+        body = (
+            f"New License Request\n"
+            f"{'='*40}\n"
+            f"Plan: {lr.plan}\n"
+            f"Name: {lr.first_name} {lr.last_name}\n"
+            f"Email: {lr.email}\n"
+            f"Company: {lr.company_name or 'N/A'}\n"
+            f"Message: {lr.message or 'N/A'}\n"
+            f"Source: {lr.source_page or 'N/A'}\n"
+            f"IP: {lr.ip_address or 'N/A'}\n"
+            f"Time: {lr.created_at}\n"
+        )
+        msg = MIMEText(body)
+        msg["Subject"] = f"[LUX IT] New License Request — {lr.plan.title()}"
+        msg["From"] = smtp_user
+        msg["To"] = notify_to
+
+        port = int(os.environ.get("SMTP_PORT", 587))
+        with smtplib.SMTP(smtp_host, port, timeout=10) as server:
+            server.starttls()
+            server.login(smtp_user, smtp_pass)
+            server.send_message(msg)
+        logger.info("License notification sent for %s", lr.email)
+    except Exception as e:
+        logger.warning("License notification email failed (best-effort): %s", e)
 
 
 @marketing_bp.route("/robots.txt")

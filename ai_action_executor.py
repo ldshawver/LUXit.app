@@ -7,7 +7,7 @@ import os
 import json
 from datetime import datetime
 from extensions import db
-from models import Company, CompanySecret
+from models import Company, CompanySecret   # CompanySecret used in get_company_secrets
 from error_logger import ErrorLog
 
 logger = logging.getLogger(__name__)
@@ -63,7 +63,7 @@ class AIActionExecutor:
             for secret_key in secrets_list:
                 value = os.getenv(secret_key)
                 if value:
-                    company.set_secret(secret_key, value)
+                    company.set_secret(secret_key, value)   # encrypts + upserts
                     added.append(secret_key)
                 else:
                     skipped.append(secret_key)

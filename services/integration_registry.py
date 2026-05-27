@@ -307,6 +307,133 @@ class IntegrationServiceRegistry:
                     'required': True
                 }
             }
+        },
+
+        'stripe': {
+            'slug': 'stripe',
+            'display_name': 'Stripe',
+            'category': 'Billing & Payments',
+            'icon': 'credit-card',
+            'description': 'Stripe subscription billing and payment processing',
+            'config_fields': {
+                'publishable_key': {
+                    'label': 'Publishable Key',
+                    'type': 'text',
+                    'placeholder': 'pk_live_...',
+                    'required': False,
+                    'help_text': 'Used in frontend for checkout'
+                },
+                'webhook_endpoint': {
+                    'label': 'Webhook Endpoint',
+                    'type': 'text',
+                    'placeholder': 'https://luxit.app/api/stripe/webhook',
+                    'required': False,
+                    'help_text': 'Register this URL in your Stripe dashboard'
+                }
+            },
+            'secret_fields': {
+                'secret_key': {
+                    'label': 'Secret Key',
+                    'type': 'password',
+                    'placeholder': 'sk_live_...',
+                    'required': True,
+                    'help_text': 'Your Stripe secret key'
+                },
+                'webhook_secret': {
+                    'label': 'Webhook Signing Secret',
+                    'type': 'password',
+                    'placeholder': 'whsec_...',
+                    'required': False,
+                    'help_text': 'From Stripe webhook dashboard — used to verify incoming events'
+                }
+            }
+        },
+
+        'supabase': {
+            'slug': 'supabase',
+            'display_name': 'Supabase',
+            'category': 'Database & Auth',
+            'icon': 'database',
+            'description': 'Supabase user identity and tenant database',
+            'config_fields': {
+                'project_url': {
+                    'label': 'Project URL',
+                    'type': 'url',
+                    'placeholder': 'https://xxxx.supabase.co',
+                    'required': True,
+                    'help_text': 'Your Supabase project URL'
+                }
+            },
+            'secret_fields': {
+                'anon_key': {
+                    'label': 'Anon / Public Key',
+                    'type': 'password',
+                    'required': False,
+                    'help_text': 'Safe to use in frontend'
+                },
+                'service_role_key': {
+                    'label': 'Service Role Key',
+                    'type': 'password',
+                    'required': True,
+                    'help_text': 'Keep secret — used for server-side tenant management'
+                }
+            }
+        },
+
+        'n8n': {
+            'slug': 'n8n',
+            'display_name': 'n8n Automation',
+            'category': 'Automation',
+            'icon': 'git-merge',
+            'description': 'n8n workflow automation engine — triggers on LUXit lifecycle events',
+            'config_fields': {
+                'webhook_url': {
+                    'label': 'Webhook URL',
+                    'type': 'url',
+                    'placeholder': 'https://your-n8n.example.com/webhook/luxit',
+                    'required': True,
+                    'help_text': 'The n8n webhook URL that receives LUXit event triggers'
+                }
+            },
+            'secret_fields': {
+                'api_key': {
+                    'label': 'API Key (optional)',
+                    'type': 'password',
+                    'required': False,
+                    'help_text': 'n8n API key for authenticated webhook calls'
+                }
+            }
+        },
+
+        'mypaylink': {
+            'slug': 'mypaylink',
+            'display_name': 'MyPayLink',
+            'category': 'Billing & Payments',
+            'icon': 'link',
+            'description': 'MyPayLink payment links, payroll, and payout management',
+            'config_fields': {
+                'api_url': {
+                    'label': 'API Base URL',
+                    'type': 'url',
+                    'placeholder': 'https://app.mypaylink.app/api',
+                    'required': True,
+                    'help_text': 'MyPayLink API base URL'
+                },
+                'account_id': {
+                    'label': 'Account ID',
+                    'type': 'text',
+                    'required': False,
+                    'help_text': 'Your MyPayLink account identifier'
+                }
+            },
+            'secret_fields': {
+                'api_key': {
+                    'label': 'API Key',
+                    'type': 'password',
+                    'required': True,
+                    'help_text': 'Your MyPayLink API key'
+                }
+            }
         }
     }
     

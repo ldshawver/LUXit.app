@@ -1,4 +1,4 @@
-{% extends "base_simple.html" %}
+{% extends "base.html" %}
 
 {% block title %}Advertising & Demand Gen Agent - LUX IT{% endblock %}
 
@@ -10,7 +10,7 @@
 <style>
   .agent-header {
     background: linear-gradient(135deg, #1a1a2e 0%, #0f0f23 100%);
-    border: 2px solid #f59e0b;
+    border: 2px solid rgba(168,85,247,0.4);
     border-radius: 16px;
     padding: 2rem;
     margin-bottom: 2rem;
@@ -18,7 +18,7 @@
   .agent-avatar {
     width: 80px;
     height: 80px;
-    background: linear-gradient(135deg, #f59e0b, #d97706);
+    background: linear-gradient(135deg, #a855f7, #7c3aed);
     border-radius: 50%;
     display: flex;
     align-items: center;
@@ -50,8 +50,8 @@
   .specialization-tag {
     display: inline-block;
     padding: 6px 14px;
-    background: rgba(245, 158, 11, 0.15);
-    color: #f59e0b;
+    background: rgba(168, 85, 247, 0.15);
+    color: #a855f7;
     border-radius: 20px;
     font-size: 0.85rem;
     margin: 4px;
@@ -71,19 +71,19 @@
     margin-right: 12px;
   }
   .status-dot.connected { background: #10b981; }
-  .status-dot.pending { background: #f59e0b; }
+  .status-dot.pending { background: #a855f7; }
   .status-dot.not-configured { background: #6b7280; }
   .task-item {
     padding: 12px 16px;
     background: rgba(255,255,255,0.03);
     border-radius: 8px;
     margin-bottom: 8px;
-    border-left: 3px solid #f59e0b;
+    border-left: 3px solid #a855f7;
   }
   .suggestion-item {
     padding: 16px;
-    background: linear-gradient(135deg, rgba(245, 158, 11, 0.1), rgba(217, 119, 6, 0.05));
-    border: 1px solid rgba(245, 158, 11, 0.3);
+    background: linear-gradient(135deg, rgba(168, 85, 247, 0.08), rgba(124, 58, 237, 0.04));
+    border: 1px solid rgba(168, 85, 247, 0.2);
     border-radius: 8px;
     margin-bottom: 12px;
   }
@@ -93,7 +93,7 @@
     background: rgba(255,255,255,0.03);
     border-radius: 12px;
   }
-  .metric-value { font-size: 2rem; font-weight: 700; color: #f59e0b; }
+  .metric-value { font-size: 2rem; font-weight: 700; color: #00e5ff; }
   .metric-label { color: #9ca3af; font-size: 0.85rem; }
   .implementation-item {
     display: flex;
@@ -104,7 +104,7 @@
   }
   .implementation-item:last-child { border-bottom: none; }
   .check-icon { color: #10b981; flex-shrink: 0; }
-  .pending-icon { color: #f59e0b; flex-shrink: 0; }
+  .pending-icon { color: #a855f7; flex-shrink: 0; }
   .coming-icon { color: #8b5cf6; flex-shrink: 0; }
   .ad-type-card {
     background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
@@ -115,10 +115,10 @@
   }
   .ad-type-card:hover {
     transform: translateY(-5px);
-    box-shadow: 0 15px 35px rgba(245, 158, 11, 0.2);
+    box-shadow: 0 15px 35px rgba(168, 85, 247, 0.15);
   }
   .ad-type-card.display { border-color: #3b82f6; }
-  .ad-type-card.search { border-color: #f59e0b; }
+  .ad-type-card.search { border-color: #a855f7; }
   .ad-type-card.shopping { border-color: #10b981; }
   .ad-type-card.press { border-color: #8b5cf6; }
   .automation-item {
@@ -143,11 +143,11 @@
     padding: 12px 20px;
   }
   .nav-tabs .nav-link.active {
-    color: #f59e0b;
-    background: rgba(245, 158, 11, 0.1);
-    border-bottom: 2px solid #f59e0b;
+    color: #a855f7;
+    background: rgba(168, 85, 247, 0.1);
+    border-bottom: 2px solid #a855f7;
   }
-  .nav-tabs .nav-link:hover { color: #f59e0b; }
+  .nav-tabs .nav-link:hover { color: #a855f7; }
 </style>
 
 <div class="container-fluid" style="background: #000000; min-height: 100vh; padding: 2rem;">
@@ -205,7 +205,7 @@
         <div class="col-lg-4 mb-4">
           <div class="section-card h-100">
             <div class="section-header">
-              <h5 class="mb-0"><i data-feather="target" class="me-2" style="color: #f59e0b;"></i> Key Specializations</h5>
+              <h5 class="mb-0"><i data-feather="target" class="me-2" style="color: #a855f7;"></i> Key Specializations</h5>
             </div>
             <div class="section-body">
               <div class="specialization-tag">Google Ads Management</div>
@@ -227,7 +227,7 @@
         <div class="col-lg-4 mb-4">
           <div class="section-card h-100">
             <div class="section-header">
-              <h5 class="mb-0"><i data-feather="list" class="me-2" style="color: #f59e0b;"></i> Agent Tasks</h5>
+              <h5 class="mb-0"><i data-feather="list" class="me-2" style="color: #a855f7;"></i> Agent Tasks</h5>
             </div>
             <div class="section-body">
               <div class="task-item">
@@ -265,7 +265,7 @@
         <div class="col-lg-4 mb-4">
           <div class="section-card h-100">
             <div class="section-header">
-              <h5 class="mb-0"><i data-feather="zap" class="me-2" style="color: #f59e0b;"></i> AI Suggestions</h5>
+              <h5 class="mb-0"><i data-feather="zap" class="me-2" style="color: #a855f7;"></i> AI Suggestions</h5>
               <button class="btn btn-sm btn-outline-warning" onclick="refreshSuggestions()">Refresh</button>
             </div>
             <div class="section-body" id="suggestionsContainer">
@@ -280,7 +280,7 @@
               </div>
               <div class="suggestion-item">
                 <div class="d-flex align-items-start">
-                  <i data-feather="alert-triangle" class="me-3" style="color: #f59e0b;"></i>
+                  <i data-feather="alert-triangle" class="me-3" style="color: #a855f7;"></i>
                   <div>
                     <strong>Pause Underperforming Ads</strong>
                     <p class="mb-0 text-muted small">3 display ads with CTR below 0.5%. Recommend pausing.</p>
@@ -304,26 +304,26 @@
       <div class="row mb-4">
         <div class="col-md-3">
           <div class="metric-card">
-            <div class="metric-value">12</div>
+            <div class="metric-value">{{ active_count or 0 }}</div>
             <div class="metric-label">Active Campaigns</div>
           </div>
         </div>
         <div class="col-md-3">
           <div class="metric-card">
-            <div class="metric-value">$4,532</div>
-            <div class="metric-label">Monthly Spend</div>
+            <div class="metric-value">${{ "%.0f"|format(total_spend) }}</div>
+            <div class="metric-label">Total Ad Spend</div>
           </div>
         </div>
         <div class="col-md-3">
           <div class="metric-card">
-            <div class="metric-value">3.8x</div>
+            <div class="metric-value">{{ roas or 0 }}x</div>
             <div class="metric-label">Average ROAS</div>
           </div>
         </div>
         <div class="col-md-3">
           <div class="metric-card">
-            <div class="metric-value">256K</div>
-            <div class="metric-label">Total Impressions</div>
+            <div class="metric-value">${{ "%.0f"|format(total_revenue) }}</div>
+            <div class="metric-label">Revenue Generated</div>
           </div>
         </div>
       </div>
@@ -348,7 +348,7 @@
         <div class="col-md-6 col-lg-3">
           <div class="card ad-type-card search">
             <div class="card-body text-center p-4">
-              <i data-feather="search" class="mb-3" style="width: 48px; height: 48px; color: #f59e0b;"></i>
+              <i data-feather="search" class="mb-3" style="width: 48px; height: 48px; color: #a855f7;"></i>
               <h5>Search Ads</h5>
               <p class="text-muted small">Text ads appearing in Google search results</p>
               <div class="mb-3">
@@ -390,7 +390,7 @@
 
       <div class="section-card">
         <div class="section-header">
-          <h5 class="mb-0"><i data-feather="cpu" class="me-2" style="color: #f59e0b;"></i> AI Campaign Generator</h5>
+          <h5 class="mb-0"><i data-feather="cpu" class="me-2" style="color: #a855f7;"></i> AI Campaign Generator</h5>
         </div>
         <div class="section-body">
           <div class="row">
@@ -475,36 +475,36 @@
                 </tr>
               </thead>
               <tbody>
-                <tr>
-                  <td>Summer Sale 2024</td>
-                  <td><span class="badge bg-primary">Display</span></td>
-                  <td><span class="badge bg-success">Active</span></td>
-                  <td>125,430</td>
-                  <td>3,421</td>
-                  <td>$842</td>
-                  <td>4.2x</td>
-                  <td><button class="btn btn-sm btn-outline-primary">Edit</button></td>
-                </tr>
-                <tr>
-                  <td>Black Friday</td>
-                  <td><span class="badge bg-warning text-dark">Search</span></td>
-                  <td><span class="badge bg-success">Active</span></td>
-                  <td>89,234</td>
-                  <td>5,612</td>
-                  <td>$1,234</td>
-                  <td>5.1x</td>
-                  <td><button class="btn btn-sm btn-outline-primary">Edit</button></td>
-                </tr>
-                <tr>
-                  <td>New Product Launch</td>
-                  <td><span class="badge bg-success">Shopping</span></td>
-                  <td><span class="badge bg-secondary">Paused</span></td>
-                  <td>42,156</td>
-                  <td>1,823</td>
-                  <td>$623</td>
-                  <td>3.3x</td>
-                  <td><button class="btn btn-sm btn-outline-primary">Edit</button></td>
-                </tr>
+                {% if campaigns %}
+                  {% for c in campaigns %}
+                  <tr>
+                    <td>{{ c.name }}</td>
+                    <td><span class="badge bg-primary">{{ c.utm_keyword or 'Campaign' }}</span></td>
+                    <td>
+                      {% if c.status == 'active' %}
+                        <span class="badge bg-success">Active</span>
+                      {% elif c.status == 'draft' %}
+                        <span class="badge bg-secondary">Draft</span>
+                      {% elif c.status == 'sent' %}
+                        <span class="badge bg-info">Sent</span>
+                      {% else %}
+                        <span class="badge bg-secondary">{{ c.status or 'Draft' }}</span>
+                      {% endif %}
+                    </td>
+                    <td>—</td>
+                    <td>—</td>
+                    <td>${{ "%.0f"|format(campaign_costs.get(c.id, 0)) }}</td>
+                    <td>{% if campaign_costs.get(c.id, 0) > 0 %}{{ "%.1f"|format((c.revenue_generated or 0) / campaign_costs[c.id]) }}x{% else %}—{% endif %}</td>
+                    <td><a href="/campaigns/{{ c.id }}" class="btn btn-sm btn-outline-primary">View</a></td>
+                  </tr>
+                  {% endfor %}
+                {% else %}
+                  <tr>
+                    <td colspan="8" class="text-center py-4 text-muted">
+                      No campaigns yet. Use the AI Campaign Generator above to create your first campaign.
+                    </td>
+                  </tr>
+                {% endif %}
               </tbody>
             </table>
           </div>
@@ -596,7 +596,7 @@
                   <strong>Facebook Marketing API</strong>
                   <div class="text-muted small">Access token needed</div>
                 </div>
-                <i data-feather="alert-circle" style="color: #f59e0b;"></i>
+                <i data-feather="alert-circle" style="color: #a855f7;"></i>
               </div>
               
               <div class="integration-item">
@@ -623,7 +623,7 @@
                 </div>
               </div>
               <div class="integration-item">
-                <i data-feather="edit-3" class="me-3" style="color: #f59e0b;"></i>
+                <i data-feather="edit-3" class="me-3" style="color: #a855f7;"></i>
                 <div class="flex-grow-1">
                   <strong>Creative Agent</strong>
                   <div class="text-muted small">Generates ad visuals & copy</div>
@@ -878,7 +878,7 @@
                   <span class="ms-2">Shopping ads up 23% this week</span>
                 </li>
                 <li class="mb-3">
-                  <i data-feather="award" style="width: 16px; color: #f59e0b;"></i>
+                  <i data-feather="award" style="width: 16px; color: #a855f7;"></i>
                   <span class="ms-2">Best performer: Black Friday</span>
                 </li>
                 <li class="mb-3">
@@ -1017,7 +1017,7 @@
 
           <div class="section-card">
             <div class="section-header">
-              <h5 class="mb-0"><i data-feather="lightbulb" class="me-2" style="color: #f59e0b;"></i> Improvement Ideas</h5>
+              <h5 class="mb-0"><i data-feather="lightbulb" class="me-2" style="color: #a855f7;"></i> Improvement Ideas</h5>
             </div>
             <div class="section-body">
               <div class="suggestion-item">
@@ -1059,7 +1059,7 @@
         container.innerHTML = data.suggestions.map(s => `
           <div class="suggestion-item">
             <div class="d-flex align-items-start">
-              <i data-feather="lightbulb" class="me-3" style="color: #f59e0b;"></i>
+              <i data-feather="lightbulb" class="me-3" style="color: #a855f7;"></i>
               <div>
                 <strong>${s.title || 'Suggestion'}</strong>
                 <p class="mb-0 text-muted small">${s.description || s}</p>

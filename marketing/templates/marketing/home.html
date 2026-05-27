@@ -207,73 +207,64 @@
         <th>HubSpot</th>
         <th>Salesforce</th>
         <th>ActiveCampaign</th>
-        <th></th>
       </tr>
     </thead>
     <tbody>
-      <tr>
-        <td>AI Agents (Autonomous)</td>
+      <tr class="clickable-row" onclick="showDetails('ai-agents')">
+        <td>AI Agents (Autonomous) <span class="row-expand-hint">▸</span></td>
         <td class="highlight"><span class="check">✓ 11 Agents</span></td>
         <td><span class="cross">✗</span></td>
         <td><span class="partial">Limited</span></td>
         <td><span class="cross">✗</span></td>
-        <td><button class="details-btn" onclick="showDetails('ai-agents')">Details</button></td>
       </tr>
-      <tr>
-        <td>Multi-Channel Outreach</td>
+      <tr class="clickable-row" onclick="showDetails('multi-channel')">
+        <td>Multi-Channel Outreach <span class="row-expand-hint">▸</span></td>
         <td class="highlight"><span class="check">✓ All Channels</span></td>
         <td><span class="check">✓</span></td>
         <td><span class="check">✓</span></td>
         <td><span class="partial">Email Only</span></td>
-        <td><button class="details-btn" onclick="showDetails('multi-channel')">Details</button></td>
       </tr>
-      <tr>
-        <td>White-Label / Licensable</td>
+      <tr class="clickable-row" onclick="showDetails('white-label')">
+        <td>White-Label / Licensable <span class="row-expand-hint">▸</span></td>
         <td class="highlight"><span class="check">✓ Full</span></td>
         <td><span class="cross">✗</span></td>
         <td><span class="cross">✗</span></td>
         <td><span class="cross">✗</span></td>
-        <td><button class="details-btn" onclick="showDetails('white-label')">Details</button></td>
       </tr>
-      <tr>
-        <td>Approval Workflows</td>
+      <tr class="clickable-row" onclick="showDetails('approval')">
+        <td>Approval Workflows <span class="row-expand-hint">▸</span></td>
         <td class="highlight"><span class="check">✓ Built-in</span></td>
         <td><span class="partial">Add-on</span></td>
         <td><span class="check">✓</span></td>
         <td><span class="cross">✗</span></td>
-        <td><button class="details-btn" onclick="showDetails('approval')">Details</button></td>
       </tr>
-      <tr>
-        <td>Social Media Publishing</td>
+      <tr class="clickable-row" onclick="showDetails('social')">
+        <td>Social Media Publishing <span class="row-expand-hint">▸</span></td>
         <td class="highlight"><span class="check">✓ All Platforms</span></td>
         <td><span class="partial">Limited</span></td>
         <td><span class="cross">✗</span></td>
         <td><span class="cross">✗</span></td>
-        <td><button class="details-btn" onclick="showDetails('social')">Details</button></td>
       </tr>
-      <tr>
-        <td>Analytics & Reporting</td>
+      <tr class="clickable-row" onclick="showDetails('analytics')">
+        <td>Analytics & Reporting <span class="row-expand-hint">▸</span></td>
         <td class="highlight"><span class="check">✓ 10 Categories</span></td>
         <td><span class="check">✓</span></td>
         <td><span class="check">✓</span></td>
         <td><span class="partial">Basic</span></td>
-        <td><button class="details-btn" onclick="showDetails('analytics')">Details</button></td>
       </tr>
-      <tr>
-        <td>CRM & Pipeline</td>
+      <tr class="clickable-row" onclick="showDetails('crm')">
+        <td>CRM & Pipeline <span class="row-expand-hint">▸</span></td>
         <td class="highlight"><span class="check">✓ Full CRM</span></td>
         <td><span class="check">✓</span></td>
         <td><span class="check">✓</span></td>
         <td><span class="partial">Basic</span></td>
-        <td><button class="details-btn" onclick="showDetails('crm')">Details</button></td>
       </tr>
-      <tr>
-        <td>Landing Page Builder</td>
+      <tr class="clickable-row" onclick="showDetails('landing')">
+        <td>Landing Page Builder <span class="row-expand-hint">▸</span></td>
         <td class="highlight"><span class="check">✓ Drag & Drop</span></td>
         <td><span class="check">✓</span></td>
         <td><span class="cross">✗</span></td>
         <td><span class="check">✓</span></td>
-        <td><button class="details-btn" onclick="showDetails('landing')">Details</button></td>
       </tr>
       <tr>
         <td>Starting Price</td>
@@ -281,7 +272,6 @@
         <td>$800/mo</td>
         <td>$1,250/mo</td>
         <td>$149/mo</td>
-        <td></td>
       </tr>
     </tbody>
   </table>
@@ -563,4 +553,5 @@ document.addEventListener('DOMContentLoaded', function() {
   setTimeout(animateChrome, 500);
 });
 </script>
+{% include "marketing/partials/license_modal.html" %}
 {% endblock %}

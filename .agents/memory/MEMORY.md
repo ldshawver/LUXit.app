@@ -1,0 +1,6 @@
+- [Twilio SMS latin-1 bug](twilio-latin1-sanitize.md) — `_sanitize_body` existed in 5 files and used latin-1 encode/decode; all replaced with `.replace("\x00","")`.
+- [After-hours auto-reply engine](twilio-after-hours-rules.md) — rules must be re-sorted with after_hours first before the loop, or priority ordering silences after-hours replies.
+- [PWA bubble multiline rendering](pwa-bubble-whitespace.md) — `white-space: pre-wrap` on `.bubble` + no `\n→<br>` in `esc()` is the correct fix for character-per-line display.
+- [Twilio outbound call flow](twilio-outbound-call.md) — `POST /api/inbox/conversations/<id>/call` in inbox_pwa.py + TwiML bridge at `GET /twilio/voice/outbound-twiml` in twilio_sms.py; forward_to flow calls agent first, TwiML then dials customer.
+- [PWA apiFetch silent failure pattern](pwa-apifetch-silent-failure.md) — missing try/catch in apiFetch + sendMsg causes permanent disabled send button when server returns non-JSON; always wrap fetch + res.json() in try/catch with finally to reset state.
+- [PWA access control: PostHog removed](pwa-access-control.md) — PostHog SMS-features flag must NOT control /app/inbox access; use UserCompanyAccess.has_mobile_inbox_access() instead. Two new columns: can_access_mobile_inbox (default 0) + can_access_full_app (default 1). Migration: scripts/migrate_db.py. API: POST /api/user/<id>/access.

@@ -1,0 +1,282 @@
+{% extends "base.html" %}
+{% block title %}Ticket #{{ ticket.id }} · LUX{% endblock %}
+{% block content %}
+<div class="container py-4">
+  <a href="{% if can_admin %}{{ url_for('feedback.admin_dashboard') }}{% else %}{{ url_for('feedback.my_tickets') }}{% endif %}"
+     class="small text-muted text-decoration-none">&larr; Back</a>
+
+  <div class="d-flex align-items-start mt-2 mb-3 flex-wrap gap-2">
+    <div>
+      <h3 class="mb-1">
+        {{ ticket.title }}
+        {% if ticket.priority_fix %}<span class="badge bg-danger ms-2">PRIORITY</span>{% endif %}
+      </h3>
+      <div class="small text-muted">
+        #{{ ticket.id }} ·
+        <span class="badge
+          {% if ticket.ticket_type == 'bug' %}bg-danger
+          {% elif ticket.ticket_type == 'feature_request' %}bg-primary
+          {% elif ticket.ticket_type == 'ux_issue' %}bg-info text-dark
+          {% elif ticket.ticket_type == 'confused' %}bg-warning text-dark
+          {% else %}bg-secondary{% endif %}" style="font-size:.7rem;">
+          {{ ticket.ticket_type.replace('_', ' ') }}
+        </span>
+        · Submitted {{ ticket.created_at.strftime('%Y-%m-%d %H:%M') }} UTC
+        {% if ticket.user %} by <strong>{{ ticket.user.username or ticket.user.email }}</strong>{% endif %}
+        {% if ticket.company %} · Tenant: {{ ticket.company.name }}{% endif %}
+      </div>
+    </div>
+    <div class="ms-auto d-flex gap-2 flex-wrap align-items-center">
+      {% if ticket.rating %}
+        <span style="color:#fbbf24;font-size:1.1rem;">{{ '★' * ticket.rating }}{{ '☆' * (5 - ticket.rating) }}</span>
+      {% endif %}
+      <span class="badge {% if ticket.severity == 'critical' %}bg-danger{% elif ticket.severity == 'high' %}bg-warning text-dark{% elif ticket.severity == 'low' %}bg-secondary{% else %}bg-info text-dark{% endif %}">
+        {{ ticket.severity }}
+      </span>
+      <span class="badge {% if ticket.status in ('closed','rejected') %}bg-secondary{% elif ticket.status == 'priority_fix' %}bg-danger{% elif ticket.status == 'in_progress' %}bg-info text-dark{% else %}bg-primary{% endif %}">
+        {{ ticket.status.replace('_', ' ') }}
+      </span>
+    </div>
+  </div>
+
+  <div class="row">
+    <div class="col-lg-8">
+
+      {# ── Main description ─────────────────────────────────────────── #}
+      <div class="card mb-3"><div class="card-body">
+        <div class="small text-uppercase text-muted mb-1">Description</div>
+        <div style="white-space:pre-wrap;">{{ ticket.description }}</div>
+
+        {# Meta info ─────────────────────────────────────────────────── #}
+        {% if ticket.page_url %}
+          <div class="small text-muted mt-3">
+            <i data-feather="link" style="width:12px;height:12px;"></i>
+            Page: <code>{{ ticket.page_url }}</code>
+          </div>
+        {% endif %}
+        {% if ticket.user_agent %}
+          <div class="small text-muted mt-1">
+            <i data-feather="monitor" style="width:12px;height:12px;"></i>
+            UA: <code style="font-size:0.7rem;">{{ ticket.user_agent[:300] }}</code>
+          </div>
+        {% endif %}
+        {% if ticket.screen_width and ticket.screen_height %}
+          <div class="small text-muted mt-1">
+            <i data-feather="maximize-2" style="width:12px;height:12px;"></i>
+            Screen: {{ ticket.screen_width }} × {{ ticket.screen_height }}
+          </div>
+        {% endif %}
+        {% if ticket.allow_follow_up is not none %}
+          <div class="small text-muted mt-1">
+            <i data-feather="{% if ticket.allow_follow_up %}check-circle{% else %}x-circle{% endif %}"
+               style="width:12px;height:12px;color:{% if ticket.allow_follow_up %}#00ffb4{% else %}#ff6b9c{% endif %};"></i>
+            Follow-up: {{ 'Allowed' if ticket.allow_follow_up else 'Not requested' }}
+          </div>
+        {% endif %}
+
+        {# PostHog replay link ────────────────────────────────────────── #}
+        {% if ticket.posthog_replay_url %}
+          <div class="mt-3 p-2 rounded" style="background:rgba(124,58,237,.1);border:1px solid rgba(124,58,237,.3);">
+            <div class="small text-muted mb-1">
+              <i data-feather="play-circle" style="width:12px;height:12px;color:#a78bfa;"></i>
+              PostHog Session Replay
+            </div>
+            <a href="{{ ticket.posthog_replay_url }}" target="_blank" rel="noopener"
+               class="btn btn-sm btn-outline-secondary" style="font-size:.8rem;">
+              <i data-feather="external-link" style="width:12px;height:12px;"></i> Open Replay
+            </a>
+            {% if ticket.posthog_session_id %}
+              <code class="small text-muted ms-2" style="font-size:.65rem;">{{ ticket.posthog_session_id }}</code>
+            {% endif %}
+          </div>
+        {% endif %}
+
+        {# Screenshot ────────────────────────────────────────────────── #}
+        {% if ticket.screenshot_path %}
+          {% set _ss = url_for('feedback.screenshot', ticket_id=ticket.id) %}
+          <div class="mt-3">
+            <div class="small text-muted mb-1"><i data-feather="image" style="width:12px;height:12px;"></i> Screenshot</div>
+            <a href="{{ _ss }}" target="_blank">
+              <img src="{{ _ss }}" alt="screenshot"
+                   style="max-width:100%;max-height:360px;border:1px solid rgba(255,255,255,0.1);border-radius:6px;">
+            </a>
+          </div>
+        {% endif %}
+      </div></div>
+
+      {# ── Admin notes (visible to admins) ──────────────────────────── #}
+      {% if can_admin %}
+      <div class="card mb-3"><div class="card-body">
+        <h6 class="mb-2" style="font-size:.85rem;">Admin Notes</h6>
+        <textarea id="adminNotesArea" class="form-control form-control-sm" rows="3"
+                  placeholder="Internal notes (not visible to submitter)…">{{ ticket.admin_notes or '' }}</textarea>
+        <button class="btn btn-sm btn-outline-secondary mt-2" id="saveNotesBtn">Save notes</button>
+        <span id="notesStatus" class="small ms-2"></span>
+      </div></div>
+      {% endif %}
+
+      {# ── Comments ─────────────────────────────────────────────────── #}
+      <div class="card"><div class="card-body">
+        <h6 class="mb-3">Comments</h6>
+        {% if not comments %}
+          <div class="text-muted small">No comments yet.</div>
+        {% else %}
+          {% for c in comments %}
+            <div class="mb-3 pb-3" style="border-bottom:1px solid rgba(255,255,255,0.06);">
+              <div class="small text-muted mb-1">
+                {% if c.author %}{{ c.author.username or c.author.email }}{% else %}user #{{ c.author_user_id }}{% endif %}
+                · {{ c.created_at.strftime('%Y-%m-%d %H:%M') }} UTC
+                {% if c.is_internal %}<span class="badge bg-warning text-dark ms-1">internal note</span>{% endif %}
+              </div>
+              <div style="white-space:pre-wrap;">{{ c.body }}</div>
+            </div>
+          {% endfor %}
+        {% endif %}
+        <form id="commentForm" class="mt-3">
+          <textarea name="body" class="form-control form-control-sm" rows="3"
+                    placeholder="Add a comment…" required></textarea>
+          {% if can_admin %}
+            <div class="form-check mt-2">
+              <input class="form-check-input" type="checkbox" name="is_internal" value="1" id="intnote">
+              <label class="form-check-label small" for="intnote">Internal note (admins only)</label>
+            </div>
+          {% endif %}
+          <button class="btn btn-sm btn-primary mt-2">Post comment</button>
+          <span id="commentStatus" class="small ms-2"></span>
+        </form>
+      </div></div>
+    </div>
+
+    {# ── Admin sidebar ─────────────────────────────────────────────── #}
+    {% if can_admin %}
+    <div class="col-lg-4">
+      <div class="card mb-3"><div class="card-body">
+        <h6 class="mb-3">Admin Actions</h6>
+        <div class="mb-3">
+          <label class="form-label small text-uppercase text-muted mb-1">Status</label>
+          <select id="statusSelect" class="form-select form-select-sm">
+            {% for s in statuses %}
+              <option value="{{ s }}" {% if ticket.status == s %}selected{% endif %}>{{ s.replace('_',' ').title() }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="mb-3">
+          <label class="form-label small text-uppercase text-muted mb-1">Assignee</label>
+          <select id="assignSelect" class="form-select form-select-sm">
+            <option value="0">— Unassigned —</option>
+            {% for u in assignable %}
+              <option value="{{ u.id }}" {% if ticket.assigned_to_user_id == u.id %}selected{% endif %}>
+                {{ u.username or u.email }}
+              </option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="form-check mb-3">
+          <input class="form-check-input" type="checkbox" id="priCheck"
+                 {% if ticket.priority_fix %}checked{% endif %}>
+          <label class="form-check-label small" for="priCheck">Mark as Priority Fix</label>
+        </div>
+        <span id="adminStatus" class="small text-muted d-block mb-2"></span>
+      </div></div>
+
+      {# Ticket metadata card #}
+      <div class="card"><div class="card-body">
+        <h6 class="mb-3" style="font-size:.85rem;">Details</h6>
+        <div class="small text-muted d-flex flex-column gap-1">
+          <div><strong>ID:</strong> #{{ ticket.id }}</div>
+          <div><strong>Created:</strong> {{ ticket.created_at.strftime('%Y-%m-%d %H:%M') }} UTC</div>
+          <div><strong>Updated:</strong> {{ ticket.updated_at.strftime('%Y-%m-%d %H:%M') }} UTC</div>
+          {% if ticket.closed_at %}<div><strong>Closed:</strong> {{ ticket.closed_at.strftime('%Y-%m-%d %H:%M') }} UTC</div>{% endif %}
+          {% if ticket.rating %}<div><strong>Rating:</strong> {{ ticket.rating }}/5</div>{% endif %}
+          {% if ticket.screen_width %}<div><strong>Screen:</strong> {{ ticket.screen_width }}×{{ ticket.screen_height }}</div>{% endif %}
+          {% if ticket.posthog_session_id %}<div><strong>PH Session:</strong> <code style="font-size:.65rem;">{{ ticket.posthog_session_id[:16] }}…</code></div>{% endif %}
+          <div><strong>Follow-up:</strong> {{ 'Yes' if ticket.allow_follow_up else 'No' }}</div>
+        </div>
+        {% if ticket.posthog_replay_url %}
+        <a href="{{ ticket.posthog_replay_url }}" target="_blank" rel="noopener"
+           class="btn btn-sm btn-outline-secondary w-100 mt-3" style="font-size:.78rem;">
+          <i data-feather="play-circle" style="width:12px;height:12px;"></i> PostHog Replay
+        </a>
+        {% endif %}
+      </div></div>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<script>
+(function() {
+  var token = (document.querySelector('meta[name="csrf-token"]') || {}).content || '';
+  function post(url, body) {
+    return fetch(url, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json', 'X-CSRFToken': token},
+      body: JSON.stringify(body || {}),
+    }).then(function(r) { return r.json().then(function(j) { return {ok:r.ok, body:j}; }); });
+  }
+
+  var cf = document.getElementById('commentForm');
+  if (cf) {
+    cf.addEventListener('submit', function(e) {
+      e.preventDefault();
+      var fd = new FormData(cf);
+      var status = document.getElementById('commentStatus');
+      status.textContent = 'Sending…';
+      post('{{ url_for("feedback.add_comment", ticket_id=ticket.id) }}',
+           {body: fd.get('body'), is_internal: fd.get('is_internal') ? true : false})
+        .then(function(res) {
+          if (res.ok) { window.location.reload(); }
+          else { status.textContent = (res.body && res.body.error) || 'Failed.'; }
+        });
+    });
+  }
+
+  {% if can_admin %}
+  function flash(msg, ok) {
+    var s = document.getElementById('adminStatus');
+    s.style.color = ok ? '#00ffb4' : '#ff6b9c';
+    s.textContent = msg;
+    setTimeout(function() { s.textContent = ''; }, 2000);
+  }
+
+  var ss = document.getElementById('statusSelect');
+  if (ss) ss.addEventListener('change', function(e) {
+    post('{{ url_for("feedback.change_status", ticket_id=ticket.id) }}',
+         {status: e.target.value})
+      .then(function(r) { flash(r.ok ? 'Status updated' : (r.body.error || 'Failed'), r.ok); });
+  });
+
+  var as = document.getElementById('assignSelect');
+  if (as) as.addEventListener('change', function(e) {
+    post('{{ url_for("feedback.assign_ticket", ticket_id=ticket.id) }}',
+         {assigned_to_user_id: e.target.value})
+      .then(function(r) { flash(r.ok ? 'Assignee updated' : (r.body.error || 'Failed'), r.ok); });
+  });
+
+  var pc = document.getElementById('priCheck');
+  if (pc) pc.addEventListener('change', function(e) {
+    post('{{ url_for("feedback.toggle_priority", ticket_id=ticket.id) }}',
+         {priority_fix: e.target.checked})
+      .then(function(r) { flash(r.ok ? 'Priority updated' : (r.body.error || 'Failed'), r.ok); });
+  });
+
+  var saveNotesBtn = document.getElementById('saveNotesBtn');
+  if (saveNotesBtn) {
+    saveNotesBtn.addEventListener('click', function() {
+      var notes = document.getElementById('adminNotesArea').value;
+      var ns = document.getElementById('notesStatus');
+      ns.textContent = 'Saving…';
+      post('{{ url_for("feedback.save_notes", ticket_id=ticket.id) }}',
+           {admin_notes: notes})
+        .then(function(r) {
+          ns.style.color = r.ok ? '#00ffb4' : '#ff6b9c';
+          ns.textContent = r.ok ? 'Saved ✓' : (r.body.error || 'Failed');
+          setTimeout(function() { ns.textContent = ''; }, 2000);
+        });
+    });
+  }
+  {% endif %}
+})();
+</script>
+<script>feather.replace();</script>
+{% endblock %}

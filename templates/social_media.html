@@ -98,11 +98,32 @@
 {% endif %}
 
 <div class="card mb-4">
-    <div class="card-header d-flex justify-content-between align-items-center">
-        <h5 class="card-title mb-0">Scheduled & Published Posts</h5>
-        <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createPostModal">
-            <i data-feather="plus"></i> Create Post
-        </button>
+    <div class="card-header">
+        <div class="d-flex justify-content-between align-items-center mb-2">
+            <h5 class="card-title mb-0">Scheduled & Published Posts{% if not showing_all %} <span class="text-muted" style="font-size: 0.75rem; font-weight: 400;">(Latest 5 of {{ total_posts }})</span>{% else %} <span class="text-muted" style="font-size: 0.75rem; font-weight: 400;">({{ posts|length }} of {{ total_posts }})</span>{% endif %}</h5>
+            <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createPostModal">
+                <i data-feather="plus"></i> Create Post
+            </button>
+        </div>
+        <form method="GET" action="{{ url_for('main.social_media') }}" class="d-flex gap-2 align-items-end flex-wrap">
+            <div style="flex: 1; min-width: 180px;">
+                <input type="text" name="q" class="form-control form-control-sm" placeholder="Search by topic or content..." value="{{ search_q }}" style="border-radius: 8px;">
+            </div>
+            <div>
+                <input type="date" name="date_from" class="form-control form-control-sm" value="{{ date_from }}" title="From date" style="border-radius: 8px;">
+            </div>
+            <div>
+                <input type="date" name="date_to" class="form-control form-control-sm" value="{{ date_to }}" title="To date" style="border-radius: 8px;">
+            </div>
+            <button type="submit" class="btn btn-sm btn-outline-info" style="border-radius: 8px;">
+                <i data-feather="search" style="width:14px;height:14px;"></i> Search
+            </button>
+            {% if showing_all %}
+            <a href="{{ url_for('main.social_media') }}" class="btn btn-sm btn-outline-secondary" style="border-radius: 8px;">Clear</a>
+            {% else %}
+            <a href="{{ url_for('main.social_media', view_all='1') }}" class="btn btn-sm btn-outline-light" style="border-radius: 8px;">View All</a>
+            {% endif %}
+        </form>
     </div>
     <div class="card-body">
         {% if posts %}

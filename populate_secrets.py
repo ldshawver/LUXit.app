@@ -48,13 +48,13 @@ def populate_secrets():
         
         count = 0
         for key, value in SECRETS.items():
-            if value:  # Only add if value exists
-                company.set_secret(key, value)
+            if value:
+                company.set_secret(key, value)   # encrypts + upserts
                 print(f"✓ Added {key}")
                 count += 1
             else:
                 print(f"⊘ Skipped {key} (not in environment)")
-        
+
         print(f"\n✓ {count} secrets populated for {company.name}")
         return True
 

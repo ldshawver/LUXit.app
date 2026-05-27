@@ -633,7 +633,7 @@ function viewReport(reportId) {
     .then(data => {
         if (data.success) {
             document.getElementById('reportContent').innerHTML = `
-                <h5>${data.report.title}</h5>
+                <h5>${data.report.title || ''}</h5>
                 <p class="text-muted">${data.report.period_start} - ${data.report.period_end}</p>
                 <hr>
                 <div>${data.report.content || 'Report content not available'}</div>

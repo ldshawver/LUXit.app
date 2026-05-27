@@ -1,0 +1,352 @@
+{% extends "base.html" %}
+{% block title %}Airtable Integration — LUXit{% endblock %}
+
+{% block content %}
+<style>
+  .at-header    { display:flex; align-items:center; gap:1rem; margin-bottom:1.5rem; }
+  .at-back      { font-size:.82rem; color:rgba(255,255,255,.5); text-decoration:none; }
+  .at-back:hover{ color:#a78bfa; }
+  .at-grid      { display:grid; grid-template-columns:repeat(auto-fill,minmax(320px,1fr)); gap:1.1rem; margin-bottom:1.5rem; }
+  .at-card      { background:rgba(255,255,255,.04); border:1px solid rgba(255,255,255,.09);
+                  border-radius:12px; padding:1.25rem; }
+  .at-card-title{ font-size:.75rem; font-weight:600; text-transform:uppercase;
+                  letter-spacing:.07em; color:rgba(255,255,255,.45); margin-bottom:.5rem; }
+  .at-stat-val  { font-size:2rem; font-weight:700; line-height:1; }
+  .at-stat-val.green { color:#10b981; }
+  .at-stat-val.red   { color:#ef4444; }
+  .at-stat-val.yellow{ color:#f59e0b; }
+  .at-stat-val.gray  { color:#9ca3af; }
+
+  .badge-connected    { background:rgba(16,185,129,.15); color:#10b981; border:1px solid rgba(16,185,129,.3); }
+  .badge-missing_config{ background:rgba(245,158,11,.15); color:#f59e0b; border:1px solid rgba(245,158,11,.3); }
+  .badge-error        { background:rgba(239,68,68,.15);  color:#ef4444; border:1px solid rgba(239,68,68,.3); }
+  .badge-unknown      { background:rgba(255,255,255,.08); color:#9ca3af; border:1px solid rgba(255,255,255,.15); }
+  .badge-synced       { background:rgba(16,185,129,.12); color:#10b981; border:1px solid rgba(16,185,129,.25); }
+  .badge-failed       { background:rgba(239,68,68,.12);  color:#ef4444; border:1px solid rgba(239,68,68,.25); }
+  .badge-pending      { background:rgba(245,158,11,.12); color:#f59e0b; border:1px solid rgba(245,158,11,.25); }
+  .status-badge       { display:inline-flex; align-items:center; gap:.3rem; font-size:.72rem;
+                        font-weight:600; padding:.18rem .55rem; border-radius:20px; }
+
+  .table-cfg-row  { display:flex; align-items:center; justify-content:space-between;
+                    padding:.4rem 0; border-bottom:1px solid rgba(255,255,255,.06); font-size:.85rem; }
+  .table-cfg-row:last-child{ border-bottom:none; }
+  .check-yes { color:#10b981; }
+  .check-no  { color:#ef4444; }
+
+  .sync-panel     { background:rgba(255,255,255,.04); border:1px solid rgba(255,255,255,.09);
+                    border-radius:12px; padding:1.25rem; margin-bottom:1.1rem; }
+  .sync-panel-head{ display:flex; align-items:center; justify-content:space-between; margin-bottom:.9rem; }
+  .sync-panel-title{ font-weight:700; font-size:1rem; }
+  .sync-desc      { font-size:.82rem; color:rgba(255,255,255,.55); margin-bottom:.9rem; }
+
+  .log-table th   { font-size:.7rem; text-transform:uppercase; letter-spacing:.06em;
+                    color:rgba(255,255,255,.35); font-weight:600; padding:.4rem .6rem; }
+  .log-table td   { font-size:.78rem; padding:.45rem .6rem; vertical-align:middle; }
+  .log-table tbody tr:hover{ background:rgba(255,255,255,.03); }
+  .entity-chip    { font-size:.68rem; background:rgba(139,92,246,.15); color:#a78bfa;
+                    border-radius:5px; padding:.1rem .38rem; }
+  .ext-id         { font-size:.7rem; color:rgba(255,255,255,.35); font-family:monospace; }
+  .err-tip        { font-size:.7rem; color:#ef4444; max-width:220px; overflow:hidden;
+                    text-overflow:ellipsis; white-space:nowrap; }
+
+  .sync-result-toast{ position:fixed; bottom:1.4rem; right:1.4rem; z-index:9999;
+                       background:#1e1e2e; border:1px solid rgba(255,255,255,.12);
+                       border-radius:10px; padding:.8rem 1.1rem; font-size:.85rem;
+                       box-shadow:0 8px 32px rgba(0,0,0,.5); display:none; min-width:260px; }
+</style>
+
+<div class="at-header">
+  <a href="/platform/integrations" class="at-back">
+    <i data-feather="arrow-left" style="width:14px;height:14px;vertical-align:middle;margin-right:3px;"></i>
+    Platform Integrations
+  </a>
+  <span style="color:rgba(255,255,255,.2);">/</span>
+  <h1 class="page-title mb-0">Airtable</h1>
+  <span class="status-badge badge-{{ health.status }}" id="healthBadge">
+    ● {{ health.status | replace('_',' ') | title }}
+  </span>
+  {% if sync_enabled %}
+  <span class="status-badge" style="background:rgba(16,185,129,.1);color:#10b981;border:1px solid rgba(16,185,129,.25);">
+    <i data-feather="zap" style="width:10px;height:10px;"></i> Sync Enabled
+  </span>
+  {% else %}
+  <span class="status-badge" style="background:rgba(245,158,11,.1);color:#f59e0b;border:1px solid rgba(245,158,11,.25);">
+    Sync Disabled
+  </span>
+  {% endif %}
+  <button class="btn btn-sm btn-outline-secondary ms-auto" onclick="recheckHealth()">
+    <i data-feather="refresh-cw" style="width:13px;height:13px;margin-right:3px;"></i> Recheck
+  </button>
+</div>
+
+<!-- Stat cards row -->
+<div class="at-grid">
+  <div class="at-card">
+    <div class="at-card-title">Total Synced</div>
+    <div class="at-stat-val green" id="statSynced">{{ stats.synced }}</div>
+    <div style="font-size:.78rem;color:rgba(255,255,255,.4);margin-top:.3rem;">Records successfully pushed</div>
+  </div>
+  <div class="at-card">
+    <div class="at-card-title">Failed</div>
+    <div class="at-stat-val {{ 'red' if stats.failed > 0 else 'gray' }}" id="statFailed">{{ stats.failed }}</div>
+    <div style="font-size:.78rem;color:rgba(255,255,255,.4);margin-top:.3rem;">Sync errors logged</div>
+  </div>
+  <div class="at-card">
+    <div class="at-card-title">Pending</div>
+    <div class="at-stat-val yellow" id="statPending">{{ stats.pending }}</div>
+    <div style="font-size:.78rem;color:rgba(255,255,255,.4);margin-top:.3rem;">Awaiting first sync</div>
+  </div>
+  <div class="at-card">
+    <div class="at-card-title">Total Records</div>
+    <div class="at-stat-val gray" id="statTotal">{{ stats.total }}</div>
+    <div style="font-size:.78rem;color:rgba(255,255,255,.4);margin-top:.3rem;">Tracked across all tables</div>
+  </div>
+</div>
+
+<div class="row g-4 mb-4">
+  <!-- Table configuration -->
+  <div class="col-md-5">
+    <div class="at-card h-100">
+      <div class="at-card-title">Table Configuration</div>
+      {% for table_name, is_set in tables_configured.items() %}
+      <div class="table-cfg-row">
+        <span>{{ table_name }}</span>
+        {% if is_set %}
+        <span class="check-yes"><i data-feather="check-circle" style="width:14px;height:14px;"></i> Configured</span>
+        {% else %}
+        <span class="check-no"><i data-feather="x-circle" style="width:14px;height:14px;"></i> Missing</span>
+        {% endif %}
+      </div>
+      {% endfor %}
+      <div style="margin-top:.85rem;font-size:.75rem;color:rgba(255,255,255,.3);">
+        Configure via Replit Secrets panel. Postgres remains the source of truth.
+      </div>
+    </div>
+  </div>
+
+  <!-- Sync panels -->
+  <div class="col-md-7">
+    <!-- Leads -->
+    <div class="sync-panel">
+      <div class="sync-panel-head">
+        <div>
+          <div class="sync-panel-title">
+            <i data-feather="users" style="width:15px;height:15px;vertical-align:middle;color:#a78bfa;margin-right:5px;"></i>
+            Leads
+          </div>
+          <div style="font-size:.72rem;color:rgba(255,255,255,.35);margin-top:.15rem;">→ {{ 'Leads table' if tables_configured.get('Leads') else '⚠ AIRTABLE_LEADS_TABLE not set' }}</div>
+        </div>
+        <div class="d-flex gap-2">
+          <input type="number" id="leadId" class="form-control form-control-sm" placeholder="Contact ID" style="width:130px;">
+          <button class="btn btn-sm btn-outline-primary" onclick="syncNow('lead', document.getElementById('leadId').value)">
+            <i data-feather="upload-cloud" style="width:12px;height:12px;margin-right:3px;"></i> Sync Now
+          </button>
+        </div>
+      </div>
+      <div class="sync-desc">Pushes Contact fields (name, email, phone, source, tags, status) to the Leads table. Tenant-scoped — only your company's records sync.</div>
+      <div id="leadResult" class="sync-feedback"></div>
+    </div>
+
+    <!-- Onboarding -->
+    <div class="sync-panel">
+      <div class="sync-panel-head">
+        <div>
+          <div class="sync-panel-title">
+            <i data-feather="clipboard" style="width:15px;height:15px;vertical-align:middle;color:#06b6d4;margin-right:5px;"></i>
+            Onboarding Pipeline
+          </div>
+        </div>
+        <div class="d-flex gap-2">
+          <input type="number" id="onboardingId" class="form-control form-control-sm" placeholder="Project ID" style="width:130px;">
+          <button class="btn btn-sm btn-outline-info" onclick="syncNow('onboarding', document.getElementById('onboardingId').value)">
+            <i data-feather="upload-cloud" style="width:12px;height:12px;margin-right:3px;"></i> Sync Now
+          </button>
+        </div>
+      </div>
+      <div class="sync-desc">Pushes CustomerOnboardingProject (title, status, due date, task progress) to the Onboarding Pipeline table.</div>
+      <div id="onboardingResult" class="sync-feedback"></div>
+    </div>
+
+    <!-- Support -->
+    <div class="sync-panel">
+      <div class="sync-panel-head">
+        <div>
+          <div class="sync-panel-title">
+            <i data-feather="life-buoy" style="width:15px;height:15px;vertical-align:middle;color:#ec4899;margin-right:5px;"></i>
+            Support / Success Notes
+          </div>
+        </div>
+        <div class="d-flex gap-2">
+          <input type="number" id="supportId" class="form-control form-control-sm" placeholder="Ticket ID" style="width:130px;">
+          <button class="btn btn-sm btn-outline-danger" onclick="syncNow('support', document.getElementById('supportId').value)">
+            <i data-feather="upload-cloud" style="width:12px;height:12px;margin-right:3px;"></i> Sync Now
+          </button>
+        </div>
+      </div>
+      <div class="sync-desc">Pushes FeedbackTicket (title, type, severity, status, description) to the Support / Success Notes table.</div>
+      <div id="supportResult" class="sync-feedback"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Sync log table -->
+<div class="at-card">
+  <div class="d-flex align-items-center justify-content-between mb-3">
+    <div>
+      <div style="font-weight:700;font-size:1rem;">Sync Log</div>
+      <div style="font-size:.78rem;color:rgba(255,255,255,.4);">Last 30 sync operations for your company</div>
+    </div>
+    <div class="d-flex gap-2">
+      <select id="filterEntity" class="form-select form-select-sm" style="width:auto;" onchange="reloadLogs()">
+        <option value="">All types</option>
+        <option value="contact">Leads (contact)</option>
+        <option value="onboarding_project">Onboarding</option>
+        <option value="feedback_ticket">Support</option>
+      </select>
+      <button class="btn btn-sm btn-outline-secondary" onclick="reloadLogs()">
+        <i data-feather="refresh-cw" style="width:13px;height:13px;"></i>
+      </button>
+    </div>
+  </div>
+  <div id="logTableWrap">
+    {% if logs %}
+    <table class="table table-dark table-borderless log-table mb-0">
+      <thead>
+        <tr>
+          <th>Entity</th>
+          <th>Local ID</th>
+          <th>External ID</th>
+          <th>Status</th>
+          <th>Last Synced</th>
+          <th>Error</th>
+        </tr>
+      </thead>
+      <tbody id="logTableBody">
+        {% for row in logs %}
+        <tr>
+          <td><span class="entity-chip">{{ row.entity_type | replace('_',' ') }}</span></td>
+          <td>{{ row.entity_id }}</td>
+          <td><span class="ext-id">{{ row.external_id or '—' }}</span></td>
+          <td><span class="status-badge badge-{{ row.sync_status }}">{{ row.sync_status }}</span></td>
+          <td style="font-size:.75rem;color:rgba(255,255,255,.45);">{{ row.last_synced_at or '—' }}</td>
+          <td>{% if row.error %}<span class="err-tip" title="{{ row.error }}">{{ row.error }}</span>{% else %}—{% endif %}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div id="logTableBody" style="text-align:center;padding:2rem;color:rgba(255,255,255,.3);font-size:.85rem;">
+      No sync records yet. Use the Sync Now buttons above to push records to Airtable.
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<!-- Toast -->
+<div class="sync-result-toast" id="toastMsg"></div>
+
+<script>
+function showToast(msg, ok) {
+  const t = document.getElementById('toastMsg');
+  t.textContent = msg;
+  t.style.display = 'block';
+  t.style.borderColor = ok ? 'rgba(16,185,129,.4)' : 'rgba(239,68,68,.4)';
+  t.style.color = ok ? '#10b981' : '#ef4444';
+  setTimeout(() => { t.style.display = 'none'; }, 4000);
+}
+
+function showInline(elId, msg, ok) {
+  const el = document.getElementById(elId);
+  if (!el) return;
+  el.style.display = 'block';
+  el.style.fontSize = '.78rem';
+  el.style.marginTop = '.5rem';
+  el.style.color = ok ? '#10b981' : '#ef4444';
+  el.textContent = msg;
+}
+
+async function syncNow(type, id) {
+  if (!id) { showToast('Enter a valid ID first.', false); return; }
+  const resultEl = type + 'Result';
+  showInline(resultEl, 'Syncing…', true);
+  try {
+    const r = await fetch(`/api/airtable/sync/${type}/${id}`, {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: {'Content-Type': 'application/json'},
+    });
+    const data = await r.json();
+    if (data.ok) {
+      const action = data.action || 'synced';
+      showInline(resultEl, `✓ ${action.charAt(0).toUpperCase()+action.slice(1)} — External ID: ${data.external_id}`, true);
+      showToast(`${type} ${id} synced successfully`, true);
+      await reloadStats();
+      await reloadLogs();
+    } else {
+      showInline(resultEl, `✗ ${data.reason || 'Sync failed'}`, false);
+      showToast(`Sync failed: ${data.reason || 'unknown error'}`, false);
+    }
+  } catch(e) {
+    showInline(resultEl, `✗ Request error: ${e.message}`, false);
+    showToast('Network error', false);
+  }
+}
+
+async function reloadStats() {
+  try {
+    const r = await fetch('/api/airtable/sync/stats', {credentials:'same-origin'});
+    const d = await r.json();
+    document.getElementById('statSynced').textContent  = d.synced  ?? '—';
+    document.getElementById('statFailed').textContent  = d.failed  ?? '—';
+    document.getElementById('statPending').textContent = d.pending ?? '—';
+    document.getElementById('statTotal').textContent   = d.total   ?? '—';
+  } catch(e) {}
+}
+
+async function reloadLogs() {
+  const filter = document.getElementById('filterEntity').value;
+  const url = `/api/airtable/sync/logs?limit=30${filter ? '&entity_type=' + filter : ''}`;
+  try {
+    const r = await fetch(url, {credentials:'same-origin'});
+    const d = await r.json();
+    const rows = d.logs || [];
+    const tbody = document.getElementById('logTableBody');
+    if (!tbody) return;
+    if (!rows.length) {
+      tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:rgba(255,255,255,.3);padding:1.5rem;">No sync records match.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = rows.map(row => `
+      <tr>
+        <td><span class="entity-chip">${(row.entity_type || '').replace(/_/g,' ')}</span></td>
+        <td>${row.entity_id || '—'}</td>
+        <td><span class="ext-id">${row.external_id || '—'}</span></td>
+        <td><span class="status-badge badge-${row.sync_status || 'unknown'}">${row.sync_status || '—'}</span></td>
+        <td style="font-size:.75rem;color:rgba(255,255,255,.45);">${row.last_synced_at ? row.last_synced_at.replace('T',' ').slice(0,19)+' UTC' : '—'}</td>
+        <td>${row.error ? `<span class="err-tip" title="${row.error}">${row.error}</span>` : '—'}</td>
+      </tr>`).join('');
+    feather.replace();
+  } catch(e) {}
+}
+
+async function recheckHealth() {
+  const badge = document.getElementById('healthBadge');
+  badge.textContent = '● Checking…';
+  try {
+    const r = await fetch('/api/airtable/health', {credentials:'same-origin'});
+    const d = await r.json();
+    const cls = ['badge-connected','badge-missing_config','badge-error','badge-unknown'];
+    cls.forEach(c => badge.classList.remove(c));
+    badge.classList.add('badge-' + (d.status || 'unknown'));
+    badge.textContent = '● ' + (d.status || 'unknown').replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase());
+    if (d.detail) showToast(d.detail, d.status === 'connected');
+  } catch(e) {
+    badge.textContent = '● Error';
+  }
+}
+
+window.addEventListener('DOMContentLoaded', () => {
+  feather.replace();
+});
+</script>
+{% endblock %}

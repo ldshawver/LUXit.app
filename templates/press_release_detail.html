@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block title %}{{ pr.title }} - Press Release - LUX IT{% endblock %}
+{% block content %}
+<div class="container mt-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <a href="{{ url_for('main.press_releases_list') }}" class="text-muted text-decoration-none mb-2 d-inline-block">
+                <i data-feather="arrow-left" style="width:16px;height:16px;"></i> Back to Press Releases
+            </a>
+            <h2>{{ pr.title }}</h2>
+            {% if pr.subtitle %}
+            <p class="text-muted">{{ pr.subtitle }}</p>
+            {% endif %}
+        </div>
+        <div class="d-flex gap-2">
+            <a href="{{ url_for('main.edit_press_release', pr_id=pr.id) }}" class="btn btn-outline-warning">
+                <i data-feather="edit"></i> Edit
+            </a>
+            <form method="POST" action="{{ url_for('main.delete_press_release', pr_id=pr.id) }}" onsubmit="return confirm('Delete this press release?');">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" class="btn btn-outline-danger"><i data-feather="trash-2"></i> Delete</button>
+            </form>
+        </div>
+    </div>
+
+    <div class="row mb-3">
+        <div class="col-md-3">
+            <span class="badge bg-{% if pr.status == 'published' %}success{% elif pr.status == 'sent' %}info{% elif pr.status == 'draft' %}secondary{% else %}warning{% endif %} fs-6">
+                {{ pr.status|title }}
+            </span>
+        </div>
+        <div class="col-md-3">
+            <small class="text-muted">Release Date:</small><br>
+            {{ pr.release_date.strftime('%B %d, %Y') if pr.release_date else 'Not set' }}
+        </div>
+        <div class="col-md-3">
+            <small class="text-muted">Media Pickups:</small><br>
+            {{ pr.pickups or 0 }}
+        </div>
+        <div class="col-md-3">
+            <small class="text-muted">Created:</small><br>
+            {{ pr.created_at.strftime('%B %d, %Y') if pr.created_at else '-' }}
+        </div>
+    </div>
+
+    {% if pr.embargo_until %}
+    <div class="alert alert-warning">
+        <i data-feather="lock" style="width:16px;height:16px;"></i>
+        <strong>Embargo:</strong> This press release is under embargo until {{ pr.embargo_until.strftime('%B %d, %Y at %H:%M') }}.
+    </div>
+    {% endif %}
+
+    <div class="card bg-dark border-secondary">
+        <div class="card-body">
+            <div style="white-space: pre-wrap;">{{ pr.content }}</div>
+        </div>
+    </div>
+
+    {% if pr.contact_info %}
+    <div class="card bg-dark border-secondary mt-3">
+        <div class="card-header bg-transparent border-secondary">
+            <h6 class="mb-0">Contact Information</h6>
+        </div>
+        <div class="card-body">
+            <div style="white-space: pre-wrap;">{{ pr.contact_info }}</div>
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

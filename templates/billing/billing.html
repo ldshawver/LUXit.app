@@ -1,0 +1,245 @@
+{% extends "base.html" %}
+{% block title %}Billing — LUXit{% endblock %}
+
+{% block content %}
+<div class="container py-4" style="max-width: 960px;">
+  <h1 class="mb-1">Billing</h1>
+  <p class="text-muted mb-4">Manage your LUXit subscription and seats.</p>
+
+  {% if checkout_outcome == "success" %}
+    <div class="alert alert-success">
+      <strong>Subscription activated.</strong>
+      Your account is being provisioned — refresh in a moment to see updated plan details.
+    </div>
+  {% elif checkout_outcome == "cancel" %}
+    <div class="alert alert-warning">
+      Checkout was cancelled. You can pick a plan again at any time.
+    </div>
+  {% endif %}
+
+  {% if not company %}
+    <div class="alert alert-warning">
+      No billing account is associated with your user. Contact your administrator.
+    </div>
+  {% else %}
+    {# ── Current plan ─────────────────────────────────────────────────── #}
+    <div class="card mb-4">
+      <div class="card-body">
+        <div class="d-flex justify-content-between align-items-start flex-wrap">
+          <div>
+            <div class="text-muted small text-uppercase">Current plan</div>
+            <h3 class="mb-1">
+              {{ (company.billing_tier or company.subscription_tier or "free") | capitalize }}
+            </h3>
+            <div>
+              Status:
+              {% set s = company.billing_status or company.stripe_subscription_status or 'none' %}
+              <span class="badge
+                {%- if s == 'active' %} bg-success
+                {%- elif s == 'grace_period' %} bg-warning text-dark
+                {%- elif s in ('canceled','suspended') %} bg-danger
+                {%- else %} bg-secondary
+                {%- endif %}">{{ s }}</span>
+              {% if company.cancel_at_period_end %}
+                <span class="badge bg-warning text-dark ms-2">Cancels at period end</span>
+              {% endif %}
+            </div>
+            {% if company.current_period_end %}
+              <div class="small text-muted mt-1">
+                Renews on {{ company.current_period_end.strftime('%Y-%m-%d') }}
+              </div>
+            {% endif %}
+            {% if company.grace_period_ends_at %}
+              <div class="small text-warning mt-1">
+                Payment failed — grace period ends {{ company.grace_period_ends_at.strftime('%Y-%m-%d') }}
+              </div>
+            {% endif %}
+          </div>
+          <div class="text-end">
+            <div class="text-muted small text-uppercase">Setup fee</div>
+            <h5 class="mb-1">
+              {% if company.setup_fee_paid %}
+                <span class="badge bg-success">Paid</span>
+              {% else %}
+                <span class="badge bg-warning text-dark">Due on first checkout</span>
+              {% endif %}
+            </h5>
+            {% if company.setup_fee_paid and company.setup_fee_paid_at %}
+              <div class="small text-muted">
+                Charged {{ company.setup_fee_paid_at.strftime('%Y-%m-%d') }}
+              </div>
+            {% endif %}
+          </div>
+          <div class="text-end">
+            <div class="text-muted small text-uppercase">Team seats</div>
+            <h3 class="mb-1">
+              {{ company.team_member_count }}
+              {% if company.max_team_members is not none %}
+                / {{ company.max_team_members }}
+              {% else %}
+                / ∞
+              {% endif %}
+            </h3>
+            {% if company.team_seats_available is not none %}
+              <div class="small text-muted">{{ company.team_seats_available }} seats left</div>
+            {% else %}
+              <div class="small text-muted">Unlimited seats</div>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+    </div>
+
+    {# ── Contact usage ────────────────────────────────────────────────── #}
+    <div class="card mb-4">
+      <div class="card-body">
+        <h5 class="card-title mb-3">Contact usage</h5>
+        <div class="row text-center">
+          <div class="col">
+            <div class="text-muted small text-uppercase">Used</div>
+            <h4 class="mb-0">{{ company.contacts_used or 0 }}</h4>
+          </div>
+          <div class="col">
+            <div class="text-muted small text-uppercase">Included</div>
+            <h4 class="mb-0">
+              {% if company.included_contacts is not none %}
+                {{ company.included_contacts }}
+              {% else %}—{% endif %}
+            </h4>
+          </div>
+          <div class="col">
+            <div class="text-muted small text-uppercase">Overage</div>
+            <h4 class="mb-0">
+              <span class="badge {% if (company.contacts_overage or 0) > 0 %}bg-warning text-dark{% else %}bg-secondary{% endif %}">
+                {{ company.contacts_overage or 0 }}
+              </span>
+            </h4>
+          </div>
+        </div>
+        {% if company.last_usage_reported_at %}
+          <div class="small text-muted mt-2">
+            Last reported {{ company.last_reported_contact_usage or 0 }}
+            on {{ company.last_usage_reported_at.strftime('%Y-%m-%d %H:%M') }} UTC
+          </div>
+        {% else %}
+          <div class="small text-muted mt-2">No usage records reported yet.</div>
+        {% endif %}
+      </div>
+    </div>
+
+    {# ── Actions ─────────────────────────────────────────────────────── #}
+    <div class="card">
+      <div class="card-body">
+        <h5 class="card-title mb-3">Manage subscription</h5>
+        <ul class="small text-muted mb-3 ps-3">
+          <li>Starter — $199/month (includes 5 seats)</li>
+          <li>Professional — $499/month (unlimited seats, all 11 AI agents)</li>
+          <li>Setup &amp; Onboarding Fee — one-time charge on initial checkout</li>
+          <li>Additional Account License — $25/account/month (managed in portal)</li>
+        </ul>
+        <div class="d-flex flex-wrap gap-2">
+          {# data-include-setup-fee tells the JS to ask the backend to
+             attach the one-time setup fee. The backend will silently drop
+             it if company.setup_fee_paid is already true, so this is
+             advisory only. #}
+          {% set needs_setup = not company.setup_fee_paid %}
+          {% if not company.stripe_subscription_id %}
+            <button class="btn btn-primary"
+                    data-lookup="luxit_starter_monthly"
+                    data-action="checkout"
+                    data-include-setup-fee="{{ 'true' if needs_setup else 'false' }}">
+              Subscribe — Starter ($199/mo, 5 seats{% if needs_setup %} + setup fee{% endif %})
+            </button>
+            <button class="btn btn-primary"
+                    data-lookup="luxit_professional_monthly"
+                    data-action="checkout"
+                    data-include-setup-fee="{{ 'true' if needs_setup else 'false' }}">
+              Subscribe — Professional ($499/mo, unlimited{% if needs_setup %} + setup fee{% endif %})
+            </button>
+          {% else %}
+            {% if (company.billing_tier or '') != 'professional' %}
+              <button class="btn btn-success"
+                      data-lookup="luxit_professional_monthly"
+                      data-action="checkout"
+                      data-include-setup-fee="{{ 'true' if needs_setup else 'false' }}">
+                Upgrade to Professional
+              </button>
+            {% endif %}
+            {% if (company.billing_tier or '') == 'starter' %}
+              {# Seat add-ons must be applied to the existing subscription —
+                 we route the user through the Customer Portal so Stripe
+                 mutates subscription_item quantity rather than creating a
+                 second standalone subscription. #}
+              <button class="btn btn-outline-primary" data-action="portal">
+                Add team seats (manage in portal)
+              </button>
+            {% endif %}
+            <button class="btn btn-secondary" data-action="portal">
+              Manage billing &amp; invoices
+            </button>
+          {% endif %}
+        </div>
+        <div id="billing-error" class="text-danger small mt-3" style="display:none;"></div>
+      </div>
+    </div>
+  {% endif %}
+</div>
+
+<script>
+(function() {
+  const companyId = {{ company.id|tojson if company else 'null' }};
+  const errBox = document.getElementById("billing-error");
+
+  function showError(msg) {
+    if (!errBox) return;
+    errBox.textContent = msg;
+    errBox.style.display = "block";
+  }
+
+  async function postJSON(url, body) {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      credentials: "same-origin",
+      body: JSON.stringify(body || {}),
+    });
+    let data = {};
+    try { data = await res.json(); } catch (e) {}
+    if (!res.ok) {
+      throw new Error(data.error || ("Request failed: " + res.status));
+    }
+    return data;
+  }
+
+  document.querySelectorAll("[data-action='checkout']").forEach(btn => {
+    btn.addEventListener("click", async () => {
+      btn.disabled = true;
+      try {
+        const data = await postJSON("/api/stripe/create-checkout-session", {
+          lookup_key:        btn.dataset.lookup,
+          company_id:        companyId,
+          include_setup_fee: btn.dataset.includeSetupFee === "true",
+        });
+        if (data.url) window.location.href = data.url;
+        else showError("No checkout URL returned.");
+      } catch (e) { showError(e.message); }
+      finally { btn.disabled = false; }
+    });
+  });
+
+  document.querySelectorAll("[data-action='portal']").forEach(btn => {
+    btn.addEventListener("click", async () => {
+      btn.disabled = true;
+      try {
+        const data = await postJSON("/api/stripe/create-portal-session", {
+          company_id: companyId,
+        });
+        if (data.url) window.location.href = data.url;
+        else showError("No portal URL returned.");
+      } catch (e) { showError(e.message); }
+      finally { btn.disabled = false; }
+    });
+  });
+})();
+</script>
+{% endblock %}

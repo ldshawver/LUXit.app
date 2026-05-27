@@ -157,7 +157,7 @@
                 <h5 class="modal-title">Edit Contact</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
-            <form method="POST" action="">
+            <form id="editContactForm">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
                 <input type="hidden" id="edit_contact_id" name="contact_id" value="">
                 <div class="modal-body">
@@ -206,8 +206,9 @@
                     </div>
                 </div>
                 <div class="modal-footer">
+                    <div id="editContactError" class="text-danger me-auto small d-none"></div>
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="submit" class="btn btn-primary">Save Changes</button>
+                    <button type="submit" class="btn btn-primary" id="editContactSaveBtn">Save Changes</button>
                 </div>
             </form>
         </div>
@@ -323,7 +324,10 @@
 </div>
 
 <script>
+let _editContactId = null;
+
 function editContact(contactId, firstName, lastName, email, company, phone, tags, segment) {
+    _editContactId = contactId;
     document.getElementById('edit_contact_id').value = contactId;
     document.getElementById('edit_first_name').value = firstName;
     document.getElementById('edit_last_name').value = lastName;
@@ -332,7 +336,37 @@ function editContact(contactId, firstName, lastName, email, company, phone, tags
     document.getElementById('edit_phone').value = phone;
     document.getElementById('edit_tags').value = tags;
     document.getElementById('edit_segment').value = segment || '';
-    document.getElementById('editContactModal').querySelector('form').action = `/api/contact/${contactId}/edit`;
+    document.getElementById('editContactError').classList.add('d-none');
 }
+
+document.getElementById('editContactForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    const btn = document.getElementById('editContactSaveBtn');
+    const errEl = document.getElementById('editContactError');
+    btn.disabled = true;
+    btn.textContent = 'Saving…';
+    errEl.classList.add('d-none');
+    try {
+        const fd = new FormData(this);
+        const resp = await fetch(`/api/contacts/${_editContactId}/update`, {
+            method: 'POST',
+            body: fd,
+        });
+        const data = await resp.json();
+        if (data.success) {
+            bootstrap.Modal.getInstance(document.getElementById('editContactModal')).hide();
+            window.location.reload();
+        } else {
+            errEl.textContent = data.error || 'Update failed. Please try again.';
+            errEl.classList.remove('d-none');
+        }
+    } catch (err) {
+        errEl.textContent = 'Network error. Please try again.';
+        errEl.classList.remove('d-none');
+    } finally {
+        btn.disabled = false;
+        btn.textContent = 'Save Changes';
+    }
+});
 </script>
 {% endblock %}

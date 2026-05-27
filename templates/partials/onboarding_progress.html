@@ -1,0 +1,42 @@
+<div class="lux-onboarding-widget" id="onboarding-progress-widget">
+  <div class="lux-onb-header">
+    <h4>
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#a855f7" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+      Onboarding Progress
+    </h4>
+    <span class="lux-onb-overall" id="onb-overall-pct">0%</span>
+  </div>
+  <div class="lux-onb-bars">
+    <div class="lux-onb-bar-row">
+      <div class="lux-onb-bar-label">
+        <span>Account Setup</span>
+        <span id="onb-setup-pct">0%</span>
+      </div>
+      <div class="lux-onb-bar-track">
+        <div class="lux-onb-bar-fill lux-onb-setup" id="onb-setup-fill" style="width:0%"></div>
+      </div>
+    </div>
+    <div class="lux-onb-bar-row">
+      <div class="lux-onb-bar-label">
+        <span>Training</span>
+        <span id="onb-training-pct">0%</span>
+      </div>
+      <div class="lux-onb-bar-track">
+        <div class="lux-onb-bar-fill lux-onb-training" id="onb-training-fill" style="width:0%"></div>
+      </div>
+    </div>
+    <div class="lux-onb-bar-row">
+      <div class="lux-onb-bar-label">
+        <span>Documentation</span>
+        <span id="onb-docs-pct">0%</span>
+      </div>
+      <div class="lux-onb-bar-track">
+        <div class="lux-onb-bar-fill lux-onb-docs" id="onb-docs-fill" style="width:0%"></div>
+      </div>
+    </div>
+  </div>
+  <div class="lux-onb-goLive" id="onb-golive-status">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+    <span>Go-Live Readiness: <strong>Not Ready</strong></span>
+  </div>
+</div>

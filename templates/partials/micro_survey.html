@@ -1,0 +1,253 @@
+{# ── Micro-survey system ─────────────────────────────────────────────────────
+   Tiny toast-style prompts shown after key workflows.
+   Triggers are fired from other templates/JS via:
+     window.LuxSurvey.show({ event, question, type, workflowName })
+   Types: 'rating' (1-5 stars) | 'yesno'
+
+   Events tracked to PostHog: ux_rating_submitted, workflow_feedback_submitted
+   Results also saved to LUXit via POST /api/feedback (ticket_type=ux_issue)
+
+   Excluded from sensitive pages (billing, stripe, payroll, etc.) — same list
+   as the session-replay guard in base.html.
+   Never captures passwords, tokens, or private customer data.
+#}
+{% if current_user.is_authenticated %}
+<div id="luxSurveyToast" role="alert" aria-live="assertive"
+     style="display:none;position:fixed;right:18px;bottom:80px;z-index:1050;
+            width:300px;border-radius:12px;
+            background:#16113a;border:1px solid rgba(124,58,237,.4);
+            box-shadow:0 8px 30px rgba(0,0,0,.5);
+            padding:16px 18px;font-size:.85rem;">
+  <div class="d-flex justify-content-between align-items-start mb-2">
+    <span id="luxSurveyQuestion" style="color:#e2e8f0;font-weight:600;flex:1;padding-right:8px;"></span>
+    <button type="button" id="luxSurveyClose"
+            style="background:none;border:none;color:#6b7280;font-size:1rem;
+                   line-height:1;cursor:pointer;padding:0;">&times;</button>
+  </div>
+
+  {# ── Rating (1–5 stars) ── #}
+  <div id="luxSurveyRating" style="display:none;">
+    <div class="d-flex gap-1 mb-3" id="luxSurveyStars">
+      {% for n in range(1,6) %}
+      <button type="button" class="lux-survey-star"
+              data-val="{{ n }}"
+              style="font-size:1.5rem;background:none;border:none;
+                     color:#4b5563;cursor:pointer;padding:0;
+                     transition:color .1s;">★</button>
+      {% endfor %}
+    </div>
+    <input type="hidden" id="luxSurveyStarVal" value="">
+    <textarea id="luxSurveyComment" class="form-control form-control-sm mb-2"
+              rows="2" placeholder="Optional comment…" style="font-size:.8rem;"></textarea>
+    <button class="btn btn-sm btn-primary w-100" id="luxSurveySubmitRating">Submit</button>
+  </div>
+
+  {# ── Yes / No ── #}
+  <div id="luxSurveyYesNo" style="display:none;">
+    <div class="d-flex gap-2 mb-2">
+      <button class="btn btn-sm btn-success flex-fill lux-yesno" data-ans="yes">Yes</button>
+      <button class="btn btn-sm btn-danger  flex-fill lux-yesno" data-ans="no">No</button>
+    </div>
+    <textarea id="luxSurveyYNComment" class="form-control form-control-sm mb-2"
+              rows="2" placeholder="Optional comment…" style="font-size:.8rem;display:none;"></textarea>
+    <div id="luxSurveyYNCommentWrap" style="display:none;">
+      <button class="btn btn-sm btn-primary w-100" id="luxSurveySubmitYN">Submit</button>
+    </div>
+  </div>
+
+  <div id="luxSurveyThanks" style="display:none;color:#00ffb4;font-size:.85rem;text-align:center;">
+    Thanks for your feedback! 🎉
+  </div>
+</div>
+
+<script>
+window.LuxSurvey = (function() {
+  var _toast    = document.getElementById('luxSurveyToast');
+  var _question = document.getElementById('luxSurveyQuestion');
+  var _close    = document.getElementById('luxSurveyClose');
+  var _ratingEl = document.getElementById('luxSurveyRating');
+  var _yesnoEl  = document.getElementById('luxSurveyYesNo');
+  var _thanksEl = document.getElementById('luxSurveyThanks');
+  var _starVal  = document.getElementById('luxSurveyStarVal');
+  var _comment  = document.getElementById('luxSurveyComment');
+  var _ynComment= document.getElementById('luxSurveyYNComment');
+  var _ynCWrap  = document.getElementById('luxSurveyYNCommentWrap');
+
+  var _current  = {};
+  var _dismissed = {};  // keyed by event name — don't re-show in same session
+
+  /* Sensitive paths — no surveys on these */
+  var _blocked = ['/payroll','/billing','/stripe','/treasury',
+                  '/settings/banking','/admin/secrets','/api-keys','/adult'];
+
+  function _isSensitive() {
+    var p = window.location.pathname;
+    for (var i=0; i<_blocked.length; i++) {
+      if (p.indexOf(_blocked[i]) !== -1) return true;
+    }
+    return false;
+  }
+
+  function _hide() {
+    if (_toast) _toast.style.display = 'none';
+    _ratingEl.style.display = 'none';
+    _yesnoEl.style.display = 'none';
+    _thanksEl.style.display = 'none';
+  }
+
+  function _show(opts) {
+    /* opts: { event, question, type:'rating'|'yesno', workflowName } */
+    if (!_toast || _isSensitive()) return;
+    if (_dismissed[opts.event]) return;
+    _current = opts;
+    _question.textContent = opts.question || 'How was that?';
+    _ratingEl.style.display = 'none';
+    _yesnoEl.style.display  = 'none';
+    _thanksEl.style.display = 'none';
+    _starVal.value = '';
+    if (_comment) _comment.value = '';
+    if (_ynComment) _ynComment.value = '';
+    if (_ynCWrap) _ynCWrap.style.display = 'none';
+    if (_ynComment) _ynComment.style.display = 'none';
+
+    /* Reset stars */
+    document.querySelectorAll('.lux-survey-star').forEach(function(s) {
+      s.style.color = '#4b5563';
+    });
+
+    if (opts.type === 'yesno') {
+      _yesnoEl.style.display = '';
+    } else {
+      _ratingEl.style.display = '';
+    }
+    _toast.style.display = '';
+  }
+
+  /* Close button */
+  if (_close) _close.addEventListener('click', function() {
+    _dismissed[_current.event] = true;
+    _hide();
+  });
+
+  /* Star rating interaction */
+  document.querySelectorAll('.lux-survey-star').forEach(function(s) {
+    s.addEventListener('click', function() {
+      var v = parseInt(this.dataset.val);
+      _starVal.value = v;
+      document.querySelectorAll('.lux-survey-star').forEach(function(x) {
+        x.style.color = parseInt(x.dataset.val) <= v ? '#fbbf24' : '#4b5563';
+      });
+    });
+    s.addEventListener('mouseover', function() {
+      var v = parseInt(this.dataset.val);
+      document.querySelectorAll('.lux-survey-star').forEach(function(x) {
+        x.style.color = parseInt(x.dataset.val) <= v ? '#fde68a' : '#4b5563';
+      });
+    });
+    s.addEventListener('mouseout', function() {
+      var cur = parseInt(_starVal.value) || 0;
+      document.querySelectorAll('.lux-survey-star').forEach(function(x) {
+        x.style.color = parseInt(x.dataset.val) <= cur ? '#fbbf24' : '#4b5563';
+      });
+    });
+  });
+
+  /* Submit rating */
+  var submitRatingBtn = document.getElementById('luxSurveySubmitRating');
+  if (submitRatingBtn) {
+    submitRatingBtn.addEventListener('click', function() {
+      var rating = parseInt(_starVal.value) || null;
+      var comment = (_comment && _comment.value.trim()) || '';
+      _submitSurvey({ rating: rating, response: null, comment: comment });
+    });
+  }
+
+  /* Yes/No buttons */
+  document.querySelectorAll('.lux-yesno').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var ans = this.dataset.ans;
+      _current._yesnoAns = ans;
+      if (ans === 'no') {
+        /* Show optional comment for 'no' answers */
+        if (_ynComment) _ynComment.style.display = '';
+        if (_ynCWrap)   _ynCWrap.style.display   = '';
+      } else {
+        _submitSurvey({ rating: null, response: ans, comment: '' });
+      }
+    });
+  });
+
+  var submitYNBtn = document.getElementById('luxSurveySubmitYN');
+  if (submitYNBtn) {
+    submitYNBtn.addEventListener('click', function() {
+      var comment = (_ynComment && _ynComment.value.trim()) || '';
+      _submitSurvey({ rating: null, response: _current._yesnoAns, comment: comment });
+    });
+  }
+
+  function _submitSurvey(data) {
+    _ratingEl.style.display = 'none';
+    _yesnoEl.style.display  = 'none';
+    _thanksEl.style.display = '';
+    _dismissed[_current.event] = true;
+
+    /* PostHog event (fire-and-forget) */
+    try {
+      if (window.posthog) {
+        posthog.capture('ux_rating_submitted', {
+          survey_event:   _current.event,
+          workflow_name:  _current.workflowName || null,
+          rating:         data.rating,
+          response:       data.response,
+          comment:        data.comment,
+          page:           window.location.pathname,
+          source:         'luxit_micro_survey',
+        });
+        if (_current.workflowName) {
+          posthog.capture('workflow_feedback_submitted', {
+            workflow_name: _current.workflowName,
+            rating:        data.rating,
+            response:      data.response,
+            source:        'luxit_micro_survey',
+          });
+        }
+      }
+    } catch(e) {}
+
+    /* Save to LUXit feedback table as a ux_issue ticket */
+    try {
+      var token = (document.querySelector('meta[name="csrf-token"]') || {}).content || '';
+      var fd = new FormData();
+      fd.append('ticket_type', 'ux_issue');
+      fd.append('title', (_current.workflowName || _current.event || 'Micro-survey') + ' feedback');
+      fd.append('severity', 'low');
+      var desc = 'Workflow: ' + (_current.workflowName || _current.event || 'unknown') +
+                 '\nQuestion: ' + (_current.question || '') +
+                 (data.rating  ? '\nRating: ' + data.rating + '/5' : '') +
+                 (data.response? '\nResponse: ' + data.response : '') +
+                 (data.comment ? '\nComment: ' + data.comment : '');
+      fd.append('description', desc);
+      fd.append('page_url', window.location.pathname);
+      if (data.rating) fd.append('rating', data.rating);
+      try {
+        if (window.posthog) {
+          fd.append('posthog_session_id',  (posthog.get_session_id  && posthog.get_session_id())  || '');
+          fd.append('posthog_distinct_id', (posthog.get_distinct_id && posthog.get_distinct_id()) || '');
+          fd.append('posthog_replay_url',  (posthog.get_session_replay_url && posthog.get_session_replay_url()) || '');
+        }
+      } catch(e) {}
+      fetch('{{ url_for("feedback.submit_ticket") }}', {
+        method: 'POST',
+        headers: {'X-CSRFToken': token},
+        body: fd,
+      }).catch(function() {});
+    } catch(e) {}
+
+    /* Auto-hide after 2s */
+    setTimeout(_hide, 2000);
+  }
+
+  return { show: _show };
+})();
+</script>
+{% endif %}

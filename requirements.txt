@@ -1,3 +1,4 @@
+posthog>=3.0.0
 aiohappyeyeballs==2.6.1
 aiohttp==3.12.15
 aiohttp-retry==2.9.1
@@ -95,3 +96,5 @@ WooCommerce==3.0.0
 wrapt==1.17.3
 WTForms==3.2.1
 yarl==1.20.1
+
+stripe==15.1.0

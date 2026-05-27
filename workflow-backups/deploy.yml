@@ -1,0 +1,22 @@
+# DEPRECATED — replaced by deploy-production.yml
+#
+# This workflow used a hardcoded IP (194.195.92.52), a non-standard secret
+# name (VPS_LUXIT), a hardcoded port (2222), and no GitHub environment gate.
+# It has been superseded by deploy-production.yml which uses:
+#   secrets.VPS_HOST / secrets.VPS_SSH_KEY / secrets.VPS_PORT
+#   environment: Production
+#
+# The job is permanently disabled via `if: false` so it will never run.
+
+name: Deploy LUXit to VPS (DEPRECATED)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  deploy-to-vps:
+    name: "DEPRECATED — see deploy-production.yml"
+    if: false
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "This workflow is disabled. Use deploy-production.yml instead."

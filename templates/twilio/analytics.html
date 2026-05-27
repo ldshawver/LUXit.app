@@ -1,0 +1,114 @@
+{% extends "base.html" %}
+{% block title %}SMS Analytics — LUXit{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4" style="max-width:960px;">
+
+  <div class="mb-3">
+    <h4 class="mb-1 fw-bold">
+      <i data-feather="bar-chart-2" style="width:18px;height:18px;color:#7c3aed;"></i>
+      SMS &amp; Call Analytics
+    </h4>
+    <small class="text-muted">All-time platform stats</small>
+  </div>
+
+  <div class="d-flex flex-wrap gap-2 mb-4">
+    <a href="{{ url_for('twilio.inbox') }}" class="btn btn-sm btn-outline-secondary">
+      <i data-feather="inbox" style="width:13px;height:13px;"></i> Inbox
+    </a>
+    <a href="{{ url_for('twilio.settings') }}" class="btn btn-sm btn-outline-secondary">
+      <i data-feather="settings" style="width:13px;height:13px;"></i> Settings
+    </a>
+    <a href="{{ url_for('twilio.rules') }}" class="btn btn-sm btn-outline-secondary">
+      <i data-feather="zap" style="width:13px;height:13px;"></i> Auto-Reply Rules
+    </a>
+    <a href="{{ url_for('twilio.business_hours') }}" class="btn btn-sm btn-outline-secondary">
+      <i data-feather="clock" style="width:13px;height:13px;"></i> Business Hours
+    </a>
+    <a href="{{ url_for('twilio.calls') }}" class="btn btn-sm btn-outline-secondary">
+      <i data-feather="phone-call" style="width:13px;height:13px;"></i> Call Log
+    </a>
+  </div>
+
+  <!-- Stat cards -->
+  {% set stat_cards = [
+    ('Inbound SMS',   stats.total_inbound,   'message-square', '#7c3aed'),
+    ('Outbound SMS',  stats.total_outbound,  'send',           '#06b6d4'),
+    ('Delivered',     stats.total_delivered, 'check-circle',   '#22c55e'),
+    ('Failed',        stats.total_failed,    'x-circle',       '#ef4444'),
+    ('Auto Replies',  stats.auto_replies,    'zap',            '#f59e0b'),
+    ('Conversations', stats.total_convs,     'users',          '#ec4899'),
+    ('Leads Captured',stats.leads_captured,  'user-plus',      '#a78bfa'),
+    ('Opted Out',     stats.opted_out,       'user-x',         '#6b7280'),
+    ('Total Calls',   stats.total_calls,     'phone',          '#38bdf8'),
+    ('Missed Calls',  stats.missed_calls,    'phone-missed',   '#f97316'),
+  ] %}
+
+  <div class="row g-3 mb-4">
+    {% for label, value, icon, color in stat_cards %}
+    <div class="col-6 col-md-4 col-lg-3">
+      <div class="card h-100 text-center" style="background:#0f1117;border:1px solid #1e2535;">
+        <div class="card-body py-3">
+          <i data-feather="{{ icon }}" style="width:24px;height:24px;color:{{ color }};margin-bottom:8px;"></i>
+          <div class="fw-bold" style="font-size:1.6rem;color:#f7f7fb;">{{ value }}</div>
+          <div class="text-muted" style="font-size:.78rem;">{{ label }}</div>
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+    <div class="col-6 col-md-4 col-lg-3">
+      <div class="card h-100 text-center" style="background:#0f1117;border:1px solid #1e2535;">
+        <div class="card-body py-3">
+          <i data-feather="activity" style="width:24px;height:24px;color:#4ade80;margin-bottom:8px;"></i>
+          <div class="fw-bold" style="font-size:1.6rem;color:#f7f7fb;">{{ stats.delivery_rate }}%</div>
+          <div class="text-muted" style="font-size:.78rem;">Delivery Rate</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Top rules -->
+  {% if top_rules %}
+  <div class="card" style="background:#0f1117;border:1px solid #1e2535;">
+    <div class="card-header d-flex align-items-center gap-2" style="background:#0b0d14;border-bottom:1px solid #1e2535;">
+      <i data-feather="zap" style="width:14px;height:14px;color:#7c3aed;"></i>
+      <span class="fw-semibold" style="font-size:.88rem;">Top Auto-Reply Rules</span>
+    </div>
+    <div class="table-responsive">
+      <table class="table table-dark mb-0" style="font-size:.87rem;">
+        <thead style="border-bottom:1px solid #1e2535;color:#9aa4b2;">
+          <tr><th>Rule</th><th>Trigger</th><th>Times Fired</th><th>Status</th></tr>
+        </thead>
+        <tbody>
+          {% for rule in top_rules %}
+          <tr style="border-bottom:1px solid #1e2535;">
+            <td class="fw-semibold">{{ rule.name }}</td>
+            <td class="text-muted">{{ rule.trigger_type | replace('_',' ') | title }}</td>
+            <td>{{ rule.match_count or 0 }}</td>
+            <td>
+              <span class="badge {% if rule.is_active %}bg-success{% else %}bg-secondary{% endif %}" style="font-size:.72rem;">
+                {{ 'Active' if rule.is_active else 'Inactive' }}
+              </span>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% endif %}
+
+  <div class="mt-3 d-flex gap-3" style="font-size:.83rem;">
+    <a href="{{ url_for('twilio.rules') }}" class="text-muted text-decoration-none">
+      <i data-feather="zap" style="width:13px;height:13px;"></i> Manage Rules
+    </a>
+    <a href="{{ url_for('twilio.calls') }}" class="text-muted text-decoration-none">
+      <i data-feather="phone" style="width:13px;height:13px;"></i> Call Log
+    </a>
+    <a href="{{ url_for('twilio.settings') }}" class="text-muted text-decoration-none">
+      <i data-feather="settings" style="width:13px;height:13px;"></i> Settings
+    </a>
+  </div>
+</div>
+<script>feather.replace();</script>
+{% endblock %}

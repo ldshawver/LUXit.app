@@ -1,30 +1,63 @@
 {% extends "marketing/base.html" %}
 
-{% block title %}Pricing • LUXit{% endblock %}
+{% block title %}Pricing — LUX IT{% endblock %}
 
 {% block content %}
-<section class="section">
-  <h1 class="section-title">Pricing</h1>
-  <p class="section-subtitle">We tailor access to your growth stage. Request access for a tailored rollout.</p>
-  <div class="grid">
-    <div class="card">
-      <h3>Launch</h3>
-      <p class="section-subtitle">Ideal for early teams moving fast.</p>
-      <p class="section-subtitle">Request Access</p>
-      <a class="cta-secondary" href="/contact">Contact Sales</a>
+<section class="pricing-section" id="pricing" style="padding-top: 120px;">
+  <div class="section-header">
+    <div class="section-label">Pricing</div>
+    <h2 class="section-title">Plans That Scale With You</h2>
+    <p class="section-subtitle">From startups to enterprise. No hidden fees. Request access for a tailored rollout.</p>
+  </div>
+  <div class="pricing-grid">
+    <div class="pricing-card scroll-reveal-flip delay-1">
+      <div class="pricing-tier">Starter</div>
+      <div class="pricing-name">Small Business</div>
+      <div class="pricing-price">$199<span>/mo</span></div>
+      <div class="pricing-desc">Perfect for growing teams</div>
+      <ul class="pricing-features">
+        <li>3 AI Agents</li>
+        <li>2,500 Contacts</li>
+        <li>Email &amp; SMS Outreach</li>
+        <li>Basic Analytics</li>
+        <li>5 Team Members</li>
+      </ul>
+      <button type="button" class="pricing-btn secondary" onclick="openLicenseModal('starter')">Request Access</button>
     </div>
-    <div class="card">
-      <h3>Growth</h3>
-      <p class="section-subtitle">For teams ready to scale operations.</p>
-      <p class="section-subtitle">Request Access</p>
-      <a class="cta-secondary" href="/contact">Contact Sales</a>
+    <div class="pricing-card featured scroll-reveal-flip delay-2">
+      <span class="popular-badge">Most Popular</span>
+      <div class="pricing-tier">Professional</div>
+      <div class="pricing-name">Agencies &amp; Teams</div>
+      <div class="pricing-price">$499<span>/mo</span></div>
+      <div class="pricing-desc">Manage multiple companies</div>
+      <ul class="pricing-features">
+        <li>All 11 AI Agents</li>
+        <li>50,000 Contacts</li>
+        <li>Multi-Company Dashboard</li>
+        <li>All Channels + Social</li>
+        <li>Advanced Analytics</li>
+        <li>Unlimited Team</li>
+        <li>Priority Support</li>
+      </ul>
+      <button type="button" class="pricing-btn primary" onclick="openLicenseModal('professional')">Request Access</button>
     </div>
-    <div class="card">
-      <h3>Enterprise</h3>
-      <p class="section-subtitle">Custom deployment and dedicated support.</p>
-      <p class="section-subtitle">Contact Sales</p>
-      <a class="cta-secondary" href="/contact">Contact Sales</a>
+    <div class="pricing-card scroll-reveal-flip delay-3">
+      <div class="pricing-tier">Enterprise</div>
+      <div class="pricing-name">White Label</div>
+      <div class="pricing-price">Custom</div>
+      <div class="pricing-desc">Your brand, your platform</div>
+      <ul class="pricing-features">
+        <li>Full White-Label</li>
+        <li>Unlimited Everything</li>
+        <li>Custom Integrations</li>
+        <li>Dedicated Support</li>
+        <li>On-Premise Option</li>
+        <li>SLA Guarantee</li>
+      </ul>
+      <button type="button" class="pricing-btn secondary" onclick="openLicenseModal('enterprise')">Contact Sales</button>
     </div>
   </div>
 </section>
+
+{% include "marketing/partials/license_modal.html" %}
 {% endblock %}
