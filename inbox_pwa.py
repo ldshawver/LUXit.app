@@ -98,10 +98,8 @@ def _get_company(user):
 def _check_mobile_inbox_access(user, company) -> bool:
     """Return True if the user may access the Mobile Inbox PWA.
 
-    Any authenticated user who belongs to a company is allowed by default.
-    Access is only denied when an admin has explicitly restricted the account
-    (both can_access_mobile_inbox AND can_access_full_app set to False).
-    Platform admins always pass regardless of access rows.
+    Access requires explicit admin approval per-user via
+    UserCompanyAccess.can_access_mobile_inbox. Platform admins always pass.
     """
     if user.is_admin:
         return True
@@ -117,8 +115,8 @@ def _check_mobile_inbox_access(user, company) -> bool:
     any_acc = UserCompanyAccess.query.filter_by(user_id=user.id).first()
     if any_acc:
         return any_acc.has_mobile_inbox_access()
-    # Has a company (via default_company_id) but no access row yet — allow through
-    return True
+    # No access row means not approved yet.
+    return False
 
 
 def _get_twilio_account(company_id):

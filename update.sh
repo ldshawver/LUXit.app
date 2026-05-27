@@ -36,10 +36,13 @@ chown -R "$APP_USER:$APP_USER" "$APP_DIR"
 echo "Updating Python dependencies..."
 sudo -u "$APP_USER" "$VENV_DIR/bin/pip" install --upgrade -r "$APP_DIR/deploy_requirements.txt"
 
-# Run database migrations if needed
+# Run database migrations + tenant data sync
 echo "Running database migrations..."
 cd "$APP_DIR"
-sudo -u "$APP_USER" bash -c "source $VENV_DIR/bin/activate && source .env && python3 -c 'from app import app, db; app.app_context().push(); db.create_all()'"
+sudo -u "$APP_USER" bash -c "source $VENV_DIR/bin/activate && source .env && python3 scripts/migrate_db.py"
+
+echo "Ensuring company + access rows exist..."
+sudo -u "$APP_USER" bash -c "source $VENV_DIR/bin/activate && source .env && python3 scripts/create_company.py"
 
 # Start the application
 echo "Starting application..."

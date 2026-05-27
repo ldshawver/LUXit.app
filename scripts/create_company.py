@@ -44,14 +44,15 @@ def run():
                 user_id=user.id, company_id=company.id
             ).first()
             if not acc:
-                role = "owner" if user.is_admin else "member"
+                role = "owner" if user.is_admin else "viewer"
                 acc = UserCompanyAccess(
                     user_id=user.id,
                     company_id=company.id,
                     role=role,
                     is_default=True,
                     can_access_full_app=True,
-                    can_access_mobile_inbox=True,
+                    # Mobile inbox requires explicit admin approval.
+                    can_access_mobile_inbox=bool(user.is_admin),
                 )
                 db.session.add(acc)
                 linked += 1
