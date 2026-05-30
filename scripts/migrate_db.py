@@ -183,6 +183,43 @@ MIGRATIONS = [
     ("saas_automation_log", "subscription_id", "VARCHAR(120)", "DEFAULT NULL"),
     ("saas_automation_log", "received_at",     "DATETIME",     "DEFAULT (CURRENT_TIMESTAMP)"),
     ("saas_automation_log", "processed_at",    "DATETIME",     "DEFAULT NULL"),
+
+    # ── contact — tenant scoping + subscriber fields added after initial create ──
+    ("contact", "company_id",    "INTEGER",      "DEFAULT NULL"),
+    ("contact", "is_active",     "BOOLEAN",      "DEFAULT 1"),
+    ("contact", "is_subscribed", "BOOLEAN",      "DEFAULT 1"),
+    ("contact", "source",        "VARCHAR(100)", "DEFAULT NULL"),
+    ("contact", "segment",       "VARCHAR(100)", "DEFAULT NULL"),
+    ("contact", "tags",          "VARCHAR(255)", "DEFAULT NULL"),
+    ("contact", "phone",         "VARCHAR(50)",  "DEFAULT NULL"),
+    ("contact", "created_at",    "DATETIME",     "DEFAULT (CURRENT_TIMESTAMP)"),
+
+    # ── campaign — tenant scoping ────────────────────────────────────────────────
+    ("campaign", "company_id",        "INTEGER",      "DEFAULT NULL"),
+    ("campaign", "revenue_generated", "REAL",         "DEFAULT 0.0"),
+    ("campaign", "utm_keyword",       "VARCHAR(255)", "DEFAULT NULL"),
+    ("campaign", "ai_generated",      "BOOLEAN",      "DEFAULT 0"),
+    ("campaign", "updated_at",        "DATETIME",     "DEFAULT (CURRENT_TIMESTAMP)"),
+    ("campaign", "automation_id",     "INTEGER",      "DEFAULT NULL"),
+    ("campaign", "ab_test_id",        "INTEGER",      "DEFAULT NULL"),
+
+    # ── blog_post — tenant scoping ───────────────────────────────────────────────
+    ("blog_post", "company_id", "INTEGER", "DEFAULT NULL"),
+    ("blog_post", "excerpt",    "TEXT",    "DEFAULT NULL"),
+    ("blog_post", "category",   "VARCHAR(120)", "DEFAULT NULL"),
+
+    # ── newsletter_subscriber — tenant scoping ───────────────────────────────────
+    ("newsletter_subscriber", "company_id", "INTEGER", "DEFAULT NULL"),
+
+    # ── agent_task — required NOT NULL resolved at runtime ───────────────────────
+    ("agent_task", "company_id", "INTEGER", "DEFAULT NULL"),
+    ("agent_task", "user_id",    "INTEGER", "DEFAULT NULL"),
+
+    # ── agent_report — tenant scoping ────────────────────────────────────────────
+    ("agent_report", "company_id", "INTEGER", "DEFAULT NULL"),
+
+    # ── agent_deliverable — tenant scoping ───────────────────────────────────────
+    ("agent_deliverable", "company_id", "INTEGER", "DEFAULT NULL"),
 ]
 
 # Indexes — created idempotently after column adds.
