@@ -5,7 +5,7 @@
 
 set -euo pipefail
 
-APP_DIR="/root/lux-email-bot"
+APP_DIR="${APP_DIR:-$(pwd)}"
 VENV="$APP_DIR/.venv"
 GUNICORN="$VENV/bin/gunicorn"
 SERVICE="luxit"
@@ -26,10 +26,18 @@ echo "════════════════════════�
 [ "$(id -u)" -eq 0 ] || fail "Must run as root: sudo bash deploy.sh"
 [ -d "$APP_DIR/.git" ] || fail "$APP_DIR is not a git repo — run vps_setup_service.sh first"
 
+EXPECTED_REPO="${LUXIT_GITHUB_REPO:-}"
+
 # ── 1. Pull latest code ───────────────────────────────────────────────────────
 echo ""
 echo "── 1. Pull latest code ──"
 cd "$APP_DIR"
+ORIGIN_URL="$(git remote get-url origin 2>/dev/null || true)"
+echo "Repo path : $APP_DIR"
+echo "Repo origin: ${ORIGIN_URL:-<none>}"
+if [ -n "$EXPECTED_REPO" ] && [ "$ORIGIN_URL" != "$EXPECTED_REPO" ]; then
+  fail "Repository mismatch. Expected '$EXPECTED_REPO' but origin is '$ORIGIN_URL'."
+fi
 git fetch origin
 LOCAL=$(git rev-parse HEAD)
 REMOTE=$(git rev-parse "origin/$BRANCH")
@@ -39,6 +47,7 @@ else
   git pull --ff-only origin "$BRANCH"
   ok "Updated to ${REMOTE:0:8} on $BRANCH"
 fi
+echo "Deployed commit: $(git rev-parse --short HEAD)"
 
 # ── 2. System build deps (Debian/Ubuntu) ─────────────────────────────────────
 echo ""
@@ -96,9 +105,24 @@ fi
 pkill -f "gunicorn.*127\.0\.0\.1:8000" 2>/dev/null \
   && warn "Killed stale gunicorn on port 8000" || true
 
-# ── 6. Restart service ────────────────────────────────────────────────────────
+# ── 6. Database migration + tenant sync ──────────────────────────────────────
 echo ""
-echo "── 5. Restart luxit service ──"
+echo "── 5. Database migration + tenant sync ──"
+if "$VENV/bin/python3" "$APP_DIR/scripts/migrate_db.py"; then
+  ok "migrate_db.py complete"
+else
+  fail "migrate_db.py failed"
+fi
+
+if "$VENV/bin/python3" "$APP_DIR/scripts/create_company.py"; then
+  ok "create_company.py complete"
+else
+  fail "create_company.py failed"
+fi
+
+# ── 7. Restart service ────────────────────────────────────────────────────────
+echo ""
+echo "── 6. Restart luxit service ──"
 systemctl daemon-reload
 systemctl restart "$SERVICE"
 sleep 3
@@ -110,9 +134,9 @@ else
   fail "$SERVICE failed to start"
 fi
 
-# ── 7. Health check ───────────────────────────────────────────────────────────
+# ── 8. Health check ───────────────────────────────────────────────────────────
 echo ""
-echo "── 6. Health check ──"
+echo "── 7. Health check ──"
 sleep 2
 HTTP=$(curl -s -o /dev/null -w '%{http_code}' -L --max-time 15 "$SITE/" 2>/dev/null || echo "000")
 if [[ "$HTTP" =~ ^(200|301|302)$ ]]; then

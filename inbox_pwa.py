@@ -119,6 +119,14 @@ def _check_mobile_inbox_access(user, company) -> bool:
     return False
 
 
+def _require_company(user):
+    """Resolve company context for APIs and avoid None.id crashes."""
+    company = _get_company(user)
+    if not company:
+        abort(409, "No company configured for this user.")
+    return company
+
+
 def _get_twilio_account(company_id):
     from models import TwilioAccount
     return TwilioAccount.query.filter_by(company_id=company_id, is_active=True).first()
@@ -714,12 +722,8 @@ def sse_stream():
 @inbox_pwa_bp.route("/api/inbox/badge-counts")
 def badge_counts():
     """Return missed-call and unread-voicemail counts for PWA badges."""
-    user, err = _require_auth()
-    if err:
-        return jsonify({"missed_calls": 0, "voicemails": 0})
-    company = _get_company(user)
-    if not company:
-        return jsonify({"missed_calls": 0, "voicemails": 0})
+    user = _require_auth()
+    company = _require_company(user)
 
     missed = 0
     vmails = 0
@@ -745,12 +749,8 @@ def badge_counts():
 @inbox_pwa_bp.route("/api/inbox/contacts/search")
 def search_contacts():
     """Search contacts by name or phone for the compose modal autocomplete."""
-    user, err = _require_auth()
-    if err:
-        return jsonify({"contacts": []})
-    company = _get_company(user)
-    if not company:
-        return jsonify({"contacts": []})
+    user = _require_auth()
+    company = _require_company(user)
 
     q = request.args.get("q", "").strip()
     if len(q) < 2:

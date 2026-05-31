@@ -369,6 +369,56 @@ def create_app() -> Flask:
 
         db.create_all()
 
+        # Self-heal guard: ensure at least one company exists and users are linked.
+        # This prevents post-sync "no company" outages when ops scripts were skipped.
+        try:
+            from models import Company, User, UserCompanyAccess
+
+            company = Company.query.first()
+            if not company:
+                company = Company(
+                    name="LUXit Marketing",
+                    is_active=True,
+                    billing_tier="professional",
+                    billing_status="active",
+                    subscription_tier="professional",
+                    onboarding_status="complete",
+                )
+                db.session.add(company)
+                db.session.flush()
+                logging.warning(
+                    "Startup self-heal created fallback company '%s' (id=%s)",
+                    company.name,
+                    company.id,
+                )
+
+            changed = 0
+            for user in User.query.all():
+                acc = UserCompanyAccess.query.filter_by(
+                    user_id=user.id, company_id=company.id
+                ).first()
+                if not acc:
+                    acc = UserCompanyAccess(
+                        user_id=user.id,
+                        company_id=company.id,
+                        role="owner" if user.is_admin else "viewer",
+                        is_default=True,
+                        can_access_full_app=True,
+                        can_access_mobile_inbox=bool(user.is_admin),
+                    )
+                    db.session.add(acc)
+                    changed += 1
+                if not user.default_company_id:
+                    user.default_company_id = company.id
+                    changed += 1
+
+            if changed:
+                db.session.commit()
+                logging.warning("Startup self-heal updated %s user/company links.", changed)
+        except Exception as _self_heal_exc:
+            db.session.rollback()
+            logging.warning("Startup self-heal skipped due to error: %s", _self_heal_exc)
+
         # ── DB startup report (never logs secrets) ─────────────────────────
         try:
             from models import User, Company

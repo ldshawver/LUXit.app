@@ -10772,13 +10772,35 @@ def add_user():
             user.email = email
             user.password_hash = generate_password_hash(password)
             db.session.add(user)
+            db.session.flush()
+
+            # Auto-link new users to the current admin's default company so
+            # they don't end up as orphan accounts with no tenant context.
+            from models import UserCompanyAccess
+            company = current_user.get_default_company()
+            if company:
+                if not user.default_company_id:
+                    user.default_company_id = company.id
+                access = UserCompanyAccess.query.filter_by(
+                    user_id=user.id, company_id=company.id
+                ).first()
+                if not access:
+                    db.session.add(UserCompanyAccess(
+                        user_id=user.id,
+                        company_id=company.id,
+                        role='viewer',
+                        is_default=True,
+                        can_access_full_app=True,
+                        can_access_mobile_inbox=False,
+                    ))
+
             db.session.commit()
             flash(f'User {username} created successfully!', 'success')
             return redirect(url_for('main.manage_users'))
         except Exception as e:
             db.session.rollback()
             logger.error(f"Add user error: {e}")
-            flash('Error creating user', 'error')
+            flash(f'Error creating user: {str(e)}', 'error')
             return redirect(url_for('main.add_user'))
     
     return render_template('add_user.html')
