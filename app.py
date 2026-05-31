@@ -374,7 +374,19 @@ def create_app() -> Flask:
         try:
             from models import Company, User, UserCompanyAccess
 
-            company = Company.query.first()
+            changed = 0
+            company = Company.query.filter_by(is_active=True).order_by(Company.id.asc()).first()
+            if not company:
+                company = Company.query.order_by(Company.id.asc()).first()
+                if company:
+                    company.is_active = True
+                    logging.warning(
+                        "Startup self-heal reactivated fallback company '%s' (id=%s)",
+                        company.name,
+                        company.id,
+                    )
+                    changed += 1
+
             if not company:
                 company = Company(
                     name="LUXit Marketing",
@@ -391,9 +403,14 @@ def create_app() -> Flask:
                     company.name,
                     company.id,
                 )
+                changed += 1
 
-            changed = 0
             for user in User.query.all():
+                if user.is_admin:
+                    if user.ensure_default_company_context():
+                        changed += 1
+                    continue
+
                 acc = UserCompanyAccess.query.filter_by(
                     user_id=user.id, company_id=company.id
                 ).first()
@@ -401,10 +418,10 @@ def create_app() -> Flask:
                     acc = UserCompanyAccess(
                         user_id=user.id,
                         company_id=company.id,
-                        role="owner" if user.is_admin else "viewer",
+                        role="viewer",
                         is_default=True,
                         can_access_full_app=True,
-                        can_access_mobile_inbox=bool(user.is_admin),
+                        can_access_mobile_inbox=False,
                     )
                     db.session.add(acc)
                     changed += 1

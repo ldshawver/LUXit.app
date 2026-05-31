@@ -230,7 +230,18 @@ class User(UserMixin, db.Model):
                 return access.company
 
             user_companies = self.get_all_companies()
-            return user_companies[0] if user_companies else None
+            if user_companies:
+                return user_companies[0]
+
+            # Platform admins are the last line of defense for tenant setup.
+            # If a restore/deploy leaves the database with no active company (or
+            # this admin is orphaned from every company), create or attach a safe
+            # default company immediately so company-scoped pages do not crash on
+            # ``None.id``. Non-admin users still require an explicit assignment.
+            if self.is_admin:
+                return self.ensure_default_company_context()
+
+            return None
         except Exception as exc:
             try:
                 db.session.rollback()
@@ -242,6 +253,93 @@ class User(UserMixin, db.Model):
     # -------------------------
     # Company / role helpers
     # -------------------------
+
+    def ensure_default_company_context(self, company_name=None):
+        """Ensure an admin user has a usable active company context.
+
+        Production restores can leave an admin account without a company or can
+        leave only inactive companies behind. This method self-heals that state
+        by creating (or reactivating) a fallback company, assigning the user as
+        owner/admin, syncing the legacy ``user_company`` join table, and setting
+        ``default_company_id``. It returns ``None`` instead of raising so callers
+        can keep rendering graceful no-company states if the database is not
+        writable.
+        """
+        logger = logging.getLogger(__name__)
+        if not self.is_admin:
+            return None
+
+        try:
+            company = Company.query.filter_by(is_active=True).order_by(Company.id.asc()).first()
+            if company is None:
+                company = Company.query.order_by(Company.id.asc()).first()
+                if company is not None:
+                    company.is_active = True
+                    logger.warning(
+                        "Company self-heal reactivated fallback company %s (%s)",
+                        company.id,
+                        company.name,
+                    )
+
+            if company is None:
+                company = Company(
+                    name=company_name or "LUXit Marketing",
+                    is_active=True,
+                    billing_tier="professional",
+                    billing_status="active",
+                    subscription_tier="professional",
+                    onboarding_status="complete",
+                )
+                db.session.add(company)
+                db.session.flush()
+                logger.warning(
+                    "Company self-heal created fallback company '%s' (id=%s)",
+                    company.name,
+                    company.id,
+                )
+
+            self.default_company_id = company.id
+
+            access = UserCompanyAccess.query.filter_by(
+                user_id=self.id, company_id=company.id
+            ).first()
+            if access is None:
+                access = UserCompanyAccess(
+                    user_id=self.id,
+                    company_id=company.id,
+                    role=UserCompanyAccess.ROLE_OWNER,
+                    is_default=True,
+                    can_access_full_app=True,
+                    can_access_mobile_inbox=True,
+                )
+                db.session.add(access)
+            else:
+                if access.role not in (UserCompanyAccess.ROLE_OWNER, UserCompanyAccess.ROLE_ADMIN):
+                    access.role = UserCompanyAccess.ROLE_OWNER
+                access.is_default = True
+                access.can_access_full_app = True
+                access.can_access_mobile_inbox = True
+
+            # Keep older code paths that still read the secondary relationship in
+            # sync without depending on database-specific UPSERT syntax.
+            linked = db.session.execute(
+                user_company.select().where(
+                    (user_company.c.user_id == self.id)
+                    & (user_company.c.company_id == company.id)
+                )
+            ).first()
+            if linked is None:
+                db.session.execute(
+                    user_company.insert().values(user_id=self.id, company_id=company.id)
+                )
+
+            db.session.commit()
+            return company
+        except Exception as exc:
+            db.session.rollback()
+            logger.warning("Company self-heal failed for user %s: %s", self.id, exc)
+            return None
+
     def set_default_company(self, company_id):
         self.default_company_id = company_id
         db.session.commit()
