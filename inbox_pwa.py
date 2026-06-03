@@ -119,6 +119,25 @@ def _check_mobile_inbox_access(user, company) -> bool:
     return False
 
 
+def _is_mobile_request() -> bool:
+    """Return True when the PWA shell is requested from a mobile device.
+
+    The PWA is intentionally a mobile-only surface. Desktop users should use
+    the standard SMS Inbox at /twilio/inbox instead of a duplicate desktop PWA
+    shell.
+    """
+    sec_ch_mobile = (request.headers.get("Sec-CH-UA-Mobile") or "").strip().lower()
+    if sec_ch_mobile == "?1":
+        return True
+
+    ua = (request.headers.get("User-Agent") or "").lower()
+    mobile_tokens = (
+        "android", "iphone", "ipad", "ipod", "mobile", "windows phone",
+        "blackberry", "opera mini",
+    )
+    return any(token in ua for token in mobile_tokens)
+
+
 def _require_company(user):
     """Resolve company context for APIs and avoid None.id crashes."""
     company = _get_company(user)
@@ -160,6 +179,52 @@ def _sanitize_body(text: str) -> str:
     return text.replace("\x00", "")
 
 
+def _twilio_send_error_message(exc) -> str:
+    """Return a PWA-safe, action-oriented explanation for Twilio send failures."""
+    raw = str(exc) or type(exc).__name__
+    code = getattr(exc, "code", None)
+    status = getattr(exc, "status", None)
+
+    guidance_by_code = {
+        21211: "The recipient phone number is invalid. Check the number and try again.",
+        21408: "Twilio is not allowed to send SMS to that destination. Enable the region in Twilio geo permissions.",
+        21606: "The configured Twilio From number cannot send SMS. Check SMS Settings or use an SMS-capable Twilio number.",
+        21610: "This customer has opted out. They must reply START before texts can be sent again.",
+        21612: "Twilio cannot route SMS to that phone number. Check the recipient number and carrier support.",
+        21614: "The recipient does not appear to be a mobile/SMS-capable number.",
+        21617: "The message is too long for Twilio to send. Shorten it and try again.",
+        30003: "The carrier could not deliver the text. Verify the customer's number or try calling.",
+        30004: "The destination handset could not receive the text. Try again later or call the customer.",
+        30005: "The destination number is unknown or inactive. Check the customer's phone number.",
+        30006: "The destination number is a landline or unreachable by SMS. Try calling instead.",
+        30007: "The carrier filtered the message. Reword it to avoid links or promotional wording, then try again.",
+    }
+    if code in guidance_by_code:
+        return guidance_by_code[code]
+    if status == 403:
+        return (
+            "Twilio rejected the request with HTTP 403. Check that the Twilio "
+            "number is SMS/voice-capable, the Account SID/Auth Token are correct, "
+            "and the destination is allowed in Twilio. For urgent contact, place a call."
+        )
+
+    lower_raw = raw.lower()
+    if ("unable to create record" in lower_raw and "forbidden" in lower_raw) or "http 403" in lower_raw:
+        return (
+            "Twilio rejected the request with HTTP 403. Check that the Twilio "
+            "number is SMS/voice-capable, the Account SID/Auth Token are correct, "
+            "and the destination is allowed in Twilio. For urgent contact, place a call."
+        )
+    if "unverified" in lower_raw and "trial" in lower_raw:
+        return "Twilio trial accounts can only text verified recipient numbers. Verify this customer in Twilio or upgrade the account."
+    if "authenticate" in lower_raw or "authentication" in lower_raw or "account sid" in lower_raw:
+        return "Twilio authentication failed. Check the Account SID and Auth Token in SMS Settings."
+    if "not a valid phone number" in lower_raw:
+        return "The recipient phone number is invalid. Check the number and try again."
+
+    return raw
+
+
 def _send_sms_internal(ta, to_number: str, body: str, conversation_id=None):
     """Send SMS via Twilio — mirrors twilio_sms._send_sms."""
     from models import TwilioMessage
@@ -193,7 +258,7 @@ def _send_sms_internal(ta, to_number: str, body: str, conversation_id=None):
         return record, None
     except Exception as exc:
         logger.error("PWA Inbox SMS send error: %s", exc)
-        return None, str(exc)
+        return None, _twilio_send_error_message(exc)
 
 
 def _conv_to_dict(conv, brief=True):
@@ -241,10 +306,12 @@ def _msg_to_dict(m):
 
 @inbox_pwa_bp.route("/app/inbox")
 def pwa_index():
-    from flask import redirect
+    from flask import redirect, url_for
     user = _current_user()
     if not user:
         return redirect("/auth/login?next=/app/inbox")
+    if not _is_mobile_request():
+        return redirect(url_for("twilio.inbox"))
     company = _get_company(user)
     # No company assigned → show setup page
     if not company:
@@ -318,7 +385,7 @@ def list_conversations():
 @inbox_pwa_bp.route("/api/inbox/conversations/<int:conv_id>")
 def get_conversation(conv_id):
     user    = _require_auth()
-    company = _get_company(user)
+    company = _require_company(user)
     from models import TwilioConversation
     conv = TwilioConversation.query.filter_by(id=conv_id, company_id=company.id).first_or_404()
 
@@ -355,7 +422,7 @@ def get_conversation(conv_id):
 @inbox_pwa_bp.route("/api/inbox/conversations/<int:conv_id>/messages", methods=["POST"])
 def send_message(conv_id):
     user    = _require_auth()
-    company = _get_company(user)
+    company = _require_company(user)
     from models import TwilioConversation
     conv = TwilioConversation.query.filter_by(id=conv_id, company_id=company.id).first_or_404()
 
@@ -419,7 +486,7 @@ def _normalize_phone(raw: str) -> str:
 @inbox_pwa_bp.route("/api/inbox/conversations", methods=["POST"])
 def new_conversation():
     user    = _require_auth()
-    company = _get_company(user)
+    company = _require_company(user)
     payload = request.get_json() or {}
     to_raw  = (payload.get("to") or "").strip()
     body    = (payload.get("body") or "").strip()
@@ -817,9 +884,7 @@ def place_outbound_call(conv_id):
     message or testing).  Requires Twilio to be configured for the company.
     """
     user = _require_auth()
-    company = _get_company(user)
-    if not company:
-        return jsonify({"success": False, "error": "No company found."}), 400
+    company = _require_company(user)
 
     from models import TwilioConversation
     conv = TwilioConversation.query.filter_by(
@@ -828,9 +893,9 @@ def place_outbound_call(conv_id):
 
     ta = _get_twilio_account(company.id)
     if not ta:
-        return jsonify({"success": False, "error": "Twilio is not configured for this account."})
+        return jsonify({"success": False, "error": "Twilio is not configured for this account."}), 400
     if not ta.from_phone:
-        return jsonify({"success": False, "error": "No outbound phone number configured in Twilio settings."})
+        return jsonify({"success": False, "error": "No outbound phone number configured in Twilio settings."}), 400
 
     try:
         from twilio.rest import Client
@@ -873,7 +938,7 @@ def place_outbound_call(conv_id):
 
     except Exception as exc:
         logger.error("Outbound call error: %s", exc)
-        return jsonify({"success": False, "error": str(exc)})
+        return jsonify({"success": False, "error": _twilio_send_error_message(exc)}), 500
 
 
 def _fire_push_notification(company_id: int, conv, message_body: str):

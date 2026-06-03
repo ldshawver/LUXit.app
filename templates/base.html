@@ -554,18 +554,11 @@
                     <a href="{{ url_for('twilio.inbox') }}" class="sidebar-nav-item{% if _p.startswith('/twilio/inbox') or _p.startswith('/twilio/conversation') %} active{% endif %}">
                         <i data-feather="message-square"></i> SMS Inbox
                     </a>
-                    {% set _co = current_user.get_default_company() if current_user.is_authenticated else None %}
-                    {% if _co %}
-                        <a href="/app/inbox" class="sidebar-nav-item{% if _p.startswith('/app/inbox') %} active{% endif %}" title="Mobile-friendly PWA inbox">
-                            <i data-feather="smartphone"></i> Mobile Inbox
-                            <span style="font-size:.6rem;padding:1px 6px;border-radius:10px;background:rgba(124,58,237,.3);color:#a78bfa;margin-left:4px;">PWA</span>
-                        </a>
-                    {% endif %}
-                    <a href="{{ url_for('twilio.rules') }}" class="sidebar-nav-item{% if _p.startswith('/twilio/rules') %} active{% endif %}">
-                        <i data-feather="zap"></i> Auto-Reply Rules
-                    </a>
-                    <a href="{{ url_for('twilio.settings') }}" class="sidebar-nav-item{% if _p.startswith('/twilio/settings') or _p.startswith('/twilio/hours') or _p.startswith('/twilio/analytics') or _p.startswith('/twilio/calls') %} active{% endif %}">
+                    <a href="{{ url_for('twilio.settings') }}" class="sidebar-nav-item{% if _p.startswith('/twilio/settings') or _p.startswith('/twilio/rules') or _p.startswith('/twilio/hours') or _p.startswith('/twilio/analytics') or _p.startswith('/twilio/calls') %} active{% endif %}">
                         <i data-feather="settings"></i> SMS Settings
+                    </a>
+                    <a href="{{ url_for('twilio.rules') }}" class="sidebar-nav-item{% if _p.startswith('/twilio/rules') %} active{% endif %}" style="padding-left:2.15rem;font-size:.82rem;">
+                        <i data-feather="zap"></i> Auto-Reply Rules
                     </a>
                     <a href="{{ url_for('main.social_media') }}" class="sidebar-nav-item{% if _p.startswith('/social') %} active{% endif %}">
                         <i data-feather="share-2"></i> Social
