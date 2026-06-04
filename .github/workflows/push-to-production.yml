@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - main
-
   workflow_dispatch:
 
 jobs:
@@ -18,28 +17,15 @@ jobs:
       - name: Deploy to Production VPS
         uses: appleboy/ssh-action@v1.0.3
         with:
-          host: ${{ secrets.VPS_HOST }}
-          username: ${{ secrets.VPS_USER }}
-          password: ${{ secrets.VPS_PASSWORD }}
-          port: ${{ secrets.VPS_PORT || 22 }}
+          host: 194.195.92.52
+          username: root
+          key: ${{ secrets.VPS_PRIVATE_KEY }}
+          port: 22
           timeout: 60s
-          command_timeout: 20m
+          command_timeout: 10m
           script: |
             echo "Connected to VPS"
             whoami
             hostname
-
             cd /root/lux-email-bot
-
-            git fetch origin
-            git checkout main
-            git pull origin main
-
-            npm install
-            npm run build
-
-            pm2 restart lux-email-bot || pm2 start npm --name lux-email-bot -- start
-
-            pm2 save
-
-            echo "Deployment completed successfully"
+            git status
