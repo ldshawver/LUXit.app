@@ -5,7 +5,7 @@
 <div class="container-fluid py-3" style="max-width:1100px;">
 
   <!-- Header -->
-  <div class="d-flex align-items-center gap-3 mb-4">
+  <div class="d-flex align-items-center gap-3 mb-4 flex-wrap">
     <div>
       <h4 class="mb-0 fw-bold d-flex align-items-center gap-2">
         <i data-feather="settings" style="width:20px;height:20px;color:#7c3aed;"></i>
@@ -35,14 +35,18 @@
   <div class="alert d-flex align-items-center gap-3 mb-4"
        style="background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.2);color:#f87171;">
     <i data-feather="alert-triangle" style="width:18px;height:18px;flex-shrink:0;"></i>
-    <div>Twilio is not configured. Add your credentials below to enable SMS and calling.</div>
+    <div>Twilio is not configured. Add your credentials to enable SMS and calling.
+      <a href="{{ url_for('twilio.settings') }}" class="ms-2" style="color:#f87171;text-decoration:underline;">
+        Configure Twilio →
+      </a>
+    </div>
   </div>
   {% endif %}
 
   <div class="row g-3">
 
-    <!-- ── Column 1: Core Configuration ── -->
-    <div class="col-md-6">
+    <!-- ── Column 1: Core service links ── -->
+    <div class="col-md-5">
 
       <div class="card mb-3" style="background:#0f1117;border:1px solid #1e2535;">
         <div class="card-header d-flex align-items-center gap-2" style="border-bottom:1px solid #1e2535;background:transparent;">
@@ -63,11 +67,11 @@
             </div>
             <div class="d-flex justify-content-between">
               <span class="text-muted">Messaging Service</span>
-              <span>{{ (ta and ta.messaging_service_sid) or '—' }}</span>
+              <span class="text-truncate" style="max-width:130px;">{{ (ta and ta.messaging_service_sid) or '—' }}</span>
             </div>
             <div class="d-flex justify-content-between">
-              <span class="text-muted">Webhook Base URL</span>
-              <span class="text-truncate" style="max-width:180px;">{{ (ta and ta.webhook_base_url) or '—' }}</span>
+              <span class="text-muted">Automation</span>
+              <span>{% if ta and ta.automation_enabled %}<span style="color:#4ade80;">● On</span>{% else %}<span style="color:#ef4444;">● Off</span>{% endif %}</span>
             </div>
           </div>
         </div>
@@ -78,51 +82,35 @@
           <i data-feather="zap" style="width:15px;height:15px;color:#06b6d4;"></i>
           <strong style="font-size:.88rem;">Auto-Reply Rules</strong>
           <a href="{{ url_for('twilio.rules') }}" class="btn btn-sm btn-outline-secondary ms-auto"
-             style="font-size:.76rem;padding:2px 9px;">Manage Rules →</a>
+             style="font-size:.76rem;padding:2px 9px;">Manage →</a>
         </div>
-        <div class="card-body py-3 px-3" style="font-size:.83rem;color:#9ca3af;">
+        <div class="card-body py-3 px-3" style="font-size:.83rem;">
           <div class="d-flex justify-content-between mb-2">
-            <span>Active rules</span>
+            <span class="text-muted">Active rules</span>
             <span class="fw-semibold" style="color:#f7f7fb;">{{ rules_count }}</span>
           </div>
-          Configure keyword triggers, first-contact replies, after-hours responses, and opt-out handling.
+          <div class="text-muted" style="font-size:.78rem;">
+            Keyword triggers, first-contact, after-hours, and opt-out handling.
+          </div>
         </div>
       </div>
 
       <div class="card mb-3" style="background:#0f1117;border:1px solid #1e2535;">
         <div class="card-header d-flex align-items-center gap-2" style="border-bottom:1px solid #1e2535;background:transparent;">
           <i data-feather="clock" style="width:15px;height:15px;color:#f59e0b;"></i>
-          <strong style="font-size:.88rem;">Business Hours &amp; After-Hours</strong>
+          <strong style="font-size:.88rem;">Business Hours</strong>
           <a href="{{ url_for('twilio.business_hours') }}" class="btn btn-sm btn-outline-secondary ms-auto"
              style="font-size:.76rem;padding:2px 9px;">Configure →</a>
         </div>
         <div class="card-body py-3 px-3" style="font-size:.83rem;color:#9ca3af;">
-          Set your team's operating hours. After-hours auto-reply rules fire automatically when
-          customers contact you outside business hours.
+          After-hours auto-reply fires when customers contact you outside these hours.
         </div>
       </div>
-
-      <div class="card mb-3" style="background:#0f1117;border:1px solid #1e2535;">
-        <div class="card-header d-flex align-items-center gap-2" style="border-bottom:1px solid #1e2535;background:transparent;">
-          <i data-feather="bar-chart-2" style="width:15px;height:15px;color:#ec4899;"></i>
-          <strong style="font-size:.88rem;">Analytics &amp; Reporting</strong>
-          <a href="{{ url_for('twilio.analytics') }}" class="btn btn-sm btn-outline-secondary ms-auto"
-             style="font-size:.76rem;padding:2px 9px;">View Analytics →</a>
-        </div>
-        <div class="card-body py-3 px-3" style="font-size:.83rem;color:#9ca3af;">
-          Message delivery rates, auto-reply performance, call volume, missed call tracking, and lead capture stats.
-        </div>
-      </div>
-
-    </div>
-
-    <!-- ── Column 2: Forwarding, Voicemail, Access ── -->
-    <div class="col-md-6">
 
       <div class="card mb-3" style="background:#0f1117;border:1px solid #1e2535;">
         <div class="card-header d-flex align-items-center gap-2" style="border-bottom:1px solid #1e2535;background:transparent;">
           <i data-feather="share-2" style="width:15px;height:15px;color:#7c3aed;"></i>
-          <strong style="font-size:.88rem;">SMS &amp; Call Forwarding</strong>
+          <strong style="font-size:.88rem;">Forwarding &amp; After-Hours</strong>
           <a href="{{ url_for('twilio.settings') }}#forwarding" class="btn btn-sm btn-outline-secondary ms-auto"
              style="font-size:.76rem;padding:2px 9px;">Configure →</a>
         </div>
@@ -132,22 +120,14 @@
               <span class="text-muted">SMS Forwarding</span>
               <span>
                 {% if ta and ta.sms_forwarding_enabled %}
-                  <span style="color:#4ade80;">● Enabled</span>
+                  <span style="color:#4ade80;">● On</span>
                   {% if ta.sms_forward_to %}<small class="text-muted ms-1">→ {{ ta.sms_forward_to }}</small>{% endif %}
-                {% else %}
-                  <span style="color:#6b7280;">Disabled</span>
-                {% endif %}
+                {% else %}<span style="color:#6b7280;">Off</span>{% endif %}
               </span>
             </div>
             <div class="d-flex justify-content-between">
               <span class="text-muted">After-Hours SMS</span>
-              <span>
-                {% if ta and ta.after_hours_sms_enabled %}
-                  <span style="color:#4ade80;">● Enabled</span>
-                {% else %}
-                  <span style="color:#6b7280;">Disabled</span>
-                {% endif %}
-              </span>
+              <span>{% if ta and ta.after_hours_sms_enabled %}<span style="color:#4ade80;">● On</span>{% else %}<span style="color:#6b7280;">Off</span>{% endif %}</span>
             </div>
           </div>
         </div>
@@ -155,101 +135,222 @@
 
       <div class="card mb-3" style="background:#0f1117;border:1px solid #1e2535;">
         <div class="card-header d-flex align-items-center gap-2" style="border-bottom:1px solid #1e2535;background:transparent;">
-          <i data-feather="mic" style="width:15px;height:15px;color:#06b6d4;"></i>
-          <strong style="font-size:.88rem;">Voicemail</strong>
-          <span class="badge ms-auto" style="background:rgba(107,114,128,.2);color:#9ca3af;font-size:.68rem;">Coming Soon</span>
+          <i data-feather="bar-chart-2" style="width:15px;height:15px;color:#ec4899;"></i>
+          <strong style="font-size:.88rem;">Analytics</strong>
+          <a href="{{ url_for('twilio.analytics') }}" class="btn btn-sm btn-outline-secondary ms-auto"
+             style="font-size:.76rem;padding:2px 9px;">View →</a>
         </div>
         <div class="card-body py-3 px-3" style="font-size:.83rem;color:#9ca3af;">
-          Voicemail greeting, transcription, and missed-call handling configuration will be available in an upcoming release.
+          Delivery rates, auto-reply performance, call volume, and lead capture stats.
         </div>
       </div>
 
-      <div class="card mb-3" style="background:#0f1117;border:1px solid #1e2535;">
-        <div class="card-header d-flex align-items-center gap-2" style="border-bottom:1px solid #1e2535;background:transparent;">
-          <i data-feather="cpu" style="width:15px;height:15px;color:#ec4899;"></i>
-          <strong style="font-size:.88rem;">AI Assistant</strong>
-          <span class="badge ms-auto" style="background:rgba(107,114,128,.2);color:#9ca3af;font-size:.68rem;">Coming Soon</span>
-        </div>
-        <div class="card-body py-3 px-3" style="font-size:.83rem;color:#9ca3af;">
-          Smart reply suggestions, conversation summaries, urgency detection, and follow-up scheduling
-          powered by GPT-4o. Coming soon.
-        </div>
-      </div>
+    </div>
 
-      <div class="card mb-3" style="background:#0f1117;border:1px solid #1e2535;">
+    <!-- ── Column 2: User Access & Licensing ── -->
+    <div class="col-md-7">
+
+      <div class="card" style="background:#0f1117;border:1px solid #1e2535;">
         <div class="card-header d-flex align-items-center gap-2" style="border-bottom:1px solid #1e2535;background:transparent;">
           <i data-feather="users" style="width:15px;height:15px;color:#4ade80;"></i>
           <strong style="font-size:.88rem;">User Access &amp; Licenses</strong>
           <a href="{{ url_for('main.manage_users') }}" class="btn btn-sm btn-outline-secondary ms-auto"
              style="font-size:.76rem;padding:2px 9px;">Manage Users →</a>
         </div>
-        <div class="card-body py-0 px-0">
-          {% if users_with_access %}
-          <table class="table table-sm mb-0" style="font-size:.82rem;color:#f7f7fb;">
+
+        <!-- Legend -->
+        <div class="px-3 py-2 d-flex flex-wrap gap-3" style="border-bottom:1px solid #1e2535;background:#070810;">
+          <span style="font-size:.72rem;color:#9ca3af;">
+            <span style="color:#7c3aed;font-weight:600;">HUB</span> = Communications Hub access
+          </span>
+          <span style="font-size:.72rem;color:#9ca3af;">
+            <span style="color:#06b6d4;font-weight:600;">PWA</span> = Mobile Inbox app access
+          </span>
+          <span style="font-size:.72rem;color:#9ca3af;">
+            <span style="color:#f59e0b;font-weight:600;">LIC</span> = Communications License
+          </span>
+          <span style="font-size:.72rem;color:#9ca3af;">
+            <span style="color:#ec4899;font-weight:600;">NUM</span> = Number Assignment
+          </span>
+        </div>
+
+        {% if users_with_access %}
+        <div style="overflow-x:auto;">
+          <table class="table table-sm mb-0" style="font-size:.81rem;color:#f7f7fb;min-width:560px;">
             <thead>
               <tr style="border-color:#1e2535;background:#070810;">
-                <th class="px-3 py-2" style="border-color:#1e2535;font-weight:500;color:#9ca3af;">User</th>
-                <th class="px-3 py-2 text-center" style="border-color:#1e2535;font-weight:500;color:#9ca3af;">Hub Access</th>
-                <th class="px-3 py-2 text-center" style="border-color:#1e2535;font-weight:500;color:#9ca3af;">Role</th>
+                <th class="px-3 py-2" style="border-color:#1e2535;font-weight:500;color:#9ca3af;min-width:160px;">User</th>
+                <th class="px-2 py-2 text-center" style="border-color:#1e2535;font-weight:600;color:#7c3aed;min-width:50px;" title="Communications Hub">HUB</th>
+                <th class="px-2 py-2 text-center" style="border-color:#1e2535;font-weight:600;color:#06b6d4;min-width:50px;" title="Mobile PWA Access">PWA</th>
+                <th class="px-2 py-2 text-center" style="border-color:#1e2535;font-weight:600;color:#f59e0b;min-width:50px;" title="Communications License">LIC</th>
+                <th class="px-2 py-2 text-center" style="border-color:#1e2535;font-weight:500;color:#9ca3af;min-width:50px;" title="SMS">SMS</th>
+                <th class="px-2 py-2 text-center" style="border-color:#1e2535;font-weight:500;color:#9ca3af;min-width:50px;" title="Calls">CALL</th>
+                <th class="px-2 py-2 text-center" style="border-color:#1e2535;font-weight:500;color:#9ca3af;min-width:50px;" title="Voicemail">VM</th>
+                <th class="px-2 py-2 text-center" style="border-color:#1e2535;font-weight:500;color:#9ca3af;min-width:50px;" title="AI">AI</th>
+                <th class="px-2 py-2" style="border-color:#1e2535;font-weight:600;color:#ec4899;min-width:100px;" title="Number Assignment">NUM</th>
               </tr>
             </thead>
             <tbody>
               {% for row in users_with_access %}
-              <tr style="border-color:#1e2535;">
+              {% set acc = row.access %}
+              {% set u   = row.user %}
+              {% set uid = u.id %}
+              {# Admins / owners always have access — show as locked #}
+              {% set is_owner_admin = acc.role in ('owner', 'admin') %}
+              <tr style="border-color:#1e2535;" data-user-id="{{ uid }}">
                 <td class="px-3 py-2" style="border-color:#1e2535;">
-                  <div style="font-weight:500;">{{ row.user.username or row.user.email }}</div>
-                  {% if row.user.username and row.user.email %}
-                  <div class="text-muted" style="font-size:.75rem;">{{ row.user.email }}</div>
+                  <div class="fw-500">{{ u.username or u.email }}</div>
+                  {% if u.username and u.email %}
+                  <div class="text-muted" style="font-size:.73rem;">{{ u.email }}</div>
                   {% endif %}
-                </td>
-                <td class="px-3 py-2 text-center" style="border-color:#1e2535;">
-                  {% if row.has_comms %}
-                  <span style="color:#4ade80;font-size:.78rem;">● On</span>
-                  {% else %}
-                  <span style="color:#6b7280;font-size:.78rem;">Off</span>
-                  {% endif %}
-                </td>
-                <td class="px-3 py-2 text-center" style="border-color:#1e2535;">
-                  <span class="badge" style="font-size:.67rem;
-                    {% if row.access.role == 'owner' %}background:rgba(124,58,237,.2);color:#a78bfa;
-                    {% elif row.access.role == 'admin' %}background:rgba(239,68,68,.15);color:#f87171;
+                  <span class="badge" style="font-size:.63rem;margin-top:2px;
+                    {% if acc.role == 'owner' %}background:rgba(124,58,237,.2);color:#a78bfa;
+                    {% elif acc.role == 'admin' %}background:rgba(239,68,68,.15);color:#f87171;
+                    {% elif acc.role == 'manager' %}background:rgba(245,158,11,.15);color:#fbbf24;
                     {% else %}background:rgba(107,114,128,.15);color:#9ca3af;{% endif %}">
-                    {{ row.access.role or 'member' }}
+                    {{ acc.role or 'member' }}
                   </span>
+                </td>
+
+                {# HUB toggle #}
+                <td class="px-2 py-2 text-center" style="border-color:#1e2535;">
+                  {% if is_owner_admin %}
+                    <span style="color:#4ade80;font-size:.8rem;" title="Always on for owner/admin">●</span>
+                  {% else %}
+                    <label class="mini-toggle" title="Communications Hub access">
+                      <input type="checkbox" data-field="comms_hub_enabled" data-uid="{{ uid }}"
+                             {% if acc.comms_hub_enabled %}checked{% endif %} onchange="saveToggle(this)">
+                      <span></span>
+                    </label>
+                  {% endif %}
+                </td>
+
+                {# PWA toggle #}
+                <td class="px-2 py-2 text-center" style="border-color:#1e2535;">
+                  {% if is_owner_admin %}
+                    <span style="color:#4ade80;font-size:.8rem;" title="Always on for owner/admin">●</span>
+                  {% else %}
+                    <label class="mini-toggle" title="Mobile Inbox PWA access">
+                      <input type="checkbox" data-field="pwa_access_enabled" data-uid="{{ uid }}"
+                             {% if acc.pwa_access_enabled or acc.can_access_mobile_inbox %}checked{% endif %}
+                             onchange="saveToggle(this)">
+                      <span></span>
+                    </label>
+                  {% endif %}
+                </td>
+
+                {# License toggle #}
+                <td class="px-2 py-2 text-center" style="border-color:#1e2535;">
+                  {% if is_owner_admin %}
+                    <span style="color:#4ade80;font-size:.8rem;" title="Always on for owner/admin">●</span>
+                  {% else %}
+                    <label class="mini-toggle" title="Communications License">
+                      <input type="checkbox" data-field="communications_license" data-uid="{{ uid }}"
+                             {% if acc.communications_license %}checked{% endif %} onchange="saveToggle(this)">
+                      <span></span>
+                    </label>
+                  {% endif %}
+                </td>
+
+                {# SMS toggle #}
+                <td class="px-2 py-2 text-center" style="border-color:#1e2535;">
+                  <label class="mini-toggle" title="SMS enabled">
+                    <input type="checkbox" data-field="sms_enabled" data-uid="{{ uid }}"
+                           {% if acc.sms_enabled is none or acc.sms_enabled %}checked{% endif %}
+                           onchange="saveToggle(this)">
+                    <span></span>
+                  </label>
+                </td>
+
+                {# Calls toggle #}
+                <td class="px-2 py-2 text-center" style="border-color:#1e2535;">
+                  <label class="mini-toggle" title="Calls enabled">
+                    <input type="checkbox" data-field="calls_enabled" data-uid="{{ uid }}"
+                           {% if acc.calls_enabled is none or acc.calls_enabled %}checked{% endif %}
+                           onchange="saveToggle(this)">
+                    <span></span>
+                  </label>
+                </td>
+
+                {# Voicemail toggle #}
+                <td class="px-2 py-2 text-center" style="border-color:#1e2535;">
+                  <label class="mini-toggle" title="Voicemail enabled">
+                    <input type="checkbox" data-field="voicemail_enabled" data-uid="{{ uid }}"
+                           {% if acc.voicemail_enabled %}checked{% endif %}
+                           onchange="saveToggle(this)">
+                    <span></span>
+                  </label>
+                </td>
+
+                {# AI toggle #}
+                <td class="px-2 py-2 text-center" style="border-color:#1e2535;">
+                  <label class="mini-toggle" title="AI assistant enabled">
+                    <input type="checkbox" data-field="ai_comms_enabled" data-uid="{{ uid }}"
+                           {% if acc.ai_comms_enabled %}checked{% endif %}
+                           onchange="saveToggle(this)">
+                    <span></span>
+                  </label>
+                </td>
+
+                {# Number assignment #}
+                <td class="px-2 py-2" style="border-color:#1e2535;">
+                  <div class="d-flex flex-column gap-1">
+                    <input type="text" class="form-control form-control-sm num-input"
+                           data-uid="{{ uid }}" placeholder="+1…"
+                           value="{{ acc.assigned_number or '' }}"
+                           style="background:#0b0d14;border-color:#1e2535;color:#f7f7fb;
+                                  font-size:.75rem;padding:2px 6px;width:100px;"
+                           onblur="saveNumber(this)">
+                    <select class="form-select form-select-sm num-type"
+                            data-uid="{{ uid }}"
+                            style="background:#0b0d14;border-color:#1e2535;color:#9ca3af;
+                                   font-size:.73rem;padding:2px 5px;width:100px;"
+                            onchange="saveNumberType(this)">
+                      <option value="shared"    {% if acc.number_type != 'dedicated' %}selected{% endif %}>Shared</option>
+                      <option value="dedicated" {% if acc.number_type == 'dedicated' %}selected{% endif %}>Dedicated</option>
+                    </select>
+                  </div>
                 </td>
               </tr>
               {% endfor %}
             </tbody>
           </table>
-          {% else %}
-          <div class="px-3 py-3 text-muted" style="font-size:.83rem;">
-            No team members found. <a href="{{ url_for('main.manage_users') }}" class="text-decoration-none" style="color:#7c3aed;">Invite users →</a>
-          </div>
-          {% endif %}
         </div>
+        {% else %}
+        <div class="px-3 py-4 text-muted" style="font-size:.83rem;">
+          No team members found.
+          <a href="{{ url_for('main.manage_users') }}" class="text-decoration-none" style="color:#7c3aed;">Invite users →</a>
+        </div>
+        {% endif %}
+
+        <!-- Save feedback bar -->
+        <div id="saveFeedback" style="display:none;padding:8px 16px;font-size:.8rem;
+             border-top:1px solid #1e2535;background:#070810;"></div>
+      </div>
+
+      <!-- Number type legend -->
+      <div class="mt-2 px-1" style="font-size:.76rem;color:#6b7280;">
+        <strong style="color:#ec4899;">Shared number</strong> — all assigned users see the same inbox.
+        <strong style="color:#7c3aed;">Dedicated number</strong> — that user gets their own DID (requires Twilio number provisioning).
       </div>
 
     </div>
   </div>
 
   <!-- Quick links footer -->
-  <div class="d-flex flex-wrap gap-2 mt-2" style="font-size:.82rem;">
+  <div class="d-flex flex-wrap gap-3 mt-3" style="font-size:.82rem;">
     <a href="{{ url_for('twilio.calls') }}" class="text-muted text-decoration-none">
       <i data-feather="phone" style="width:12px;height:12px;"></i> Call Log
     </a>
-    <span class="text-muted">&middot;</span>
     <a href="{{ url_for('twilio.analytics') }}" class="text-muted text-decoration-none">
       <i data-feather="bar-chart-2" style="width:12px;height:12px;"></i> Analytics
     </a>
-    <span class="text-muted">&middot;</span>
     <a href="{{ url_for('twilio.business_hours') }}" class="text-muted text-decoration-none">
       <i data-feather="clock" style="width:12px;height:12px;"></i> Business Hours
     </a>
-    <span class="text-muted">&middot;</span>
     <a href="{{ url_for('twilio.rules') }}" class="text-muted text-decoration-none">
       <i data-feather="zap" style="width:12px;height:12px;"></i> Auto-Reply Rules
     </a>
-    <span class="text-muted">&middot;</span>
     <a href="{{ url_for('twilio.comms_hub') }}" class="text-muted text-decoration-none">
       <i data-feather="arrow-left" style="width:12px;height:12px;"></i> Back to Hub
     </a>
@@ -257,5 +358,95 @@
 
 </div>
 
-<script>feather.replace();</script>
+<!-- ── Mini toggle CSS ───────────────────────────────────────────────────── -->
+<style>
+.mini-toggle {
+  position: relative; display: inline-block;
+  width: 32px; height: 18px; cursor: pointer; margin: 0;
+}
+.mini-toggle input { opacity: 0; width: 0; height: 0; }
+.mini-toggle span {
+  position: absolute; inset: 0; border-radius: 9px;
+  background: #1e2535; transition: background .2s;
+}
+.mini-toggle span::after {
+  content: ''; position: absolute;
+  width: 12px; height: 12px; border-radius: 50%;
+  background: #4b5563; top: 3px; left: 3px;
+  transition: transform .2s, background .2s;
+}
+.mini-toggle input:checked + span { background: rgba(124,58,237,.35); }
+.mini-toggle input:checked + span::after {
+  transform: translateX(14px); background: #7c3aed;
+}
+</style>
+
+<script>
+feather.replace();
+const CSRF = document.querySelector('meta[name="csrf-token"]')?.content || '{{ csrf_token() }}';
+
+function showFeedback(msg, ok) {
+  const el = document.getElementById('saveFeedback');
+  el.style.display = 'block';
+  el.style.color   = ok ? '#4ade80' : '#f87171';
+  el.textContent   = msg;
+  clearTimeout(el._t);
+  el._t = setTimeout(() => { el.style.display = 'none'; }, 3000);
+}
+
+async function saveToggle(input) {
+  const uid   = input.dataset.uid;
+  const field = input.dataset.field;
+  const val   = input.checked;
+  try {
+    const r    = await fetch(`/twilio/comms/settings/user/${uid}`, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF },
+      body:    JSON.stringify({ [field]: val }),
+    });
+    const data = await r.json();
+    if (data.success) {
+      showFeedback(`✓ Saved ${field} = ${val}`, true);
+    } else {
+      showFeedback(`✗ ${data.message}`, false);
+      input.checked = !val;  // revert
+    }
+  } catch (e) {
+    showFeedback('Network error — try again.', false);
+    input.checked = !val;
+  }
+}
+
+async function saveNumber(input) {
+  const uid = input.dataset.uid;
+  const val = input.value.trim() || null;
+  try {
+    const r    = await fetch(`/twilio/comms/settings/user/${uid}`, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF },
+      body:    JSON.stringify({ assigned_number: val }),
+    });
+    const data = await r.json();
+    showFeedback(data.success ? `✓ Number saved: ${val || 'cleared'}` : `✗ ${data.message}`, data.success);
+  } catch (e) {
+    showFeedback('Network error — try again.', false);
+  }
+}
+
+async function saveNumberType(select) {
+  const uid = select.dataset.uid;
+  const val = select.value;
+  try {
+    const r    = await fetch(`/twilio/comms/settings/user/${uid}`, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF },
+      body:    JSON.stringify({ number_type: val }),
+    });
+    const data = await r.json();
+    showFeedback(data.success ? `✓ Number type: ${val}` : `✗ ${data.message}`, data.success);
+  } catch (e) {
+    showFeedback('Network error — try again.', false);
+  }
+}
+</script>
 {% endblock %}
