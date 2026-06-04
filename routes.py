@@ -10767,6 +10767,7 @@ def add_user():
                 return redirect(url_for('main.add_user'))
             
             from werkzeug.security import generate_password_hash
+            from models import User, UserCompanyAccess
             user = User()
             user.username = username
             user.email = email
@@ -10776,7 +10777,6 @@ def add_user():
 
             # Auto-link new users to the current admin's default company so
             # they don't end up as orphan accounts with no tenant context.
-            from models import UserCompanyAccess
             company = current_user.get_default_company()
             if company:
                 if not user.default_company_id:
