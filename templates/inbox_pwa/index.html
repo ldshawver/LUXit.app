@@ -2,7 +2,7 @@
 <html lang="en" data-vapid="{{ vapid_public }}">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -36,8 +36,13 @@
     #shell {
       display: flex;
       height: 100dvh;
+      height: -webkit-fill-available; /* iOS Safari */
       padding-top: var(--safe-top);
       padding-bottom: var(--safe-bot);
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      width: 100%;
+      overflow: hidden;
     }
 
     /* ── Sidebar ────────────────────────────────────── */
@@ -113,16 +118,8 @@
     #convList::-webkit-scrollbar { width: 4px; }
     #convList::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
 
-    /* Conversation row + swipe */
+    /* Conversation row */
     .conv-item-wrap { position: relative; overflow: hidden; }
-    .conv-swipe-bg {
-      position: absolute; inset: 0; background: var(--red);
-      display: flex; align-items: center; justify-content: flex-end;
-      padding-right: 20px; color: #fff; font-size: .8rem; gap: 6px;
-      opacity: 0; transition: opacity .15s;
-      pointer-events: none;
-    }
-    .conv-swipe-bg.show { opacity: 1; }
     .conv-item {
       display: flex; align-items: center; gap: 12px;
       padding: 12px 14px; cursor: pointer; border-bottom: 1px solid var(--border);
@@ -245,10 +242,10 @@
 
     /* Composer */
     .composer {
-      padding: 10px 12px; border-top: 1px solid var(--border);
+      padding: 10px 12px calc(10px + var(--safe-bot)); border-top: 1px solid var(--border);
       background: var(--surface); flex-shrink: 0;
       display: flex; gap: 8px; align-items: flex-end;
-      /* keep above keyboard on iOS; safe-area-inset handled by #shell padding */
+      /* always anchored at the bottom of the visible area */
       position: sticky; bottom: 0; z-index: 20;
     }
     .composer-wrap { flex: 1; position: relative; }
@@ -453,10 +450,11 @@
     /* ── Mobile ─────────────────────────────────────── */
     @media (min-width: 900px) { #contactPanel { display: flex; } }
     @media (max-width: 640px) {
-      #sidebar { width: 100%; max-width: 100%; border-right: none; }
-      #main { display: none; }
+      #sidebar { width: 100%; max-width: 100%; border-right: none; min-width: 0; }
+      #main { display: none; width: 100%; }
       #shell.thread-open #sidebar { display: none; }
-      #shell.thread-open #main  { display: flex; flex: 1; height: 100%; }
+      #shell.thread-open #main  { display: flex; flex: 1; min-width: 0; overflow: hidden; }
+      #shell.thread-open #thread { display: flex !important; flex: 1; min-height: 0; }
       .btn-back { display: flex; }
     }
     @media (min-width: 641px) { #thread { display: flex !important; } }
@@ -506,7 +504,6 @@
       <button class="ftab active" onclick="setFilter('all',   this)">All</button>
       <button class="ftab"        onclick="setFilter('unread',this)">Unread</button>
       <button class="ftab"        onclick="setFilter('mine',  this)">Mine</button>
-      <button class="ftab"        onclick="setFilter('archived',this)">Archived</button>
     </div>
 
     <div id="convList"></div>
@@ -535,7 +532,6 @@
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 12 19.79 19.79 0 0 1 1.62 3.42 2 2 0 0 1 3.6 1.26h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L7.91 8.83a16 16 0 0 0 6.29 6.29l1.13-.91a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
           </button>
           <button onclick="markCurrentRead(false)" title="Mark unread">◎</button>
-          <button onclick="archiveCurrent()"       title="Archive">⊡</button>
           <button onclick="toggleContactPanel()"   title="Contact info">👤</button>
           <button onclick="openRename()"           title="Rename">✏</button>
         </div>
@@ -704,7 +700,7 @@ window.addEventListener('DOMContentLoaded', () => {
   connectSSE();
   registerSW();
   checkNotifPrompt();
-  setupSwipeGestures();
+  setupKeyboardResize();
   const params = new URLSearchParams(location.search);
   const convId = params.get('conv');
   if (convId) openConversation(parseInt(convId));
@@ -918,10 +914,6 @@ function renderConvList(convs) {
     const optOut   = c.is_opted_out ? 'opted-out' : '';
     return `
     <div class="conv-item-wrap" id="wrap-${c.id}">
-      <div class="conv-swipe-bg" id="swipebg-${c.id}">
-        <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/></svg>
-        Archive
-      </div>
       <div class="conv-item ${unread?'unread':''} ${active}"
            id="ci-${c.id}" onclick="openConversation(${c.id})">
         <div class="conv-avatar ${optOut}">${initials}</div>
@@ -936,9 +928,6 @@ function renderConvList(convs) {
       </div>
     </div>`;
   }).join('');
-
-  // Re-attach swipe gestures to new elements
-  setupSwipeGestures();
 }
 
 function updateUnreadBadge(count) {
@@ -947,51 +936,21 @@ function updateUnreadBadge(count) {
   el.classList.toggle('show', count > 0);
 }
 
-/* ── Swipe-to-archive ─────────────────────────────────────────── */
-function setupSwipeGestures() {
-  document.querySelectorAll('.conv-item[id^="ci-"]').forEach(el => {
-    if (el.dataset.swipeInit) return;
-    el.dataset.swipeInit = '1';
-    let startX = 0, dx = 0, swiping = false;
-    const THRESHOLD = 80;
-
-    el.addEventListener('touchstart', e => {
-      startX  = e.touches[0].clientX;
-      dx      = 0;
-      swiping = true;
-    }, { passive: true });
-
-    el.addEventListener('touchmove', e => {
-      if (!swiping) return;
-      dx = e.touches[0].clientX - startX;
-      if (dx < 0) {
-        el.style.transform = `translateX(${Math.max(dx, -THRESHOLD * 1.5)}px)`;
-        const bg = document.getElementById('swipebg-' + el.id.replace('ci-', ''));
-        if (bg) bg.classList.toggle('show', dx < -40);
-      }
-    }, { passive: true });
-
-    el.addEventListener('touchend', () => {
-      swiping = false;
-      const convId = parseInt(el.id.replace('ci-', ''));
-      if (dx < -THRESHOLD) {
-        el.style.transform = 'translateX(-100%)';
-        setTimeout(() => archiveConv(convId), 250);
-      } else {
-        el.style.transform = '';
-        const bg = document.getElementById('swipebg-' + el.id.replace('ci-', ''));
-        if (bg) bg.classList.remove('show');
-      }
-    });
-  });
-}
-
-async function archiveConv(convId) {
-  await apiFetch(`/api/inbox/conversations/${convId}/archive`, 'PATCH', { archived: true });
-  if (navigator.vibrate) navigator.vibrate(60);
-  toast('Archived.', 'success');
-  if (state.activeConvId === convId) closeThread();
-  loadConversations();
+/* ── Keyboard resize (Android Chrome visual viewport fix) ─────── */
+function setupKeyboardResize() {
+  const shell = document.getElementById('shell');
+  function applyHeight() {
+    const h = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+    shell.style.height = h + 'px';
+    // Scroll messages to bottom when keyboard closes/opens
+    if (state.activeConvId) scrollThreadToBottom();
+  }
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener('resize',  applyHeight);
+    window.visualViewport.addEventListener('scroll',  applyHeight);
+  }
+  window.addEventListener('resize', applyHeight);
+  applyHeight();
 }
 
 /* ── Open conversation ────────────────────────────────────────── */
@@ -1175,9 +1134,7 @@ function renderContactPanel(c, contact) {
       <textarea class="notes-area" id="notesArea" placeholder="Add notes…">${esc(c.notes||'')}</textarea>
       <button class="btn-small" style="margin-top:6px;" onclick="saveNotes(document.getElementById('notesArea').value)">Save Notes</button>
     </div>
-    <div class="cp-section" style="display:flex;flex-direction:column;gap:6px;">
-      <button class="btn-small danger" onclick="archiveCurrent()">Archive Conversation</button>
-    </div>`;
+  `;
 }
 
 function toggleContactPanel() {
@@ -1394,11 +1351,6 @@ async function markCurrentRead(isRead = true) {
   if (!state.activeConvId) return;
   const data = await apiFetch(`/api/inbox/conversations/${state.activeConvId}/read`, 'PATCH', { is_read: isRead });
   if (data?.success) { toast(isRead ? 'Marked as read.' : 'Marked as unread.'); loadConversations(); }
-}
-
-async function archiveCurrent() {
-  if (!state.activeConvId) return;
-  await archiveConv(state.activeConvId);
 }
 
 function openRename() {

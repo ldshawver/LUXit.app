@@ -348,7 +348,12 @@ def create_app() -> Flask:
     try:
         from inbox_pwa import inbox_pwa_bp
         app.register_blueprint(inbox_pwa_bp)
-        print("✓ PWA Inbox loaded: /app/inbox")
+        # The PWA inbox API endpoints are all session-authenticated via
+        # _require_auth().  The service worker caches the page HTML, which
+        # means the CSRF token baked into the page can expire before the
+        # cached copy is refreshed.  Session auth is sufficient here.
+        csrf.exempt(inbox_pwa_bp)
+        print("✓ PWA Inbox loaded: /app/inbox (CSRF-exempt, session-auth)")
     except Exception as exc:
         app.logger.warning("Failed to register inbox_pwa blueprint: %s", exc)
     # Stripe webhook deliveries from Stripe's edge servers will never carry
