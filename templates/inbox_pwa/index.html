@@ -388,19 +388,66 @@
     .thread-actions .thread-act-call:hover { background: rgba(34,197,94,.28); }
     .thread-actions .thread-act-call:disabled { opacity: .6; cursor: wait; }
 
-    /* ── Settings sheet links ──────────────────────── */
-    .settings-link-row {
-      display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px;
+    /* ── Settings sheet ─────────────────────────────── */
+    .settings-section-label {
+      font-size: .7rem; font-weight: 700; text-transform: uppercase;
+      letter-spacing: .08em; color: var(--muted); margin-bottom: 8px;
     }
-    .settings-link {
+    .settings-account-row {
+      display: flex; align-items: center; gap: 12px;
+      padding: 10px 0; margin-bottom: 10px;
+    }
+    .settings-account-avatar {
+      width: 44px; height: 44px; border-radius: 50%; flex-shrink: 0;
+      background: linear-gradient(135deg, var(--purple), var(--cyan));
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1.1rem; font-weight: 700; color: #fff;
+    }
+    .settings-account-info { flex: 1; min-width: 0; }
+    .settings-account-name { font-size: .93rem; font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .settings-account-sub  { font-size: .76rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px; }
+
+    .settings-action-btn {
       display: flex; align-items: center; gap: 10px;
-      padding: 12px 14px; border-radius: 10px;
+      width: 100%; padding: 11px 14px; border-radius: 10px;
       background: rgba(255,255,255,.05); border: 1px solid var(--border);
-      color: var(--text); text-decoration: none; font-size: .87rem;
-      transition: background .15s;
+      color: var(--text); font-size: .87rem; cursor: pointer;
+      transition: background .15s; text-align: left;
     }
-    .settings-link:hover { background: rgba(255,255,255,.09); color: #fff; text-decoration: none; }
-    .settings-link svg { width: 17px; height: 17px; flex-shrink: 0; stroke: var(--cyan); }
+    .settings-action-btn:hover { background: rgba(255,255,255,.09); }
+    .settings-action-btn svg { flex-shrink: 0; stroke: var(--cyan); }
+    .settings-signout { color: var(--red) !important; }
+    .settings-signout svg { stroke: var(--red) !important; }
+
+    .settings-toggle-row {
+      display: flex; align-items: center; gap: 10px;
+      padding: 10px 0; border-bottom: 1px solid var(--border);
+    }
+    .settings-toggle-row:last-of-type { border-bottom: none; }
+    .settings-toggle-label {
+      display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0;
+      color: var(--text); font-size: .87rem;
+    }
+    .settings-toggle-label svg { flex-shrink: 0; stroke: var(--cyan); }
+    .settings-toggle-label div { display: flex; flex-direction: column; gap: 2px; }
+    .settings-toggle-label span { font-size: .87rem; }
+    .settings-toggle-label small { font-size: .72rem; color: var(--muted); }
+
+    /* iOS-style toggle */
+    .pwa-toggle { position: relative; display: inline-block; width: 44px; height: 26px; flex-shrink: 0; }
+    .pwa-toggle input { opacity: 0; width: 0; height: 0; position: absolute; }
+    .pwa-toggle-track {
+      position: absolute; inset: 0; border-radius: 13px;
+      background: var(--border); transition: background .2s; cursor: pointer;
+    }
+    .pwa-toggle-track::before {
+      content: ''; position: absolute;
+      width: 20px; height: 20px; border-radius: 50%;
+      background: #fff; top: 3px; left: 3px;
+      transition: transform .2s; box-shadow: 0 1px 3px rgba(0,0,0,.4);
+    }
+    .pwa-toggle input:checked + .pwa-toggle-track { background: var(--purple); }
+    .pwa-toggle input:checked + .pwa-toggle-track::before { transform: translateX(18px); }
 
     /* ── Compose contact search ─────────────────────── */
     .compose-search-results {
@@ -605,39 +652,74 @@
 <!-- ── Settings sheet ─────────────────────────────────────────────── -->
 <div class="pwa-modal-overlay" id="settingsSheet">
   <div class="pwa-modal">
-    <div class="modal-title">SMS Settings</div>
-    <div class="settings-link-row">
-      <a href="/twilio/settings" class="settings-link">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-        Twilio &amp; SMS Settings
-      </a>
-      <a href="/twilio/rules" class="settings-link">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
-        Auto-Reply Rules
-      </a>
-      <a href="/twilio/hours" class="settings-link">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-        Business Hours &amp; After-Hours
-      </a>
-      <a href="/twilio/calls" class="settings-link">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 12 19.79 19.79 0 0 1 1.62 3.42 2 2 0 0 1 3.6 1.26h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L7.91 8.83a16 16 0 0 0 6.29 6.29l1.13-.91a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
-        Call Log &amp; Missed Calls
-      </a>
-      <a href="/twilio/analytics" class="settings-link">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
-        SMS Analytics
-      </a>
-      <a href="/settings/integrations" class="settings-link">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
-        Platform Integrations
-      </a>
-      <a href="/dashboard" class="settings-link">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
-        Back to Dashboard
-      </a>
+    <div class="modal-title">Settings</div>
+
+    <!-- Account -->
+    <div class="settings-section-label">Account</div>
+    <div class="settings-account-row">
+      <div class="settings-account-avatar" id="settingsAvatar">{{ (user.username or user.email or 'U')[0].upper() }}</div>
+      <div class="settings-account-info">
+        <div class="settings-account-name">{{ user.username or user.email or 'User' }}</div>
+        <div class="settings-account-sub">{{ user.email or '' }}</div>
+      </div>
     </div>
-    <div class="modal-actions">
-      <button class="btn-cancel" onclick="closeModal('settingsSheet')">Close</button>
+    <a href="/logout" class="settings-action-btn settings-signout">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+      Sign Out
+    </a>
+
+    <!-- Notifications -->
+    <div class="settings-section-label" style="margin-top:20px;">Notifications</div>
+    <div class="settings-toggle-row">
+      <div class="settings-toggle-label">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+        <div>
+          <span>Message Sound</span>
+          <small>Play a tone on new messages</small>
+        </div>
+      </div>
+      <label class="pwa-toggle">
+        <input type="checkbox" id="toggleSound" onchange="setSoundEnabled(this.checked)">
+        <span class="pwa-toggle-track"></span>
+      </label>
+    </div>
+    <div class="settings-toggle-row">
+      <div class="settings-toggle-label">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>
+        <div>
+          <span>Vibrate</span>
+          <small>Vibrate on new messages</small>
+        </div>
+      </div>
+      <label class="pwa-toggle">
+        <input type="checkbox" id="toggleVibrate" onchange="setVibrateEnabled(this.checked)">
+        <span class="pwa-toggle-track"></span>
+      </label>
+    </div>
+    <div class="settings-toggle-row">
+      <div class="settings-toggle-label">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 17H2a3 3 0 0 0 3-3V9a7 7 0 0 1 14 0v5a3 3 0 0 0 3 3z"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+        <div>
+          <span>Push Notifications</span>
+          <small id="pushStatusLabel">Tap Enable to allow</small>
+        </div>
+      </div>
+      <button class="btn-small" id="pushToggleBtn" onclick="togglePushFromSettings()">Enable</button>
+    </div>
+
+    <!-- App -->
+    <div class="settings-section-label" style="margin-top:20px;">App</div>
+    <button class="settings-action-btn" onclick="refreshApp()">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+      Check for Updates &amp; Refresh
+    </button>
+    <a href="/dashboard" class="settings-action-btn" style="margin-top:6px;text-decoration:none;">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+      Back to Dashboard
+    </a>
+
+    <div class="modal-actions" style="margin-top:18px;">
+      <button class="btn-cancel" onclick="closeModal('settingsSheet')">Done</button>
     </div>
   </div>
 </div>
@@ -689,7 +771,8 @@ let state = {
   sseConnected:  false,
   pollConvTimer: null,
   pollMsgTimer:  null,
-  soundEnabled:  localStorage.getItem('sndEnabled') !== 'false',
+  soundEnabled:   localStorage.getItem('sndEnabled') !== 'false',
+  vibrateEnabled: localStorage.getItem('vibrateEnabled') !== 'false',
 };
 
 /* ── Init ─────────────────────────────────────────────────────── */
@@ -717,16 +800,33 @@ function registerSW() {
 
 /* ── Sound toggle ─────────────────────────────────────────────── */
 function toggleSound() {
-  state.soundEnabled = !state.soundEnabled;
+  setSoundEnabled(!state.soundEnabled);
+  toast(state.soundEnabled ? 'Sound on' : 'Sound off');
+}
+function setSoundEnabled(val) {
+  state.soundEnabled = !!val;
   localStorage.setItem('sndEnabled', state.soundEnabled);
   updateSoundBtn();
-  toast(state.soundEnabled ? 'Sound on' : 'Sound off');
+  const cb = document.getElementById('toggleSound');
+  if (cb) cb.checked = state.soundEnabled;
 }
 function updateSoundBtn() {
   const btn = document.getElementById('soundBtn');
   if (!btn) return;
   btn.textContent = state.soundEnabled ? '🔔' : '🔕';
   btn.classList.toggle('active', state.soundEnabled);
+}
+
+/* ── Vibrate toggle ───────────────────────────────────────────── */
+function setVibrateEnabled(val) {
+  state.vibrateEnabled = !!val;
+  localStorage.setItem('vibrateEnabled', state.vibrateEnabled);
+  const cb = document.getElementById('toggleVibrate');
+  if (cb) cb.checked = state.vibrateEnabled;
+}
+function vibrateIfEnabled(pattern) {
+  if (!state.vibrateEnabled) return;
+  if ('vibrate' in navigator) { try { navigator.vibrate(pattern || 200); } catch(e) {} }
 }
 function playSound() {
   if (!state.soundEnabled) return;
@@ -821,8 +921,7 @@ function connectSSE() {
 
 function handleSSEEvent(data) {
   if (data.type === 'new_message') {
-    // Vibrate on new inbound message
-    if (navigator.vibrate) navigator.vibrate([80, 40, 80]);
+    vibrateIfEnabled([80, 40, 80]);
     playSound();
 
     // Flash the conversation row if visible
@@ -1236,7 +1335,73 @@ function scrollThreadToBottom() {
 }
 
 /* ── Settings sheet ────────────────────────────────────────────── */
-function openSettingsSheet() { openModal('settingsSheet'); }
+function openSettingsSheet() {
+  // Sync checkboxes with current state before opening
+  const soundCb = document.getElementById('toggleSound');
+  const vibCb   = document.getElementById('toggleVibrate');
+  if (soundCb) soundCb.checked = state.soundEnabled;
+  if (vibCb)   vibCb.checked   = state.vibrateEnabled;
+
+  // Update push button label
+  const pushBtn   = document.getElementById('pushToggleBtn');
+  const pushLabel = document.getElementById('pushStatusLabel');
+  if ('Notification' in window) {
+    if (Notification.permission === 'granted') {
+      if (pushBtn)   { pushBtn.textContent = 'Enabled'; pushBtn.disabled = true; }
+      if (pushLabel) pushLabel.textContent = 'Notifications are on';
+    } else if (Notification.permission === 'denied') {
+      if (pushBtn)   { pushBtn.textContent = 'Blocked'; pushBtn.disabled = true; }
+      if (pushLabel) pushLabel.textContent = 'Blocked in browser settings';
+    } else {
+      if (pushBtn)   { pushBtn.textContent = 'Enable'; pushBtn.disabled = false; }
+      if (pushLabel) pushLabel.textContent = 'Tap to allow notifications';
+    }
+  } else {
+    const row = document.getElementById('pushRow');
+    if (row) row.style.display = 'none';
+  }
+
+  openModal('settingsSheet');
+}
+
+/* ── Push toggle from settings ─────────────────────────────────── */
+async function togglePushFromSettings() {
+  if (!('Notification' in window)) return;
+  if (Notification.permission === 'denied') {
+    toast('Push blocked — please enable in browser/OS settings');
+    return;
+  }
+  await requestPush();
+  openSettingsSheet(); // refresh labels
+}
+
+/* ── Refresh / check for updates ───────────────────────────────── */
+async function refreshApp() {
+  toast('Checking for updates…');
+  try {
+    if ('serviceWorker' in navigator) {
+      const reg = await navigator.serviceWorker.getRegistration();
+      if (reg) {
+        await reg.update();
+        if (reg.waiting) {
+          reg.waiting.postMessage({ type: 'SKIP_WAITING' });
+          await new Promise(r => setTimeout(r, 600));
+          location.reload(true);
+          return;
+        }
+      }
+    }
+    // Clear all caches then reload
+    if ('caches' in window) {
+      const keys = await caches.keys();
+      await Promise.all(keys.map(k => caches.delete(k)));
+    }
+    toast('Up to date — reloading…');
+    setTimeout(() => location.reload(true), 800);
+  } catch (e) {
+    location.reload(true);
+  }
+}
 
 /* ── Badge counts (missed calls + voicemail) ───────────────────── */
 async function loadBadgeCounts() {
