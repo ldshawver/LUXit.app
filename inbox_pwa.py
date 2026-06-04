@@ -194,10 +194,11 @@ def _twilio_send_error_message(exc) -> str:
     status = getattr(exc, "status", None)
 
     guidance_by_code = {
+        # ── SMS error codes ────────────────────────────────────────────
         21211: "The recipient phone number is invalid. Check the number and try again.",
-        21408: "Twilio is not allowed to send SMS to that destination. Enable the region in Twilio geo permissions.",
+        21408: "Twilio is not allowed to send SMS to that destination. Enable the region in Twilio Console → Voice & Messaging → Geo Permissions.",
         21606: "The configured Twilio From number cannot send SMS. Check SMS Settings or use an SMS-capable Twilio number.",
-        21610: "This customer has opted out. They must reply START before texts can be sent again.",
+        21610: "This contact has opted out. They must reply START before texts can be sent again.",
         21612: "Twilio cannot route SMS to that phone number. Check the recipient number and carrier support.",
         21614: "The recipient does not appear to be a mobile/SMS-capable number.",
         21617: "The message is too long for Twilio to send. Shorten it and try again.",
@@ -206,29 +207,51 @@ def _twilio_send_error_message(exc) -> str:
         30005: "The destination number is unknown or inactive. Check the customer's phone number.",
         30006: "The destination number is a landline or unreachable by SMS. Try calling instead.",
         30007: "The carrier filtered the message. Reword it to avoid links or promotional wording, then try again.",
+        # ── Voice / call error codes ───────────────────────────────────
+        20003: "Twilio authentication failed. Check the Account SID and Auth Token in SMS Settings.",
+        13224: "Invalid phone number format. Make sure the number is in E.164 format (+1XXXXXXXXXX).",
+        13227: "Twilio geographic permissions block calls to that destination. Enable the region in Twilio Console → Voice & Messaging → Geo Permissions.",
+        21201: "International calling is not enabled for your Twilio number. Enable it in Twilio Console → Voice & Messaging → Geo Permissions.",
+        21210: "The From number is not a valid Twilio phone number. Check SMS Settings.",
+        21215: "Twilio does not have permission to dial that number. Enable geographic permissions or check your Twilio account status.",
+        21216: "Your Twilio account is not authorized to call this number. If you are on a trial account, verify the number at twilio.com/console → Phone Numbers → Verified Caller IDs.",
+        21217: "The dialled number is not reachable via Twilio. Confirm the number is correct and try again.",
+        21218: "The From number does not have voice capability. Use a voice-capable Twilio number in SMS Settings.",
+        21219: "The To number is not a valid, dialable phone number. Check the number and try again.",
+        21401: "Twilio could not parse the phone number. Ensure it starts with + and the country code.",
+        32016: "Twilio cannot locate your calling app. Check that your Twilio voice webhook is configured.",
     }
     if code in guidance_by_code:
         return guidance_by_code[code]
-    if status == 403:
-        return (
-            "Twilio rejected the request with HTTP 403. Check that the Twilio "
-            "number is SMS/voice-capable, the Account SID/Auth Token are correct, "
-            "and the destination is allowed in Twilio. For urgent contact, place a call."
-        )
 
     lower_raw = raw.lower()
-    if ("unable to create record" in lower_raw and "forbidden" in lower_raw) or "http 403" in lower_raw:
+
+    # Trial-account restriction (number not verified)
+    if ("unverified" in lower_raw or "verified caller" in lower_raw) and (
+        "trial" in lower_raw or "upgrade" in lower_raw
+    ):
         return (
-            "Twilio rejected the request with HTTP 403. Check that the Twilio "
-            "number is SMS/voice-capable, the Account SID/Auth Token are correct, "
-            "and the destination is allowed in Twilio. For urgent contact, place a call."
+            "Twilio trial accounts can only call/text numbers you have verified. "
+            "Go to twilio.com/console → Phone Numbers → Verified Caller IDs and add this number, "
+            "or upgrade your Twilio account to a paid plan."
         )
-    if "unverified" in lower_raw and "trial" in lower_raw:
-        return "Twilio trial accounts can only text verified recipient numbers. Verify this customer in Twilio or upgrade the account."
+
+    if status == 403 or (
+        ("unable to create record" in lower_raw and "forbidden" in lower_raw)
+        or "http 403" in lower_raw
+    ):
+        return (
+            "Twilio 403: On trial accounts the destination must be a Verified Caller ID "
+            "(twilio.com/console → Verified Caller IDs). "
+            "Otherwise check Geo Permissions or Voice capability on your Twilio number."
+        )
+
     if "authenticate" in lower_raw or "authentication" in lower_raw or "account sid" in lower_raw:
         return "Twilio authentication failed. Check the Account SID and Auth Token in SMS Settings."
-    if "not a valid phone number" in lower_raw:
-        return "The recipient phone number is invalid. Check the number and try again."
+    if "not a valid phone number" in lower_raw or "is not a valid" in lower_raw:
+        return "The phone number is invalid. Make sure it includes the country code (e.g. +15551234567)."
+    if "geo permission" in lower_raw or "geographic" in lower_raw:
+        return "Twilio geographic permissions block that destination. Enable the region in Twilio Console → Voice & Messaging → Geo Permissions."
 
     return raw
 
@@ -1013,8 +1036,13 @@ def dial_number():
         return jsonify({"success": True, "call_sid": call.sid, "status": call.status, "message": msg})
 
     except Exception as exc:
-        logger.error("Dial pad call error: %s", exc)
-        return jsonify({"success": False, "error": _twilio_send_error_message(exc)}), 500
+        twilio_code   = getattr(exc, "code",   None)
+        twilio_status = getattr(exc, "status", None)
+        logger.error(
+            "Dial pad call error: twilio_code=%s http_status=%s to=%s from=%s — %s",
+            twilio_code, twilio_status, to_number, ta.from_phone, exc,
+        )
+        return jsonify({"success": False, "error": _twilio_send_error_message(exc)}), 400
 
 
 def _fire_push_notification(company_id: int, conv, message_body: str):
