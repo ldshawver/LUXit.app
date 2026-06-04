@@ -42,7 +42,7 @@
                     <tr>
                         <td><strong>Segment:</strong></td>
                         <td>
-                            <span class="badge" style="background: {% if user.segment == 'admin' %}#e4055c{% elif user.segment == 'moderator' %}#0044ff{% else %}#00ffb4{% endif %}; color: white;">{{ user.segment.upper() }}</span>
+                            <span class="badge" style="background: {% if user.segment == 'admin' %}#e4055c{% elif user.segment == 'moderator' %}#0044ff{% else %}#00ffb4{% endif %}; color: white;">{{ (user.segment or 'user')|upper }}</span>
                         </td>
                     </tr>
                     <tr>
@@ -67,7 +67,7 @@
                     {% endif %}
                     <tr>
                         <td><strong>Member Since:</strong></td>
-                        <td>{{ user.created_at.strftime('%B %d, %Y') }}</td>
+                        <td>{{ user.created_at.strftime('%B %d, %Y') if user.created_at else 'N/A' }}</td>
                     </tr>
                 </table>
                 
