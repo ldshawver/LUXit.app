@@ -505,6 +505,87 @@
       .btn-back { display: flex; }
     }
     @media (min-width: 641px) { #thread { display: flex !important; } }
+    /* ── Dial pad ──────────────────────────────────────── */
+    .dial-pad-overlay {
+      position: fixed; inset: 0; z-index: 300;
+      background: rgba(0,0,0,.88); backdrop-filter: blur(8px);
+      display: flex; align-items: flex-end; justify-content: center;
+      opacity: 0; pointer-events: none; transition: opacity .2s;
+    }
+    .dial-pad-overlay.show { opacity: 1; pointer-events: all; }
+    .dial-pad-sheet {
+      background: #111827; border-radius: 20px 20px 0 0;
+      width: 100%; max-width: 420px; padding: 16px 20px 36px;
+      box-shadow: 0 -8px 40px rgba(0,0,0,.6);
+    }
+    .dial-handle {
+      width: 36px; height: 4px; border-radius: 2px;
+      background: #374151; margin: 0 auto 18px;
+    }
+    .dial-display-row {
+      display: flex; align-items: center; min-height: 56px; padding: 0 4px 12px;
+    }
+    .dial-display {
+      flex: 1; font-size: 2.2rem; font-weight: 300; color: #fff;
+      letter-spacing: 3px; text-align: center; font-variant-numeric: tabular-nums;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .dial-display.empty { font-size: 1rem; color: #4b5563; font-weight: 400; letter-spacing: 0; }
+    .dial-back {
+      background: none; border: none; color: #6b7280; font-size: 1.4rem;
+      cursor: pointer; padding: 8px 4px; line-height: 1; width: 40px; text-align: center;
+      transition: color .1s;
+    }
+    .dial-back:active { color: #fff; }
+    .dial-grid {
+      display: grid; grid-template-columns: repeat(3, 1fr);
+      gap: 10px; margin: 4px 0 20px;
+    }
+    .dial-key {
+      background: #1f2937; border: none; border-radius: 50%;
+      width: 72px; height: 72px; margin: auto;
+      color: #fff; cursor: pointer;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      transition: background .1s; user-select: none;
+      -webkit-tap-highlight-color: transparent; touch-action: manipulation;
+    }
+    .dial-key:active { background: #374151; }
+    .dial-key .dk-num { font-size: 1.5rem; font-weight: 400; line-height: 1.1; }
+    .dial-key .dk-sub { font-size: .52rem; letter-spacing: .1em; color: #6b7280; margin-top: 2px; text-transform: uppercase; }
+    .dial-actions {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0 10px;
+    }
+    .dial-side-btn {
+      width: 52px; height: 52px; border-radius: 50%;
+      background: #1f2937; border: none; color: #9ca3af;
+      display: flex; align-items: center; justify-content: center;
+      cursor: pointer; transition: background .1s, color .1s;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .dial-side-btn:active { background: #374151; color: #fff; }
+    .dial-call-btn {
+      width: 72px; height: 72px; border-radius: 50%;
+      background: #22c55e; border: none; color: #fff;
+      display: flex; align-items: center; justify-content: center;
+      cursor: pointer; box-shadow: 0 4px 20px rgba(34,197,94,.4);
+      transition: background .12s, transform .1s;
+      -webkit-tap-highlight-color: transparent; touch-action: manipulation;
+    }
+    .dial-call-btn:active  { background: #16a34a; transform: scale(.94); }
+    .dial-call-btn:disabled { background: #374151; box-shadow: none; cursor: not-allowed; }
+    /* compose contact picker */
+    .compose-picker-row {
+      display: flex; gap: 8px; align-items: center; margin-top: 8px;
+    }
+    .compose-picker-btn {
+      background: none; border: 1px solid var(--border);
+      border-radius: 8px; color: var(--text-dim); cursor: pointer;
+      padding: 6px 10px; font-size: .78rem;
+      display: flex; align-items: center; gap: 5px; transition: border-color .15s, color .15s;
+      white-space: nowrap;
+    }
+    .compose-picker-btn:hover { border-color: var(--purple); color: var(--purple-l); }
   </style>
 </head>
 <body>
@@ -519,10 +600,10 @@
       <span class="badge-unread" id="unreadBadge">0</span>
       <div class="live-dot" id="liveDot" title="Connecting..."></div>
       <div class="pwa-head-actions">
-        <a href="/twilio/calls" class="pwa-head-icon" title="Calls &amp; Missed Calls">
+        <button class="pwa-head-icon" onclick="openDialPad()" title="Dial Pad">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 12 19.79 19.79 0 0 1 1.62 3.42 2 2 0 0 1 3.6 1.26h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L7.91 8.83a16 16 0 0 0 6.29 6.29l1.13-.91a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
           <span class="pwa-head-badge" id="missedCallsBadge" style="display:none;">0</span>
-        </a>
+        </button>
         <a href="/twilio/calls" class="pwa-head-icon" title="Voicemail" id="vmIconLink">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 18v-6a9 9 0 0 1 18 0v6"/><path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z"/></svg>
           <span class="pwa-head-badge" id="vmBadge" style="display:none;">0</span>
@@ -637,6 +718,12 @@
         </div>
       </div>
       <input type="hidden" id="composeTo">
+      <div class="compose-picker-row">
+        <button class="compose-picker-btn" onclick="pickComposeContact()" title="Pick from phone contacts">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+          From contacts
+        </button>
+      </div>
     </div>
     <div class="pwa-field">
       <label>Message</label>
@@ -707,6 +794,35 @@
       <button class="btn-small" id="pushToggleBtn" onclick="togglePushFromSettings()">Enable</button>
     </div>
 
+    <!-- Calls -->
+    <div class="settings-section-label" style="margin-top:20px;">Calls</div>
+    <div class="settings-toggle-row">
+      <div class="settings-toggle-label">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 12 19.79 19.79 0 0 1 1.62 3.42 2 2 0 0 1 3.6 1.26h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L7.91 8.83a16 16 0 0 0 6.29 6.29l1.13-.91a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
+        <div>
+          <span>Cell network forwarding</span>
+          <small id="callMethodLabel">Twilio calls your phone, then connects customer — Twilio number shown as caller ID</small>
+        </div>
+      </div>
+      <label class="pwa-toggle">
+        <input type="checkbox" id="toggleCellCall" checked onchange="setCellCallMethod(this.checked)">
+        <span class="pwa-toggle-track"></span>
+      </label>
+    </div>
+    <div class="settings-toggle-row" style="opacity:.5;pointer-events:none;">
+      <div class="settings-toggle-label">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 6l11 7L23 6"/><rect x="1" y="4" width="22" height="16" rx="2"/></svg>
+        <div>
+          <span>VoIP / Wi-Fi calling</span>
+          <small>Browser-based — coming soon</small>
+        </div>
+      </div>
+      <label class="pwa-toggle">
+        <input type="checkbox" disabled>
+        <span class="pwa-toggle-track"></span>
+      </label>
+    </div>
+
     <!-- App -->
     <div class="settings-section-label" style="margin-top:20px;">App</div>
     <button class="settings-action-btn" onclick="refreshApp()">
@@ -734,6 +850,83 @@
     <div class="modal-actions">
       <button class="btn-cancel"  onclick="closeModal('renameModal')">Cancel</button>
       <button class="btn-primary" onclick="submitRename()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Dial Pad ─────────────────────────────────────────────────────── -->
+<div class="dial-pad-overlay" id="dialPad">
+  <div class="dial-pad-sheet">
+    <div class="dial-handle"></div>
+
+    <div class="dial-display-row">
+      <div class="dial-display empty" id="dialDisplay">Enter number</div>
+      <button class="dial-back" id="dialBack" onclick="dialBackspace()" style="display:none;">⌫</button>
+    </div>
+
+    <div class="dial-grid">
+      <button class="dial-key" onclick="dialKey('1')">
+        <span class="dk-num">1</span><span class="dk-sub">&nbsp;</span>
+      </button>
+      <button class="dial-key" onclick="dialKey('2')">
+        <span class="dk-num">2</span><span class="dk-sub">ABC</span>
+      </button>
+      <button class="dial-key" onclick="dialKey('3')">
+        <span class="dk-num">3</span><span class="dk-sub">DEF</span>
+      </button>
+      <button class="dial-key" onclick="dialKey('4')">
+        <span class="dk-num">4</span><span class="dk-sub">GHI</span>
+      </button>
+      <button class="dial-key" onclick="dialKey('5')">
+        <span class="dk-num">5</span><span class="dk-sub">JKL</span>
+      </button>
+      <button class="dial-key" onclick="dialKey('6')">
+        <span class="dk-num">6</span><span class="dk-sub">MNO</span>
+      </button>
+      <button class="dial-key" onclick="dialKey('7')">
+        <span class="dk-num">7</span><span class="dk-sub">PQRS</span>
+      </button>
+      <button class="dial-key" onclick="dialKey('8')">
+        <span class="dk-num">8</span><span class="dk-sub">TUV</span>
+      </button>
+      <button class="dial-key" onclick="dialKey('9')">
+        <span class="dk-num">9</span><span class="dk-sub">WXYZ</span>
+      </button>
+      <button class="dial-key" onclick="dialKey('*')">
+        <span class="dk-num">*</span><span class="dk-sub">&nbsp;</span>
+      </button>
+      <button class="dial-key" onclick="dialKey('0')" onlongpress="dialKey('+')">
+        <span class="dk-num">0</span><span class="dk-sub">+</span>
+      </button>
+      <button class="dial-key" onclick="dialKey('#')">
+        <span class="dk-num">#</span><span class="dk-sub">&nbsp;</span>
+      </button>
+    </div>
+
+    <div class="dial-actions">
+      <!-- Contacts picker -->
+      <button class="dial-side-btn" onclick="pickDialContact()" title="Pick from contacts">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+          <circle cx="9" cy="7" r="4"/>
+          <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+          <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+        </svg>
+      </button>
+
+      <!-- Call button -->
+      <button class="dial-call-btn" id="dialCallBtn" onclick="dialPlaceCall()" disabled>
+        <svg width="26" height="26" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M20.01 15.38c-1.23 0-2.42-.2-3.53-.56-.35-.12-.74-.03-1.01.24l-1.57 1.97c-2.83-1.35-5.48-3.9-6.89-6.83l1.95-1.66c.27-.28.35-.67.24-1.02-.37-1.11-.56-2.3-.56-3.53 0-.54-.45-.99-.99-.99H4.19C3.65 3 3 3.24 3 3.99 3 13.28 10.73 21 20.01 21c.71 0 .99-.63.99-1.18v-3.45c0-.54-.45-.99-.99-.99z"/>
+        </svg>
+      </button>
+
+      <!-- Close -->
+      <button class="dial-side-btn" onclick="closeDialPad()" title="Close">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+        </svg>
+      </button>
     </div>
   </div>
 </div>
@@ -1611,6 +1804,149 @@ function closeModal(id) { document.getElementById(id).classList.remove('show'); 
 document.querySelectorAll('.pwa-modal-overlay').forEach(el => {
   el.addEventListener('click', e => { if (e.target === el) el.classList.remove('show'); });
 });
+
+/* ── Dial Pad ─────────────────────────────────────────────────── */
+let dialState = { number: '', isCalling: false };
+
+function openDialPad() {
+  dialState.number = '';
+  dialState.isCalling = false;
+  _dialRefresh();
+  document.getElementById('dialPad').classList.add('show');
+}
+
+function closeDialPad() {
+  document.getElementById('dialPad').classList.remove('show');
+}
+
+function dialKey(key) {
+  if (dialState.number.length >= 15) return;
+  // Long-press on 0 inserts +
+  dialState.number += key;
+  _dialRefresh();
+}
+
+function dialBackspace() {
+  dialState.number = dialState.number.slice(0, -1);
+  _dialRefresh();
+}
+
+function _dialRefresh() {
+  const display = document.getElementById('dialDisplay');
+  const back    = document.getElementById('dialBack');
+  const callBtn = document.getElementById('dialCallBtn');
+  const n = dialState.number;
+  if (n) {
+    display.textContent = _dialFormat(n);
+    display.classList.remove('empty');
+    back.style.display = '';
+  } else {
+    display.textContent = 'Enter number';
+    display.classList.add('empty');
+    back.style.display = 'none';
+  }
+  // Enable call button when we have ≥7 digits
+  const digits = n.replace(/\D/g, '');
+  callBtn.disabled = digits.length < 7 || dialState.isCalling;
+}
+
+function _dialFormat(n) {
+  // Pretty-print US numbers as they're typed: +1 (555) 867-5309
+  const d = n.replace(/\D/g, '');
+  if (n.startsWith('+') && d.length > 11) return n; // international — leave as-is
+  if (d.length <= 3)  return d;
+  if (d.length <= 6)  return `(${d.slice(0,3)}) ${d.slice(3)}`;
+  if (d.length <= 10) return `(${d.slice(0,3)}) ${d.slice(3,6)}-${d.slice(6)}`;
+  return `+${d.slice(0,1)} (${d.slice(1,4)}) ${d.slice(4,7)}-${d.slice(7,11)}`;
+}
+
+// Long-press 0 → + (native phone behaviour)
+(function () {
+  const zeroBtn = document.querySelector('.dial-key[onclick="dialKey(\'0\')"]');
+  if (!zeroBtn) return;
+  let pressTimer;
+  zeroBtn.addEventListener('pointerdown', () => {
+    pressTimer = setTimeout(() => { dialState.number += '+'; _dialRefresh(); }, 600);
+  });
+  zeroBtn.addEventListener('pointerup',   () => clearTimeout(pressTimer));
+  zeroBtn.addEventListener('pointerleave',() => clearTimeout(pressTimer));
+})();
+
+async function dialPlaceCall() {
+  const n = dialState.number.trim();
+  if (!n || dialState.isCalling) return;
+  dialState.isCalling = true;
+  _dialRefresh();
+  const btn = document.getElementById('dialCallBtn');
+  btn.disabled = true;
+  try {
+    const data = await apiFetch('/api/inbox/call/dial', 'POST', { to: n });
+    if (data?.success) {
+      toast(data.message || 'Call initiated via Twilio.', 'success');
+      closeDialPad();
+    } else {
+      toast(data?.error || 'Call failed. Check Twilio settings.', 'error');
+    }
+  } catch (err) {
+    toast('Call error: ' + (err.message || 'Unknown'), 'error');
+  } finally {
+    dialState.isCalling = false;
+    _dialRefresh();
+  }
+}
+
+/* ── Contact Picker API (Android Chrome only) ─────────────────── */
+async function _pickNativeContact(opts = {}) {
+  if (!('contacts' in navigator) || !('ContactsManager' in window)) {
+    toast(
+      'Contact picker not supported on this browser. ' +
+      (opts.fallbackHint || 'Type the number manually.'),
+      'info'
+    );
+    return null;
+  }
+  try {
+    const results = await navigator.contacts.select(['name', 'tel'], { multiple: false });
+    if (!results || !results.length) return null;
+    const c   = results[0];
+    const tel = (c.tel && c.tel[0]) ? c.tel[0].replace(/\s/g, '') : '';
+    const nm  = (c.name && c.name[0]) || tel;
+    if (!tel) { toast('No phone number found for that contact.', 'error'); return null; }
+    return { name: nm, tel };
+  } catch (err) {
+    if (err.name !== 'AbortError') toast('Could not open contacts: ' + err.message, 'error');
+    return null;
+  }
+}
+
+async function pickDialContact() {
+  const c = await _pickNativeContact({ fallbackHint: 'Type the number on the pad.' });
+  if (!c) return;
+  dialState.number = c.tel;
+  _dialRefresh();
+  toast(`${c.name} selected`, 'success');
+}
+
+async function pickComposeContact() {
+  const c = await _pickNativeContact({ fallbackHint: 'Search by name above.' });
+  if (!c) return;
+  selectComposeContact(c.tel, c.name || c.tel);
+}
+
+/* ── Call method setting ──────────────────────────────────────── */
+function setCellCallMethod(enabled) {
+  localStorage.setItem('cellCallEnabled', enabled ? '1' : '0');
+  const lbl = document.getElementById('callMethodLabel');
+  if (lbl) lbl.textContent = enabled
+    ? 'Twilio calls your phone, then connects customer — Twilio number shown as caller ID'
+    : 'Forwarding disabled — calls go direct (requires Twilio VoIP setup)';
+}
+
+(function _initCallSetting() {
+  const stored = localStorage.getItem('cellCallEnabled');
+  const el = document.getElementById('toggleCellCall');
+  if (el && stored === '0') { el.checked = false; setCellCallMethod(false); }
+})();
 
 let toastTimer;
 function toast(msg, type = '') {

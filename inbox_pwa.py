@@ -949,6 +949,74 @@ def place_outbound_call(conv_id):
         return jsonify({"success": False, "error": _twilio_send_error_message(exc)}), 500
 
 
+@inbox_pwa_bp.route("/api/inbox/call/dial", methods=["POST"])
+def dial_number():
+    """
+    Initiate a Twilio outbound call to an arbitrary number from the PWA dial pad.
+    Uses the same forwarding model as place_outbound_call — Twilio calls the
+    agent's call_forward_to number first, then bridges to the dialled number.
+    The recipient sees the company's Twilio number as caller ID.
+    """
+    user    = _require_auth()
+    company = _require_company(user)
+
+    ta = _get_twilio_account(company.id)
+    if not ta:
+        return jsonify({"success": False, "error": "Twilio is not configured for this account."}), 400
+    if not ta.from_phone:
+        return jsonify({"success": False, "error": "No outbound phone number configured in Twilio settings."}), 400
+
+    payload   = request.get_json() or {}
+    to_number = (payload.get("to") or "").strip()
+    if not to_number:
+        return jsonify({"success": False, "error": "A phone number to dial is required."}), 400
+
+    import re
+    digits = re.sub(r"[^\d]", "", to_number)
+    if not digits:
+        return jsonify({"success": False, "error": "Invalid phone number."}), 400
+    if not to_number.startswith("+"):
+        to_number = ("+1" + digits) if len(digits) == 10 else ("+" + digits)
+
+    try:
+        from twilio.rest import Client
+        from flask import url_for as _url_for
+        sid    = ta.get_account_sid() if hasattr(ta, "get_account_sid") else ta._account_sid
+        tok    = ta.get_auth_token()  if hasattr(ta, "get_auth_token")  else ta._auth_token
+        client = Client(sid, tok)
+
+        forward_to = payload.get("forward_to") or ta.call_forward_to
+
+        twiml_url = _url_for(
+            "twilio.outbound_call_twiml",
+            to=to_number,
+            caller=ta.from_phone,
+            _external=True,
+        )
+
+        if forward_to:
+            call = client.calls.create(
+                to=forward_to,
+                from_=ta.from_phone,
+                url=twiml_url,
+            )
+            msg = f"Calling your phone ({forward_to}). Answer to be connected to {to_number}."
+        else:
+            call = client.calls.create(
+                to=to_number,
+                from_=ta.from_phone,
+                url=twiml_url,
+            )
+            msg = f"Outbound call initiated to {to_number}."
+
+        logger.info("Dial pad outbound call: sid=%s to=%s", call.sid, call.to)
+        return jsonify({"success": True, "call_sid": call.sid, "status": call.status, "message": msg})
+
+    except Exception as exc:
+        logger.error("Dial pad call error: %s", exc)
+        return jsonify({"success": False, "error": _twilio_send_error_message(exc)}), 500
+
+
 def _fire_push_notification(company_id: int, conv, message_body: str):
     """Called from the inbound SMS webhook — fires push to all subscribed users."""
     vapid_private = os.environ.get("VAPID_PRIVATE_KEY", "")
