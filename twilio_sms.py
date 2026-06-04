@@ -172,11 +172,16 @@ def _validate_twilio_signature(ta, endpoint_path: str = "/twilio/sms/inbound") -
     """
     Validate the X-Twilio-Signature header for any Twilio webhook endpoint.
     Always passes on Replit dev (no real Twilio traffic).
-    Returns True if valid or if validation cannot be performed.
+
+    By default, a signature mismatch is logged as a WARNING but the request
+    is still processed.  Set TWILIO_STRICT_SIGNATURE=1 in the environment to
+    reject requests with bad signatures (returns False → caller aborts 403).
     """
     is_replit = bool(os.environ.get("REPL_ID") or os.environ.get("REPLIT_DEV_DOMAIN"))
     if is_replit:
         return True
+
+    strict = os.environ.get("TWILIO_STRICT_SIGNATURE", "").lower() in ("1", "true", "yes")
 
     try:
         from twilio.request_validator import RequestValidator
@@ -190,10 +195,16 @@ def _validate_twilio_signature(ta, endpoint_path: str = "/twilio/sms/inbound") -
 
     signature = request.headers.get("X-Twilio-Signature", "")
     if not signature:
-        logger.warning("Request rejected — missing X-Twilio-Signature (path=%s)", endpoint_path)
-        return False
+        logger.warning(
+            "Twilio webhook received without X-Twilio-Signature header "
+            "(path=%s strict=%s) — %s",
+            endpoint_path, strict,
+            "REJECTED" if strict else "accepted (set TWILIO_STRICT_SIGNATURE=1 to reject)",
+        )
+        return not strict  # fail-open unless strict mode
 
-    # Determine canonical webhook URL
+    # Build the canonical URL used for signature verification.
+    # Prefer the stored webhook_base_url; fall back to TWILIO_WEBHOOK_PUBLIC_URL env.
     base = (ta.webhook_base_url.rstrip("/") if ta and ta.webhook_base_url
             else TWILIO_WEBHOOK_PUBLIC_URL.rsplit("/twilio/", 1)[0])
     url = base + endpoint_path
@@ -201,8 +212,13 @@ def _validate_twilio_signature(ta, endpoint_path: str = "/twilio/sms/inbound") -
     validator = RequestValidator(token)
     valid = validator.validate(url, request.form, signature)
     if not valid:
-        logger.warning("Request rejected — invalid signature (url=%s)", url)
-    return valid
+        logger.warning(
+            "Twilio signature mismatch (url=%s strict=%s) — %s",
+            url, strict,
+            "REJECTED" if strict else "accepted (set TWILIO_STRICT_SIGNATURE=1 to reject)",
+        )
+        return not strict  # fail-open unless strict mode
+    return True
 
 
 def _is_business_hours(company_id: int) -> bool:
