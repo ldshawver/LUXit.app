@@ -372,9 +372,20 @@ def _apply_auto_reply_rules(conv, body: str, ta) -> bool:
     lower-precedence rule (e.g. first_contact tag) has already fired, so a
     customer texting for the first time outside business hours receives the
     after-hours message rather than the generic welcome message.
+
+    Diagnostic logging is emitted at every decision point so failures can
+    be traced from application logs alone (no Twilio console needed).
     """
     from models import AutoReplyRule, Contact
+
+    _tag = f"[auto-reply company={ta.company_id} conv={conv.id} from={conv.from_number}]"
+
     if not ta.automation_enabled:
+        logger.info("%s automation_enabled=False — skipping all rules", _tag)
+        return False
+
+    if conv.is_opted_out:
+        logger.info("%s contact is opted-out — skipping rules", _tag)
         return False
 
     rules_raw = (
@@ -384,39 +395,66 @@ def _apply_auto_reply_rules(conv, body: str, ta) -> bool:
         .all()
     )
 
+    if not rules_raw:
+        logger.info(
+            "%s no active auto-reply rules found for company_id=%s",
+            _tag, ta.company_id,
+        )
+        return False
+
+    logger.info("%s evaluating %d active rules for body=%.60r", _tag, len(rules_raw), body)
+
     # Always evaluate after_hours rules first, then the rest by priority.
-    # This guarantees the after-hours reply fires even on first contact,
-    # regardless of whatever priority value is stored in the database
-    # (legacy records may have priority=1 which would otherwise run last).
     rules = sorted(
         rules_raw,
         key=lambda r: (0 if r.trigger_type == "after_hours" else 1, -r.priority)
     )
 
-    now_utc = datetime.now(timezone.utc)
-    reply_sent = False  # tracks whether a reply-type action already fired
+    now_utc     = datetime.now(timezone.utc)
+    reply_sent  = False
+    in_business = _is_business_hours(ta.company_id)
+
+    logger.info("%s business_hours=%s first_contact=%s", _tag, in_business, conv.is_first_contact)
 
     for rule in rules:
         matched = False
+        skip_reason = None
 
         if rule.trigger_type == "always":
             matched = True
         elif rule.trigger_type == "stop_keyword":
             matched = _is_stop_message(body)
         elif rule.trigger_type == "first_contact":
-            matched = conv.is_first_contact
+            matched = bool(conv.is_first_contact)
+            if not matched:
+                skip_reason = "not first_contact"
         elif rule.trigger_type == "after_hours":
-            matched = (not _is_business_hours(ta.company_id)
-                       and ta.after_hours_sms_enabled)
+            if not ta.after_hours_sms_enabled:
+                matched = False
+                skip_reason = "after_hours_sms_enabled=False"
+            elif in_business:
+                matched = False
+                skip_reason = "currently in business hours"
+            else:
+                matched = True
         elif rule.trigger_type in ("keyword_contains", "keyword_exact", "regex"):
             matched = _match_keywords(body, rule.keywords or [], rule.trigger_type)
+            if not matched:
+                skip_reason = f"keywords not matched (type={rule.trigger_type})"
+        else:
+            skip_reason = f"unknown trigger_type={rule.trigger_type!r}"
 
         if not matched:
+            logger.debug(
+                "%s rule id=%s name=%r type=%s NOT matched — %s",
+                _tag, rule.id, rule.name, rule.trigger_type, skip_reason or "condition false",
+            )
             continue
 
         # Schedule filter
         if rule.active_days:
             if now_utc.weekday() not in rule.active_days:
+                logger.debug("%s rule id=%s skipped — wrong active_day %s", _tag, rule.id, now_utc.weekday())
                 continue
         if rule.active_hours_start and rule.active_hours_end:
             try:
@@ -424,16 +462,27 @@ def _apply_auto_reply_rules(conv, body: str, ta) -> bool:
                 eh, em = [int(x) for x in rule.active_hours_end.split(":")]
                 cur = now_utc.hour * 60 + now_utc.minute
                 if not (sh * 60 + sm <= cur < eh * 60 + em):
+                    logger.debug(
+                        "%s rule id=%s skipped — outside active_hours %s-%s (now=%02d:%02d UTC)",
+                        _tag, rule.id, rule.active_hours_start, rule.active_hours_end,
+                        now_utc.hour, now_utc.minute,
+                    )
                     continue
             except Exception:
                 pass
+
+        logger.info(
+            "%s rule id=%s name=%r type=%s action=%s MATCHED",
+            _tag, rule.id, rule.name, rule.trigger_type, rule.action,
+        )
 
         # Execute action
         if rule.action == "opt_out" or rule.trigger_type == "stop_keyword":
             conv.is_opted_out = True
             if rule.response:
-                _send_sms(ta, conv.from_number, rule.response,
-                          conversation_id=conv.id, is_auto_reply=True, rule_id=rule.id)
+                result = _send_sms(ta, conv.from_number, rule.response,
+                                   conversation_id=conv.id, is_auto_reply=True, rule_id=rule.id)
+                logger.info("%s opt-out reply sent: success=%s", _tag, result.get("success"))
             rule.match_count = (rule.match_count or 0) + 1
             db.session.commit()
             return True  # hard stop — opted out
@@ -445,26 +494,34 @@ def _apply_auto_reply_rules(conv, body: str, ta) -> bool:
                 conv.tags = tags
             rule.match_count = (rule.match_count or 0) + 1
             db.session.commit()
-            # Send optional reply only if no reply has gone out yet
             if rule.response and not reply_sent:
-                _send_sms(ta, conv.from_number, rule.response,
-                          conversation_id=conv.id, is_auto_reply=True, rule_id=rule.id)
-                reply_sent = True
-            # Continue evaluating — after_hours must still have a chance to fire
+                result = _send_sms(ta, conv.from_number, rule.response,
+                                   conversation_id=conv.id, is_auto_reply=True, rule_id=rule.id)
+                reply_sent = result.get("success", False)
+                logger.info("%s tag rule reply: success=%s err=%s", _tag, result.get("success"), result.get("error"))
+            # Continue — after_hours must still have a chance to fire
 
         elif rule.action == "reply" and rule.response:
             if reply_sent:
-                # Don't send a second reply (e.g. after after_hours already fired)
+                logger.debug("%s rule id=%s skipped — reply already sent", _tag, rule.id)
                 continue
             result = _send_sms(ta, conv.from_number, rule.response,
                                conversation_id=conv.id, is_auto_reply=True, rule_id=rule.id)
             rule.match_count = (rule.match_count or 0) + 1
             db.session.commit()
             reply_sent = result.get("success", False)
-            # after_hours rules always get a chance; other reply rules stop the loop
+            logger.info(
+                "%s reply rule fired: success=%s sid=%s err=%s",
+                _tag, result.get("success"), result.get("sid"), result.get("error"),
+            )
             if rule.trigger_type != "after_hours":
                 return reply_sent
 
+        elif rule.action == "reply" and not rule.response:
+            logger.warning("%s rule id=%s action=reply but response is empty — skipped", _tag, rule.id)
+
+    if not reply_sent:
+        logger.info("%s no rule produced a reply for this message", _tag)
     return reply_sent
 
 
@@ -1298,9 +1355,8 @@ def comms_settings():
             u = User.query.get(acc.user_id)
             if u:
                 users_with_access.append({
-                    "user":        u,
-                    "access":      acc,
-                    "has_comms":   acc.has_mobile_inbox_access(),
+                    "user":   u,
+                    "access": acc,
                 })
     except Exception:
         users_with_access = []
@@ -1319,6 +1375,74 @@ def comms_settings():
         users_with_access=users_with_access,
         rules_count=rules_count,
     )
+
+
+@twilio_bp.route("/comms/settings/user/<int:user_id>", methods=["POST"])
+@login_required
+def comms_settings_user(user_id):
+    """
+    AJAX endpoint — admin saves per-user Communications Hub feature toggles.
+    Accepts JSON body with any subset of the toggle fields.
+    Returns JSON {success, message}.
+    """
+    from flask_login import current_user
+    from models import UserCompanyAccess
+
+    is_admin = getattr(current_user, "is_admin", False) or getattr(current_user, "is_platform_admin", False)
+    if not is_admin:
+        return jsonify({"success": False, "message": "Admin access required."}), 403
+
+    company = _get_company()
+    if not company:
+        return jsonify({"success": False, "message": "No company found."}), 400
+
+    acc = UserCompanyAccess.query.filter_by(
+        user_id=user_id, company_id=company.id
+    ).first()
+    if not acc:
+        return jsonify({"success": False, "message": "User not found in this company."}), 404
+
+    data = request.get_json(silent=True) or {}
+
+    BOOL_FIELDS = [
+        "comms_hub_enabled",
+        "pwa_access_enabled",
+        "calls_enabled",
+        "sms_enabled",
+        "voicemail_enabled",
+        "ai_comms_enabled",
+        "forwarding_enabled",
+        "communications_license",
+        "can_access_mobile_inbox",
+    ]
+    STR_FIELDS = ["assigned_number", "number_type"]
+
+    changed = []
+    for f in BOOL_FIELDS:
+        if f in data:
+            val = bool(data[f])
+            setattr(acc, f, val)
+            changed.append(f"{f}={val}")
+
+    for f in STR_FIELDS:
+        if f in data:
+            val = (data[f] or "").strip() or None
+            setattr(acc, f, val)
+            changed.append(f"{f}={val!r}")
+
+    if changed:
+        try:
+            db.session.commit()
+            logger.info(
+                "comms_settings_user: company=%s user=%s changed=%s by admin=%s",
+                company.id, user_id, ", ".join(changed), current_user.id,
+            )
+        except Exception as exc:
+            db.session.rollback()
+            logger.error("comms_settings_user save error: %s", exc)
+            return jsonify({"success": False, "message": str(exc)}), 500
+
+    return jsonify({"success": True, "message": "Saved.", "changed": changed})
 
 
 @twilio_bp.route("/inbox/<int:conv_id>")
