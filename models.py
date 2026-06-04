@@ -33,6 +33,23 @@ class UserCompanyAccess(db.Model):
     can_access_mobile_inbox = db.Column(db.Boolean, default=False)
     can_access_full_app     = db.Column(db.Boolean, default=True)
 
+    # ── Communications Hub feature toggles (per-user licensing) ──────────────
+    # comms_hub_enabled: can access /twilio/comms hub page
+    comms_hub_enabled         = db.Column(db.Boolean, default=False)
+    # pwa_access_enabled: can install/use the Mobile Inbox PWA (/app/inbox)
+    pwa_access_enabled        = db.Column(db.Boolean, default=False)
+    # Granular channel toggles — ignored unless comms_hub_enabled or pwa_access_enabled
+    calls_enabled             = db.Column(db.Boolean, default=True)
+    sms_enabled               = db.Column(db.Boolean, default=True)
+    voicemail_enabled         = db.Column(db.Boolean, default=False)
+    ai_comms_enabled          = db.Column(db.Boolean, default=False)
+    forwarding_enabled        = db.Column(db.Boolean, default=False)
+    # License flag — admin explicitly marks user as having a comms license
+    communications_license    = db.Column(db.Boolean, default=False)
+    # Number assignment — 'shared' = company shared number, 'dedicated' = own DID
+    assigned_number           = db.Column(db.String(20), nullable=True)
+    number_type               = db.Column(db.String(20), default="shared")
+
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(
         db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
@@ -80,16 +97,32 @@ class UserCompanyAccess(db.Model):
         return self.role == self.ROLE_OWNER
 
     def has_mobile_inbox_access(self) -> bool:
-        """Mobile Inbox requires explicit admin approval.
+        """Mobile Inbox / PWA requires explicit admin approval.
 
         Rules:
-        - owner/admin role: always allowed
-        - inbox_only role: must still be explicitly approved
-        - all other roles: must be explicitly approved
+        - owner/admin role: always allowed (implicit comms access)
+        - any role with pwa_access_enabled=True: allowed
+        - any role with can_access_mobile_inbox=True: allowed (legacy flag, backward compat)
+        - all other roles: denied
         """
         if self.role in (self.ROLE_OWNER, self.ROLE_ADMIN):
             return True
+        if self.pwa_access_enabled:
+            return True
         return bool(self.can_access_mobile_inbox)
+
+    def has_comms_hub_access(self) -> bool:
+        """Communications Hub (/twilio/comms) access check.
+
+        - owner/admin: always allowed
+        - any role with comms_hub_enabled=True: allowed
+        - any role with communications_license=True: allowed
+        """
+        if self.role in (self.ROLE_OWNER, self.ROLE_ADMIN):
+            return True
+        if self.comms_hub_enabled:
+            return True
+        return bool(self.communications_license)
 
     def has_full_app_access(self) -> bool:
         """Inbox-only role never gets full app; all other roles default to True."""

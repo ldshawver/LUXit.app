@@ -174,8 +174,19 @@ MIGRATIONS = [
     ("feedback_ticket", "admin_notes",        "TEXT",         "DEFAULT NULL"),
 
     # user_company_access — per-user PWA & full-app access control (PostHog-free)
-    ("user_company_access", "can_access_mobile_inbox", "BOOLEAN", "DEFAULT 0"),
-    ("user_company_access", "can_access_full_app",     "BOOLEAN", "DEFAULT 1"),
+    ("user_company_access", "can_access_mobile_inbox", "BOOLEAN",      "DEFAULT 0"),
+    ("user_company_access", "can_access_full_app",     "BOOLEAN",      "DEFAULT 1"),
+    # Communications Hub per-user licensing & feature toggles
+    ("user_company_access", "comms_hub_enabled",       "BOOLEAN",      "DEFAULT 0"),
+    ("user_company_access", "pwa_access_enabled",      "BOOLEAN",      "DEFAULT 0"),
+    ("user_company_access", "calls_enabled",           "BOOLEAN",      "DEFAULT 1"),
+    ("user_company_access", "sms_enabled",             "BOOLEAN",      "DEFAULT 1"),
+    ("user_company_access", "voicemail_enabled",       "BOOLEAN",      "DEFAULT 0"),
+    ("user_company_access", "ai_comms_enabled",        "BOOLEAN",      "DEFAULT 0"),
+    ("user_company_access", "forwarding_enabled",      "BOOLEAN",      "DEFAULT 0"),
+    ("user_company_access", "communications_license",  "BOOLEAN",      "DEFAULT 0"),
+    ("user_company_access", "assigned_number",         "VARCHAR(20)",  "DEFAULT NULL"),
+    ("user_company_access", "number_type",             "VARCHAR(20)",  "DEFAULT 'shared'"),
 
     # saas_automation_log — Stripe webhook audit columns
     ("saas_automation_log", "stripe_event_id", "VARCHAR(120)", "DEFAULT NULL"),
