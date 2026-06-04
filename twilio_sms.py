@@ -331,19 +331,23 @@ def _send_sms(ta, to_number: str, body: str,
             pass
         return {"success": True, "sid": msg.sid, "status": msg.status}
     except Exception as exc:
-        logger.error("SMS send error: %s", exc)
+        logger.error(
+            "SMS send error: code=%s status=%s — %s",
+            getattr(exc, "code", None), getattr(exc, "status", None), exc,
+        )
         try:
             from services.posthog_client import track_event
             track_event(f"company_{ta.company_id}", 'sms_failed', {
                 'company_id': ta.company_id,
                 'tenant_id':  ta.company_id,
-                'error_code': type(exc).__name__,
+                'error_code': getattr(exc, "code", type(exc).__name__),
                 'source':     'twilio',
                 'success':    False,
             })
         except Exception:
             pass
-        return {"success": False, "error": str(exc)}
+        from services.twilio_error_handler import twilio_friendly_error
+        return {"success": False, "error": twilio_friendly_error(exc)}
 
 
 def _match_keywords(body: str, keywords: list, match_type: str) -> bool:

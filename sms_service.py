@@ -82,17 +82,16 @@ class SMSService:
             }
             
         except TwilioRestException as e:
-            logger.error(f"Twilio error sending SMS to {to_number}: {e}")
-            return {
-                'success': False,
-                'error': str(e)
-            }
+            logger.error(
+                "Twilio error sending SMS to %s: code=%s status=%s — %s",
+                to_number, getattr(e, "code", None), getattr(e, "status", None), e,
+            )
+            from services.twilio_error_handler import twilio_friendly_error
+            return {'success': False, 'error': twilio_friendly_error(e)}
         except Exception as e:
             logger.error(f"Error sending SMS to {to_number}: {e}")
-            return {
-                'success': False,
-                'error': str(e)
-            }
+            from services.twilio_error_handler import twilio_friendly_error
+            return {'success': False, 'error': twilio_friendly_error(e)}
     
     def send_bulk_sms(self, recipients, message):
         """

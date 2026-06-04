@@ -188,7 +188,13 @@ def _sanitize_body(text: str) -> str:
     return _safe_sms_text(text).replace("\x00", "")
 
 def _twilio_send_error_message(exc) -> str:
-    """Return a PWA-safe, action-oriented explanation for Twilio send failures."""
+    """Return a PWA-safe, action-oriented explanation for Twilio send/call failures."""
+    from services.twilio_error_handler import twilio_friendly_error
+    return twilio_friendly_error(exc)
+
+
+def _twilio_send_error_message_LEGACY(exc) -> str:
+    """DEPRECATED — kept only as reference; use _twilio_send_error_message above."""
     raw = str(exc) or type(exc).__name__
     code = getattr(exc, "code", None)
     status = getattr(exc, "status", None)
