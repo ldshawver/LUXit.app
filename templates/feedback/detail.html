@@ -109,7 +109,7 @@
       <div class="card mb-3"><div class="card-body">
         <h6 class="mb-2" style="font-size:.85rem;">Admin Notes</h6>
         <textarea id="adminNotesArea" class="form-control form-control-sm" rows="3"
-                  placeholder="Internal notes (not visible to submitter)…">{{ ticket.admin_notes or '' }}</textarea>
+                  placeholder="Internal notes (not visible to submitter)...">{{ ticket.admin_notes or '' }}</textarea>
         <button class="btn btn-sm btn-outline-secondary mt-2" id="saveNotesBtn">Save notes</button>
         <span id="notesStatus" class="small ms-2"></span>
       </div></div>
@@ -134,7 +134,7 @@
         {% endif %}
         <form id="commentForm" class="mt-3">
           <textarea name="body" class="form-control form-control-sm" rows="3"
-                    placeholder="Add a comment…" required></textarea>
+                    placeholder="Add a comment..." required></textarea>
           {% if can_admin %}
             <div class="form-check mt-2">
               <input class="form-check-input" type="checkbox" name="is_internal" value="1" id="intnote">
@@ -189,7 +189,7 @@
           {% if ticket.closed_at %}<div><strong>Closed:</strong> {{ ticket.closed_at.strftime('%Y-%m-%d %H:%M') }} UTC</div>{% endif %}
           {% if ticket.rating %}<div><strong>Rating:</strong> {{ ticket.rating }}/5</div>{% endif %}
           {% if ticket.screen_width %}<div><strong>Screen:</strong> {{ ticket.screen_width }}×{{ ticket.screen_height }}</div>{% endif %}
-          {% if ticket.posthog_session_id %}<div><strong>PH Session:</strong> <code style="font-size:.65rem;">{{ ticket.posthog_session_id[:16] }}…</code></div>{% endif %}
+          {% if ticket.posthog_session_id %}<div><strong>PH Session:</strong> <code style="font-size:.65rem;">{{ ticket.posthog_session_id[:16] }}...</code></div>{% endif %}
           <div><strong>Follow-up:</strong> {{ 'Yes' if ticket.allow_follow_up else 'No' }}</div>
         </div>
         {% if ticket.posthog_replay_url %}
@@ -221,7 +221,7 @@
       e.preventDefault();
       var fd = new FormData(cf);
       var status = document.getElementById('commentStatus');
-      status.textContent = 'Sending…';
+      status.textContent = 'Sending...';
       post('{{ url_for("feedback.add_comment", ticket_id=ticket.id) }}',
            {body: fd.get('body'), is_internal: fd.get('is_internal') ? true : false})
         .then(function(res) {
@@ -265,7 +265,7 @@
     saveNotesBtn.addEventListener('click', function() {
       var notes = document.getElementById('adminNotesArea').value;
       var ns = document.getElementById('notesStatus');
-      ns.textContent = 'Saving…';
+      ns.textContent = 'Saving...';
       post('{{ url_for("feedback.save_notes", ticket_id=ticket.id) }}',
            {admin_notes: notes})
         .then(function(r) {

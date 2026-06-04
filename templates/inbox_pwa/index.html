@@ -517,7 +517,7 @@
     <div class="sidebar-head">
       <h1>Messages</h1>
       <span class="badge-unread" id="unreadBadge">0</span>
-      <div class="live-dot" id="liveDot" title="Connecting…"></div>
+      <div class="live-dot" id="liveDot" title="Connecting..."></div>
       <div class="pwa-head-actions">
         <a href="/twilio/calls" class="pwa-head-icon" title="Calls &amp; Missed Calls">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 12 19.79 19.79 0 0 1 1.62 3.42 2 2 0 0 1 3.6 1.26h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L7.91 8.83a16 16 0 0 0 6.29 6.29l1.13-.91a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
@@ -544,7 +544,7 @@
     </div>
 
     <div class="search-wrap">
-      <input type="search" id="searchInput" placeholder="Search name or number…" oninput="onSearch(this.value)">
+      <input type="search" id="searchInput" placeholder="Search name or number..." oninput="onSearch(this.value)">
     </div>
 
     <div class="filter-tabs">
@@ -600,7 +600,7 @@
 
       <div class="composer">
         <div class="composer-wrap">
-          <textarea id="msgInput" placeholder="Type a message…" rows="1"
+          <textarea id="msgInput" placeholder="Type a message..." rows="1"
             oninput="autoResize(this);updateChar(this)"
             onfocus="showChips()" onblur="hideChipsDelayed()"
             onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendMsg();}"></textarea>
@@ -627,7 +627,7 @@
     <div class="modal-title">New Message</div>
     <div class="pwa-field">
       <label>To — search by name or enter number</label>
-      <input type="text" id="composeSearch" placeholder="Search contact or type +1…"
+      <input type="text" id="composeSearch" placeholder="Search contact or type +1..."
              oninput="onComposeSearch(this.value)" autocomplete="off">
       <div id="composeSearchResults" class="compose-search-results"></div>
       <div id="composeSelectedWrap" style="display:none;margin-top:6px;">
@@ -640,7 +640,7 @@
     </div>
     <div class="pwa-field">
       <label>Message</label>
-      <textarea id="composeBody" rows="4" placeholder="Type your message…"></textarea>
+      <textarea id="composeBody" rows="4" placeholder="Type your message..."></textarea>
     </div>
     <div class="modal-actions">
       <button class="btn-cancel"  onclick="closeModal('composeModal')">Cancel</button>
@@ -876,7 +876,7 @@ function setLiveDot(mode) {
   const dot = document.getElementById('liveDot');
   if (!dot) return;
   dot.className = 'live-dot ' + (mode || '');
-  dot.title = mode === 'live' ? 'Live — real-time' : mode === 'polling' ? 'Polling (fallback)' : 'Connecting…';
+  dot.title = mode === 'live' ? 'Live — real-time' : mode === 'polling' ? 'Polling (fallback)' : 'Connecting...';
 }
 
 function connectSSE() {
@@ -1230,7 +1230,7 @@ function renderContactPanel(c, contact) {
     ${tags ? `<div class="cp-section"><div class="cp-label">Tags</div><div class="cp-tags">${tags}</div></div>` : ''}
     <div class="cp-section">
       <div class="cp-label">Internal Notes</div>
-      <textarea class="notes-area" id="notesArea" placeholder="Add notes…">${esc(c.notes||'')}</textarea>
+      <textarea class="notes-area" id="notesArea" placeholder="Add notes...">${esc(c.notes||'')}</textarea>
       <button class="btn-small" style="margin-top:6px;" onclick="saveNotes(document.getElementById('notesArea').value)">Save Notes</button>
     </div>
   `;
@@ -1318,7 +1318,7 @@ function addOptimisticMsg(body) {
   div.id = uid;
   div.innerHTML = `<div>
       <div class="bubble out">${esc(body)}</div>
-      <div class="msg-meta out">${now} · <span class="msg-status">sending…</span></div>
+      <div class="msg-meta out">${now} · <span class="msg-status">sending...</span></div>
     </div>`;
   el.appendChild(div);
   scrollThreadToBottom();
@@ -1491,7 +1491,7 @@ async function sendNewMsg() {
   if (!to)   { toast('Enter a recipient phone number.', 'error'); return; }
   if (!body) { toast('Type a message first.', 'error'); return; }
   const btn = document.getElementById('composeSendBtn');
-  btn.disabled = true; btn.textContent = 'Sending…';
+  btn.disabled = true; btn.textContent = 'Sending...';
   try {
     const data = await apiFetch('/api/inbox/conversations', 'POST', { to, body });
     if (!data || !data.success) {

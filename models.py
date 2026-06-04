@@ -2824,7 +2824,7 @@ class BusinessHours(db.Model):
 
     id           = db.Column(db.Integer, primary_key=True)
     company_id   = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=False)
-    day_of_week  = db.Column(db.Integer)    # 0=Mon … 6=Sun
+    day_of_week  = db.Column(db.Integer)    # 0=Mon ... 6=Sun
     is_open      = db.Column(db.Boolean, default=True)
     open_time    = db.Column(db.String(5), default="09:00")
     close_time   = db.Column(db.String(5), default="17:00")

@@ -107,7 +107,7 @@
               <label class="form-label" style="font-size:.82rem;color:#9aa4b2;">Response Message</label>
               <textarea name="response" class="form-control form-control-sm" rows="3"
                         style="background:#0b0d14;border-color:#1e2535;color:#f7f7fb;"
-                        placeholder="Your auto-reply text…"></textarea>
+                        placeholder="Your auto-reply text..."></textarea>
             </div>
             <div class="col-md-6" id="tag-field" style="display:none;">
               <label class="form-label" style="font-size:.82rem;color:#9aa4b2;">Tag Value</label>
@@ -193,7 +193,7 @@
         <!-- Keywords preview -->
         {% if rule.keywords %}
         <span class="text-muted d-none d-md-inline" style="font-size:.8rem;">
-          — {{ rule.keywords[:3] | join(', ') }}{% if rule.keywords|length > 3 %}…{% endif %}
+          — {{ rule.keywords[:3] | join(', ') }}{% if rule.keywords|length > 3 %}...{% endif %}
         </span>
         {% endif %}
 
@@ -221,7 +221,7 @@
           <!-- Response preview (shown only when collapsed; hidden via JS when expanded) -->
           {% if rule.response %}
           <div class="rule-response-preview mb-3 px-1" style="font-size:.82rem;color:#9aa4b2;font-style:italic;border-left:2px solid #1e2535;padding-left:10px;">
-            "{{ rule.response[:180] }}{% if rule.response|length > 180 %}…{% endif %}"
+            "{{ rule.response[:180] }}{% if rule.response|length > 180 %}...{% endif %}"
           </div>
           {% endif %}
 
@@ -278,7 +278,7 @@
                 <label class="form-label" style="font-size:.82rem;color:#9aa4b2;">Response Message</label>
                 <textarea name="response" class="form-control form-control-sm" rows="3"
                           style="background:#0b0d14;border-color:#1e2535;color:#f7f7fb;"
-                          placeholder="Your auto-reply text…">{{ rule.response or '' }}</textarea>
+                          placeholder="Your auto-reply text...">{{ rule.response or '' }}</textarea>
               </div>
               <div class="col-md-6 tag-field" style="display:{% if rule.action == 'tag' %}block{% else %}none{% endif %};">
                 <label class="form-label" style="font-size:.82rem;color:#9aa4b2;">Tag Value</label>
@@ -450,7 +450,7 @@ document.querySelectorAll('.rule-edit-form').forEach(form => {
         const preview    = card.querySelector('.rule-response-preview');
         if (preview && responseTA) {
           const txt = responseTA.value.trim();
-          preview.textContent = txt ? `"${txt.substring(0,180)}${txt.length>180?'…':''}"` : '';
+          preview.textContent = txt ? `"${txt.substring(0,180)}${txt.length>180?'...':''}"` : '';
           preview.style.display = txt ? '' : 'none';
         }
       } else {

@@ -687,7 +687,7 @@
       </div>
       <div class="chat-footer">
         <input type="text" class="chat-input" id="chatInput"
-               placeholder="Ask anything about marketing strategy, campaigns, analytics…"
+               placeholder="Ask anything about marketing strategy, campaigns, analytics..."
                autocomplete="off">
         <button class="chat-send-btn" onclick="sendMessage()" title="Send">
           <svg data-feather="send"></svg>
@@ -706,7 +706,7 @@
       <div class="tasks-body" id="tasksList">
         <div class="empty-state">
           <svg data-feather="loader" class="spinning"></svg>
-          <p>Loading tasks…</p>
+          <p>Loading tasks...</p>
         </div>
       </div>
     </div>
@@ -988,7 +988,7 @@ async function sendMessage() {
   msgs.innerHTML += `
     <div class="chat-msg agent" id="${typingId}">
       <strong>${agent.name}</strong>
-      <span><em style="color:#555;">Thinking…</em></span>
+      <span><em style="color:#555;">Thinking...</em></span>
     </div>`;
   msgs.scrollTop = msgs.scrollHeight;
 
@@ -1029,7 +1029,7 @@ async function loadTasks(key) {
   list.innerHTML = `
     <div class="empty-state">
       <svg data-feather="loader" class="spinning"></svg>
-      <p>Loading tasks…</p>
+      <p>Loading tasks...</p>
     </div>`;
   if (typeof feather !== 'undefined') feather.replace();
 
@@ -1289,8 +1289,8 @@ async function getSuggestions() {
   const list = document.getElementById('suggestionsList');
 
   btn.disabled = true;
-  btn.innerHTML = '<svg data-feather="loader" class="spinning"></svg> Generating…';
-  list.innerHTML = `<div class="empty-state"><svg data-feather="loader" class="spinning"></svg><p>Analyzing your marketing data…</p></div>`;
+  btn.innerHTML = '<svg data-feather="loader" class="spinning"></svg> Generating...';
+  list.innerHTML = `<div class="empty-state"><svg data-feather="loader" class="spinning"></svg><p>Analyzing your marketing data...</p></div>`;
   if (typeof feather !== 'undefined') feather.replace();
 
   try {

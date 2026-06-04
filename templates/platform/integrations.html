@@ -127,7 +127,7 @@ async function testConnection(slug) {
   const btn = event.target.closest('button');
   const orig = btn.innerHTML;
   btn.disabled = true;
-  btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Testing…';
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Testing...';
 
   try {
     const r = await fetch(`/api/integrations/health/${slug}/test`, {

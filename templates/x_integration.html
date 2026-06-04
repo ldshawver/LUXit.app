@@ -221,7 +221,7 @@
         <div id="tweets-container" class="card-body p-0">
           <div class="text-center py-5 text-muted" id="tweets-loading">
             <div class="spinner-border spinner-border-sm me-2" role="status"></div>
-            Loading posts…
+            Loading posts...
           </div>
         </div>
       </div>
@@ -299,7 +299,7 @@ async function postTweet() {
 
   const btn = document.getElementById('post-btn');
   btn.disabled = true;
-  btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Posting…';
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Posting...';
 
   try {
     const res  = await fetch('/api/x/tweet', {
@@ -341,7 +341,7 @@ async function loadTweets(accountId) {
 
   const container = document.getElementById('tweets-container');
   container.innerHTML = `<div class="text-center py-5 text-muted">
-    <div class="spinner-border spinner-border-sm me-2"></div> Loading posts…
+    <div class="spinner-border spinner-border-sm me-2"></div> Loading posts...
   </div>`;
 
   try {
@@ -458,7 +458,7 @@ document.getElementById('confirm-disconnect-btn')?.addEventListener('click', asy
   if (!_pendingDisconnectId) return;
   const btn = document.getElementById('confirm-disconnect-btn');
   btn.disabled = true;
-  btn.textContent = 'Disconnecting…';
+  btn.textContent = 'Disconnecting...';
 
   try {
     const res  = await fetch('/auth/x/disconnect', {

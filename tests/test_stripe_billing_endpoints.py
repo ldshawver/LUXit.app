@@ -840,7 +840,7 @@ def test_checkout_completed_sets_included_contacts_for_starter(client, company_u
 
 def test_checkout_completed_persists_usage_subscription_item(client, company_user):
     """When the Stripe subscription has a metered usage item, the webhook
-    persists its si_… on the company so later report_contact_usage calls
+    persists its si_... on the company so later report_contact_usage calls
     don't need a Stripe round-trip."""
     company, _ = company_user
     event = _make_event("checkout.session.completed", {

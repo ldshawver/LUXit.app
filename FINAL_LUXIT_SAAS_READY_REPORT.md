@@ -254,4 +254,4 @@ cd /root/lux-email-bot && git pull \
   && .venv/bin/python3 scripts/migrate_db.py \
   && systemctl restart lux-email-bot
 ```
-Then register the webhook at https://dashboard.stripe.com → `https://luxit.app/api/stripe/webhook` (5 events) and add `STRIPE_WEBHOOK_SECRET=whsec_…` to `/root/lux-email-bot/.env`.
+Then register the webhook at https://dashboard.stripe.com → `https://luxit.app/api/stripe/webhook` (5 events) and add `STRIPE_WEBHOOK_SECRET=whsec_...` to `/root/lux-email-bot/.env`.

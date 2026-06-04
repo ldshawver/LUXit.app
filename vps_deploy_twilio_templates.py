@@ -77,7 +77,7 @@ TEMPLATES["settings.html"] = r"""{% extends "base.html" %}
           <label class="form-label" style="font-size:.85rem;">Account SID</label>
           <input type="text" name="account_sid" class="form-control"
                  placeholder="ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-                 value="{{ ta.get_account_sid()[:8] + '…' if ta and ta._account_sid else '' }}"
+                 value="{{ ta.get_account_sid()[:8] + '...' if ta and ta._account_sid else '' }}"
                  style="background:#0b0d14;border-color:#1e2535;color:#f7f7fb;">
           <small class="text-muted">Starts with AC — leave blank to keep existing</small>
         </div>
@@ -332,7 +332,7 @@ TEMPLATES["inbox.html"] = r"""{% extends "base.html" %}
     <form class="ms-auto d-flex gap-2" method="get" action="">
       <input type="hidden" name="status" value="{{ status_filter }}">
       <input type="search" name="q" class="form-control form-control-sm"
-             placeholder="Search number or name…" value="{{ search }}"
+             placeholder="Search number or name..." value="{{ search }}"
              style="width:220px;background:#0b0d14;border-color:#1e2535;color:#f7f7fb;">
       <button class="btn btn-sm btn-outline-secondary" type="submit">
         <i data-feather="search" style="width:13px;height:13px;"></i>
@@ -471,7 +471,7 @@ TEMPLATES["conversation.html"] = r"""{% extends "base.html" %}
       </div>
       <textarea id="notes-field" class="form-control form-control-sm"
                 style="background:#0b0d14;border-color:#1e2535;color:#f7f7fb;resize:none;" rows="2"
-                placeholder="Internal notes about this contact…">{{ conv.notes or '' }}</textarea>
+                placeholder="Internal notes about this contact...">{{ conv.notes or '' }}</textarea>
     </div>
   </div>
 
@@ -497,7 +497,7 @@ TEMPLATES["conversation.html"] = r"""{% extends "base.html" %}
   {% if ta and ta.is_configured %}
   <div class="card" style="background:#0f1117;border:1px solid #1e2535;">
     <div class="card-body">
-      <textarea id="reply-body" class="form-control mb-2" placeholder="Type a message…" rows="3" maxlength="1600"
+      <textarea id="reply-body" class="form-control mb-2" placeholder="Type a message..." rows="3" maxlength="1600"
                 style="background:#0b0d14;border-color:#1e2535;color:#f7f7fb;resize:none;"></textarea>
       <div class="d-flex justify-content-between align-items-center">
         <small id="reply-count" class="text-muted">0 / 1600</small>
@@ -602,7 +602,7 @@ TEMPLATES["rules.html"] = r"""{% extends "base.html" %}
             <td class="text-muted">{{ rule.priority }}</td>
             <td class="fw-semibold">{{ rule.name }}</td>
             <td><span class="badge" style="font-size:.72rem;background:{% if rule.trigger_type == 'keyword_contains' %}rgba(124,58,237,.3);color:#a78bfa{% elif rule.trigger_type == 'keyword_exact' %}rgba(6,182,212,.3);color:#06b6d4{% elif rule.trigger_type == 'after_hours' %}rgba(249,115,22,.3);color:#fb923c{% elif rule.trigger_type == 'first_contact' %}rgba(34,197,94,.3);color:#4ade80{% else %}rgba(107,114,128,.3);color:#9ca3af{% endif %};">{{ rule.trigger_type | replace('_', ' ') | title }}</span></td>
-            <td class="text-muted">{% if rule.keywords %}{{ rule.keywords[:3] | join(', ') }}{% if rule.keywords|length > 3 %}…{% endif %}{% else %}—{% endif %}</td>
+            <td class="text-muted">{% if rule.keywords %}{{ rule.keywords[:3] | join(', ') }}{% if rule.keywords|length > 3 %}...{% endif %}{% else %}—{% endif %}</td>
             <td><span style="font-size:.8rem;color:{% if rule.action == 'reply' %}#a78bfa{% elif rule.action == 'opt_out' %}#f87171{% elif rule.action == 'tag' %}#4ade80{% else %}#9aa4b2{% endif %};">{{ rule.action }}{% if rule.tag_value %} ({{ rule.tag_value }}){% endif %}{% if rule.forward_to %} → {{ rule.forward_to }}{% endif %}</span></td>
             <td class="text-muted">{{ rule.match_count or 0 }}</td>
             <td><div class="form-check form-switch mb-0"><input type="checkbox" class="form-check-input" role="switch" {% if rule.is_active %}checked{% endif %} onchange="toggleRule({{ rule.id }}, this)"></div></td>
@@ -615,7 +615,7 @@ TEMPLATES["rules.html"] = r"""{% extends "base.html" %}
           </tr>
           {% if rule.response %}
           <tr style="border-bottom:1px solid #1e2535;">
-            <td colspan="8" class="text-muted py-1 ps-4" style="font-size:.8rem;font-style:italic;">Reply: "{{ rule.response[:120] }}{% if rule.response|length > 120 %}…{% endif %}"</td>
+            <td colspan="8" class="text-muted py-1 ps-4" style="font-size:.8rem;font-style:italic;">Reply: "{{ rule.response[:120] }}{% if rule.response|length > 120 %}...{% endif %}"</td>
           </tr>
           {% endif %}
           {% endfor %}
@@ -650,7 +650,7 @@ TEMPLATES["rules.html"] = r"""{% extends "base.html" %}
             <div class="col-md-3"><label class="form-label" style="font-size:.85rem;">Action</label><select name="action" class="form-select" id="action-sel" style="background:#0b0d14;border-color:#1e2535;color:#f7f7fb;" onchange="toggleAction(this.value)"><option value="reply">Reply</option><option value="tag">Tag Contact</option><option value="opt_out">Opt Out</option><option value="forward">Forward</option></select></div>
             <div class="col-md-6"><label class="form-label" style="font-size:.85rem;">Trigger Type</label><select name="trigger_type" class="form-select" style="background:#0b0d14;border-color:#1e2535;color:#f7f7fb;" onchange="toggleKeywords(this.value)"><option value="keyword_contains">Keyword Contains</option><option value="keyword_exact">Keyword Exact Match</option><option value="regex">Regex Pattern</option><option value="first_contact">First Contact</option><option value="after_hours">After Hours</option><option value="stop_keyword">Stop / Unsubscribe</option><option value="always">Always</option></select></div>
             <div class="col-md-6" id="keywords-field"><label class="form-label" style="font-size:.85rem;">Keywords <small class="text-muted">(comma-separated)</small></label><input type="text" name="keywords" class="form-control" style="background:#0b0d14;border-color:#1e2535;color:#f7f7fb;" placeholder="price, pricing, cost"></div>
-            <div class="col-12"><label class="form-label" style="font-size:.85rem;">Response Message</label><textarea name="response" class="form-control" rows="3" style="background:#0b0d14;border-color:#1e2535;color:#f7f7fb;" placeholder="Our pricing starts at…"></textarea></div>
+            <div class="col-12"><label class="form-label" style="font-size:.85rem;">Response Message</label><textarea name="response" class="form-control" rows="3" style="background:#0b0d14;border-color:#1e2535;color:#f7f7fb;" placeholder="Our pricing starts at..."></textarea></div>
             <div class="col-md-6" id="tag-field" style="display:none;"><label class="form-label" style="font-size:.85rem;">Tag Value</label><input type="text" name="tag_value" class="form-control" style="background:#0b0d14;border-color:#1e2535;color:#f7f7fb;" placeholder="hot-lead"></div>
             <div class="col-md-6" id="forward-field" style="display:none;"><label class="form-label" style="font-size:.85rem;">Forward To</label><input type="text" name="forward_to" class="form-control" style="background:#0b0d14;border-color:#1e2535;color:#f7f7fb;" placeholder="+15551234567"></div>
           </div>

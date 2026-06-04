@@ -268,7 +268,7 @@ function showInline(elId, msg, ok) {
 async function syncNow(type, id) {
   if (!id) { showToast('Enter a valid ID first.', false); return; }
   const resultEl = type + 'Result';
-  showInline(resultEl, 'Syncing…', true);
+  showInline(resultEl, 'Syncing...', true);
   try {
     const r = await fetch(`/api/airtable/sync/${type}/${id}`, {
       method: 'POST',
@@ -331,7 +331,7 @@ async function reloadLogs() {
 
 async function recheckHealth() {
   const badge = document.getElementById('healthBadge');
-  badge.textContent = '● Checking…';
+  badge.textContent = '● Checking...';
   try {
     const r = await fetch('/api/airtable/health', {credentials:'same-origin'});
     const d = await r.json();

@@ -260,7 +260,7 @@ OLD_BIZ = '''def _is_business_hours(company_id: int) -> bool:
     """Return True if current UTC time falls within business hours for the company."""
     from models import BusinessHours
     now_utc = datetime.now(timezone.utc)
-    day = now_utc.weekday()   # 0=Mon … 6=Sun
+    day = now_utc.weekday()   # 0=Mon ... 6=Sun
     bh = BusinessHours.query.filter_by(company_id=company_id, day_of_week=day).first()
     if not bh or not bh.is_open:
         return False

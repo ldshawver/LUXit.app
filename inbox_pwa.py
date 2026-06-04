@@ -166,18 +166,26 @@ _UNICODE_REPLACEMENTS = str.maketrans({
     "\u00a9": "(C)",   # ©
 })
 
-def _sanitize_body(text: str) -> str:
-    """
-    Normalise smart punctuation before sending via Twilio.
-    The Twilio Python SDK submits the body as UTF-8, so stripping to latin-1
-    is unnecessary and destroys emoji / accented characters.  Only null bytes
-    (the one codepoint Twilio actively rejects) are removed.
-    """
-    if not text:
-        return text
-    text = text.translate(_UNICODE_REPLACEMENTS)
-    return text.replace("\x00", "")
 
+def _safe_sms_text(value):
+    if value is None:
+        return ""
+    value = str(value)
+    return (
+        value.replace("…", "...")
+             .replace("→", "->")
+             .replace("←", "<-")
+             .replace("—", "-")
+             .replace("–", "-")
+             .replace("“", '"')
+             .replace("”", '"')
+             .replace("‘", "'")
+             .replace("’", "'")
+             .replace("\u00a0", " ")
+    )
+
+def _sanitize_body(text: str) -> str:
+    return _safe_sms_text(text).replace("\x00", "")
 
 def _twilio_send_error_message(exc) -> str:
     """Return a PWA-safe, action-oriented explanation for Twilio send failures."""

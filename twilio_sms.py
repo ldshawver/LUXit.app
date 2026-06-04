@@ -153,20 +153,26 @@ _UNICODE_REPLACEMENTS = str.maketrans({
     "\u00a9": "(C)",   # ©
 })
 
-def _sanitize_body(text: str) -> str:
-    """
-    Normalise smart punctuation so Twilio receives clean text.
-    The Twilio Python SDK passes the body as UTF-8 to the REST API, so there
-    is no need to strip to latin-1; doing so only destroys emoji and accented
-    characters that Twilio handles perfectly well.
-    """
-    if not text:
-        return text
-    text = text.translate(_UNICODE_REPLACEMENTS)
-    # Strip null bytes only — the one character Twilio's API actively rejects.
-    # All other Unicode (emoji, accented chars, CJK, etc.) works natively.
-    return text.replace("\x00", "")
 
+def _safe_sms_text(value):
+    if value is None:
+        return ""
+    value = str(value)
+    return (
+        value.replace("…", "...")
+             .replace("→", "->")
+             .replace("←", "<-")
+             .replace("—", "-")
+             .replace("–", "-")
+             .replace("“", '"')
+             .replace("”", '"')
+             .replace("‘", "'")
+             .replace("’", "'")
+             .replace("\u00a0", " ")
+    )
+
+def _sanitize_body(text: str) -> str:
+    return _safe_sms_text(text).replace("\x00", "")
 
 def _validate_twilio_signature(ta, endpoint_path: str = "/twilio/sms/inbound") -> bool:
     """

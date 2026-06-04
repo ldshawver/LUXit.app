@@ -58,7 +58,7 @@
           <label class="form-label" style="font-size:.85rem;">Account SID</label>
           <input type="text" name="account_sid" class="form-control"
                  placeholder="ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-                 value="{{ ta.get_account_sid()[:8] + '…' if ta and ta._account_sid else '' }}"
+                 value="{{ ta.get_account_sid()[:8] + '...' if ta and ta._account_sid else '' }}"
                  style="background:#0b0d14;border-color:#1e2535;color:#f7f7fb;">
           <small class="text-muted">Starts with AC — leave blank to keep existing</small>
         </div>
@@ -292,7 +292,7 @@ document.getElementById('voicemailUpload').addEventListener('change', function()
   const file = this.files[0];
   if (!file) return;
   const btn = this.closest('label');
-  btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Uploading…';
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Uploading...';
 
   const fd = new FormData();
   fd.append('audio', file);

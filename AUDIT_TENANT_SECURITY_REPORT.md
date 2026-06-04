@@ -71,7 +71,7 @@ Multi-company access uses `UserCompanyAccess` join table.
 **Implementation:** `services/secret_vault.py` uses Fernet symmetric encryption.
 
 ```python
-company.set_secret("openai", "api_key", "sk-…")   # encrypts then stores
+company.set_secret("openai", "api_key", "sk-...")   # encrypts then stores
 company.get_secret("openai", "api_key")             # decrypts on retrieval
 ```
 

@@ -157,7 +157,7 @@
         ux_issue:        'Describe the usability or design issue.',
         confused:        "What are you trying to do? Where did you get stuck?",
       };
-      document.getElementById('fbDesc').placeholder = placeholders[t] || 'Describe your feedback…';
+      document.getElementById('fbDesc').placeholder = placeholders[t] || 'Describe your feedback...';
       step1.style.display = 'none';
       step2.style.display = '';
     });
@@ -222,7 +222,7 @@
     if (!form.reportValidity()) return;
     submitBtn.disabled = true;
     statusEl.style.color = '';
-    statusEl.textContent = 'Sending…';
+    statusEl.textContent = 'Sending...';
     var token = (document.querySelector('meta[name="csrf-token"]') || {}).content || '';
     fetch('{{ url_for("feedback.submit_ticket") }}', {
       method: 'POST',

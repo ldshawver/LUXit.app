@@ -157,7 +157,7 @@ def included_contacts_for_tier(tier: Optional[str]) -> Optional[int]:
 
 
 def find_contacts_usage_item_id(sub_obj: dict) -> Optional[str]:
-    """Walk a Stripe Subscription's items and return the ``si_…`` id of the
+    """Walk a Stripe Subscription's items and return the ``si_...`` id of the
     metered contacts-usage line, if any.
 
     Used by the webhook handlers to persist
