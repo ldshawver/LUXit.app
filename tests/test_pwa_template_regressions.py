@@ -20,10 +20,9 @@ def test_pwa_message_bubbles_avoid_character_stacking_regression():
     assert "function normalizeSmsBody" in html
 
 
-def test_desktop_sidebar_hides_duplicate_mobile_inbox_link():
+def test_desktop_sidebar_shows_communications_hub():
     html = (ROOT / "templates" / "base.html").read_text()
 
-    assert "Mobile Inbox" not in html
-    assert "/app/inbox" not in html
-    assert "SMS Inbox" in html
-    assert html.index("SMS Settings") < html.index("Auto-Reply Rules")
+    assert "Mobile Inbox PWA" not in html
+    assert "Communications Hub" in html
+    assert "comms_hub" in html

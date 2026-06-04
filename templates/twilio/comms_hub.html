@@ -1,0 +1,450 @@
+{% extends "base.html" %}
+{% block title %}Communications Hub — LUXit{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-3" style="max-width:1200px;">
+
+  <!-- Header -->
+  <div class="d-flex align-items-center gap-3 mb-3 flex-wrap">
+    <div>
+      <h4 class="mb-0 fw-bold d-flex align-items-center gap-2">
+        <svg style="width:20px;height:20px;flex-shrink:0;" viewBox="0 0 24 24" fill="none"
+             stroke="#7c3aed" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M15.05 5A5 5 0 0 1 19 8.95M15.05 1A9 9 0 0 1 23 8.94m-1 7.98v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 12 19.79 19.79 0 0 1 1.62 3.42 2 2 0 0 1 3.6 1.26h3a2 2 0 0 1 2 1.72c.12.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L7.91 8.83a16 16 0 0 0 6.29 6.29l1.13-.91a2 2 0 0 1 2.11-.45c.91.34 1.85.58 2.81.7A2 2 0 0 1 22 16.92z"/>
+        </svg>
+        Communications Hub
+        {% if unread_count > 0 %}
+        <span class="badge bg-danger" style="font-size:.68rem;">{{ unread_count }}</span>
+        {% endif %}
+      </h4>
+      <small class="text-muted">Calls &middot; SMS &middot; Voicemail &middot; Contacts &middot; Team Chat</small>
+    </div>
+    <div class="ms-auto d-flex gap-2 flex-wrap align-items-center">
+      {% if is_admin %}
+      <a href="{{ url_for('twilio.comms_settings') }}" class="btn btn-sm btn-outline-secondary">
+        <i data-feather="settings" style="width:13px;height:13px;"></i> Settings
+      </a>
+      {% endif %}
+      {% if tab == 'inbox' %}
+      <button class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#newMsgModal">
+        <i data-feather="plus" style="width:13px;height:13px;"></i> New Message
+      </button>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- Tab bar -->
+  <div style="border-bottom:2px solid #1e2535;margin-bottom:1.25rem;display:flex;gap:2px;overflow-x:auto;white-space:nowrap;">
+    {% for t_id, t_icon, t_label, t_badge in [
+      ('inbox',    'message-square', 'Inbox',       unread_count),
+      ('calls',    'phone',          'Calls',        missed_calls_count),
+      ('voicemail','mic',            'Voicemail',    0),
+      ('contacts', 'users',          'Contacts',     0),
+      ('team',     'message-circle', 'Team Chat',    0),
+      ('notes',    'file-text',      'Notes',        0),
+      ('ai',       'cpu',            'AI Assistant', 0),
+    ] %}
+    <a href="?tab={{ t_id }}"
+       style="display:inline-flex;align-items:center;gap:5px;padding:.55rem .85rem;font-size:.84rem;
+              color:{% if tab == t_id %}#7c3aed{% else %}#9ca3af{% endif %};
+              border-bottom:2px solid {% if tab == t_id %}#7c3aed{% else %}transparent{% endif %};
+              margin-bottom:-2px;text-decoration:none;transition:color .15s;flex-shrink:0;">
+      <i data-feather="{{ t_icon }}" style="width:13px;height:13px;flex-shrink:0;"></i>
+      {{ t_label }}
+      {% if t_badge > 0 %}
+      <span class="badge ms-1" style="background:#7c3aed;font-size:.6rem;padding:2px 5px;">{{ t_badge }}</span>
+      {% endif %}
+    </a>
+    {% endfor %}
+  </div>
+
+  <!-- ═══════════ INBOX TAB ═══════════ -->
+  {% if tab == 'inbox' %}
+
+  {% if not ta or not ta.is_configured %}
+  <div class="alert alert-warning d-flex align-items-center gap-3">
+    <i data-feather="alert-triangle" style="width:20px;height:20px;flex-shrink:0;"></i>
+    <div>Twilio is not configured.
+      {% if is_admin %}<a href="{{ url_for('twilio.comms_settings') }}" class="alert-link">Configure in Communications Settings →</a>
+      {% else %}Contact your administrator to enable SMS.{% endif %}
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- Google Contacts bar -->
+  <div class="d-flex align-items-center gap-2 mb-2 px-3 py-2 rounded"
+       style="background:#0f1117;border:1px solid #1e2535;font-size:.82rem;">
+    <img src="https://www.gstatic.com/images/branding/product/1x/contacts_2022_16dp.png"
+         alt="" width="16" height="16" style="opacity:.85;" onerror="this.style.display='none'">
+    {% if gc_connected %}
+      <span style="color:#4ade80;font-weight:600;">●</span>
+      <span class="text-muted">Google Contacts &mdash; {{ gc_contacts }} contacts
+        {% if gc_last_sync %}&middot; Last sync {{ gc_last_sync }}{% endif %}
+      </span>
+      <div class="ms-auto d-flex gap-2 align-items-center">
+        <button id="gc-sync-btn" class="btn btn-outline-secondary" style="font-size:.75rem;padding:2px 8px;" onclick="gcSync()">
+          <span id="gc-sync-spinner" class="spinner-border spinner-border-sm me-1" style="display:none;width:10px;height:10px;"></span>
+          <i data-feather="refresh-cw" style="width:11px;height:11px;"></i> Sync Now
+        </button>
+        <form method="POST" action="{{ url_for('twilio.google_contacts_disconnect') }}" style="margin:0;">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button type="submit" class="btn btn-outline-danger" style="font-size:.75rem;padding:2px 8px;"
+                  onclick="return confirm('Disconnect Google Contacts?')">
+            <i data-feather="x" style="width:11px;height:11px;"></i>
+          </button>
+        </form>
+      </div>
+    {% else %}
+      <span style="color:#6b7280;">●</span>
+      <span class="text-muted">Google Contacts not connected &mdash; sync contact names</span>
+      <a href="{{ url_for('twilio.google_contacts_connect') }}"
+         class="btn btn-outline-secondary ms-auto" style="font-size:.75rem;padding:2px 10px;white-space:nowrap;">
+        <i data-feather="link" style="width:11px;height:11px;"></i> Connect
+      </a>
+    {% endif %}
+    <span id="gc-sync-result" class="text-muted" style="font-size:.78rem;"></span>
+  </div>
+
+  <!-- Filter + Search -->
+  <div class="d-flex align-items-center gap-2 mb-3 flex-wrap">
+    <a href="?tab=inbox&status=all"      class="btn btn-sm {% if status_filter == 'all' %}btn-primary{% else %}btn-outline-secondary{% endif %}">All</a>
+    <a href="?tab=inbox&status=unread"   class="btn btn-sm {% if status_filter == 'unread' %}btn-primary{% else %}btn-outline-secondary{% endif %}">Unread</a>
+    <a href="?tab=inbox&status=opted_out" class="btn btn-sm {% if status_filter == 'opted_out' %}btn-primary{% else %}btn-outline-secondary{% endif %}">Opted Out</a>
+    <form class="ms-auto d-flex gap-2" method="get" action="">
+      <input type="hidden" name="tab"    value="inbox">
+      <input type="hidden" name="status" value="{{ status_filter }}">
+      <input type="search" name="q" class="form-control form-control-sm"
+             placeholder="Search number or name…" value="{{ search }}"
+             style="width:220px;background:#0b0d14;border-color:#1e2535;color:#f7f7fb;">
+      <button class="btn btn-sm btn-outline-secondary" type="submit">
+        <i data-feather="search" style="width:13px;height:13px;"></i>
+      </button>
+    </form>
+  </div>
+
+  <!-- Conversation list -->
+  {% if conversations %}
+  <div class="card" style="background:#0f1117;border:1px solid #1e2535;">
+    {% for conv in conversations %}
+    <a href="{{ url_for('twilio.conversation', conv_id=conv.id) }}"
+       class="d-flex align-items-center gap-3 px-3 py-3 text-decoration-none {% if not conv.is_read %}fw-semibold{% endif %}"
+       style="border-bottom:1px solid #1e2535;color:#f7f7fb;
+              background:{% if not conv.is_read %}rgba(124,58,237,.07){% else %}transparent{% endif %};">
+      <div style="width:42px;height:42px;border-radius:50%;background:#1e2535;flex-shrink:0;
+                  display:flex;align-items:center;justify-content:center;
+                  border:2px solid {% if conv.is_opted_out %}#6b7280{% elif not conv.is_read %}#7c3aed{% else %}#374151{% endif %};">
+        <i data-feather="user" style="width:18px;height:18px;color:#6b7280;"></i>
+      </div>
+      <div class="flex-grow-1 min-w-0">
+        <div class="d-flex justify-content-between align-items-baseline">
+          <span style="font-size:.9rem;">
+            {{ conv.contact_name or conv.from_number }}
+            {% if conv.contact_name %}<small class="text-muted ms-1">{{ conv.from_number }}</small>{% endif %}
+          </span>
+          <small class="text-muted flex-shrink-0">
+            {{ conv.last_message_at.strftime('%b %-d') if conv.last_message_at else '' }}
+          </small>
+        </div>
+        <div class="d-flex align-items-center gap-2">
+          <span class="text-muted text-truncate" style="font-size:.82rem;max-width:500px;">
+            {{ conv.last_message_preview or 'No messages yet' }}
+          </span>
+          <div class="ms-auto d-flex gap-1 flex-shrink-0">
+            {% if conv.is_opted_out %}<span class="badge bg-secondary" style="font-size:.68rem;">Opted Out</span>{% endif %}
+            {% if conv.lead_captured %}<span class="badge" style="background:#7c3aed;font-size:.68rem;">Lead</span>{% endif %}
+            {% for tag in (conv.tags or [])[:2] %}
+            <span class="badge bg-dark border" style="font-size:.68rem;border-color:#374151!important;">{{ tag }}</span>
+            {% endfor %}
+            {% if not conv.is_read %}<span class="badge bg-primary" style="width:8px;height:8px;border-radius:50%;padding:0;"></span>{% endif %}
+          </div>
+        </div>
+      </div>
+    </a>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="card text-center py-5" style="background:#0f1117;border:1px solid #1e2535;">
+    <div class="card-body">
+      <i data-feather="inbox" style="width:48px;height:48px;opacity:.3;"></i>
+      <p class="text-muted mt-3">
+        {% if search %}No conversations matching &ldquo;{{ search }}&rdquo;
+        {% else %}No conversations yet. Configure Twilio and start messaging!{% endif %}
+      </p>
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- ═══════════ CALLS TAB ═══════════ -->
+  {% elif tab == 'calls' %}
+
+  <div class="d-flex align-items-center gap-3 mb-3 flex-wrap">
+    <div>
+      <h6 class="mb-0 fw-semibold">Call Log</h6>
+      <small class="text-muted">All inbound and outbound calls</small>
+    </div>
+    <div class="ms-auto d-flex gap-2">
+      <a href="{{ url_for('twilio.calls') }}" class="btn btn-sm btn-outline-secondary">
+        <i data-feather="external-link" style="width:12px;height:12px;"></i> Full Call Log
+      </a>
+    </div>
+  </div>
+
+  {% if calls %}
+  <div class="card" style="background:#0f1117;border:1px solid #1e2535;">
+    {% for call in calls %}
+    <div class="d-flex align-items-center gap-3 px-3 py-3"
+         style="border-bottom:1px solid #1e2535;">
+      <div style="width:36px;height:36px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;
+                  background:{% if call.status in ('no-answer','missed') %}rgba(239,68,68,.15){% elif call.direction == 'inbound' %}rgba(34,197,94,.1){% else %}rgba(124,58,237,.15){% endif %};">
+        <i data-feather="{% if call.status in ('no-answer','missed') %}phone-missed{% elif call.direction == 'inbound' %}phone-incoming{% else %}phone-outgoing{% endif %}"
+           style="width:15px;height:15px;color:{% if call.status in ('no-answer','missed') %}#ef4444{% elif call.direction == 'inbound' %}#22c55e{% else %}#7c3aed{% endif %};"></i>
+      </div>
+      <div class="flex-grow-1 min-w-0">
+        <div class="d-flex justify-content-between align-items-baseline">
+          <span style="font-size:.88rem;font-weight:500;">
+            {{ call.caller_name or call.from_number }}
+            {% if call.caller_name and call.from_number %}<small class="text-muted ms-1">{{ call.from_number }}</small>{% endif %}
+          </span>
+          <small class="text-muted flex-shrink-0">
+            {{ call.created_at.strftime('%b %-d, %H:%M') if call.created_at else '' }}
+          </small>
+        </div>
+        <div class="d-flex align-items-center gap-2 mt-1">
+          <span class="badge" style="font-size:.67rem;
+            background:{% if call.status == 'completed' %}rgba(34,197,94,.15){% elif call.status in ('no-answer','missed') %}rgba(239,68,68,.15){% else %}rgba(107,114,128,.2){% endif %};
+            color:{% if call.status == 'completed' %}#4ade80{% elif call.status in ('no-answer','missed') %}#f87171{% else %}#9ca3af{% endif %};">
+            {{ call.status or 'unknown' }}
+          </span>
+          <span class="badge bg-dark border" style="font-size:.67rem;border-color:#374151!important;">
+            {{ call.direction or 'unknown' }}
+          </span>
+          {% if call.duration %}
+          <span class="text-muted" style="font-size:.78rem;">
+            {{ (call.duration // 60)|int }}m {{ call.duration % 60 }}s
+          </span>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="card text-center py-5" style="background:#0f1117;border:1px solid #1e2535;">
+    <div class="card-body">
+      <i data-feather="phone-off" style="width:48px;height:48px;opacity:.3;"></i>
+      <p class="text-muted mt-3">No call records yet.</p>
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- ═══════════ VOICEMAIL TAB ═══════════ -->
+  {% elif tab == 'voicemail' %}
+  <div class="card text-center py-5" style="background:#0f1117;border:1px solid #1e2535;">
+    <div class="card-body">
+      <i data-feather="mic" style="width:52px;height:52px;opacity:.25;color:#7c3aed;"></i>
+      <h5 class="mt-3 mb-1">Voicemail</h5>
+      <p class="text-muted mb-3" style="max-width:380px;margin:0 auto;">
+        Voicemail recording and transcription is coming soon.<br>
+        Configure voicemail greetings and missed-call handling in
+        <a href="{{ url_for('twilio.comms_settings') }}" class="text-decoration-none" style="color:#7c3aed;">Communications Settings</a>.
+      </p>
+    </div>
+  </div>
+
+  <!-- ═══════════ CONTACTS TAB ═══════════ -->
+  {% elif tab == 'contacts' %}
+  <div class="d-flex align-items-center gap-3 mb-3">
+    <div>
+      <h6 class="mb-0 fw-semibold">Contact Directory</h6>
+      <small class="text-muted">All contacts linked to conversations</small>
+    </div>
+    <div class="ms-auto d-flex gap-2">
+      <a href="{{ url_for('main.contacts') }}" class="btn btn-sm btn-outline-secondary">
+        <i data-feather="users" style="width:12px;height:12px;"></i> Full Contacts
+      </a>
+      <a href="{{ url_for('twilio.google_contacts_connect') }}" class="btn btn-sm btn-outline-secondary">
+        <i data-feather="link" style="width:12px;height:12px;"></i> Google Contacts
+      </a>
+    </div>
+  </div>
+
+  {% if conversations %}
+  <div class="card" style="background:#0f1117;border:1px solid #1e2535;">
+    {% set seen = [] %}
+    {% for conv in conversations %}
+    {% if conv.from_number not in seen %}
+    {% if seen.append(conv.from_number) %}{% endif %}
+    <div class="d-flex align-items-center gap-3 px-3 py-3" style="border-bottom:1px solid #1e2535;">
+      <div style="width:40px;height:40px;border-radius:50%;background:rgba(124,58,237,.15);flex-shrink:0;
+                  display:flex;align-items:center;justify-content:center;border:1px solid rgba(124,58,237,.3);">
+        <span style="font-size:.85rem;font-weight:600;color:#a78bfa;">
+          {{ (conv.contact_name or conv.from_number or '?')[0].upper() }}
+        </span>
+      </div>
+      <div class="flex-grow-1 min-w-0">
+        <div style="font-size:.88rem;font-weight:500;">
+          {{ conv.contact_name or conv.from_number }}
+          {% if conv.contact_name %}<small class="text-muted ms-1">{{ conv.from_number }}</small>{% endif %}
+        </div>
+        <div class="text-muted" style="font-size:.76rem;">
+          {% if conv.last_message_at %}Last message {{ conv.last_message_at.strftime('%b %-d') }}{% endif %}
+          {% if conv.is_opted_out %}&middot; <span style="color:#ef4444;">Opted Out</span>{% endif %}
+          {% if conv.lead_captured %}&middot; <span style="color:#7c3aed;">Lead</span>{% endif %}
+        </div>
+      </div>
+      <a href="{{ url_for('twilio.conversation', conv_id=conv.id) }}"
+         class="btn btn-sm btn-outline-secondary">
+        <i data-feather="message-square" style="width:12px;height:12px;"></i>
+      </a>
+    </div>
+    {% endif %}
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="card text-center py-5" style="background:#0f1117;border:1px solid #1e2535;">
+    <div class="card-body">
+      <i data-feather="users" style="width:48px;height:48px;opacity:.3;"></i>
+      <p class="text-muted mt-3">No contacts yet. Start an SMS conversation to build your directory.</p>
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- ═══════════ TEAM CHAT TAB ═══════════ -->
+  {% elif tab == 'team' %}
+  <div class="card text-center py-5" style="background:#0f1117;border:1px solid #1e2535;">
+    <div class="card-body">
+      <i data-feather="message-circle" style="width:52px;height:52px;opacity:.25;color:#06b6d4;"></i>
+      <h5 class="mt-3 mb-1">Team Chat</h5>
+      <p class="text-muted mb-3" style="max-width:380px;margin:0 auto;">
+        Internal team messaging is coming soon.<br>
+        Team members will be able to collaborate on conversations, tag each other, and share notes.
+      </p>
+    </div>
+  </div>
+
+  <!-- ═══════════ NOTES TAB ═══════════ -->
+  {% elif tab == 'notes' %}
+  <div class="card text-center py-5" style="background:#0f1117;border:1px solid #1e2535;">
+    <div class="card-body">
+      <i data-feather="file-text" style="width:52px;height:52px;opacity:.25;color:#f59e0b;"></i>
+      <h5 class="mt-3 mb-1">Internal Notes</h5>
+      <p class="text-muted mb-3" style="max-width:380px;margin:0 auto;">
+        Attach private notes to contacts and conversations.<br>
+        Notes are visible to your team but never sent to customers.
+        This feature is coming soon.
+      </p>
+    </div>
+  </div>
+
+  <!-- ═══════════ AI ASSISTANT TAB ═══════════ -->
+  {% elif tab == 'ai' %}
+  <div class="card text-center py-5" style="background:#0f1117;border:1px solid #1e2535;">
+    <div class="card-body">
+      <i data-feather="cpu" style="width:52px;height:52px;opacity:.25;color:#ec4899;"></i>
+      <h5 class="mt-3 mb-1">AI Assistant</h5>
+      <p class="text-muted mb-3" style="max-width:420px;margin:0 auto;">
+        AI-powered conversation summaries, smart reply drafts, urgency flagging, and follow-up suggestions.
+        <br>Connect your OpenAI API key in Settings to enable.
+      </p>
+      {% if is_admin %}
+      <a href="{{ url_for('twilio.comms_settings') }}" class="btn btn-sm btn-outline-secondary">
+        <i data-feather="settings" style="width:12px;height:12px;"></i> Configure in Settings
+      </a>
+      {% endif %}
+    </div>
+  </div>
+
+  {% endif %}
+
+</div>
+
+<!-- ── New Message Modal ─────────────────────────────────────────── -->
+<div class="modal fade" id="newMsgModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content" style="background:#0f1117;border:1px solid #1e2535;">
+      <div class="modal-header" style="border-bottom:1px solid #1e2535;">
+        <h5 class="modal-title">New SMS</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="mb-3">
+          <label class="form-label" style="font-size:.85rem;">To (phone number)</label>
+          <input type="tel" id="new-to" class="form-control" placeholder="+15551234567"
+                 style="background:#0b0d14;border-color:#1e2535;color:#f7f7fb;">
+        </div>
+        <div class="mb-3">
+          <label class="form-label" style="font-size:.85rem;">Message</label>
+          <textarea id="new-body" class="form-control" rows="4" maxlength="1600"
+                    style="background:#0b0d14;border-color:#1e2535;color:#f7f7fb;resize:none;"></textarea>
+        </div>
+        <div id="new-msg-result" style="display:none;"></div>
+      </div>
+      <div class="modal-footer" style="border-top:1px solid #1e2535;">
+        <button class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button class="btn btn-sm btn-primary" onclick="sendNewMessage()">
+          <i data-feather="send" style="width:13px;height:13px;"></i> Send
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+feather.replace();
+const CSRF = document.querySelector('meta[name="csrf-token"]')?.content || '{{ csrf_token() }}';
+
+async function gcSync() {
+  const btn     = document.getElementById('gc-sync-btn');
+  const spinner = document.getElementById('gc-sync-spinner');
+  const result  = document.getElementById('gc-sync-result');
+  if (!btn) return;
+  btn.disabled = true;
+  spinner.style.display = 'inline-block';
+  result.textContent = '';
+  try {
+    const r    = await fetch('/twilio/google-contacts/sync', {
+      method: 'POST', headers: { 'X-CSRFToken': CSRF },
+    });
+    const data = await r.json();
+    if (data.error) {
+      result.style.color = '#f87171';
+      result.textContent = `Sync failed: ${data.error}`;
+    } else {
+      result.style.color = '#4ade80';
+      result.textContent = `✓ ${data.synced} contacts · ${data.matched} names updated`;
+      if (data.matched > 0) setTimeout(() => location.reload(), 1500);
+    }
+  } catch (e) {
+    result.style.color = '#f87171';
+    result.textContent = 'Network error — try again.';
+  } finally {
+    btn.disabled = false;
+    spinner.style.display = 'none';
+  }
+}
+
+async function sendNewMessage() {
+  const to   = document.getElementById('new-to').value.trim();
+  const body = document.getElementById('new-body').value.trim();
+  const res  = document.getElementById('new-msg-result');
+  if (!to || !body) {
+    res.style.display = 'block';
+    res.innerHTML = '<div class="alert alert-warning py-2">To and message are required.</div>';
+    return;
+  }
+  const r    = await fetch('/twilio/send', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF },
+    body: JSON.stringify({ to, body }),
+  });
+  const data = await r.json();
+  res.style.display = 'block';
+  if (data.success) {
+    res.innerHTML = '<div class="alert alert-success py-2">Sent!</div>';
+    setTimeout(() => location.reload(), 1200);
+  } else {
+    res.innerHTML = `<div class="alert alert-danger py-2">${data.error || 'Send failed.'}</div>`;
+  }
+}
+</script>
+{% endblock %}

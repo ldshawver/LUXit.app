@@ -1,0 +1,261 @@
+{% extends "base.html" %}
+{% block title %}Communications Settings — LUXit{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-3" style="max-width:1100px;">
+
+  <!-- Header -->
+  <div class="d-flex align-items-center gap-3 mb-4">
+    <div>
+      <h4 class="mb-0 fw-bold d-flex align-items-center gap-2">
+        <i data-feather="settings" style="width:20px;height:20px;color:#7c3aed;"></i>
+        Communications Settings
+      </h4>
+      <small class="text-muted">
+        <a href="{{ url_for('twilio.comms_hub') }}" class="text-muted text-decoration-none">
+          <i data-feather="arrow-left" style="width:12px;height:12px;"></i> Back to Communications Hub
+        </a>
+      </small>
+    </div>
+    <div class="ms-auto">
+      <span class="badge" style="background:rgba(239,68,68,.15);color:#f87171;font-size:.75rem;">Admin Only</span>
+    </div>
+  </div>
+
+  <!-- Status banner -->
+  {% if ta and ta.is_configured %}
+  <div class="alert d-flex align-items-center gap-3 mb-4"
+       style="background:rgba(34,197,94,.08);border:1px solid rgba(34,197,94,.2);color:#4ade80;">
+    <i data-feather="check-circle" style="width:18px;height:18px;flex-shrink:0;"></i>
+    <div>Twilio is configured and active for <strong>{{ company.name }}</strong>.
+      Phone: <code style="color:#4ade80;">{{ ta.from_phone or 'not set' }}</code>
+    </div>
+  </div>
+  {% else %}
+  <div class="alert d-flex align-items-center gap-3 mb-4"
+       style="background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.2);color:#f87171;">
+    <i data-feather="alert-triangle" style="width:18px;height:18px;flex-shrink:0;"></i>
+    <div>Twilio is not configured. Add your credentials below to enable SMS and calling.</div>
+  </div>
+  {% endif %}
+
+  <div class="row g-3">
+
+    <!-- ── Column 1: Core Configuration ── -->
+    <div class="col-md-6">
+
+      <div class="card mb-3" style="background:#0f1117;border:1px solid #1e2535;">
+        <div class="card-header d-flex align-items-center gap-2" style="border-bottom:1px solid #1e2535;background:transparent;">
+          <i data-feather="phone" style="width:15px;height:15px;color:#7c3aed;"></i>
+          <strong style="font-size:.88rem;">Twilio Account &amp; Numbers</strong>
+          <a href="{{ url_for('twilio.settings') }}" class="btn btn-sm btn-outline-secondary ms-auto"
+             style="font-size:.76rem;padding:2px 9px;">Configure →</a>
+        </div>
+        <div class="card-body py-3 px-3" style="font-size:.83rem;">
+          <div class="d-flex flex-column gap-2">
+            <div class="d-flex justify-content-between">
+              <span class="text-muted">Account SID</span>
+              <span>{% if ta and ta._account_sid %}{{ (ta.get_account_sid() or '')[:8] }}…{% else %}<span class="text-danger">Not set</span>{% endif %}</span>
+            </div>
+            <div class="d-flex justify-content-between">
+              <span class="text-muted">Phone Number</span>
+              <span>{{ (ta and ta.from_phone) or '—' }}</span>
+            </div>
+            <div class="d-flex justify-content-between">
+              <span class="text-muted">Messaging Service</span>
+              <span>{{ (ta and ta.messaging_service_sid) or '—' }}</span>
+            </div>
+            <div class="d-flex justify-content-between">
+              <span class="text-muted">Webhook Base URL</span>
+              <span class="text-truncate" style="max-width:180px;">{{ (ta and ta.webhook_base_url) or '—' }}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card mb-3" style="background:#0f1117;border:1px solid #1e2535;">
+        <div class="card-header d-flex align-items-center gap-2" style="border-bottom:1px solid #1e2535;background:transparent;">
+          <i data-feather="zap" style="width:15px;height:15px;color:#06b6d4;"></i>
+          <strong style="font-size:.88rem;">Auto-Reply Rules</strong>
+          <a href="{{ url_for('twilio.rules') }}" class="btn btn-sm btn-outline-secondary ms-auto"
+             style="font-size:.76rem;padding:2px 9px;">Manage Rules →</a>
+        </div>
+        <div class="card-body py-3 px-3" style="font-size:.83rem;color:#9ca3af;">
+          <div class="d-flex justify-content-between mb-2">
+            <span>Active rules</span>
+            <span class="fw-semibold" style="color:#f7f7fb;">{{ rules_count }}</span>
+          </div>
+          Configure keyword triggers, first-contact replies, after-hours responses, and opt-out handling.
+        </div>
+      </div>
+
+      <div class="card mb-3" style="background:#0f1117;border:1px solid #1e2535;">
+        <div class="card-header d-flex align-items-center gap-2" style="border-bottom:1px solid #1e2535;background:transparent;">
+          <i data-feather="clock" style="width:15px;height:15px;color:#f59e0b;"></i>
+          <strong style="font-size:.88rem;">Business Hours &amp; After-Hours</strong>
+          <a href="{{ url_for('twilio.business_hours') }}" class="btn btn-sm btn-outline-secondary ms-auto"
+             style="font-size:.76rem;padding:2px 9px;">Configure →</a>
+        </div>
+        <div class="card-body py-3 px-3" style="font-size:.83rem;color:#9ca3af;">
+          Set your team's operating hours. After-hours auto-reply rules fire automatically when
+          customers contact you outside business hours.
+        </div>
+      </div>
+
+      <div class="card mb-3" style="background:#0f1117;border:1px solid #1e2535;">
+        <div class="card-header d-flex align-items-center gap-2" style="border-bottom:1px solid #1e2535;background:transparent;">
+          <i data-feather="bar-chart-2" style="width:15px;height:15px;color:#ec4899;"></i>
+          <strong style="font-size:.88rem;">Analytics &amp; Reporting</strong>
+          <a href="{{ url_for('twilio.analytics') }}" class="btn btn-sm btn-outline-secondary ms-auto"
+             style="font-size:.76rem;padding:2px 9px;">View Analytics →</a>
+        </div>
+        <div class="card-body py-3 px-3" style="font-size:.83rem;color:#9ca3af;">
+          Message delivery rates, auto-reply performance, call volume, missed call tracking, and lead capture stats.
+        </div>
+      </div>
+
+    </div>
+
+    <!-- ── Column 2: Forwarding, Voicemail, Access ── -->
+    <div class="col-md-6">
+
+      <div class="card mb-3" style="background:#0f1117;border:1px solid #1e2535;">
+        <div class="card-header d-flex align-items-center gap-2" style="border-bottom:1px solid #1e2535;background:transparent;">
+          <i data-feather="share-2" style="width:15px;height:15px;color:#7c3aed;"></i>
+          <strong style="font-size:.88rem;">SMS &amp; Call Forwarding</strong>
+          <a href="{{ url_for('twilio.settings') }}#forwarding" class="btn btn-sm btn-outline-secondary ms-auto"
+             style="font-size:.76rem;padding:2px 9px;">Configure →</a>
+        </div>
+        <div class="card-body py-3 px-3" style="font-size:.83rem;">
+          <div class="d-flex flex-column gap-2">
+            <div class="d-flex justify-content-between">
+              <span class="text-muted">SMS Forwarding</span>
+              <span>
+                {% if ta and ta.sms_forwarding_enabled %}
+                  <span style="color:#4ade80;">● Enabled</span>
+                  {% if ta.sms_forward_to %}<small class="text-muted ms-1">→ {{ ta.sms_forward_to }}</small>{% endif %}
+                {% else %}
+                  <span style="color:#6b7280;">Disabled</span>
+                {% endif %}
+              </span>
+            </div>
+            <div class="d-flex justify-content-between">
+              <span class="text-muted">After-Hours SMS</span>
+              <span>
+                {% if ta and ta.after_hours_sms_enabled %}
+                  <span style="color:#4ade80;">● Enabled</span>
+                {% else %}
+                  <span style="color:#6b7280;">Disabled</span>
+                {% endif %}
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card mb-3" style="background:#0f1117;border:1px solid #1e2535;">
+        <div class="card-header d-flex align-items-center gap-2" style="border-bottom:1px solid #1e2535;background:transparent;">
+          <i data-feather="mic" style="width:15px;height:15px;color:#06b6d4;"></i>
+          <strong style="font-size:.88rem;">Voicemail</strong>
+          <span class="badge ms-auto" style="background:rgba(107,114,128,.2);color:#9ca3af;font-size:.68rem;">Coming Soon</span>
+        </div>
+        <div class="card-body py-3 px-3" style="font-size:.83rem;color:#9ca3af;">
+          Voicemail greeting, transcription, and missed-call handling configuration will be available in an upcoming release.
+        </div>
+      </div>
+
+      <div class="card mb-3" style="background:#0f1117;border:1px solid #1e2535;">
+        <div class="card-header d-flex align-items-center gap-2" style="border-bottom:1px solid #1e2535;background:transparent;">
+          <i data-feather="cpu" style="width:15px;height:15px;color:#ec4899;"></i>
+          <strong style="font-size:.88rem;">AI Assistant</strong>
+          <span class="badge ms-auto" style="background:rgba(107,114,128,.2);color:#9ca3af;font-size:.68rem;">Coming Soon</span>
+        </div>
+        <div class="card-body py-3 px-3" style="font-size:.83rem;color:#9ca3af;">
+          Smart reply suggestions, conversation summaries, urgency detection, and follow-up scheduling
+          powered by GPT-4o. Coming soon.
+        </div>
+      </div>
+
+      <div class="card mb-3" style="background:#0f1117;border:1px solid #1e2535;">
+        <div class="card-header d-flex align-items-center gap-2" style="border-bottom:1px solid #1e2535;background:transparent;">
+          <i data-feather="users" style="width:15px;height:15px;color:#4ade80;"></i>
+          <strong style="font-size:.88rem;">User Access &amp; Licenses</strong>
+          <a href="{{ url_for('main.manage_users') }}" class="btn btn-sm btn-outline-secondary ms-auto"
+             style="font-size:.76rem;padding:2px 9px;">Manage Users →</a>
+        </div>
+        <div class="card-body py-0 px-0">
+          {% if users_with_access %}
+          <table class="table table-sm mb-0" style="font-size:.82rem;color:#f7f7fb;">
+            <thead>
+              <tr style="border-color:#1e2535;background:#070810;">
+                <th class="px-3 py-2" style="border-color:#1e2535;font-weight:500;color:#9ca3af;">User</th>
+                <th class="px-3 py-2 text-center" style="border-color:#1e2535;font-weight:500;color:#9ca3af;">Hub Access</th>
+                <th class="px-3 py-2 text-center" style="border-color:#1e2535;font-weight:500;color:#9ca3af;">Role</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in users_with_access %}
+              <tr style="border-color:#1e2535;">
+                <td class="px-3 py-2" style="border-color:#1e2535;">
+                  <div style="font-weight:500;">{{ row.user.username or row.user.email }}</div>
+                  {% if row.user.username and row.user.email %}
+                  <div class="text-muted" style="font-size:.75rem;">{{ row.user.email }}</div>
+                  {% endif %}
+                </td>
+                <td class="px-3 py-2 text-center" style="border-color:#1e2535;">
+                  {% if row.has_comms %}
+                  <span style="color:#4ade80;font-size:.78rem;">● On</span>
+                  {% else %}
+                  <span style="color:#6b7280;font-size:.78rem;">Off</span>
+                  {% endif %}
+                </td>
+                <td class="px-3 py-2 text-center" style="border-color:#1e2535;">
+                  <span class="badge" style="font-size:.67rem;
+                    {% if row.access.role == 'owner' %}background:rgba(124,58,237,.2);color:#a78bfa;
+                    {% elif row.access.role == 'admin' %}background:rgba(239,68,68,.15);color:#f87171;
+                    {% else %}background:rgba(107,114,128,.15);color:#9ca3af;{% endif %}">
+                    {{ row.access.role or 'member' }}
+                  </span>
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+          {% else %}
+          <div class="px-3 py-3 text-muted" style="font-size:.83rem;">
+            No team members found. <a href="{{ url_for('main.manage_users') }}" class="text-decoration-none" style="color:#7c3aed;">Invite users →</a>
+          </div>
+          {% endif %}
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Quick links footer -->
+  <div class="d-flex flex-wrap gap-2 mt-2" style="font-size:.82rem;">
+    <a href="{{ url_for('twilio.calls') }}" class="text-muted text-decoration-none">
+      <i data-feather="phone" style="width:12px;height:12px;"></i> Call Log
+    </a>
+    <span class="text-muted">&middot;</span>
+    <a href="{{ url_for('twilio.analytics') }}" class="text-muted text-decoration-none">
+      <i data-feather="bar-chart-2" style="width:12px;height:12px;"></i> Analytics
+    </a>
+    <span class="text-muted">&middot;</span>
+    <a href="{{ url_for('twilio.business_hours') }}" class="text-muted text-decoration-none">
+      <i data-feather="clock" style="width:12px;height:12px;"></i> Business Hours
+    </a>
+    <span class="text-muted">&middot;</span>
+    <a href="{{ url_for('twilio.rules') }}" class="text-muted text-decoration-none">
+      <i data-feather="zap" style="width:12px;height:12px;"></i> Auto-Reply Rules
+    </a>
+    <span class="text-muted">&middot;</span>
+    <a href="{{ url_for('twilio.comms_hub') }}" class="text-muted text-decoration-none">
+      <i data-feather="arrow-left" style="width:12px;height:12px;"></i> Back to Hub
+    </a>
+  </div>
+
+</div>
+
+<script>feather.replace();</script>
+{% endblock %}

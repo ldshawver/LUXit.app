@@ -1186,6 +1186,141 @@ def inbox():
     )
 
 
+@twilio_bp.route("/comms")
+@login_required
+def comms_hub():
+    """Communications Hub — tabbed wrapper for SMS, Calls, Voicemail, Contacts, etc."""
+    from flask_login import current_user
+    from models import TwilioConversation, TwilioCallLog
+
+    company = _get_company()
+    if not company:
+        flash("No company found.", "error")
+        return redirect(url_for("main.dashboard"))
+
+    ta           = _get_twilio_account(company.id)
+    tab          = request.args.get("tab", "inbox")
+    status_filter = request.args.get("status", "all")
+    search       = request.args.get("q", "").strip()
+
+    # ── Inbox data ───────────────────────────────────────────────────────
+    q = TwilioConversation.query.filter_by(company_id=company.id)
+    if status_filter == "unread":
+        q = q.filter_by(is_read=False)
+    elif status_filter == "opted_out":
+        q = q.filter_by(is_opted_out=True)
+    if search and tab == "inbox":
+        q = q.filter(
+            db.or_(
+                TwilioConversation.from_number.ilike(f"%{search}%"),
+                TwilioConversation.contact_name.ilike(f"%{search}%"),
+                TwilioConversation.last_message_preview.ilike(f"%{search}%"),
+            )
+        )
+    conversations = q.order_by(TwilioConversation.last_message_at.desc()).limit(100).all()
+    unread_count  = TwilioConversation.query.filter_by(company_id=company.id, is_read=False).count()
+
+    # ── Call log data ─────────────────────────────────────────────────────
+    calls              = []
+    missed_calls_count = 0
+    try:
+        calls = (
+            TwilioCallLog.query
+            .filter_by(company_id=company.id)
+            .order_by(TwilioCallLog.created_at.desc())
+            .limit(100).all()
+        )
+        missed_calls_count = TwilioCallLog.query.filter_by(
+            company_id=company.id, status="no-answer"
+        ).count()
+    except Exception:
+        pass
+
+    # ── Google Contacts bar ───────────────────────────────────────────────
+    gc_connected = False
+    gc_last_sync = None
+    gc_contacts  = 0
+    try:
+        from services.google_contacts import get_token
+        tok = get_token(current_user.id)
+        if tok and tok.access_token:
+            gc_connected = True
+            gc_contacts  = tok.contacts_synced or 0
+            gc_last_sync = tok.last_sync_at.strftime("%-d %b %H:%M") if tok.last_sync_at else None
+    except Exception:
+        pass
+
+    is_admin = getattr(current_user, "is_admin", False) or getattr(current_user, "is_platform_admin", False)
+
+    return render_template(
+        "twilio/comms_hub.html",
+        tab=tab,
+        conversations=conversations,
+        unread_count=unread_count,
+        ta=ta,
+        status_filter=status_filter,
+        search=search,
+        calls=calls,
+        missed_calls_count=missed_calls_count,
+        gc_connected=gc_connected,
+        gc_last_sync=gc_last_sync,
+        gc_contacts=gc_contacts,
+        is_admin=is_admin,
+    )
+
+
+@twilio_bp.route("/comms/settings")
+@login_required
+def comms_settings():
+    """Communications Settings — admin-only configuration hub."""
+    from flask_login import current_user
+    from models import AutoReplyRule, UserCompanyAccess, User
+
+    is_admin = getattr(current_user, "is_admin", False) or getattr(current_user, "is_platform_admin", False)
+    if not is_admin:
+        abort(403)
+
+    company = _get_company()
+    if not company:
+        return redirect(url_for("main.dashboard"))
+
+    ta = _get_twilio_account(company.id)
+
+    # Users + their communications access
+    try:
+        access_rows = (
+            UserCompanyAccess.query
+            .filter_by(company_id=company.id)
+            .all()
+        )
+        users_with_access = []
+        for acc in access_rows:
+            u = User.query.get(acc.user_id)
+            if u:
+                users_with_access.append({
+                    "user":        u,
+                    "access":      acc,
+                    "has_comms":   acc.has_mobile_inbox_access(),
+                })
+    except Exception:
+        users_with_access = []
+
+    # Auto-reply rules summary
+    rules_count = 0
+    try:
+        rules_count = AutoReplyRule.query.filter_by(company_id=company.id, is_active=True).count()
+    except Exception:
+        pass
+
+    return render_template(
+        "twilio/comms_settings.html",
+        ta=ta,
+        company=company,
+        users_with_access=users_with_access,
+        rules_count=rules_count,
+    )
+
+
 @twilio_bp.route("/inbox/<int:conv_id>")
 @login_required
 def conversation(conv_id):
