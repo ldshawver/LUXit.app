@@ -120,13 +120,54 @@
           </div>
         </div>
         {% endfor %}
-        <div class="mb-0">
+        <div class="mb-3">
           <label class="form-label" style="font-size:.8rem;color:#9aa4b2;">Public Webhook Base URL (override)</label>
           <input type="text" name="webhook_base_url" class="form-control"
                  placeholder="https://luxit.app"
                  value="{{ ta.webhook_base_url or '' }}"
                  style="background:#0b0d14;border-color:#1e2535;color:#f7f7fb;">
           <small class="text-muted">Set to https://luxit.app on VPS. Leave blank to use request URL.</small>
+        </div>
+
+        <!-- Fallback URLs -->
+        <div class="p-3 rounded mb-0" style="background:#0b0d14;border:1px solid #2a1a4a;">
+          <div class="d-flex align-items-center gap-2 mb-2">
+            <i data-feather="alert-triangle" style="width:13px;height:13px;color:#f59e0b;"></i>
+            <span class="fw-semibold" style="font-size:.82rem;color:#f59e0b;">Fallback URLs</span>
+            <span class="text-muted ms-1" style="font-size:.78rem;">— Twilio calls these if your primary webhook fails</span>
+          </div>
+          <div class="row g-3">
+            <div class="col-md-6">
+              <label class="form-label" style="font-size:.8rem;color:#9aa4b2;">SMS Fallback URL</label>
+              {% set default_sms_fb = (ta.webhook_base_url or 'https://luxit.app').rstrip('/') + '/twilio/fallback' if ta else 'https://luxit.app/twilio/fallback' %}
+              <div class="input-group">
+                <input type="text" name="sms_fallback_url" class="form-control"
+                       placeholder="{{ default_sms_fb }}"
+                       value="{{ ta.sms_fallback_url or '' if ta else '' }}"
+                       style="background:#050710;border-color:#2a1a4a;color:#f7f7fb;">
+                <button class="btn btn-outline-secondary btn-sm" type="button"
+                        onclick="this.previousElementSibling.value='{{ default_sms_fb }}'">
+                  Default
+                </button>
+              </div>
+              <small class="text-muted">Leave blank to auto-use <code style="color:#a78bfa;">/twilio/fallback</code></small>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label" style="font-size:.8rem;color:#9aa4b2;">Voice Fallback URL</label>
+              {% set default_voice_fb = (ta.webhook_base_url or 'https://luxit.app').rstrip('/') + '/twilio/fallback' if ta else 'https://luxit.app/twilio/fallback' %}
+              <div class="input-group">
+                <input type="text" name="voice_fallback_url" class="form-control"
+                       placeholder="{{ default_voice_fb }}"
+                       value="{{ ta.voice_fallback_url or '' if ta else '' }}"
+                       style="background:#050710;border-color:#2a1a4a;color:#f7f7fb;">
+                <button class="btn btn-outline-secondary btn-sm" type="button"
+                        onclick="this.previousElementSibling.value='{{ default_voice_fb }}'">
+                  Default
+                </button>
+              </div>
+              <small class="text-muted">Leave blank to auto-use <code style="color:#a78bfa;">/twilio/fallback</code></small>
+            </div>
+          </div>
         </div>
       </div>
     </div>

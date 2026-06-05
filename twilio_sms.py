@@ -1531,6 +1531,8 @@ def settings():
         messaging_service_sid = f.get("messaging_service_sid", "").strip()
         from_phone            = f.get("from_phone", "").strip()
         webhook_base_url      = f.get("webhook_base_url", "").strip()
+        sms_fallback_url      = f.get("sms_fallback_url", "").strip()
+        voice_fallback_url    = f.get("voice_fallback_url", "").strip()
         automation_enabled    = f.get("automation_enabled") == "on"
         ai_mode               = f.get("ai_mode", "off")
         ai_system_prompt      = f.get("ai_system_prompt", "").strip()
@@ -1557,6 +1559,8 @@ def settings():
         ta.messaging_service_sid       = messaging_service_sid or ta.messaging_service_sid
         ta.from_phone                  = from_phone or ta.from_phone
         ta.webhook_base_url            = webhook_base_url
+        ta.sms_fallback_url            = sms_fallback_url or None
+        ta.voice_fallback_url          = voice_fallback_url or None
         ta.automation_enabled          = automation_enabled
         ta.ai_mode                     = ai_mode
         ta.ai_system_prompt            = ai_system_prompt
@@ -1616,6 +1620,58 @@ def upload_voicemail():
     return jsonify({"url": public_url})
 
 
+@twilio_bp.route("/fallback", methods=["GET", "POST"])
+def twilio_fallback():
+    """
+    Twilio calls this URL when the primary SMS or Voice webhook fails to respond.
+    Returns a valid TwiML response so the call/message is handled gracefully,
+    logs the failure so it appears in the error dashboard, and never returns
+    a non-2xx status (which would cause Twilio to retry and double-log).
+    """
+    try:
+        from flask import request as _req
+        error_code = _req.values.get("ErrorCode", "unknown")
+        error_url  = _req.values.get("ErrorUrl", "")
+        call_sid   = _req.values.get("CallSid")
+        msg_sid    = _req.values.get("MessageSid")
+        logger.error(
+            "Twilio fallback triggered: ErrorCode=%s ErrorUrl=%s CallSid=%s MessageSid=%s",
+            error_code, error_url, call_sid, msg_sid,
+        )
+        # Try to log to the error dashboard
+        try:
+            from models import AppError
+            from extensions import db as _db
+            _db.session.add(AppError(
+                error_type="TwilioFallback",
+                error_message=f"Primary webhook failed (ErrorCode {error_code}). URL: {error_url}",
+                severity="high",
+                source="twilio_fallback",
+                context=dict(_req.values),
+            ))
+            _db.session.commit()
+        except Exception:
+            pass
+    except Exception as log_exc:
+        logger.warning("Fallback logging error: %s", log_exc)
+
+    # Return valid TwiML — voice gets a brief message; SMS gets an empty response
+    from flask import Response
+    if request.values.get("CallSid"):
+        twiml = (
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            "<Response>"
+            "<Say>We're sorry, we're experiencing technical difficulties. "
+            "Please try your call again shortly. Goodbye.</Say>"
+            "<Hangup/>"
+            "</Response>"
+        )
+    else:
+        twiml = '<?xml version="1.0" encoding="UTF-8"?><Response></Response>'
+
+    return Response(twiml, mimetype="text/xml", status=200)
+
+
 def _auto_configure_twilio_webhook(ta):
     """Push the inbound SMS webhook URL to Twilio Messaging Service via REST API."""
     try:
@@ -1629,12 +1685,15 @@ def _auto_configure_twilio_webhook(ta):
         base = (ta.webhook_base_url or "https://luxit.app").rstrip("/")
         inbound_url  = f"{base}/twilio/sms/inbound"
         status_url   = f"{base}/twilio/sms/status"
+        sms_fallback = ta.sms_fallback_url or f"{base}/twilio/fallback"
 
         from twilio.rest import Client
         client = Client(sid, token)
         client.messaging.v1.services(ta.messaging_service_sid).update(
             inbound_request_url=inbound_url,
             inbound_method="POST",
+            fallback_url=sms_fallback,
+            fallback_method="POST",
             status_callback=status_url,
             use_inbound_webhook_on_number=False,
         )

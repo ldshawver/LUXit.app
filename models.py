@@ -2661,7 +2661,9 @@ class TwilioAccount(db.Model):
     _auth_token  = db.Column("auth_token",  db.Text)
     messaging_service_sid = db.Column(db.String(60))
     from_phone   = db.Column(db.String(20))
-    webhook_base_url = db.Column(db.String(500))
+    webhook_base_url  = db.Column(db.String(500))
+    sms_fallback_url  = db.Column(db.String(500))
+    voice_fallback_url = db.Column(db.String(500))
 
     is_active            = db.Column(db.Boolean, default=True)
     automation_enabled   = db.Column(db.Boolean, default=True)
