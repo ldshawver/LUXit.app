@@ -98,3 +98,8 @@ WTForms==3.2.1
 yarl==1.20.1
 
 stripe==15.1.0
+email_validator
+flask
+flask-sqlalchemy
+gunicorn
+psycopg2-binary

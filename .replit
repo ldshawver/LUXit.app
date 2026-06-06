@@ -1,10 +1,11 @@
 modules = ["web", "python-3.11", "bash", "nodejs-20", "postgresql-16"]
 [agent]
 expertMode = true
+stack = "FLASK_VANILLA_JS"
 
 [nix]
 channel = "stable-25_05"
-packages = ["c-ares", "cacert", "cargo", "freetype", "glibcLocales", "grpc", "lcms2", "libffi", "libiconv", "libimagequant", "libjpeg", "libtiff", "libwebp", "libxcrypt", "openjpeg", "openssl", "pkg-config", "rustc", "tcl", "tk", "xcodebuild", "zlib"]
+packages = ["c-ares", "cacert", "cargo", "freetype", "glibcLocales", "grpc", "lcms2", "libffi", "libiconv", "libimagequant", "libjpeg", "libtiff", "libwebp", "libxcrypt", "openjpeg", "openssl", "pkg-config", "postgresql", "rustc", "tcl", "tk", "xcodebuild", "zlib"]
 
 [workflows]
 runButton = "Project"
@@ -40,3 +41,7 @@ externalPort = 80
 POSTHOG_API_KEY = "phc_ru95nA6YWQxhWAtw8AHvjYoKb9mTrH9MVpbUavsEdF5h"
 POSTHOG_HOST = "https://us.i.posthog.com"
 POSTHOG_FRONTEND_HOST = "https://p.luxit.app"
+
+[deployment]
+deploymentTarget = "autoscale"
+run = ["gunicorn", "--bind", "0.0.0.0:5000", "main:app"]

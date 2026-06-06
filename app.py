@@ -151,6 +151,31 @@ def _resolve_db_url() -> str:
 
         if not db_ok:
             if _is_replit:
+                # Try to build a connection URL from Replit's PG* env vars
+                pg_host = os.environ.get("PGHOST", "").strip()
+                pg_port = os.environ.get("PGPORT", "5432").strip()
+                pg_user = os.environ.get("PGUSER", "").strip()
+                pg_password = os.environ.get("PGPASSWORD", "").strip()
+                pg_database = os.environ.get("PGDATABASE", "").strip()
+                if pg_host and pg_user and pg_database:
+                    import urllib.parse as _uparse
+                    replit_pg_url = (
+                        f"postgresql://{_uparse.quote(pg_user, safe='')}:"
+                        f"{_uparse.quote(pg_password, safe='')}@"
+                        f"{pg_host}:{pg_port}/{pg_database}"
+                    )
+                    try:
+                        import psycopg2 as _pg2
+                        _conn = _pg2.connect(replit_pg_url, connect_timeout=5)
+                        _conn.close()
+                        logging.info(
+                            "DB: DATABASE_URL unreachable; switched to Replit PostgreSQL (PG* vars)."
+                        )
+                        _resolved_db_url_cache = replit_pg_url
+                        return _resolved_db_url_cache
+                    except Exception as _pg_exc:
+                        logging.warning("DB: Replit PG* vars also unreachable: %s", _pg_exc)
+
                 logging.warning(
                     "\n"
                     "  ⚠️  DATABASE_URL points to %s:%s but the database is\n"
