@@ -28,7 +28,7 @@ outputType = "webview"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "gunicorn --bind 0.0.0.0:5000 --workers 1 --threads 12 --worker-class gthread --timeout 120 wsgi:app"
+args = "bash start.sh"
 waitForPort = 5000
 
 [[ports]]

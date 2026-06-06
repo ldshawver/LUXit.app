@@ -163,6 +163,7 @@ def _resolve_db_url() -> str:
                         f"postgresql://{_uparse.quote(pg_user, safe='')}:"
                         f"{_uparse.quote(pg_password, safe='')}@"
                         f"{pg_host}:{pg_port}/{pg_database}"
+                        f"?sslmode=require"
                     )
                     try:
                         import psycopg2 as _pg2
@@ -175,6 +176,36 @@ def _resolve_db_url() -> str:
                         return _resolved_db_url_cache
                     except Exception as _pg_exc:
                         logging.warning("DB: Replit PG* vars also unreachable: %s", _pg_exc)
+
+                # Last resort: probe the local PostgreSQL started by start.sh
+                # It listens on /tmp socket with the same db/user as POSTGRESQL_DATABASE_URL
+                try:
+                    import psycopg2 as _pg2
+                    _local_url = os.environ.get("POSTGRESQL_DATABASE_URL", "").strip()
+                    if _local_url:
+                        import urllib.parse as _uparse2
+                        _lp = _uparse2.urlparse(_local_url)
+                        _local_conn = _pg2.connect(
+                            host="/tmp",
+                            port=5432,
+                            user=_lp.username or "luxuser",
+                            password=_lp.password or "",
+                            dbname=_lp.path.lstrip("/") or "lux_marketing",
+                            connect_timeout=3,
+                        )
+                        _local_conn.close()
+                        _dbname = _lp.path.lstrip("/") or "lux_marketing"
+                        _socket_url = (
+                            f"postgresql+psycopg2://{_uparse2.quote(_lp.username or 'luxuser', safe='')}:"
+                            f"{_uparse2.quote(_lp.password or '', safe='')}@"
+                            f"/{_dbname}"
+                            f"?host=/tmp"
+                        )
+                        logging.info("DB: Connected to local PostgreSQL via /tmp socket.")
+                        _resolved_db_url_cache = _socket_url
+                        return _resolved_db_url_cache
+                except Exception as _local_exc:
+                    logging.warning("DB: Local /tmp socket also unreachable: %s", _local_exc)
 
                 logging.warning(
                     "\n"
