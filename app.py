@@ -485,10 +485,10 @@ def create_app() -> Flask:
             if _user_count == 0:
                 logging.warning(
                     "\n"
-                    "  ⚠️  Zero users found in database — the wrong DB file may be configured.\n"
+                    "  ⚠️  Zero users found in database.\n"
                     "  Current DATABASE_URL: %s\n"
-                    "  Production correct path:\n"
-                    "    DATABASE_URL=sqlite:////root/lux-email-bot/instance/email_marketing.db",
+                    "  If this is a fresh database, run: python3 scripts/bootstrap.py\n"
+                    "  If migrating from SQLite, run:   python3 scripts/sqlite_to_postgres.py --help",
                     _safe_url,
                 )
         except Exception as _diag_exc:

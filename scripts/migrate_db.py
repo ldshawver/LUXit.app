@@ -33,39 +33,24 @@ def _load_dotenv():
 _load_dotenv()
 
 
-# ── SQLite path safety check ─────────────────────────────────────────────────
-def _check_sqlite_exists():
-    """If DATABASE_URL points to a SQLite file, abort if the file does not exist.
+# ── PostgreSQL-only guard ─────────────────────────────────────────────────────
+def _check_not_sqlite():
+    """Abort if DATABASE_URL still points to a SQLite file.
 
-    This prevents migrate_db.py from silently creating a new empty database
-    (e.g. /root/lux-email-bot/email_marketing.db) while the real data lives
-    in instance/email_marketing.db.
+    This script is designed for PostgreSQL only. Data migration from SQLite is
+    handled by scripts/sqlite_to_postgres.py.
     """
     raw = os.environ.get("DATABASE_URL", "").strip()
-    if not raw or not raw.startswith("sqlite:"):
-        return  # Postgres / not set — let app.py handle it
-
-    # Extract filesystem path from sqlite URL:
-    #   sqlite:////absolute/path  →  /absolute/path
-    #   sqlite:///relative/path   →  <cwd>/relative/path
-    path = raw[len("sqlite:///"):]          # strip "sqlite:///"
-    if not os.path.isabs(path):
-        path = os.path.join(_PROJECT_ROOT, path)
-
-    if not os.path.exists(path):
+    if raw and raw.startswith("sqlite:"):
         print(
-            f"\n  ✗  FATAL: DATABASE_URL points to a SQLite file that does not exist:\n"
-            f"       {path}\n\n"
-            f"  This would create a brand-new empty database and lose all production data.\n"
-            f"  Update DATABASE_URL in your .env to the correct path, e.g.:\n"
-            f"    DATABASE_URL=sqlite:////root/lux-email-bot/instance/email_marketing.db\n",
+            "\n  ✗  DATABASE_URL points to SQLite — this script requires PostgreSQL.\n"
+            "  To migrate data from SQLite to PostgreSQL, use:\n"
+            "    python3 scripts/sqlite_to_postgres.py --help\n",
             file=sys.stderr,
         )
         sys.exit(1)
 
-    print(f"  ✓  SQLite file verified: {path}")
-
-_check_sqlite_exists()
+_check_not_sqlite()
 
 from app import create_app
 from extensions import db
