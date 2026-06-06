@@ -18,7 +18,7 @@ def twilio_friendly_error(exc) -> str:
         21211: "The recipient phone number is invalid. Check the number and try again.",
         21408: "Twilio is not allowed to send to that destination. Enable the region in Twilio Console → Voice & Messaging → Geo Permissions.",
         21606: "The configured Twilio From number cannot send SMS. Check SMS Settings or use an SMS-capable number.",
-        21610: "This contact has opted out. They must reply START before texts can be sent again.",
+        21610: "This customer has opted out. They must reply START before texts can be sent again.",
         21612: "Twilio cannot route SMS to that number. Check the recipient number and carrier support.",
         21614: "The recipient does not appear to be a mobile/SMS-capable number.",
         21617: "The message is too long for Twilio to send. Shorten it and try again.",
@@ -47,23 +47,24 @@ def twilio_friendly_error(exc) -> str:
 
     lower = raw.lower()
 
-    # Trial-account verified-number restriction (SMS or voice)
-    if ("unverified" in lower or "verified caller" in lower) and (
-        "trial" in lower or "upgrade" in lower
-    ):
-        return (
-            "Twilio trial accounts can only send to verified numbers. "
-            "Add the number at twilio.com/console → Phone Numbers → Verified Caller IDs, "
-            "or upgrade your Twilio account."
-        )
-
-    # Generic 403 / "Unable to create record" — the most common user-facing message
+    # Generic 403 / "Unable to create record" — catch BEFORE trial-account check
+    # because trial-account 403s also contain "unable to create record"
     if status == 403 or "unable to create record" in lower or "http 403" in lower:
         return (
-            "Twilio 403: request blocked. Most common causes — "
-            "trial account (destination must be a Verified Caller ID at twilio.com/console), "
-            "geographic permissions not enabled (Twilio Console → Geo Permissions), "
+            "Twilio rejected the request with HTTP 403. "
+            "Most common causes: trial account (destination must be a Verified Caller ID — "
+            "add it at twilio.com/console → Phone Numbers → Verified Caller IDs), "
+            "geographic permissions not enabled (Twilio Console → Voice & Messaging → Geo Permissions), "
             "or the Twilio number lacks SMS/Voice capability."
+        )
+
+    # Trial-account verified-number restriction (SMS or voice)
+    if ("unverified" in lower or "verified caller" in lower) and (
+        "trial" in lower or "upgrade" in lower or "cannot" in lower
+    ):
+        return (
+            "Twilio trial accounts can only text verified recipient numbers. "
+            "Verify this customer in Twilio or upgrade the account."
         )
 
     if "authenticate" in lower or "authentication" in lower or "account sid" in lower:
