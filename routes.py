@@ -5903,6 +5903,55 @@ def company_settings(company_id):
         logger.error(f"Settings page error: {e}")
         return redirect(url_for('main.dashboard'))
 
+
+@main_bp.route('/connections')
+@login_required
+def connections_hub():
+    """Redirect /connections to the user's default company."""
+    company = current_user.get_default_company()
+    if not company:
+        flash('No company found. Please complete onboarding first.', 'warning')
+        return redirect(url_for('main.dashboard'))
+    return redirect(url_for('main.company_connections', company_id=company.id))
+
+
+@main_bp.route('/connections/<int:company_id>')
+@login_required
+def company_connections(company_id):
+    """Connections & API Keys hub — one card per integration provider."""
+    import json
+    from services.integration_registry import IntegrationServiceRegistry
+    try:
+        company = Company.query.get(company_id)
+        if not company:
+            return redirect(url_for('main.dashboard'))
+
+        all_companies = current_user.get_all_companies()
+        user_role = current_user.get_company_role(company.id)
+        can_edit  = current_user.can_edit_company(company.id)
+
+        registry      = IntegrationServiceRegistry.get_all_services()
+        providers_by_cat = IntegrationServiceRegistry.get_services_by_category()
+        providers     = list(registry.values())
+
+        # Serialize registry for the template JS
+        registry_json = json.dumps(registry)
+
+        return render_template(
+            'connections.html',
+            company=company,
+            all_companies=all_companies,
+            user_role=user_role,
+            can_edit=can_edit,
+            providers=providers,
+            providers_by_cat=providers_by_cat,
+            registry_json=registry_json,
+        )
+    except Exception as e:
+        logger.error(f"Connections hub error: {e}")
+        return redirect(url_for('main.dashboard'))
+
+
 @main_bp.route('/user/change-password', methods=['GET', 'POST'])
 @login_required
 def change_password():
@@ -6183,6 +6232,37 @@ def save_company_secrets(company_id):
     except Exception as e:
         logger.error(f"Save secrets error: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@main_bp.route('/api/company/<int:company_id>/secrets/delete', methods=['POST'])
+@login_required
+def delete_company_secret(company_id):
+    """Delete a single secret key from a company's vault."""
+    try:
+        from models import Company, CompanySecret
+        company = Company.query.get_or_404(company_id)
+
+        if not current_user.can_edit_company(company_id):
+            return jsonify({'success': False, 'error': 'Permission denied'}), 403
+
+        data = request.get_json() or {}
+        key  = (data.get('key') or '').strip()
+        if not key:
+            return jsonify({'success': False, 'error': 'key is required'}), 400
+
+        row = CompanySecret.query.filter_by(company_id=company_id, key=key).first()
+        if row:
+            from extensions import db
+            db.session.delete(row)
+            db.session.commit()
+            logger.info(f"Deleted secret key={key} company_id={company_id}")
+            return jsonify({'success': True, 'deleted': key})
+        else:
+            return jsonify({'success': True, 'deleted': None, 'note': 'key not found'})
+    except Exception as e:
+        logger.error(f"Delete secret error: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 
 @main_bp.route('/api/company/<int:company_id>/settings', methods=['POST'])
 @login_required

@@ -1,0 +1,660 @@
+{% extends "base.html" %}
+
+{% block title %}Connections & API Keys — {{ company.name }}{% endblock %}
+
+{% block content %}
+<style>
+/* ── Layout ─────────────────────────────────────────────────────────────── */
+.conn-wrap { display: flex; gap: 0; min-height: calc(100vh - 80px); }
+
+.conn-sidebar {
+    width: 220px; flex-shrink: 0;
+    background: #0a0a0a;
+    border-right: 1px solid #1e1e1e;
+    padding: 20px 0;
+    position: sticky; top: 0; height: calc(100vh - 80px); overflow-y: auto;
+}
+.conn-sidebar-head {
+    padding: 0 16px 16px;
+    font-size: 11px; font-weight: 700; letter-spacing: 1.5px;
+    color: #555; text-transform: uppercase;
+    border-bottom: 1px solid #1e1e1e; margin-bottom: 8px;
+}
+.cat-pill {
+    display: flex; align-items: center; gap: 8px;
+    padding: 8px 16px; cursor: pointer;
+    font-size: 13px; color: #888;
+    border-left: 3px solid transparent;
+    transition: all .2s; user-select: none;
+}
+.cat-pill:hover { color: #ccc; background: #111; }
+.cat-pill.active { color: #bc00ed; border-left-color: #bc00ed; background: #12001a; }
+.cat-pill .cat-count {
+    margin-left: auto; background: #222; border-radius: 10px;
+    padding: 1px 7px; font-size: 11px; color: #555;
+}
+.cat-pill.active .cat-count { background: #3a0055; color: #bc00ed; }
+
+.conn-main { flex: 1; padding: 28px 32px; overflow-y: auto; }
+
+/* ── Top bar ─────────────────────────────────────────────────────────────── */
+.conn-topbar {
+    display: flex; align-items: center; gap: 16px;
+    margin-bottom: 28px; flex-wrap: wrap;
+}
+.conn-topbar h1 { font-size: 22px; color: #fff; margin: 0; flex: 1; }
+.conn-search {
+    display: flex; align-items: center; gap: 8px;
+    background: #111; border: 1px solid #2a2a2a; border-radius: 8px;
+    padding: 8px 14px; width: 260px;
+}
+.conn-search input {
+    background: none; border: none; outline: none;
+    color: #fff; font-size: 14px; width: 100%;
+}
+.conn-search input::placeholder { color: #555; }
+
+.company-bar {
+    display: flex; align-items: center; gap: 12px;
+    background: #0f0f0f; border: 1px solid #222; border-radius: 10px;
+    padding: 12px 20px; margin-bottom: 24px;
+}
+.company-bar label { font-size: 11px; color: #555; text-transform: uppercase; letter-spacing: 1px; margin: 0; }
+.company-bar select {
+    background: #000; border: 1px solid #bc00ed; color: #fff;
+    border-radius: 6px; padding: 6px 12px; font-size: 14px; cursor: pointer;
+}
+.company-bar .role-badge {
+    padding: 4px 10px; border-radius: 4px; font-size: 11px; font-weight: 700;
+    background: {% if user_role == 'owner' %}#bc00ed{% elif user_role == 'admin' %}#00c9a7{% else %}#444{% endif %};
+    color: #000;
+}
+
+/* ── Stats bar ───────────────────────────────────────────────────────────── */
+.stats-bar {
+    display: flex; gap: 16px; margin-bottom: 28px; flex-wrap: wrap;
+}
+.stat-chip {
+    background: #111; border: 1px solid #222; border-radius: 8px;
+    padding: 10px 18px; display: flex; align-items: center; gap: 8px;
+}
+.stat-chip .num { font-size: 22px; font-weight: 700; color: #bc00ed; }
+.stat-chip .lbl { font-size: 12px; color: #666; }
+
+/* ── Provider grid ───────────────────────────────────────────────────────── */
+.provider-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 16px;
+}
+.provider-card {
+    background: #0d0d0d; border: 1px solid #1e1e1e; border-radius: 12px;
+    padding: 20px; cursor: pointer; transition: all .2s;
+    position: relative; overflow: hidden;
+}
+.provider-card:hover { border-color: #333; background: #111; transform: translateY(-1px); }
+.provider-card.configured { border-color: #003a2a; }
+.provider-card.configured:hover { border-color: #00c9a7; }
+
+.provider-card-top { display: flex; align-items: flex-start; gap: 14px; }
+.provider-icon {
+    width: 46px; height: 46px; border-radius: 10px;
+    background: #151515; border: 1px solid #2a2a2a;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 22px; flex-shrink: 0;
+}
+.provider-info { flex: 1; min-width: 0; }
+.provider-name { font-size: 15px; font-weight: 600; color: #fff; margin: 0 0 4px; }
+.provider-cat {
+    font-size: 10px; color: #555; text-transform: uppercase; letter-spacing: 1px;
+}
+.provider-desc {
+    font-size: 12px; color: #666; margin: 10px 0 14px;
+    line-height: 1.5;
+}
+.provider-footer { display: flex; align-items: center; justify-content: space-between; }
+.status-dot {
+    display: flex; align-items: center; gap: 6px;
+    font-size: 12px; font-weight: 600;
+}
+.status-dot::before {
+    content: ''; width: 8px; height: 8px; border-radius: 50%;
+    background: #333;
+}
+.status-dot.ok { color: #00c9a7; }
+.status-dot.ok::before { background: #00c9a7; box-shadow: 0 0 6px #00c9a7; }
+.status-dot.partial { color: #f59e0b; }
+.status-dot.partial::before { background: #f59e0b; }
+
+.btn-configure {
+    font-size: 12px; font-weight: 600;
+    padding: 6px 14px; border-radius: 6px; border: none; cursor: pointer;
+    background: #bc00ed; color: #fff; transition: all .2s;
+}
+.btn-configure:hover { background: #9900c5; }
+
+.configured-bar {
+    position: absolute; top: 0; left: 0; right: 0; height: 3px;
+    background: linear-gradient(90deg, #00c9a7, #bc00ed);
+    opacity: 0; transition: opacity .3s;
+}
+.provider-card.configured .configured-bar { opacity: 1; }
+
+/* ── Modal ───────────────────────────────────────────────────────────────── */
+.modal-overlay {
+    display: none; position: fixed; inset: 0; z-index: 1000;
+    background: rgba(0,0,0,.85); align-items: center; justify-content: center;
+}
+.modal-overlay.open { display: flex; }
+.modal-box {
+    background: #0d0d0d; border: 1px solid #2a2a2a; border-radius: 16px;
+    width: 620px; max-width: 95vw; max-height: 90vh;
+    overflow-y: auto; padding: 0;
+    animation: slideUp .25s ease;
+}
+@keyframes slideUp { from { transform: translateY(20px); opacity:0; } to { transform: translateY(0); opacity:1; } }
+
+.modal-header {
+    display: flex; align-items: center; gap: 16px;
+    padding: 24px 28px 20px; border-bottom: 1px solid #1e1e1e;
+    position: sticky; top: 0; background: #0d0d0d; z-index: 2;
+}
+.modal-icon { font-size: 32px; }
+.modal-title { flex: 1; }
+.modal-title h2 { font-size: 18px; color: #fff; margin: 0 0 4px; }
+.modal-title p { font-size: 12px; color: #666; margin: 0; }
+.modal-close {
+    width: 32px; height: 32px; border-radius: 8px; border: 1px solid #333;
+    background: none; color: #888; cursor: pointer; font-size: 18px;
+    display: flex; align-items: center; justify-content: center;
+}
+.modal-close:hover { color: #fff; border-color: #555; }
+
+.modal-body { padding: 24px 28px; }
+
+.field-section { margin-bottom: 28px; }
+.field-section-title {
+    font-size: 11px; font-weight: 700; color: #555;
+    text-transform: uppercase; letter-spacing: 1.5px;
+    margin-bottom: 16px; display: flex; align-items: center; gap: 8px;
+}
+.field-section-title::after {
+    content: ''; flex: 1; height: 1px; background: #1e1e1e;
+}
+
+.field-row { margin-bottom: 16px; }
+.field-row label {
+    display: block; font-size: 13px; font-weight: 600; color: #aaa;
+    margin-bottom: 6px;
+}
+.field-row .req { color: #bc00ed; }
+.field-input-wrap { position: relative; }
+.field-input-wrap input,
+.field-input-wrap textarea {
+    width: 100%; padding: 10px 14px; background: #111;
+    border: 1px solid #2a2a2a; border-radius: 8px; color: #fff;
+    font-size: 14px; font-family: 'Inter', monospace;
+    transition: border-color .2s; box-sizing: border-box;
+}
+.field-input-wrap textarea { resize: vertical; min-height: 100px; }
+.field-input-wrap input:focus,
+.field-input-wrap textarea:focus { outline: none; border-color: #bc00ed; }
+.field-input-wrap input.configured-input { border-color: #003a2a; }
+.field-configured-badge {
+    position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
+    font-size: 11px; color: #00c9a7; font-weight: 600; pointer-events: none;
+}
+.field-help { font-size: 11px; color: #555; margin-top: 5px; }
+.field-masked {
+    font-size: 11px; color: #00c9a7; margin-top: 4px;
+    display: flex; align-items: center; gap: 6px;
+}
+.btn-clear-field {
+    font-size: 11px; color: #ff4466; background: none; border: none;
+    cursor: pointer; padding: 0; margin-left: auto;
+}
+.btn-clear-field:hover { color: #ff0044; }
+
+.modal-footer {
+    padding: 20px 28px; border-top: 1px solid #1e1e1e;
+    display: flex; align-items: center; gap: 12px;
+    position: sticky; bottom: 0; background: #0d0d0d;
+}
+.btn-save {
+    padding: 10px 28px; border-radius: 8px; border: none;
+    background: #bc00ed; color: #fff; font-size: 14px; font-weight: 600;
+    cursor: pointer; transition: all .2s;
+}
+.btn-save:hover { background: #9900c5; }
+.btn-save:disabled { opacity: .5; cursor: default; }
+.btn-cancel {
+    padding: 10px 20px; border-radius: 8px;
+    border: 1px solid #333; background: none;
+    color: #888; font-size: 14px; cursor: pointer;
+}
+.btn-cancel:hover { color: #fff; border-color: #555; }
+.save-msg { font-size: 13px; margin-left: auto; }
+.save-msg.ok { color: #00c9a7; }
+.save-msg.err { color: #ff4466; }
+
+/* ── Empty / loading ─────────────────────────────────────────────────────── */
+.cat-heading {
+    font-size: 13px; font-weight: 700; color: #555;
+    text-transform: uppercase; letter-spacing: 1.5px;
+    margin: 8px 0 14px; display: flex; align-items: center; gap: 10px;
+}
+.cat-heading::after { content: ''; flex: 1; height: 1px; background: #1e1e1e; }
+
+.no-results { text-align: center; padding: 60px 20px; color: #555; }
+</style>
+
+<!-- Company bar -->
+<div class="company-bar">
+    <div>
+        <label>Company</label>
+        <select onchange="window.location.href='/connections/'+this.value">
+            {% for c in all_companies %}
+            <option value="{{ c.id }}" {% if c.id == company.id %}selected{% endif %}>
+                {{ c.name }}{% if c.id == current_user.default_company_id %} ⭐{% endif %}
+            </option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="role-badge">{{ user_role|title }}</div>
+    {% if not can_edit %}
+    <div style="margin-left:8px;font-size:12px;color:#ff4466;">
+        ⚠️ View-only — contact an admin for edit access
+    </div>
+    {% endif %}
+    <div style="margin-left:auto;font-size:12px;color:#555;">
+        Secrets are encrypted at rest. Keys are never shown in plaintext.
+    </div>
+</div>
+
+<div class="conn-wrap">
+    <!-- Sidebar categories -->
+    <nav class="conn-sidebar">
+        <div class="conn-sidebar-head">Categories</div>
+        <div class="cat-pill active" data-cat="all" onclick="filterCat('all')">
+            <span>All Integrations</span>
+            <span class="cat-count" id="cnt-all">{{ providers|length }}</span>
+        </div>
+        {% for cat, svcs in providers_by_cat.items() %}
+        <div class="cat-pill" data-cat="{{ cat }}" onclick="filterCat('{{ cat }}')">
+            <span>{{ cat }}</span>
+            <span class="cat-count" id="cnt-{{ cat|replace(' ','_')|replace('&','n') }}">{{ svcs|length }}</span>
+        </div>
+        {% endfor %}
+    </nav>
+
+    <!-- Main content -->
+    <div class="conn-main">
+        <div class="conn-topbar">
+            <h1>Connections & API Keys</h1>
+            <div class="conn-search">
+                <svg width="14" height="14" fill="none" stroke="#555" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+                <input type="text" id="search-input" placeholder="Search integrations…" oninput="applySearch()">
+            </div>
+        </div>
+
+        <!-- Stats -->
+        <div class="stats-bar">
+            <div class="stat-chip">
+                <span class="num" id="stat-configured">0</span>
+                <span class="lbl">Configured</span>
+            </div>
+            <div class="stat-chip">
+                <span class="num">{{ providers|length }}</span>
+                <span class="lbl">Total integrations</span>
+            </div>
+            <div class="stat-chip">
+                <span class="num">{{ providers_by_cat|length }}</span>
+                <span class="lbl">Categories</span>
+            </div>
+        </div>
+
+        <!-- Provider grid (rendered per-category for grouping) -->
+        <div id="provider-container">
+            {% for cat, svcs in providers_by_cat.items() %}
+            <div class="cat-group" data-cat="{{ cat }}">
+                <div class="cat-heading">{{ cat }}</div>
+                <div class="provider-grid">
+                    {% for svc in svcs %}
+                    <div class="provider-card"
+                         data-slug="{{ svc.slug }}"
+                         data-cat="{{ cat }}"
+                         data-name="{{ svc.display_name|lower }}"
+                         id="card-{{ svc.slug }}"
+                         onclick="openModal('{{ svc.slug }}')">
+                        <div class="configured-bar"></div>
+                        <div class="provider-card-top">
+                            <div class="provider-icon">{{ svc.icon }}</div>
+                            <div class="provider-info">
+                                <div class="provider-name">{{ svc.display_name }}</div>
+                                <div class="provider-cat">{{ cat }}</div>
+                            </div>
+                        </div>
+                        <div class="provider-desc">{{ svc.description }}</div>
+                        <div class="provider-footer">
+                            <span class="status-dot" id="dot-{{ svc.slug }}">Not set</span>
+                            <button class="btn-configure" onclick="event.stopPropagation();openModal('{{ svc.slug }}')">
+                                Configure →
+                            </button>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endfor %}
+            <div class="no-results" id="no-results" style="display:none;">
+                No integrations match your search.
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ── Configure Modal ────────────────────────────────────────────────────── -->
+<div class="modal-overlay" id="modal-overlay" onclick="closeModalIfBg(event)">
+    <div class="modal-box" id="modal-box">
+        <div class="modal-header">
+            <div class="modal-icon" id="modal-icon">🔌</div>
+            <div class="modal-title">
+                <h2 id="modal-title-text">Configure</h2>
+                <p id="modal-subtitle"></p>
+            </div>
+            <button class="modal-close" onclick="closeModal()">✕</button>
+        </div>
+        <div class="modal-body" id="modal-body"></div>
+        <div class="modal-footer">
+            <button class="btn-save" id="modal-save-btn" onclick="saveProvider()"
+                    {% if not can_edit %}disabled title="View-only access"{% endif %}>
+                💾 Save
+            </button>
+            <button class="btn-cancel" onclick="closeModal()">Cancel</button>
+            <span class="save-msg" id="modal-save-msg"></span>
+        </div>
+    </div>
+</div>
+
+<script>
+const COMPANY_ID = {{ company.id }};
+const CAN_EDIT   = {{ 'true' if can_edit else 'false' }};
+const CSRF_TOKEN = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
+
+/* ── Provider registry (from server) ──────────────────────────────────────── */
+const REGISTRY = {{ registry_json | safe }};
+
+/* ── Secrets state ────────────────────────────────────────────────────────── */
+let configuredKeys = new Set();   // stored_key names that are set in DB
+let maskedValues   = {};          // stored_key → masked string
+
+async function loadSecrets() {
+    try {
+        const r = await fetch(`/api/company/${COMPANY_ID}/secrets`);
+        const d = await r.json();
+        if (d.success && d.secrets) {
+            configuredKeys.clear();
+            maskedValues = {};
+            d.secrets.forEach(s => {
+                if (s.configured) {
+                    configuredKeys.add(s.key);
+                    maskedValues[s.key] = s.masked || '••••••••';
+                }
+            });
+        }
+    } catch(e) { console.error('loadSecrets', e); }
+    renderStatuses();
+}
+
+function providerConfigured(svc) {
+    const allFields = [
+        ...Object.values(svc.config_fields || {}),
+        ...Object.values(svc.secret_fields || {}),
+    ];
+    const withKey = allFields.filter(f => f.stored_key);
+    if (!withKey.length) return false;
+    return withKey.some(f => configuredKeys.has(f.stored_key));
+}
+
+function providerFullyConfigured(svc) {
+    const req = [
+        ...Object.values(svc.config_fields || {}),
+        ...Object.values(svc.secret_fields || {}),
+    ].filter(f => f.required && f.stored_key);
+    return req.length > 0 && req.every(f => configuredKeys.has(f.stored_key));
+}
+
+function renderStatuses() {
+    let configuredCount = 0;
+    Object.values(REGISTRY).forEach(svc => {
+        const dot  = document.getElementById(`dot-${svc.slug}`);
+        const card = document.getElementById(`card-${svc.slug}`);
+        if (!dot || !card) return;
+        if (providerFullyConfigured(svc)) {
+            dot.textContent  = '✓ Configured';
+            dot.className    = 'status-dot ok';
+            card.classList.add('configured');
+            configuredCount++;
+        } else if (providerConfigured(svc)) {
+            dot.textContent  = '◑ Partial';
+            dot.className    = 'status-dot partial';
+            card.classList.add('configured');
+            configuredCount++;
+        } else {
+            dot.textContent  = 'Not set';
+            dot.className    = 'status-dot';
+            card.classList.remove('configured');
+        }
+    });
+    document.getElementById('stat-configured').textContent = configuredCount;
+}
+
+/* ── Category filter ──────────────────────────────────────────────────────── */
+let currentCat = 'all';
+let currentSearch = '';
+
+function filterCat(cat) {
+    currentCat = cat;
+    document.querySelectorAll('.cat-pill').forEach(p => {
+        p.classList.toggle('active', p.dataset.cat === cat);
+    });
+    applyFilters();
+}
+
+function applySearch() {
+    currentSearch = document.getElementById('search-input').value.toLowerCase().trim();
+    applyFilters();
+}
+
+function applyFilters() {
+    let anyVisible = false;
+    document.querySelectorAll('.cat-group').forEach(group => {
+        const groupCat = group.dataset.cat;
+        let groupVisible = false;
+        group.querySelectorAll('.provider-card').forEach(card => {
+            const matchCat    = currentCat === 'all' || card.dataset.cat === currentCat;
+            const matchSearch = !currentSearch || card.dataset.name.includes(currentSearch)
+                                || card.dataset.cat.toLowerCase().includes(currentSearch);
+            const visible = matchCat && matchSearch;
+            card.style.display = visible ? '' : 'none';
+            if (visible) { groupVisible = true; anyVisible = true; }
+        });
+        group.style.display = groupVisible ? '' : 'none';
+    });
+    document.getElementById('no-results').style.display = anyVisible ? 'none' : '';
+}
+
+/* ── Modal ────────────────────────────────────────────────────────────────── */
+let currentSlug = null;
+
+function openModal(slug) {
+    const svc = REGISTRY[slug];
+    if (!svc) return;
+    currentSlug = slug;
+
+    document.getElementById('modal-icon').textContent     = svc.icon;
+    document.getElementById('modal-title-text').textContent = svc.display_name;
+    document.getElementById('modal-subtitle').textContent  = svc.description;
+    document.getElementById('modal-save-msg').textContent  = '';
+    document.getElementById('modal-save-msg').className   = 'save-msg';
+
+    let html = '';
+
+    // Config fields
+    const cfKeys = Object.keys(svc.config_fields || {});
+    if (cfKeys.length) {
+        html += `<div class="field-section">
+            <div class="field-section-title">Configuration</div>`;
+        cfKeys.forEach(fname => {
+            const f = svc.config_fields[fname];
+            html += renderField(f, fname);
+        });
+        html += `</div>`;
+    }
+
+    // Secret fields
+    const sfKeys = Object.keys(svc.secret_fields || {});
+    if (sfKeys.length) {
+        html += `<div class="field-section">
+            <div class="field-section-title">Credentials & Secrets</div>`;
+        sfKeys.forEach(fname => {
+            const f = svc.secret_fields[fname];
+            html += renderField(f, fname);
+        });
+        html += `</div>`;
+    }
+
+    if (!cfKeys.length && !sfKeys.length) {
+        html = `<p style="color:#555;text-align:center;padding:30px 0;">
+            No configurable fields for this integration yet.</p>`;
+    }
+
+    document.getElementById('modal-body').innerHTML = html;
+    document.getElementById('modal-overlay').classList.add('open');
+    document.body.style.overflow = 'hidden';
+}
+
+function renderField(f, fname) {
+    const sk  = f.stored_key || fname;
+    const isConf = configuredKeys.has(sk);
+    const masked = maskedValues[sk] || '';
+    const req    = f.required ? '<span class="req">*</span>' : '';
+    const inputId = `field-${sk}`;
+    const type   = f.type || 'text';
+
+    let inputHtml = '';
+    if (type === 'textarea') {
+        inputHtml = `<div class="field-input-wrap">
+            <textarea id="${inputId}" data-stored-key="${sk}"
+                placeholder="${f.placeholder || ''}"
+                ${!CAN_EDIT ? 'readonly' : ''}></textarea>
+        </div>`;
+    } else {
+        inputHtml = `<div class="field-input-wrap">
+            <input type="${type === 'password' ? 'password' : (type === 'email' ? 'email' : (type === 'url' ? 'url' : (type === 'number' ? 'number' : 'text')))}"
+                id="${inputId}" data-stored-key="${sk}"
+                placeholder="${isConf ? '(leave blank to keep current)' : (f.placeholder || '')}"
+                ${!CAN_EDIT ? 'readonly' : ''}>
+            ${isConf ? '<span class="field-configured-badge">✓</span>' : ''}
+        </div>`;
+    }
+
+    const maskedHtml = isConf ? `<div class="field-masked">
+        <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+        Current: ${masked}
+        ${CAN_EDIT ? `<button class="btn-clear-field" onclick="clearField('${sk}')">Clear</button>` : ''}
+    </div>` : '';
+
+    return `<div class="field-row" id="row-${sk}">
+        <label for="${inputId}">${f.label} ${req}</label>
+        ${inputHtml}
+        ${maskedHtml}
+        ${f.help_text ? `<div class="field-help">${f.help_text}</div>` : ''}
+    </div>`;
+}
+
+async function clearField(storedKey) {
+    if (!CAN_EDIT) return;
+    if (!confirm(`Remove "${storedKey}" from this company's secrets?`)) return;
+    try {
+        const r = await fetch(`/api/company/${COMPANY_ID}/secrets/delete`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF_TOKEN },
+            body: JSON.stringify({ key: storedKey }),
+        });
+        const d = await r.json();
+        if (d.success) {
+            configuredKeys.delete(storedKey);
+            delete maskedValues[storedKey];
+            renderStatuses();
+            openModal(currentSlug); // re-render modal
+        } else {
+            alert('Error: ' + d.error);
+        }
+    } catch(e) { alert('Error clearing field'); }
+}
+
+async function saveProvider() {
+    if (!CAN_EDIT || !currentSlug) return;
+    const btn = document.getElementById('modal-save-btn');
+    const msg = document.getElementById('modal-save-msg');
+    btn.disabled = true;
+    btn.textContent = 'Saving…';
+    msg.textContent = '';
+
+    const payload = {};
+    document.querySelectorAll('#modal-body [data-stored-key]').forEach(el => {
+        const key = el.getAttribute('data-stored-key');
+        const val = el.value.trim();
+        if (val) payload[key] = val;
+    });
+
+    if (!Object.keys(payload).length) {
+        btn.disabled = false;
+        btn.textContent = '💾 Save';
+        msg.textContent = 'No new values entered.';
+        msg.className = 'save-msg';
+        return;
+    }
+
+    try {
+        const r = await fetch(`/api/company/${COMPANY_ID}/secrets/save`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF_TOKEN },
+            body: JSON.stringify(payload),
+        });
+        const d = await r.json();
+        if (d.success) {
+            msg.textContent = `✓ ${d.secrets_saved} secret(s) saved`;
+            msg.className = 'save-msg ok';
+            await loadSecrets();
+            openModal(currentSlug);
+        } else {
+            msg.textContent = '✗ ' + d.error;
+            msg.className = 'save-msg err';
+        }
+    } catch(e) {
+        msg.textContent = '✗ Network error';
+        msg.className = 'save-msg err';
+    } finally {
+        btn.disabled = false;
+        btn.textContent = '💾 Save';
+    }
+}
+
+function closeModal() {
+    document.getElementById('modal-overlay').classList.remove('open');
+    document.body.style.overflow = '';
+    currentSlug = null;
+}
+
+function closeModalIfBg(e) {
+    if (e.target === document.getElementById('modal-overlay')) closeModal();
+}
+
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
+
+/* ── Boot ─────────────────────────────────────────────────────────────────── */
+loadSecrets();
+</script>
+{% endblock %}

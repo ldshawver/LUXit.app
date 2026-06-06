@@ -465,7 +465,7 @@
                             <li><a class="dropdown-item" href="{{ url_for('main.manage_users') }}"><i data-feather="users"></i> Manage Users</a></li>
                             <li><hr class="dropdown-divider"></li>
                             <li><h6 class="dropdown-header">Company Settings</h6></li>
-                            <li><a class="dropdown-item" href="{{ url_for('main.settings_integrations') }}"><i data-feather="sliders"></i> Connections & API Keys</a></li>
+                            <li><a class="dropdown-item" href="{{ url_for('main.connections_hub') }}"><i data-feather="link"></i> Connections & API Keys</a></li>
                             <li><a class="dropdown-item" href="{{ url_for('main.settings_integrations') }}#brand"><i data-feather="droplet"></i> Brand Kit & Colors</a></li>
                             <li><a class="dropdown-item" href="{{ url_for('main.companies_list') }}"><i data-feather="briefcase"></i> Manage Companies</a></li>
                             <li><hr class="dropdown-divider"></li>
@@ -647,6 +647,14 @@
                     </a>
                 </div>
                 {% endif %}
+
+                {# Connections — always visible in sidebar #}
+                <div class="sidebar-section">
+                    <p class="sidebar-section-label">Settings</p>
+                    <a href="{{ url_for('main.connections_hub') }}" class="sidebar-nav-item{% if _p.startswith('/connections') %} active{% endif %}">
+                        <i data-feather="link"></i> Connections &amp; API Keys
+                    </a>
+                </div>
 
                 {# Platform Integrations — shown when on /platform routes #}
                 {% if _p.startswith('/platform') %}
