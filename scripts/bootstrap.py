@@ -20,22 +20,20 @@ try:
 except ImportError:
     pass
 
-# Validate DATABASE_URL early so the error is actionable
-_db_url = os.environ.get("DATABASE_URL", "").strip()
-if not _db_url:
-    print(
-        "\n  ❌  DATABASE_URL is not set.\n"
-        "  In Replit: open Tools → Secrets and verify DATABASE_URL is present.\n"
-        "  On VPS:    export DATABASE_URL=postgresql://user:pass@host:5432/dbname\n",
-        file=sys.stderr,
-    )
+# Use the same DB resolution logic as the main app so PG* vars (Replit managed
+# PostgreSQL) take priority over a potentially stale DATABASE_URL secret.
+sys.path.insert(0, _PROJECT_ROOT)
+from app import _resolve_db_url
+
+try:
+    _resolved = _resolve_db_url()
+except RuntimeError as _e:
+    print(str(_e), file=sys.stderr)
     sys.exit(1)
 
-# Normalise postgres:// → postgresql:// for SQLAlchemy
-if _db_url.startswith("postgres://"):
-    os.environ["DATABASE_URL"] = _db_url.replace("postgres://", "postgresql://", 1)
-
-print(f"[bootstrap] DATABASE_URL host: {_db_url.split('@')[-1].split('/')[0]}")
+import urllib.parse as _up
+_parsed = _up.urlparse(_resolved)
+print(f"[bootstrap] PostgreSQL: {_parsed.hostname}/{(_parsed.path or '').lstrip('/')}")
 
 from app import create_app
 from extensions import db

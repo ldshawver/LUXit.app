@@ -73,8 +73,21 @@ print(f"[migrate] SQLite source : {args.sqlite}  ({os.path.getsize(args.sqlite)/
 
 if not args.dry_run:
     pg_url = args.pg_url
+
+    if not pg_url and not (args.pg_host and args.pg_user and args.pg_db):
+        # Auto-resolve: try app's _resolve_db_url() first (handles Replit PG* vars),
+        # then fall back to raw DATABASE_URL.
+        try:
+            _script_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            sys.path.insert(0, _script_dir)
+            from app import _resolve_db_url
+            pg_url = _resolve_db_url()
+            print(f"[migrate] Auto-resolved DB URL from app resolver.")
+        except Exception:
+            pass
+
     if not pg_url:
-        # fall back to environment DATABASE_URL
+        # fall back to raw DATABASE_URL env var
         pg_url = os.environ.get("DATABASE_URL", "").strip()
         if pg_url and pg_url.startswith("postgres://"):
             pg_url = pg_url.replace("postgres://", "postgresql://", 1)
@@ -84,7 +97,8 @@ if not args.dry_run:
         if not (args.pg_host and args.pg_user and args.pg_db):
             print(
                 "  ❌  Provide --pg-url OR (--pg-host, --pg-user, --pg-db [, --pg-password]).\n"
-                "  Or set DATABASE_URL in the environment.",
+                "  Or set DATABASE_URL in the environment.\n"
+                "  When running inside Replit, no flags are needed — the app resolver is used automatically.",
                 file=sys.stderr,
             )
             sys.exit(1)
