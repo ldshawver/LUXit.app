@@ -81,158 +81,119 @@ _resolved_db_url_cache: str | None = None
 
 
 def _resolve_db_url() -> str:
-    """Determine the database URL to use at startup.
+    """Resolve the database URL.
 
     Resolution order:
-    1. ``DEV_DATABASE_URL`` env var – explicit dev override (highest priority).
-    2. ``DATABASE_URL`` env / secret – the configured database.
-       * If it's a Postgres URL, we probe the TCP port (2 s timeout).
-         - Reachable  → use it as-is.
-         - Unreachable + running inside Replit → warn and fall back to SQLite.
-         - Unreachable + NOT Replit (VPS/prod) → raise RuntimeError with a
-           clear message so the process exits instead of silently corrupting.
-    3. Default SQLite (``sqlite:///lux_marketing_dev.db``) when DATABASE_URL is
-       not set at all.
+    1. Replit managed PostgreSQL — built from PGHOST/PGPORT/PGUSER/PGPASSWORD/
+       PGDATABASE env vars when PGHOST is present.  These are set automatically
+       by Replit's Database tool and always point to the live managed instance.
+    2. DATABASE_URL secret/env — used on VPS / non-Replit environments, or
+       when PGHOST is not available.  The legacy ``postgres://`` scheme is
+       normalised to ``postgresql://`` for SQLAlchemy compatibility.
 
-    MySQL driver shim is applied before returning.
-    Result is cached so repeated calls (e.g. from tests) skip the network probe.
+    Raises RuntimeError if neither source provides a usable URL so the
+    process fails fast instead of silently writing to a wrong database.
+    Result is cached so repeated calls skip the URL rewrite.
     """
     global _resolved_db_url_cache
     if _resolved_db_url_cache is not None:
         return _resolved_db_url_cache
 
-    import socket
-    import urllib.parse
+    import urllib.parse as _uparse
 
-    _SQLITE_FALLBACK = "sqlite:///lux_marketing_dev.db"
-    _is_replit = bool(os.environ.get("REPL_ID") or os.environ.get("REPLIT_DEV_DOMAIN"))
-
-    # ── 1. Explicit dev override ────────────────────────────────────────────
-    dev_override = os.environ.get("DEV_DATABASE_URL", "").strip()
-    if dev_override:
-        logging.info("DB: using DEV_DATABASE_URL override → %s",
-                     dev_override.split("@")[-1] if "@" in dev_override else dev_override)
-        return _apply_mysql_shim(dev_override)
-
-    # ── 2. Configured DATABASE_URL ──────────────────────────────────────────
-    raw = os.environ.get("DATABASE_URL", "").strip()
-
-    if not raw:
-        if _is_replit:
-            logging.warning(
-                "DATABASE_URL is not set. Falling back to SQLite for "
-                "Replit development: %s", _SQLITE_FALLBACK
-            )
-            return _SQLITE_FALLBACK
-        raise RuntimeError(
-            "\n\n"
-            "  ❌  DATABASE_URL is not configured.\n"
-            "  Set DATABASE_URL in your environment to a valid PostgreSQL\n"
-            "  connection string, e.g.:\n"
-            "    postgresql://user:password@localhost:5432/lux_marketing\n"
-        )
-
-    # Probe Postgres/MySQL with a real protocol-level connection attempt.
-    # A plain TCP socket check is NOT sufficient — Neon proxies accept TCP
-    # but then reject at the Postgres protocol level when compute is disabled.
-    parsed = urllib.parse.urlparse(raw)
-    if parsed.scheme.startswith(("postgres", "postgresql", "mysql")):
-        host = parsed.hostname or ""
-        port = parsed.port or (5432 if "postgres" in parsed.scheme else 3306)
-        db_ok = False
-        probe_error = ""
+    def _probe(url: str, timeout: int = 4) -> bool:
+        """Return True if a psycopg2 connection to *url* succeeds."""
         try:
             import psycopg2
-            conn = psycopg2.connect(raw, connect_timeout=5)
+            conn = psycopg2.connect(url, connect_timeout=timeout)
             conn.close()
-            db_ok = True
-        except Exception as exc:
-            probe_error = str(exc)
+            return True
+        except Exception:
+            return False
 
-        if not db_ok:
-            if _is_replit:
-                # Try to build a connection URL from Replit's PG* env vars
-                pg_host = os.environ.get("PGHOST", "").strip()
-                pg_port = os.environ.get("PGPORT", "5432").strip()
-                pg_user = os.environ.get("PGUSER", "").strip()
-                pg_password = os.environ.get("PGPASSWORD", "").strip()
-                pg_database = os.environ.get("PGDATABASE", "").strip()
-                if pg_host and pg_user and pg_database:
-                    import urllib.parse as _uparse
-                    replit_pg_url = (
-                        f"postgresql://{_uparse.quote(pg_user, safe='')}:"
-                        f"{_uparse.quote(pg_password, safe='')}@"
-                        f"{pg_host}:{pg_port}/{pg_database}"
-                        f"?sslmode=require"
-                    )
-                    try:
-                        import psycopg2 as _pg2
-                        _conn = _pg2.connect(replit_pg_url, connect_timeout=5)
-                        _conn.close()
-                        logging.info(
-                            "DB: DATABASE_URL unreachable; switched to Replit PostgreSQL (PG* vars)."
-                        )
-                        _resolved_db_url_cache = replit_pg_url
-                        return _resolved_db_url_cache
-                    except Exception as _pg_exc:
-                        logging.warning("DB: Replit PG* vars also unreachable: %s", _pg_exc)
+    _is_replit = bool(os.environ.get("REPL_ID") or os.environ.get("REPLIT_DEV_DOMAIN"))
 
-                # Last resort: probe the local PostgreSQL started by start.sh
-                # It listens on /tmp socket with the same db/user as POSTGRESQL_DATABASE_URL
-                try:
-                    import psycopg2 as _pg2
-                    _local_url = os.environ.get("POSTGRESQL_DATABASE_URL", "").strip()
-                    if _local_url:
-                        import urllib.parse as _uparse2
-                        _lp = _uparse2.urlparse(_local_url)
-                        _local_conn = _pg2.connect(
-                            host="/tmp",
-                            port=5432,
-                            user=_lp.username or "luxuser",
-                            password=_lp.password or "",
-                            dbname=_lp.path.lstrip("/") or "lux_marketing",
-                            connect_timeout=3,
-                        )
-                        _local_conn.close()
-                        _dbname = _lp.path.lstrip("/") or "lux_marketing"
-                        _socket_url = (
-                            f"postgresql+psycopg2://{_uparse2.quote(_lp.username or 'luxuser', safe='')}:"
-                            f"{_uparse2.quote(_lp.password or '', safe='')}@"
-                            f"/{_dbname}"
-                            f"?host=/tmp"
-                        )
-                        logging.info("DB: Connected to local PostgreSQL via /tmp socket.")
-                        _resolved_db_url_cache = _socket_url
-                        return _resolved_db_url_cache
-                except Exception as _local_exc:
-                    logging.warning("DB: Local /tmp socket also unreachable: %s", _local_exc)
+    # ── 1. Replit managed PostgreSQL (PG* vars) ──────────────────────────────
+    # Replit's Database tool sets PGHOST to an internal hostname (not a known
+    # external SaaS host).  We probe first to avoid spending time on stale
+    # Neon/Supabase credentials that are no longer valid.
+    pg_host = os.environ.get("PGHOST", "").strip()
+    pg_port = os.environ.get("PGPORT", "5432").strip()
+    pg_user = os.environ.get("PGUSER", "").strip()
+    pg_password = os.environ.get("PGPASSWORD", "").strip()
+    pg_database = os.environ.get("PGDATABASE", "").strip()
 
-                logging.warning(
-                    "\n"
-                    "  ⚠️  DATABASE_URL points to %s:%s but the database is\n"
-                    "     not accepting connections (%s).\n"
-                    "  Falling back to SQLite for Replit development: %s\n"
-                    "  To connect to your VPS Postgres instead, set:\n"
-                    "    DEV_DATABASE_URL=postgresql://user:pass@<vps-ip>:5432/lux_marketing\n"
-                    "  in the Replit Secrets panel (Settings → Secrets).\n",
-                    host, port, probe_error.split("\n")[0], _SQLITE_FALLBACK
-                )
-                return _SQLITE_FALLBACK
-            raise RuntimeError(
-                "\n\n"
-                f"  ❌  Database at {host}:{port} is not accepting connections.\n"
-                f"  Error: {probe_error.split(chr(10))[0]}\n"
-                "  Check that your database server is running and that\n"
-                "  DATABASE_URL is correct. On Hostinger VPS:\n"
-                "    sudo systemctl status postgresql\n"
-                "    sudo systemctl start postgresql\n"
+    if pg_host and pg_user and pg_database:
+        candidate = (
+            f"postgresql://{_uparse.quote(pg_user, safe='')}:"
+            f"{_uparse.quote(pg_password, safe='')}@"
+            f"{pg_host}:{pg_port}/{pg_database}"
+        )
+        if _probe(candidate):
+            os.environ["DATABASE_URL"] = candidate
+            _resolved_db_url_cache = candidate
+            logging.info(
+                "DB: using managed PostgreSQL at %s/%s", pg_host, pg_database
+            )
+            return _resolved_db_url_cache
+        else:
+            logging.warning(
+                "DB: PG* vars point to %s but connection failed — skipping.", pg_host
             )
 
-        logging.info("DB: connection probe OK → %s:%s/%s",
-                     host, port, parsed.path.lstrip("/"))
+    # ── 2. DATABASE_URL (VPS / explicit override) ────────────────────────────
+    raw = os.environ.get("DATABASE_URL", "").strip()
+    if raw:
+        # Normalise postgres:// → postgresql:// (Heroku/Render/Neon legacy scheme)
+        if raw.startswith("postgres://"):
+            raw = raw.replace("postgres://", "postgresql://", 1)
+        url = _apply_mysql_shim(raw)
+        if _probe(url):
+            _resolved_db_url_cache = url
+            _parsed = _uparse.urlparse(url)
+            logging.info(
+                "DB: using PostgreSQL at %s/%s",
+                _parsed.hostname or "?",
+                (_parsed.path or "").lstrip("/"),
+            )
+            return _resolved_db_url_cache
+        else:
+            logging.warning(
+                "DB: DATABASE_URL unreachable (%s) — continuing to local fallback.",
+                _uparse.urlparse(raw).hostname or raw[:40],
+            )
 
-    _resolved_db_url_cache = _apply_mysql_shim(raw)
-    return _resolved_db_url_cache
+    # ── 3. Local PostgreSQL via /tmp socket (Replit dev — started by start.sh)
+    if _is_replit:
+        try:
+            import psycopg2 as _pg2
+            _local_conn = _pg2.connect(
+                host="/tmp",
+                port=5432,
+                user="luxuser",
+                password="LuxPass2024!",
+                dbname="lux_marketing",
+                connect_timeout=4,
+            )
+            _local_conn.close()
+            _socket_url = (
+                "postgresql+psycopg2://luxuser:LuxPass2024%21"
+                "@/lux_marketing?host=/tmp"
+            )
+            os.environ["DATABASE_URL"] = _socket_url
+            _resolved_db_url_cache = _socket_url
+            logging.info("DB: Connected to local PostgreSQL via /tmp socket.")
+            return _resolved_db_url_cache
+        except Exception as _local_exc:
+            logging.warning("DB: Local /tmp socket also failed: %s", _local_exc)
+
+    raise RuntimeError(
+        "\n\n"
+        "  ❌  No database connection could be established.\n"
+        "  • In Replit: open the Database tool to provision managed PostgreSQL,\n"
+        "    then delete the old PGHOST / DATABASE_URL secrets so fresh ones are set.\n"
+        "  • On VPS: ensure DATABASE_URL is correct and PostgreSQL is running.\n"
+    )
 
 
 def _apply_mysql_shim(url: str) -> str:

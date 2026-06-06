@@ -6,7 +6,7 @@ class Config:
     """Base configuration."""
 
     SECRET_KEY = os.environ.get("SESSION_SECRET")
-    SQLALCHEMY_DATABASE_URI = os.environ.get("DATABASE_URL", "sqlite:///email_marketing.db")
+    SQLALCHEMY_DATABASE_URI = os.environ.get("DATABASE_URL")
     SQLALCHEMY_ENGINE_OPTIONS = {
         "pool_recycle": 300,
         "pool_pre_ping": True,

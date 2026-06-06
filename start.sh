@@ -38,7 +38,7 @@ if [ "$USER_EXISTS" != "1" ]; then
     psql_local -c "CREATE USER luxuser WITH PASSWORD 'LuxPass2024!';"
 fi
 
-# ── 5. Create database if it doesn't exist (must not be in a transaction) ───
+# ── 5. Create database if it doesn't exist ───────────────────────────────────
 DB_EXISTS=$(psql_local -tAc "SELECT 1 FROM pg_database WHERE datname='lux_marketing'" 2>/dev/null || echo "")
 if [ "$DB_EXISTS" != "1" ]; then
     echo "[start.sh] Creating lux_marketing database..."
