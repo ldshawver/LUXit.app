@@ -3557,16 +3557,26 @@ def ai_generate_sms():
 @login_required
 def sms_analytics(campaign_id):
     """View SMS campaign analytics"""
-    # from services.sms_service import SMSService
-    
     campaign = SMSCampaign.query.get_or_404(campaign_id)
-    analytics = SMSService.calculate_analytics(campaign_id)
     recipients = SMSRecipient.query.filter_by(campaign_id=campaign_id).all()
-    
+
+    total = len(recipients)
+    delivered = sum(1 for r in recipients if r.status == 'delivered')
+    failed = sum(1 for r in recipients if r.status == 'failed')
+    pending = total - delivered - failed
+
+    analytics = {
+        'total_recipients': total,
+        'delivered': delivered,
+        'failed': failed,
+        'pending': pending,
+        'delivery_rate': round((delivered / total * 100) if total else 0, 1),
+    }
+
     return render_template('sms_analytics.html',
-                         campaign=campaign,
-                         analytics=analytics,
-                         recipients=recipients)
+                           campaign=campaign,
+                           analytics=analytics,
+                           recipients=recipients)
 
 # Non-Opener Resend Feature
 @main_bp.route('/campaigns/<int:campaign_id>/resend-non-openers', methods=['GET', 'POST'])

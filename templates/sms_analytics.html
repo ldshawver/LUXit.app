@@ -1,0 +1,139 @@
+{% extends "base.html" %}
+{% block title %}SMS Analytics — {{ campaign.name }}{% endblock %}
+{% block page_title %}SMS Analytics{% endblock %}
+{% block content %}
+<style>
+.stat-card { background: rgba(10,10,15,0.9); border: 1px solid rgba(188,0,237,0.3); border-radius: 12px; padding: 24px; text-align: center; }
+.stat-value { font-size: 2.2rem; font-weight: 700; background: linear-gradient(135deg, #bc00ed, #00ffb4); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+.stat-label { color: #a1a7b8; font-size: 0.85rem; margin-top: 4px; }
+.progress-bar-custom { height: 8px; border-radius: 4px; background: linear-gradient(90deg, #bc00ed, #00ffb4); }
+</style>
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h1 style="background: linear-gradient(135deg, #bc00ed, #00ffb4); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">
+            <i data-feather="bar-chart-2" style="stroke: #bc00ed;"></i> Campaign Analytics
+        </h1>
+        <p class="text-muted mb-0">{{ campaign.name }}</p>
+    </div>
+    <a href="{{ url_for('main.sms_dashboard') }}" class="btn btn-outline-secondary">
+        <i data-feather="arrow-left"></i> Back to Campaigns
+    </a>
+</div>
+
+<div class="row g-3 mb-4">
+    <div class="col-md-3">
+        <div class="stat-card">
+            <div class="stat-value">{{ analytics.total_recipients }}</div>
+            <div class="stat-label">Total Recipients</div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="stat-card">
+            <div class="stat-value" style="background: linear-gradient(135deg, #00ffb4, #06b6d4); -webkit-background-clip: text;">{{ analytics.delivered }}</div>
+            <div class="stat-label">Delivered</div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="stat-card">
+            <div class="stat-value" style="background: linear-gradient(135deg, #f59e0b, #ef4444); -webkit-background-clip: text;">{{ analytics.failed }}</div>
+            <div class="stat-label">Failed</div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="stat-card">
+            <div class="stat-value">{{ analytics.delivery_rate }}%</div>
+            <div class="stat-label">Delivery Rate</div>
+        </div>
+    </div>
+</div>
+
+<div class="card mb-4" style="background: rgba(10,10,15,0.9); border: 1px solid rgba(188,0,237,0.3);">
+    <div class="card-body">
+        <h6 style="color: #00ffb4;" class="mb-3">Campaign Details</h6>
+        <div class="row g-3">
+            <div class="col-md-4">
+                <small class="text-muted d-block">Status</small>
+                <span class="badge bg-{{ 'success' if campaign.status == 'sent' else ('warning' if campaign.status == 'sending' else 'secondary') }}">
+                    {{ campaign.status|title }}
+                </span>
+            </div>
+            <div class="col-md-4">
+                <small class="text-muted d-block">Created</small>
+                <span style="color: #f7f7fb;">{{ campaign.created_at.strftime('%b %d, %Y %H:%M') if campaign.created_at else '—' }}</span>
+            </div>
+            <div class="col-md-4">
+                <small class="text-muted d-block">Sent At</small>
+                <span style="color: #f7f7fb;">{{ campaign.sent_at.strftime('%b %d, %Y %H:%M') if campaign.sent_at else '—' }}</span>
+            </div>
+            <div class="col-12">
+                <small class="text-muted d-block mb-1">Message</small>
+                <div style="background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; padding: 12px; color: #f7f7fb; font-size: 0.9rem;">
+                    {{ campaign.message or '—' }}
+                </div>
+            </div>
+        </div>
+
+        {% if analytics.total_recipients > 0 %}
+        <div class="mt-4">
+            <div class="d-flex justify-content-between mb-1">
+                <small style="color: #a1a7b8;">Delivery Progress</small>
+                <small style="color: #00ffb4;">{{ analytics.delivery_rate }}%</small>
+            </div>
+            <div class="progress" style="height: 8px; background: rgba(255,255,255,0.1); border-radius: 4px;">
+                <div class="progress-bar-custom" style="width: {{ analytics.delivery_rate }}%;"></div>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<div class="card" style="background: rgba(10,10,15,0.9); border: 1px solid rgba(188,0,237,0.3);">
+    <div class="card-body">
+        <h6 style="color: #00ffb4;" class="mb-3">
+            <i data-feather="users"></i> Recipients ({{ analytics.total_recipients }})
+        </h6>
+        {% if recipients %}
+        <div class="table-responsive">
+            <table class="table table-hover">
+                <thead>
+                    <tr>
+                        <th>Contact</th>
+                        <th>Status</th>
+                        <th>Sent At</th>
+                        <th>Delivered At</th>
+                        <th>Error</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for r in recipients %}
+                    <tr>
+                        <td>
+                            {% if r.contact %}
+                            {{ r.contact.first_name or '' }} {{ r.contact.last_name or '' }}
+                            {% else %}
+                            <span class="text-muted">—</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <span class="badge bg-{{ 'success' if r.status == 'delivered' else ('danger' if r.status == 'failed' else 'secondary') }}">
+                                {{ r.status or 'pending' }}
+                            </span>
+                        </td>
+                        <td><small>{{ r.sent_at.strftime('%b %d %H:%M') if r.sent_at else '—' }}</small></td>
+                        <td><small>{{ r.delivered_at.strftime('%b %d %H:%M') if r.delivered_at else '—' }}</small></td>
+                        <td><small class="text-danger">{{ r.error_message or '' }}</small></td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="text-center py-4 text-muted">
+            <i data-feather="users" style="width:40px;height:40px;" class="mb-2"></i>
+            <p>No recipients recorded for this campaign.</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
