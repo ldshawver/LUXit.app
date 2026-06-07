@@ -3138,3 +3138,283 @@ class ApiHubAuditLog(db.Model):
     __table_args__ = (
         db.Index("ix_api_hub_audit_provider_ts", "provider_slug", "timestamp"),
     )
+
+
+# ===========================================================================
+# Phase A — Multi-Number VoIP Architecture
+# ===========================================================================
+
+class TwilioPhoneNumber(db.Model):
+    """One row per Twilio phone number. Single source of truth for routing.
+    TwilioAccount holds credentials; TwilioPhoneNumber holds per-number config."""
+    __tablename__ = "twilio_phone_number"
+
+    id                = db.Column(db.Integer, primary_key=True)
+    company_id        = db.Column(db.Integer, db.ForeignKey("company.id"),        nullable=False)
+    twilio_account_id = db.Column(db.Integer, db.ForeignKey("twilio_account.id"), nullable=True)
+
+    phone_number   = db.Column(db.String(20), nullable=False, unique=True)
+    friendly_name  = db.Column(db.String(100))
+    twilio_sid     = db.Column(db.String(60))
+
+    # luxit | mypaylink | myorder | myreview | unassigned
+    app_assignment = db.Column(db.String(50), default="luxit")
+    # local | toll_free | short_code | mobile
+    number_type    = db.Column(db.String(20), default="local")
+
+    sms_enabled    = db.Column(db.Boolean, default=True)
+    voice_enabled  = db.Column(db.Boolean, default=True)
+    mms_enabled    = db.Column(db.Boolean, default=False)
+
+    sms_webhook_url   = db.Column(db.String(500))
+    voice_webhook_url = db.Column(db.String(500))
+
+    sms_forward_to         = db.Column(db.String(20))
+    sms_forwarding_enabled = db.Column(db.Boolean, default=False)
+    auto_reply_enabled     = db.Column(db.Boolean, default=True)
+
+    call_forward_to          = db.Column(db.String(20))
+    voice_forwarding_enabled = db.Column(db.Boolean, default=True)
+    ring_timeout             = db.Column(db.Integer, default=25)
+
+    voicemail_greeting_text       = db.Column(db.Text)
+    voicemail_greeting_audio_url  = db.Column(db.String(500))
+    missed_call_text              = db.Column(db.Text)
+    after_hours_text              = db.Column(db.Text)
+    after_hours_sms_enabled       = db.Column(db.Boolean, default=True)
+    after_hours_voicemail_enabled = db.Column(db.Boolean, default=True)
+
+    is_active  = db.Column(db.Boolean, default=True)
+    is_primary = db.Column(db.Boolean, default=False)
+    notes      = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    company        = db.relationship("Company",       backref="phone_numbers")
+    twilio_account = db.relationship("TwilioAccount", backref="phone_numbers")
+
+    def __repr__(self):
+        return f"<TwilioPhoneNumber {self.phone_number} co={self.company_id}>"
+
+
+class VoiceVoicemailBox(db.Model):
+    """Named voicemail box — attached to a number, extension, or routing rule."""
+    __tablename__ = "voice_voicemail_box"
+
+    id              = db.Column(db.Integer, primary_key=True)
+    company_id      = db.Column(db.Integer, db.ForeignKey("company.id"),             nullable=False)
+    phone_number_id = db.Column(db.Integer, db.ForeignKey("twilio_phone_number.id"), nullable=True)
+
+    name               = db.Column(db.String(100), nullable=False)
+    greeting_text      = db.Column(db.Text)
+    greeting_audio_url = db.Column(db.String(500))
+    email_notify       = db.Column(db.String(200))
+    pin                = db.Column(db.String(10))
+    max_length_secs    = db.Column(db.Integer, default=180)
+    is_active          = db.Column(db.Boolean, default=True)
+    created_at         = db.Column(db.DateTime, default=datetime.utcnow)
+
+    company  = db.relationship("Company", backref="voicemail_boxes")
+    messages = db.relationship("VoiceVoicemailMessage", backref="box",
+                               cascade="all, delete-orphan")
+
+
+class VoiceExtension(db.Model):
+    """Internal dial-by-extension directory entry."""
+    __tablename__ = "voice_extension"
+
+    id              = db.Column(db.Integer, primary_key=True)
+    company_id      = db.Column(db.Integer, db.ForeignKey("company.id"),             nullable=False)
+    phone_number_id = db.Column(db.Integer, db.ForeignKey("twilio_phone_number.id"), nullable=True)
+
+    extension_number    = db.Column(db.String(10),  nullable=False)
+    name                = db.Column(db.String(100), nullable=False)
+    description         = db.Column(db.Text)
+    # external | user | voicemail
+    destination_type    = db.Column(db.String(30), default="external")
+    destination_number  = db.Column(db.String(20))
+    destination_user_id = db.Column(db.Integer, db.ForeignKey("user.id"),                nullable=True)
+    voicemail_box_id    = db.Column(db.Integer, db.ForeignKey("voice_voicemail_box.id"), nullable=True)
+
+    ring_timeout = db.Column(db.Integer, default=20)
+    is_active    = db.Column(db.Boolean, default=True)
+    created_at   = db.Column(db.DateTime, default=datetime.utcnow)
+
+    company          = db.relationship("Company", backref="voice_extensions")
+    destination_user = db.relationship("User",    backref="voice_extensions")
+
+    __table_args__ = (
+        db.UniqueConstraint("company_id", "extension_number", name="uq_voice_ext_company_num"),
+    )
+
+
+class VoiceIVRMenu(db.Model):
+    """IVR menu tree for a phone number."""
+    __tablename__ = "voice_ivr_menu"
+
+    id              = db.Column(db.Integer, primary_key=True)
+    company_id      = db.Column(db.Integer, db.ForeignKey("company.id"),             nullable=False)
+    phone_number_id = db.Column(db.Integer, db.ForeignKey("twilio_phone_number.id"), nullable=True)
+
+    name               = db.Column(db.String(100), nullable=False)
+    greeting_text      = db.Column(db.Text)
+    greeting_audio_url = db.Column(db.String(500))
+    timeout_seconds    = db.Column(db.Integer, default=5)
+    max_attempts       = db.Column(db.Integer, default=3)
+    invalid_input_text = db.Column(db.Text,    default="Invalid selection. Please try again.")
+    is_active          = db.Column(db.Boolean, default=False)
+    created_at         = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at         = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    company = db.relationship("Company", backref="ivr_menus")
+    options = db.relationship("VoiceIVROption", backref="menu",
+                              cascade="all, delete-orphan",
+                              order_by="VoiceIVROption.digit",
+                              foreign_keys="VoiceIVROption.menu_id")
+
+
+class VoiceIVROption(db.Model):
+    """One keypress -> destination within an IVR menu."""
+    __tablename__ = "voice_ivr_option"
+
+    id      = db.Column(db.Integer, primary_key=True)
+    menu_id = db.Column(db.Integer, db.ForeignKey("voice_ivr_menu.id"), nullable=False)
+    digit   = db.Column(db.String(1), nullable=False)
+    label   = db.Column(db.String(100))
+
+    # forward | extension | voicemail | submenu | hang_up
+    action           = db.Column(db.String(30), default="forward")
+    forward_to       = db.Column(db.String(20))
+    extension_id     = db.Column(db.Integer, db.ForeignKey("voice_extension.id"),     nullable=True)
+    submenu_id       = db.Column(db.Integer, db.ForeignKey("voice_ivr_menu.id"),      nullable=True)
+    voicemail_box_id = db.Column(db.Integer, db.ForeignKey("voice_voicemail_box.id"), nullable=True)
+    say_text         = db.Column(db.Text)
+
+    extension = db.relationship("VoiceExtension", backref="ivr_options",
+                                foreign_keys=[extension_id])
+    submenu   = db.relationship("VoiceIVRMenu",   foreign_keys=[submenu_id])
+
+    __table_args__ = (
+        db.UniqueConstraint("menu_id", "digit", name="uq_ivr_option_menu_digit"),
+    )
+
+
+class VoiceRoutingRule(db.Model):
+    """Priority-ordered call routing rules for a phone number."""
+    __tablename__ = "voice_routing_rule"
+
+    id              = db.Column(db.Integer, primary_key=True)
+    company_id      = db.Column(db.Integer, db.ForeignKey("company.id"),             nullable=False)
+    phone_number_id = db.Column(db.Integer, db.ForeignKey("twilio_phone_number.id"), nullable=True)
+
+    name              = db.Column(db.String(100), nullable=False)
+    priority          = db.Column(db.Integer, default=0)
+    # always | business_hours | after_hours | caller_id
+    condition_type    = db.Column(db.String(30), default="always")
+    caller_id_pattern = db.Column(db.String(50))
+
+    # forward | voicemail | ivr | extension | hang_up
+    action           = db.Column(db.String(30), default="voicemail")
+    forward_to       = db.Column(db.String(20))
+    extension_id     = db.Column(db.Integer, db.ForeignKey("voice_extension.id"),     nullable=True)
+    ivr_menu_id      = db.Column(db.Integer, db.ForeignKey("voice_ivr_menu.id"),      nullable=True)
+    voicemail_box_id = db.Column(db.Integer, db.ForeignKey("voice_voicemail_box.id"), nullable=True)
+
+    ring_timeout = db.Column(db.Integer, default=25)
+    whisper_text = db.Column(db.Text)
+    is_active    = db.Column(db.Boolean, default=True)
+    created_at   = db.Column(db.DateTime, default=datetime.utcnow)
+
+    company = db.relationship("Company", backref="voice_routing_rules")
+
+
+class VoiceForwardingRule(db.Model):
+    """Sequential or simultaneous ring-group forwarding rules."""
+    __tablename__ = "voice_forwarding_rule"
+
+    id              = db.Column(db.Integer, primary_key=True)
+    company_id      = db.Column(db.Integer, db.ForeignKey("company.id"),             nullable=False)
+    phone_number_id = db.Column(db.Integer, db.ForeignKey("twilio_phone_number.id"), nullable=True)
+    routing_rule_id = db.Column(db.Integer, db.ForeignKey("voice_routing_rule.id"),  nullable=True)
+
+    name            = db.Column(db.String(100))
+    # sequential | simultaneous
+    ring_strategy   = db.Column(db.String(20), default="sequential")
+    # [{number: "+1...", timeout: 20, label: "Luke"}]
+    numbers         = db.Column(JSON, default=list)
+    fallback_action = db.Column(db.String(20), default="voicemail")
+    is_active       = db.Column(db.Boolean,  default=True)
+    created_at      = db.Column(db.DateTime, default=datetime.utcnow)
+
+    company = db.relationship("Company", backref="forwarding_rules")
+
+
+class VoiceVoicemailMessage(db.Model):
+    """Individual voicemail recording left by a caller."""
+    __tablename__ = "voice_voicemail_message"
+
+    id               = db.Column(db.Integer, primary_key=True)
+    company_id       = db.Column(db.Integer, db.ForeignKey("company.id"),             nullable=False)
+    voicemail_box_id = db.Column(db.Integer, db.ForeignKey("voice_voicemail_box.id"), nullable=True)
+    call_log_id      = db.Column(db.Integer, db.ForeignKey("twilio_call_log.id"),     nullable=True)
+
+    from_number   = db.Column(db.String(20))
+    to_number     = db.Column(db.String(20))
+    call_sid      = db.Column(db.String(100))
+    recording_sid = db.Column(db.String(100))
+    recording_url = db.Column(db.String(500))
+    duration_secs = db.Column(db.Integer, default=0)
+    transcript    = db.Column(db.Text)
+    is_read       = db.Column(db.Boolean, default=False)
+    is_deleted    = db.Column(db.Boolean, default=False)
+    created_at    = db.Column(db.DateTime, default=datetime.utcnow)
+
+    company  = db.relationship("Company",       backref="voicemail_messages")
+    call_log = db.relationship("TwilioCallLog", backref="voicemail_message", uselist=False)
+
+
+class CallRecording(db.Model):
+    """Full call recording (any recorded call leg, not just voicemail)."""
+    __tablename__ = "call_recording"
+
+    id          = db.Column(db.Integer, primary_key=True)
+    company_id  = db.Column(db.Integer, db.ForeignKey("company.id"),         nullable=False)
+    call_log_id = db.Column(db.Integer, db.ForeignKey("twilio_call_log.id"), nullable=True)
+
+    call_sid      = db.Column(db.String(100))
+    recording_sid = db.Column(db.String(100), unique=True)
+    recording_url = db.Column(db.String(500))
+    duration_secs = db.Column(db.Integer, default=0)
+    channels      = db.Column(db.Integer, default=1)
+    status        = db.Column(db.String(30), default="completed")
+    is_deleted    = db.Column(db.Boolean,  default=False)
+    created_at    = db.Column(db.DateTime, default=datetime.utcnow)
+
+    company  = db.relationship("Company",       backref="call_recordings")
+    call_log = db.relationship("TwilioCallLog", backref="call_recordings")
+
+
+class PinnedPhoneFavorite(db.Model):
+    """User-pinned speed-dial tiles on the PWA phone screen (max 4 per user/company)."""
+    __tablename__ = "pinned_phone_favorite"
+
+    id         = db.Column(db.Integer, primary_key=True)
+    user_id    = db.Column(db.Integer, db.ForeignKey("user.id"),    nullable=False)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=False)
+    contact_id = db.Column(db.Integer, db.ForeignKey("contact.id"), nullable=True)
+
+    display_name = db.Column(db.String(100), nullable=False)
+    phone_number = db.Column(db.String(20),  nullable=False)
+    avatar_url   = db.Column(db.String(500))
+    sort_order   = db.Column(db.Integer, default=0)
+
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    user    = db.relationship("User",    backref="pinned_favorites")
+    company = db.relationship("Company", backref="pinned_favorites")
+    contact = db.relationship("Contact", backref="pinned_favorites")
+
+    __table_args__ = (
+        db.UniqueConstraint("user_id", "company_id", "sort_order",
+                            name="uq_pinned_fav_user_co_order"),
+    )

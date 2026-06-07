@@ -96,12 +96,115 @@ def _get_twilio_account(company_id):
 
 
 def _get_twilio_account_by_number(to_number: str):
-    """Find TwilioAccount by looking at from_phone — used in webhooks."""
-    from models import TwilioAccount
-    return TwilioAccount.query.filter(
-        (TwilioAccount.from_phone == to_number) |
-        (TwilioAccount.from_phone == None)
-    ).first()
+    """Legacy helper — delegates to _resolve_number for backward compat."""
+    _pn, ta = _resolve_number(to_number)
+    return ta
+
+
+def _resolve_number(to_number: str, msg_service_sid: str = ""):
+    """
+    Phase A: Resolve inbound Twilio webhook to (TwilioPhoneNumber, TwilioAccount).
+
+    Lookup priority:
+      1. TwilioPhoneNumber.phone_number == to_number  (multi-number DB, primary path)
+      2. TwilioAccount.messaging_service_sid == msg_service_sid (messaging service)
+      3. TwilioAccount.from_phone == to_number  (legacy single-number accounts)
+      4. First active TwilioAccount (absolute fallback — existing behaviour)
+
+    Returns (pn_or_None, ta_or_None).
+    """
+    from models import TwilioPhoneNumber, TwilioAccount
+
+    # ── 1. Look up by phone number in new multi-number table ─────────────────
+    pn = None
+    if to_number:
+        pn = TwilioPhoneNumber.query.filter_by(
+            phone_number=to_number, is_active=True
+        ).first()
+
+    if pn:
+        # Prefer the account linked directly; fall back to any account for company
+        ta = (TwilioAccount.query.get(pn.twilio_account_id)
+              if pn.twilio_account_id else None)
+        if not ta:
+            ta = TwilioAccount.query.filter_by(company_id=pn.company_id).first()
+        logger.debug("_resolve_number: matched TwilioPhoneNumber id=%s company=%s",
+                     pn.id, pn.company_id)
+        return pn, ta
+
+    # ── 2. Messaging Service SID ──────────────────────────────────────────────
+    if msg_service_sid:
+        ta = TwilioAccount.query.filter_by(
+            messaging_service_sid=msg_service_sid
+        ).first()
+        if ta:
+            logger.debug("_resolve_number: matched by MessagingServiceSid ta=%s", ta.id)
+            return None, ta
+
+    # ── 3. Legacy from_phone on TwilioAccount ────────────────────────────────
+    if to_number:
+        ta = TwilioAccount.query.filter_by(from_phone=to_number).first()
+        if ta:
+            logger.debug("_resolve_number: matched legacy from_phone ta=%s", ta.id)
+            return None, ta
+
+    # ── 4. Absolute fallback — first active account ───────────────────────────
+    ta = TwilioAccount.query.filter_by(is_active=True).first()
+    if ta:
+        logger.debug("_resolve_number: fallback to first active TwilioAccount id=%s", ta.id)
+    return None, ta
+
+
+def _seed_phone_numbers_from_accounts():
+    """
+    Phase A migration helper: auto-create TwilioPhoneNumber rows for any
+    TwilioAccount that has a from_phone but no matching TwilioPhoneNumber yet.
+    Safe to call multiple times (idempotent).
+    """
+    from models import TwilioAccount, TwilioPhoneNumber
+    try:
+        accounts = TwilioAccount.query.filter(
+            TwilioAccount.from_phone.isnot(None),
+            TwilioAccount.from_phone != "",
+        ).all()
+        seeded = 0
+        for ta in accounts:
+            existing = TwilioPhoneNumber.query.filter_by(
+                phone_number=ta.from_phone
+            ).first()
+            if not existing:
+                pn = TwilioPhoneNumber(
+                    company_id        = ta.company_id,
+                    twilio_account_id = ta.id,
+                    phone_number      = ta.from_phone,
+                    friendly_name     = f"Primary ({ta.from_phone})",
+                    app_assignment    = "luxit",
+                    number_type       = "local",
+                    sms_enabled       = True,
+                    voice_enabled     = True,
+                    sms_forward_to    = ta.sms_forward_to,
+                    sms_forwarding_enabled  = bool(ta.sms_forwarding_enabled),
+                    auto_reply_enabled      = True,
+                    call_forward_to         = ta.call_forward_to,
+                    voice_forwarding_enabled = bool(ta.voice_forwarding_enabled),
+                    ring_timeout            = 25,
+                    voicemail_greeting_text = ta.voicemail_greeting_text,
+                    voicemail_greeting_audio_url = ta.voicemail_greeting_audio_url,
+                    missed_call_text        = ta.missed_call_text,
+                    after_hours_text        = ta.after_hours_text,
+                    after_hours_sms_enabled = bool(ta.after_hours_sms_enabled),
+                    after_hours_voicemail_enabled = bool(ta.after_hours_voicemail_enabled),
+                    is_active  = True,
+                    is_primary = True,
+                )
+                db.session.add(pn)
+                seeded += 1
+        if seeded:
+            db.session.commit()
+            logger.info("Phase A seed: created %d TwilioPhoneNumber rows from TwilioAccount.from_phone", seeded)
+    except Exception as exc:
+        db.session.rollback()
+        logger.warning("Phase A seed error (non-fatal): %s", exc)
 
 
 def _build_client(ta):
@@ -644,7 +747,7 @@ def inbound_sms():
       4. Handle STOP / START / HELP system keywords (always, regardless of rules)
       5. Run auto-reply rule engine for all other messages
     """
-    from models import TwilioAccount, TwilioConversation, TwilioMessage
+    from models import TwilioConversation, TwilioMessage
 
     data            = request.form
     from_number     = data.get("From", "").strip()
@@ -659,14 +762,8 @@ def inbound_sms():
         from_number, to_number, twilio_sid, msg_service_sid, body,
     )
 
-    # ── 1. Find TwilioAccount ──────────────────────────────────────────────
-    ta = TwilioAccount.query.filter(
-        (TwilioAccount.from_phone == to_number) |
-        (TwilioAccount.messaging_service_sid == msg_service_sid)
-    ).first()
-    if not ta:
-        ta = TwilioAccount.query.filter_by(is_active=True).first()
-
+    # ── 1. Find TwilioPhoneNumber + TwilioAccount (Phase A multi-number) ────
+    _pn, ta = _resolve_number(to_number, msg_service_sid)
     if not ta:
         logger.warning("Inbound SMS: no TwilioAccount found for to=%s", to_number)
         return '<Response></Response>', 200, {"Content-Type": "text/xml"}
@@ -969,7 +1066,7 @@ def inbound_call():
     After hours + after_hours_voicemail_enabled → Voicemail greeting + Record.
     Fallback: generic voicemail.
     """
-    from models import TwilioAccount, TwilioCallLog
+    from models import TwilioCallLog
 
     data        = request.form
     from_number = data.get("From", "")
@@ -979,10 +1076,7 @@ def inbound_call():
     duration    = int(data.get("CallDuration") or 0)
     caller_name = data.get("CallerName", "")
 
-    ta = (
-        TwilioAccount.query.filter(TwilioAccount.from_phone == to_number).first()
-        or TwilioAccount.query.filter_by(is_active=True).first()
-    )
+    _pn, ta = _resolve_number(to_number)
 
     if not ta:
         twiml = """<?xml version="1.0" encoding="UTF-8"?>
@@ -1087,17 +1181,14 @@ def voice_no_answer():
     Twilio Dial action callback — fired when the forwarded call is not answered.
     Routes the caller to voicemail.
     """
-    from models import TwilioAccount, TwilioCallLog
+    from models import TwilioCallLog
 
     data        = request.form
     call_sid    = data.get("CallSid", "")
     dial_status = data.get("DialCallStatus", "")
     to_number   = data.get("To", "")
 
-    ta = (
-        TwilioAccount.query.filter(TwilioAccount.from_phone == to_number).first()
-        or TwilioAccount.query.filter_by(is_active=True).first()
-    )
+    _pn, ta = _resolve_number(to_number)
 
     logger.info("Voice no-answer: sid=%s dial_status=%s", call_sid, dial_status)
 
@@ -2086,3 +2177,194 @@ def google_contacts_disconnect():
     disconnect(current_user.id)
     flash("Google Contacts disconnected.", "info")
     return redirect(url_for("twilio.inbox"))
+
+
+# ===========================================================================
+# Phase A — Number Management Admin UI
+# ===========================================================================
+
+@twilio_bp.route("/numbers")
+@login_required
+def number_management():
+    """
+    Admin UI: list and manage all Twilio phone numbers for the company.
+    GET /twilio/numbers
+    """
+    from models import TwilioPhoneNumber, TwilioAccount
+
+    is_admin = getattr(current_user, "is_admin", False) or \
+               getattr(current_user, "is_platform_admin", False)
+    if not is_admin:
+        abort(403)
+
+    company = _get_company()
+    if not company:
+        flash("No company found.", "error")
+        return redirect(url_for("main.dashboard"))
+
+    ta = _get_twilio_account(company.id)
+
+    # Seed TwilioPhoneNumber rows from legacy TwilioAccount.from_phone (idempotent)
+    _seed_phone_numbers_from_accounts()
+
+    numbers = (
+        TwilioPhoneNumber.query
+        .filter_by(company_id=company.id)
+        .order_by(TwilioPhoneNumber.is_primary.desc(), TwilioPhoneNumber.created_at)
+        .all()
+    )
+
+    return render_template(
+        "twilio/numbers.html",
+        numbers=numbers,
+        ta=ta,
+        company=company,
+    )
+
+
+@twilio_bp.route("/numbers/add", methods=["POST"])
+@login_required
+def number_add():
+    """Register a new phone number in the DB."""
+    from models import TwilioPhoneNumber
+
+    is_admin = getattr(current_user, "is_admin", False) or \
+               getattr(current_user, "is_platform_admin", False)
+    if not is_admin:
+        abort(403)
+
+    company = _get_company()
+    if not company:
+        abort(400)
+
+    phone_number   = request.form.get("phone_number", "").strip()
+    friendly_name  = request.form.get("friendly_name", "").strip()
+    app_assignment = request.form.get("app_assignment", "luxit").strip()
+    number_type    = request.form.get("number_type", "local").strip()
+    twilio_sid     = request.form.get("twilio_sid", "").strip()
+
+    if not phone_number:
+        flash("Phone number is required.", "error")
+        return redirect(url_for("twilio.number_management"))
+
+    # Normalise: ensure E.164 with +
+    if not phone_number.startswith("+"):
+        phone_number = "+" + phone_number.lstrip("+")
+
+    existing = TwilioPhoneNumber.query.filter_by(phone_number=phone_number).first()
+    if existing:
+        flash(f"{phone_number} is already registered.", "warning")
+        return redirect(url_for("twilio.number_management"))
+
+    ta = _get_twilio_account(company.id)
+
+    pn = TwilioPhoneNumber(
+        company_id        = company.id,
+        twilio_account_id = ta.id if ta else None,
+        phone_number      = phone_number,
+        friendly_name     = friendly_name or phone_number,
+        app_assignment    = app_assignment,
+        number_type       = number_type,
+        twilio_sid        = twilio_sid or None,
+        sms_enabled       = True,
+        voice_enabled     = True,
+        is_active         = True,
+        is_primary        = False,
+    )
+    db.session.add(pn)
+    db.session.commit()
+    flash(f"Number {phone_number} added successfully.", "success")
+    return redirect(url_for("twilio.number_management"))
+
+
+@twilio_bp.route("/numbers/<int:number_id>/edit", methods=["POST"])
+@login_required
+def number_edit(number_id):
+    """Update routing settings for a phone number."""
+    from models import TwilioPhoneNumber
+
+    is_admin = getattr(current_user, "is_admin", False) or \
+               getattr(current_user, "is_platform_admin", False)
+    if not is_admin:
+        abort(403)
+
+    company = _get_company()
+    pn = TwilioPhoneNumber.query.filter_by(id=number_id, company_id=company.id).first_or_404()
+
+    pn.friendly_name          = request.form.get("friendly_name", pn.friendly_name).strip()
+    pn.app_assignment         = request.form.get("app_assignment", pn.app_assignment).strip()
+    pn.number_type            = request.form.get("number_type", pn.number_type).strip()
+    pn.sms_enabled            = request.form.get("sms_enabled") == "1"
+    pn.voice_enabled          = request.form.get("voice_enabled") == "1"
+    pn.sms_forward_to         = request.form.get("sms_forward_to", "").strip() or None
+    pn.sms_forwarding_enabled = request.form.get("sms_forwarding_enabled") == "1"
+    pn.auto_reply_enabled     = request.form.get("auto_reply_enabled") == "1"
+    pn.call_forward_to        = request.form.get("call_forward_to", "").strip() or None
+    pn.voice_forwarding_enabled = request.form.get("voice_forwarding_enabled") == "1"
+    pn.missed_call_text       = request.form.get("missed_call_text", "").strip() or None
+    pn.voicemail_greeting_text = request.form.get("voicemail_greeting_text", "").strip() or None
+    pn.after_hours_sms_enabled = request.form.get("after_hours_sms_enabled") == "1"
+    pn.after_hours_voicemail_enabled = request.form.get("after_hours_voicemail_enabled") == "1"
+    pn.notes                  = request.form.get("notes", "").strip() or None
+
+    # Primary number toggle (only one per company)
+    if request.form.get("is_primary") == "1":
+        TwilioPhoneNumber.query.filter_by(company_id=company.id).update({"is_primary": False})
+        pn.is_primary = True
+
+    db.session.commit()
+    flash(f"Number {pn.phone_number} updated.", "success")
+    return redirect(url_for("twilio.number_management"))
+
+
+@twilio_bp.route("/numbers/<int:number_id>/toggle", methods=["POST"])
+@login_required
+def number_toggle(number_id):
+    """Enable / disable a phone number."""
+    from models import TwilioPhoneNumber
+
+    is_admin = getattr(current_user, "is_admin", False) or \
+               getattr(current_user, "is_platform_admin", False)
+    if not is_admin:
+        abort(403)
+
+    company = _get_company()
+    pn = TwilioPhoneNumber.query.filter_by(id=number_id, company_id=company.id).first_or_404()
+    pn.is_active = not pn.is_active
+    db.session.commit()
+    state = "enabled" if pn.is_active else "disabled"
+    flash(f"{pn.phone_number} {state}.", "success")
+    return redirect(url_for("twilio.number_management"))
+
+
+@twilio_bp.route("/numbers/<int:number_id>/delete", methods=["POST"])
+@login_required
+def number_delete(number_id):
+    """Remove a phone number record from the DB (does NOT release from Twilio)."""
+    from models import TwilioPhoneNumber
+
+    is_admin = getattr(current_user, "is_admin", False) or \
+               getattr(current_user, "is_platform_admin", False)
+    if not is_admin:
+        abort(403)
+
+    company = _get_company()
+    pn = TwilioPhoneNumber.query.filter_by(id=number_id, company_id=company.id).first_or_404()
+    num = pn.phone_number
+    db.session.delete(pn)
+    db.session.commit()
+    flash(f"Number {num} removed from the database.", "info")
+    return redirect(url_for("twilio.number_management"))
+
+
+@twilio_bp.route("/numbers/seed", methods=["POST"])
+@login_required
+def number_seed():
+    """Manually trigger migration of TwilioAccount.from_phone -> TwilioPhoneNumber."""
+    is_admin = getattr(current_user, "is_admin", False) or \
+               getattr(current_user, "is_platform_admin", False)
+    if not is_admin:
+        abort(403)
+    _seed_phone_numbers_from_accounts()
+    flash("Phone numbers synced from account settings.", "success")
+    return redirect(url_for("twilio.number_management"))

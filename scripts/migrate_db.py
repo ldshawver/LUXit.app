@@ -218,7 +218,14 @@ MIGRATIONS = [
 
     # ── agent_deliverable — tenant scoping ───────────────────────────────────────
     ("agent_deliverable", "company_id", "INTEGER", "DEFAULT NULL"),
+
+    # ── Phase A: multi-number VoIP — twilio_conversation / call_log FKs ────────
+    ("twilio_conversation", "phone_number_id", "INTEGER",      "DEFAULT NULL"),
+    ("twilio_call_log",     "phone_number_id", "INTEGER",      "DEFAULT NULL"),
+    ("twilio_call_log",     "voicemail_url",   "VARCHAR(500)", "DEFAULT NULL"),
+    ("twilio_call_log",     "recording_url",   "VARCHAR(500)", "DEFAULT NULL"),
 ]
+
 
 # Indexes — created idempotently after column adds.
 INDEXES = [
