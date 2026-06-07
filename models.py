@@ -3050,3 +3050,91 @@ class GoogleOAuthToken(db.Model):
     created_at     = db.Column(db.DateTime, default=datetime.utcnow)
 
     user = db.relationship("User", backref=db.backref("google_oauth_token", uselist=False))
+
+
+# ============================================================
+# API Hub — Provider Credentials & Audit Log
+# ============================================================
+
+class ProviderCredential(db.Model):
+    """
+    Encrypted credential storage for all provider API keys / secrets.
+
+    scope values:
+        'platform'  — platform-wide (company_id NULL)
+        'company'   — per-company override (company_id set)
+        'user'      — per-user OAuth token (company_id + actor_user_id set)
+
+    source values:
+        'env'       — imported from environment variable
+        'manual'    — entered manually via API Hub UI
+        'oauth'     — obtained via OAuth redirect
+    """
+    __tablename__ = "provider_credential"
+
+    id              = db.Column(db.Integer, primary_key=True)
+    provider_slug   = db.Column(db.String(80),  nullable=False, index=True)
+    scope           = db.Column(db.String(20),  nullable=False, default="platform")
+    company_id      = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=True, index=True)
+    key             = db.Column(db.String(255), nullable=False)
+    encrypted_value = db.Column(db.Text,        nullable=True)
+    source          = db.Column(db.String(30),  nullable=False, default="manual")
+    imported_at     = db.Column(db.DateTime,    default=datetime.utcnow)
+    last_tested_at  = db.Column(db.DateTime,    nullable=True)
+    last_test_status= db.Column(db.String(30),  nullable=True)
+    is_active       = db.Column(db.Boolean,     default=True)
+    audit_notes     = db.Column(db.Text,        nullable=True)
+    created_at      = db.Column(db.DateTime,    default=datetime.utcnow)
+    updated_at      = db.Column(db.DateTime,    default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    company = db.relationship("Company", backref="provider_credentials")
+
+    __table_args__ = (
+        db.UniqueConstraint(
+            "provider_slug", "scope", "company_id", "key",
+            name="uq_provider_credential_provider_scope_company_key",
+        ),
+        db.Index("ix_provider_credential_provider_scope", "provider_slug", "scope"),
+    )
+
+    def masked_value(self, show_chars: int = 4) -> str:
+        """Return masked display of the DECRYPTED plaintext tail (never raw secret)."""
+        if not self.encrypted_value:
+            return "****"
+        try:
+            from services.secret_vault import vault
+            plain = vault.decrypt(self.encrypted_value)
+            if plain and len(plain) > show_chars:
+                return f"****{plain[-show_chars:]}"
+            return "****"
+        except Exception:
+            # If decryption fails, fall back to a generic mask — never expose
+            # the encrypted ciphertext tail (which is Fernet base64, not meaningful)
+            tail = (self.key or "")[-2:] or "??"
+            return f"****({tail})"
+
+
+class ApiHubAuditLog(db.Model):
+    """
+    Immutable audit trail for all API Hub credential operations.
+
+    action values: created | updated | rotated | tested | disabled |
+                   imported | fallback_used | deleted
+
+    NEVER store raw secret values in any column.
+    """
+    __tablename__ = "api_hub_audit_log"
+
+    id            = db.Column(db.Integer, primary_key=True)
+    provider_slug = db.Column(db.String(80),  nullable=False, index=True)
+    action        = db.Column(db.String(50),  nullable=False)
+    actor_user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True)
+    scope         = db.Column(db.String(20),  nullable=True)
+    company_id    = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=True, index=True)
+    timestamp     = db.Column(db.DateTime,    default=datetime.utcnow, index=True)
+    result        = db.Column(db.String(50),  nullable=True)
+    notes         = db.Column(db.Text,        nullable=True)
+
+    __table_args__ = (
+        db.Index("ix_api_hub_audit_provider_ts", "provider_slug", "timestamp"),
+    )

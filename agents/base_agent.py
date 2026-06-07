@@ -28,7 +28,11 @@ class BaseAgent:
         self.agent_type = agent_type
         self.description = description
         
-        self._api_key = os.getenv("OPENAI_API_KEY")
+        try:
+            from services.provider_config import get_provider_config as _gpc
+            self._api_key = _gpc("openai", "platform")
+        except Exception:
+            self._api_key = None
         self._client = None
         if not self._api_key:
             logger.warning(
@@ -45,7 +49,11 @@ class BaseAgent:
         if self._client:
             return self._client
         if not self._api_key:
-            self._api_key = os.getenv("OPENAI_API_KEY")
+            try:
+                from services.provider_config import get_provider_config as _gpc
+                self._api_key = _gpc("openai", "platform")
+            except Exception:
+                pass
         if not self._api_key:
             logger.warning("%s: OpenAI client unavailable; missing OPENAI_API_KEY.", self.agent_name)
             return None

@@ -76,7 +76,11 @@ def get_stripe():
     Raises ``RuntimeError`` if ``STRIPE_SECRET_KEY`` is not configured so
     callers can return a clean 503 instead of a stack trace.
     """
-    secret = os.environ.get("STRIPE_SECRET_KEY")
+    try:
+        from services.provider_config import get_provider_config
+        secret = get_provider_config("stripe", "platform", "secret_key")
+    except Exception:
+        secret = os.environ.get("STRIPE_SECRET_KEY")
     if not secret:
         raise RuntimeError("STRIPE_SECRET_KEY not configured")
     import stripe  # type: ignore

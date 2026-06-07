@@ -678,7 +678,11 @@ def stripe_webhook():
 
     payload = request.get_data()
     sig     = request.headers.get("Stripe-Signature", "")
-    secret  = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
+    try:
+        from services.provider_config import get_provider_config
+        secret = get_provider_config("stripe", "platform", "webhook_secret")
+    except Exception:
+        secret = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
 
     # Strict by default: only allow unsigned webhooks when the operator has
     # explicitly opted into dev mode. We do NOT key off REPLIT_DEPLOYMENT

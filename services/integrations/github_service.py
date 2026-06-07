@@ -19,7 +19,8 @@ _BASE = "https://api.github.com"
 # ---------------------------------------------------------------------------
 
 def health_check() -> dict:
-    token = os.environ.get("GITHUB_PERSONAL_ACCESS_TOKEN") or os.environ.get("GITHUB_TOKEN")
+    from services.provider_config import get_provider_config
+    token = get_provider_config("github", "platform", "token")
     if not token:
         return {"status": "missing_config", "detail": "GitHub token not configured"}
     try:
@@ -156,7 +157,13 @@ def get_latest_commit(owner: str, repo: str, branch: str = "main") -> dict:
 # ---------------------------------------------------------------------------
 
 def _token():
-    return os.environ.get("GITHUB_PERSONAL_ACCESS_TOKEN") or os.environ.get("GITHUB_TOKEN")
+    try:
+        from services.provider_config import get_provider_config
+        # GITHUB_PERSONAL_ACCESS_TOKEN first, then legacy GITHUB_TOKEN alias
+        return (get_provider_config("github", "platform", "token") or
+                get_provider_config("github", "platform", "github_token"))
+    except Exception:
+        return None
 
 
 def _headers(token):

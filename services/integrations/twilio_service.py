@@ -34,12 +34,14 @@ def _sanitize_body(text: str) -> str:
 
 def health_check() -> dict:
     """Return status dict for the Twilio integration."""
-    sid   = os.environ.get("TWILIO_ACCOUNT_SID", "")
-    token = os.environ.get("TWILIO_AUTH_TOKEN", "")
-    phone = os.environ.get("TWILIO_PHONE_NUMBER", "")
+    from services.provider_config import get_provider_config
+    sid   = get_provider_config("twilio", "platform", "account_sid")
+    token = get_provider_config("twilio", "platform", "auth_token")
+    # Phone routing — DB-first via resolver, env as bootstrap fallback
+    phone = get_provider_config("twilio", "platform", "phone_number") or ""
 
-    if not (sid and token and phone):
-        return {"status": "missing_config", "detail": "Twilio credentials not configured"}
+    if not (sid and token):
+        return {"status": "missing_config", "detail": "Twilio SID/token not configured"}
 
     try:
         from twilio.rest import Client
@@ -92,9 +94,11 @@ def send_sms(to_number: str, body: str, company_id: int | None = None,
         logger.warning("Twilio conversation check error: %s", exc)
 
     # --- Send ---
-    sid   = os.environ.get("TWILIO_ACCOUNT_SID", "")
-    token = os.environ.get("TWILIO_AUTH_TOKEN", "")
-    from_phone = from_number or os.environ.get("TWILIO_PHONE_NUMBER", "")
+    from services.provider_config import get_provider_config
+    sid   = get_provider_config("twilio", "platform", "account_sid")
+    token = get_provider_config("twilio", "platform", "auth_token")
+    # Phone routing — DB-first via resolver, env as bootstrap fallback
+    from_phone = from_number or get_provider_config("twilio", "platform", "phone_number") or ""
 
     if not (sid and token and from_phone):
         return {"ok": False, "reason": "Twilio credentials not configured"}

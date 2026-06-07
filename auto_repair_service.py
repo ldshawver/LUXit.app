@@ -168,7 +168,8 @@ Focus on immediate, actionable fixes."""
         
         try:
             # Get API key
-            api_key = os.environ.get('OPENAI_API_KEY') or os.getenv('OPENAI_API_KEY')
+            from services.provider_config import get_provider_config
+            api_key = get_provider_config('openai', 'platform')
             if not api_key:
                 results['error'] = 'OpenAI API key not configured'
                 return results

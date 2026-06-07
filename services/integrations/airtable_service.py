@@ -36,11 +36,21 @@ _RETRY_DELAYS = [1, 2, 4]   # seconds between attempts
 # ============================================================
 
 def _token() -> str | None:
-    return os.environ.get("AIRTABLE_API_KEY") or os.environ.get("AIRTABLE_TOKEN")
+    try:
+        from services.provider_config import get_provider_config
+        # Try api_key first, then the legacy AIRTABLE_TOKEN alias
+        return (get_provider_config("airtable", "platform", "api_key") or
+                get_provider_config("airtable", "platform", "token"))
+    except Exception:
+        return None
 
 
 def _base_id() -> str:
-    return os.environ.get("AIRTABLE_BASE_ID", "")
+    try:
+        from services.provider_config import get_provider_config
+        return get_provider_config("airtable", "platform", "base_id") or ""
+    except Exception:
+        return os.environ.get("AIRTABLE_BASE_ID", "")
 
 
 def _sync_enabled() -> bool:

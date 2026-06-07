@@ -115,7 +115,11 @@ class ImageService:
         Requires PEXELS_API_KEY in environment
         """
         try:
-            api_key = os.environ.get('PEXELS_API_KEY')
+            try:
+                from services.provider_config import get_provider_config
+                api_key = get_provider_config('pexels', 'platform', 'api_key')
+            except Exception:
+                api_key = os.environ.get('PEXELS_API_KEY')
             if not api_key:
                 return [], "Pexels API key not configured. Add PEXELS_API_KEY in Settings → Integrations."
             
@@ -248,7 +252,11 @@ class ImageService:
         Returns (local_path, error)
         """
         try:
-            api_key = os.environ.get('OPENAI_API_KEY')
+            try:
+                from services.provider_config import get_provider_config
+                api_key = get_provider_config('openai', 'platform', 'api_key')
+            except Exception:
+                api_key = os.environ.get('OPENAI_API_KEY')
             if not api_key:
                 return None, "OpenAI API key not configured"
             

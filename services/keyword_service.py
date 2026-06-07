@@ -22,7 +22,8 @@ class KeywordService:
         Returns (list of hashtags, error)
         """
         try:
-            api_key = os.environ.get('OPENAI_API_KEY')
+            from services.provider_config import get_provider_config
+            api_key = get_provider_config('openai', 'platform')
             if not api_key:
                 return [], "OpenAI API key not configured"
             
@@ -95,7 +96,8 @@ Requirements:
         Returns (list of keywords, error)
         """
         try:
-            api_key = os.environ.get('OPENAI_API_KEY')
+            from services.provider_config import get_provider_config
+            api_key = get_provider_config('openai', 'platform')
             if not api_key:
                 return [], "OpenAI API key not configured"
             
@@ -156,7 +158,8 @@ Requirements:
         Returns (suggestions dict, error)
         """
         try:
-            api_key = os.environ.get('OPENAI_API_KEY')
+            from services.provider_config import get_provider_config
+            api_key = get_provider_config('openai', 'platform')
             if not api_key:
                 return {}, "OpenAI API key not configured"
             

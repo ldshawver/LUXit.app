@@ -699,9 +699,13 @@ def _send_license_notification_email(lr):
     import smtplib
     from email.mime.text import MIMEText
 
-    smtp_host = os.environ.get("SMTP_HOST")
-    smtp_user = os.environ.get("SMTP_USER")
-    smtp_pass = os.environ.get("SMTP_PASS")
+    try:
+        from services.provider_config import get_provider_config as _gpc
+        smtp_host = _gpc("smtp", "platform", "host")
+        smtp_user = _gpc("smtp", "platform", "user")
+        smtp_pass = _gpc("smtp", "platform", "pass")
+    except Exception:
+        smtp_host = smtp_user = smtp_pass = None
     notify_to = os.environ.get("LICENSE_NOTIFY_EMAIL", "luke@adiken.com")
 
     if not all([smtp_host, smtp_user, smtp_pass]):

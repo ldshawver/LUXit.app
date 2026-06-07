@@ -23,9 +23,16 @@ class SMSService:
     """Service to handle SMS operations via Twilio."""
     
     def __init__(self):
-        self.account_sid = os.environ.get('TWILIO_ACCOUNT_SID')
-        self.auth_token = os.environ.get('TWILIO_AUTH_TOKEN')
-        self.phone_number = os.environ.get('TWILIO_PHONE_NUMBER')
+        try:
+            from services.provider_config import get_provider_config
+            self.account_sid  = get_provider_config('twilio', 'platform', 'account_sid')
+            self.auth_token   = get_provider_config('twilio', 'platform', 'auth_token')
+            # Phone routing inside the same try — DB-first, env bootstrap via resolver
+            self.phone_number = get_provider_config('twilio', 'platform', 'phone_number')
+        except Exception:
+            self.account_sid  = os.environ.get('TWILIO_ACCOUNT_SID')
+            self.auth_token   = os.environ.get('TWILIO_AUTH_TOKEN')
+            self.phone_number = os.environ.get('TWILIO_PHONE_NUMBER')
         
         if self.account_sid and self.auth_token and self.phone_number:
             self.client = Client(self.account_sid, self.auth_token)

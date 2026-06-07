@@ -43,9 +43,16 @@ class SMSService:
             cls._twilio_enabled = False
             return False
             
-        account_sid = os.environ.get('TWILIO_ACCOUNT_SID')
-        auth_token = os.environ.get('TWILIO_AUTH_TOKEN')
-        cls._twilio_phone = os.environ.get('TWILIO_PHONE_NUMBER')
+        try:
+            from services.provider_config import get_provider_config
+            account_sid   = get_provider_config('twilio', 'platform', 'account_sid')
+            auth_token    = get_provider_config('twilio', 'platform', 'auth_token')
+            # Phone routing inside the same try — DB-first, env bootstrap via resolver
+            cls._twilio_phone = get_provider_config('twilio', 'platform', 'phone_number')
+        except Exception:
+            account_sid   = os.environ.get('TWILIO_ACCOUNT_SID')
+            auth_token    = os.environ.get('TWILIO_AUTH_TOKEN')
+            cls._twilio_phone = os.environ.get('TWILIO_PHONE_NUMBER')
         
         if account_sid and auth_token and cls._twilio_phone:
             try:

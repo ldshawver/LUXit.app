@@ -65,14 +65,15 @@ class AICodeFixer:
         """AUTOMATICALLY FIX: OpenAI Authentication Error"""
         try:
             # Check if API key exists
-            api_key = os.environ.get('OPENAI_API_KEY')
+            from services.provider_config import get_provider_config
+            api_key = get_provider_config('openai', 'platform')
             
             if not api_key:
                 return {
                     'error': 'OPENAI_API_KEY not set',
                     'fix': 'API key environment variable must be set',
                     'status': 'manual_action_needed',
-                    'action': 'Set OPENAI_API_KEY environment variable in project settings'
+                    'action': 'Set OPENAI_API_KEY via environment variable or Platform → API Hub'
                 }
             
             # Test the key

@@ -194,7 +194,12 @@ def _validate_twilio_signature(ta, endpoint_path: str = "/twilio/sms/inbound") -
     except ImportError:
         return True
 
-    token = (ta.get_auth_token() if ta else None) or os.environ.get("TWILIO_AUTH_TOKEN")
+    try:
+        from services.provider_config import get_provider_config
+        _platform_token = get_provider_config("twilio", "platform", "auth_token")
+    except Exception:
+        _platform_token = None
+    token = (ta.get_auth_token() if ta else None) or _platform_token
     if not token:
         logger.warning("Twilio signature validation skipped: no auth token configured")
         return True

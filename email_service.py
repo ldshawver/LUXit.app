@@ -115,11 +115,15 @@ class EmailService:
             from email.mime.text import MIMEText
             from email.mime.multipart import MIMEMultipart
             
-            # Check for SMTP configuration
-            smtp_server = os.environ.get("SMTP_SERVER")
+            # Check for SMTP configuration via central resolver
+            try:
+                from services.provider_config import get_provider_config as _gpc
+                smtp_server   = _gpc("smtp", "platform", "server",   key="SMTP_SERVER")   or _gpc("smtp", "platform", "host")
+                smtp_username = _gpc("smtp", "platform", "username", key="SMTP_USERNAME") or _gpc("smtp", "platform", "user")
+                smtp_password = _gpc("smtp", "platform", "password", key="SMTP_PASSWORD") or _gpc("smtp", "platform", "pass")
+            except Exception:
+                smtp_server = smtp_username = smtp_password = None
             smtp_port = int(os.environ.get("SMTP_PORT", "587"))
-            smtp_username = os.environ.get("SMTP_USERNAME")
-            smtp_password = os.environ.get("SMTP_PASSWORD")
             
             if not smtp_server or not smtp_username or not smtp_password:
                 logging.warning("SMTP fallback not configured, email could not be sent")

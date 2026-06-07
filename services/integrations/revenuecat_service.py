@@ -161,8 +161,13 @@ def handle_webhook(payload: dict, company_id: int | None = None) -> dict:
 # ---------------------------------------------------------------------------
 
 def _secret_key():
-    return (os.environ.get("REVENUECAT_SECRET_KEY")
-            or os.environ.get("REVENUECAT_API_KEY"))
+    try:
+        from services.provider_config import get_provider_config
+        # REVENUECAT_API_KEY first, then legacy REVENUECAT_SECRET_KEY alias
+        return (get_provider_config("revenuecat", "platform", "api_key") or
+                get_provider_config("revenuecat", "platform", "secret_key"))
+    except Exception:
+        return None
 
 
 def _headers(key: str) -> dict:

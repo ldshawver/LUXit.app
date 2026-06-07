@@ -654,6 +654,11 @@
                     <a href="{{ url_for('main.connections_hub') }}" class="sidebar-nav-item{% if _p.startswith('/connections') %} active{% endif %}">
                         <i data-feather="link"></i> Connections &amp; API Keys
                     </a>
+                    {% if current_user.is_admin or _user_is_company_admin %}
+                    <a href="/platform/api-hub" class="sidebar-nav-item{% if _p == '/platform/api-hub' %} active{% endif %}">
+                        <i data-feather="key"></i> API Hub
+                    </a>
+                    {% endif %}
                 </div>
 
                 {# Platform Integrations — shown when on /platform routes #}
@@ -662,6 +667,9 @@
                     <p class="sidebar-section-label">Platform</p>
                     <a href="/platform/integrations" class="sidebar-nav-item{% if _p == '/platform/integrations' %} active{% endif %}">
                         <i data-feather="zap"></i> Integrations
+                    </a>
+                    <a href="/platform/api-hub" class="sidebar-nav-item{% if _p == '/platform/api-hub' %} active{% endif %}">
+                        <i data-feather="key"></i> API Hub
                     </a>
                 </div>
                 {% endif %}

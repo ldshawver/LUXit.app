@@ -27,7 +27,11 @@ class LUXAgent:
 
     def __init__(self):
         self._client = None
-        self._api_key = os.getenv("OPENAI_API_KEY")
+        try:
+            from services.provider_config import get_provider_config as _gpc
+            self._api_key = _gpc("openai", "platform")
+        except Exception:
+            self._api_key = None
         if not self._api_key:
             logger.warning("OPENAI_API_KEY missing; AI features will be disabled until configured.")
         self.model = "gpt-4o"  # Using GPT-4o for reliable performance

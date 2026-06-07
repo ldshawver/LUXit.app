@@ -20,13 +20,14 @@ class ErrorFixService:
         try:
             from openai import OpenAI
             
-            api_key = os.environ.get('OPENAI_API_KEY') or os.getenv('OPENAI_API_KEY')
+            from services.provider_config import get_provider_config
+            api_key = get_provider_config('openai', 'platform')
             if not api_key:
                 return {
                     'valid': False,
                     'message': 'OPENAI_API_KEY not configured',
-                    'diagnosis': 'API key not found in environment',
-                    'fix': 'Set OPENAI_API_KEY environment variable'
+                    'diagnosis': 'API key not found in environment or API Hub',
+                    'fix': 'Set OPENAI_API_KEY environment variable or add via Platform → API Hub'
                 }
             
             # Test key by making a simple request

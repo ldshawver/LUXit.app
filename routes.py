@@ -167,6 +167,16 @@ def inject_company_context():
         usage_sms = 0
         unread_notifications = 0
         unread_inbox = 0
+    # Detect if the current user is a company admin on any company (for API Hub nav)
+    _user_is_company_admin = False
+    if current_user.is_authenticated and not getattr(current_user, 'is_admin', False):
+        try:
+            from models import UserCompanyAccess
+            _uca = UserCompanyAccess.query.filter_by(user_id=current_user.id).first()
+            _user_is_company_admin = bool(_uca and _uca.can_admin())
+        except Exception:
+            pass
+
     return dict(
         user_companies=user_companies,
         current_company=current_company,
@@ -180,6 +190,7 @@ def inject_company_context():
         posthog_api_key=os.environ.get("POSTHOG_API_KEY", ""),
         posthog_host=os.environ.get("POSTHOG_HOST", "https://us.i.posthog.com"),
         posthog_frontend_host=os.environ.get("POSTHOG_FRONTEND_HOST", "https://p.luxit.app"),
+        _user_is_company_admin=_user_is_company_admin,
     )
 
 
@@ -267,7 +278,12 @@ def dashboard():
             pass
         recent_campaigns = []
     
-    ai_status = "enabled" if os.getenv("OPENAI_API_KEY") else "disabled"
+    try:
+        from services.provider_config import get_provider_config_bool
+        _openai_ok = get_provider_config_bool("openai", "platform")
+    except Exception:
+        _openai_ok = bool(os.getenv("OPENAI_API_KEY"))
+    ai_status = "enabled" if _openai_ok else "disabled"
     scheduler_status = "running" if _scheduler_status() == "running" else "disabled"
     
     try:
@@ -1956,8 +1972,15 @@ def health_check():
             return False, str(e)
 
     db_ok, db_error = _db_status()
-    stripe_secret_key = bool(os.getenv("STRIPE_SECRET_KEY"))
-    stripe_webhook_secret = bool(os.getenv("STRIPE_WEBHOOK_SECRET"))
+    try:
+        from services.provider_config import get_provider_config_bool
+        stripe_secret_key     = get_provider_config_bool("stripe", "platform", "secret_key")
+        stripe_webhook_secret = get_provider_config_bool("stripe", "platform", "webhook_secret")
+        _ai_ok                = get_provider_config_bool("openai", "platform")
+    except Exception:
+        stripe_secret_key     = bool(os.getenv("STRIPE_SECRET_KEY"))
+        stripe_webhook_secret = bool(os.getenv("STRIPE_WEBHOOK_SECRET"))
+        _ai_ok                = bool(os.getenv("OPENAI_API_KEY"))
     if stripe_secret_key and stripe_webhook_secret:
         stripe_status = "configured"
     elif stripe_secret_key or stripe_webhook_secret:
@@ -1969,7 +1992,7 @@ def health_check():
         "status": "ok" if db_ok else "degraded",
         "db": "connected" if db_ok else "error",
         "auth": "ready" if "auth" in current_app.blueprints else "unavailable",
-        "ai": "enabled" if os.getenv("OPENAI_API_KEY") else "disabled",
+        "ai": "enabled" if _ai_ok else "disabled",
         "scheduler": _scheduler_status(),
         "stripe": stripe_status,
         "stripe_details": {
@@ -2004,8 +2027,15 @@ def readiness_check():
         failed.append(f"database: {str(exc)[:120]}")
 
     # Stripe secrets — boolean only, no values.
-    secret_key = bool(os.getenv("STRIPE_SECRET_KEY"))
-    webhook_secret = bool(os.getenv("STRIPE_WEBHOOK_SECRET"))
+    try:
+        from services.provider_config import get_provider_config_bool
+        secret_key     = get_provider_config_bool("stripe", "platform", "secret_key")
+        webhook_secret = get_provider_config_bool("stripe", "platform", "webhook_secret")
+        openai_key     = get_provider_config_bool("openai", "platform")
+    except Exception:
+        secret_key     = bool(os.getenv("STRIPE_SECRET_KEY"))
+        webhook_secret = bool(os.getenv("STRIPE_WEBHOOK_SECRET"))
+        openai_key     = bool(os.getenv("OPENAI_API_KEY"))
     checks["stripe_secret_key"] = secret_key
     checks["stripe_webhook_secret"] = webhook_secret
     if not secret_key:
@@ -2014,7 +2044,6 @@ def readiness_check():
         failed.append("STRIPE_WEBHOOK_SECRET missing")
 
     # OpenAI key — required by AI agents.
-    openai_key = bool(os.getenv("OPENAI_API_KEY"))
     checks["openai_api_key"] = openai_key
     if not openai_key:
         failed.append("OPENAI_API_KEY missing")
@@ -5552,30 +5581,33 @@ def system_init():
 # Primary health_check function is defined earlier in the file
 
 def _feature_config_summary():
-    return {
-        "openai": bool(os.getenv("OPENAI_API_KEY")),
-        "replit_auth": bool(os.getenv("REPL_ID")),
-        "tiktok": bool(os.getenv("TIKTOK_CLIENT_KEY") and os.getenv("TIKTOK_CLIENT_SECRET")),
-        "microsoft_graph": bool(
-            os.getenv("MS_CLIENT_ID")
-            and os.getenv("MS_CLIENT_SECRET")
-            and os.getenv("MS_TENANT_ID")
-        ),
-        "twilio": bool(
-            os.getenv("TWILIO_ACCOUNT_SID")
-            and os.getenv("TWILIO_AUTH_TOKEN")
-            and os.getenv("TWILIO_PHONE_NUMBER")
-        ),
-        "stripe": bool(os.getenv("STRIPE_SECRET_KEY")),
-        "stripe_webhook": bool(os.getenv("STRIPE_WEBHOOK_SECRET")),
-        "stripe_publishable": bool(os.getenv("STRIPE_PUBLISHABLE_KEY")),
-        "woocommerce": bool(
-            os.getenv("WC_STORE_URL")
-            and os.getenv("WC_CONSUMER_KEY")
-            and os.getenv("WC_CONSUMER_SECRET")
-        ),
-        "ga4": bool(os.getenv("GA4_PROPERTY_ID")),
-    }
+    try:
+        from services.provider_config import get_provider_config_bool as _gb
+        return {
+            "openai":             _gb("openai",      "platform"),
+            "replit_auth":        bool(os.getenv("REPL_ID")),
+            "tiktok":             _gb("tiktok",      "platform", "client_key"),
+            "microsoft_graph":    _gb("ms365",       "platform", "client_id"),
+            "twilio":             _gb("twilio",      "platform", "account_sid"),
+            "stripe":             _gb("stripe",      "platform", "secret_key"),
+            "stripe_webhook":     _gb("stripe",      "platform", "webhook_secret"),
+            "stripe_publishable": _gb("stripe",      "platform", "publishable_key"),
+            "woocommerce":        _gb("woocommerce", "platform", "url"),
+            "ga4":                bool(os.getenv("GA4_PROPERTY_ID")),
+        }
+    except Exception:
+        return {
+            "openai": bool(os.getenv("OPENAI_API_KEY")),
+            "replit_auth": bool(os.getenv("REPL_ID")),
+            "tiktok": bool(os.getenv("TIKTOK_CLIENT_KEY") and os.getenv("TIKTOK_CLIENT_SECRET")),
+            "microsoft_graph": bool(os.getenv("MS_CLIENT_ID") and os.getenv("MS_CLIENT_SECRET") and os.getenv("MS_TENANT_ID")),
+            "twilio": bool(os.getenv("TWILIO_ACCOUNT_SID") and os.getenv("TWILIO_AUTH_TOKEN") and os.getenv("TWILIO_PHONE_NUMBER")),
+            "stripe": bool(os.getenv("STRIPE_SECRET_KEY")),
+            "stripe_webhook": bool(os.getenv("STRIPE_WEBHOOK_SECRET")),
+            "stripe_publishable": bool(os.getenv("STRIPE_PUBLISHABLE_KEY")),
+            "woocommerce": bool(os.getenv("WC_STORE_URL") and os.getenv("WC_CONSUMER_KEY") and os.getenv("WC_CONSUMER_SECRET")),
+            "ga4": bool(os.getenv("GA4_PROPERTY_ID")),
+        }
 
 
 @main_bp.route('/health/config')
@@ -6331,10 +6363,14 @@ def chatbot_send_with_auto_fix():
         if not user_message:
             return jsonify({'error': 'Message is required'}), 400
         
-        # Retrieve API key from environment
-        api_key = os.environ.get('OPENAI_API_KEY') or os.getenv('OPENAI_API_KEY')
+        # Retrieve API key via central resolver (DB-first, env fallback inside resolver)
+        try:
+            from services.provider_config import get_provider_config as _gpc
+            api_key = _gpc("openai", "platform")
+        except Exception:
+            api_key = None
         if not api_key:
-            error_msg = 'OpenAI API key not configured in environment'
+            error_msg = 'OpenAI API key not configured'
             logger.warning("OpenAI features disabled: missing OPENAI_API_KEY.")
             log_application_error(
                 error_type='ConfigurationError',
@@ -6576,8 +6612,12 @@ def generate_content():
         if not topic:
             return jsonify({'error': 'Topic is required'}), 400
         
-        # Get API key
-        api_key = os.getenv('OPENAI_API_KEY') or os.getenv('OPENAI_API_BOUTIQUELUX')
+        # Get API key via central resolver
+        try:
+            from services.provider_config import get_provider_config as _gpc
+            api_key = _gpc("openai", "platform")
+        except Exception:
+            api_key = None
         if not api_key:
             logger.warning("OpenAI content generation disabled: missing API key.")
             return jsonify({'error': 'OpenAI API key not configured'}), 500
@@ -9132,7 +9172,11 @@ def api_agent_chat():
         system_prompt = agent_prompts.get(agent_type, "You are a helpful AI marketing assistant.")
         system_prompt += "\n\nYou are part of the LUX Marketing Platform AI team. Be helpful, professional, and provide actionable advice. Keep responses concise but informative."
         
-        api_key = os.environ.get("OPENAI_API_KEY")
+        try:
+            from services.provider_config import get_provider_config as _gpc
+            api_key = _gpc("openai", "platform")
+        except Exception:
+            api_key = None
         if not api_key:
             logger.warning("Agent chat disabled: missing OPENAI_API_KEY.")
             return jsonify({'success': True, 'response': "I'm sorry, but I can't process your request right now. Please ensure the OpenAI API key is configured."})
@@ -9275,7 +9319,11 @@ def get_agent_suggestions(agent_type):
         
         prompt = suggestion_prompts.get(agent_type, "Suggest 3 marketing improvements.")
         
-        api_key = os.environ.get("OPENAI_API_KEY")
+        try:
+            from services.provider_config import get_provider_config as _gpc
+            api_key = _gpc("openai", "platform")
+        except Exception:
+            api_key = None
         if not api_key:
             return jsonify({
                 'success': False,
@@ -9409,7 +9457,11 @@ def create_agent_report(agent_type):
         db.session.add(report)
         db.session.commit()
         
-        api_key = os.environ.get("OPENAI_API_KEY")
+        try:
+            from services.provider_config import get_provider_config as _gpc
+            api_key = _gpc("openai", "platform")
+        except Exception:
+            api_key = None
         if api_key:
             try:
                 client = OpenAI(api_key=api_key)

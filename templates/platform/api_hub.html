@@ -1,0 +1,408 @@
+{% extends "base.html" %}
+{% block title %}API Hub — LUX IT{% endblock %}
+
+{% block content %}
+<style>
+  .hub-grid        { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 1.1rem; }
+  .hub-card        { background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.1);
+                     border-radius: 14px; padding: 1.3rem; display: flex; flex-direction: column; gap: .75rem; }
+  .hub-card-head   { display: flex; align-items: center; gap: .75rem; }
+  .hub-icon        { width: 38px; height: 38px; border-radius: 10px;
+                     background: rgba(188,0,237,.12); display: flex; align-items: center;
+                     justify-content: center; color: var(--lux-primary); flex-shrink: 0; }
+  .hub-name        { font-weight: 700; font-size: 1rem; }
+  .hub-scope-badge { font-size: .65rem; font-weight: 600; padding: .1rem .45rem;
+                     border-radius: 4px; background: rgba(255,255,255,.07); color: rgba(255,255,255,.45);
+                     text-transform: uppercase; letter-spacing: .04em; }
+  .hub-status      { display: inline-flex; align-items: center; gap: .3rem;
+                     font-size: .73rem; font-weight: 600; padding: .2rem .55rem;
+                     border-radius: 20px; }
+  .s-configured    { background:rgba(16,185,129,.15); color:#10b981; border:1px solid rgba(16,185,129,.3); }
+  .s-env_only      { background:rgba(245,158,11,.15); color:#f59e0b; border:1px solid rgba(245,158,11,.3); }
+  .s-missing       { background:rgba(239,68,68,.12);  color:#ef4444; border:1px solid rgba(239,68,68,.25); }
+  .s-error         { background:rgba(239,68,68,.12);  color:#ef4444; border:1px solid rgba(239,68,68,.25); }
+  .s-untested      { background:rgba(255,255,255,.07); color:#9ca3af; border:1px solid rgba(255,255,255,.12); }
+  .s-connected     { background:rgba(16,185,129,.15); color:#10b981; border:1px solid rgba(16,185,129,.3); }
+  .hub-fields      { display: flex; flex-direction: column; gap: .3rem; }
+  .hub-field-row   { display: flex; align-items: center; justify-content: space-between;
+                     font-size: .75rem; gap: .5rem; flex-wrap: wrap; }
+  .hub-field-key   { color: rgba(255,255,255,.45); font-family: monospace; flex-shrink: 0; }
+  .hub-field-val   { font-family: monospace; font-size: .73rem; padding: .15rem .45rem;
+                     border-radius: 6px; background: rgba(255,255,255,.05); color: rgba(255,255,255,.55); }
+  .hub-field-none  { font-size: .72rem; color: rgba(239,68,68,.7); font-style: italic; }
+  .hub-src         { font-size: .68rem; padding: .1rem .35rem; border-radius: 4px; }
+  .src-db          { background: rgba(16,185,129,.12); color: #10b981; }
+  .src-env         { background: rgba(245,158,11,.12); color: #f59e0b; }
+  .src-none        { background: rgba(239,68,68,.10); color: #ef4444; }
+  .hub-actions     { display: flex; gap: .5rem; margin-top: auto; padding-top: .25rem; flex-wrap: wrap; }
+  .hub-test-result { font-size: .73rem; padding: .2rem .5rem; border-radius: 6px;
+                     background: rgba(255,255,255,.05); color: rgba(255,255,255,.55);
+                     min-height: 1.5rem; display: none; }
+  .cat-header      { font-size: .7rem; font-weight: 700; text-transform: uppercase;
+                     letter-spacing: .08em; color: rgba(255,255,255,.35); margin: 1.5rem 0 .6rem; }
+  .audit-table     { font-size: .8rem; }
+  .audit-table td  { padding: .35rem .6rem; vertical-align: middle; }
+  .action-badge    { font-size: .67rem; font-weight: 600; padding: .12rem .4rem; border-radius: 4px; }
+  .a-tested        { background: rgba(99,102,241,.15);  color: #818cf8; }
+  .a-fallback_used { background: rgba(245,158,11,.12);  color: #f59e0b; }
+  .a-created       { background: rgba(16,185,129,.12);  color: #10b981; }
+  .a-updated       { background: rgba(16,185,129,.10);  color: #34d399; }
+  .a-rotated       { background: rgba(188,0,237,.12);   color: #c084fc; }
+  .a-deleted       { background: rgba(239,68,68,.12);   color: #f87171; }
+  .a-viewed_hub    { background: rgba(255,255,255,.06); color: #9ca3af; }
+  .a-imported      { background: rgba(16,185,129,.12);  color: #10b981; }
+  .hint-env-only   { font-size: .73rem; color: #f59e0b; margin-top: .1rem; }
+  /* Credential editor */
+  .cred-editor     { background: rgba(0,0,0,.35); border: 1px solid rgba(188,0,237,.25);
+                     border-radius: 10px; padding: 1rem; margin-top: .5rem; display: none; }
+  .cred-editor input{ background: rgba(255,255,255,.05); border: 1px solid rgba(255,255,255,.12);
+                     border-radius: 6px; color: #fff; padding: .4rem .7rem; font-family: monospace;
+                     font-size: .82rem; width: 100%; }
+  .cred-editor input:focus { outline: none; border-color: var(--lux-primary); }
+  .cred-editor select { background: rgba(255,255,255,.05); border: 1px solid rgba(255,255,255,.12);
+                     border-radius: 6px; color: #fff; padding: .4rem .7rem; font-size: .82rem; width: 100%; }
+  .cred-save-result{ font-size: .73rem; margin-top: .4rem; color: #10b981; min-height: 1.2rem; }
+</style>
+
+<div class="app-page-header d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
+  <div>
+    <h1 class="page-title mb-1">
+      {% if is_platform_admin %}API Hub{% else %}Company Credentials{% endif %}
+    </h1>
+    <p class="page-subtitle text-muted mb-0">
+      {% if is_platform_admin %}
+        Platform-admin credential management — no raw secrets are shown or returned
+      {% else %}
+        Manage your company's integration tokens and API keys — values are encrypted at rest
+      {% endif %}
+    </p>
+  </div>
+  <div class="d-flex gap-2">
+    {% if is_platform_admin %}
+    <button class="btn btn-outline-success btn-sm" onclick="importFromEnv(this)">
+      <i data-feather="download-cloud" style="width:14px;height:14px;margin-right:4px;"></i> Import from Env
+    </button>
+    {% endif %}
+    <a href="{{ url_for('integrations.platform_integrations') }}" class="btn btn-outline-secondary btn-sm">
+      <i data-feather="layers" style="width:14px;height:14px;margin-right:4px;"></i> Service Health
+    </a>
+  </div>
+</div>
+
+<div id="import-result" class="alert d-none mb-3" style="border-radius:10px;"></div>
+
+{% for category, cat_cards in categories.items() %}
+<div class="cat-header">{{ category }}</div>
+<div class="hub-grid mb-2">
+  {% for card in cat_cards %}
+  <div class="hub-card" id="hub-card-{{ card.slug }}">
+
+    <div class="hub-card-head">
+      <div class="hub-icon">
+        <i data-feather="{{ card.icon }}" style="width:18px;height:18px;"></i>
+      </div>
+      <div class="flex-grow-1">
+        <div class="hub-name">{{ card.display_name }}</div>
+        <div class="d-flex align-items-center gap-2 mt-1 flex-wrap">
+          <span class="hub-status s-{{ card.status }}" id="status-{{ card.slug }}">
+            ● {{ card.status | replace('_', ' ') | title }}
+          </span>
+          <span class="hub-scope-badge">{{ card.scope }}</span>
+          {% if card.source == 'env' %}
+          <span class="hub-src src-env">env-only</span>
+          {% elif card.source == 'db' %}
+          <span class="hub-src src-db">db</span>
+          {% else %}
+          <span class="hub-src src-none">missing</span>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+    {% if card.masked_fields %}
+    <div class="hub-fields">
+      {% for f in card.masked_fields %}
+      <div class="hub-field-row">
+        <span class="hub-field-key">{{ f.key }}</span>
+        {% if f.masked %}
+        <div class="d-flex align-items-center gap-1 flex-wrap">
+          <span class="hub-field-val" id="masked-{{ card.slug }}-{{ loop.index }}">{{ f.masked }}</span>
+          <span class="hub-src src-{{ f.source }}">{{ f.source }}</span>
+          {% if f.source == 'db' %}
+          <button class="btn btn-outline-danger btn-sm py-0 px-1"
+                  style="font-size:.65rem;line-height:1.4;"
+                  onclick="deleteKey('{{ card.slug }}', '{{ f.key }}', {{ loop.index }})"
+                  title="Deactivate this DB entry (env fallback continues)">
+            <i data-feather="trash-2" style="width:10px;height:10px;"></i>
+          </button>
+          {% endif %}
+        </div>
+        {% else %}
+        <span class="hub-field-none">not set</span>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    {% if card.status == 'env_only' %}
+    <div class="hint-env-only">
+      <i data-feather="alert-circle" style="width:12px;height:12px;margin-right:3px;"></i>
+      Credential is env-only. Import to DB for rotation and audit tracking.
+    </div>
+    {% endif %}
+
+    {% if card.last_tested %}
+    <div style="font-size:.72rem;color:rgba(255,255,255,.3);">
+      Last tested {{ card.last_tested[:19] | replace('T',' ') }}
+      {% if card.test_status %}— <span class="hub-status s-{{ card.test_status }}" style="padding:.1rem .35rem;font-size:.68rem;">{{ card.test_status }}</span>{% endif %}
+    </div>
+    {% endif %}
+
+    <div class="hub-actions">
+      <button class="btn btn-sm btn-outline-primary"
+              onclick="testProvider('{{ card.slug }}')"
+              id="btn-test-{{ card.slug }}" style="flex:1;">
+        <i data-feather="zap" style="width:12px;height:12px;margin-right:4px;"></i> Test
+      </button>
+      <button class="btn btn-sm btn-outline-secondary"
+              onclick="toggleEditor('{{ card.slug }}')"
+              id="btn-edit-{{ card.slug }}">
+        <i data-feather="edit-2" style="width:12px;height:12px;"></i>
+      </button>
+    </div>
+    <div class="hub-test-result" id="result-{{ card.slug }}"></div>
+
+    {# ── Inline credential editor ── #}
+    <div class="cred-editor" id="editor-{{ card.slug }}">
+      <div style="font-size:.75rem;color:rgba(255,255,255,.5);margin-bottom:.5rem;">
+        Save / rotate a credential for <strong>{{ card.display_name }}</strong>
+      </div>
+      <div class="mb-2">
+        <label style="font-size:.72rem;color:rgba(255,255,255,.4);display:block;margin-bottom:.25rem;">Credential key (env var name)</label>
+        <select id="ed-key-{{ card.slug }}" class="mb-1">
+          {% for f in card.masked_fields %}
+          <option value="{{ f.key }}">{{ f.key }}</option>
+          {% endfor %}
+          {% if not card.masked_fields %}
+          <option value="">— no keys defined —</option>
+          {% endif %}
+        </select>
+      </div>
+      <div class="mb-2">
+        <label style="font-size:.72rem;color:rgba(255,255,255,.4);display:block;margin-bottom:.25rem;">New value <span style="color:#ef4444;">(never stored in logs)</span></label>
+        <input type="password" id="ed-val-{{ card.slug }}" placeholder="Paste secret here…" autocomplete="off">
+      </div>
+      <div class="d-flex gap-2">
+        <button class="btn btn-sm btn-primary flex-grow-1"
+                onclick="saveCredential('{{ card.slug }}')"
+                id="btn-save-{{ card.slug }}">
+          <i data-feather="save" style="width:12px;height:12px;margin-right:4px;"></i> Encrypt &amp; Save
+        </button>
+        <button class="btn btn-sm btn-outline-secondary"
+                onclick="toggleEditor('{{ card.slug }}')">Cancel</button>
+      </div>
+      <div class="cred-save-result" id="save-result-{{ card.slug }}"></div>
+    </div>
+
+  </div>
+  {% endfor %}
+</div>
+{% endfor %}
+
+{% if recent_audit %}
+<hr style="border-color:rgba(255,255,255,.08);margin:2rem 0 1rem;">
+<h5 style="font-size:.95rem;font-weight:700;margin-bottom:.75rem;">
+  Recent Audit Log
+  <span style="font-size:.72rem;font-weight:400;color:rgba(255,255,255,.35);">(immutable — every credential operation is recorded)</span>
+</h5>
+<div style="overflow-x:auto;max-height:380px;overflow-y:auto;">
+<table class="table table-sm audit-table" style="background:transparent;">
+  <thead>
+    <tr style="font-size:.72rem;color:rgba(255,255,255,.4);border-bottom:1px solid rgba(255,255,255,.1);">
+      <th>Time</th><th>Provider</th><th>Action</th><th>Scope</th><th>Result</th><th>Notes</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for row in recent_audit %}
+    {% set a = row.action | default('') %}
+    <tr style="border-bottom:1px solid rgba(255,255,255,.05);">
+      <td style="color:rgba(255,255,255,.35);white-space:nowrap;">{{ row.timestamp.strftime('%m/%d %H:%M') if row.timestamp else '—' }}</td>
+      <td><code style="font-size:.73rem;">{{ row.provider_slug }}</code></td>
+      <td><span class="action-badge a-{{ a }}">{{ a | replace('_',' ') }}</span></td>
+      <td style="color:rgba(255,255,255,.4);">{{ row.scope or '—' }}</td>
+      <td style="color:rgba(255,255,255,.4);">{{ row.result or '—' }}</td>
+      <td style="color:rgba(255,255,255,.3);max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{{ row.notes or '' }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endif %}
+
+<div class="mt-4 p-3" style="background:rgba(255,255,255,.03);border-radius:10px;border:1px solid rgba(255,255,255,.08);">
+  <div style="font-size:.8rem;color:rgba(255,255,255,.5);">
+    <i data-feather="terminal" style="width:13px;height:13px;margin-right:5px;"></i>
+    CLI backfill (idempotent — same as clicking "Import from Env" above):
+    <code style="margin-left:.4rem;background:rgba(255,255,255,.07);padding:.1rem .4rem;border-radius:4px;">
+      python scripts/backfill_provider_credentials.py
+    </code>
+  </div>
+</div>
+
+<script>
+const _csrf = () => {
+  const m = document.querySelector('meta[name="csrf-token"]');
+  return m ? m.content : '';
+};
+
+const _apiFetch = (url, body) =>
+  fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-CSRFToken': _csrf() },
+    body: JSON.stringify(body || {}),
+  }).then(r => r.json());
+
+function toggleEditor(slug) {
+  const ed = document.getElementById('editor-' + slug);
+  if (!ed) return;
+  ed.style.display = ed.style.display === 'block' ? 'none' : 'block';
+  const inp = document.getElementById('ed-val-' + slug);
+  if (inp && ed.style.display === 'block') inp.focus();
+}
+
+function testProvider(slug) {
+  const btn    = document.getElementById('btn-test-' + slug);
+  const result = document.getElementById('result-' + slug);
+  const status = document.getElementById('status-' + slug);
+  if (!btn) return;
+
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status"></span> Testing…';
+  if (result) result.style.display = 'none';
+
+  _apiFetch('/api/api-hub/' + slug + '/test')
+  .then(data => {
+    const s      = data.status || 'error';
+    const latency = data.latency_ms || 0;
+    const detail  = data.detail  || '';
+
+    const colorMap = {
+      connected: '#10b981', configured: '#10b981',
+      error: '#ef4444', missing: '#ef4444',
+      env_only: '#f59e0b', untested: '#9ca3af',
+    };
+    const color = colorMap[s] || '#9ca3af';
+
+    if (status) {
+      status.className = 'hub-status s-' + s;
+      status.textContent = '● ' + s.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+    }
+
+    if (result) {
+      result.style.display = 'block';
+      result.style.color   = color;
+      result.innerHTML     = `<strong>${s}</strong>${detail ? ' — ' + detail : ''} <span style="color:rgba(255,255,255,.3)">(${latency}ms)</span>`;
+    }
+  })
+  .catch(err => {
+    if (result) {
+      result.style.display = 'block';
+      result.style.color   = '#ef4444';
+      result.textContent   = 'Request failed: ' + err.message;
+    }
+  })
+  .finally(() => {
+    btn.disabled = false;
+    btn.innerHTML = '<i data-feather="zap" style="width:12px;height:12px;margin-right:4px;"></i> Test';
+    if (window.feather) feather.replace();
+  });
+}
+
+function saveCredential(slug) {
+  const keyEl = document.getElementById('ed-key-' + slug);
+  const valEl = document.getElementById('ed-val-' + slug);
+  const resEl = document.getElementById('save-result-' + slug);
+  const btn   = document.getElementById('btn-save-' + slug);
+  if (!keyEl || !valEl) return;
+
+  const key = keyEl.value.trim();
+  const val = valEl.value.trim();
+  if (!key || !val) { if (resEl) { resEl.style.color='#ef4444'; resEl.textContent='Key and value are required.'; } return; }
+
+  btn.disabled = true;
+  btn.textContent = 'Saving…';
+  if (resEl) { resEl.style.color = '#9ca3af'; resEl.textContent = 'Encrypting and saving…'; }
+
+  _apiFetch('/api/api-hub/' + slug + '/save', { key, value: val })
+  .then(data => {
+    if (data.ok) {
+      if (resEl) { resEl.style.color = '#10b981'; resEl.textContent = `✓ ${data.action} — stored as ${data.masked}`; }
+      valEl.value = '';
+      // Update the displayed masked value for this key
+      document.querySelectorAll(`[id^="masked-${slug}-"]`).forEach(el => {
+        el.textContent = data.masked;
+      });
+      const statusEl = document.getElementById('status-' + slug);
+      if (statusEl) { statusEl.className = 'hub-status s-configured'; statusEl.textContent = '● Configured'; }
+    } else {
+      if (resEl) { resEl.style.color = '#ef4444'; resEl.textContent = 'Error: ' + (data.error || 'unknown'); }
+    }
+  })
+  .catch(err => {
+    if (resEl) { resEl.style.color = '#ef4444'; resEl.textContent = 'Request failed: ' + err.message; }
+  })
+  .finally(() => {
+    btn.disabled = false;
+    btn.innerHTML = '<i data-feather="save" style="width:12px;height:12px;margin-right:4px;"></i> Encrypt &amp; Save';
+    if (window.feather) feather.replace();
+  });
+}
+
+function deleteKey(slug, key, idx) {
+  if (!confirm(`Deactivate DB entry for ${key}?\n\nThe env fallback will still work. The credential row is soft-deleted (audit trail preserved).`)) return;
+
+  _apiFetch('/api/api-hub/' + slug + '/delete', { key })
+  .then(data => {
+    if (data.ok) {
+      // Reload page to show updated status
+      window.location.reload();
+    } else {
+      alert('Delete failed: ' + (data.error || 'unknown'));
+    }
+  })
+  .catch(err => alert('Request failed: ' + err.message));
+}
+
+function importFromEnv(btn) {
+  btn.disabled = true;
+  btn.textContent = 'Importing…';
+
+  _apiFetch('/api/api-hub/import-from-env')
+  .then(data => {
+    const el = document.getElementById('import-result');
+    if (data.ok) {
+      el.className = 'alert alert-success';
+      el.innerHTML = `✓ Import complete — <strong>${data.created}</strong> created, <strong>${data.skipped}</strong> already present / not set.` +
+        (data.errors && data.errors.length ? `<br><small>Errors: ${data.errors.join(', ')}</small>` : '');
+    } else {
+      el.className = 'alert alert-danger';
+      el.innerHTML = 'Import failed: ' + (data.error || 'unknown error');
+    }
+    el.classList.remove('d-none');
+    setTimeout(() => window.location.reload(), 2500);
+  })
+  .catch(err => {
+    const el = document.getElementById('import-result');
+    el.className = 'alert alert-danger';
+    el.innerHTML = 'Request failed: ' + err.message;
+    el.classList.remove('d-none');
+  })
+  .finally(() => {
+    btn.disabled = false;
+    btn.innerHTML = '<i data-feather="download-cloud" style="width:14px;height:14px;margin-right:4px;"></i> Import from Env';
+    if (window.feather) feather.replace();
+  });
+}
+</script>
+{% endblock %}
