@@ -2743,6 +2743,7 @@ class TwilioConversation(db.Model):
     from_number     = db.Column(db.String(20), nullable=False)
     to_number       = db.Column(db.String(20))
     contact_name    = db.Column(db.String(200))
+    contact_source  = db.Column(db.String(50), nullable=True)
     is_read         = db.Column(db.Boolean, default=False)
     is_opted_out    = db.Column(db.Boolean, default=False)
     sms_opt_in_at   = db.Column(db.DateTime, nullable=True)
@@ -3047,6 +3048,7 @@ class GoogleOAuthToken(db.Model):
     token_expiry   = db.Column(db.DateTime, nullable=True)
     last_sync_at   = db.Column(db.DateTime, nullable=True)
     contacts_synced = db.Column(db.Integer, default=0)
+    sync_error     = db.Column(db.Text, nullable=True)
     created_at     = db.Column(db.DateTime, default=datetime.utcnow)
 
     user = db.relationship("User", backref=db.backref("google_oauth_token", uselist=False))

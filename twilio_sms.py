@@ -363,23 +363,47 @@ def _is_business_hours(company_id: int) -> bool:
 
 def _get_or_create_conversation(company_id: int, from_number: str, to_number: str):
     from models import TwilioConversation, Contact
+    from services.google_contacts import normalize_phone, _all_forms
+
     conv = TwilioConversation.query.filter_by(
         company_id=company_id,
         from_number=from_number,
     ).first()
     if not conv:
-        # Try to link to an existing Contact
-        contact = Contact.query.filter_by(
-            company_id=company_id,
-            phone=from_number,
-            is_active=True,
-        ).first()
+        # Normalize the inbound number and try all common representations
+        norm  = normalize_phone(from_number)
+        forms = _all_forms(from_number)
+
+        contact = None
+        for form in forms:
+            contact = Contact.query.filter_by(
+                company_id=company_id,
+                phone=form,
+                is_active=True,
+            ).first()
+            if contact:
+                break
+
+        contact_name   = None
+        contact_source = None
+        if contact:
+            contact_name   = f"{contact.first_name or ''} {contact.last_name or ''}".strip() or None
+            contact_source = "crm"
+
+        logger.debug(
+            "_get_or_create_conversation: from=%s norm=%s company=%s "
+            "contact_match=%s name=%s source=%s",
+            from_number, norm, company_id,
+            contact.id if contact else None, contact_name, contact_source,
+        )
+
         conv = TwilioConversation(
             company_id=company_id,
             from_number=from_number,
             to_number=to_number,
             contact_id=contact.id if contact else None,
-            contact_name=f"{contact.first_name or ''} {contact.last_name or ''}".strip() if contact else None,
+            contact_name=contact_name,
+            contact_source=contact_source,
             is_first_contact=True,
         )
         db.session.add(conv)
@@ -2155,16 +2179,24 @@ def google_contacts_sync():
 @twilio_bp.route("/google-contacts/status")
 @login_required
 def google_contacts_status():
-    """Return connection status as JSON."""
+    """Return connection status as JSON — includes sync error and expiry state."""
     from flask_login import current_user
-    from services.google_contacts import get_token
+    from services.google_contacts import get_token, is_token_expired
     tok = get_token(current_user.id)
     if not tok:
-        return jsonify({"connected": False})
+        return jsonify({
+            "connected":       False,
+            "oauth_expired":   False,
+            "last_sync_at":    None,
+            "contacts_synced": 0,
+            "sync_error":      None,
+        })
     return jsonify({
         "connected":       True,
+        "oauth_expired":   is_token_expired(tok),
         "last_sync_at":    tok.last_sync_at.strftime("%b %-d %H:%M") if tok.last_sync_at else None,
         "contacts_synced": tok.contacts_synced or 0,
+        "sync_error":      getattr(tok, "sync_error", None),
     })
 
 

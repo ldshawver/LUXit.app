@@ -15,6 +15,8 @@ Routes:
   GET  /api/inbox/unread-count                    — unread badge count
   POST /api/inbox/push/subscribe                  — save Web Push subscription
   POST /api/inbox/push/test                       — send test push notification
+  GET  /api/inbox/google-contacts/status          — Google Contacts OAuth + sync status
+  POST /api/inbox/google-contacts/sync            — trigger manual Google Contacts sync
 """
 
 import logging
@@ -300,12 +302,14 @@ def _send_sms_internal(ta, to_number: str, body: str, conversation_id=None):
 
 def _conv_to_dict(conv, brief=True):
     tags = conv.tags or []
+    contact_source = getattr(conv, "contact_source", None)
     d = {
         "id":                  conv.id,
         "from_number":         conv.from_number,
         "contact_name":        conv.contact_name or conv.from_number,
         "display_name":        conv.contact_name or conv.from_number,
         "contact_id":          conv.contact_id,
+        "contact_source":      contact_source,
         "is_read":             conv.is_read,
         "is_opted_out":        conv.is_opted_out,
         "is_archived":         "archived" in tags,
@@ -1086,3 +1090,46 @@ def _fire_push_notification(company_id: int, conv, message_body: str):
             if "410" in str(exc) or "404" in str(exc):
                 db.session.delete(sub)
                 db.session.commit()
+
+
+# ── Google Contacts status + sync (PWA API) ───────────────────────────────────
+
+@inbox_pwa_bp.route("/api/inbox/google-contacts/status")
+def gc_status():
+    """Return Google Contacts OAuth + sync status for the PWA settings sheet."""
+    user = _require_auth()
+    if isinstance(user, tuple):
+        return user
+    from services.google_contacts import get_token, is_token_expired
+    tok = get_token(user.id)
+    if not tok:
+        return jsonify({
+            "connected":       False,
+            "oauth_expired":   False,
+            "last_sync_at":    None,
+            "contacts_synced": 0,
+            "sync_error":      None,
+            "connect_url":     "/twilio/google-contacts/connect",
+        })
+    return jsonify({
+        "connected":       True,
+        "oauth_expired":   is_token_expired(tok),
+        "last_sync_at":    tok.last_sync_at.strftime("%b %-d %H:%M") if tok.last_sync_at else None,
+        "contacts_synced": tok.contacts_synced or 0,
+        "sync_error":      getattr(tok, "sync_error", None),
+        "connect_url":     "/twilio/google-contacts/connect",
+    })
+
+
+@inbox_pwa_bp.route("/api/inbox/google-contacts/sync", methods=["POST"])
+def gc_sync():
+    """Trigger a manual Google Contacts sync from the PWA."""
+    user = _require_auth()
+    if isinstance(user, tuple):
+        return user
+    company = _get_company(user)
+    if not company:
+        return jsonify({"error": "No company found."}), 400
+    from services.google_contacts import sync_contacts
+    result = sync_contacts(user.id, company.id)
+    return jsonify(result)

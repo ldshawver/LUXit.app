@@ -23,7 +23,7 @@ import stripe
 
 from app import create_app
 from extensions import db as _db
-from models import Company, SaasAutomationLog, User, UserCompanyAccess
+from models import Company, CustomerOnboardingProject, CustomerOnboardingTask, SaasAutomationLog, User, UserCompanyAccess
 
 
 WEBHOOK_SECRET = "whsec_test_secret_for_pytest_only"
@@ -49,7 +49,17 @@ def client(app):
 def company_user(app):
     """Create a Company + admin User who owns it (default_company_id)."""
     with app.app_context():
-        Company.query.filter_by(stripe_customer_id="cus_billing_test").delete()
+        existing = Company.query.filter_by(stripe_customer_id="cus_billing_test").first()
+        if existing:
+            _cleanup_company_rows(_db, existing.id)
+            _delete_company_users(_db, existing.id)
+            _db.session.delete(existing)
+            _db.session.commit()
+        for existing_user in User.query.filter(
+            (User.email == "bill@test.com") | (User.username == "billtest")
+        ).all():
+            UserCompanyAccess.query.filter_by(user_id=existing_user.id).delete(synchronize_session=False)
+            _db.session.delete(existing_user)
         _db.session.commit()
         c = Company(name="Billing Test Co", stripe_customer_id="cus_billing_test",
                     billing_status="none", billing_tier="free")
@@ -61,9 +71,8 @@ def company_user(app):
         _db.session.commit()
         yield c, u
         try:
-            SaasAutomationLog.query.filter_by(company_id=c.id).delete()
-            UserCompanyAccess.query.filter_by(company_id=c.id).delete()
-            User.query.filter_by(default_company_id=c.id).delete()
+            _cleanup_company_rows(_db, c.id)
+            _delete_company_users(_db, c.id)
             _db.session.delete(c)
             _db.session.commit()
         except Exception:
@@ -75,6 +84,29 @@ def _login(client, user_id):
     with client.session_transaction() as sess:
         sess["_user_id"] = str(user_id)
         sess["_fresh"] = True
+
+
+def _cleanup_company_rows(db, company_id):
+    """Delete all FK-dependent rows for a company in safe order."""
+    from models import IntegrationEvent
+    CustomerOnboardingTask.query.filter(
+        CustomerOnboardingTask.project_id.in_(
+            db.session.query(CustomerOnboardingProject.id).filter_by(company_id=company_id)
+        )
+    ).delete(synchronize_session=False)
+    CustomerOnboardingProject.query.filter_by(company_id=company_id).delete(synchronize_session=False)
+    SaasAutomationLog.query.filter_by(company_id=company_id).delete(synchronize_session=False)
+    IntegrationEvent.query.filter_by(company_id=company_id).delete(synchronize_session=False)
+
+
+def _delete_company_users(db, company_id):
+    """Delete users whose default_company_id matches, cleaning up FK deps first."""
+    user_ids = [u.id for u in User.query.filter_by(default_company_id=company_id).all()]
+    if user_ids:
+        UserCompanyAccess.query.filter(
+            UserCompanyAccess.user_id.in_(user_ids)
+        ).delete(synchronize_session=False)
+        User.query.filter(User.id.in_(user_ids)).delete(synchronize_session=False)
 
 
 def _signed_post(client, event):
@@ -233,6 +265,19 @@ def test_create_checkout_drops_setup_fee_when_already_paid(app, client):
     cid = uid = None
     try:
         with app.app_context():
+            # Remove any leftover rows from a previous failed run
+            existing_co = Company.query.filter_by(stripe_customer_id="cus_paid_setup").first()
+            if existing_co:
+                _cleanup_company_rows(_db, existing_co.id)
+                _delete_company_users(_db, existing_co.id)
+                _db.session.delete(existing_co)
+                _db.session.commit()
+            for eu in User.query.filter(
+                (User.email == "paid@setup.com") | (User.username == "paidsetup")
+            ).all():
+                UserCompanyAccess.query.filter_by(user_id=eu.id).delete(synchronize_session=False)
+                _db.session.delete(eu)
+            _db.session.commit()
             c = Company(name="Paid Setup Co",
                         stripe_customer_id="cus_paid_setup",
                         billing_status="none", billing_tier="free",
@@ -261,11 +306,16 @@ def test_create_checkout_drops_setup_fee_when_already_paid(app, client):
         assert mk.call_args.kwargs["include_setup_fee"] is False
     finally:
         with app.app_context():
-            if uid:
-                User.query.filter_by(id=uid).delete()
-            if cid:
-                Company.query.filter_by(id=cid).delete()
-            _db.session.commit()
+            try:
+                if uid:
+                    UserCompanyAccess.query.filter_by(user_id=uid).delete(synchronize_session=False)
+                    User.query.filter(User.id == uid).delete(synchronize_session=False)
+                if cid:
+                    _cleanup_company_rows(_db, cid)
+                    Company.query.filter(Company.id == cid).delete(synchronize_session=False)
+                _db.session.commit()
+            except Exception:
+                _db.session.rollback()
 
 
 def test_create_checkout_omits_setup_fee_by_default(client, company_user):

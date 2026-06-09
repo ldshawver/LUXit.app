@@ -425,6 +425,10 @@ def initialize_agent_scheduler():
     """Initialize and start the agent scheduler with all agents"""
     try:
         app = current_app._get_current_object()
+        scheduler = get_agent_scheduler()
+        if scheduler.scheduler.running:
+            scheduler.set_app(app)
+            return scheduler
         agent_classes = {}
         try:
             from agents.brand_strategy_agent import BrandStrategyAgent

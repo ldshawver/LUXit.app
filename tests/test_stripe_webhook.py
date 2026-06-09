@@ -13,7 +13,7 @@ import stripe
 
 from app import create_app
 from extensions import db as _db
-from models import Company, SaasAutomationLog, CustomerOnboardingProject
+from models import Company, CustomerOnboardingProject, CustomerOnboardingTask, SaasAutomationLog
 
 
 WEBHOOK_SECRET = "whsec_test_secret_for_pytest_only"
@@ -40,6 +40,7 @@ def company(app):
     with app.app_context():
         existing = Company.query.filter_by(stripe_customer_id="cus_test_123").first()
         if existing:
+            _cleanup_company_rows(_db, existing.id)
             _db.session.delete(existing)
             _db.session.commit()
         c = Company(
@@ -51,12 +52,22 @@ def company(app):
         _db.session.commit()
         yield c
         try:
-            SaasAutomationLog.query.filter_by(company_id=c.id).delete()
-            CustomerOnboardingProject.query.filter_by(company_id=c.id).delete()
+            _cleanup_company_rows(_db, c.id)
             _db.session.delete(c)
             _db.session.commit()
         except Exception:
             _db.session.rollback()
+
+
+def _cleanup_company_rows(db, company_id):
+    """Delete all FK-dependent rows for a company in safe order."""
+    CustomerOnboardingTask.query.filter(
+        CustomerOnboardingTask.project_id.in_(
+            _db.session.query(CustomerOnboardingProject.id).filter_by(company_id=company_id)
+        )
+    ).delete(synchronize_session=False)
+    CustomerOnboardingProject.query.filter_by(company_id=company_id).delete()
+    SaasAutomationLog.query.filter_by(company_id=company_id).delete()
 
 
 def _signed_post(client, event_payload):

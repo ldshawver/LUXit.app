@@ -224,6 +224,12 @@ MIGRATIONS = [
     ("twilio_call_log",     "phone_number_id", "INTEGER",      "DEFAULT NULL"),
     ("twilio_call_log",     "voicemail_url",   "VARCHAR(500)", "DEFAULT NULL"),
     ("twilio_call_log",     "recording_url",   "VARCHAR(500)", "DEFAULT NULL"),
+
+    # ── Google Contacts sync — extended tracking fields ──────────────────────
+    ("google_oauth_token",  "sync_error",      "TEXT",         "DEFAULT NULL"),
+
+    # ── Contact name source tracking on conversations ────────────────────────
+    ("twilio_conversation", "contact_source",  "VARCHAR(50)",  "DEFAULT NULL"),
 ]
 
 

@@ -582,17 +582,18 @@ def create_app() -> Flask:
         except Exception as e:
             logging.error(f"Error logging setup failed: {e}")
 
-        try:
-            from agent_scheduler import (
-                initialize_agent_scheduler,
-                get_agent_scheduler,
-            )
+        if not app.config.get("TESTING"):
+            try:
+                from agent_scheduler import (
+                    initialize_agent_scheduler,
+                    get_agent_scheduler,
+                )
 
-            initialize_agent_scheduler()
-            app.extensions["agent_scheduler"] = get_agent_scheduler()
-            logging.info("Agent scheduler initialized")
-        except Exception as e:
-            logging.error(f"Agent scheduler failed: {e}")
+                initialize_agent_scheduler()
+                app.extensions["agent_scheduler"] = get_agent_scheduler()
+                logging.info("Agent scheduler initialized")
+            except Exception as e:
+                logging.error(f"Agent scheduler failed: {e}")
 
     return app
 

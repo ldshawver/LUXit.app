@@ -823,6 +823,25 @@
       </label>
     </div>
 
+    <!-- Google Contacts -->
+    <div class="settings-section-label" style="margin-top:20px;">Contacts</div>
+    <div id="gcStatusRow" class="settings-toggle-row" style="flex-direction:column;align-items:flex-start;gap:6px;">
+      <div class="settings-toggle-label" style="width:100%;justify-content:space-between;">
+        <div style="display:flex;align-items:center;gap:8px;">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+          <div>
+            <span>Google Contacts</span>
+            <small id="gcStatusLabel" style="display:block;">Checking…</small>
+          </div>
+        </div>
+        <div style="display:flex;gap:6px;align-items:center;">
+          <button id="gcSyncBtn" class="btn-small" onclick="triggerGoogleSync()" style="display:none;">Sync</button>
+          <a id="gcConnectBtn" href="/twilio/google-contacts/connect" class="btn-small" style="display:none;text-decoration:none;">Connect</a>
+        </div>
+      </div>
+      <div id="gcErrorBanner" style="display:none;width:100%;padding:6px 8px;border-radius:6px;background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.25);color:#f87171;font-size:.75rem;"></div>
+    </div>
+
     <!-- App -->
     <div class="settings-section-label" style="margin-top:20px;">App</div>
     <button class="settings-action-btn" onclick="refreshApp()">
@@ -1527,6 +1546,72 @@ function scrollThreadToBottom() {
   if (el) el.scrollTop = el.scrollHeight;
 }
 
+/* ── Google Contacts status + sync ─────────────────────────────── */
+async function loadGoogleContactsStatus() {
+  const label     = document.getElementById('gcStatusLabel');
+  const syncBtn   = document.getElementById('gcSyncBtn');
+  const connectBtn= document.getElementById('gcConnectBtn');
+  const errBanner = document.getElementById('gcErrorBanner');
+  if (!label) return;
+
+  try {
+    const d = await apiFetch('/api/inbox/google-contacts/status');
+    if (!d) { label.textContent = 'Unable to load'; return; }
+
+    if (!d.connected) {
+      label.textContent = 'Not connected — names will not show';
+      if (connectBtn) connectBtn.style.display = 'inline-flex';
+      if (syncBtn)    syncBtn.style.display    = 'none';
+      return;
+    }
+
+    if (d.oauth_expired) {
+      label.textContent = 'Session expired — reconnect to sync';
+      label.style.color = '#f59e0b';
+      if (connectBtn) connectBtn.style.display = 'inline-flex';
+      if (syncBtn)    syncBtn.style.display    = 'none';
+      return;
+    }
+
+    const lastSync = d.last_sync_at ? `Last sync: ${d.last_sync_at}` : 'Not synced yet';
+    label.textContent = `Connected · ${d.contacts_synced || 0} contacts · ${lastSync}`;
+    label.style.color = '';
+    if (syncBtn)    syncBtn.style.display    = 'inline-flex';
+    if (connectBtn) connectBtn.style.display = 'none';
+
+    if (d.sync_error) {
+      if (errBanner) {
+        errBanner.textContent = `⚠ Last sync error: ${d.sync_error}`;
+        errBanner.style.display = 'block';
+      }
+    } else {
+      if (errBanner) errBanner.style.display = 'none';
+    }
+  } catch (e) {
+    if (label) label.textContent = 'Status unavailable';
+  }
+}
+
+async function triggerGoogleSync() {
+  const syncBtn = document.getElementById('gcSyncBtn');
+  const label   = document.getElementById('gcStatusLabel');
+  if (syncBtn) { syncBtn.disabled = true; syncBtn.textContent = 'Syncing…'; }
+  try {
+    const d = await apiFetch('/api/inbox/google-contacts/sync', 'POST', {});
+    if (d && !d.error) {
+      toast(`Synced ${d.synced || 0} contacts · ${d.matched || 0} names updated`);
+      loadConversations();
+    } else {
+      toast((d && d.error) || 'Sync failed — check Google connection', true);
+    }
+  } catch (e) {
+    toast('Sync request failed', true);
+  } finally {
+    if (syncBtn) { syncBtn.disabled = false; syncBtn.textContent = 'Sync'; }
+    loadGoogleContactsStatus();
+  }
+}
+
 /* ── Settings sheet ────────────────────────────────────────────── */
 function openSettingsSheet() {
   // Sync checkboxes with current state before opening
@@ -1534,6 +1619,7 @@ function openSettingsSheet() {
   const vibCb   = document.getElementById('toggleVibrate');
   if (soundCb) soundCb.checked = state.soundEnabled;
   if (vibCb)   vibCb.checked   = state.vibrateEnabled;
+  loadGoogleContactsStatus();
 
   // Update push button label
   const pushBtn   = document.getElementById('pushToggleBtn');

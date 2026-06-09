@@ -48,50 +48,54 @@ def client(app):
 
 @pytest.fixture
 def admin_user(app):
-    """Create and return a platform admin user."""
+    """Return a platform admin user, creating one only if needed."""
     with app.app_context():
         from extensions import db
         from models import User, Company
-        company = Company(name="LUXit Platform")
-        db.session.add(company)
-        db.session.flush()
-        user = User(
-            email="admin@luxit.app",
-            username="admin_test",
-            password_hash="x",
-            is_admin=True,
-            default_company_id=company.id,
-        )
-        db.session.add(user)
-        db.session.commit()
+        user = User.query.filter_by(email="admin@luxit.app").first()
+        _created = False
+        if user is None:
+            company = Company(name="LUXit Platform Test")
+            db.session.add(company)
+            db.session.flush()
+            user = User(
+                email="admin@luxit.app",
+                username="admin_test",
+                password_hash="x",
+                is_admin=True,
+                default_company_id=company.id,
+            )
+            db.session.add(user)
+            db.session.commit()
+            _created = True
+        else:
+            if not user.is_admin:
+                user.is_admin = True
+                db.session.commit()
         yield user
-        db.session.delete(user)
-        db.session.delete(company)
-        db.session.commit()
 
 
 @pytest.fixture
 def regular_user(app):
-    """Create and return a regular (non-admin) user."""
+    """Return a regular (non-admin) user, creating one only if needed."""
     with app.app_context():
         from extensions import db
         from models import User, Company
-        company = Company(name="Tenant Co")
-        db.session.add(company)
-        db.session.flush()
-        user = User(
-            email="tenant@luxit.app",
-            username="tenant_test",
-            password_hash="x",
-            is_admin=False,
-            default_company_id=company.id,
-        )
-        db.session.add(user)
-        db.session.commit()
+        user = User.query.filter_by(email="tenant@luxit.app").first()
+        if user is None:
+            company = Company(name="Tenant Co Test")
+            db.session.add(company)
+            db.session.flush()
+            user = User(
+                email="tenant@luxit.app",
+                username="tenant_test",
+                password_hash="x",
+                is_admin=False,
+                default_company_id=company.id,
+            )
+            db.session.add(user)
+            db.session.commit()
         yield user
-        db.session.delete(user)
-        db.session.delete(company)
-        db.session.commit()
 
 
 def _login(client, user):
@@ -164,7 +168,7 @@ class TestTwilioService:
     def test_send_sms_blocked_do_not_text(self, app):
         with app.app_context():
             from extensions import db
-            from models import Contact, Company
+            from models import Contact, Company, TwilioConversation
             co = Company(name="SMSCo")
             db.session.add(co)
             db.session.flush()
@@ -182,14 +186,15 @@ class TestTwilioService:
             assert result["ok"] is False
             assert "do_not_text" in result["reason"]
 
-            db.session.delete(contact)
+            TwilioConversation.query.filter_by(company_id=co.id).delete()
+            Contact.query.filter_by(company_id=co.id).delete()
             db.session.delete(co)
             db.session.commit()
 
     def test_send_sms_blocked_unsubscribed(self, app):
         with app.app_context():
             from extensions import db
-            from models import Contact, Company
+            from models import Contact, Company, TwilioConversation
             co = Company(name="SMSCo2")
             db.session.add(co)
             db.session.flush()
@@ -207,7 +212,8 @@ class TestTwilioService:
             assert result["ok"] is False
             assert "subscribed" in result["reason"].lower()
 
-            db.session.delete(contact)
+            TwilioConversation.query.filter_by(company_id=co.id).delete()
+            Contact.query.filter_by(company_id=co.id).delete()
             db.session.delete(co)
             db.session.commit()
 
@@ -268,9 +274,11 @@ class TestTwilioService:
             assert c is not None
             assert "sms_opt_in" in (c.tags or "")
 
-            # Clean up conversations + contacts before removing company (NOT NULL constraint)
-            TwilioConversation.query.filter_by(company_id=co.id).delete()
-            Contact.query.filter_by(company_id=co.id).delete()
+            # Clean up FK-dependent rows before removing company
+            TwilioConversation.query.filter_by(company_id=co.id).delete(synchronize_session=False)
+            Contact.query.filter_by(company_id=co.id).delete(synchronize_session=False)
+            from models import IntegrationEvent
+            IntegrationEvent.query.filter_by(company_id=co.id).delete(synchronize_session=False)
             db.session.delete(co)
             db.session.commit()
 
