@@ -15,13 +15,17 @@ import logging
 import os
 import sys
 
-# Make sure the project root is on sys.path
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# When run as a standalone script, ensure the project root is importable.
+# When imported as a module from inside the Flask app, this is a no-op because
+# the project root is already on sys.path — insert only when missing.
+_project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _project_root not in sys.path:
+    sys.path.insert(0, _project_root)
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [backfill] %(levelname)s %(message)s",
-)
+# Use a named logger so the app's logging config controls formatting.
+# Do NOT call logging.basicConfig here — that would override the app's handler
+# when this module is imported at startup. basicConfig is only applied when
+# running as __main__ (standalone CLI mode).
 logger = logging.getLogger("backfill")
 
 
@@ -106,68 +110,92 @@ def _mask(val: str, show: int = 4) -> str:
     return f"{val[:2]}***{val[-show:]}"
 
 
-def run_backfill(app):
+def _do_backfill():
+    """
+    Core backfill logic — must be called inside an active app context.
+    Returns (imported, skipped, missing) counts.
+    """
     from models import ProviderCredential
     from services.secret_vault import vault
     from extensions import db
-    from datetime import datetime, timezone
 
     imported = 0
     skipped = 0
     missing = 0
 
-    with app.app_context():
-        for provider, scope, env_key, field in CREDENTIALS:
-            raw = os.environ.get(env_key)
-            if not raw:
-                logger.info("[MISSING ] %-14s %-10s %-35s — env var not set, skipping",
-                            provider, scope, env_key)
-                missing += 1
-                continue
+    for provider, scope, env_key, field in CREDENTIALS:
+        raw = os.environ.get(env_key)
+        if not raw:
+            logger.debug("[MISSING ] %-14s %-10s %-35s — env var not set, skipping",
+                         provider, scope, env_key)
+            missing += 1
+            continue
 
-            # Check for existing row
-            existing = ProviderCredential.query.filter_by(
+        existing = ProviderCredential.query.filter_by(
+            provider_slug=provider,
+            scope=scope,
+            key=env_key,
+        ).first()
+
+        if existing:
+            logger.debug("[SKIPPED ] %-14s %-10s %-35s — already in DB (source=%s)",
+                         provider, scope, env_key, existing.source)
+            skipped += 1
+            continue
+
+        try:
+            encrypted = vault.encrypt(raw)
+            row = ProviderCredential(
                 provider_slug=provider,
                 scope=scope,
+                company_id=None,
                 key=env_key,
-            ).first()
-
-            if existing:
-                logger.info("[SKIPPED ] %-14s %-10s %-35s — already in DB (source=%s)",
-                            provider, scope, env_key, existing.source)
-                skipped += 1
-                continue
-
-            # Encrypt and insert
-            try:
-                encrypted = vault.encrypt(raw)
-                row = ProviderCredential(
-                    provider_slug=provider,
-                    scope=scope,
-                    company_id=None,
-                    key=env_key,
-                    encrypted_value=encrypted,
-                    source="env",
-                    is_active=True,
-                    audit_notes=f"Backfilled from env var {env_key}",
-                )
-                db.session.add(row)
-                db.session.commit()
-                logger.info("[IMPORTED] %-14s %-10s %-35s — value=%s",
-                            provider, scope, env_key, _mask(raw))
-                imported += 1
-            except Exception as exc:
-                db.session.rollback()
-                logger.error("[ERROR   ] %-14s %-10s %-35s — %s",
-                             provider, scope, env_key, exc)
+                encrypted_value=encrypted,
+                source="env",
+                is_active=True,
+                audit_notes=f"Backfilled from env var {env_key}",
+            )
+            db.session.add(row)
+            db.session.commit()
+            logger.info("[IMPORTED] %-14s %-10s %-35s — value=%s",
+                        provider, scope, env_key, _mask(raw))
+            imported += 1
+        except Exception as exc:
+            db.session.rollback()
+            logger.error("[ERROR   ] %-14s %-10s %-35s — %s",
+                         provider, scope, env_key, exc)
 
     logger.info(
         "Backfill complete: %d imported, %d skipped (already exist), %d missing from env",
         imported, skipped, missing,
     )
+    return imported, skipped, missing
+
+
+def run_backfill(app=None):
+    """
+    Public entry point.
+
+    When called from inside an active Flask app context (e.g. from app.py
+    startup), pass app=None or any app — the existing context is reused.
+
+    When called as a standalone CLI script, pass the Flask app instance so
+    a new context is pushed.
+    """
+    from flask import has_app_context
+    if has_app_context():
+        return _do_backfill()
+    if app is None:
+        raise RuntimeError("run_backfill() requires an app when called outside an app context")
+    with app.app_context():
+        return _do_backfill()
 
 
 if __name__ == "__main__":
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [backfill] %(levelname)s %(message)s",
+    )
     from app import create_app
     application = create_app()
     run_backfill(application)

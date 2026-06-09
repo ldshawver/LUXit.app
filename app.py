@@ -458,6 +458,21 @@ def create_app() -> Flask:
             db.session.rollback()
             logging.warning("Startup self-heal skipped due to error: %s", _self_heal_exc)
 
+        # ── Auto-backfill provider credentials on first boot ───────────────
+        # Runs only when ProviderCredential table is empty (i.e. fresh deploy).
+        # The backfill is idempotent — safe to call on every cold start, but
+        # the empty-table guard avoids any overhead on subsequent restarts.
+        try:
+            from models import ProviderCredential
+            if ProviderCredential.query.limit(1).count() == 0:
+                logging.info("ProviderCredential table is empty — running auto-backfill from env vars")
+                from scripts.backfill_provider_credentials import run_backfill
+                run_backfill()  # already inside app context — no app arg needed
+            else:
+                logging.debug("ProviderCredential table has rows — skipping auto-backfill")
+        except Exception as _backfill_exc:
+            logging.warning("Auto-backfill skipped (non-fatal): %s", _backfill_exc)
+
         # ── DB startup report (never logs secrets) ─────────────────────────
         try:
             from models import User, Company
