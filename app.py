@@ -458,18 +458,38 @@ def create_app() -> Flask:
             db.session.rollback()
             logging.warning("Startup self-heal skipped due to error: %s", _self_heal_exc)
 
-        # ── Auto-backfill provider credentials on first boot ───────────────
-        # Runs only when ProviderCredential table is empty (i.e. fresh deploy).
-        # The backfill is idempotent — safe to call on every cold start, but
-        # the empty-table guard avoids any overhead on subsequent restarts.
+        # ── Auto-backfill provider credentials (incremental, every cold start) ─
+        # Compares every env var in the CREDENTIALS map against existing DB rows.
+        # Only imports rows that are missing — already-present rows are skipped.
+        # This means:
+        #   • Fresh deploy (empty table) → all present env vars are imported.
+        #   • Subsequent restarts → no-op if nothing changed (fast set diff).
+        #   • New env var added later → picked up automatically on next restart
+        #     without needing a manual script run or a full table wipe.
+        # The entire block is non-blocking: any error logs a warning and continues.
         try:
             from models import ProviderCredential
-            if ProviderCredential.query.limit(1).count() == 0:
-                logging.info("ProviderCredential table is empty — running auto-backfill from env vars")
-                from scripts.backfill_provider_credentials import run_backfill
-                run_backfill()  # already inside app context — no app arg needed
+            from scripts.backfill_provider_credentials import CREDENTIALS, run_backfill
+            import os as _os
+            # Build set of (provider_slug, scope, key) already in DB
+            _db_keys = {
+                (r.provider_slug, r.scope, r.key)
+                for r in ProviderCredential.query.with_entities(
+                    ProviderCredential.provider_slug,
+                    ProviderCredential.scope,
+                    ProviderCredential.key,
+                ).all()
+            }
+            # Check whether any env var is set but has no DB row
+            _needs_backfill = any(
+                _os.environ.get(env_key) and (provider, scope, env_key) not in _db_keys
+                for provider, scope, env_key, _field in CREDENTIALS
+            )
+            if _needs_backfill:
+                logging.info("Auto-backfill: new env credentials detected — importing missing rows")
+                run_backfill()  # already inside app context; idempotent per-row
             else:
-                logging.debug("ProviderCredential table has rows — skipping auto-backfill")
+                logging.debug("Auto-backfill: all env credentials already in DB — skipping")
         except Exception as _backfill_exc:
             logging.warning("Auto-backfill skipped (non-fatal): %s", _backfill_exc)
 
