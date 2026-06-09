@@ -165,11 +165,14 @@
               id="btn-test-{{ card.slug }}" style="flex:1;">
         <i data-feather="zap" style="width:12px;height:12px;margin-right:4px;"></i> Test
       </button>
+      {% if is_platform_admin or is_company_admin %}
       <button class="btn btn-sm btn-outline-secondary"
               onclick="toggleEditor('{{ card.slug }}')"
-              id="btn-edit-{{ card.slug }}">
-        <i data-feather="edit-2" style="width:12px;height:12px;"></i>
+              id="btn-edit-{{ card.slug }}"
+              title="Update credential">
+        <i data-feather="key" style="width:12px;height:12px;margin-right:3px;"></i> Update Key
       </button>
+      {% endif %}
     </div>
     <div class="hub-test-result" id="result-{{ card.slug }}"></div>
 
@@ -336,18 +339,46 @@ function saveCredential(slug) {
 
   _apiFetch('/api/api-hub/' + slug + '/save', { key, value: val })
   .then(data => {
-    if (data.ok) {
-      if (resEl) { resEl.style.color = '#10b981'; resEl.textContent = `✓ ${data.action} — stored as ${data.masked}`; }
-      valEl.value = '';
-      // Update the displayed masked value for this key
-      document.querySelectorAll(`[id^="masked-${slug}-"]`).forEach(el => {
-        el.textContent = data.masked;
-      });
-      const statusEl = document.getElementById('status-' + slug);
-      if (statusEl) { statusEl.className = 'hub-status s-configured'; statusEl.textContent = '● Configured'; }
-    } else {
+    if (!data.ok) {
       if (resEl) { resEl.style.color = '#ef4444'; resEl.textContent = 'Error: ' + (data.error || 'unknown'); }
+      return;
     }
+
+    // Save succeeded — update masked display
+    valEl.value = '';
+    document.querySelectorAll(`[id^="masked-${slug}-"]`).forEach(el => {
+      el.textContent = data.masked;
+    });
+    if (resEl) { resEl.style.color = '#9ca3af'; resEl.textContent = `✓ ${data.action} (${data.masked}) — verifying connection…`; }
+
+    // Run inline test; close editor only when test passes, keep open on failure
+    return _apiFetch('/api/api-hub/' + slug + '/test')
+      .then(td => {
+        const s = td.status || 'error';
+        const detail = td.detail || '';
+        const ok_statuses = ['connected', 'configured'];
+        const statusEl = document.getElementById('status-' + slug);
+
+        if (statusEl) {
+          statusEl.className = 'hub-status s-' + s;
+          statusEl.textContent = '● ' + s.replace(/_/g,' ').replace(/\b\w/g, c => c.toUpperCase());
+        }
+
+        if (ok_statuses.includes(s)) {
+          if (resEl) { resEl.style.color = '#10b981'; resEl.textContent = `✓ Saved & verified (${data.masked})`; }
+          toggleEditor(slug);   // close on success
+        } else {
+          // Keep editor open — surface the failure so the admin can correct the value
+          if (resEl) {
+            resEl.style.color = '#ef4444';
+            resEl.textContent = `Saved, but connection test failed: ${s}${detail ? ' — ' + detail : ''}. Correct the value and save again.`;
+          }
+        }
+      })
+      .catch(testErr => {
+        // Network error during test — treat as warning, not failure (credential was saved)
+        if (resEl) { resEl.style.color = '#f59e0b'; resEl.textContent = `Saved (${data.masked}) — could not verify: ${testErr.message}`; }
+      });
   })
   .catch(err => {
     if (resEl) { resEl.style.color = '#ef4444'; resEl.textContent = 'Request failed: ' + err.message; }
