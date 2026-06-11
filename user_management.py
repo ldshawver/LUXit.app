@@ -98,7 +98,7 @@ def add_user():
         # operating within a billed company context.
         if current_user.is_authenticated and getattr(current_user, "default_company_id", None):
             from models import Company
-            home_company = Company.query.get(current_user.default_company_id)
+            home_company = db.session.get(Company, current_user.default_company_id)
             if home_company and not home_company.can_add_team_member():
                 limit = home_company.max_team_members
                 flash(

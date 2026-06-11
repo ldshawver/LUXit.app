@@ -204,7 +204,7 @@ class AnalyticsAgent(BaseAgent):
             
             from models import ABTest, Campaign
             
-            ab_test = ABTest.query.get(test_id)
+            ab_test = db.session.get(ABTest, test_id)
             if not ab_test:
                 return {'success': False, 'error': 'A/B test not found'}
             

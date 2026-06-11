@@ -22,7 +22,7 @@ def run_scheduled_campaign(campaign_id, app):
 def send_scheduled_campaign(campaign_id):
     """Send a scheduled campaign"""
     try:
-        campaign = Campaign.query.get(campaign_id)
+        campaign = db.session.get(Campaign, campaign_id)
         if not campaign:
             logging.error(f"Campaign {campaign_id} not found")
             return
@@ -42,7 +42,7 @@ def send_scheduled_campaign(campaign_id):
         logging.error(f"Error sending scheduled campaign {campaign_id}: {str(e)}")
         
         # Update campaign status to failed
-        campaign = Campaign.query.get(campaign_id)
+        campaign = db.session.get(Campaign, campaign_id)
         if campaign:
             campaign.status = 'failed'
             db.session.commit()

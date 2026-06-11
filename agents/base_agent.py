@@ -305,7 +305,7 @@ class BaseAgent:
         try:
             from models import AgentTask, db
             
-            task = AgentTask.query.get(task_id)
+            task = db.session.get(AgentTask, task_id)
             if not task:
                 return False
             

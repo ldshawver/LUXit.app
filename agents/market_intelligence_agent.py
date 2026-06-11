@@ -33,7 +33,7 @@ class MarketIntelligenceAgent:
         return self._generate_report(company_id, cadence="monthly")
 
     def _generate_report(self, company_id: int, cadence: str) -> Dict[str, Any]:
-        company = Company.query.get(company_id)
+        company = db.session.get(Company, company_id)
         if not company:
             return {"success": False, "error": "Company not found"}
 

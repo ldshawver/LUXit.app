@@ -88,7 +88,7 @@ class SubscriberSyncService:
     def subscribe_contact(contact_id, source='manual'):
         """Subscribe a contact to the newsletter"""
         try:
-            contact = Contact.query.get(contact_id)
+            contact = db.session.get(Contact, contact_id)
             if not contact:
                 return {'success': False, 'error': 'Contact not found'}
             
@@ -125,7 +125,7 @@ class SubscriberSyncService:
     def unsubscribe_contact(contact_id):
         """Unsubscribe a contact from the newsletter"""
         try:
-            contact = Contact.query.get(contact_id)
+            contact = db.session.get(Contact, contact_id)
             if not contact:
                 return {'success': False, 'error': 'Contact not found'}
             

@@ -296,7 +296,7 @@ def create_app() -> Flask:
         import logging as _logging
         _log = _logging.getLogger("auth")
         try:
-            u = User.query.get(int(user_id))
+            u = db.session.get(User, int(user_id))
             _log.info("USER_LOADER: id=%s → user=%s (authenticated=%s)", user_id, u, bool(u))
             return u
         except Exception as _exc:

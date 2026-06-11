@@ -21,7 +21,7 @@ def fire_n8n(event_type: str, company_id: int, payload: dict):
 
     n8n_url = None
     try:
-        company = Company.query.get(company_id)
+        company = db.session.get(Company, company_id)
         if company:
             n8n_url = company.get_secret("n8n_webhook_url")
     except Exception as exc:

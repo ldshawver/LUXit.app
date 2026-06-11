@@ -71,7 +71,7 @@ class InfluencerService:
         try:
             from models import InfluencerContent
             
-            content = InfluencerContent.query.get(content_id)
+            content = db.session.get(InfluencerContent, content_id)
             if not content:
                 return {'success': False, 'error': 'Content not found'}
             
@@ -113,7 +113,7 @@ class InfluencerService:
             from models import Influencer, InfluencerContent
             from sqlalchemy import func
             
-            influencer = Influencer.query.get(influencer_id)
+            influencer = db.session.get(Influencer, influencer_id)
             if not influencer:
                 return {'success': False, 'error': 'Influencer not found'}
             

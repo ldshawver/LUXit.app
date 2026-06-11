@@ -124,7 +124,7 @@ class ApplicationDiagnostics:
     def mark_error_resolved(error_id, resolution):
         """Mark an error as resolved"""
         try:
-            error = ErrorLog.query.get(error_id)
+            error = db.session.get(ErrorLog, error_id)
             if error:
                 error.is_resolved = True
                 error.resolution_notes = resolution

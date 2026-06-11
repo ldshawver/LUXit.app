@@ -16,7 +16,7 @@ class AutomationService:
     def run_test(automation_id, test_contact_id=None, test_data=None):
         """Run automation in test mode"""
         try:
-            automation = Automation.query.get(automation_id)
+            automation = db.session.get(Automation, automation_id)
             if not automation:
                 return None
             
@@ -106,7 +106,7 @@ class AutomationService:
     def update_ab_test_results(test_id, variant, sent=0, opens=0, clicks=0):
         """Update A/B test results"""
         try:
-            ab_test = AutomationABTest.query.get(test_id)
+            ab_test = db.session.get(AutomationABTest, test_id)
             if not ab_test:
                 return None
             
@@ -140,7 +140,7 @@ class AutomationService:
                                   category=None, trigger_config=None, steps_template=None):
         """Update an existing trigger template"""
         try:
-            trigger = AutomationTriggerLibrary.query.get(trigger_id)
+            trigger = db.session.get(AutomationTriggerLibrary, trigger_id)
             if not trigger:
                 return None
             
@@ -169,7 +169,7 @@ class AutomationService:
         """Duplicate a trigger template"""
         import copy
         try:
-            original = AutomationTriggerLibrary.query.get(trigger_id)
+            original = db.session.get(AutomationTriggerLibrary, trigger_id)
             if not original:
                 return None
             
@@ -199,7 +199,7 @@ class AutomationService:
     def delete_trigger_template(trigger_id):
         """Delete a trigger template (only non-predefined)"""
         try:
-            trigger = AutomationTriggerLibrary.query.get(trigger_id)
+            trigger = db.session.get(AutomationTriggerLibrary, trigger_id)
             if not trigger:
                 return False
             

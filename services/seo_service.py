@@ -34,7 +34,7 @@ class SEOService:
     def update_keyword_position(keyword_id, position, url=None, impressions=0, clicks=0):
         """Update keyword ranking"""
         try:
-            keyword = SEOKeyword.query.get(keyword_id)
+            keyword = db.session.get(SEOKeyword, keyword_id)
             if keyword:
                 keyword.previous_position = keyword.current_position
                 keyword.current_position = position
@@ -96,7 +96,7 @@ class SEOService:
     def update_competitor_metrics(competitor_id, metrics):
         """Update competitor metrics and save snapshot"""
         try:
-            competitor = SEOCompetitor.query.get(competitor_id)
+            competitor = db.session.get(SEOCompetitor, competitor_id)
             if competitor:
                 competitor.organic_traffic = metrics.get('organic_traffic', 0)
                 competitor.organic_keywords = metrics.get('organic_keywords', 0)

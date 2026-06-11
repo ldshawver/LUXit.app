@@ -115,7 +115,7 @@ def get_campaign_analytics(campaign_id):
     try:
         from models import Campaign, CampaignRecipient
         
-        campaign = Campaign.query.get(campaign_id)
+        campaign = db.session.get(Campaign, campaign_id)
         if not campaign:
             return None
         

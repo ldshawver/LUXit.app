@@ -283,7 +283,7 @@ class OrchestratorAgent:
             from models import FeatureToggle, Company
             company_id = self._get_current_company_id()
             if company_id:
-                company = Company.query.get(company_id)
+                company = db.session.get(Company, company_id)
             else:
                 company = Company.query.first()
             if not company:

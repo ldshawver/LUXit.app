@@ -50,7 +50,7 @@ def test_competitor_crud(app_context):
     fetched.status = 'watchlist'
     db.session.commit()
 
-    updated = Competitor.query.get(fetched.id)
+    updated = db.session.get(Competitor, fetched.id)
     assert updated.status == 'watchlist'
 
 
@@ -70,7 +70,7 @@ def test_competitor_content_relationship(app_context):
     db.session.add(content)
     db.session.commit()
 
-    refreshed = Competitor.query.get(competitor.id)
+    refreshed = db.session.get(Competitor, competitor.id)
     assert len(refreshed.content_items) == 1
     assert refreshed.content_items[0].title == 'Launch update'
 
@@ -101,7 +101,7 @@ def test_market_signal_and_strategy_recommendation(app_context):
     db.session.add(recommendation)
     db.session.commit()
 
-    fetched = StrategyRecommendation.query.get(recommendation.id)
+    fetched = db.session.get(StrategyRecommendation, recommendation.id)
     assert fetched.related_signal_id == signal.id
     assert fetched.priority == 'high'
 
@@ -132,7 +132,7 @@ def test_market_intelligence_agent_report_generation(app_context):
     result = agent.generate_report(company.id, cadence='weekly')
 
     assert result['success'] is True
-    report = AgentReport.query.get(result['report_id'])
+    report = db.session.get(AgentReport, result['report_id'])
     assert report is not None
     assert report.report_data['metrics']['competitor_count'] == 1
     assert report.report_data['metrics']['signals_detected'] == 1

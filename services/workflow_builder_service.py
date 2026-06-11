@@ -166,7 +166,7 @@ class WorkflowBuilderService:
         try:
             from models import WorkflowAutomation, WorkflowNode, WorkflowConnection
             
-            workflow = WorkflowAutomation.query.get(workflow_id)
+            workflow = db.session.get(WorkflowAutomation, workflow_id)
             if not workflow:
                 return {'success': False, 'error': 'Workflow not found'}
             
@@ -218,7 +218,7 @@ class WorkflowBuilderService:
         try:
             from models import WorkflowExecution, WorkflowNode, WorkflowConnection, Contact
             
-            contact = Contact.query.get(contact_id)
+            contact = db.session.get(Contact, contact_id)
             if not contact:
                 return {'success': False, 'error': 'Contact not found'}
             
@@ -265,8 +265,8 @@ class WorkflowBuilderService:
         try:
             from models import WorkflowNode, WorkflowConnection, WorkflowExecution
             
-            node = WorkflowNode.query.get(node_id)
-            execution = WorkflowExecution.query.get(execution_id)
+            node = db.session.get(WorkflowNode, node_id)
+            execution = db.session.get(WorkflowExecution, execution_id)
             
             execution.current_node_id = node_id
             db.session.commit()

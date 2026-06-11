@@ -204,7 +204,7 @@ def sync_lead_to_airtable(contact_id: int, company_id: int) -> dict:
 
     try:
         from models import Contact
-        contact = Contact.query.get(contact_id)
+        contact = db.session.get(Contact, contact_id)
         if not contact:
             return {"ok": False, "reason": f"Contact {contact_id} not found"}
         if contact.company_id != company_id:
@@ -253,7 +253,7 @@ def sync_onboarding_to_airtable(project_id: int, company_id: int) -> dict:
 
     try:
         from models import CustomerOnboardingProject
-        project = CustomerOnboardingProject.query.get(project_id)
+        project = db.session.get(CustomerOnboardingProject, project_id)
         if not project:
             return {"ok": False, "reason": f"OnboardingProject {project_id} not found"}
         if project.company_id != company_id:
@@ -306,7 +306,7 @@ def sync_support_note_to_airtable(ticket_id: int, company_id: int) -> dict:
 
     try:
         from models import FeedbackTicket
-        ticket = FeedbackTicket.query.get(ticket_id)
+        ticket = db.session.get(FeedbackTicket, ticket_id)
         if not ticket:
             return {"ok": False, "reason": f"FeedbackTicket {ticket_id} not found"}
         if ticket.company_id != company_id:

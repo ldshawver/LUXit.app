@@ -61,9 +61,9 @@ DEFAULT_ONBOARDING_TASKS = [
 def _get_company():
     from models import Company, UserCompanyAccess
     if current_user.default_company_id:
-        return Company.query.get(current_user.default_company_id)
+        return db.session.get(Company, current_user.default_company_id)
     access = UserCompanyAccess.query.filter_by(user_id=current_user.id).first()
-    return Company.query.get(access.company_id) if access else None
+    return db.session.get(Company, access.company_id) if access else None
 
 
 _REDACT_KEYS = {
@@ -340,7 +340,7 @@ def toggle_task(task_id):
         task.status       = "completed"
         task.completed_at = datetime.utcnow()
 
-    proj = CustomerOnboardingProject.query.get(task.project_id)
+    proj = db.session.get(CustomerOnboardingProject, task.project_id)
     if proj:
         all_tasks = proj.tasks
         if all_tasks and all(t.status == "completed" for t in all_tasks):
@@ -514,11 +514,11 @@ def create_checkout_session():
     company = None
     if company_id:
         try:
-            company = Company.query.get(int(company_id))
+            company = db.session.get(Company, int(company_id))
         except (TypeError, ValueError):
             return jsonify({"error": "invalid company_id"}), 400
     if not company and current_user.default_company_id:
-        company = Company.query.get(current_user.default_company_id)
+        company = db.session.get(Company, current_user.default_company_id)
     if not company:
         return jsonify({"error": "company not found"}), 404
     if not _user_can_access_company(current_user, company):
@@ -579,11 +579,11 @@ def create_portal_session():
     company = None
     if company_id:
         try:
-            company = Company.query.get(int(company_id))
+            company = db.session.get(Company, int(company_id))
         except (TypeError, ValueError):
             return jsonify({"error": "invalid company_id"}), 400
     if not company and current_user.default_company_id:
-        company = Company.query.get(current_user.default_company_id)
+        company = db.session.get(Company, current_user.default_company_id)
     if not company:
         return jsonify({"error": "company not found"}), 404
     if not _user_can_access_company(current_user, company):
@@ -629,11 +629,11 @@ def report_contact_usage_endpoint():
     company = None
     if company_id:
         try:
-            company = Company.query.get(int(company_id))
+            company = db.session.get(Company, int(company_id))
         except (TypeError, ValueError):
             return jsonify({"error": "invalid company_id"}), 400
     if not company and current_user.default_company_id:
-        company = Company.query.get(current_user.default_company_id)
+        company = db.session.get(Company, current_user.default_company_id)
     if not company:
         return jsonify({"error": "company not found"}), 404
     if not _user_can_access_company(current_user, company):
@@ -871,7 +871,7 @@ def stripe_webhook():
             if not company and client_ref:
                 try:
                     cid_int = int(client_ref)
-                    company = Company.query.get(cid_int)
+                    company = db.session.get(Company, cid_int)
                     if company:
                         company_id = company.id
                         if stripe_cid and not company.stripe_customer_id:

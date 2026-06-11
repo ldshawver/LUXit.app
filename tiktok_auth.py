@@ -104,7 +104,7 @@ def callback():
         flash('No authorization code received from TikTok.', 'error')
         return redirect(url_for('main.dashboard'))
     
-    company = Company.query.get(company_id) if company_id else get_current_company()
+    company = db.session.get(Company, company_id) if company_id else get_current_company()
     if not company:
         flash('Could not determine company for TikTok connection.', 'error')
         return redirect(url_for('main.dashboard'))

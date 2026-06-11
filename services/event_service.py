@@ -41,7 +41,7 @@ class EventService:
     def purchase_ticket(ticket_id, contact_id, quantity, payment_method='card'):
         """Process ticket purchase"""
         try:
-            ticket = EventTicket.query.get(ticket_id)
+            ticket = db.session.get(EventTicket, ticket_id)
             if not ticket or ticket.quantity_available < quantity:
                 return None
             
@@ -82,7 +82,7 @@ class EventService:
             
             # Mark ticket as checked in
             if ticket_purchase_id:
-                purchase = TicketPurchase.query.get(ticket_purchase_id)
+                purchase = db.session.get(TicketPurchase, ticket_purchase_id)
                 if purchase:
                     purchase.checked_in = True
                     purchase.check_in_time = datetime.utcnow()
@@ -99,7 +99,7 @@ class EventService:
     def get_event_stats(event_id):
         """Get event statistics"""
         try:
-            event = Event.query.get(event_id)
+            event = db.session.get(Event, event_id)
             if not event:
                 return None
             

@@ -178,7 +178,7 @@ Focus on immediate, actionable fixes."""
             
             # Get errors to process
             if error_id:
-                errors_to_process = [ErrorLog.query.get(error_id)]
+                errors_to_process = [db.session.get(ErrorLog, error_id)]
                 if not errors_to_process[0]:
                     results['error'] = f'Error {error_id} not found'
                     return results
@@ -227,7 +227,7 @@ Focus on immediate, actionable fixes."""
                     
                     if is_resolved:
                         # Mark as resolved
-                        error_obj = ErrorLog.query.get(error['id'])
+                        error_obj = db.session.get(ErrorLog, error['id'])
                         if error_obj:
                             error_obj.is_resolved = True
                             error_obj.resolution_notes = json.dumps({

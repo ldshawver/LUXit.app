@@ -93,7 +93,7 @@ class SMSService:
         from models import SMSRecipient, Contact
         
         for contact_id in contact_ids:
-            contact = Contact.query.get(contact_id)
+            contact = db.session.get(Contact, contact_id)
             if contact and contact.phone:
                 recipient = SMSRecipient(
                     campaign_id=campaign_id,
@@ -163,7 +163,7 @@ class SMSService:
         from extensions import db
         from models import SMSCampaign, SMSRecipient
         
-        campaign = SMSCampaign.query.get(campaign_id)
+        campaign = db.session.get(SMSCampaign, campaign_id)
         if not campaign:
             return {'success': False, 'error': 'Campaign not found'}
         
@@ -260,7 +260,7 @@ class SMSService:
         """Calculate analytics for an SMS campaign"""
         from models import SMSCampaign, SMSRecipient
         
-        campaign = SMSCampaign.query.get(campaign_id)
+        campaign = db.session.get(SMSCampaign, campaign_id)
         if not campaign:
             return {}
         

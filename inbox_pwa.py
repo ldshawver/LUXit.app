@@ -61,7 +61,7 @@ def _current_user():
     uid = session.get("user_id") or session.get("_user_id")
     if not uid:
         return None
-    return User.query.get(uid)
+    return db.session.get(User, uid)
 
 
 def _require_auth():
@@ -77,18 +77,18 @@ def _get_company(user):
     # 1. Prefer the is_default=True access row
     acc = UserCompanyAccess.query.filter_by(user_id=user.id, is_default=True).first()
     if acc:
-        c = Company.query.get(acc.company_id)
+        c = db.session.get(Company, acc.company_id)
         if c:
             return c
     # 2. Any access row (first one found)
     acc = UserCompanyAccess.query.filter_by(user_id=user.id).first()
     if acc:
-        c = Company.query.get(acc.company_id)
+        c = db.session.get(Company, acc.company_id)
         if c:
             return c
     # 3. Explicit default_company_id pointer
     if user.default_company_id:
-        c = Company.query.get(user.default_company_id)
+        c = db.session.get(Company, user.default_company_id)
         if c:
             return c
     # 4. Platform admins get the first active company as a fallback context
@@ -323,7 +323,7 @@ def _conv_to_dict(conv, brief=True):
         d["notes"] = conv.notes or ""
         if conv.assigned_user_id:
             from models import User
-            u = User.query.get(conv.assigned_user_id)
+            u = db.session.get(User, conv.assigned_user_id)
             d["assigned_user_name"] = u.username if u else None
         else:
             d["assigned_user_name"] = None
@@ -441,7 +441,7 @@ def get_conversation(conv_id):
     contact_data = None
     if conv.contact_id:
         from models import Contact
-        c = Contact.query.get(conv.contact_id)
+        c = db.session.get(Contact, conv.contact_id)
         if c:
             contact_data = {
                 "id":    c.id,

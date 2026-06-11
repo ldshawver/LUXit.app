@@ -141,7 +141,7 @@ class ApprovalService:
         """Get a single approval queue item"""
         from models import ApprovalQueue
         
-        item = ApprovalQueue.query.get(approval_id)
+        item = db.session.get(ApprovalQueue, approval_id)
         return item.to_dict() if item else None
     
     @staticmethod
@@ -163,7 +163,7 @@ class ApprovalService:
         from models import ApprovalQueue, ApprovalAuditLog, db
         
         try:
-            item = ApprovalQueue.query.get(approval_id)
+            item = db.session.get(ApprovalQueue, approval_id)
             if not item:
                 return {'success': False, 'error': 'Item not found'}
             
@@ -230,7 +230,7 @@ class ApprovalService:
         from models import ApprovalQueue, ApprovalAuditLog, db
         
         try:
-            item = ApprovalQueue.query.get(approval_id)
+            item = db.session.get(ApprovalQueue, approval_id)
             if not item:
                 return {'success': False, 'error': 'Item not found'}
             
@@ -284,7 +284,7 @@ class ApprovalService:
         from models import ApprovalQueue, ApprovalAuditLog, db
         
         try:
-            item = ApprovalQueue.query.get(approval_id)
+            item = db.session.get(ApprovalQueue, approval_id)
             if not item:
                 return {'success': False, 'error': 'Item not found'}
             
@@ -340,7 +340,7 @@ class ApprovalService:
         from models import ApprovalQueue, ApprovalAuditLog, db
         
         try:
-            item = ApprovalQueue.query.get(approval_id)
+            item = db.session.get(ApprovalQueue, approval_id)
             if not item:
                 return {'success': False, 'error': 'Item not found'}
             
@@ -373,7 +373,7 @@ class ApprovalService:
         from models import ApprovalQueue, ApprovalAuditLog, db
         
         try:
-            item = ApprovalQueue.query.get(approval_id)
+            item = db.session.get(ApprovalQueue, approval_id)
             if not item:
                 return {'success': False, 'error': 'Item not found'}
             
@@ -704,7 +704,7 @@ class FeatureToggleService:
         try:
             if content_type == 'email_campaign':
                 from models import Campaign
-                record = Campaign.query.get(content_id)
+                record = db.session.get(Campaign, content_id)
                 if record and record.status not in ('sending', 'sent'):
                     record.status = 'approved'
                     db.session.commit()
@@ -713,7 +713,7 @@ class FeatureToggleService:
             elif content_type == 'social_post':
                 try:
                     from models import SocialPost
-                    record = SocialPost.query.get(content_id)
+                    record = db.session.get(SocialPost, content_id)
                     if record:
                         record.status = 'approved'
                         db.session.commit()
@@ -724,7 +724,7 @@ class FeatureToggleService:
             elif content_type == 'blog_post':
                 try:
                     from models import BlogPost
-                    record = BlogPost.query.get(content_id)
+                    record = db.session.get(BlogPost, content_id)
                     if record:
                         record.status = 'approved'
                         db.session.commit()
@@ -734,7 +734,7 @@ class FeatureToggleService:
 
             elif content_type == 'sms_campaign':
                 from models import Campaign
-                record = Campaign.query.get(content_id)
+                record = db.session.get(Campaign, content_id)
                 if record and record.status not in ('sending', 'sent'):
                     record.status = 'approved'
                     db.session.commit()

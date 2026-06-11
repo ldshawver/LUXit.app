@@ -88,7 +88,7 @@ def _get_account(account_id: int, user_id: int, company_id) -> tuple:
     Returns (record, error_message). error_message is None on success.
     """
     from models import XOAuth
-    record = XOAuth.query.get(account_id)
+    record = db.session.get(XOAuth, account_id)
     if not record:
         return None, "X account not found."
     if record.user_id != user_id:
@@ -352,7 +352,7 @@ def callback():
 
     from models import XOAuth, Company
     company = (
-        Company.query.get(company_id) if company_id else _get_current_company()
+        db.session.get(Company, company_id) if company_id else _get_current_company()
     )
 
     expires_at = None

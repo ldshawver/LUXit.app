@@ -144,7 +144,7 @@ def _notify(user_id: int, title: str, message: str, link: str,
     # Best-effort email — only if EmailService is wired up. Failures must not
     # block ticket submission or status changes.
     try:
-        u = User.query.get(user_id)
+        u = db.session.get(User, user_id)
         if not u or not getattr(u, "email", None):
             return
         from email_service import EmailService  # type: ignore
@@ -455,7 +455,7 @@ def admin_dashboard():
 def _get_or_403(ticket_id: int) -> tuple[Optional[FeedbackTicket], Optional[tuple]]:
     """Return (ticket, error_response). On failure, ticket is None and the
     second element is a (response, status) tuple to return."""
-    t = FeedbackTicket.query.get(ticket_id)
+    t = db.session.get(FeedbackTicket, ticket_id)
     if not t:
         return None, (jsonify({"error": "ticket not found"}), 404)
     if not _can_view_ticket(current_user, t):
@@ -590,7 +590,7 @@ def assign_ticket(ticket_id):
             from models import UserCompanyAccess
             ok = UserCompanyAccess.query.filter_by(
                 user_id=new_owner, company_id=t.company_id).first()
-            if not ok and not _is_platform_admin(User.query.get(new_owner)):
+            if not ok and not _is_platform_admin(db.session.get(User, new_owner)):
                 return jsonify({"error": "user is not part of the ticket's company"}), 400
     t.assigned_to_user_id = new_owner
     db.session.commit()

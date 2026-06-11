@@ -3,7 +3,7 @@ from urllib.parse import urlparse
 
 from flask import Blueprint, current_app, flash, redirect, render_template, request, url_for
 from flask_login import current_user, login_required, login_user, logout_user
-from extensions import csrf
+from extensions import csrf, db
 from jinja2 import TemplateNotFound
 from sqlalchemy import or_, text as db_text
 from sqlalchemy.exc import SQLAlchemyError
@@ -283,7 +283,7 @@ def reset_password(token):
             error = "Passwords do not match."
         else:
             try:
-                user = User.query.get(prt.user_id)
+                user = db.session.get(User, prt.user_id)
                 if user:
                     user.password_hash = generate_password_hash(new_pw)
                     prt.used = True
@@ -450,7 +450,7 @@ def debug_session():
         user_from_loader = None
         if uid:
             try:
-                user_from_loader = User.query.get(int(uid))
+                user_from_loader = db.session.get(User, int(uid))
             except Exception as e:
                 user_from_loader = f"error: {e}"
         return jsonify({

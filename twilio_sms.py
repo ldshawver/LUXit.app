@@ -124,7 +124,7 @@ def _resolve_number(to_number: str, msg_service_sid: str = ""):
 
     if pn:
         # Prefer the account linked directly; fall back to any account for company
-        ta = (TwilioAccount.query.get(pn.twilio_account_id)
+        ta = (db.session.get(TwilioAccount, pn.twilio_account_id)
               if pn.twilio_account_id else None)
         if not ta:
             ta = TwilioAccount.query.filter_by(company_id=pn.company_id).first()
@@ -1482,7 +1482,7 @@ def comms_settings():
         )
         users_with_access = []
         for acc in access_rows:
-            u = User.query.get(acc.user_id)
+            u = db.session.get(User, acc.user_id)
             if u:
                 users_with_access.append({
                     "user":   u,

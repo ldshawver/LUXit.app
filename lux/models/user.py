@@ -32,7 +32,7 @@ class User(UserMixin, TimestampMixin, db.Model):
             default_id = getattr(self, "default_company_id", None)
             if default_id:
                 from lux.models.company import Company
-                return Company.query.get(default_id)
+                return db.session.get(Company, default_id)
 
             from lux.models.company import Company
             return Company.query.filter_by(is_active=True).first()

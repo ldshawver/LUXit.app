@@ -806,7 +806,7 @@ def campaigns():
 def email_builder(campaign_id=None):
     from models import Campaign, EmailTemplate
     templates = EmailTemplate.query.all()
-    campaign = Campaign.query.get(campaign_id) if campaign_id else None
+    campaign = db.session.get(Campaign, campaign_id) if campaign_id else None
     return render_template('email_builder.html', campaign=campaign, templates=templates)
 
 @main_bp.route('/analytics')
@@ -2086,12 +2086,12 @@ def billing_page():
     """Customer-facing billing page: current plan, usage, upgrade buttons."""
     company = None
     if current_user.default_company_id:
-        company = Company.query.get(current_user.default_company_id)
+        company = db.session.get(Company, current_user.default_company_id)
     if not company:
         from models import UserCompanyAccess
         access = UserCompanyAccess.query.filter_by(user_id=current_user.id).first()
         if access:
-            company = Company.query.get(access.company_id)
+            company = db.session.get(Company, access.company_id)
     return render_template("billing/billing.html", company=company)
 
 
@@ -2100,7 +2100,7 @@ def billing_page():
 def billing_success():
     """Stripe Checkout success landing page."""
     return render_template("billing/billing.html",
-                           company=Company.query.get(current_user.default_company_id) if current_user.default_company_id else None,
+                           company=db.session.get(Company, current_user.default_company_id) if current_user.default_company_id else None,
                            checkout_session_id=request.args.get("session_id"),
                            checkout_outcome="success")
 
@@ -2110,7 +2110,7 @@ def billing_success():
 def billing_cancel():
     """Stripe Checkout cancel landing page."""
     return render_template("billing/billing.html",
-                           company=Company.query.get(current_user.default_company_id) if current_user.default_company_id else None,
+                           company=db.session.get(Company, current_user.default_company_id) if current_user.default_company_id else None,
                            checkout_outcome="cancel")
 
 
@@ -2335,7 +2335,7 @@ def create_social_post():
         }
         
         if post_id:
-            post = SocialPost.query.get(post_id)
+            post = db.session.get(SocialPost, post_id)
             if not post:
                 flash('Post not found', 'error')
                 return redirect(url_for('main.social_media'))
@@ -2368,7 +2368,7 @@ def create_social_post():
 def delete_social_post(post_id):
     """Delete a social media post"""
     try:
-        post = SocialPost.query.get(post_id)
+        post = db.session.get(SocialPost, post_id)
         if not post:
             return jsonify({'success': False, 'message': 'Post not found'}), 404
         
@@ -2392,7 +2392,7 @@ def refresh_social_followers():
         account_id = request.form.get('account_id')
         if account_id:
             # Refresh specific account
-            account = SocialMediaAccount.query.get(account_id)
+            account = db.session.get(SocialMediaAccount, account_id)
             if account:
                 result = SocialMediaService.refresh_account_data(account)
                 if result.get('success'):
@@ -3786,7 +3786,7 @@ def landing_page_builder(page_id=None):
     """Visual drag-and-drop landing page builder"""
     page = None
     if page_id:
-        page = LandingPage.query.get(page_id)
+        page = db.session.get(LandingPage, page_id)
     return render_template('landing_page_builder.html', page=page)
 
 @main_bp.route('/api/landing-page/save', methods=['POST'])
@@ -3811,7 +3811,7 @@ def save_landing_page_api():
             return jsonify({'success': False, 'error': 'Slug must be lowercase letters, numbers, and hyphens only'}), 400
         
         if page_id:
-            page = LandingPage.query.get(page_id)
+            page = db.session.get(LandingPage, page_id)
             if not page:
                 return jsonify({'success': False, 'error': 'Page not found'}), 404
         else:
@@ -4144,7 +4144,7 @@ def view_event(event_id):
     
     # Get contacts for registrations
     for reg in registrations:
-        reg.contact = Contact.query.get(reg.contact_id)
+        reg.contact = db.session.get(Contact, reg.contact_id)
     
     return render_template('view_event.html', event=event, registrations=registrations)
 
@@ -4941,7 +4941,7 @@ def api_get_triggers():
 @login_required
 def api_get_trigger(trigger_id):
     """Get a specific trigger by ID"""
-    trigger = AutomationTriggerLibrary.query.get(trigger_id)
+    trigger = db.session.get(AutomationTriggerLibrary, trigger_id)
     if not trigger:
         return jsonify({'success': False, 'error': 'Trigger not found'}), 404
     
@@ -5037,7 +5037,7 @@ def api_delete_trigger(trigger_id):
     from services.automation_service import AutomationService
     
     try:
-        trigger = AutomationTriggerLibrary.query.get(trigger_id)
+        trigger = db.session.get(AutomationTriggerLibrary, trigger_id)
         if not trigger:
             return jsonify({'success': False, 'error': 'Trigger not found'}), 404
         
@@ -5414,28 +5414,28 @@ def api_calendar_update_event(event_id):
             return jsonify({'success': False, 'error': 'Start date required'}), 400
         
         if event_type == 'sms':
-            campaign = SMSCampaign.query.get(content_id)
+            campaign = db.session.get(SMSCampaign, content_id)
             if campaign:
                 campaign.scheduled_at = new_start_dt
                 db.session.commit()
                 return jsonify({'success': True, 'message': 'SMS campaign rescheduled'})
         
         elif event_type == 'social':
-            post = SocialPost.query.get(content_id)
+            post = db.session.get(SocialPost, content_id)
             if post:
                 post.scheduled_at = new_start_dt
                 db.session.commit()
                 return jsonify({'success': True, 'message': 'Social post rescheduled'})
         
         elif event_type == 'email':
-            campaign = Campaign.query.get(content_id)
+            campaign = db.session.get(Campaign, content_id)
             if campaign:
                 campaign.scheduled_at = new_start_dt
                 db.session.commit()
                 return jsonify({'success': True, 'message': 'Email campaign rescheduled'})
         
         elif event_type == 'custom':
-            event = CalendarEvent.query.get(content_id)
+            event = db.session.get(CalendarEvent, content_id)
             if event:
                 event.start_date = new_start_dt
                 if new_end:
@@ -5469,7 +5469,7 @@ def api_calendar_delete_event(event_id):
             return jsonify({'success': False, 'error': 'Can only delete custom events'}), 400
         
         content_id = int(parts[1])
-        event = CalendarEvent.query.get(content_id)
+        event = db.session.get(CalendarEvent, content_id)
         
         if not event:
             return jsonify({'success': False, 'error': 'Event not found'}), 404
@@ -5499,7 +5499,7 @@ def api_calendar_get_event(event_id):
         content_id = int(parts[1])
         
         if event_type == 'sms':
-            campaign = SMSCampaign.query.get(content_id)
+            campaign = db.session.get(SMSCampaign, content_id)
             if campaign:
                 return jsonify({
                     'success': True,
@@ -5515,7 +5515,7 @@ def api_calendar_get_event(event_id):
                 })
         
         elif event_type == 'social':
-            post = SocialPost.query.get(content_id)
+            post = db.session.get(SocialPost, content_id)
             if post:
                 return jsonify({
                     'success': True,
@@ -5532,7 +5532,7 @@ def api_calendar_get_event(event_id):
                 })
         
         elif event_type == 'email':
-            campaign = Campaign.query.get(content_id)
+            campaign = db.session.get(Campaign, content_id)
             if campaign:
                 return jsonify({
                     'success': True,
@@ -5548,7 +5548,7 @@ def api_calendar_get_event(event_id):
                 })
         
         elif event_type == 'custom':
-            event = CalendarEvent.query.get(content_id)
+            event = db.session.get(CalendarEvent, content_id)
             if event:
                 return jsonify({'success': True, 'event': event.to_dict()})
         
@@ -5788,7 +5788,7 @@ def ai_auto_fix_all():
 def ai_fix_single_error(error_id):
     """AI-powered: Fix a specific error by ID"""
     try:
-        error = ErrorLog.query.get(error_id)
+        error = db.session.get(ErrorLog, error_id)
         if not error:
             return jsonify({'success': False, 'error': 'Error not found'}), 404
         
@@ -5929,7 +5929,7 @@ def settings_integrations():
 def company_settings(company_id):
     """Company settings & integrations page"""
     try:
-        company = Company.query.get(company_id)
+        company = db.session.get(Company, company_id)
         all_companies = current_user.get_all_companies()
         if not company:
             return redirect(url_for('main.dashboard'))
@@ -5964,7 +5964,7 @@ def company_connections(company_id):
     import json
     from services.integration_registry import IntegrationServiceRegistry
     try:
-        company = Company.query.get(company_id)
+        company = db.session.get(Company, company_id)
         if not company:
             return redirect(url_for('main.dashboard'))
 
@@ -6098,7 +6098,7 @@ def update_user_access(user_id):
             if not company or not current_user.can_admin_company(company.id):
                 return jsonify({'success': False, 'error': 'Permission denied.'}), 403
 
-        target = User.query.get(user_id)
+        target = db.session.get(User, user_id)
         if not target:
             return jsonify({'success': False, 'error': 'User not found.'}), 404
 
@@ -6149,7 +6149,7 @@ def set_default_company():
         if not company_id:
             return jsonify({'success': False, 'error': 'company_id required'}), 400
         
-        company = Company.query.get(company_id)
+        company = db.session.get(Company, company_id)
         if not company:
             return jsonify({'success': False, 'error': 'Company not found'}), 404
         
@@ -6311,7 +6311,7 @@ def delete_company_secret(company_id):
 def save_company_settings(company_id):
     """Save company brand settings"""
     try:
-        company = Company.query.get(company_id)
+        company = db.session.get(Company, company_id)
         if not company:
             return jsonify({'success': False, 'error': 'Company not found'}), 404
         
@@ -6967,7 +6967,7 @@ def save_competitor():
     competitor_id = request.form.get('competitor_id')
     
     if competitor_id:
-        competitor = CompetitorProfile.query.get(competitor_id)
+        competitor = db.session.get(CompetitorProfile, competitor_id)
         if not competitor or competitor.company_id != company.id:
             flash('Competitor not found', 'error')
             return redirect(url_for('main.competitor_analysis'))
@@ -7034,7 +7034,7 @@ def get_competitor(competitor_id):
     from models import CompetitorProfile
     company = current_user.get_default_company()
     
-    competitor = CompetitorProfile.query.get(competitor_id)
+    competitor = db.session.get(CompetitorProfile, competitor_id)
     if not competitor or competitor.company_id != company.id:
         return jsonify({'success': False, 'error': 'Competitor not found'}), 404
     
@@ -7084,7 +7084,7 @@ def delete_competitor(competitor_id):
     from models import CompetitorProfile
     company = current_user.get_default_company()
     
-    competitor = CompetitorProfile.query.get(competitor_id)
+    competitor = db.session.get(CompetitorProfile, competitor_id)
     if not competitor or competitor.company_id != company.id:
         return jsonify({'success': False, 'error': 'Competitor not found'}), 404
     
@@ -7100,7 +7100,7 @@ def edit_competitor(competitor_id):
     from models import CompetitorProfile
     company = current_user.get_default_company()
     
-    competitor = CompetitorProfile.query.get(competitor_id)
+    competitor = db.session.get(CompetitorProfile, competitor_id)
     if not competitor or competitor.company_id != company.id:
         flash('Competitor not found', 'error')
         return redirect(url_for('main.competitor_analysis'))
@@ -7350,7 +7350,7 @@ def lux_crm():
             'priority': 'high'
         })
     for lead in hot_leads[:3]:
-        contact = Contact.query.get(lead.contact_id) if getattr(lead, 'contact_id', None) else None
+        contact = db.session.get(Contact, lead.contact_id) if getattr(lead, 'contact_id', None) else None
         if contact:
             next_actions.append({
                 'type': 'success',
@@ -8461,7 +8461,7 @@ def get_deal_json(deal_id):
 def get_contact(contact_id):
     """Get contact details via API"""
     try:
-        contact = Contact.query.get(contact_id)
+        contact = db.session.get(Contact, contact_id)
         if not contact:
             return jsonify({'error': 'Contact not found'}), 404
         return jsonify({
@@ -9252,7 +9252,7 @@ def update_agent_task(agent_type, task_id):
             return jsonify({'success': False, 'error': 'No company selected'}), 400
         
         data = request.get_json()
-        task = AgentAutomation.query.get(int(task_id))
+        task = db.session.get(AgentAutomation, int(task_id))
         
         if not task or task.agent_type != agent_type:
             return jsonify({'success': False, 'error': 'Task not found'}), 404
@@ -9280,7 +9280,7 @@ def delete_agent_task(agent_type, task_id):
     from models import AgentAutomation
     
     try:
-        task = AgentAutomation.query.get(int(task_id))
+        task = db.session.get(AgentAutomation, int(task_id))
         
         if not task or task.agent_type != agent_type:
             return jsonify({'success': False, 'error': 'Task not found'}), 404
@@ -9517,7 +9517,7 @@ def get_agent_report_detail(agent_type, report_id):
     ).filter(user_company.c.user_id == current_user.id).first()
     company_id = company.id if company else None
     
-    report = AgentReport.query.get(report_id)
+    report = db.session.get(AgentReport, report_id)
     if not report or report.agent_type != agent_type:
         return jsonify({'success': False, 'error': 'Report not found'}), 404
     
@@ -9621,7 +9621,7 @@ def get_agent_deliverable_detail(agent_type, deliverable_id):
     ).filter(user_company.c.user_id == current_user.id).first()
     company_id = company.id if company else None
     
-    deliverable = AgentDeliverable.query.get(deliverable_id)
+    deliverable = db.session.get(AgentDeliverable, deliverable_id)
     if not deliverable or deliverable.agent_type != agent_type or deliverable.company_id != company_id:
         return jsonify({'success': False, 'error': 'Deliverable not found'}), 404
     
@@ -10182,7 +10182,7 @@ def create_template():
     template_id = request.args.get('branded_template_id')
     if template_id and EmailTemplate is not None:
         try:
-            branded_template = EmailTemplate.query.get(int(template_id))
+            branded_template = db.session.get(EmailTemplate, int(template_id))
         except Exception:
             pass
     return render_template('template_create.html', branded_template=branded_template, categories=[])
@@ -10194,7 +10194,7 @@ def edit_template(template_id):
     template = None
     try:
         if EmailTemplate is not None:
-            template = EmailTemplate.query.get(template_id)
+            template = db.session.get(EmailTemplate, template_id)
     except Exception:
         pass
     if template is None:
@@ -10220,7 +10220,7 @@ def preview_template(template_id):
     template = None
     try:
         if EmailTemplate is not None:
-            template = EmailTemplate.query.get(template_id)
+            template = db.session.get(EmailTemplate, template_id)
     except Exception:
         pass
     if template is None:
@@ -10279,7 +10279,7 @@ def edit_campaign(campaign_id):
     campaign = None
     try:
         if Campaign is not None:
-            campaign = Campaign.query.get(campaign_id)
+            campaign = db.session.get(Campaign, campaign_id)
     except Exception:
         pass
     if campaign is None:
@@ -10311,7 +10311,7 @@ def campaign_detail(campaign_id):
     campaign = None
     try:
         if Campaign is not None:
-            campaign = Campaign.query.get(campaign_id)
+            campaign = db.session.get(Campaign, campaign_id)
     except Exception:
         pass
     if campaign is None:
@@ -10326,7 +10326,7 @@ def preview_campaign(campaign_id):
     campaign = None
     try:
         if Campaign is not None:
-            campaign = Campaign.query.get(campaign_id)
+            campaign = db.session.get(Campaign, campaign_id)
     except Exception:
         pass
     if campaign is None:
@@ -10340,7 +10340,7 @@ def preview_campaign(campaign_id):
 def send_campaign(campaign_id):
     try:
         if Campaign is not None:
-            campaign = Campaign.query.get(campaign_id)
+            campaign = db.session.get(Campaign, campaign_id)
             if campaign:
                 campaign.status = 'sending'
                 db.session.commit()
@@ -10399,7 +10399,7 @@ def add_contact():
 def delete_contact(contact_id):
     try:
         if Contact is not None:
-            contact = Contact.query.get(contact_id)
+            contact = db.session.get(Contact, contact_id)
             if contact:
                 db.session.delete(contact)
                 db.session.commit()
@@ -10515,7 +10515,7 @@ def create_poll():
 def delete_poll(poll_id):
     try:
         if Poll is not None:
-            poll = Poll.query.get(poll_id)
+            poll = db.session.get(Poll, poll_id)
             if poll:
                 db.session.delete(poll)
                 db.session.commit()
@@ -10536,7 +10536,7 @@ def view_poll_results(poll_id):
     results = {}
     try:
         if Poll is not None:
-            poll = Poll.query.get(poll_id)
+            poll = db.session.get(Poll, poll_id)
         if poll and PollResponse is not None:
             responses = PollResponse.query.filter_by(poll_id=poll_id).all()
             if poll.options:
@@ -10562,7 +10562,7 @@ def ab_test_results(test_id):
     test = None
     try:
         if ABTest is not None:
-            test = ABTest.query.get(test_id)
+            test = db.session.get(ABTest, test_id)
     except Exception:
         pass
     if test is None:
@@ -10600,7 +10600,7 @@ def edit_ab_test(test_id):
     test = None
     try:
         if ABTest is not None:
-            test = ABTest.query.get(test_id)
+            test = db.session.get(ABTest, test_id)
     except Exception:
         pass
     if test is None:
@@ -10633,7 +10633,7 @@ def edit_ab_test(test_id):
 def delete_ab_test(test_id):
     try:
         if ABTest is not None:
-            test = ABTest.query.get(test_id)
+            test = db.session.get(ABTest, test_id)
             if test:
                 db.session.delete(test)
                 db.session.commit()
@@ -10651,7 +10651,7 @@ def delete_ab_test(test_id):
 def duplicate_ab_test(test_id):
     try:
         if ABTest is not None:
-            test = ABTest.query.get(test_id)
+            test = db.session.get(ABTest, test_id)
             if test:
                 new_test = ABTest(
                     campaign_id=test.campaign_id,
@@ -10678,7 +10678,7 @@ def duplicate_ab_test(test_id):
 def run_ab_test(test_id):
     try:
         if ABTest is not None:
-            test = ABTest.query.get(test_id)
+            test = db.session.get(ABTest, test_id)
             if test:
                 test.status = 'running'
                 test.started_at = datetime.utcnow()
@@ -10769,7 +10769,7 @@ def sms_campaigns():
 def send_sms_campaign(campaign_id):
     try:
         if SMSCampaign is not None:
-            campaign = SMSCampaign.query.get(campaign_id)
+            campaign = db.session.get(SMSCampaign, campaign_id)
             if campaign:
                 campaign.status = 'sending'
                 db.session.commit()
@@ -10811,7 +10811,7 @@ def create_brandkit():
 def activate_brandkit(kit_id):
     try:
         if BrandKit is not None:
-            kit = BrandKit.query.get(kit_id)
+            kit = db.session.get(BrandKit, kit_id)
             if kit:
                 company_id = getattr(current_user, 'default_company_id', None)
                 if company_id:
@@ -11688,7 +11688,7 @@ def _walkthrough_access_ok(wt, company):
 def api_walkthrough_step(wt_id):
     from models import WalkthroughProgress, WalkthroughDef
     try:
-        wt = WalkthroughDef.query.get(wt_id)
+        wt = db.session.get(WalkthroughDef, wt_id)
         if not wt or not wt.is_active:
             return jsonify({'success': False, 'error': 'Walkthrough not found'}), 404
         company = current_user.get_default_company()
@@ -11726,7 +11726,7 @@ def api_walkthrough_step(wt_id):
 def api_walkthrough_complete(wt_id):
     from models import WalkthroughProgress, WalkthroughDef
     try:
-        wt = WalkthroughDef.query.get(wt_id)
+        wt = db.session.get(WalkthroughDef, wt_id)
         if not wt or not wt.is_active:
             return jsonify({'success': False, 'error': 'Walkthrough not found'}), 404
         company = current_user.get_default_company()

@@ -241,7 +241,7 @@ class User(UserMixin, db.Model):
             if self.default_company_id:
                 if hasattr(self, "default_company") and self.default_company is not None:
                     return self.default_company
-                found = Company.query.get(self.default_company_id)
+                found = db.session.get(Company, self.default_company_id)
                 if found:
                     return found
                 # Company was deleted — clear stale FK and fall through to fallbacks

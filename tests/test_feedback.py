@@ -132,7 +132,7 @@ def test_submit_creates_ticket_with_company_scope(app, client, world):
     body = resp.get_json()
     assert body["ok"] and body["ticket"]["status"] == "new"
     with app.app_context():
-        t = FeedbackTicket.query.get(body["ticket"]["id"])
+        t = _db.session.get(FeedbackTicket, body["ticket"]["id"])
         assert t.user_id == world["bob"]
         assert t.company_id == world["co_a"]
         assert t.severity == "high"
@@ -261,7 +261,7 @@ def test_status_change_to_closed_sets_closed_at(app, client, world):
     resp = client.post(f"/api/feedback/{tid}/status", json={"status": "closed"})
     assert resp.status_code == 200
     with app.app_context():
-        assert FeedbackTicket.query.get(tid).closed_at is not None
+        assert _db.session.get(FeedbackTicket, tid).closed_at is not None
 
 
 def test_priority_toggle_promotes_new_to_priority_fix(app, client, world):
@@ -319,7 +319,7 @@ def test_upload_rejects_non_image_with_image_extension(app, client, world):
     assert resp.status_code == 201  # ticket still created
     tid = resp.get_json()["ticket"]["id"]
     with app.app_context():
-        assert FeedbackTicket.query.get(tid).screenshot_path is None
+        assert _db.session.get(FeedbackTicket, tid).screenshot_path is None
 
 
 def test_upload_accepts_real_png_and_serves_via_authed_route(app, client, world):
@@ -333,7 +333,7 @@ def test_upload_accepts_real_png_and_serves_via_authed_route(app, client, world)
     assert resp.status_code == 201
     tid = resp.get_json()["ticket"]["id"]
     with app.app_context():
-        rel = FeedbackTicket.query.get(tid).screenshot_path
+        rel = _db.session.get(FeedbackTicket, tid).screenshot_path
         assert rel and rel.startswith(f"{tid}/") and rel.endswith(".png")
         # Confirm file lives under instance_path/uploads, NOT /static.
         from feedback import _screenshot_storage_root
@@ -354,7 +354,7 @@ def test_screenshot_route_requires_view_permission(app, client, world):
     # Attach a screenshot path to the ticket directly (no file needed; the
     # permission check fires before the filesystem read).
     with app.app_context():
-        t = FeedbackTicket.query.get(tid)
+        t = _db.session.get(FeedbackTicket, tid)
         t.screenshot_path = f"{tid}/decoy.png"
         _db.session.commit()
     _login(client, world["carol"])

@@ -24,7 +24,7 @@ class LTVService:
         Returns:
             dict: LTV metrics
         """
-        contact = Contact.query.get(contact_id)
+        contact = db.session.get(Contact, contact_id)
         if not contact:
             return None
         
@@ -94,7 +94,7 @@ class LTVService:
         if reference_date is None:
             reference_date = datetime.utcnow()
         
-        contact = Contact.query.get(contact_id)
+        contact = db.session.get(Contact, contact_id)
         if not contact:
             return None
         
@@ -218,7 +218,7 @@ class LTVService:
         rfm_data = []
         
         for (contact_id,) in contact_ids:
-            contact = Contact.query.get(contact_id)
+            contact = db.session.get(Contact, contact_id)
             if not contact:
                 continue
             
