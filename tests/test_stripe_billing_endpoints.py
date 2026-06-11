@@ -31,6 +31,7 @@ WEBHOOK_SECRET = "whsec_test_secret_for_pytest_only"
 
 @pytest.fixture
 def app():
+    os.environ["FLASK_ENV"] = "testing"
     os.environ["STRIPE_WEBHOOK_SECRET"] = WEBHOOK_SECRET
     os.environ["STRIPE_SECRET_KEY"] = "sk_test_dummy"
     a = create_app()

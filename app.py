@@ -96,6 +96,12 @@ def _resolve_db_url() -> str:
     Result is cached so repeated calls skip the URL rewrite.
     """
     global _resolved_db_url_cache
+
+    # Testing shortcut — always wins, bypasses cache so pytest never touches
+    # the live database regardless of what PGHOST / DATABASE_URL are set to.
+    if os.environ.get("FLASK_ENV") == "testing":
+        return os.environ.get("TEST_DATABASE_URL", "sqlite:///:memory:")
+
     if _resolved_db_url_cache is not None:
         return _resolved_db_url_cache
 
@@ -467,31 +473,34 @@ def create_app() -> Flask:
         #   • New env var added later → picked up automatically on next restart
         #     without needing a manual script run or a full table wipe.
         # The entire block is non-blocking: any error logs a warning and continues.
-        try:
-            from models import ProviderCredential
-            from scripts.backfill_provider_credentials import CREDENTIALS, run_backfill
-            import os as _os
-            # Build set of (provider_slug, scope, key) already in DB
-            _db_keys = {
-                (r.provider_slug, r.scope, r.key)
-                for r in ProviderCredential.query.with_entities(
-                    ProviderCredential.provider_slug,
-                    ProviderCredential.scope,
-                    ProviderCredential.key,
-                ).all()
-            }
-            # Check whether any env var is set but has no DB row
-            _needs_backfill = any(
-                _os.environ.get(env_key) and (provider, scope, env_key) not in _db_keys
-                for provider, scope, env_key, _field in CREDENTIALS
-            )
-            if _needs_backfill:
-                logging.info("Auto-backfill: new env credentials detected — importing missing rows")
-                run_backfill()  # already inside app context; idempotent per-row
-            else:
-                logging.debug("Auto-backfill: all env credentials already in DB — skipping")
-        except Exception as _backfill_exc:
-            logging.warning("Auto-backfill skipped (non-fatal): %s", _backfill_exc)
+        # Skipped entirely during test runs so tests never seed live credentials
+        # into the ephemeral DB (which would break monkeypatch-based env tests).
+        if os.environ.get("FLASK_ENV") != "testing":
+            try:
+                from models import ProviderCredential
+                from scripts.backfill_provider_credentials import CREDENTIALS, run_backfill
+                import os as _os
+                # Build set of (provider_slug, scope, key) already in DB
+                _db_keys = {
+                    (r.provider_slug, r.scope, r.key)
+                    for r in ProviderCredential.query.with_entities(
+                        ProviderCredential.provider_slug,
+                        ProviderCredential.scope,
+                        ProviderCredential.key,
+                    ).all()
+                }
+                # Check whether any env var is set but has no DB row
+                _needs_backfill = any(
+                    _os.environ.get(env_key) and (provider, scope, env_key) not in _db_keys
+                    for provider, scope, env_key, _field in CREDENTIALS
+                )
+                if _needs_backfill:
+                    logging.info("Auto-backfill: new env credentials detected — importing missing rows")
+                    run_backfill()  # already inside app context; idempotent per-row
+                else:
+                    logging.debug("Auto-backfill: all env credentials already in DB — skipping")
+            except Exception as _backfill_exc:
+                logging.warning("Auto-backfill skipped (non-fatal): %s", _backfill_exc)
 
         # ── DB startup report (never logs secrets) ─────────────────────────
         try:

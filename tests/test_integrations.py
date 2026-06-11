@@ -20,7 +20,7 @@ ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
-os.environ.setdefault("DATABASE_URL", "sqlite:///:memory:")
+os.environ["FLASK_ENV"] = "testing"
 os.environ.setdefault("OPENAI_API_KEY", "test")
 os.environ.setdefault("DATA_ENCRYPTION_KEY", "g2CDXwdc6VKAElQ5QWqFBCsmXL_dQAs3e44_Gl1oJaU=")
 
