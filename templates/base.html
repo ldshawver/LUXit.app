@@ -501,14 +501,6 @@
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
                     Sales
                 </a>
-                <a href="{{ url_for('saas.dashboard') }}" class="catbar-sw{% if _sec_saas %} active{% endif %}">
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
-                    SaaS
-                </a>
-                <a href="/platform/integrations" class="catbar-sw{% if _p.startswith('/platform') %} active{% endif %}">
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
-                    Platform
-                </a>
             </div>
             <div class="cat-tabs">
                 <a href="{{ url_for('main.campaign_hub') }}" class="cat-tab{% if _sec_core %} active{% endif %}">Core Marketing</a>
@@ -631,28 +623,6 @@
                     </a>
                 </div>
 
-                {# SaaS Command Center — shown when on /saas routes #}
-                {% if _sec_saas %}
-                <div class="sidebar-section">
-                    <p class="sidebar-section-label">SaaS Command Center</p>
-                    <a href="{{ url_for('saas.dashboard') }}#accounts" class="sidebar-nav-item{% if _p.startswith('/saas') %} active{% endif %}">
-                        <i data-feather="briefcase"></i> Accounts
-                    </a>
-                    <a href="{{ url_for('saas.dashboard') }}#licenses" class="sidebar-nav-item">
-                        <i data-feather="key"></i> Licenses
-                    </a>
-                    <a href="{{ url_for('saas.dashboard') }}#onboarding" class="sidebar-nav-item">
-                        <i data-feather="check-square"></i> Onboarding
-                    </a>
-                    <a href="{{ url_for('saas.dashboard') }}#pipeline" class="sidebar-nav-item">
-                        <i data-feather="trending-up"></i> Pipeline
-                    </a>
-                    <a href="{{ url_for('saas.dashboard') }}#log" class="sidebar-nav-item">
-                        <i data-feather="activity"></i> Automation Log
-                    </a>
-                </div>
-                {% endif %}
-
                 {# Connections — always visible in sidebar #}
                 <div class="sidebar-section">
                     <p class="sidebar-section-label">Settings</p>
@@ -666,10 +636,25 @@
                     {% endif %}
                 </div>
 
-                {# Platform Integrations — shown when on /platform routes #}
-                {% if _p.startswith('/platform') %}
+                {# Platform Admin — SaaS + Platform tools, admin-only, always shown at bottom #}
+                {% if current_user.is_admin or _user_is_company_admin %}
                 <div class="sidebar-section">
                     <p class="sidebar-section-label">Platform</p>
+                    <a href="{{ url_for('saas.dashboard') }}" class="sidebar-nav-item{% if _p.startswith('/saas') %} active{% endif %}">
+                        <i data-feather="monitor"></i> SaaS Command Center
+                    </a>
+                    <a href="{{ url_for('saas.dashboard') }}#accounts" class="sidebar-nav-item{% if _p.startswith('/saas') %} active{% endif %}" style="padding-left:2rem;font-size:.8rem;">
+                        <i data-feather="briefcase"></i> Accounts
+                    </a>
+                    <a href="{{ url_for('saas.dashboard') }}#licenses" class="sidebar-nav-item" style="padding-left:2rem;font-size:.8rem;">
+                        <i data-feather="key"></i> Licenses
+                    </a>
+                    <a href="{{ url_for('saas.dashboard') }}#onboarding" class="sidebar-nav-item" style="padding-left:2rem;font-size:.8rem;">
+                        <i data-feather="check-square"></i> Onboarding
+                    </a>
+                    <a href="{{ url_for('saas.dashboard') }}#pipeline" class="sidebar-nav-item" style="padding-left:2rem;font-size:.8rem;">
+                        <i data-feather="trending-up"></i> Pipeline
+                    </a>
                     <a href="/platform/integrations" class="sidebar-nav-item{% if _p == '/platform/integrations' %} active{% endif %}">
                         <i data-feather="zap"></i> Integrations
                     </a>

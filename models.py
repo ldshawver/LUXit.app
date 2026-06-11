@@ -706,6 +706,19 @@ class Campaign(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
+    @property
+    def total_recipients(self):
+        from sqlalchemy import func
+        return db.session.query(func.count(CampaignRecipient.id)).filter_by(campaign_id=self.id).scalar() or 0
+
+    @property
+    def sent_count(self):
+        return self.total_recipients if self.status in ('sent', 'active') else 0
+
+    @property
+    def failed_count(self):
+        return 0
+
 
 class CampaignRecipient(db.Model):
     __tablename__ = "campaign_recipient"
