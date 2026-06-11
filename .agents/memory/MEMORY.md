@@ -7,3 +7,4 @@
 - [Comms Hub licensing columns](comms-hub-licensing.md) — UserCompanyAccess has 10 new comms feature-toggle columns; has_comms_hub_access() is the canonical gate; SQLAlchemy model tests must use plain Python stand-in class, not __new__; Flask-SQLAlchemy monkeypatch requires app_context().
 - [Phase A VoIP multi-number architecture](voip-phase-a-arch.md) — TwilioPhoneNumber is the routing source of truth; IVR option needs foreign_keys= to disambiguate dual FK to same table; _resolve_number() lookup order documented.
 - [Contact phone normalization](contact-phone-normalization.md) — canonical normalize_phone/_all_forms in services/google_contacts.py; always try all forms in Contact lookup.
+- [Flask 3.x g is per-AppContext](flask-g-per-appcontext.md) — Flask-Login's g._login_user leaks across requests in a module-scoped app fixture; clear it in _db_rollback setup.
