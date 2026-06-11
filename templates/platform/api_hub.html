@@ -110,11 +110,11 @@
           </span>
           <span class="hub-scope-badge">{{ card.scope }}</span>
           {% if card.source == 'env' %}
-          <span class="hub-src src-env">env-only</span>
+          <span class="hub-src src-env" title="Credential lives only in an environment variable — re-deploy to rotate">Env only</span>
           {% elif card.source == 'db' %}
-          <span class="hub-src src-db">db</span>
+          <span class="hub-src src-db" title="Credential is encrypted in the database — rotate from this UI without a re-deploy">DB (encrypted)</span>
           {% else %}
-          <span class="hub-src src-none">missing</span>
+          <span class="hub-src src-none" title="No credential found in DB or environment">Not set</span>
           {% endif %}
         </div>
       </div>
@@ -128,7 +128,7 @@
         {% if f.masked %}
         <div class="d-flex align-items-center gap-1 flex-wrap">
           <span class="hub-field-val" id="masked-{{ card.slug }}-{{ loop.index }}">{{ f.masked }}</span>
-          <span class="hub-src src-{{ f.source }}">{{ f.source }}</span>
+          <span class="hub-src src-{{ f.source }}">{% if f.source == 'db' %}DB{% elif f.source == 'env' %}Env{% else %}—{% endif %}</span>
           {% if f.source == 'db' %}
           <button class="btn btn-outline-danger btn-sm py-0 px-1"
                   style="font-size:.65rem;line-height:1.4;"
