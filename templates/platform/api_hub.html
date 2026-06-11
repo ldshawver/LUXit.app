@@ -79,8 +79,9 @@
   </div>
   <div class="d-flex gap-2">
     {% if is_platform_admin %}
-    <button class="btn btn-outline-success btn-sm" onclick="importFromEnv(this)">
-      <i data-feather="download-cloud" style="width:14px;height:14px;margin-right:4px;"></i> Import from Env
+    <button class="btn btn-outline-success btn-sm" onclick="importFromEnv(this)"
+            title="Sync any env-var credentials that are set but not yet in the database. Safe to run at any time — existing rows are never overwritten.">
+      <i data-feather="refresh-cw" style="width:14px;height:14px;margin-right:4px;"></i> Re-sync from Env
     </button>
     {% endif %}
     <a href="{{ url_for('integrations.platform_integrations') }}" class="btn btn-outline-secondary btn-sm">
@@ -246,7 +247,7 @@
 <div class="mt-4 p-3" style="background:rgba(255,255,255,.03);border-radius:10px;border:1px solid rgba(255,255,255,.08);">
   <div style="font-size:.8rem;color:rgba(255,255,255,.5);">
     <i data-feather="terminal" style="width:13px;height:13px;margin-right:5px;"></i>
-    CLI backfill (idempotent — same as clicking "Import from Env" above):
+    CLI backfill (idempotent — same as clicking "Re-sync from Env" above):
     <code style="margin-left:.4rem;background:rgba(255,255,255,.07);padding:.1rem .4rem;border-radius:4px;">
       python scripts/backfill_provider_credentials.py
     </code>
@@ -407,14 +408,14 @@ function deleteKey(slug, key, idx) {
 
 function importFromEnv(btn) {
   btn.disabled = true;
-  btn.textContent = 'Importing…';
+  btn.textContent = 'Re-syncing…';
 
   _apiFetch('/api/api-hub/import-from-env')
   .then(data => {
     const el = document.getElementById('import-result');
     if (data.ok) {
       el.className = 'alert alert-success';
-      el.innerHTML = `✓ Import complete — <strong>${data.created}</strong> created, <strong>${data.skipped}</strong> already present / not set.` +
+      el.innerHTML = `✓ Re-sync complete — <strong>${data.created}</strong> new credential(s) imported, <strong>${data.skipped}</strong> already present / env var not set.` +
         (data.errors && data.errors.length ? `<br><small>Errors: ${data.errors.join(', ')}</small>` : '');
     } else {
       el.className = 'alert alert-danger';
@@ -431,7 +432,7 @@ function importFromEnv(btn) {
   })
   .finally(() => {
     btn.disabled = false;
-    btn.innerHTML = '<i data-feather="download-cloud" style="width:14px;height:14px;margin-right:4px;"></i> Import from Env';
+    btn.innerHTML = '<i data-feather="refresh-cw" style="width:14px;height:14px;margin-right:4px;"></i> Re-sync from Env';
     if (window.feather) feather.replace();
   });
 }

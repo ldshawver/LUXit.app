@@ -1,11 +1,15 @@
 """
-Idempotent backfill script — imports provider env-var credentials into the
+Incremental, idempotent backfill — syncs provider env-var credentials into the
 ProviderCredential table.
 
 Usage (from project root):
     python scripts/backfill_provider_credentials.py
 
-Safe to run multiple times.  Existing rows are skipped; new ones are inserted.
+Safe to run multiple times — existing DB rows are skipped, only env vars that
+have no matching DB row are inserted.  This means it works correctly on both:
+  • First deploy  (all rows missing → full import)
+  • Subsequent runs / new env vars added later (only the new ones are inserted)
+
 Only masked values appear in the log output — never raw secrets.
 
 The script requires an app context so it can use the SQLAlchemy models and the

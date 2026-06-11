@@ -999,84 +999,43 @@ def api_hub_delete(slug):
 @login_required
 def api_hub_import_from_env():
     """
-    Trigger the backfill script programmatically (platform admin only).
-    Imports all env-based credentials into the DB — idempotent.
-    Returns counts of created/skipped rows.
-    Audit logs an 'imported' action per provider.
+    Re-sync env-var credentials into the DB (platform admin only).
+
+    Delegates entirely to run_backfill() — the single source of truth for
+    the CREDENTIALS map — so the UI button and the startup auto-backfill
+    always cover exactly the same set of 52 provider keys.
+
+    Idempotent: existing DB rows are never updated or deleted; only env vars
+    that are set but have no matching (provider_slug, scope, key) row are
+    inserted.  Raw secret values are encrypted before storage and are never
+    logged.
     """
     if not current_user.is_admin:
         abort(403)
 
-    import os
-    from services.secret_vault import vault
-    from models import ProviderCredential, ApiHubAuditLog
-    from extensions import db
     from services.provider_config import write_audit_log
 
-    created = 0
-    skipped = 0
-    errors  = []
-
-    for slug, _name, _cat, scope, _icon, env_keys in _HUB_PROVIDERS:
-        for env_key in env_keys:
-            try:
-                from services.provider_config import get_provider_config as _gpc_imp
-                val = _gpc_imp(slug, scope, field=env_key, key=env_key)
-            except Exception:
-                val = None
-            if not val:
-                skipped += 1
-                continue
-            try:
-                existing = ProviderCredential.query.filter_by(
-                    provider_slug=slug, scope=scope, key=env_key,
-                    company_id=None, is_active=True,
-                ).first()
-                if existing:
-                    skipped += 1
-                    continue
-                encrypted = vault.encrypt(val)
-                row = ProviderCredential(
-                    provider_slug   = slug,
-                    scope           = scope,
-                    key             = env_key,
-                    company_id      = None,
-                    encrypted_value = encrypted,
-                    source          = "env",
-                    is_active       = True,
-                    audit_notes     = "imported via API Hub UI",
-                )
-                db.session.add(row)
-                created += 1
-                # Per-credential audit row — written before commit so failures are traceable
-                write_audit_log(slug, "imported", scope,
-                                actor_user_id=current_user.id,
-                                result="ok",
-                                notes=f"key={env_key} source=env")
-            except Exception as e:
-                errors.append(f"{slug}/{env_key}: {str(e)[:100]}")
-                write_audit_log(slug, "imported", scope,
-                                actor_user_id=current_user.id,
-                                result="error",
-                                notes=f"key={env_key} error={str(e)[:120]}")
-
     try:
-        db.session.commit()
-    except Exception as e:
-        db.session.rollback()
-        return jsonify({"ok": False, "error": str(e)}), 500
+        from scripts.backfill_provider_credentials import run_backfill
+        imported, skipped, missing = run_backfill()
+    except Exception as exc:
+        logger.error("api_hub_import_from_env: run_backfill() failed: %s", exc)
+        write_audit_log("*", "import_summary", "platform",
+                        actor_user_id=current_user.id,
+                        result="error",
+                        notes=f"run_backfill() error: {str(exc)[:200]}")
+        return jsonify({"ok": False, "error": str(exc)}), 500
 
-    # Per-credential audit rows are written inside the loop above (one per imported key).
-    # Write a summary row so the aggregate is also queryable.
-    write_audit_log("*", "import_summary", "platform", actor_user_id=current_user.id,
+    write_audit_log("*", "import_summary", "platform",
+                    actor_user_id=current_user.id,
                     result="ok",
-                    notes=f"created={created} skipped={skipped} errors={len(errors)}")
+                    notes=f"created={imported} skipped={skipped} missing_from_env={missing}")
 
     return jsonify({
-        "ok": True,
-        "created": created,
-        "skipped": skipped,
-        "errors":  errors[:10],
+        "ok":      True,
+        "created": imported,
+        "skipped": skipped + missing,
+        "errors":  [],
     })
 
 
