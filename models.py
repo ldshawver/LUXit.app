@@ -207,6 +207,16 @@ class User(UserMixin, db.Model):
     def __repr__(self):
         return f"<User {self.username}>"
 
+    def set_password(self, password: str):
+        """Set password_hash for legacy tests and admin-created users."""
+        from werkzeug.security import generate_password_hash
+        self.password_hash = generate_password_hash(password)
+
+    def check_password(self, password: str) -> bool:
+        """Verify a plaintext password against password_hash."""
+        from werkzeug.security import check_password_hash
+        return bool(self.password_hash and check_password_hash(self.password_hash, password))
+
     @property
     def full_name(self):
         return (
@@ -1584,7 +1594,7 @@ class AgentReport(db.Model):
     agent_name = db.Column(db.String(200))
     report_type = db.Column(db.String(50), nullable=False)
     report_title = db.Column(db.String(500))
-    report_data = db.Column(db.Text)
+    report_data = db.Column(JSON)
     insights = db.Column(db.Text)
     period_start = db.Column(db.DateTime)
     period_end = db.Column(db.DateTime)
@@ -1767,12 +1777,29 @@ class Competitor(db.Model):
     name = db.Column(db.String(255))
     website_url = db.Column(db.String(500))
     industry = db.Column(db.String(100))
-    status = db.Column(db.String(50))
+    status = db.Column(db.String(50), default="active")
     notes = db.Column(db.Text)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     company = db.relationship("Company", backref="competitors")
+
+
+class CompetitorContent(db.Model):
+    """Content item captured for a tracked competitor."""
+    __tablename__ = "competitor_content"
+
+    id = db.Column(db.Integer, primary_key=True)
+    competitor_id = db.Column(db.Integer, db.ForeignKey("competitor.id"), nullable=False, index=True)
+    content_type = db.Column(db.String(100))
+    title = db.Column(db.String(500))
+    url = db.Column(db.String(500))
+    summary = db.Column(db.Text)
+    published_at = db.Column(db.DateTime)
+    raw_data = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    competitor = db.relationship("Competitor", backref="content_items")
 
 
 class FacebookOAuth(db.Model):
@@ -2928,18 +2955,84 @@ class TwilioCallLog(db.Model):
     id           = db.Column(db.Integer, primary_key=True)
     company_id   = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=False)
     twilio_sid   = db.Column(db.String(100))
+    parent_call_sid = db.Column(db.String(100), nullable=True)
     direction    = db.Column(db.String(20))     # inbound | outbound
     from_number  = db.Column(db.String(20))
     to_number    = db.Column(db.String(20))
+    forwarded_to_number = db.Column(db.String(20), nullable=True)
+    contact_id   = db.Column(db.Integer, db.ForeignKey("contact.id"), nullable=True)
+    customer_id  = db.Column(db.Integer, nullable=True)
+    assigned_user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True)
+    answered_by_user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True)
     status       = db.Column(db.String(50))     # completed | missed | no-answer | busy | failed
     duration     = db.Column(db.Integer, default=0)
+    answered_at  = db.Column(db.DateTime, nullable=True)
+    ended_at     = db.Column(db.DateTime, nullable=True)
+    recording_url = db.Column(db.String(500), nullable=True)
+    recording_sid = db.Column(db.String(100), nullable=True)
+    voicemail_url = db.Column(db.String(500), nullable=True)
+    voicemail_sid = db.Column(db.String(100), nullable=True)
+    transcription_text = db.Column(db.Text, nullable=True)
+    transcription_status = db.Column(db.String(30), default="not_requested")
+    transcription_provider = db.Column(db.String(80), nullable=True)
     caller_name  = db.Column(db.String(200))
     notes        = db.Column(db.Text)
     missed_text_sent = db.Column(db.Boolean, default=False)
     raw_payload  = db.Column(JSON)
+    metadata_json = db.Column(JSON)
+    is_read      = db.Column(db.Boolean, default=False)
+    is_archived  = db.Column(db.Boolean, default=False)
     created_at   = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at   = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     company = db.relationship("Company", backref="twilio_call_logs")
+
+
+class PhoneSettings(db.Model):
+    """Tenant-level PWA phone routing, voicemail, SMS, recording, and transcription settings."""
+    __tablename__ = "phone_settings"
+
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=False, unique=True, index=True)
+    business_hours = db.Column(JSON, default=dict)
+    timezone = db.Column(db.String(80), default="America/Los_Angeles")
+    during_hours_route = db.Column(db.String(30), default="ring_pwa")  # ring_pwa | forward | voicemail | message_then_route
+    after_hours_route = db.Column(db.String(30), default="voicemail")
+    forward_number = db.Column(db.String(20))
+    fallback_forward_number = db.Column(db.String(20))
+    after_hours_forward_number = db.Column(db.String(20))
+    after_hours_fallback_forward_number = db.Column(db.String(20))
+    ring_duration_seconds = db.Column(db.Integer, default=25)
+    voicemail_greeting = db.Column(db.Text)
+    after_hours_voicemail_greeting = db.Column(db.Text)
+    missed_call_sms_enabled = db.Column(db.Boolean, default=False)
+    missed_call_sms_body = db.Column(db.Text)
+    after_hours_sms_enabled = db.Column(db.Boolean, default=False)
+    after_hours_sms_body = db.Column(db.Text)
+    recording_enabled = db.Column(db.Boolean, default=False)
+    transcription_enabled = db.Column(db.Boolean, default=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    company = db.relationship("Company", backref=db.backref("phone_settings", uselist=False))
+
+
+class CallEvent(db.Model):
+    """Idempotent audit trail for Twilio voice webhook events."""
+    __tablename__ = "call_event"
+
+    id = db.Column(db.Integer, primary_key=True)
+    call_log_id = db.Column(db.Integer, db.ForeignKey("twilio_call_log.id"), nullable=False, index=True)
+    event_type = db.Column(db.String(80), nullable=False)
+    provider_event_id = db.Column(db.String(160), nullable=True)
+    payload = db.Column(JSON)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    call_log = db.relationship("TwilioCallLog", backref="events")
+
+    __table_args__ = (
+        db.UniqueConstraint("call_log_id", "event_type", "provider_event_id", name="uq_call_event_idempotency"),
+    )
 
 
 # ---------------------------------------------------------------------------

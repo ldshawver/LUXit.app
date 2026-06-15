@@ -8,6 +8,7 @@ from lux.models.base import TimestampMixin
 
 class User(UserMixin, TimestampMixin, db.Model):
     """User model for authentication and authorization."""
+    __table_args__ = {"extend_existing": True}
     
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(64), unique=True, nullable=False, index=True)

@@ -1,0 +1,145 @@
+{% extends "base.html" %}
+{% block title %}SMS & Calls Admin — LUXit{% endblock %}
+{% block content %}
+<div class="container-fluid py-3 admin-comms" style="max-width:1280px;">
+  <div class="d-flex align-items-start justify-content-between gap-3 flex-wrap mb-4">
+    <div>
+      <h2 class="mb-1 d-flex align-items-center gap-2"><i data-feather="phone-call"></i> SMS &amp; Calls Admin</h2>
+      <p class="text-muted mb-0">Backend-connected controls for {{ company.name }} using the current PWA phone, Twilio, SMS campaign, and call-log implementation.</p>
+    </div>
+    <div class="d-flex gap-2 flex-wrap">
+      <a class="btn btn-outline-primary btn-sm" href="{{ url_for('inbox_pwa.pwa_calls') }}">Open PWA Calls</a>
+      <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('twilio.comms_hub') }}">Communications Hub</a>
+      <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('twilio.number_management') }}">Manage Numbers</a>
+    </div>
+  </div>
+
+  <ul class="nav nav-pills mb-3" id="adminCommsTabs" role="tablist">
+    <li class="nav-item"><button class="nav-link active" data-bs-toggle="pill" data-bs-target="#sms-settings" type="button">SMS Settings</button></li>
+    <li class="nav-item"><button class="nav-link" data-bs-toggle="pill" data-bs-target="#sms-campaigns" type="button">SMS Campaigns</button></li>
+    <li class="nav-item"><button class="nav-link" data-bs-toggle="pill" data-bs-target="#call-settings" type="button">Call Settings</button></li>
+    <li class="nav-item"><button class="nav-link" data-bs-toggle="pill" data-bs-target="#call-logs" type="button">Call Logs</button></li>
+    <li class="nav-item"><button class="nav-link" data-bs-toggle="pill" data-bs-target="#voicemail" type="button">Voicemail</button></li>
+    <li class="nav-item"><button class="nav-link" data-bs-toggle="pill" data-bs-target="#numbers" type="button">Numbers</button></li>
+  </ul>
+
+  <div class="tab-content">
+    <section class="tab-pane fade show active" id="sms-settings">
+      <div class="row g-3">
+        <div class="col-lg-5">
+          <div class="card h-100"><div class="card-body">
+            <h5>Auto Reply Rules</h5>
+            <p class="text-muted small">Rules are served by the existing Twilio auto-reply backend; this admin page links to the rule editor instead of duplicating logic.</p>
+            <div class="list-group list-group-flush mb-3">
+              {% for rule in auto_reply_rules %}
+              <div class="list-group-item bg-transparent px-0 d-flex justify-content-between gap-3">
+                <div><strong>{{ rule.name }}</strong><div class="text-muted small">{{ rule.trigger_type }} · {{ rule.action }} · priority {{ rule.priority or 0 }}</div></div>
+                <span class="badge {{ 'bg-success' if rule.is_active else 'bg-secondary' }}">{{ 'Active' if rule.is_active else 'Off' }}</span>
+              </div>
+              {% else %}
+              <div class="text-muted small">No auto-reply rules found.</div>
+              {% endfor %}
+            </div>
+            <a href="{{ url_for('twilio.rules') }}" class="btn btn-primary btn-sm">Manage Auto Reply Rules</a>
+          </div></div>
+        </div>
+        <div class="col-lg-7">
+          <div class="card h-100"><div class="card-body">
+            <h5>Missed-call and after-hours SMS</h5>
+            <form id="smsPhoneSettingsForm" class="row g-3">
+              <div class="col-md-6 form-check form-switch ms-2">
+                <input class="form-check-input" type="checkbox" id="missed_call_sms_enabled" name="missed_call_sms_enabled" {% if phone_settings and phone_settings.missed_call_sms_enabled %}checked{% endif %}>
+                <label class="form-check-label" for="missed_call_sms_enabled">Missed-call SMS enabled</label>
+              </div>
+              <div class="col-md-6 form-check form-switch ms-2">
+                <input class="form-check-input" type="checkbox" id="after_hours_sms_enabled" name="after_hours_sms_enabled" {% if phone_settings and phone_settings.after_hours_sms_enabled %}checked{% endif %}>
+                <label class="form-check-label" for="after_hours_sms_enabled">After-hours SMS enabled</label>
+              </div>
+              <div class="col-12"><label class="form-label">Missed-call SMS body</label><textarea class="form-control" name="missed_call_sms_body" rows="3">{{ phone_settings.missed_call_sms_body if phone_settings else '' }}</textarea></div>
+              <div class="col-12"><label class="form-label">After-hours SMS body</label><textarea class="form-control" name="after_hours_sms_body" rows="3">{{ phone_settings.after_hours_sms_body if phone_settings else '' }}</textarea></div>
+              <div class="col-12"><button class="btn btn-primary btn-sm" type="submit">Save SMS Settings</button><span id="smsSettingsStatus" class="small text-muted ms-2"></span></div>
+            </form>
+            <div class="alert alert-info mt-3 mb-0 small">STOP suppression and cooldown behavior are enforced in the Twilio SMS backend and covered by the focused phone tests.</div>
+          </div></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="tab-pane fade" id="sms-campaigns">
+      <div class="card"><div class="card-body">
+        <div class="d-flex justify-content-between align-items-center mb-3"><h5 class="mb-0">SMS Campaigns</h5><a class="btn btn-primary btn-sm" href="{{ url_for('main.sms_campaigns') }}">Open Campaign Dashboard</a></div>
+        <div class="table-responsive"><table class="table table-sm align-middle"><thead><tr><th>Name</th><th>Status</th><th>Scheduled</th><th>Sent</th></tr></thead><tbody>
+        {% for campaign in sms_campaigns %}<tr><td>{{ campaign.name }}</td><td>{{ campaign.status or 'draft' }}</td><td>{{ campaign.scheduled_at or '—' }}</td><td>{{ campaign.sent_at or '—' }}</td></tr>{% else %}<tr><td colspan="4" class="text-muted">No SMS campaigns found.</td></tr>{% endfor %}
+        </tbody></table></div>
+      </div></div>
+    </section>
+
+    <section class="tab-pane fade" id="call-settings">
+      <div class="row g-3">
+        <div class="col-lg-6"><div class="card h-100"><div class="card-body">
+          <h5>Routing &amp; timed forwarding</h5>
+          <form id="callPhoneSettingsForm" class="row g-3">
+            <div class="col-md-6"><label class="form-label">During-hours route</label><select class="form-select" name="during_hours_route"><option value="ring_pwa" {% if not phone_settings or phone_settings.during_hours_route == 'ring_pwa' %}selected{% endif %}>Ring PWA users</option><option value="forward" {% if phone_settings and phone_settings.during_hours_route == 'forward' %}selected{% endif %}>Forward</option><option value="voicemail" {% if phone_settings and phone_settings.during_hours_route == 'voicemail' %}selected{% endif %}>Voicemail</option></select></div>
+            <div class="col-md-6"><label class="form-label">After-hours route</label><select class="form-select" name="after_hours_route"><option value="voicemail" {% if not phone_settings or phone_settings.after_hours_route == 'voicemail' %}selected{% endif %}>Voicemail</option><option value="forward" {% if phone_settings and phone_settings.after_hours_route == 'forward' %}selected{% endif %}>Forward</option><option value="ring_pwa" {% if phone_settings and phone_settings.after_hours_route == 'ring_pwa' %}selected{% endif %}>Ring PWA users</option></select></div>
+            <div class="col-md-6"><label class="form-label">Business-hours forward number</label><input class="form-control" name="forward_number" value="{{ phone_settings.forward_number if phone_settings else '' }}"></div>
+            <div class="col-md-6"><label class="form-label">Fallback number</label><input class="form-control" name="fallback_forward_number" value="{{ phone_settings.fallback_forward_number if phone_settings else '' }}"></div>
+            <div class="col-md-6"><label class="form-label">After-hours forward number</label><input class="form-control" name="after_hours_forward_number" value="{{ phone_settings.after_hours_forward_number if phone_settings else '' }}"></div>
+            <div class="col-md-6"><label class="form-label">After-hours fallback</label><input class="form-control" name="after_hours_fallback_forward_number" value="{{ phone_settings.after_hours_fallback_forward_number if phone_settings else '' }}"></div>
+            <div class="col-md-6"><label class="form-label">Ring duration before fallback/voicemail</label><input class="form-control" type="number" min="5" max="120" name="ring_duration_seconds" value="{{ phone_settings.ring_duration_seconds if phone_settings else 25 }}"></div>
+            <div class="col-md-6"><label class="form-label">Timezone</label><input class="form-control" name="timezone" value="{{ phone_settings.timezone if phone_settings else 'America/Los_Angeles' }}"></div>
+            <div class="col-12"><button class="btn btn-primary btn-sm" type="submit">Save Call Routing</button><span id="callSettingsStatus" class="small text-muted ms-2"></span></div>
+          </form>
+        </div></div></div>
+        <div class="col-lg-6"><div class="card h-100"><div class="card-body">
+          <h5>Recording, transcription &amp; escalation</h5>
+          <form id="mediaPhoneSettingsForm" class="row g-3">
+            <div class="col-md-6 form-check form-switch ms-2"><input class="form-check-input" type="checkbox" id="recording_enabled" name="recording_enabled" {% if phone_settings and phone_settings.recording_enabled %}checked{% endif %}><label class="form-check-label" for="recording_enabled">Record calls</label></div>
+            <div class="col-md-6 form-check form-switch ms-2"><input class="form-check-input" type="checkbox" id="transcription_enabled" name="transcription_enabled" {% if not phone_settings or phone_settings.transcription_enabled %}checked{% endif %}><label class="form-check-label" for="transcription_enabled">Transcribe voicemail</label></div>
+            <div class="col-12"><label class="form-label">Business-hours voicemail greeting</label><textarea class="form-control" name="voicemail_greeting" rows="3">{{ phone_settings.voicemail_greeting if phone_settings else '' }}</textarea></div>
+            <div class="col-12"><label class="form-label">After-hours voicemail greeting</label><textarea class="form-control" name="after_hours_voicemail_greeting" rows="3">{{ phone_settings.after_hours_voicemail_greeting if phone_settings else '' }}</textarea></div>
+            <div class="col-12"><button class="btn btn-primary btn-sm" type="submit">Save Media Settings</button><span id="mediaSettingsStatus" class="small text-muted ms-2"></span></div>
+          </form>
+          <div class="alert alert-warning mt-3 mb-0 small">Multi-step missed-call escalation is UI-visible here through SMS and forwarding controls; a separate escalation-chain backend has not been added.</div>
+        </div></div></div>
+      </div>
+    </section>
+
+    <section class="tab-pane fade" id="call-logs">
+      <div class="card"><div class="card-body">
+        <form class="row g-2 mb-3" method="get" action="{{ url_for('admin_communications.communications_admin') }}">
+          <input type="hidden" name="tab" value="call-logs"><div class="col-md-3"><select class="form-select" name="status"><option value="all">All ({{ call_counts.all }})</option><option value="missed">Missed ({{ call_counts.missed }})</option><option value="voicemail">Voicemail ({{ call_counts.voicemail }})</option><option value="forwarded">Forwarded ({{ call_counts.forwarded }})</option><option value="recordings">Recordings ({{ call_counts.recordings }})</option></select></div>
+          <div class="col-md-3"><select class="form-select" name="direction"><option value="all">All directions</option><option value="inbound">Inbound</option><option value="outbound">Outbound</option></select></div>
+          <div class="col-md-4"><input class="form-control" name="q" value="{{ search }}" placeholder="Search number, caller, or SID"></div><div class="col-md-2"><button class="btn btn-outline-primary w-100" type="submit">Filter</button></div>
+        </form>
+        <div class="table-responsive"><table class="table table-sm align-middle"><thead><tr><th>Date</th><th>Caller</th><th>Status</th><th>Duration</th><th>Recording</th><th>Voicemail</th></tr></thead><tbody>
+        {% for call in calls %}<tr><td>{{ call.created_at }}</td><td><strong>{{ call.caller_name or call.from_number or 'Unknown' }}</strong><div class="text-muted small">{{ call.from_number }} → {{ call.to_number }}</div></td><td><span class="badge bg-secondary">{{ call.status or 'ringing' }}</span></td><td>{{ call.duration or 0 }}s</td><td>{% if call.recording_url %}<a href="{{ call.recording_url }}" target="_blank">Play</a>{% else %}—{% endif %}</td><td>{% if call.voicemail_url %}<a href="{{ call.voicemail_url }}" target="_blank">Play</a>{% else %}—{% endif %}</td></tr>{% else %}<tr><td colspan="6" class="text-muted">No calls match the current filters.</td></tr>{% endfor %}
+        </tbody></table></div>
+      </div></div>
+    </section>
+
+    <section class="tab-pane fade" id="voicemail">
+      <div class="card"><div class="card-body"><h5>Voicemail Inbox Controls</h5><p class="text-muted small">Playback uses stored Twilio recording URLs. Mark-read/archive actions call the existing PWA call APIs.</p>
+        <div class="list-group list-group-flush">
+          {% for vm in voicemails %}<div class="list-group-item bg-transparent px-0"><div class="d-flex justify-content-between gap-3"><div><strong>{{ vm.from_number or 'Unknown caller' }}</strong><div class="text-muted small">{{ vm.created_at }} · {{ vm.duration_secs or 0 }}s</div>{% if vm.transcript %}<div class="small mt-1">{{ vm.transcript[:180] }}</div>{% endif %}</div><div class="text-end">{% if vm.recording_url %}<a class="btn btn-sm btn-outline-primary" href="{{ vm.recording_url }}" target="_blank">Play</a>{% endif %}{% if vm.call_log_id %}<button class="btn btn-sm btn-outline-secondary" data-call-action="mark-read" data-call-id="{{ vm.call_log_id }}">Mark read</button><button class="btn btn-sm btn-outline-danger" data-call-action="archive" data-call-id="{{ vm.call_log_id }}">Archive</button>{% endif %}</div></div></div>{% else %}<div class="text-muted small">No voicemail messages found.</div>{% endfor %}
+        </div>
+      </div></div>
+    </section>
+
+    <section class="tab-pane fade" id="numbers">
+      <div class="card"><div class="card-body"><div class="d-flex justify-content-between align-items-center mb-3"><h5 class="mb-0">Multi-number management</h5><a class="btn btn-primary btn-sm" href="{{ url_for('twilio.number_management') }}">Open Number Manager</a></div>
+        <div class="table-responsive"><table class="table table-sm"><thead><tr><th>Number</th><th>App</th><th>SMS</th><th>Voice</th><th>Forwarding</th></tr></thead><tbody>
+        {% for number in phone_numbers %}<tr><td>{{ number.phone_number }}{% if number.is_primary %} <span class="badge bg-primary">Primary</span>{% endif %}</td><td>{{ number.app_assignment }}</td><td>{{ 'On' if number.sms_enabled else 'Off' }}</td><td>{{ 'On' if number.voice_enabled else 'Off' }}</td><td>{{ number.call_forward_to or number.sms_forward_to or '—' }}</td></tr>{% else %}<tr><td colspan="5" class="text-muted">No managed Twilio numbers found.</td></tr>{% endfor %}
+        </tbody></table></div>
+      </div></div>
+    </section>
+  </div>
+</div>
+<script>
+const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content || '{{ csrf_token() }}';
+function collectPhoneSettings(form){const fd=new FormData(form);const data={};for(const [k,v] of fd.entries())data[k]=v;form.querySelectorAll('input[type="checkbox"]').forEach(i=>data[i.name]=i.checked);if(data.ring_duration_seconds)data.ring_duration_seconds=Number(data.ring_duration_seconds);return data;}
+async function savePhoneSettings(form,statusId){const el=document.getElementById(statusId);el.textContent='Saving…';const current=await fetch('/api/phone/settings',{credentials:'same-origin'}).then(r=>r.json()).catch(()=>({}));const payload=Object.assign({},current,collectPhoneSettings(form));const r=await fetch('/api/phone/settings',{method:'PUT',credentials:'same-origin',headers:{'Content-Type':'application/json','X-CSRFToken':csrfToken},body:JSON.stringify(payload)});el.textContent=r.ok?'Saved.':'Save failed.';el.className='small ms-2 '+(r.ok?'text-success':'text-danger');}
+const phoneForms={smsPhoneSettingsForm:'smsSettingsStatus',callPhoneSettingsForm:'callSettingsStatus',mediaPhoneSettingsForm:'mediaSettingsStatus'};Object.entries(phoneForms).forEach(([id,statusId])=>{const form=document.getElementById(id);if(form)form.addEventListener('submit',(e)=>{e.preventDefault();savePhoneSettings(form,statusId);});});
+document.querySelectorAll('[data-call-action]').forEach((btn)=>btn.addEventListener('click',async()=>{const action=btn.dataset.callAction;const id=btn.dataset.callId;const r=await fetch(`/api/calls/${id}/${action}`,{method:'POST',credentials:'same-origin',headers:{'X-CSRFToken':csrfToken}});btn.textContent=r.ok?'Done':'Failed';}));
+if(window.feather) feather.replace();
+</script>
+{% endblock %}

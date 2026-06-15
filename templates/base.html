@@ -547,6 +547,11 @@
                         <i data-feather="phone-call"></i> Communications Hub
                     </a>
                     {% if current_user.is_authenticated and (current_user.is_admin or current_user.is_platform_admin) %}
+                    <a href="{{ url_for('admin_communications.communications_admin') }}" class="sidebar-nav-item{% if _p.startswith('/admin/communications') %} active{% endif %}">
+                        <i data-feather="settings"></i> SMS &amp; Calls Admin
+                    </a>
+                    {% endif %}
+                    {% if current_user.is_authenticated and (current_user.is_admin or current_user.is_platform_admin) %}
                     <a href="{{ url_for('twilio.number_management') }}" class="sidebar-nav-item{% if _p.startswith('/twilio/numbers') %} active{% endif %}">
                         <i data-feather="hash"></i> Phone Numbers
                     </a>
@@ -655,7 +660,7 @@
                     <a href="{{ url_for('saas.dashboard') }}#pipeline" class="sidebar-nav-item" style="padding-left:2rem;font-size:.8rem;">
                         <i data-feather="trending-up"></i> Pipeline
                     </a>
-                    <a href="/platform/integrations" class="sidebar-nav-item{% if _p == '/platform/integrations' %} active{% endif %}">
+                    <a href="/global-admin/integrations" class="sidebar-nav-item{% if _p in ['/platform/integrations', '/global-admin/integrations'] %} active{% endif %}">
                         <i data-feather="zap"></i> Integrations
                     </a>
                     <a href="/platform/api-hub" class="sidebar-nav-item{% if _p == '/platform/api-hub' %} active{% endif %}">
