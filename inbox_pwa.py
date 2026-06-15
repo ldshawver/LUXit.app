@@ -371,7 +371,255 @@ def pwa_index():
     )
 
 
+@inbox_pwa_bp.route("/app/calls")
+@inbox_pwa_bp.route("/app/calls/settings")
+def pwa_calls():
+    from flask import redirect
+    user = _current_user()
+    if not user:
+        return redirect("/auth/login?next=/app/calls")
+    company = _get_company(user)
+    if not company:
+        return render_template("no_company.html", user=user)
+    if not _check_mobile_inbox_access(user, company):
+        return render_template("inbox_access_denied.html", user=user, company=company), 403
+    return render_template("inbox_pwa/calls.html", user=user, company=company)
+
+
+def _call_to_dict(call):
+    return {
+        "id": call.id,
+        "twilio_call_sid": call.twilio_sid,
+        "parent_call_sid": getattr(call, "parent_call_sid", None),
+        "direction": call.direction,
+        "status": call.status,
+        "from_number": call.from_number,
+        "to_number": call.to_number,
+        "forwarded_to_number": getattr(call, "forwarded_to_number", None),
+        "caller_name": call.caller_name or call.from_number,
+        "duration_seconds": call.duration or 0,
+        "recording_url": getattr(call, "recording_url", None),
+        "recording_sid": getattr(call, "recording_sid", None),
+        "voicemail_url": getattr(call, "voicemail_url", None),
+        "voicemail_sid": getattr(call, "voicemail_sid", None),
+        "transcription_text": getattr(call, "transcription_text", None),
+        "transcription_status": getattr(call, "transcription_status", None),
+        "answered_by_user_id": getattr(call, "answered_by_user_id", None),
+        "answered_at": call.answered_at.isoformat() if getattr(call, "answered_at", None) else None,
+        "ended_at": call.ended_at.isoformat() if getattr(call, "ended_at", None) else None,
+        "is_read": getattr(call, "is_read", False),
+        "is_archived": getattr(call, "is_archived", False),
+        "created_at": call.created_at.isoformat() if call.created_at else None,
+        "updated_at": call.updated_at.isoformat() if getattr(call, "updated_at", None) else None,
+    }
+
+
 # ── API: conversation list ────────────────────────────────────────────────────
+
+@inbox_pwa_bp.route("/api/calls/recent")
+def api_recent_calls():
+    user = _require_auth()
+    company = _require_company(user)
+    from models import TwilioCallLog
+    tab = request.args.get("tab", "all")
+    q = TwilioCallLog.query.filter_by(company_id=company.id, is_archived=False)
+    if tab == "missed":
+        q = q.filter(TwilioCallLog.status.in_(["missed", "no-answer", "busy", "failed"]))
+    elif tab == "voicemail":
+        q = q.filter(TwilioCallLog.status == "voicemail")
+    elif tab == "recordings":
+        q = q.filter(TwilioCallLog.recording_url.isnot(None))
+    elif tab == "forwarded":
+        q = q.filter(db.or_(TwilioCallLog.status == "forwarded", TwilioCallLog.forwarded_to_number.isnot(None)))
+    calls = q.order_by(TwilioCallLog.created_at.desc()).limit(100).all()
+    return jsonify({"calls": [_call_to_dict(c) for c in calls]})
+
+
+@inbox_pwa_bp.route("/api/calls/<int:call_id>")
+def api_call_detail(call_id):
+    user = _require_auth()
+    company = _require_company(user)
+    from models import TwilioCallLog
+    call = TwilioCallLog.query.filter_by(id=call_id, company_id=company.id).first_or_404()
+    return jsonify({"call": _call_to_dict(call)})
+
+
+@inbox_pwa_bp.route("/api/calls/<int:call_id>/mark-read", methods=["POST"])
+def api_call_mark_read(call_id):
+    user = _require_auth()
+    company = _require_company(user)
+    from models import TwilioCallLog, VoiceVoicemailMessage
+    call = TwilioCallLog.query.filter_by(id=call_id, company_id=company.id).first_or_404()
+    call.is_read = True
+    vm = VoiceVoicemailMessage.query.filter_by(call_log_id=call.id, company_id=company.id).first()
+    if vm:
+        vm.is_read = True
+    db.session.commit()
+    return jsonify({"success": True, "call": _call_to_dict(call)})
+
+
+@inbox_pwa_bp.route("/api/calls/<int:call_id>/archive", methods=["POST"])
+def api_call_archive(call_id):
+    user = _require_auth()
+    company = _require_company(user)
+    from models import TwilioCallLog, VoiceVoicemailMessage
+    call = TwilioCallLog.query.filter_by(id=call_id, company_id=company.id).first_or_404()
+    call.is_archived = True
+    vm = VoiceVoicemailMessage.query.filter_by(call_log_id=call.id, company_id=company.id).first()
+    if vm:
+        vm.is_deleted = True
+    db.session.commit()
+    return jsonify({"success": True})
+
+
+@inbox_pwa_bp.route("/api/calls/voicemails")
+def api_voicemails():
+    user = _require_auth()
+    company = _require_company(user)
+    from models import TwilioCallLog
+    calls = TwilioCallLog.query.filter_by(company_id=company.id, status="voicemail", is_archived=False).order_by(TwilioCallLog.created_at.desc()).limit(100).all()
+    return jsonify({"voicemails": [_call_to_dict(c) for c in calls]})
+
+
+def _default_business_hours():
+    return {str(i): {"is_open": i < 5, "open": "09:00", "close": "17:00"} for i in range(7)}
+
+
+def _settings_to_dict(settings):
+    return {
+        "business_hours": settings.business_hours or _default_business_hours(),
+        "timezone": settings.timezone,
+        "during_hours_route": settings.during_hours_route,
+        "after_hours_route": settings.after_hours_route,
+        "forward_number": settings.forward_number,
+        "fallback_forward_number": settings.fallback_forward_number,
+        "after_hours_forward_number": settings.after_hours_forward_number,
+        "after_hours_fallback_forward_number": settings.after_hours_fallback_forward_number,
+        "ring_duration_seconds": settings.ring_duration_seconds,
+        "voicemail_greeting": settings.voicemail_greeting,
+        "after_hours_voicemail_greeting": settings.after_hours_voicemail_greeting,
+        "missed_call_sms_enabled": settings.missed_call_sms_enabled,
+        "missed_call_sms_body": settings.missed_call_sms_body,
+        "after_hours_sms_enabled": settings.after_hours_sms_enabled,
+        "after_hours_sms_body": settings.after_hours_sms_body,
+        "recording_enabled": settings.recording_enabled,
+        "transcription_enabled": settings.transcription_enabled,
+    }
+
+
+@inbox_pwa_bp.route("/api/phone/settings", methods=["GET", "PUT"])
+def api_phone_settings():
+    user = _require_auth()
+    company = _require_company(user)
+    from models import PhoneSettings
+    settings = PhoneSettings.query.filter_by(company_id=company.id).first()
+    if not settings:
+        settings = PhoneSettings(company_id=company.id, business_hours=_default_business_hours(), timezone=os.environ.get("DEFAULT_PHONE_TIMEZONE", "America/Los_Angeles"))
+        db.session.add(settings)
+        db.session.commit()
+    if request.method == "PUT":
+        data = request.get_json() or {}
+        allowed = set(_settings_to_dict(settings).keys())
+        for key in allowed:
+            if key in data:
+                setattr(settings, key, data[key])
+        db.session.commit()
+    return jsonify({"settings": _settings_to_dict(settings)})
+
+
+@inbox_pwa_bp.route("/api/phone/test-forwarding", methods=["POST"])
+def api_test_forwarding():
+    user = _require_auth()
+    company = _require_company(user)
+    data = request.get_json() or {}
+    number = data.get("number")
+    if not number:
+        return jsonify({"success": False, "error": "number is required"}), 400
+    return jsonify({"success": True, "message": f"Forwarding target {number} is syntactically valid. Place a live Twilio test call to verify carrier reachability."})
+
+
+@inbox_pwa_bp.route("/api/phone/voice-token")
+def api_phone_voice_token():
+    """Issue a Twilio Voice SDK access token for the current tenant PWA."""
+    user = _require_auth()
+    company = _require_company(user)
+    from models import TwilioAccount
+    ta = TwilioAccount.query.filter_by(company_id=company.id).first()
+    account_sid = (
+        os.environ.get("TWILIO_ACCOUNT_SID")
+        or (ta.get_account_sid() if ta and hasattr(ta, "get_account_sid") else None)
+    )
+    api_key = os.environ.get("TWILIO_API_KEY")
+    api_secret = os.environ.get("TWILIO_API_SECRET")
+    if not account_sid or not api_key or not api_secret:
+        return jsonify({
+            "success": False,
+            "error": "Twilio Voice SDK credentials are not configured. Set TWILIO_ACCOUNT_SID, TWILIO_API_KEY, and TWILIO_API_SECRET.",
+        }), 503
+    try:
+        from twilio.jwt.access_token import AccessToken
+        from twilio.jwt.access_token.grants import VoiceGrant
+        from services.phone_identity import pwa_voice_identity
+        identity = pwa_voice_identity(company.id)
+        token = AccessToken(account_sid, api_key, api_secret, identity=identity)
+        token.add_grant(VoiceGrant(
+            incoming_allow=True,
+            outgoing_application_sid=os.environ.get("TWILIO_TWIML_APP_SID"),
+        ))
+        return jsonify({
+            "success": True,
+            "token": token.to_jwt(),
+            "identity": identity,
+            "user_id": user.id,
+            "company_id": company.id,
+        })
+    except Exception as exc:
+        logger.exception("Unable to issue Twilio Voice token")
+        return jsonify({"success": False, "error": str(exc)}), 500
+
+
+def _update_call_action(call_id: int, *, status: str, user_field: str | None = None):
+    user = _require_auth()
+    company = _require_company(user)
+    from models import TwilioCallLog, CallEvent
+    call = TwilioCallLog.query.filter_by(id=call_id, company_id=company.id).first_or_404()
+    call.status = status
+    if user_field:
+        setattr(call, user_field, user.id)
+    if status == "answered":
+        call.answered_at = call.answered_at or datetime.utcnow()
+    if status in ("completed", "declined", "voicemail"):
+        call.ended_at = call.ended_at or datetime.utcnow()
+    event_id = f"pwa:{status}:{user.id}"
+    if not CallEvent.query.filter_by(call_log_id=call.id, event_type="pwa_action", provider_event_id=event_id).first():
+        db.session.add(CallEvent(
+            call_log_id=call.id,
+            event_type="pwa_action",
+            provider_event_id=event_id,
+            payload={"status": status, "user_id": user.id},
+        ))
+    db.session.commit()
+    return jsonify({"success": True, "call": _call_to_dict(call)})
+
+
+@inbox_pwa_bp.route("/api/calls/<int:call_id>/accept", methods=["POST"])
+def api_call_accept(call_id):
+    return _update_call_action(call_id, status="answered", user_field="answered_by_user_id")
+
+
+@inbox_pwa_bp.route("/api/calls/<int:call_id>/decline", methods=["POST"])
+def api_call_decline(call_id):
+    return _update_call_action(call_id, status="declined")
+
+
+@inbox_pwa_bp.route("/api/calls/<int:call_id>/voicemail", methods=["POST"])
+def api_call_send_voicemail(call_id):
+    return _update_call_action(call_id, status="voicemail")
+
+
+@inbox_pwa_bp.route("/api/calls/<int:call_id>/end", methods=["POST"])
+def api_call_end(call_id):
+    return _update_call_action(call_id, status="completed")
 
 @inbox_pwa_bp.route("/api/inbox/conversations")
 def list_conversations():

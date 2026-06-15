@@ -2,7 +2,7 @@
 name = "repl-nix-workspace"
 version = "0.1.0"
 description = "Add your description here"
-requires-python = ">=3.11"
+requires-python = ">=3.11,<3.14"
 dependencies = [
     "apscheduler>=3.11.0",
     "email-validator>=2.2.0",
@@ -18,6 +18,7 @@ dependencies = [
     "pyjwt>=2.9.0",
     "requests>=2.32.4",
     "sqlalchemy>=2.0.42",
+    "stripe>=15.1.0",
     "werkzeug>=3.1.3",
     "openai>=1.98.0",
     "flask-wtf>=1.2.2",

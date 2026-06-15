@@ -42,9 +42,11 @@ class MarketIntelligenceAgent:
         competitor_count = Competitor.query.filter_by(company_id=company_id).count()
         signal_query = MarketSignal.query.filter(
             MarketSignal.company_id == company_id,
-            MarketSignal.signal_date >= period_start,
-            MarketSignal.signal_date <= period_end
-        ).order_by(MarketSignal.signal_date.desc())
+            db.or_(
+                MarketSignal.signal_date.is_(None),
+                db.and_(MarketSignal.signal_date >= period_start, MarketSignal.signal_date <= period_end),
+            )
+        ).order_by(MarketSignal.signal_date.desc().nullslast(), MarketSignal.created_at.desc())
         signals = signal_query.limit(10).all()
 
         recommendation_query = StrategyRecommendation.query.filter(

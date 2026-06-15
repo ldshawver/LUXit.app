@@ -1044,6 +1044,7 @@ def api_hub_import_from_env():
 # ============================================================
 
 @integrations_bp.route("/platform/integrations")
+@integrations_bp.route("/global-admin/integrations")
 @login_required
 def platform_integrations():
     from models import IntegrationConnection

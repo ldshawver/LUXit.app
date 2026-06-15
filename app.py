@@ -343,7 +343,7 @@ def create_app() -> Flask:
     from marketing import marketing_bp
     from legal import legal_bp
     from x_auth import x_bp, x_api_bp
-    from twilio_sms import twilio_bp
+    from twilio_sms import twilio_bp, api_twilio_bp
     from saas_mgmt import saas_bp, stripe_webhook_bp
 
     # IMPORTANT: Marketing first if it owns "/"
@@ -356,6 +356,8 @@ def create_app() -> Flask:
     app.register_blueprint(x_bp)
     app.register_blueprint(x_api_bp)
     app.register_blueprint(twilio_bp)
+    app.register_blueprint(api_twilio_bp)
+    csrf.exempt(api_twilio_bp)
     app.register_blueprint(saas_bp)
     app.register_blueprint(stripe_webhook_bp)
     try:
@@ -368,6 +370,11 @@ def create_app() -> Flask:
         app.register_blueprint(integrations_bp)
     except Exception as exc:
         app.logger.warning("Failed to register integrations blueprint: %s", exc)
+    try:
+        from admin_communications import admin_communications_bp
+        app.register_blueprint(admin_communications_bp)
+    except Exception as exc:
+        app.logger.warning("Failed to register admin communications blueprint: %s", exc)
     try:
         from inbox_pwa import inbox_pwa_bp
         app.register_blueprint(inbox_pwa_bp)

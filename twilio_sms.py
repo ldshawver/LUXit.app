@@ -27,6 +27,7 @@ import json
 import logging
 import os
 import re
+import html
 from datetime import datetime, timezone, timedelta
 from zoneinfo import ZoneInfo
 
@@ -41,6 +42,7 @@ from extensions import db, csrf
 logger = logging.getLogger(__name__)
 
 twilio_bp = Blueprint("twilio", __name__, url_prefix="/twilio")
+api_twilio_bp = Blueprint("api_twilio", __name__, url_prefix="/api/twilio")
 
 
 @twilio_bp.before_request
@@ -341,16 +343,39 @@ def _is_business_hours(company_id: int) -> bool:
     the configured business hours for the company.
     Handles midnight-crossing schedules (e.g. open_time=11:00, close_time=01:00).
     """
-    from models import BusinessHours
-    now_la = datetime.now(timezone.utc).astimezone(_LA)
-    day = now_la.weekday()   # 0=Mon … 6=Sun
+    from models import BusinessHours, PhoneSettings
+    settings = PhoneSettings.query.filter_by(company_id=company_id).first()
+    tz_name = (settings.timezone if settings and settings.timezone else os.environ.get("DEFAULT_PHONE_TIMEZONE")) or "America/Los_Angeles"
+    try:
+        tz = ZoneInfo(tz_name)
+    except Exception:
+        tz = _LA
+    now_local = datetime.now(timezone.utc).astimezone(tz)
+    day = now_local.weekday()   # 0=Mon … 6=Sun
+    if settings and settings.business_hours:
+        day_key = str(day)
+        day_cfg = settings.business_hours.get(day_key) or settings.business_hours.get(DAYS[day].lower())
+        if day_cfg:
+            if day_cfg.get("closed") or day_cfg.get("is_open") is False:
+                return False
+            open_time = day_cfg.get("open") or day_cfg.get("open_time") or "09:00"
+            close_time = day_cfg.get("close") or day_cfg.get("close_time") or "17:00"
+            try:
+                oh, om = [int(x) for x in open_time.split(":")[:2]]
+                ch, cm = [int(x) for x in close_time.split(":")[:2]]
+                current = now_local.hour * 60 + now_local.minute
+                opens = oh * 60 + om
+                closes = ch * 60 + cm
+                return (current >= opens or current < closes) if closes <= opens else (opens <= current < closes)
+            except Exception:
+                return True
     bh = BusinessHours.query.filter_by(company_id=company_id, day_of_week=day).first()
     if not bh or not bh.is_open:
         return False
     try:
         open_h,  open_m  = [int(x) for x in bh.open_time.split(":")]
         close_h, close_m = [int(x) for x in bh.close_time.split(":")]
-        current  = now_la.hour * 60 + now_la.minute
+        current  = now_local.hour * 60 + now_local.minute
         opens    = open_h  * 60 + open_m
         closes   = close_h * 60 + close_m
         if closes <= opens:
@@ -359,6 +384,35 @@ def _is_business_hours(company_id: int) -> bool:
         return opens <= current < closes
     except Exception:
         return True
+
+
+def _pwa_voice_identity(company_id: int) -> str:
+    """Shared non-guessable tenant identity for registered PWA CSR browsers."""
+    from services.phone_identity import pwa_voice_identity
+    return pwa_voice_identity(company_id)
+
+
+def _can_send_call_auto_sms(company_id: int, to_number: str, *, cooldown_hours: int = 24) -> tuple[bool, str]:
+    """Guard call-triggered automated SMS for opt-out compliance and cooldown."""
+    from models import TwilioConversation, TwilioCallLog
+    if not to_number:
+        return False, "missing_number"
+    conv = TwilioConversation.query.filter_by(
+        company_id=company_id,
+        from_number=to_number,
+    ).first()
+    if conv and conv.is_opted_out:
+        return False, "opted_out"
+    cutoff = datetime.utcnow() - timedelta(hours=cooldown_hours)
+    recent = TwilioCallLog.query.filter(
+        TwilioCallLog.company_id == company_id,
+        TwilioCallLog.from_number == to_number,
+        TwilioCallLog.missed_text_sent.is_(True),
+        TwilioCallLog.created_at >= cutoff,
+    ).first()
+    if recent:
+        return False, "cooldown"
+    return True, "ok"
 
 
 def _get_or_create_conversation(company_id: int, from_number: str, to_number: str):
@@ -1090,7 +1144,7 @@ def inbound_call():
     After hours + after_hours_voicemail_enabled → Voicemail greeting + Record.
     Fallback: generic voicemail.
     """
-    from models import TwilioCallLog
+    from models import TwilioCallLog, PhoneSettings, CallEvent
 
     data        = request.form
     from_number = data.get("From", "")
@@ -1108,10 +1162,13 @@ def inbound_call():
         return twiml, 200, {"Content-Type": "text/xml"}
 
     # Validate Twilio signature
-    if not _validate_twilio_signature(ta, "/twilio/voice/inbound"):
+    signature_path = "/twilio/voice/inbound" if request.path.startswith("/twilio/") else "/api/twilio/voice/incoming"
+    if not _validate_twilio_signature(ta, signature_path):
         abort(403)
 
-    # Log the call
+    settings = PhoneSettings.query.filter_by(company_id=ta.company_id).first()
+
+    # Log the call idempotently
     existing = TwilioCallLog.query.filter_by(twilio_sid=call_sid).first()
     if not existing and call_sid:
         log = TwilioCallLog(
@@ -1123,16 +1180,38 @@ def inbound_call():
             status=call_status or "ringing",
             duration=duration,
             caller_name=caller_name,
+            transcription_status="not_requested",
             raw_payload=dict(data),
         )
         db.session.add(log)
         db.session.commit()
+    else:
+        log = existing
+    if log:
+        evt = CallEvent.query.filter_by(call_log_id=log.id, event_type="incoming", provider_event_id=call_sid).first()
+        if not evt:
+            db.session.add(CallEvent(call_log_id=log.id, event_type="incoming", provider_event_id=call_sid, payload=dict(data)))
+            db.session.commit()
 
     # Determine routing
     in_hours = _is_business_hours(ta.company_id)
+    if (not in_hours) and settings and settings.after_hours_sms_enabled and settings.after_hours_sms_body and from_number and log and not log.missed_text_sent:
+        try:
+            can_send, reason = _can_send_call_auto_sms(ta.company_id, from_number)
+            if can_send:
+                result = _send_sms(ta, from_number, settings.after_hours_sms_body)
+                if result.get("success"):
+                    log.missed_text_sent = True
+                    db.session.commit()
+            else:
+                logger.info("After-hours SMS auto-reply skipped for call sid=%s reason=%s", call_sid, reason)
+        except Exception as exc:
+            logger.warning("After-hours SMS auto-reply failed for call sid=%s: %s", call_sid, exc)
 
-    def _voicemail_twiml():
-        greeting = (ta.voicemail_greeting_text or
+    def _voicemail_twiml(after_hours=False):
+        greeting = ((settings.after_hours_voicemail_greeting if after_hours and settings else None) or
+                    (settings.voicemail_greeting if settings else None) or
+                    ta.voicemail_greeting_text or
                     "Thank you for calling. Please leave your name and message after the tone.")
         if ta.voicemail_greeting_audio_url:
             greeting_xml = f"<Play>{ta.voicemail_greeting_audio_url}</Play>"
@@ -1144,38 +1223,80 @@ def inbound_call():
             f'<?xml version="1.0" encoding="UTF-8"?>\n'
             f"<Response>\n"
             f"  {greeting_xml}\n"
-            f'  <Record maxLength="180" playBeep="true"\n'
+            f'  <Record maxLength="180" playBeep="true" transcribe="{str(bool(settings and settings.transcription_enabled)).lower()}"\n'
             f'          recordingStatusCallback="/twilio/voice/recording"\n'
+            f'          transcribeCallback="/twilio/voice/transcription"\n'
             f'          recordingStatusCallbackMethod="POST" />\n'
             f"  <Say>We did not receive a recording. Goodbye.</Say>\n"
             f"</Response>"
         )
 
-    if in_hours and ta.voice_forwarding_enabled and ta.call_forward_to:
+    route = (settings.during_hours_route if settings and in_hours else settings.after_hours_route if settings else None)
+    forward_to = ((settings.forward_number if in_hours else settings.after_hours_forward_number) if settings else None) or ta.call_forward_to
+    fallback_to = ((settings.fallback_forward_number if in_hours else settings.after_hours_fallback_forward_number) if settings else None)
+    timeout = (settings.ring_duration_seconds if settings else None) or 25
+    record_attr = ' record="record-from-answer" recordingStatusCallback="/twilio/voice/recording"' if settings and settings.recording_enabled else ""
+
+    def _dial_twiml(number, fallback=None):
         caller_id = ta.from_phone or to_number
-        twiml = (
+        if log:
+            log.status = "forwarded"
+            log.forwarded_to_number = number
+            db.session.commit()
+        fallback_xml = f"<Number>{fallback}</Number>" if fallback else ""
+        return (
             f'<?xml version="1.0" encoding="UTF-8"?>\n'
             f"<Response>\n"
-            f'  <Dial callerId="{caller_id}" timeout="25"\n'
-            f'        action="/twilio/voice/no-answer" method="POST">\n'
-            f"    <Number>{ta.call_forward_to}</Number>\n"
+            f'  <Dial callerId="{caller_id}" timeout="{timeout}" action="/twilio/voice/no-answer" method="POST"{record_attr}>\n'
+            f"    <Number>{number}</Number>{fallback_xml}\n"
             f"  </Dial>\n"
             f"</Response>"
         )
+
+    if in_hours and (route in (None, "ring_pwa")):
+        if log:
+            log.status = "ringing"
+            db.session.commit()
+        try:
+            from inbox_pwa import _push_sse_event
+            _push_sse_event(ta.company_id, "incoming_call", {
+                "call_id": log.id if log else None,
+                "call_sid": call_sid,
+                "from_number": from_number,
+                "to_number": to_number,
+                "caller_name": caller_name or from_number,
+            })
+        except Exception as exc:
+            logger.debug("PWA incoming call event failed: %s", exc)
+        caller_id = ta.from_phone or to_number
+        client_identity = _pwa_voice_identity(ta.company_id)
+        safe_from = html.escape(from_number or "", quote=True)
+        safe_caller = html.escape(caller_name or from_number or "", quote=True)
+        safe_caller_id = html.escape(caller_id or "", quote=True)
+        twiml = (
+            '<?xml version="1.0" encoding="UTF-8"?>\n'
+            '<Response>\n'
+            f'  <Dial callerId="{safe_caller_id}" timeout="{timeout}" action="/twilio/voice/no-answer" method="POST"{record_attr}>\n'
+            '    <Client>\n'
+            f'      <Identity>{client_identity}</Identity>\n'
+            f'      <Parameter name="call_log_id" value="{log.id if log else ""}"/>\n'
+            f'      <Parameter name="from_number" value="{safe_from}"/>\n'
+            f'      <Parameter name="caller_name" value="{safe_caller}"/>\n'
+            '    </Client>\n'
+            '  </Dial>\n'
+            '</Response>'
+        )
+    elif route == "forward" and forward_to:
+        twiml = _dial_twiml(forward_to, fallback_to)
+    elif route == "voicemail":
+        twiml = _voicemail_twiml(after_hours=not in_hours)
+    elif in_hours and ta.voice_forwarding_enabled and ta.call_forward_to:
+        twiml = _dial_twiml(ta.call_forward_to)
     elif not in_hours and ta.after_hours_voicemail_enabled:
-        twiml = _voicemail_twiml()
+        twiml = _voicemail_twiml(after_hours=True)
     elif ta.call_forward_to and ta.voice_forwarding_enabled:
         # Always forward regardless of hours when explicitly configured
-        caller_id = ta.from_phone or to_number
-        twiml = (
-            f'<?xml version="1.0" encoding="UTF-8"?>\n'
-            f"<Response>\n"
-            f'  <Dial callerId="{caller_id}" timeout="25"\n'
-            f'        action="/twilio/voice/no-answer" method="POST">\n'
-            f"    <Number>{ta.call_forward_to}</Number>\n"
-            f"  </Dial>\n"
-            f"</Response>"
-        )
+        twiml = _dial_twiml(ta.call_forward_to)
     else:
         twiml = _voicemail_twiml()
 
@@ -1205,7 +1326,7 @@ def voice_no_answer():
     Twilio Dial action callback — fired when the forwarded call is not answered.
     Routes the caller to voicemail.
     """
-    from models import TwilioCallLog
+    from models import TwilioCallLog, PhoneSettings
 
     data        = request.form
     call_sid    = data.get("CallSid", "")
@@ -1225,17 +1346,27 @@ def voice_no_answer():
 
     # Send missed-call text if configured
     from_number = data.get("From", "")
-    if ta and ta.missed_call_text and from_number:
-        result = _send_sms(ta, from_number, ta.missed_call_text)
-        if result.get("success"):
-            log = TwilioCallLog.query.filter_by(twilio_sid=call_sid).first()
-            if log and not log.missed_text_sent:
-                log.missed_text_sent = True
-                db.session.commit()
+    settings = PhoneSettings.query.filter_by(company_id=ta.company_id).first() if ta else None
+    sms_body = None
+    if ta and settings and settings.missed_call_sms_enabled:
+        sms_body = settings.missed_call_sms_body or ta.missed_call_text
+    elif ta and not settings and ta.missed_call_text:
+        sms_body = ta.missed_call_text
+    if ta and sms_body and from_number:
+        can_send, reason = _can_send_call_auto_sms(ta.company_id, from_number)
+        if can_send:
+            result = _send_sms(ta, from_number, sms_body)
+            if result.get("success"):
+                log = TwilioCallLog.query.filter_by(twilio_sid=call_sid).first()
+                if log and not log.missed_text_sent:
+                    log.missed_text_sent = True
+                    db.session.commit()
+        else:
+            logger.info("Missed-call SMS auto-reply skipped for call sid=%s reason=%s", call_sid, reason)
 
     # Fall through to voicemail
     if ta:
-        greeting = (ta.voicemail_greeting_text or
+        greeting = ((settings.voicemail_greeting if settings else None) or ta.voicemail_greeting_text or
                     "Thank you for calling. Please leave your name and message after the tone.")
         if ta.voicemail_greeting_audio_url:
             greeting_xml = f"<Play>{ta.voicemail_greeting_audio_url}</Play>"
@@ -1265,13 +1396,18 @@ def voice_recording():
     """
     Twilio recording status callback — logs the voicemail recording URL.
     """
-    from models import TwilioCallLog
+    from models import TwilioCallLog, VoiceVoicemailMessage, CallRecording, CallEvent
 
     data           = request.form
     call_sid       = data.get("CallSid", "")
     recording_url  = data.get("RecordingUrl", "")
     recording_sid  = data.get("RecordingSid", "")
     recording_dur  = data.get("RecordingDuration", "0")
+    _pn, ta = _resolve_number(data.get("To", ""))
+    if ta:
+        endpoint = "/twilio/voice/recording" if request.path.startswith("/twilio/") else "/api/twilio/voice/recording"
+        if not _validate_twilio_signature(ta, endpoint):
+            abort(403)
 
     logger.info(
         "Voicemail recording: sid=%s recording=%s dur=%ss url=%s",
@@ -1281,9 +1417,39 @@ def voice_recording():
     if call_sid and recording_url:
         log = TwilioCallLog.query.filter_by(twilio_sid=call_sid).first()
         if log:
-            notes = f"Voicemail: {recording_url} ({recording_dur}s)"
-            log.notes = notes
-            log.status = "voicemail"
+            is_voicemail = (data.get("RecordingSource") == "RecordVerb") or log.status in ("no-answer", "missed", "voicemail")
+            log.recording_url = recording_url
+            log.recording_sid = recording_sid
+            log.duration = int(recording_dur or log.duration or 0)
+            if is_voicemail:
+                log.voicemail_url = recording_url
+                log.voicemail_sid = recording_sid
+                log.status = "voicemail"
+                if not VoiceVoicemailMessage.query.filter_by(recording_sid=recording_sid).first():
+                    db.session.add(VoiceVoicemailMessage(
+                        company_id=log.company_id,
+                        call_log_id=log.id,
+                        from_number=log.from_number,
+                        to_number=log.to_number,
+                        call_sid=call_sid,
+                        recording_sid=recording_sid,
+                        recording_url=recording_url,
+                        duration_secs=int(recording_dur or 0),
+                    ))
+            elif log.status != "voicemail":
+                log.status = log.status or "completed"
+            if recording_sid and not CallRecording.query.filter_by(recording_sid=recording_sid).first():
+                db.session.add(CallRecording(
+                    company_id=log.company_id,
+                    call_log_id=log.id,
+                    call_sid=call_sid,
+                    recording_sid=recording_sid,
+                    recording_url=recording_url,
+                    duration_secs=int(recording_dur or 0),
+                    status=data.get("RecordingStatus") or "completed",
+                ))
+            if not CallEvent.query.filter_by(call_log_id=log.id, event_type="recording", provider_event_id=recording_sid).first():
+                db.session.add(CallEvent(call_log_id=log.id, event_type="recording", provider_event_id=recording_sid, payload=dict(data)))
             db.session.commit()
 
     return "", 204
@@ -1293,12 +1459,17 @@ def voice_recording():
 @csrf.exempt
 def voice_status():
     """Twilio voice status callback — updates call record."""
-    from models import TwilioCallLog
+    from models import TwilioCallLog, CallEvent
 
     data        = request.form
     call_sid    = data.get("CallSid", "")
     call_status = data.get("CallStatus", "")
     duration    = int(data.get("CallDuration") or 0)
+    _pn, ta = _resolve_number(data.get("To", ""))
+    if ta:
+        endpoint = "/twilio/voice/status" if request.path.startswith("/twilio/") else "/api/twilio/voice/status"
+        if not _validate_twilio_signature(ta, endpoint):
+            abort(403)
 
     logger.info("Voice status: sid=%s status=%s dur=%s", call_sid, call_status, duration)
 
@@ -1307,9 +1478,79 @@ def voice_status():
         if log:
             log.status   = call_status
             log.duration = duration
+            if call_status == "completed":
+                log.ended_at = datetime.utcnow()
+            if call_status == "in-progress":
+                log.status = "answered"
+                log.answered_at = log.answered_at or datetime.utcnow()
+            if call_status in ("no-answer", "busy", "failed", "canceled"):
+                log.status = "missed"
+            if not CallEvent.query.filter_by(call_log_id=log.id, event_type="status", provider_event_id=f"{call_sid}:{call_status}").first():
+                db.session.add(CallEvent(call_log_id=log.id, event_type="status", provider_event_id=f"{call_sid}:{call_status}", payload=dict(data)))
             db.session.commit()
 
     return "", 204
+
+
+@twilio_bp.route("/voice/voicemail", methods=["POST"])
+@twilio_bp.route("/voice/transcription", methods=["POST"])
+@csrf.exempt
+def voice_transcription():
+    """Twilio transcription callback for voicemail Record verbs."""
+    from models import TwilioCallLog, VoiceVoicemailMessage, CallEvent
+    data = request.form
+    call_sid = data.get("CallSid", "")
+    recording_sid = data.get("RecordingSid", "")
+    transcription_sid = data.get("TranscriptionSid", "")
+    text = data.get("TranscriptionText", "")
+    status = (data.get("TranscriptionStatus") or ("complete" if text else "failed")).lower()
+    _pn, ta = _resolve_number(data.get("To", ""))
+    if ta:
+        api_tail = "voicemail" if request.path.endswith("/voicemail") else "transcription"
+        endpoint = f"/twilio/voice/{api_tail}" if request.path.startswith("/twilio/") else f"/api/twilio/voice/{api_tail}"
+        if not _validate_twilio_signature(ta, endpoint):
+            abort(403)
+    log = TwilioCallLog.query.filter_by(twilio_sid=call_sid).first()
+    if log:
+        log.transcription_text = text or log.transcription_text
+        log.transcription_status = "complete" if status == "completed" else status
+        log.transcription_provider = "twilio"
+        vm = VoiceVoicemailMessage.query.filter_by(call_log_id=log.id).first()
+        if vm:
+            vm.transcript = text or vm.transcript
+        event_id = transcription_sid or recording_sid or f"{call_sid}:transcription"
+        if not CallEvent.query.filter_by(call_log_id=log.id, event_type="transcription", provider_event_id=event_id).first():
+            db.session.add(CallEvent(call_log_id=log.id, event_type="transcription", provider_event_id=event_id, payload=dict(data)))
+        db.session.commit()
+    return "", 204
+
+
+# PWA/API-compatible Twilio webhook aliases. They call the canonical /twilio
+# handlers so signature validation, routing, idempotency, and persistence stay
+# in one implementation while satisfying the /api/twilio/voice/* contract.
+@api_twilio_bp.route("/voice/incoming", methods=["POST"])
+@csrf.exempt
+def api_voice_incoming():
+    return inbound_call()
+
+
+@api_twilio_bp.route("/voice/status", methods=["POST"])
+@csrf.exempt
+def api_voice_status():
+    return voice_status()
+
+
+@api_twilio_bp.route("/voice/recording", methods=["POST"])
+@csrf.exempt
+def api_voice_recording():
+    return voice_recording()
+
+
+@api_twilio_bp.route("/voice/voicemail", methods=["POST"])
+@api_twilio_bp.route("/voice/transcription", methods=["POST"])
+@csrf.exempt
+def api_voice_transcription():
+    return voice_transcription()
 
 
 # ---------------------------------------------------------------------------
