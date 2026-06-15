@@ -1,6 +1,7 @@
 """SMS Service for SMS campaign management with Twilio integration"""
 import os
 import logging
+import threading
 from datetime import datetime
 
 logger = logging.getLogger(__name__)
@@ -28,7 +29,84 @@ except ImportError:
 
 class SMSService:
     """Service for SMS campaign management with Twilio sending"""
-    
+
+    ACTIVE_STATUSES = {'queued', 'sending', 'processing'}
+    BLOCKED_SEND_STATUSES = {'scheduled', 'sent', 'completed', 'failed', 'canceled', 'cancelled', 'archived'}
+    ASYNC_RECIPIENT_THRESHOLD = int(os.environ.get('SMS_CAMPAIGN_ASYNC_THRESHOLD', '50'))
+    _send_locks = {}
+    _send_locks_guard = threading.Lock()
+
+    @classmethod
+    def _campaign_send_lock(cls, campaign_id):
+        with cls._send_locks_guard:
+            return cls._send_locks.setdefault(campaign_id, threading.Lock())
+
+    @staticmethod
+    def _audit_campaign_event(company_id, action, campaign_id, status=None):
+        try:
+            from extensions import db
+            from models import IntegrationAuditLog
+            db.session.add(IntegrationAuditLog(
+                company_id=company_id,
+                service_slug='sms_campaign',
+                action=action,
+                changes={'campaign_id': campaign_id, 'status': status},
+            ))
+        except Exception:
+            logger.exception('Failed to write SMS campaign audit log')
+
+    @classmethod
+    def begin_send(cls, campaign_id, queued=False):
+        from extensions import db
+        from models import SMSCampaign
+
+        # The per-process lock prevents double-click/rapid-repeat requests handled by this app worker.
+        # The DB status transition below remains the cross-worker safety net; PostgreSQL also honors
+        # the SELECT ... FOR UPDATE attempt while SQLite simply ignores it in tests.
+        lock = cls._campaign_send_lock(campaign_id)
+        with lock:
+            query = SMSCampaign.query.filter_by(id=campaign_id)
+            try:
+                query = query.with_for_update(nowait=False)
+            except Exception:
+                pass
+            campaign = query.first()
+            if not campaign:
+                return None, {'success': False, 'error': 'Campaign not found', 'status_code': 404}
+            if campaign.status in cls.ACTIVE_STATUSES or campaign.status in cls.BLOCKED_SEND_STATUSES:
+                cls._audit_campaign_event(campaign.company_id, 'duplicate_send_rejected', campaign.id, campaign.status)
+                db.session.commit()
+                return campaign, {
+                    'success': False,
+                    'error': f'Campaign cannot be sent while status is {campaign.status}',
+                    'duplicate': True,
+                    'status_code': 409,
+                }
+            campaign.status = 'queued' if queued else 'sending'
+            cls._audit_campaign_event(campaign.company_id, 'send_queued' if queued else 'send_started', campaign.id, campaign.status)
+            db.session.commit()
+            return campaign, {'success': True}
+
+    @classmethod
+    def queue_campaign_send(cls, campaign_id, app=None):
+        campaign, result = cls.begin_send(campaign_id, queued=True)
+        if not result.get('success'):
+            return result
+
+        def _runner():
+            try:
+                if app is not None:
+                    with app.app_context():
+                        cls.send_campaign(campaign_id, transition=False)
+                else:
+                    cls.send_campaign(campaign_id, transition=False)
+            except Exception:
+                logger.exception('Background SMS campaign send failed for campaign_id=%s', campaign_id)
+
+        thread = threading.Thread(target=_runner, name=f'sms-campaign-{campaign_id}', daemon=True)
+        thread.start()
+        return {'success': True, 'queued': True, 'campaign_id': campaign_id}
+
     _twilio_client = None
     _twilio_phone = None
     _twilio_enabled = False
@@ -68,14 +146,40 @@ class SMSService:
             
         return cls._twilio_enabled
     
+
     @staticmethod
-    def create_campaign(name, message, scheduled_at=None):
-        """Create a new SMS campaign"""
+    def _tenant_twilio_config(company_id):
+        """Return tenant Twilio client/routing config when configured."""
+        if not company_id or not TWILIO_AVAILABLE:
+            return None
+        try:
+            from models import TwilioAccount
+            ta = TwilioAccount.query.filter_by(company_id=company_id, is_active=True).first()
+            if not ta or not ta.is_configured:
+                return None
+            account_sid = ta.get_account_sid()
+            auth_token = ta.get_auth_token()
+            if not account_sid or not auth_token:
+                return None
+            return {
+                'client': Client(account_sid, auth_token),
+                'messaging_service_sid': ta.messaging_service_sid,
+                'from_phone': ta.from_phone,
+            }
+        except Exception as exc:
+            logger.error("Failed to load tenant Twilio config for company_id=%s: %s", company_id, exc)
+            return None
+
+    @staticmethod
+    def create_campaign(name, message, scheduled_at=None, company_id=None):
+        """Create a persistent SMS marketing campaign."""
         from extensions import db
         from models import SMSCampaign
-        
+
+        message = SMSService.ensure_opt_out_language(message or "")
         status = 'scheduled' if scheduled_at else 'draft'
         campaign = SMSCampaign(
+            company_id=company_id,
             name=name,
             message=message,
             status=status,
@@ -90,20 +194,47 @@ class SMSService:
     def add_recipients(campaign_id, contact_ids):
         """Add recipients to a campaign"""
         from extensions import db
-        from models import SMSRecipient, Contact
-        
+        from models import SMSCampaign, SMSRecipient, Contact
+
+        campaign = db.session.get(SMSCampaign, campaign_id)
+        if not campaign:
+            return
+
         for contact_id in contact_ids:
             contact = db.session.get(Contact, contact_id)
-            if contact and contact.phone:
-                recipient = SMSRecipient(
-                    campaign_id=campaign_id,
-                    contact_id=contact_id,
-                    phone_number=contact.phone,
-                    status='pending'
-                )
-                db.session.add(recipient)
+            if campaign.company_id and getattr(contact, 'company_id', None) != campaign.company_id:
+                continue
+            if not SMSService.contact_can_receive_marketing(contact):
+                continue
+            recipient = SMSRecipient(
+                campaign_id=campaign_id,
+                contact_id=contact_id,
+                phone_number=contact.phone,
+                status='pending'
+            )
+            db.session.add(recipient)
         db.session.commit()
     
+    @staticmethod
+    def ensure_opt_out_language(message):
+        if not message:
+            return message
+        lower = message.lower()
+        if "stop" in lower or "opt out" in lower or "unsubscribe" in lower:
+            return message
+        return f"{message.rstrip()} Reply STOP to opt out."
+
+    @staticmethod
+    def contact_can_receive_marketing(contact):
+        if not contact or not getattr(contact, "phone", None):
+            return False
+        if getattr(contact, "sms_opt_out_at", None):
+            return False
+        return bool(
+            getattr(contact, "sms_marketing_opt_in", False)
+            and getattr(contact, "sms_consent_status", "unknown") in ("opted_in", "subscribed")
+        )
+
     @staticmethod
     def create_template(name, message, category='promotional', tone='professional'):
         """Create a reusable SMS template"""
@@ -122,13 +253,22 @@ class SMSService:
         return template
     
     @classmethod
-    def send_sms(cls, to_number, message):
-        """Send an SMS message via Twilio"""
-        if not cls._init_twilio():
-            return {
-                'success': False,
-                'error': 'Twilio not configured. Please set TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, and TWILIO_PHONE_NUMBER.'
-            }
+    def send_sms(cls, to_number, message, company_id=None):
+        """Send an SMS message via tenant Twilio config, falling back to platform config."""
+        tenant_config = cls._tenant_twilio_config(company_id)
+        if tenant_config:
+            client = tenant_config['client']
+            messaging_service_sid = tenant_config.get('messaging_service_sid')
+            from_phone = tenant_config.get('from_phone')
+        else:
+            if not cls._init_twilio():
+                return {
+                    'success': False,
+                    'error': 'Twilio not configured. Please configure tenant Twilio settings or set TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, and TWILIO_PHONE_NUMBER.'
+                }
+            client = cls._twilio_client
+            messaging_service_sid = None
+            from_phone = cls._twilio_phone
         
         try:
             clean_number = to_number.replace('+', '').replace('-', '').replace(' ', '').replace('(', '').replace(')', '')
@@ -136,12 +276,13 @@ class SMSService:
                 clean_number = '1' + clean_number
             formatted_number = '+' + clean_number
             
-            message = _sanitize_body(message)
-            message_obj = cls._twilio_client.messages.create(
-                body=message,
-                from_=cls._twilio_phone,
-                to=formatted_number
-            )
+            message = _sanitize_body(cls.ensure_opt_out_language(message))
+            send_kwargs = {'body': message, 'to': formatted_number}
+            if messaging_service_sid:
+                send_kwargs['messaging_service_sid'] = messaging_service_sid
+            else:
+                send_kwargs['from_'] = from_phone
+            message_obj = client.messages.create(**send_kwargs)
             
             logger.info(f"SMS sent successfully. SID: {message_obj.sid}")
             return {
@@ -158,22 +299,33 @@ class SMSService:
             }
     
     @classmethod
-    def send_campaign(cls, campaign_id):
-        """Send SMS campaign to all recipients"""
+    def send_campaign(cls, campaign_id, transition=True):
+        """Send SMS campaign to all pending recipients."""
         from extensions import db
         from models import SMSCampaign, SMSRecipient
+
+        if transition:
+            campaign, begin_result = cls.begin_send(campaign_id, queued=False)
+            if not begin_result.get('success'):
+                return begin_result
+        else:
+            campaign = db.session.get(SMSCampaign, campaign_id)
+            if not campaign:
+                return {'success': False, 'error': 'Campaign not found'}
+            campaign.status = 'sending'
+            db.session.commit()
         
-        campaign = db.session.get(SMSCampaign, campaign_id)
-        if not campaign:
-            return {'success': False, 'error': 'Campaign not found'}
-        
-        recipients = SMSRecipient.query.filter_by(campaign_id=campaign_id, status='pending').all()
+        recipients = (
+            SMSRecipient.query
+            .filter_by(campaign_id=campaign_id, status='pending')
+            .all()
+        )
         
         sent = 0
         failed = 0
         
         for recipient in recipients:
-            result = cls.send_sms(recipient.phone_number, campaign.message)
+            result = cls.send_sms(recipient.phone_number, campaign.message, company_id=campaign.company_id)
             if result['success']:
                 recipient.status = 'sent'
                 recipient.sent_at = datetime.utcnow()
@@ -187,10 +339,10 @@ class SMSService:
         if failed > 0 and sent == 0:
             campaign.status = 'failed'
         elif failed > 0:
-            campaign.status = 'partial'
+            campaign.status = 'failed' if sent == 0 else 'completed'
             campaign.sent_at = datetime.utcnow()
         else:
-            campaign.status = 'sent'
+            campaign.status = 'completed'
             campaign.sent_at = datetime.utcnow()
         db.session.commit()
         

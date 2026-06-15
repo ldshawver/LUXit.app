@@ -227,7 +227,7 @@ _HELP_REPLY  = "LUX: Reply STOP to opt out. Msg frequency varies. Msg & data rat
 
 # All recognised opt-out / opt-in keyword variants (per CTIA / Twilio guidelines)
 _STOP_KEYWORDS  = {"stop", "stopall", "unsubscribe", "cancel", "end", "quit"}
-_START_KEYWORDS = {"start", "subscribe", "join"}
+_START_KEYWORDS = {"start", "unstop", "yes", "subscribe", "join"}
 
 TWILIO_WEBHOOK_PUBLIC_URL = os.environ.get(
     "TWILIO_WEBHOOK_PUBLIC_URL", "https://luxit.app/twilio/sms/inbound"
@@ -335,14 +335,20 @@ def _validate_twilio_signature(ta, endpoint_path: str = "/twilio/sms/inbound") -
     return True
 
 
-def _is_business_hours(company_id: int) -> bool:
-    """
-    Return True if the current local time (America/Los_Angeles) falls within
-    the configured business hours for the company.
-    Handles midnight-crossing schedules (e.g. open_time=11:00, close_time=01:00).
+def _is_business_hours(company_id: int, at_time=None) -> bool:
+    """Return True when *at_time* falls within the company's configured hours.
+
+    BusinessHours.timezone is honored per tenant; missing rows mean closed.
     """
     from models import BusinessHours
-    now_la = datetime.now(timezone.utc).astimezone(_LA)
+    from zoneinfo import ZoneInfo
+    sample = BusinessHours.query.filter_by(company_id=company_id).first()
+    tz_name = getattr(sample, "timezone", None) or "America/Los_Angeles"
+    try:
+        local_tz = ZoneInfo(tz_name)
+    except Exception:
+        local_tz = _LA
+    now_la = (at_time or datetime.now(timezone.utc)).astimezone(local_tz)
     day = now_la.weekday()   # 0=Mon … 6=Sun
     bh = BusinessHours.query.filter_by(company_id=company_id, day_of_week=day).first()
     if not bh or not bh.is_open:
@@ -501,8 +507,49 @@ def _match_keywords(body: str, keywords: list, match_type: str) -> bool:
     return False
 
 
+def _normalized_keyword(body: str) -> str:
+    return (body or "").strip().lower()
+
 def _is_stop_message(body: str) -> bool:
-    return body.lower().strip() in _STOP_KEYWORDS
+    return _normalized_keyword(body) in _STOP_KEYWORDS
+
+def _write_sms_compliance_audit(company_id, action, phone_number, keyword, contact_id=None, conversation_id=None):
+    try:
+        from models import IntegrationAuditLog
+        log = IntegrationAuditLog(
+            company_id=company_id,
+            service_slug="sms_compliance",
+            action=action,
+            changes={
+                "phone_last4": (phone_number or "")[-4:],
+                "keyword": keyword,
+                "contact_id": contact_id,
+                "conversation_id": conversation_id,
+            },
+        )
+        db.session.add(log)
+    except Exception:
+        logger.exception("Failed to write SMS compliance audit log")
+
+def _update_contact_sms_consent(company_id, phone_number, opted_in, source):
+    from models import Contact
+    from services.google_contacts import _all_forms
+    contact = None
+    for form in _all_forms(phone_number):
+        contact = Contact.query.filter_by(company_id=company_id, phone=form, is_active=True).first()
+        if contact:
+            break
+    if contact:
+        now = datetime.utcnow()
+        contact.sms_marketing_opt_in = bool(opted_in)
+        contact.sms_consent_status = "opted_in" if opted_in else "opted_out"
+        if opted_in:
+            contact.sms_marketing_opt_in_at = now
+            contact.sms_marketing_opt_in_source = source
+            contact.sms_opt_out_at = None
+        else:
+            contact.sms_opt_out_at = now
+    return contact
 
 
 def _apply_auto_reply_rules(conv, body: str, ta) -> bool:
@@ -578,7 +625,19 @@ def _apply_auto_reply_rules(conv, body: str, ta) -> bool:
                 matched = False
                 skip_reason = "currently in business hours"
             else:
-                matched = True
+                cooldown_minutes = getattr(ta, "after_hours_cooldown_minutes", None) or 720
+                cutoff = datetime.now(timezone.utc) - timedelta(minutes=cooldown_minutes)
+                from models import TwilioMessage
+                recent = TwilioMessage.query.filter(
+                    TwilioMessage.conversation_id == conv.id,
+                    TwilioMessage.is_auto_reply == True,
+                    TwilioMessage.created_at >= cutoff,
+                ).first()
+                if recent:
+                    matched = False
+                    skip_reason = f"after-hours cooldown active ({cooldown_minutes}m)"
+                else:
+                    matched = True
         elif rule.trigger_type in ("keyword_contains", "keyword_exact", "regex"):
             matched = _match_keywords(body, rule.keywords or [], rule.trigger_type)
             if not matched:
@@ -643,11 +702,15 @@ def _apply_auto_reply_rules(conv, body: str, ta) -> bool:
                 logger.info("%s tag rule reply: success=%s err=%s", _tag, result.get("success"), result.get("error"))
             # Continue — after_hours must still have a chance to fire
 
-        elif rule.action == "reply" and rule.response:
+        elif rule.action == "reply" and (rule.response or rule.trigger_type == "after_hours"):
+            response_body = rule.response
+            if rule.trigger_type == "after_hours":
+                response_body = (getattr(ta, "after_hours_text", None) or rule.response or
+                                 "Thanks for reaching out. We’re currently closed, but your message has been received. A team member will reply as soon as we’re back during business hours. Reply STOP to opt out.")
             if reply_sent:
                 logger.debug("%s rule id=%s skipped — reply already sent", _tag, rule.id)
                 continue
-            result = _send_sms(ta, conv.from_number, rule.response,
+            result = _send_sms(ta, conv.from_number, response_body,
                                conversation_id=conv.id, is_auto_reply=True, rule_id=rule.id)
             rule.match_count = (rule.match_count or 0) + 1
             db.session.commit()
@@ -719,7 +782,7 @@ def _seed_default_rules(company_id: int):
              priority=5, action="tag", tag_value="new-lead"),
         dict(name="After Hours",         trigger_type="after_hours",
              keywords=[],
-             response="Thanks for reaching out to Alavont Therapeutics. You messaged us after business hours. Please reach back during business hours: 11 AM to 1 AM, Sunday-Saturday.\n\nThank you!",
+             response="Thanks for reaching out. We’re currently closed, but your message has been received. A team member will reply as soon as we’re back during business hours. Reply STOP to opt out.",
              priority=50, action="reply"),
     ]
     for d in defaults:
@@ -913,24 +976,31 @@ def inbound_sms():
 
         # ── 4. System-level keyword handling ──────────────────────────────
         # These always fire and return a TwiML reply immediately.
-        kw = body.upper().strip()
+        kw = _normalized_keyword(body)
 
         if kw in _STOP_KEYWORDS:
             conv.is_opted_out   = True
             conv.sms_opt_out_at = datetime.utcnow()
+            contact = _update_contact_sms_consent(ta.company_id, from_number, False, f"keyword:{kw}")
+            _write_sms_compliance_audit(ta.company_id, "opt_out", from_number, kw, getattr(contact, "id", None), conv.id)
             db.session.commit()
-            logger.info("Opt-out keyword '%s' received: opted out %s", kw, from_number)
+            logger.info("Opt-out keyword received: company_id=%s phone_last4=%s", ta.company_id, from_number[-4:])
             return _twiml_message(_STOP_REPLY)
 
         if kw in _START_KEYWORDS:
             conv.is_opted_out  = False
             conv.sms_opt_in_at = datetime.utcnow()
+            conv.sms_opt_out_at = None
+            contact = _update_contact_sms_consent(ta.company_id, from_number, True, f"keyword:{kw}")
+            _write_sms_compliance_audit(ta.company_id, "opt_in", from_number, kw, getattr(contact, "id", None), conv.id)
             db.session.commit()
-            logger.info("Opt-in keyword '%s' received: opted in %s", kw, from_number)
+            logger.info("Opt-in keyword received: company_id=%s phone_last4=%s", ta.company_id, from_number[-4:])
             return _twiml_message(_START_REPLY)
 
-        if kw == "HELP":
-            logger.info("HELP received from %s", from_number)
+        if kw in {"help", "info"}:
+            _write_sms_compliance_audit(ta.company_id, "help", from_number, kw, conv.contact_id, conv.id)
+            db.session.commit()
+            logger.info("HELP/INFO received: company_id=%s phone_last4=%s", ta.company_id, from_number[-4:])
             return _twiml_message(_HELP_REPLY)
 
         # ── 5. SMS forwarding — always runs before auto-reply so exceptions

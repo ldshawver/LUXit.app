@@ -684,6 +684,11 @@ class Contact(db.Model):
     is_subscribed = db.Column(db.Boolean, default=True)
     source = db.Column(db.String(100))
     segment = db.Column(db.String(100))
+    sms_marketing_opt_in = db.Column(db.Boolean, default=False, nullable=False)
+    sms_marketing_opt_in_at = db.Column(db.DateTime)
+    sms_marketing_opt_in_source = db.Column(db.String(120))
+    sms_opt_out_at = db.Column(db.DateTime)
+    sms_consent_status = db.Column(db.String(30), default="unknown", nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 
@@ -878,9 +883,13 @@ class SMSCampaign(db.Model):
     __tablename__ = "sms_campaign"
 
     id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=True, index=True)
     name = db.Column(db.String(255))
     message = db.Column(db.String(1000))
-    status = db.Column(db.String(50))
+    status = db.Column(db.String(50), default="draft")
+    audience_filter = db.Column(JSON, default=dict)
+    estimated_recipient_count = db.Column(db.Integer, default=0)
+    test_sent_at = db.Column(db.DateTime)
     scheduled_at = db.Column(db.DateTime)
     sent_at = db.Column(db.DateTime)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
@@ -894,10 +903,15 @@ class SMSRecipient(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     campaign_id = db.Column(db.Integer, db.ForeignKey("sms_campaign.id"), nullable=True)
     contact_id = db.Column(db.Integer, db.ForeignKey("contact.id"), nullable=True)
-    status = db.Column(db.String(50))
+    phone_number = db.Column(db.String(50))
+    status = db.Column(db.String(50), default="pending")
+    message_sid = db.Column(db.String(100))
+    error_code = db.Column(db.String(50))
     sent_at = db.Column(db.DateTime)
     delivered_at = db.Column(db.DateTime)
     error_message = db.Column(db.Text)
+
+    contact = db.relationship("Contact", backref="sms_recipients")
 
 
 class SMSTemplate(db.Model):
@@ -1213,8 +1227,8 @@ class SocialMediaAccount(db.Model):
     platform = db.Column(db.String(50), nullable=True, default="")
     account_name = db.Column(db.String(255))
     account_id = db.Column(db.String(255))
-    access_token = db.Column(db.Text)
-    refresh_token = db.Column(db.Text)
+    _access_token = db.Column("access_token", db.Text)
+    _refresh_token = db.Column("refresh_token", db.Text)
     token_expires_at = db.Column(db.DateTime)
     is_active = db.Column(db.Boolean, default=True)
     is_verified = db.Column(db.Boolean, default=False)
@@ -1224,6 +1238,55 @@ class SocialMediaAccount(db.Model):
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     company = db.relationship("Company", backref="social_media_accounts")
+
+    @staticmethod
+    def _encrypt_social_secret(value):
+        if not value:
+            return None
+        try:
+            from services.secret_vault import vault
+            return vault.encrypt(value)
+        except Exception:
+            # Preserve operability in development/test environments without a vault key; callers must still avoid rendering/logging raw values.
+            return value
+
+    @staticmethod
+    def _decrypt_social_secret(value):
+        if not value:
+            return None
+        try:
+            from services.secret_vault import vault
+            return vault.decrypt(value)
+        except Exception:
+            return value
+
+    def set_access_token(self, token: str):
+        self._access_token = self._encrypt_social_secret(token)
+
+    def get_access_token(self) -> str:
+        return self._decrypt_social_secret(self._access_token)
+
+    @property
+    def access_token(self):
+        return self.get_access_token()
+
+    @access_token.setter
+    def access_token(self, token):
+        self.set_access_token(token)
+
+    def set_refresh_token(self, token: str):
+        self._refresh_token = self._encrypt_social_secret(token)
+
+    def get_refresh_token(self) -> str:
+        return self._decrypt_social_secret(self._refresh_token)
+
+    @property
+    def refresh_token(self):
+        return self.get_refresh_token()
+
+    @refresh_token.setter
+    def refresh_token(self, token):
+        self.set_refresh_token(token)
 
 
 class SocialMediaSchedule(db.Model):
@@ -1516,7 +1579,7 @@ class AgentReport(db.Model):
     agent_name = db.Column(db.String(200))
     report_type = db.Column(db.String(50), nullable=False)
     report_title = db.Column(db.String(500))
-    report_data = db.Column(db.Text)
+    report_data = db.Column(JSON)
     insights = db.Column(db.Text)
     period_start = db.Column(db.DateTime)
     period_end = db.Column(db.DateTime)
@@ -1664,7 +1727,7 @@ class MarketSignal(db.Model):
     title = db.Column(db.String(500))
     summary = db.Column(db.Text)
     severity = db.Column(db.String(50))
-    signal_date = db.Column(db.DateTime)
+    signal_date = db.Column(db.DateTime, default=datetime.utcnow)
     raw_data = db.Column(db.Text)
     is_actionable = db.Column(db.Boolean, default=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
@@ -1699,12 +1762,27 @@ class Competitor(db.Model):
     name = db.Column(db.String(255))
     website_url = db.Column(db.String(500))
     industry = db.Column(db.String(100))
-    status = db.Column(db.String(50))
+    status = db.Column(db.String(50), default='active')
     notes = db.Column(db.Text)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     company = db.relationship("Company", backref="competitors")
+
+
+class CompetitorContent(db.Model):
+    __tablename__ = "competitor_content"
+
+    id = db.Column(db.Integer, primary_key=True)
+    competitor_id = db.Column(db.Integer, db.ForeignKey("competitor.id"), nullable=False, index=True)
+    content_type = db.Column(db.String(100))
+    title = db.Column(db.String(500))
+    url = db.Column(db.String(500))
+    summary = db.Column(db.Text)
+    published_at = db.Column(db.DateTime)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    competitor = db.relationship("Competitor", backref=db.backref("content_items", lazy="select"))
 
 
 class FacebookOAuth(db.Model):
@@ -2683,7 +2761,8 @@ class TwilioAccount(db.Model):
     ai_mode              = db.Column(db.String(20), default="off")   # off | assist | auto
     ai_system_prompt     = db.Column(db.Text)
     missed_call_text     = db.Column(db.Text, default="Sorry we missed your call! Reply to schedule a callback.")
-    after_hours_text     = db.Column(db.Text, default="Thanks for reaching out! Our team is currently away. We'll reply during business hours.")
+    after_hours_text     = db.Column(db.Text, default="Thanks for reaching out. We’re currently closed, but your message has been received. A team member will reply as soon as we’re back during business hours. Reply STOP to opt out.")
+    after_hours_cooldown_minutes = db.Column(db.Integer, default=720, server_default="720")
     sms_forward_to       = db.Column(db.String(20))   # Forward all inbound SMS to this number
     call_forward_to      = db.Column(db.String(20))   # Forward all inbound calls to this number
 
