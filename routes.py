@@ -194,6 +194,37 @@ def inject_company_context():
     )
 
 
+
+def _marketing_pages_allowed():
+    """Return True for platform admins or tenant admins/owners/managers/editors."""
+    if getattr(current_user, 'is_admin', False):
+        return True
+    try:
+        company = current_user.get_default_company() if hasattr(current_user, 'get_default_company') else None
+        if not company:
+            return False
+        role = current_user.get_company_role(company.id) if hasattr(current_user, 'get_company_role') else None
+        return role in ('owner', 'admin', 'manager', 'editor')
+    except Exception:
+        logger.exception("Marketing page access check failed")
+        return False
+
+
+
+def _current_company_id():
+    try:
+        company = current_user.get_default_company() if hasattr(current_user, 'get_default_company') else None
+        return company.id if company else getattr(current_user, 'default_company_id', None)
+    except Exception:
+        return getattr(current_user, 'default_company_id', None)
+
+
+def _marketing_forbidden_response():
+    if request.accept_mimetypes.accept_json and not request.accept_mimetypes.accept_html:
+        return jsonify({'success': False, 'error': 'Forbidden'}), 403
+    return make_response(render_template('403.html') if os.path.exists(os.path.join(current_app.template_folder or 'templates', '403.html')) else 'Forbidden', 403)
+
+
 def log_activity(user_id, action, detail=None, icon='activity', company_id=None):
     try:
         from models import ActivityLog
@@ -779,31 +810,41 @@ def add_deal():
     return redirect(url_for('main.deals'))
 
 @main_bp.route('/campaigns')
+@main_bp.route('/app/campaigns')
 @login_required
 def campaigns():
-    """Email Campaigns list - redirect to campaign hub"""
+    """Email Campaigns list with safe empty/error handling."""
+    if not _marketing_pages_allowed():
+        return _marketing_forbidden_response()
     from models import Campaign, Company, user_company
-    
-    company = db.session.query(Company).join(
-        user_company, Company.id == user_company.c.company_id
-    ).filter(user_company.c.user_id == current_user.id).first()
-    company_id = company.id if company else None
-    
-    status_filter = request.args.get('status', '')
-    page = request.args.get('page', 1, type=int)
-    
-    query = Campaign.query.filter_by(company_id=company_id)
-    if status_filter:
-        query = query.filter_by(status=status_filter)
-    
     try:
+        company = current_user.get_default_company() if hasattr(current_user, 'get_default_company') else None
+        if not company:
+            company = db.session.query(Company).join(
+                user_company, Company.id == user_company.c.company_id
+            ).filter(user_company.c.user_id == current_user.id).first()
+        company_id = company.id if company else None
+
+        status_filter = request.args.get('status', '')
+        page = request.args.get('page', 1, type=int)
+
+        query = Campaign.query
+        if company_id:
+            query = query.filter_by(company_id=company_id)
+        else:
+            query = query.filter(Campaign.company_id.is_(None))
+        if status_filter:
+            query = query.filter_by(status=status_filter)
+
         campaigns = query.order_by(Campaign.created_at.desc()).paginate(page=page, per_page=20, error_out=False)
+        return render_template('campaigns.html', campaigns=campaigns, status_filter=status_filter)
     except Exception as exc:
-        logger.exception("Campaigns page failed; returning empty tenant-safe list: %s", exc)
-        db.session.rollback()
-        campaigns = Campaign.query.filter(text("1=0")).paginate(page=1, per_page=20, error_out=False)
-    
-    return render_template('campaigns.html', campaigns=campaigns, status_filter=status_filter)
+        logger.exception("Campaigns page failed")
+        if request.accept_mimetypes.accept_json and not request.accept_mimetypes.accept_html:
+            return jsonify({'success': False, 'error': 'Unable to load campaigns'}), 500
+        flash('Unable to load campaigns right now. Please try again later.', 'error')
+        empty = Campaign.query.filter(text('1=0')).paginate(page=1, per_page=20, error_out=False)
+        return render_template('campaigns.html', campaigns=empty, status_filter=request.args.get('status', '')), 200
 
 @main_bp.route('/email-builder')
 @main_bp.route('/email-builder/<int:campaign_id>')
@@ -2192,20 +2233,31 @@ def create_segment():
 
 # Social Media Management Routes
 @main_bp.route('/social-media')
+@main_bp.route('/app/social')
 @login_required
 def social_media():
     """Social media management dashboard"""
+    if not _marketing_pages_allowed():
+        return _marketing_forbidden_response()
     from datetime import datetime, timedelta
     search_q = request.args.get('q', '').strip()
     date_from = request.args.get('date_from', '')
     date_to = request.args.get('date_to', '')
     view_all = request.args.get('view_all', '')
 
-    company_id = getattr(current_user, 'default_company_id', None)
-    query = SocialPost.query
-    if company_id:
-        query = query.filter_by(company_id=company_id)
-    query = query.order_by(SocialPost.created_at.desc())
+    company = current_user.get_default_company() if hasattr(current_user, 'get_default_company') else None
+    company_id = company.id if company else getattr(current_user, 'default_company_id', None)
+
+    try:
+        query = SocialPost.query
+        if company_id:
+            query = query.filter_by(company_id=company_id)
+        else:
+            query = query.filter(SocialPost.company_id.is_(None))
+        query = query.order_by(SocialPost.created_at.desc())
+    except Exception:
+        logger.exception("Social page query initialization failed")
+        return render_template('social_media.html', posts=[], connected_accounts=[], total_posts=0, search_q=search_q, date_from=date_from, date_to=date_to, view_all=view_all, showing_all=False), 200
 
     if search_q:
         query = query.filter(SocialPost.content.ilike(f'%{search_q}%'))
@@ -2222,21 +2274,25 @@ def social_media():
 
     try:
         total_posts = query.count()
-        if view_all:
-            posts = query.all()
-        elif search_q or date_from or date_to:
-            posts = query.all()
-        else:
-            posts = query.limit(5).all()
-        account_query = SocialMediaAccount.query.filter_by(is_active=True)
+    except Exception:
+        logger.exception("Social page count failed")
+        return render_template('social_media.html', posts=[], connected_accounts=[], total_posts=0, search_q=search_q, date_from=date_from, date_to=date_to, view_all=view_all, showing_all=False), 200
+    if view_all:
+        posts = query.all()
+    elif search_q or date_from or date_to:
+        posts = query.all()
+    else:
+        posts = query.limit(5).all()
+
+    try:
+        connected_query = SocialMediaAccount.query.filter_by(is_active=True)
         if company_id:
-            account_query = account_query.filter_by(company_id=company_id)
-        connected_accounts = account_query.all()
-    except Exception as exc:
-        logger.exception("Social Media page failed; returning graceful disconnected state: %s", exc)
-        db.session.rollback()
-        total_posts = 0
-        posts = []
+            connected_query = connected_query.filter_by(company_id=company_id)
+        else:
+            connected_query = connected_query.filter(SocialMediaAccount.company_id.is_(None))
+        connected_accounts = connected_query.all()
+    except Exception:
+        logger.exception("Social accounts load failed")
         connected_accounts = []
     return render_template('social_media.html',
         posts=posts,
@@ -2360,14 +2416,15 @@ def create_social_post():
             } if link_url else None
         }
         
+        company_id = _current_company_id()
         if post_id:
-            post = db.session.get(SocialPost, post_id)
+            post = SocialPost.query.filter_by(id=post_id, company_id=company_id).first()
             if not post:
                 flash('Post not found', 'error')
                 return redirect(url_for('main.social_media'))
             message = 'Social media post updated successfully!'
         else:
-            post = SocialPost()
+            post = SocialPost(company_id=company_id, user_id=current_user.id)
             message = 'Social media post created successfully!'
         
         post.content = content
@@ -2394,7 +2451,7 @@ def create_social_post():
 def delete_social_post(post_id):
     """Delete a social media post"""
     try:
-        post = db.session.get(SocialPost, post_id)
+        post = SocialPost.query.filter_by(id=post_id, company_id=_current_company_id()).first()
         if not post:
             return jsonify({'success': False, 'message': 'Post not found'}), 404
         
@@ -2430,7 +2487,7 @@ def refresh_social_followers():
                     flash(f"Could not refresh {account.platform}: {result.get('message')}", 'warning')
         else:
             # Refresh all accounts
-            accounts = SocialMediaAccount.query.filter_by(is_active=True).all()
+            accounts = SocialMediaAccount.query.filter_by(is_active=True, company_id=_current_company_id()).all()
             updated_count = 0
             for account in accounts:
                 result = SocialMediaService.refresh_account_data(account)
@@ -3388,21 +3445,17 @@ def sms_dashboard():
     """SMS marketing dashboard"""
     # # from services.sms_service import SMSService
     company_id = getattr(current_user, 'default_company_id', None)
-    campaigns = []
-    templates = []
-    total_campaigns = sent_campaigns = scheduled_campaigns = 0
-    try:
-        campaigns_query = SMSCampaign.query
-        if company_id:
-            campaigns_query = campaigns_query.filter_by(company_id=company_id)
-        campaigns = campaigns_query.order_by(SMSCampaign.created_at.desc()).all()
-        templates = SMSTemplate.query.order_by(SMSTemplate.created_at.desc()).limit(10).all()
-        total_campaigns = campaigns_query.count()
-        sent_campaigns = campaigns_query.filter_by(status='sent').count()
-        scheduled_campaigns = campaigns_query.filter_by(status='scheduled').count()
-    except Exception as exc:
-        logger.exception("SMS dashboard query failed; rendering empty safe state: %s", exc)
-        db.session.rollback()
+    
+    campaigns_query = SMSCampaign.query
+    if company_id:
+        campaigns_query = campaigns_query.filter_by(company_id=company_id)
+    campaigns = campaigns_query.order_by(SMSCampaign.created_at.desc()).all()
+    templates = SMSTemplate.query.order_by(SMSTemplate.created_at.desc()).limit(10).all()
+    
+    # Stats
+    total_campaigns = campaigns_query.count()
+    sent_campaigns = campaigns_query.filter_by(status='sent').count()
+    scheduled_campaigns = campaigns_query.filter_by(status='scheduled').count()
     
     # Check if Twilio is configured for this company
     twilio_configured = False
@@ -3450,14 +3503,12 @@ def create_sms_campaign():
                 return redirect(url_for('main.sms_dashboard'))
 
             # Create campaign
-            campaign = SMSCampaign(
-                company_id=company_id,
-                created_by_user_id=current_user.id,
+            company = current_user.get_default_company() if hasattr(current_user, 'get_default_company') else None
+            campaign = SMSService.create_campaign(
                 name=name,
                 message=message,
-                segment=request.form.get('segment_tags') or None,
-                status='scheduled' if scheduled_at else 'draft',
-                scheduled_at=scheduled_at
+                scheduled_at=scheduled_at,
+                company_id=company.id if company else getattr(current_user, 'default_company_id', None)
             )
             if campaign.message and 'STOP' not in campaign.message.upper():
                 campaign.message = f"{campaign.message.strip()} Reply STOP to opt out."
@@ -3492,19 +3543,21 @@ def create_sms_campaign():
                 tag_filters = [Contact.tags.contains(tag_name) for tag_name in segment_names]
                 
                 contacts_to_target = Contact.query.filter(
-                    Contact.company_id == company_id,
+                    Contact.company_id == campaign.company_id,
                     Contact.phone.isnot(None),
-                    Contact.is_active.is_(True),
-                    Contact.is_subscribed.is_(True),
+                    Contact.sms_marketing_opt_in == True,
+                    Contact.sms_opt_out_at.is_(None),
+                    Contact.sms_consent_status.in_(['opted_in', 'subscribed']),
                     or_(*tag_filters) if tag_filters else True
                 ).all()
             else:
                 # Send to all contacts with phone numbers
                 contacts_to_target = Contact.query.filter(
-                    Contact.company_id == company_id,
+                    Contact.company_id == campaign.company_id,
                     Contact.phone.isnot(None),
-                    Contact.is_active.is_(True),
-                    Contact.is_subscribed.is_(True),
+                    Contact.sms_marketing_opt_in == True,
+                    Contact.sms_opt_out_at.is_(None),
+                    Contact.sms_consent_status.in_(['opted_in', 'subscribed'])
                 ).all()
             
             # Add recipients
@@ -3539,22 +3592,17 @@ def create_sms_campaign():
             logger.error(f"Error creating SMS campaign: {e}")
             flash('Error creating SMS campaign', 'error')
     
-    contacts = []
-    tags = []
-    templates = []
-    segments = []
-    try:
-        company_id = getattr(current_user, 'default_company_id', None)
-        contact_query = Contact.query.filter(Contact.phone.isnot(None))
-        if company_id:
-            contact_query = contact_query.filter_by(company_id=company_id)
-        contacts = contact_query.all()
-        tags = CampaignTaggingService.get_all_tags()
-        templates = SMSTemplate.query.all()
-        segments = Segment.query.all()
-    except Exception as exc:
-        logger.exception("SMS campaign create dependencies failed; rendering empty safe state: %s", exc)
-        db.session.rollback()
+    company_id = _current_company_id()
+    contacts = Contact.query.filter(
+        Contact.company_id == company_id,
+        Contact.phone.isnot(None),
+        Contact.sms_marketing_opt_in == True,
+        Contact.sms_opt_out_at.is_(None),
+        Contact.sms_consent_status.in_(['opted_in', 'subscribed'])
+    ).all()
+    tags = CampaignTaggingService.get_all_tags()
+    templates = SMSTemplate.query.all()
+    segments = Segment.query.all()
     
     return render_template('create_sms_campaign.html',
                          contacts=contacts,
@@ -3568,7 +3616,8 @@ def edit_sms_campaign(campaign_id):
     """Edit an existing SMS campaign"""
     from services.sms_service import SMSService
     
-    campaign = SMSCampaign.query.get_or_404(campaign_id)
+    company_id = _current_company_id()
+    campaign = SMSCampaign.query.filter_by(id=campaign_id, company_id=company_id).first_or_404()
     
     if request.method == 'POST':
         try:
@@ -3587,7 +3636,14 @@ def edit_sms_campaign(campaign_id):
             logger.error(f"Error updating SMS campaign: {e}")
             flash('Error updating campaign', 'error')
     
-    contacts = Contact.query.filter(Contact.phone.isnot(None)).all()
+    company_id = _current_company_id()
+    contacts = Contact.query.filter(
+        Contact.company_id == company_id,
+        Contact.phone.isnot(None),
+        Contact.sms_marketing_opt_in == True,
+        Contact.sms_opt_out_at.is_(None),
+        Contact.sms_consent_status.in_(['opted_in', 'subscribed'])
+    ).all()
     templates = SMSTemplate.query.all()
     
     return render_template('edit_sms_campaign.html',
@@ -3600,7 +3656,8 @@ def edit_sms_campaign(campaign_id):
 def archive_sms_campaign(campaign_id):
     """Archive an SMS campaign"""
     try:
-        campaign = SMSCampaign.query.get_or_404(campaign_id)
+        company_id = _current_company_id()
+        campaign = SMSCampaign.query.filter_by(id=campaign_id, company_id=company_id).first_or_404()
         campaign.status = 'archived'
         db.session.commit()
         flash('Campaign archived successfully', 'success')
@@ -4851,7 +4908,7 @@ def event_checkin(event_id):
 def social_accounts():
     """Manage connected social media accounts"""
     from models import SocialMediaAccount, XOAuth
-    accounts = SocialMediaAccount.query.filter_by(is_active=True).all()
+    accounts = SocialMediaAccount.query.filter_by(is_active=True, company_id=_current_company_id()).all()
     company = current_user.get_default_company() if current_user.is_authenticated else None
     x_records = XOAuth.query.filter_by(
         user_id=current_user.id,
@@ -4952,6 +5009,10 @@ def social_schedule_post():
     
     if request.method == 'POST':
         account_id = int(request.form.get('account_id'))
+        account = SocialMediaAccount.query.filter_by(id=account_id, company_id=_current_company_id(), is_active=True).first()
+        if not account:
+            flash('Social account not found', 'error')
+            return redirect(url_for('main.social_media'))
         content = request.form.get('content')
         scheduled_for = datetime.fromisoformat(request.form.get('scheduled_for'))
         hashtags = request.form.get('hashtags')
@@ -4961,7 +5022,7 @@ def social_schedule_post():
             flash('Post scheduled!', 'success')
             return redirect(url_for('main.social_media'))
     
-    accounts = SocialMediaAccount.query.filter_by(is_active=True).all()
+    accounts = SocialMediaAccount.query.filter_by(is_active=True, company_id=_current_company_id()).all()
     return render_template('social_schedule.html', accounts=accounts)
 
 @main_bp.route('/social/crosspost', methods=['POST'])
@@ -10849,19 +10910,31 @@ def analytics_report_print():
 
 
 @main_bp.route('/sms/campaigns')
+@main_bp.route('/app/sms-campaigns')
 @login_required
 def sms_campaigns():
+    if not _marketing_pages_allowed():
+        return _marketing_forbidden_response()
     campaigns_list = []
+    twilio_configured = False
     try:
         if SMSCampaign is not None:
-            company_id = getattr(current_user, 'default_company_id', None)
+            company = current_user.get_default_company() if hasattr(current_user, 'get_default_company') else None
+            company_id = company.id if company else getattr(current_user, 'default_company_id', None)
             query = SMSCampaign.query
-            if company_id:
+            if company_id and hasattr(SMSCampaign, 'company_id'):
                 query = query.filter_by(company_id=company_id)
             campaigns_list = query.order_by(SMSCampaign.created_at.desc()).all()
+            try:
+                from models import TwilioAccount
+                ta = TwilioAccount.query.filter_by(company_id=company_id).first() if company_id else None
+                twilio_configured = bool(ta and ta.is_configured)
+            except Exception:
+                twilio_configured = False
     except Exception:
-        pass
-    return render_template('sms_campaigns.html', campaigns=campaigns_list)
+        logger.exception("SMS campaigns page failed")
+        campaigns_list = []
+    return render_template('sms_campaigns.html', campaigns=campaigns_list, sms_enabled=True, twilio_configured=twilio_configured, scheduled_count=sum(1 for c in campaigns_list if c.status == 'scheduled'))
 
 
 @main_bp.route('/sms/campaign/<int:campaign_id>/send', methods=['POST'])
@@ -10869,15 +10942,33 @@ def sms_campaigns():
 def send_sms_campaign(campaign_id):
     try:
         if SMSCampaign is not None:
-            campaign = db.session.get(SMSCampaign, campaign_id)
-            if campaign:
-                campaign.status = 'sending'
-                db.session.commit()
-                flash('SMS Campaign is being sent!', 'success')
-            else:
+            company_id = _current_company_id()
+            campaign = SMSCampaign.query.filter_by(id=campaign_id, company_id=company_id).first()
+            if not campaign:
                 flash('SMS Campaign not found.', 'danger')
+                return redirect(url_for('main.sms_campaigns'))
+            recipient_count = SMSRecipient.query.filter_by(campaign_id=campaign_id, status='pending').count()
+            if recipient_count > SMSService.ASYNC_RECIPIENT_THRESHOLD:
+                result = SMSService.queue_campaign_send(campaign_id, app=current_app._get_current_object()) if SMSService else {'success': False, 'error': 'SMS service unavailable'}
+                if result.get('success'):
+                    flash(f"SMS campaign queued for {recipient_count} recipient(s).", 'success')
+                elif result.get('status_code') == 409:
+                    flash(result.get('error'), 'danger')
+                    return redirect(url_for('main.sms_campaigns')), 409
+                else:
+                    flash(f"SMS campaign could not be queued: {result.get('error')}", 'danger')
+            else:
+                result = SMSService.send_campaign(campaign_id) if SMSService else {'success': False, 'error': 'SMS service unavailable'}
+                if result.get('success'):
+                    flash(f"SMS campaign sent to {result.get('sent', 0)} recipient(s); {result.get('failed', 0)} failed.", 'success')
+                elif result.get('status_code') == 409:
+                    flash(result.get('error'), 'danger')
+                    return redirect(url_for('main.sms_campaigns')), 409
+                else:
+                    flash(f"SMS campaign could not be sent: {result.get('error') or 'no opted-in pending recipients'}", 'danger')
     except Exception as e:
         db.session.rollback()
+        logger.exception("Error sending SMS campaign")
         flash(f'Error sending SMS campaign: {str(e)}', 'danger')
     return redirect(url_for('main.sms_campaigns'))
 
