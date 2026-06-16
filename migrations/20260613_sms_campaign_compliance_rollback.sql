@@ -1,8 +1,10 @@
 -- Rollback for 20260613_sms_campaign_compliance.sql (PostgreSQL).
+DROP INDEX IF EXISTS ix_sms_recipient_provider_message_sid;
 DROP INDEX IF EXISTS ix_sms_recipient_campaign_status;
 DROP INDEX IF EXISTS ix_sms_campaign_company_id;
 ALTER TABLE twilio_account DROP COLUMN IF EXISTS after_hours_cooldown_minutes;
 ALTER TABLE sms_recipient DROP COLUMN IF EXISTS error_code;
+ALTER TABLE sms_recipient DROP COLUMN IF EXISTS provider_message_sid;
 ALTER TABLE sms_recipient DROP COLUMN IF EXISTS message_sid;
 ALTER TABLE sms_recipient DROP COLUMN IF EXISTS phone_number;
 ALTER TABLE sms_campaign DROP COLUMN IF EXISTS test_sent_at;

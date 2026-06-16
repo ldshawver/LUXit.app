@@ -330,6 +330,7 @@ class SMSService:
                 recipient.status = 'sent'
                 recipient.sent_at = datetime.utcnow()
                 recipient.message_sid = result.get('message_sid')
+                recipient.provider_message_sid = result.get('message_sid')
                 sent += 1
             else:
                 recipient.status = 'failed'

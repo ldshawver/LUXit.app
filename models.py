@@ -920,6 +920,7 @@ class SMSRecipient(db.Model):
     phone_number = db.Column(db.String(50))
     status = db.Column(db.String(50), default="pending")
     message_sid = db.Column(db.String(100))
+    provider_message_sid = db.Column(db.String(255), nullable=True, index=True)
     error_code = db.Column(db.String(50))
     sent_at = db.Column(db.DateTime)
     delivered_at = db.Column(db.DateTime)
