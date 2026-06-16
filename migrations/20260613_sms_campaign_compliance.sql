@@ -10,7 +10,9 @@ ALTER TABLE sms_campaign ADD COLUMN IF NOT EXISTS estimated_recipient_count INTE
 ALTER TABLE sms_campaign ADD COLUMN IF NOT EXISTS test_sent_at TIMESTAMP NULL;
 ALTER TABLE sms_recipient ADD COLUMN IF NOT EXISTS phone_number VARCHAR(50) NULL;
 ALTER TABLE sms_recipient ADD COLUMN IF NOT EXISTS message_sid VARCHAR(100) NULL;
+ALTER TABLE sms_recipient ADD COLUMN IF NOT EXISTS provider_message_sid VARCHAR(255) NULL;
 ALTER TABLE sms_recipient ADD COLUMN IF NOT EXISTS error_code VARCHAR(50) NULL;
 ALTER TABLE twilio_account ADD COLUMN IF NOT EXISTS after_hours_cooldown_minutes INTEGER NOT NULL DEFAULT 720;
 CREATE INDEX IF NOT EXISTS ix_sms_campaign_company_id ON sms_campaign(company_id);
 CREATE INDEX IF NOT EXISTS ix_sms_recipient_campaign_status ON sms_recipient(campaign_id, status);
+CREATE INDEX IF NOT EXISTS ix_sms_recipient_provider_message_sid ON sms_recipient(provider_message_sid);
