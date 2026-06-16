@@ -1746,6 +1746,9 @@ def inbox():
 
 
 @twilio_bp.route("/comms")
+@twilio_bp.route("/communications")
+@twilio_bp.route("/communication-hub")
+@twilio_bp.route("/communications-hub")
 @login_required
 def comms_hub():
     """Communications Hub — tabbed wrapper for SMS, Calls, Voicemail, Contacts, etc."""
@@ -1763,21 +1766,27 @@ def comms_hub():
     search       = request.args.get("q", "").strip()
 
     # ── Inbox data ───────────────────────────────────────────────────────
-    q = TwilioConversation.query.filter_by(company_id=company.id)
-    if status_filter == "unread":
-        q = q.filter_by(is_read=False)
-    elif status_filter == "opted_out":
-        q = q.filter_by(is_opted_out=True)
-    if search and tab == "inbox":
-        q = q.filter(
-            db.or_(
-                TwilioConversation.from_number.ilike(f"%{search}%"),
-                TwilioConversation.contact_name.ilike(f"%{search}%"),
-                TwilioConversation.last_message_preview.ilike(f"%{search}%"),
+    conversations = []
+    unread_count = 0
+    try:
+        q = TwilioConversation.query.filter_by(company_id=company.id)
+        if status_filter == "unread":
+            q = q.filter_by(is_read=False)
+        elif status_filter == "opted_out":
+            q = q.filter_by(is_opted_out=True)
+        if search and tab == "inbox":
+            q = q.filter(
+                db.or_(
+                    TwilioConversation.from_number.ilike(f"%{search}%"),
+                    TwilioConversation.contact_name.ilike(f"%{search}%"),
+                    TwilioConversation.last_message_preview.ilike(f"%{search}%"),
+                )
             )
-        )
-    conversations = q.order_by(TwilioConversation.last_message_at.desc()).limit(100).all()
-    unread_count  = TwilioConversation.query.filter_by(company_id=company.id, is_read=False).count()
+        conversations = q.order_by(TwilioConversation.last_message_at.desc()).limit(100).all()
+        unread_count = TwilioConversation.query.filter_by(company_id=company.id, is_read=False).count()
+    except Exception as exc:
+        logger.exception("Communications Hub inbox query failed; rendering empty safe state: %s", exc)
+        db.session.rollback()
 
     # ── Call log data ─────────────────────────────────────────────────────
     calls              = []
@@ -1973,11 +1982,13 @@ def conversation(conv_id):
 @login_required
 def send_message():
     company = _get_company()
+    if not company:
+        return jsonify({"success": False, "error": "Company/tenant is required."}), 200
     ta = _get_twilio_account(company.id)
     if not ta or not ta.is_configured:
-        return jsonify({"success": False, "error": "Twilio not configured for this company."})
+        return jsonify({"success": False, "error": "Twilio not configured for this company."}), 200
 
-    payload   = request.get_json() or {}
+    payload   = request.get_json(silent=True) or {}
     to_number = (payload.get("to") or "").strip()
     body      = (payload.get("body") or "").strip()
     conv_id   = payload.get("conversation_id")
@@ -1985,22 +1996,27 @@ def send_message():
     if not to_number or not body:
         return jsonify({"success": False, "error": "to and body are required."})
 
-    conv = None
-    if conv_id:
-        from models import TwilioConversation
-        conv = TwilioConversation.query.filter_by(id=conv_id, company_id=company.id).first()
+    try:
+        conv = None
+        if conv_id:
+            from models import TwilioConversation
+            conv = TwilioConversation.query.filter_by(id=conv_id, company_id=company.id).first()
 
-    if not conv:
-        conv = _get_or_create_conversation(company.id, to_number, ta.from_phone or "")
+        if not conv:
+            conv = _get_or_create_conversation(company.id, to_number, ta.from_phone or "")
 
-    # Update conversation preview
-    conv.last_message_at      = datetime.utcnow()
-    conv.last_message_preview = f"You: {body[:150]}"
-    conv.message_count        = (conv.message_count or 0) + 1
-    db.session.commit()
+        # Update conversation preview
+        conv.last_message_at      = datetime.utcnow()
+        conv.last_message_preview = f"You: {body[:150]}"
+        conv.message_count        = (conv.message_count or 0) + 1
+        db.session.commit()
 
-    result = _send_sms(ta, to_number, body, conversation_id=conv.id)
-    return jsonify(result)
+        result = _send_sms(ta, to_number, body, conversation_id=conv.id)
+        return jsonify(result)
+    except Exception as exc:
+        db.session.rollback()
+        logger.exception("Communications Hub send failed safely: %s", exc)
+        return jsonify({"success": False, "error": "Message could not be sent. Check Twilio configuration and try again."}), 200
 
 
 @twilio_bp.route("/settings", methods=["GET", "POST"])
