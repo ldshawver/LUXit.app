@@ -16,7 +16,7 @@ try:
 except ImportError:
     pass
 
-from flask import Flask, g, has_request_context, request
+from flask import Flask, g, has_request_context, jsonify, redirect, request
 from flask_login import LoginManager
 from werkzeug.middleware.proxy_fix import ProxyFix
 from extensions import db, csrf  # csrf used below to exempt Stripe routes
@@ -337,7 +337,7 @@ def create_app() -> Flask:
     # Blueprints
     # --------------------------------------------------------
     from routes import main_bp
-    from auth import auth_bp
+    from auth import auth_bp, login as auth_login
     from user_management import user_bp
     from advanced_config import advanced_config_bp
     from marketing import marketing_bp
@@ -394,6 +394,34 @@ def create_app() -> Flask:
     # own auth/signature/allowlist controls, so we exempt the whole blueprint.
     csrf.exempt(stripe_webhook_bp)
     print("✓ SaaS Command Center routes loaded: /saas, /api/stripe/webhook (CSRF-exempt)")
+
+    @app.get("/login")
+    def login_alias():
+        """Public login alias used by deploy smoke tests and legacy links."""
+        return auth_login()
+
+    @app.get("/healthz")
+    def healthz():
+        """Minimal load-balancer health check that never requires auth."""
+        return jsonify({"status": "ok"})
+
+    @app.get("/__version")
+    def version():
+        """Build/version metadata endpoint with safe defaults."""
+        return jsonify(
+            {
+                "app": "luxit",
+                "version": os.environ.get("APP_VERSION", "unknown"),
+                "git_sha": os.environ.get("GIT_SHA", os.environ.get("COMMIT_SHA", "unknown")),
+            }
+        )
+
+    @app.get("/communication-hub")
+    @app.get("/communications")
+    @app.get("/communications-hub")
+    def communications_alias():
+        """Legacy communications URLs redirect to the tenant-scoped hub."""
+        return redirect("/twilio/comms", code=302)
 
     from utils import get_campaign_status_color
     app.jinja_env.filters['campaign_status_color'] = get_campaign_status_color
@@ -617,6 +645,17 @@ def create_app() -> Flask:
                     ("platforms", "JSON"),
                     ("media_urls", "JSON"),
                     ("updated_at", "TIMESTAMP"),
+                ],
+                "agent_report": [
+                    ("company_id", "INTEGER"),
+                ],
+                "agent_log": [
+                    ("company_id", "INTEGER"),
+                ],
+                "agent_deliverable": [
+                    ("company_id", "INTEGER"),
+                    ("priority", "VARCHAR(50) DEFAULT 'normal'"),
+                    ("requested_by_id", "INTEGER"),
                 ],
                 "twilio_conversation": [
                     ("company_id", "INTEGER"),

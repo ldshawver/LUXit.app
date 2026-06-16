@@ -6,7 +6,7 @@ import os
 from datetime import datetime, timedelta
 from flask import Blueprint, render_template, request, flash, redirect, url_for, jsonify, make_response, send_file, current_app, g
 from flask_login import login_required, current_user
-from sqlalchemy import or_, case, text
+from sqlalchemy import or_, case, text, func
 from extensions import db, csrf
 try:
     from models import (
@@ -20,7 +20,8 @@ try:
         TicketPurchase, EventCheckIn, SocialMediaAccount, SocialMediaSchedule,
         AutomationTest, AutomationTriggerLibrary, AutomationABTest, Company, user_company,
         Deal, LeadScore, PersonalizationRule, KeywordResearch,
-        Notification, InboxMessage, CampaignCost,
+        Notification, InboxMessage, CampaignCost, CRMTask, Meeting, SalesStage,
+        TouchpointEvent,
     )
     MODELS_AVAILABLE = True
 except ImportError as exc:
@@ -38,6 +39,7 @@ except ImportError as exc:
     AutomationTriggerLibrary = AutomationABTest = Company = user_company = None
     Deal = LeadScore = PersonalizationRule = KeywordResearch = None
     Notification = InboxMessage = CampaignCost = None
+    CRMTask = Meeting = SalesStage = TouchpointEvent = None
 try:
     from email_service import EmailService
 except ImportError as exc:
@@ -287,20 +289,27 @@ def set_hub_preference():
 @login_required
 def dashboard():
     """Sales Hub Dashboard - shows deals, pipeline, and CRM metrics"""
+    try:
+        company = current_user.get_default_company() if hasattr(current_user, "get_default_company") else None
+        company_id = company.id if company else getattr(current_user, "default_company_id", None)
+    except Exception:
+        db.session.rollback()
+        company_id = getattr(current_user, "default_company_id", None)
+
     total_contacts = safe_count(
-        Contact.query.filter_by(is_active=True),
+        Contact.query.filter_by(company_id=company_id, is_active=True) if company_id else Contact.query.filter_by(id=-1),
         context="active contacts"
     )
     total_campaigns = safe_count(
-        Campaign.query,
+        Campaign.query.filter_by(company_id=company_id) if company_id else Campaign.query.filter_by(id=-1),
         context="campaigns"
     )
     active_campaigns = safe_count(
-        Campaign.query.filter_by(status='sending'),
+        Campaign.query.filter_by(company_id=company_id, status='sending') if company_id else Campaign.query.filter_by(id=-1),
         context="active campaigns"
     )
     try:
-        recent_campaigns = Campaign.query.order_by(Campaign.created_at.desc()).limit(5).all()
+        recent_campaigns = Campaign.query.filter_by(company_id=company_id).order_by(Campaign.created_at.desc()).limit(5).all() if company_id else []
     except Exception as exc:
         logger.warning("Dashboard recent campaigns query failed: %s", exc)
         try:
@@ -317,10 +326,6 @@ def dashboard():
     ai_status = "enabled" if _openai_ok else "disabled"
     scheduler_status = "running" if _scheduler_status() == "running" else "disabled"
     
-    try:
-        company_id = getattr(current_user, 'default_company_id', None)
-    except Exception:
-        company_id = None
     today = datetime.utcnow().date()
     week_ago = today - timedelta(days=7)
     
@@ -2820,10 +2825,11 @@ def agent_reports():
     
     agent_type = request.args.get('agent', 'all')
     report_type = request.args.get('type', 'all')
+    company_id = _current_company_id()
     
-    deliverables_query = AgentDeliverable.query
-    reports_query = AgentReport.query
-    logs_query = AgentLog.query
+    deliverables_query = AgentDeliverable.query.filter_by(company_id=company_id)
+    reports_query = AgentReport.query.filter_by(company_id=company_id)
+    logs_query = AgentLog.query.filter_by(company_id=company_id)
     
     if agent_type != 'all':
         deliverables_query = deliverables_query.filter_by(agent_type=agent_type)
@@ -2886,11 +2892,12 @@ def agent_detail(agent_type):
     agent = agent_info[agent_type]
     agent['type'] = agent_type
     
-    deliverables = AgentDeliverable.query.filter_by(agent_type=agent_type).order_by(AgentDeliverable.created_at.desc()).limit(20).all()
-    reports = AgentReport.query.filter_by(agent_type=agent_type).order_by(AgentReport.created_at.desc()).limit(10).all()
-    logs = AgentLog.query.filter_by(agent_type=agent_type).order_by(AgentLog.created_at.desc()).limit(50).all()
-    memories = AgentMemory.query.filter_by(agent_type=agent_type).order_by(AgentMemory.updated_at.desc()).limit(20).all()
-    performance = AgentPerformance.query.filter_by(agent_type=agent_type).order_by(AgentPerformance.created_at.desc()).first()
+    company_id = _current_company_id()
+    deliverables = AgentDeliverable.query.filter_by(agent_type=agent_type, company_id=company_id).order_by(AgentDeliverable.created_at.desc()).limit(20).all()
+    reports = AgentReport.query.filter_by(agent_type=agent_type, company_id=company_id).order_by(AgentReport.created_at.desc()).limit(10).all()
+    logs = AgentLog.query.filter_by(agent_type=agent_type, company_id=company_id).order_by(AgentLog.created_at.desc()).limit(50).all()
+    memories = AgentMemory.query.filter_by(agent_type=agent_type, company_id=company_id).order_by(AgentMemory.updated_at.desc()).limit(20).all()
+    performance = AgentPerformance.query.filter_by(agent_type=agent_type, company_id=company_id).order_by(AgentPerformance.created_at.desc()).first()
     
     return render_template('agent_detail.html',
                          agent=agent,
@@ -3550,6 +3557,7 @@ def create_sms_campaign():
                         company_id=company_id,
                         campaign_id=campaign.id,
                         contact_id=contact.id,
+                        phone_number=contact.phone,
                         status='queued',
                     ))
             
@@ -4457,24 +4465,25 @@ def agents_dashboard():
     """AI Agents Dashboard - View and manage all marketing agents"""
     from models import AgentTask, AgentLog, AgentReport, AgentSchedule
     from agent_scheduler import get_agent_scheduler
+    company_id = _current_company_id()
     
     # Get scheduler and job information
     scheduler = get_agent_scheduler()
     scheduled_jobs = scheduler.get_scheduled_jobs() if scheduler else []
     
     # Get recent agent activity
-    recent_logs = AgentLog.query.order_by(AgentLog.created_at.desc()).limit(20).all()
-    pending_tasks = AgentTask.query.filter_by(status='pending').order_by(AgentTask.scheduled_at).all()
-    recent_reports = AgentReport.query.order_by(AgentReport.created_at.desc()).limit(10).all()
+    recent_logs = AgentLog.query.filter_by(company_id=company_id).order_by(AgentLog.created_at.desc()).limit(20).all()
+    pending_tasks = AgentTask.query.filter_by(company_id=company_id, status='pending').order_by(AgentTask.scheduled_at).all()
+    recent_reports = AgentReport.query.filter_by(company_id=company_id).order_by(AgentReport.created_at.desc()).limit(10).all()
     
     # Get agent stats
     agent_stats = {}
     agent_types = ['brand_strategy', 'content_seo', 'analytics', 'creative_design']
     
     for agent_type in agent_types:
-        total_tasks = AgentTask.query.filter_by(agent_type=agent_type).count()
-        completed_tasks = AgentTask.query.filter_by(agent_type=agent_type, status='completed').count()
-        failed_tasks = AgentTask.query.filter_by(agent_type=agent_type, status='failed').count()
+        total_tasks = AgentTask.query.filter_by(company_id=company_id, agent_type=agent_type).count()
+        completed_tasks = AgentTask.query.filter_by(company_id=company_id, agent_type=agent_type, status='completed').count()
+        failed_tasks = AgentTask.query.filter_by(company_id=company_id, agent_type=agent_type, status='failed').count()
         
         agent_stats[agent_type] = {
             'total': total_tasks,
@@ -4595,7 +4604,7 @@ def view_agent_report(report_id):
     """View detailed agent report"""
     from models import AgentReport
     
-    report = AgentReport.query.get_or_404(report_id)
+    report = AgentReport.query.filter_by(id=report_id, company_id=_current_company_id()).first_or_404()
     
     return render_template('view_agent_report.html', report=report)
 
@@ -7558,13 +7567,14 @@ def agents_reports_dashboard():
     scheduled_jobs = scheduler.get_scheduled_jobs() if scheduler else []
     
     # Get recent agent activities (last 50)
-    recent_activities = AgentLog.query.order_by(AgentLog.created_at.desc()).limit(50).all()
+    company_id = company.id if company else None
+    recent_activities = AgentLog.query.filter_by(company_id=company_id).order_by(AgentLog.created_at.desc()).limit(50).all()
     
     # Get agent task statistics
-    total_tasks = AgentTask.query.count()
-    completed_tasks = AgentTask.query.filter_by(status='completed').count()
-    pending_tasks = AgentTask.query.filter_by(status='pending').count()
-    failed_tasks = AgentTask.query.filter_by(status='failed').count()
+    total_tasks = AgentTask.query.filter_by(company_id=company_id).count()
+    completed_tasks = AgentTask.query.filter_by(company_id=company_id, status='completed').count()
+    pending_tasks = AgentTask.query.filter_by(company_id=company_id, status='pending').count()
+    failed_tasks = AgentTask.query.filter_by(company_id=company_id, status='failed').count()
     
     # Agent performance metrics
     agent_stats = {}
@@ -7573,7 +7583,7 @@ def agents_reports_dashboard():
                   'retention', 'operations', 'app_intelligence']
     
     for agent_type in agent_types:
-        agent_tasks = AgentTask.query.filter_by(agent_type=agent_type).all()
+        agent_tasks = AgentTask.query.filter_by(company_id=company_id, agent_type=agent_type).all()
         agent_completed = len([t for t in agent_tasks if t.status == 'completed'])
         agent_total = len(agent_tasks)
         
@@ -7581,7 +7591,7 @@ def agents_reports_dashboard():
             'total_tasks': agent_total,
             'completed': agent_completed,
             'success_rate': (agent_completed / agent_total * 100) if agent_total > 0 else 0,
-            'last_activity': AgentLog.query.filter_by(agent_type=agent_type).order_by(
+            'last_activity': AgentLog.query.filter_by(company_id=company_id, agent_type=agent_type).order_by(
                 AgentLog.created_at.desc()
             ).first()
         }
@@ -7605,7 +7615,7 @@ def get_agent_activity():
     limit = request.args.get('limit', 20, type=int)
     agent_type = request.args.get('agent_type')
     
-    query = AgentLog.query
+    query = AgentLog.query.filter_by(company_id=_current_company_id())
     
     if agent_type:
         query = query.filter_by(agent_type=agent_type)
@@ -7635,7 +7645,9 @@ def get_agent_performance(agent_type):
     # Get tasks from last 30 days
     thirty_days_ago = datetime.now() - timedelta(days=30)
     
+    company_id = _current_company_id()
     tasks = AgentTask.query.filter(
+        AgentTask.company_id == company_id,
         AgentTask.agent_type == agent_type,
         AgentTask.created_at >= thirty_days_ago
     ).all()
@@ -7646,6 +7658,7 @@ def get_agent_performance(agent_type):
     
     # Get activity count
     activities = AgentLog.query.filter(
+        AgentLog.company_id == company_id,
         AgentLog.agent_type == agent_type,
         AgentLog.created_at >= thirty_days_ago
     ).count()
@@ -9499,15 +9512,11 @@ def get_agent_suggestions(agent_type):
 @login_required
 def get_agent_reports(agent_type):
     """Get reports generated by a specific agent"""
-    from models import AgentReport, Company, user_company
-    
-    company = db.session.query(Company).join(
-        user_company, Company.id == user_company.c.company_id
-    ).filter(user_company.c.user_id == current_user.id).first()
-    company_id = company.id if company else None
+    from models import AgentReport
+    company_id = _current_company_id()
     
     reports = AgentReport.query.filter_by(
-        agent_type=agent_type
+        agent_type=agent_type, company_id=company_id
     ).order_by(AgentReport.created_at.desc()).limit(50).all()
     
     return jsonify({
@@ -9527,7 +9536,7 @@ def get_agent_reports(agent_type):
 @login_required
 def create_agent_report(agent_type):
     """Generate a new report from an agent"""
-    from models import AgentReport, Company, user_company
+    from models import AgentReport
     from datetime import datetime, timedelta
     import os
     from openai import OpenAI
@@ -9536,10 +9545,9 @@ def create_agent_report(agent_type):
         data = request.get_json()
         report_type = data.get('report_type', 'weekly')
         
-        company = db.session.query(Company).join(
-            user_company, Company.id == user_company.c.company_id
-        ).filter(user_company.c.user_id == current_user.id).first()
-        company_id = company.id if company else None
+        company_id = _current_company_id()
+        if not company_id:
+            return jsonify({'success': False, 'error': 'tenant/company is required'}), 400
         
         now = datetime.utcnow()
         if report_type == 'daily':
@@ -9575,6 +9583,7 @@ def create_agent_report(agent_type):
         title = f"{agent_titles.get(agent_type, agent_type.title())} {report_type.title()} Report"
         
         report = AgentReport(
+            company_id=company_id,
             agent_type=agent_type,
             agent_name=agent_titles.get(agent_type, agent_type),
             report_type=report_type,
@@ -9638,19 +9647,17 @@ Format as clean, professional markdown."""
 @login_required
 def get_agent_report_detail(agent_type, report_id):
     """Get a specific report with company validation"""
-    from models import AgentReport, Company, user_company
-    
-    company = db.session.query(Company).join(
-        user_company, Company.id == user_company.c.company_id
-    ).filter(user_company.c.user_id == current_user.id).first()
-    company_id = company.id if company else None
+    from models import AgentReport
+    company_id = _current_company_id()
     
     report = db.session.get(AgentReport, report_id)
-    if not report or report.agent_type != agent_type:
+    if not report or report.agent_type != agent_type or report.company_id != company_id:
         return jsonify({'success': False, 'error': 'Report not found'}), 404
     
     import html
     content = report.report_data or ''
+    if not isinstance(content, str):
+        content = json.dumps(content)
     safe_content = html.escape(content)
     
     return jsonify({
@@ -9999,8 +10006,9 @@ except ImportError as exc:
 @login_required
 def approval_queue_dashboard():
     """Admin approval queue dashboard"""
-    company = Company.query.first()
-    company_id = company.id if company else 1
+    company_id = _current_company_id()
+    if not company_id:
+        return redirect(url_for('main.dashboard'))
     
     stats = ApprovalService.get_queue_stats(company_id)
     pending_items = ApprovalService.get_pending_items(company_id)
@@ -10016,8 +10024,9 @@ def approval_queue_dashboard():
 def get_approval_queue():
     """Get approval queue items with filters"""
     try:
-        company = Company.query.first()
-        company_id = company.id if company else 1
+        company_id = _current_company_id()
+        if not company_id:
+            return jsonify({'success': True, 'items': [], 'stats': {}})
         
         filters = {}
         if request.args.get('content_type'):
@@ -10046,8 +10055,9 @@ def get_approval_queue():
 def get_approval_item(approval_id):
     """Get a single approval queue item with full details"""
     try:
+        company_id = _current_company_id()
         item = ApprovalService.get_item(approval_id)
-        if not item:
+        if not item or item.get('company_id') != company_id:
             return jsonify({'success': False, 'error': 'Item not found'}), 404
         
         audit_trail = ApprovalService.get_audit_trail(approval_id)
@@ -10072,6 +10082,10 @@ def approve_content(approval_id):
             from datetime import datetime
             schedule_at = datetime.fromisoformat(data['schedule_at'].replace('Z', '+00:00'))
         
+        item = ApprovalService.get_item(approval_id)
+        if not item or item.get('company_id') != _current_company_id():
+            return jsonify({'success': False, 'error': 'Item not found'}), 404
+
         result = ApprovalService.approve(
             approval_id=approval_id,
             user_id=current_user.id,
@@ -10089,6 +10103,10 @@ def reject_content(approval_id):
     """Reject content"""
     try:
         data = request.get_json() or {}
+        item = ApprovalService.get_item(approval_id)
+        if not item or item.get('company_id') != _current_company_id():
+            return jsonify({'success': False, 'error': 'Item not found'}), 404
+
         result = ApprovalService.reject(
             approval_id=approval_id,
             user_id=current_user.id,
@@ -10106,6 +10124,10 @@ def edit_approval_content(approval_id):
     """Edit content in the approval queue"""
     try:
         data = request.get_json() or {}
+        item = ApprovalService.get_item(approval_id)
+        if not item or item.get('company_id') != _current_company_id():
+            return jsonify({'success': False, 'error': 'Item not found'}), 404
+
         result = ApprovalService.edit_content(
             approval_id=approval_id,
             user_id=current_user.id,
@@ -10123,6 +10145,10 @@ def cancel_approval(approval_id):
     """Cancel an approval queue item"""
     try:
         data = request.get_json() or {}
+        item = ApprovalService.get_item(approval_id)
+        if not item or item.get('company_id') != _current_company_id():
+            return jsonify({'success': False, 'error': 'Item not found'}), 404
+
         result = ApprovalService.cancel(
             approval_id=approval_id,
             user_id=current_user.id,
@@ -10138,8 +10164,9 @@ def cancel_approval(approval_id):
 def get_approval_stats():
     """Get approval queue statistics"""
     try:
-        company = Company.query.first()
-        company_id = company.id if company else 1
+        company_id = _current_company_id()
+        if not company_id:
+            return jsonify({'success': True, 'stats': {}})
         stats = ApprovalService.get_queue_stats(company_id)
         return jsonify({'success': True, 'stats': stats})
     except Exception as e:
@@ -10152,8 +10179,9 @@ def get_approval_stats():
 def get_feature_toggles():
     """Get all feature toggles"""
     try:
-        company = Company.query.first()
-        company_id = company.id if company else 1
+        company_id = _current_company_id()
+        if not company_id:
+            return jsonify({'success': True, 'toggles': []})
         category = request.args.get('category')
         
         toggles = FeatureToggleService.get_all_toggles(company_id, category)
@@ -10167,8 +10195,9 @@ def get_feature_toggles():
 def get_feature_toggle(feature_key):
     """Get a specific feature toggle"""
     try:
-        company = Company.query.first()
-        company_id = company.id if company else 1
+        company_id = _current_company_id()
+        if not company_id:
+            return jsonify({'success': False, 'error': 'Toggle not found'}), 404
         
         toggle = FeatureToggleService.get_toggle(company_id, feature_key)
         if not toggle:
@@ -10184,8 +10213,9 @@ def get_feature_toggle(feature_key):
 def update_feature_toggle(feature_key):
     """Update a feature toggle"""
     try:
-        company = Company.query.first()
-        company_id = company.id if company else 1
+        company_id = _current_company_id()
+        if not company_id:
+            return jsonify({'success': False, 'error': 'tenant/company is required'}), 400
         
         data = request.get_json() or {}
         result = FeatureToggleService.update_toggle(
@@ -10204,8 +10234,9 @@ def update_feature_toggle(feature_key):
 def emergency_stop_all():
     """Emergency stop all automation"""
     try:
-        company = Company.query.first()
-        company_id = company.id if company else 1
+        company_id = _current_company_id()
+        if not company_id:
+            return jsonify({'success': False, 'error': 'tenant/company is required'}), 400
         
         result = FeatureToggleService.emergency_stop_all(company_id, current_user.id)
         return jsonify(result)
@@ -10218,8 +10249,9 @@ def emergency_stop_all():
 def resume_all_automation():
     """Clear emergency stop and resume automation"""
     try:
-        company = Company.query.first()
-        company_id = company.id if company else 1
+        company_id = _current_company_id()
+        if not company_id:
+            return jsonify({'success': False, 'error': 'tenant/company is required'}), 400
         
         result = FeatureToggleService.resume_all(company_id, current_user.id)
         return jsonify(result)
@@ -10232,8 +10264,9 @@ def resume_all_automation():
 def initialize_toggles():
     """Initialize default feature toggles for the company"""
     try:
-        company = Company.query.first()
-        company_id = company.id if company else 1
+        company_id = _current_company_id()
+        if not company_id:
+            return jsonify({'success': False, 'error': 'tenant/company is required'}), 400
         
         FeatureToggleService.initialize_toggles(company_id)
         toggles = FeatureToggleService.get_all_toggles(company_id)

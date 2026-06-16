@@ -139,7 +139,7 @@ class ApprovalService:
     @staticmethod
     def get_item(approval_id: int) -> Optional[Dict]:
         """Get a single approval queue item"""
-        from models import ApprovalQueue
+        from models import ApprovalQueue, db
         
         item = db.session.get(ApprovalQueue, approval_id)
         return item.to_dict() if item else None

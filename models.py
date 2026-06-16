@@ -898,6 +898,7 @@ class SMSCampaign(db.Model):
     name = db.Column(db.String(255))
     objective = db.Column(db.Text)
     message = db.Column(db.String(1000))
+    segment = db.Column(db.String(100), nullable=True)
     status = db.Column(db.String(50), default="draft")
     audience_filter = db.Column(JSON, default=dict)
     estimated_recipient_count = db.Column(db.Integer, default=0)
@@ -1639,6 +1640,7 @@ class AgentLog(db.Model):
     __tablename__ = "agent_log"
 
     id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=True, index=True)
     agent_type = db.Column(db.String(100), nullable=False)
     agent_name = db.Column(db.String(200))
     activity_type = db.Column(db.String(100))
@@ -1646,11 +1648,14 @@ class AgentLog(db.Model):
     status = db.Column(db.String(50))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
+    company = db.relationship("Company", backref="agent_logs")
+
 
 class AgentReport(db.Model):
     __tablename__ = "agent_report"
 
     id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=True, index=True)
     agent_type = db.Column(db.String(100), nullable=False, index=True)
     agent_name = db.Column(db.String(200))
     report_type = db.Column(db.String(50), nullable=False)
@@ -1660,6 +1665,8 @@ class AgentReport(db.Model):
     period_start = db.Column(db.DateTime)
     period_end = db.Column(db.DateTime)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    company = db.relationship("Company", backref="agent_reports")
 
 
 class AgentSchedule(db.Model):
@@ -1697,6 +1704,8 @@ class AgentDeliverable(db.Model):
     file_path = db.Column(db.String(500))
     extra_data = db.Column(db.Text)
     prompt_used = db.Column(db.Text)
+    priority = db.Column(db.String(50), default='normal')
+    requested_by_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True)
     status = db.Column(db.String(50), default='requested')
     is_starred = db.Column(db.Boolean, default=False)
     view_count = db.Column(db.Integer, default=0)

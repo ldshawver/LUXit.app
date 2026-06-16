@@ -315,10 +315,13 @@ class TestRevenueCatService:
 # ============================================================
 
 class TestOutlookService:
-    def test_health_with_credentials_set(self, app):
+    def test_health_documents_missing_config(self, app, monkeypatch):
+        for key in ("MS_CLIENT_ID", "MS_CLIENT_SECRET", "MS_TENANT_ID"):
+            monkeypatch.delenv(key, raising=False)
         from services.integrations.outlook_service import health_check
         result = health_check()
-        assert result["status"] in ("connected", "error")
+        assert result["status"] == "missing_config"
+        assert "Microsoft credentials not configured" in result["detail"]
 
     def test_send_email_graceful_failure(self, app, monkeypatch):
         import services.integrations.outlook_service as svc
@@ -334,6 +337,25 @@ class TestOutlookService:
             "Demo Call", "2026-06-01T10:00:00", "2026-06-01T11:00:00"
         )
         assert result["ok"] is False
+
+
+def test_woocommerce_missing_config_is_non_crashing(app, monkeypatch):
+    for key in ("WC_STORE_URL", "WC_CONSUMER_KEY", "WC_CONSUMER_SECRET"):
+        monkeypatch.delenv(key, raising=False)
+    from woocommerce_service import WooCommerceService
+
+    svc = WooCommerceService()
+    assert svc.is_configured() is False
+    assert svc.get_products() is None
+
+
+def test_posthog_missing_config_noops(app, monkeypatch):
+    monkeypatch.delenv("POSTHOG_API_KEY", raising=False)
+    import services.posthog_client as posthog_client
+
+    posthog_client._client = None
+    assert posthog_client._get_client() is None
+    assert posthog_client.track_event("user-1", "audit_test", {"ok": True}) is None
 
 
 # ============================================================
