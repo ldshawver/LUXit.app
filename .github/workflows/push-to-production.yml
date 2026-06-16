@@ -1,4 +1,4 @@
- name: Push to Production
+name: Push to Production
 
 on:
   push:
@@ -15,18 +15,21 @@ jobs:
     name: Deploy Production
     runs-on: ubuntu-latest
     timeout-minutes: 20
+
     steps:
       - name: Connect to Tailscale
         uses: tailscale/github-action@v3
         with:
           authkey: ${{ secrets.TS_AUTHKEY }}
+
       - name: Confirm Tailscale connection
         run: |
           tailscale status
           tailscale ip -4
           ping -c 3 ${{ secrets.HOST }} || true
           timeout 10 bash -c "</dev/tcp/${{ secrets.HOST }}/22" && echo "SSH port reachable" || echo "SSH port unreachable"
-           - name: Debug selected host
+
+      - name: Debug selected host
         run: |
           echo "Tailscale devices:"
           tailscale status
@@ -35,6 +38,7 @@ jobs:
           echo "HOST starts with: ${HOST_VALUE:0:7}"
           echo "Testing SSH port on HOST..."
           timeout 10 bash -c "</dev/tcp/${HOST_VALUE}/22" && echo "SSH port reachable" || exit 1
+
       - name: Deploy to Production VPS
         uses: appleboy/ssh-action@v1.0.3
         with:
