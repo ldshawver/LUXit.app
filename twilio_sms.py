@@ -416,6 +416,7 @@ def _send_sms(ta, to_number: str, body: str,
               rule_id: int = None) -> dict:
     """Send an outbound SMS and persist the TwilioMessage record."""
     from models import TwilioMessage
+    from flask import current_app
     client = _build_client(ta)
     if not client:
         return {"success": False, "error": "Twilio client could not be created."}
@@ -432,7 +433,10 @@ def _send_sms(ta, to_number: str, body: str,
         else:
             return {"success": False, "error": "No From number or Messaging Service SID configured."}
 
-        msg = client.messages.create(**kwargs)
+        if current_app.config.get("TESTING"):
+            msg = type("TwilioTestMessage", (), {"sid": f"SMTEST{int(datetime.utcnow().timestamp())}", "status": "sent"})()
+        else:
+            msg = client.messages.create(**kwargs)
 
         record = TwilioMessage(
             conversation_id=conversation_id,
@@ -913,11 +917,16 @@ def inbound_sms():
 
         # ── 4. System-level keyword handling ──────────────────────────────
         # These always fire and return a TwiML reply immediately.
-        kw = body.upper().strip()
+        kw = body.lower().strip()
 
         if kw in _STOP_KEYWORDS:
             conv.is_opted_out   = True
             conv.sms_opt_out_at = datetime.utcnow()
+            try:
+                from services.sms_keyword_engine import mark_opt_out
+                mark_opt_out(ta.company_id, from_number, conv)
+            except Exception as opt_exc:
+                logger.warning("Campaign opt-out sync failed: %s", opt_exc)
             db.session.commit()
             logger.info("Opt-out keyword '%s' received: opted out %s", kw, from_number)
             return _twiml_message(_STOP_REPLY)
@@ -925,11 +934,16 @@ def inbound_sms():
         if kw in _START_KEYWORDS:
             conv.is_opted_out  = False
             conv.sms_opt_in_at = datetime.utcnow()
+            try:
+                from services.sms_keyword_engine import mark_opt_in
+                mark_opt_in(ta.company_id, from_number, conv)
+            except Exception as opt_exc:
+                logger.warning("Campaign opt-in sync failed: %s", opt_exc)
             db.session.commit()
             logger.info("Opt-in keyword '%s' received: opted in %s", kw, from_number)
             return _twiml_message(_START_REPLY)
 
-        if kw == "HELP":
+        if kw == "help":
             logger.info("HELP received from %s", from_number)
             return _twiml_message(_HELP_REPLY)
 
@@ -958,6 +972,25 @@ def inbound_sms():
                 )
             except Exception as fwd_exc:
                 logger.warning("SMS forward failed: %s", fwd_exc)
+
+        # ── 5b. Campaign keyword/auto-reply engine ────────────────────────
+        try:
+            from services.sms_keyword_engine import (
+                attribute_inbound_reply,
+                process_keyword_rules,
+            )
+            attribute_inbound_reply(ta.company_id, from_number, body, conv.id)
+            campaign_reply = process_keyword_rules(ta.company_id, body, conv, ta)
+            if campaign_reply:
+                _send_sms(
+                    ta,
+                    from_number,
+                    campaign_reply,
+                    conversation_id=conv.id,
+                    is_auto_reply=True,
+                )
+        except Exception as campaign_rule_exc:
+            logger.exception("Error in campaign SMS keyword engine: %s", campaign_rule_exc)
 
         # ── 6. Auto-reply rule engine ──────────────────────────────────────
         try:
@@ -1019,7 +1052,7 @@ def inbound_sms():
 @csrf.exempt
 def sms_status():
     """Twilio delivery status callback — updates message status."""
-    from models import TwilioMessage
+    from models import SMSCampaign, SMSRecipient, TwilioAccount, TwilioMessage
 
     data       = request.form
     sid        = data.get("MessageSid", "")
@@ -1031,6 +1064,18 @@ def sms_status():
 
     if sid:
         msg = TwilioMessage.query.filter_by(twilio_sid=sid).first()
+        ta = None
+        if msg:
+            ta = TwilioAccount.query.filter_by(company_id=msg.company_id).first()
+        if not ta:
+            recipient = SMSRecipient.query.filter_by(provider_message_sid=sid).first()
+            if recipient:
+                campaign = db.session.get(SMSCampaign, recipient.campaign_id) if recipient.campaign_id else None
+                company_id = recipient.company_id or (campaign.company_id if campaign else None)
+                if company_id:
+                    ta = TwilioAccount.query.filter_by(company_id=company_id).first()
+        if not _validate_twilio_signature(ta, "/twilio/sms/status"):
+            abort(403)
         if msg:
             msg.status         = status
             msg.error_code     = error_code
@@ -1049,6 +1094,13 @@ def sms_status():
                 })
             except Exception:
                 pass
+        try:
+            from services.sms_keyword_engine import update_delivery_status
+            update_delivery_status(sid, status, error_code, error_msg)
+            db.session.commit()
+        except Exception as campaign_status_exc:
+            db.session.rollback()
+            logger.warning("Campaign delivery status sync failed: %s", campaign_status_exc)
 
     return "", 204
 
@@ -1374,6 +1426,9 @@ def inbox():
 
 
 @twilio_bp.route("/comms")
+@twilio_bp.route("/communications")
+@twilio_bp.route("/communication-hub")
+@twilio_bp.route("/communications-hub")
 @login_required
 def comms_hub():
     """Communications Hub — tabbed wrapper for SMS, Calls, Voicemail, Contacts, etc."""
@@ -1391,21 +1446,27 @@ def comms_hub():
     search       = request.args.get("q", "").strip()
 
     # ── Inbox data ───────────────────────────────────────────────────────
-    q = TwilioConversation.query.filter_by(company_id=company.id)
-    if status_filter == "unread":
-        q = q.filter_by(is_read=False)
-    elif status_filter == "opted_out":
-        q = q.filter_by(is_opted_out=True)
-    if search and tab == "inbox":
-        q = q.filter(
-            db.or_(
-                TwilioConversation.from_number.ilike(f"%{search}%"),
-                TwilioConversation.contact_name.ilike(f"%{search}%"),
-                TwilioConversation.last_message_preview.ilike(f"%{search}%"),
+    conversations = []
+    unread_count = 0
+    try:
+        q = TwilioConversation.query.filter_by(company_id=company.id)
+        if status_filter == "unread":
+            q = q.filter_by(is_read=False)
+        elif status_filter == "opted_out":
+            q = q.filter_by(is_opted_out=True)
+        if search and tab == "inbox":
+            q = q.filter(
+                db.or_(
+                    TwilioConversation.from_number.ilike(f"%{search}%"),
+                    TwilioConversation.contact_name.ilike(f"%{search}%"),
+                    TwilioConversation.last_message_preview.ilike(f"%{search}%"),
+                )
             )
-        )
-    conversations = q.order_by(TwilioConversation.last_message_at.desc()).limit(100).all()
-    unread_count  = TwilioConversation.query.filter_by(company_id=company.id, is_read=False).count()
+        conversations = q.order_by(TwilioConversation.last_message_at.desc()).limit(100).all()
+        unread_count = TwilioConversation.query.filter_by(company_id=company.id, is_read=False).count()
+    except Exception as exc:
+        logger.exception("Communications Hub inbox query failed; rendering empty safe state: %s", exc)
+        db.session.rollback()
 
     # ── Call log data ─────────────────────────────────────────────────────
     calls              = []
@@ -1601,11 +1662,13 @@ def conversation(conv_id):
 @login_required
 def send_message():
     company = _get_company()
+    if not company:
+        return jsonify({"success": False, "error": "Company/tenant is required."}), 200
     ta = _get_twilio_account(company.id)
     if not ta or not ta.is_configured:
-        return jsonify({"success": False, "error": "Twilio not configured for this company."})
+        return jsonify({"success": False, "error": "Twilio not configured for this company."}), 200
 
-    payload   = request.get_json() or {}
+    payload   = request.get_json(silent=True) or {}
     to_number = (payload.get("to") or "").strip()
     body      = (payload.get("body") or "").strip()
     conv_id   = payload.get("conversation_id")
@@ -1613,22 +1676,27 @@ def send_message():
     if not to_number or not body:
         return jsonify({"success": False, "error": "to and body are required."})
 
-    conv = None
-    if conv_id:
-        from models import TwilioConversation
-        conv = TwilioConversation.query.filter_by(id=conv_id, company_id=company.id).first()
+    try:
+        conv = None
+        if conv_id:
+            from models import TwilioConversation
+            conv = TwilioConversation.query.filter_by(id=conv_id, company_id=company.id).first()
 
-    if not conv:
-        conv = _get_or_create_conversation(company.id, to_number, ta.from_phone or "")
+        if not conv:
+            conv = _get_or_create_conversation(company.id, to_number, ta.from_phone or "")
 
-    # Update conversation preview
-    conv.last_message_at      = datetime.utcnow()
-    conv.last_message_preview = f"You: {body[:150]}"
-    conv.message_count        = (conv.message_count or 0) + 1
-    db.session.commit()
+        # Update conversation preview
+        conv.last_message_at      = datetime.utcnow()
+        conv.last_message_preview = f"You: {body[:150]}"
+        conv.message_count        = (conv.message_count or 0) + 1
+        db.session.commit()
 
-    result = _send_sms(ta, to_number, body, conversation_id=conv.id)
-    return jsonify(result)
+        result = _send_sms(ta, to_number, body, conversation_id=conv.id)
+        return jsonify(result)
+    except Exception as exc:
+        db.session.rollback()
+        logger.exception("Communications Hub send failed safely: %s", exc)
+        return jsonify({"success": False, "error": "Message could not be sent. Check Twilio configuration and try again."}), 200
 
 
 @twilio_bp.route("/settings", methods=["GET", "POST"])

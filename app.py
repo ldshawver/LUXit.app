@@ -345,6 +345,7 @@ def create_app() -> Flask:
     from x_auth import x_bp, x_api_bp
     from twilio_sms import twilio_bp
     from saas_mgmt import saas_bp, stripe_webhook_bp
+    from marketing_api import marketing_api_bp
 
     # IMPORTANT: Marketing first if it owns "/"
     app.register_blueprint(marketing_bp)
@@ -358,6 +359,7 @@ def create_app() -> Flask:
     app.register_blueprint(twilio_bp)
     app.register_blueprint(saas_bp)
     app.register_blueprint(stripe_webhook_bp)
+    app.register_blueprint(marketing_api_bp)
     try:
         from feedback import feedback_bp
         app.register_blueprint(feedback_bp)
@@ -577,6 +579,90 @@ def create_app() -> Flask:
                     ("variant_b", "JSON"),
                     ("status", "VARCHAR(50) DEFAULT 'running'"),
                     ("winner", "VARCHAR(10)"),
+                    ("created_at", "TIMESTAMP"),
+                ],
+                "sms_campaign": [
+                    ("company_id", "INTEGER"),
+                    ("created_by_user_id", "INTEGER"),
+                    ("objective", "TEXT"),
+                    ("segment", "VARCHAR(100)"),
+                    ("status", "VARCHAR(50) DEFAULT 'draft'"),
+                    ("updated_at", "TIMESTAMP"),
+                ],
+                "sms_recipient": [
+                    ("company_id", "INTEGER"),
+                    ("campaign_id", "INTEGER"),
+                    ("contact_id", "INTEGER"),
+                    ("status", "VARCHAR(50)"),
+                    ("provider_message_sid", "VARCHAR(120)"),
+                    ("sent_at", "TIMESTAMP"),
+                    ("delivered_at", "TIMESTAMP"),
+                    ("replied_at", "TIMESTAMP"),
+                    ("opted_out_at", "TIMESTAMP"),
+                    ("provider_error_code", "VARCHAR(50)"),
+                    ("error_message", "TEXT"),
+                    ("created_at", "TIMESTAMP"),
+                    ("updated_at", "TIMESTAMP"),
+                ],
+                "social_post": [
+                    ("company_id", "INTEGER"),
+                    ("user_id", "INTEGER"),
+                    ("platforms", "JSON"),
+                    ("media_urls", "JSON"),
+                    ("updated_at", "TIMESTAMP"),
+                ],
+                "twilio_conversation": [
+                    ("company_id", "INTEGER"),
+                    ("contact_id", "INTEGER"),
+                    ("from_number", "VARCHAR(20)"),
+                    ("to_number", "VARCHAR(20)"),
+                    ("contact_name", "VARCHAR(200)"),
+                    ("contact_source", "VARCHAR(50)"),
+                    ("is_read", "BOOLEAN DEFAULT FALSE"),
+                    ("is_opted_out", "BOOLEAN DEFAULT FALSE"),
+                    ("sms_opt_in_at", "TIMESTAMP"),
+                    ("sms_opt_out_at", "TIMESTAMP"),
+                    ("is_first_contact", "BOOLEAN DEFAULT TRUE"),
+                    ("lead_captured", "BOOLEAN DEFAULT FALSE"),
+                    ("tags", "JSON"),
+                    ("notes", "TEXT"),
+                    ("assigned_user_id", "INTEGER"),
+                    ("last_message_at", "TIMESTAMP"),
+                    ("last_message_preview", "VARCHAR(200)"),
+                    ("message_count", "INTEGER DEFAULT 0"),
+                    ("created_at", "TIMESTAMP"),
+                    ("updated_at", "TIMESTAMP"),
+                ],
+                "twilio_message": [
+                    ("conversation_id", "INTEGER"),
+                    ("company_id", "INTEGER"),
+                    ("twilio_sid", "VARCHAR(100)"),
+                    ("direction", "VARCHAR(10)"),
+                    ("from_number", "VARCHAR(20)"),
+                    ("to_number", "VARCHAR(20)"),
+                    ("body", "TEXT"),
+                    ("status", "VARCHAR(50) DEFAULT 'received'"),
+                    ("num_segments", "INTEGER DEFAULT 1"),
+                    ("media_urls", "JSON"),
+                    ("is_auto_reply", "BOOLEAN DEFAULT FALSE"),
+                    ("rule_id", "INTEGER"),
+                    ("error_code", "VARCHAR(20)"),
+                    ("error_message", "TEXT"),
+                    ("raw_payload", "JSON"),
+                    ("created_at", "TIMESTAMP"),
+                ],
+                "twilio_call_log": [
+                    ("company_id", "INTEGER"),
+                    ("twilio_sid", "VARCHAR(100)"),
+                    ("direction", "VARCHAR(20)"),
+                    ("from_number", "VARCHAR(20)"),
+                    ("to_number", "VARCHAR(20)"),
+                    ("status", "VARCHAR(50)"),
+                    ("duration", "INTEGER DEFAULT 0"),
+                    ("caller_name", "VARCHAR(200)"),
+                    ("notes", "TEXT"),
+                    ("missed_text_sent", "BOOLEAN DEFAULT FALSE"),
+                    ("raw_payload", "JSON"),
                     ("created_at", "TIMESTAMP"),
                 ],
             }

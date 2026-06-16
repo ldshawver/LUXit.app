@@ -878,12 +878,17 @@ class SMSCampaign(db.Model):
     __tablename__ = "sms_campaign"
 
     id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=True, index=True)
+    created_by_user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True)
     name = db.Column(db.String(255))
+    objective = db.Column(db.Text)
     message = db.Column(db.String(1000))
-    status = db.Column(db.String(50))
+    segment = db.Column(db.String(100))
+    status = db.Column(db.String(50), default="draft")
     scheduled_at = db.Column(db.DateTime)
     sent_at = db.Column(db.DateTime)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     recipients = db.relationship('SMSRecipient', backref='campaign', lazy='dynamic', foreign_keys='SMSRecipient.campaign_id')
 
@@ -892,12 +897,24 @@ class SMSRecipient(db.Model):
     __tablename__ = "sms_recipient"
 
     id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=True, index=True)
     campaign_id = db.Column(db.Integer, db.ForeignKey("sms_campaign.id"), nullable=True)
     contact_id = db.Column(db.Integer, db.ForeignKey("contact.id"), nullable=True)
     status = db.Column(db.String(50))
+    provider_message_sid = db.Column(db.String(120))
     sent_at = db.Column(db.DateTime)
     delivered_at = db.Column(db.DateTime)
+    replied_at = db.Column(db.DateTime)
+    opted_out_at = db.Column(db.DateTime)
+    provider_error_code = db.Column(db.String(50))
     error_message = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    __table_args__ = (
+        db.UniqueConstraint("campaign_id", "contact_id", name="uq_sms_recipient_campaign_contact"),
+        db.UniqueConstraint("provider_message_sid", name="uq_sms_recipient_provider_message_sid"),
+    )
 
 
 class SMSTemplate(db.Model):
@@ -958,6 +975,57 @@ class SegmentMember(db.Model):
     added_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     contact = db.relationship("Contact", backref="segment_memberships")
+
+
+class SMSKeywordRule(db.Model):
+    __tablename__ = "sms_keyword_rule"
+
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=True, index=True)
+    campaign_id = db.Column(db.Integer, db.ForeignKey("sms_campaign.id"), nullable=True)
+    keyword = db.Column(db.String(80), nullable=False)
+    match_type = db.Column(db.String(30), default="exact")
+    reply_message = db.Column(db.Text)
+    priority = db.Column(db.Integer, default=100)
+    is_active = db.Column(db.Boolean, default=True)
+    business_hours_only = db.Column(db.Boolean, default=False)
+    after_hours_message = db.Column(db.Text)
+    tag_to_add = db.Column(db.String(100))
+    segment_to_add = db.Column(db.String(100))
+    notify_admin = db.Column(db.Boolean, default=False)
+    created_by_user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class SMSAutoReplyRule(db.Model):
+    __tablename__ = "sms_auto_reply_rule"
+
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=True, index=True)
+    campaign_id = db.Column(db.Integer, db.ForeignKey("sms_campaign.id"), nullable=True)
+    name = db.Column(db.String(255), nullable=False)
+    trigger_type = db.Column(db.String(50), default="inbound")
+    reply_message = db.Column(db.Text)
+    after_hours_message = db.Column(db.Text)
+    is_active = db.Column(db.Boolean, default=True)
+    created_by_user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class MarketingAuditLog(db.Model):
+    __tablename__ = "marketing_audit_log"
+
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=True, index=True)
+    created_by_user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True)
+    entity_type = db.Column(db.String(80))
+    entity_id = db.Column(db.Integer)
+    action = db.Column(db.String(80), nullable=False)
+    details = db.Column(db.JSON)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
 class WebForm(db.Model):
