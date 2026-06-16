@@ -6,26 +6,42 @@ on:
       - main
   workflow_dispatch:
 
+concurrency:
+  group: push-production
+  cancel-in-progress: true
+
 jobs:
   deploy-production:
+    name: Deploy Production
     runs-on: ubuntu-latest
+    timeout-minutes: 20
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
       - name: Deploy to Production VPS
         uses: appleboy/ssh-action@v1.0.3
         with:
-          host: 194.195.92.52
+          host: ${{ secrets.HOST }}
           username: root
           key: ${{ secrets.VPS_PRIVATE_KEY }}
           port: 22
           timeout: 60s
-          command_timeout: 10m
+          command_timeout: 15m
+          script_stop: true
           script: |
-            echo "Connected to VPS"
-            whoami
-            hostname
+            set -e
+
             cd /root/lux-email-bot
-            git status
+
+            git fetch origin
+            git reset --hard origin/main
+            git clean -fd
+
+            source .env
+            psql "$DATABASE_URL" -c "select now();"
+
+            sudo systemctl daemon-reload
+            sudo systemctl reset-failed luxit.service
+            sudo systemctl restart luxit.service
+
+            sleep 5
+            sudo systemctl status luxit.service --no-pager -l

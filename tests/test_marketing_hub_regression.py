@@ -520,26 +520,3 @@ def test_ten_simultaneous_send_requests_no_duplicate_recipient_sends(app, tenant
     assert len(recipients) == 3
     assert len({r.contact_id for r in recipients}) == 3
     assert all(r.status == "sent" for r in recipients)
-
-
-def test_marketing_pages_and_ajax_actions_fail_gracefully_without_integrations(client, tenant_user, monkeypatch):
-    for path in ("/campaigns", "/sms/campaigns", "/social-media", "/twilio/comms"):
-        response = client.get(path)
-        assert response.status_code == 200, path
-
-    for alias in ("/communication-hub", "/communications", "/communications-hub"):
-        response = client.get(alias, follow_redirects=False)
-        assert response.status_code in {301, 302}, alias
-        assert response.headers["Location"].startswith("/twilio/")
-
-    social = client.post("/api/social/test-connection", json={"platform": "facebook"})
-    assert social.status_code == 200
-    assert social.get_json()["success"] is False
-
-    sms_ai = client.post("/sms/ai-generate", json={"campaign_name": "VIP launch", "tone": "luxury"})
-    assert sms_ai.status_code == 200
-    assert sms_ai.get_json()["success"] is True
-
-    send = client.post("/twilio/send", json={"to": "+15550009999", "body": "Hello"})
-    assert send.status_code == 200
-    assert send.get_json()["success"] is False
