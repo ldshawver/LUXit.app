@@ -15,13 +15,17 @@ jobs:
     name: Deploy Production
     runs-on: ubuntu-latest
     timeout-minutes: 20
-
     steps:
       - name: Connect to Tailscale
         uses: tailscale/github-action@v3
         with:
           authkey: ${{ secrets.TS_AUTHKEY }}
-
+      - name: Confirm Tailscale connection
+        run: |
+          tailscale status
+          tailscale ip -4
+          ping -c 3 ${{ secrets.HOST }} || true
+          timeout 10 bash -c "</dev/tcp/${{ secrets.HOST }}/22" && echo "SSH port reachable" || echo "SSH port unreachable"
       - name: Deploy to Production VPS
         uses: appleboy/ssh-action@v1.0.3
         with:
