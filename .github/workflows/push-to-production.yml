@@ -29,6 +29,7 @@ jobs:
 
       - name: Show Tailscale Status
         run: |
+          tailscale version
           tailscale status
           tailscale ip -4
 
