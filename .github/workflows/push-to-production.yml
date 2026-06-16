@@ -25,6 +25,7 @@ jobs:
         with:
           oauth-client-id: ${{ secrets.TS_CLIENTID }}
           oauth-secret: ${{ secrets.TS_CLIENT_SECRET }}
+          tags: ${{ secrets.TAGS }}
 
       - name: Show Tailscale Status
         run: |
@@ -35,14 +36,14 @@ jobs:
       - name: Test VPS Reachability
         run: |
           echo "Testing Tailscale connectivity to VPS..."
-          timeout 20 bash -c '</dev/tcp/100.117.100.45/22' \
+          timeout 20 bash -c "</dev/tcp/${{ secrets.HOST }}/22" \
             && echo "SUCCESS: SSH port reachable" \
             || (echo "FAILED: SSH port not reachable" && exit 1)
 
       - name: Deploy to Production VPS
         uses: appleboy/ssh-action@v1.0.3
         with:
-          host: 100.117.100.45
+          host: ${{ secrets.HOST }}
           username: root
           key: ${{ secrets.VPS_PRIVATE_KEY }}
           port: 22
