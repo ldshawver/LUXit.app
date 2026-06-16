@@ -6,25 +6,43 @@ on:
       - main
   workflow_dispatch:
 
+concurrency:
+  group: push-production
+  cancel-in-progress: true
+
 jobs:
   deploy-production:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Connect to Tailscale
+        uses: tailscale/github-action@v3
+        with:
+          authkey: ${{ secrets.TS_AUTHKEY }}
+
+      - name: Test Tailscale SSH connectivity
+        run: |
+          echo "Testing SSH to VPS over Tailscale..."
+          timeout 15 bash -c '</dev/tcp/100.117.100.45/22' \
+            && echo "SSH reachable over Tailscale" \
+            || (echo "SSH not reachable over Tailscale" && exit 1)
+
       - name: Deploy to Production VPS
         uses: appleboy/ssh-action@v1.0.3
         with:
-          host: 194.195.92.52
+          host: 100.117.100.45
           username: root
           key: ${{ secrets.VPS_PRIVATE_KEY }}
           port: 22
           timeout: 60s
           command_timeout: 10m
+          script_stop: true
           script: |
-            echo "Connected to VPS"
+            echo "Connected to VPS over Tailscale"
             whoami
             hostname
             cd /root/lux-email-bot
