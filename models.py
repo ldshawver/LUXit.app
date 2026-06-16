@@ -207,6 +207,16 @@ class User(UserMixin, db.Model):
     def __repr__(self):
         return f"<User {self.username}>"
 
+    def set_password(self, password: str):
+        """Set password_hash for legacy tests and admin-created users."""
+        from werkzeug.security import generate_password_hash
+        self.password_hash = generate_password_hash(password)
+
+    def check_password(self, password: str) -> bool:
+        """Verify a plaintext password against password_hash."""
+        from werkzeug.security import check_password_hash
+        return bool(self.password_hash and check_password_hash(self.password_hash, password))
+
     @property
     def full_name(self):
         return (
@@ -884,7 +894,9 @@ class SMSCampaign(db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
     company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=True, index=True)
+    created_by_user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True)
     name = db.Column(db.String(255))
+    objective = db.Column(db.Text)
     message = db.Column(db.String(1000))
     status = db.Column(db.String(50), default="draft")
     audience_filter = db.Column(JSON, default=dict)
@@ -893,6 +905,7 @@ class SMSCampaign(db.Model):
     scheduled_at = db.Column(db.DateTime)
     sent_at = db.Column(db.DateTime)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     recipients = db.relationship('SMSRecipient', backref='campaign', lazy='dynamic', foreign_keys='SMSRecipient.campaign_id')
 
@@ -901,6 +914,7 @@ class SMSRecipient(db.Model):
     __tablename__ = "sms_recipient"
 
     id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=True, index=True)
     campaign_id = db.Column(db.Integer, db.ForeignKey("sms_campaign.id"), nullable=True)
     contact_id = db.Column(db.Integer, db.ForeignKey("contact.id"), nullable=True)
     phone_number = db.Column(db.String(50))
@@ -909,7 +923,17 @@ class SMSRecipient(db.Model):
     error_code = db.Column(db.String(50))
     sent_at = db.Column(db.DateTime)
     delivered_at = db.Column(db.DateTime)
+    replied_at = db.Column(db.DateTime)
+    opted_out_at = db.Column(db.DateTime)
+    provider_error_code = db.Column(db.String(50))
     error_message = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    __table_args__ = (
+        db.UniqueConstraint("campaign_id", "contact_id", name="uq_sms_recipient_campaign_contact"),
+        db.UniqueConstraint("provider_message_sid", name="uq_sms_recipient_provider_message_sid"),
+    )
 
     contact = db.relationship("Contact", backref="sms_recipients")
 
@@ -972,6 +996,57 @@ class SegmentMember(db.Model):
     added_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     contact = db.relationship("Contact", backref="segment_memberships")
+
+
+class SMSKeywordRule(db.Model):
+    __tablename__ = "sms_keyword_rule"
+
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=True, index=True)
+    campaign_id = db.Column(db.Integer, db.ForeignKey("sms_campaign.id"), nullable=True)
+    keyword = db.Column(db.String(80), nullable=False)
+    match_type = db.Column(db.String(30), default="exact")
+    reply_message = db.Column(db.Text)
+    priority = db.Column(db.Integer, default=100)
+    is_active = db.Column(db.Boolean, default=True)
+    business_hours_only = db.Column(db.Boolean, default=False)
+    after_hours_message = db.Column(db.Text)
+    tag_to_add = db.Column(db.String(100))
+    segment_to_add = db.Column(db.String(100))
+    notify_admin = db.Column(db.Boolean, default=False)
+    created_by_user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class SMSAutoReplyRule(db.Model):
+    __tablename__ = "sms_auto_reply_rule"
+
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=True, index=True)
+    campaign_id = db.Column(db.Integer, db.ForeignKey("sms_campaign.id"), nullable=True)
+    name = db.Column(db.String(255), nullable=False)
+    trigger_type = db.Column(db.String(50), default="inbound")
+    reply_message = db.Column(db.Text)
+    after_hours_message = db.Column(db.Text)
+    is_active = db.Column(db.Boolean, default=True)
+    created_by_user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class MarketingAuditLog(db.Model):
+    __tablename__ = "marketing_audit_log"
+
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=True, index=True)
+    created_by_user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True)
+    entity_type = db.Column(db.String(80))
+    entity_id = db.Column(db.Integer)
+    action = db.Column(db.String(80), nullable=False)
+    details = db.Column(db.JSON)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
 class WebForm(db.Model):
@@ -1771,6 +1846,7 @@ class Competitor(db.Model):
 
 
 class CompetitorContent(db.Model):
+    """Content item captured for a tracked competitor."""
     __tablename__ = "competitor_content"
 
     id = db.Column(db.Integer, primary_key=True)
@@ -2939,18 +3015,84 @@ class TwilioCallLog(db.Model):
     id           = db.Column(db.Integer, primary_key=True)
     company_id   = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=False)
     twilio_sid   = db.Column(db.String(100))
+    parent_call_sid = db.Column(db.String(100), nullable=True)
     direction    = db.Column(db.String(20))     # inbound | outbound
     from_number  = db.Column(db.String(20))
     to_number    = db.Column(db.String(20))
+    forwarded_to_number = db.Column(db.String(20), nullable=True)
+    contact_id   = db.Column(db.Integer, db.ForeignKey("contact.id"), nullable=True)
+    customer_id  = db.Column(db.Integer, nullable=True)
+    assigned_user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True)
+    answered_by_user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True)
     status       = db.Column(db.String(50))     # completed | missed | no-answer | busy | failed
     duration     = db.Column(db.Integer, default=0)
+    answered_at  = db.Column(db.DateTime, nullable=True)
+    ended_at     = db.Column(db.DateTime, nullable=True)
+    recording_url = db.Column(db.String(500), nullable=True)
+    recording_sid = db.Column(db.String(100), nullable=True)
+    voicemail_url = db.Column(db.String(500), nullable=True)
+    voicemail_sid = db.Column(db.String(100), nullable=True)
+    transcription_text = db.Column(db.Text, nullable=True)
+    transcription_status = db.Column(db.String(30), default="not_requested")
+    transcription_provider = db.Column(db.String(80), nullable=True)
     caller_name  = db.Column(db.String(200))
     notes        = db.Column(db.Text)
     missed_text_sent = db.Column(db.Boolean, default=False)
     raw_payload  = db.Column(JSON)
+    metadata_json = db.Column(JSON)
+    is_read      = db.Column(db.Boolean, default=False)
+    is_archived  = db.Column(db.Boolean, default=False)
     created_at   = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at   = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     company = db.relationship("Company", backref="twilio_call_logs")
+
+
+class PhoneSettings(db.Model):
+    """Tenant-level PWA phone routing, voicemail, SMS, recording, and transcription settings."""
+    __tablename__ = "phone_settings"
+
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=False, unique=True, index=True)
+    business_hours = db.Column(JSON, default=dict)
+    timezone = db.Column(db.String(80), default="America/Los_Angeles")
+    during_hours_route = db.Column(db.String(30), default="ring_pwa")  # ring_pwa | forward | voicemail | message_then_route
+    after_hours_route = db.Column(db.String(30), default="voicemail")
+    forward_number = db.Column(db.String(20))
+    fallback_forward_number = db.Column(db.String(20))
+    after_hours_forward_number = db.Column(db.String(20))
+    after_hours_fallback_forward_number = db.Column(db.String(20))
+    ring_duration_seconds = db.Column(db.Integer, default=25)
+    voicemail_greeting = db.Column(db.Text)
+    after_hours_voicemail_greeting = db.Column(db.Text)
+    missed_call_sms_enabled = db.Column(db.Boolean, default=False)
+    missed_call_sms_body = db.Column(db.Text)
+    after_hours_sms_enabled = db.Column(db.Boolean, default=False)
+    after_hours_sms_body = db.Column(db.Text)
+    recording_enabled = db.Column(db.Boolean, default=False)
+    transcription_enabled = db.Column(db.Boolean, default=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    company = db.relationship("Company", backref=db.backref("phone_settings", uselist=False))
+
+
+class CallEvent(db.Model):
+    """Idempotent audit trail for Twilio voice webhook events."""
+    __tablename__ = "call_event"
+
+    id = db.Column(db.Integer, primary_key=True)
+    call_log_id = db.Column(db.Integer, db.ForeignKey("twilio_call_log.id"), nullable=False, index=True)
+    event_type = db.Column(db.String(80), nullable=False)
+    provider_event_id = db.Column(db.String(160), nullable=True)
+    payload = db.Column(JSON)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    call_log = db.relationship("TwilioCallLog", backref="events")
+
+    __table_args__ = (
+        db.UniqueConstraint("call_log_id", "event_type", "provider_event_id", name="uq_call_event_idempotency"),
+    )
 
 
 # ---------------------------------------------------------------------------

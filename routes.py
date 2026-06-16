@@ -3427,14 +3427,18 @@ def resume_automation(id):
 def sms_dashboard():
     """SMS marketing dashboard"""
     # # from services.sms_service import SMSService
+    company_id = getattr(current_user, 'default_company_id', None)
     
-    campaigns = SMSCampaign.query.order_by(SMSCampaign.created_at.desc()).all()
+    campaigns_query = SMSCampaign.query
+    if company_id:
+        campaigns_query = campaigns_query.filter_by(company_id=company_id)
+    campaigns = campaigns_query.order_by(SMSCampaign.created_at.desc()).all()
     templates = SMSTemplate.query.order_by(SMSTemplate.created_at.desc()).limit(10).all()
     
     # Stats
-    total_campaigns = SMSCampaign.query.count()
-    sent_campaigns = SMSCampaign.query.filter_by(status='sent').count()
-    scheduled_campaigns = SMSCampaign.query.filter_by(status='scheduled').count()
+    total_campaigns = campaigns_query.count()
+    sent_campaigns = campaigns_query.filter_by(status='sent').count()
+    scheduled_campaigns = campaigns_query.filter_by(status='scheduled').count()
     
     # Check if Twilio is configured for this company
     twilio_configured = False
@@ -3460,8 +3464,6 @@ def sms_dashboard():
 @login_required
 def create_sms_campaign():
     """Create a new SMS campaign"""
-    # from services.sms_service import SMSService
-    # from services.scheduling_service import SchedulingService
     from services.campaign_tagging_service import CampaignTaggingService
     
     if request.method == 'POST':
@@ -3478,6 +3480,11 @@ def create_sms_campaign():
                 if scheduled_date and scheduled_time:
                     scheduled_at = datetime.fromisoformat(f"{scheduled_date}T{scheduled_time}")
             
+            company_id = getattr(current_user, 'default_company_id', None)
+            if not company_id:
+                flash('Company/tenant is required to create an SMS campaign.', 'error')
+                return redirect(url_for('main.sms_dashboard'))
+
             # Create campaign
             company = current_user.get_default_company() if hasattr(current_user, 'get_default_company') else None
             campaign = SMSService.create_campaign(
@@ -3486,6 +3493,10 @@ def create_sms_campaign():
                 scheduled_at=scheduled_at,
                 company_id=company.id if company else getattr(current_user, 'default_company_id', None)
             )
+            if campaign.message and 'STOP' not in campaign.message.upper():
+                campaign.message = f"{campaign.message.strip()} Reply STOP to opt out."
+            db.session.add(campaign)
+            db.session.flush()
             
             # Process campaign tags for organization
             campaign_tags_str = request.form.get('campaign_tags', '')
@@ -3534,18 +3545,28 @@ def create_sms_campaign():
             
             # Add recipients
             if contacts_to_target:
-                SMSService.add_recipients(campaign.id, [contact.id for contact in contacts_to_target])
+                for contact in contacts_to_target:
+                    db.session.add(SMSRecipient(
+                        company_id=company_id,
+                        campaign_id=campaign.id,
+                        contact_id=contact.id,
+                        status='queued',
+                    ))
             
             # Add to unified schedule if scheduled
             if scheduled_at:
-                SchedulingService.create_schedule(
-                    module_type='sms',
-                    module_object_id=campaign.id,
-                    title=f'SMS: {name}',
-                    scheduled_at=scheduled_at,
-                    description=message[:100]
-                )
+                try:
+                    SchedulingService.create_schedule(
+                        module_type='sms',
+                        module_object_id=campaign.id,
+                        title=f'SMS: {name}',
+                        scheduled_at=scheduled_at,
+                        description=message[:100]
+                    )
+                except Exception as sched_exc:
+                    logger.warning("SMS schedule helper skipped: %s", sched_exc)
             
+            db.session.commit()
             log_activity(current_user.id, 'Created SMS campaign', name, 'message-square')
             flash('SMS campaign created successfully!', 'success')
             return redirect(url_for('main.sms_dashboard'))
