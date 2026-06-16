@@ -33,6 +33,24 @@ Configure Twilio Messaging Service or phone number webhooks:
 - Inbound SMS: `https://<your-domain>/twilio/sms/inbound`
 - Delivery status callback: `https://<your-domain>/twilio/sms/status`
 
+
+
+## Network-error regression smoke
+
+After deploy, verify the exact user-facing surfaces that previously showed generic internal/network errors:
+
+```bash
+python -m pytest -q tests/test_marketing_hub_regression.py::test_marketing_pages_and_ajax_actions_fail_gracefully_without_integrations
+```
+
+Manual checks:
+
+- `/sms/campaigns` renders even when Twilio credentials are absent.
+- `/social-media` renders and `/api/social/test-connection` returns JSON with `success: false` instead of HTTP 500 when credentials are missing.
+- `/twilio/comms` and the legacy `/communication-hub`, `/communications`, and `/communications-hub` paths render/redirect without HTTP 500.
+- `/sms/ai-generate` returns safe fallback SMS copy when the AI provider is not configured.
+- `/twilio/send` returns JSON with `success: false` instead of HTTP 500 when Twilio is not configured.
+
 ## Post-deploy smoke checklist
 
 1. Open `/campaigns`, `/sms/campaigns`, and `/social-media` as a tenant user.
