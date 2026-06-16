@@ -20,13 +20,14 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Connect to Tailscale
-        uses: tailscale/github-action@v3
+        uses: tailscale/github-action@v4
         with:
-          authkey: ${{ secrets.TS_AUTHKEY }}
+          oauth-client-id: ${{ secrets.TS_CLIENTID }}
+          oauth-secret: ${{ secrets.TS_CLIENT_SECRET }}
+          tags: tag:ci
 
       - name: Test Tailscale SSH connectivity
         run: |
-          echo "Testing SSH to VPS over Tailscale..."
           timeout 15 bash -c '</dev/tcp/100.117.100.45/22' \
             && echo "SSH reachable over Tailscale" \
             || (echo "SSH not reachable over Tailscale" && exit 1)
