@@ -17,6 +17,11 @@ jobs:
     timeout-minutes: 20
 
     steps:
+      - name: Connect to Tailscale
+        uses: tailscale/github-action@v3
+        with:
+          authkey: ${{ secrets.TS_AUTHKEY }}
+
       - name: Deploy to Production VPS
         uses: appleboy/ssh-action@v1.0.3
         with:
