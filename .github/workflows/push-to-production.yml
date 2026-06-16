@@ -12,8 +12,9 @@ concurrency:
 
 jobs:
   deploy-production:
+    name: Deploy Production
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
 
     steps:
       - name: Checkout code
@@ -24,13 +25,19 @@ jobs:
         with:
           oauth-client-id: ${{ secrets.TS_CLIENTID }}
           oauth-secret: ${{ secrets.TS_CLIENT_SECRET }}
-          tags: tag:ci
 
-      - name: Test Tailscale SSH connectivity
+      - name: Show Tailscale Status
         run: |
-          timeout 15 bash -c '</dev/tcp/100.117.100.45/22' \
-            && echo "SSH reachable over Tailscale" \
-            || (echo "SSH not reachable over Tailscale" && exit 1)
+          tailscale version
+          tailscale status || true
+          tailscale ip -4 || true
+
+      - name: Test VPS Reachability
+        run: |
+          echo "Testing Tailscale connectivity to VPS..."
+          timeout 20 bash -c '</dev/tcp/100.117.100.45/22' \
+            && echo "SUCCESS: SSH port reachable" \
+            || (echo "FAILED: SSH port not reachable" && exit 1)
 
       - name: Deploy to Production VPS
         uses: appleboy/ssh-action@v1.0.3
@@ -40,11 +47,22 @@ jobs:
           key: ${{ secrets.VPS_PRIVATE_KEY }}
           port: 22
           timeout: 60s
-          command_timeout: 10m
+          command_timeout: 15m
           script_stop: true
+          debug: true
           script: |
-            echo "Connected to VPS over Tailscale"
+            set -e
+
+            echo "===== CONNECTED ====="
             whoami
             hostname
+            pwd
+
+            echo "===== APP ====="
             cd /root/lux-email-bot
+
             git status
+            git branch
+            git rev-parse HEAD
+
+            echo "===== COMPLETE ====="
