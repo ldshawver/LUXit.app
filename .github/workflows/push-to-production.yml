@@ -29,41 +29,43 @@ jobs:
 
       - name: Show Tailscale Status
         run: |
-          tailscale version
-          tailscale status || true
-          tailscale ip -4 || true
+          tailscale status
+          tailscale ip -4
 
       - name: Test VPS Reachability
         run: |
-          echo "Testing Tailscale connectivity to VPS..."
           timeout 20 bash -c "</dev/tcp/${{ secrets.HOST }}/22" \
             && echo "SUCCESS: SSH port reachable" \
             || (echo "FAILED: SSH port not reachable" && exit 1)
 
+      - name: Prepare SSH Key
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          echo "${{ secrets.VPS_PRIVATE_KEY }}" > ~/.ssh/luxit_vps_key
+          chmod 600 ~/.ssh/luxit_vps_key
+          ssh-keyscan -H "${{ secrets.HOST }}" >> ~/.ssh/known_hosts
+
       - name: Deploy to Production VPS
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.HOST }}
-          username: root
-          key: ${{ secrets.VPS_PRIVATE_KEY }}
-          port: 22
-          timeout: 60s
-          command_timeout: 15m
-          script_stop: true
-          debug: true
-          script: |
-            set -e
+        run: |
+          ssh -i ~/.ssh/luxit_vps_key \
+            -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes \
+            -o ConnectTimeout=30 \
+            root@${{ secrets.HOST }} << 'EOF'
+              set -e
 
-            echo "===== CONNECTED ====="
-            whoami
-            hostname
-            pwd
+              echo "===== CONNECTED ====="
+              whoami
+              hostname
+              pwd
 
-            echo "===== APP ====="
-            cd /root/lux-email-bot
+              echo "===== APP ====="
+              cd /root/lux-email-bot
 
-            git status
-            git branch
-            git rev-parse HEAD
+              git status
+              git branch
+              git rev-parse HEAD
 
-            echo "===== COMPLETE ====="
+              echo "===== COMPLETE ====="
+          EOF
