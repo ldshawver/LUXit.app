@@ -207,6 +207,7 @@ class SMSService:
             if not SMSService.contact_can_receive_marketing(contact):
                 continue
             recipient = SMSRecipient(
+                company_id=campaign.company_id,
                 campaign_id=campaign_id,
                 contact_id=contact_id,
                 phone_number=contact.phone,

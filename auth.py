@@ -117,9 +117,18 @@ def login():
 
         logger.info("LOGIN: user found=%s, has_hash=%s", user is not None, bool(getattr(user, 'password_hash', None)))
 
-        if not user or not user.password_hash:
-            logger.warning("LOGIN FAIL: user not found or no password hash for %r", identifier)
+        if not user:
+            logger.warning("LOGIN FAIL: user not found for %r", identifier)
             flash("Invalid credentials.", "error")
+            try:
+                return render_template("auth/login.html")
+            except TemplateNotFound as exc:
+                logger.warning("Auth login template missing: %s", exc)
+                return render_template("login.html")
+
+        if not user.password_hash:
+            logger.warning("LOGIN FAIL: user has no password hash for %r", identifier)
+            flash("This account doesn't have a password set. Use SSO or ask an admin to set a password.", "error")
             try:
                 return render_template("auth/login.html")
             except TemplateNotFound as exc:
