@@ -540,7 +540,7 @@
                     <a href="{{ url_for('main.email_hub') }}" class="sidebar-nav-item{% if _p.startswith('/email') %} active{% endif %}">
                         <i data-feather="mail"></i> Email
                     </a>
-                    <a href="{{ url_for('main.sms_dashboard') }}" class="sidebar-nav-item{% if _p.startswith('/sms') and not _p.startswith('/twilio') %} active{% endif %}">
+                    <a href="{{ url_for('main.sms_campaigns') }}" class="sidebar-nav-item{% if _p.startswith('/sms') and not _p.startswith('/twilio') %} active{% endif %}">
                         <i data-feather="smartphone"></i> SMS Campaigns
                     </a>
                     <a href="{{ url_for('twilio.comms_hub') }}" class="sidebar-nav-item{% if _p.startswith('/twilio/comms') or _p.startswith('/twilio/inbox') or _p.startswith('/twilio/conversation') or _p.startswith('/app/inbox') %} active{% endif %}">

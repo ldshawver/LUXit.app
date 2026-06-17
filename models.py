@@ -944,6 +944,7 @@ class SMSTemplate(db.Model):
     __tablename__ = "sms_template"
 
     id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=True, index=True)
     name = db.Column(db.String(255))
     message = db.Column(db.Text)
     category = db.Column(db.String(100))
@@ -978,6 +979,7 @@ class Segment(db.Model):
     __tablename__ = "segment"
 
     id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=True, index=True)
     name = db.Column(db.String(255), nullable=False)
     description = db.Column(db.Text, nullable=True)
     segment_type = db.Column(db.String(100), default="behavioral")
@@ -1115,8 +1117,43 @@ class CalendarEvent(db.Model):
     __tablename__ = "calendar_event"
 
     id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=True, index=True)
+    created_by_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True)
+    title = db.Column(db.String(255))
+    description = db.Column(db.Text)
     event_type = db.Column(db.String(50))
+    channel = db.Column(db.String(50))
+    content_type = db.Column(db.String(80))
+    content_id = db.Column(db.Integer)
+    status = db.Column(db.String(50))
+    audience = db.Column(db.String(255))
+    estimated_recipient_count = db.Column(db.Integer, default=0)
     start_date = db.Column(db.DateTime)
+    end_date = db.Column(db.DateTime)
+    all_day = db.Column(db.Boolean, default=False)
+    notes = db.Column(db.Text)
+    color = db.Column(db.String(40))
+    deadline_at = db.Column(db.DateTime)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "title": self.title,
+            "description": self.description,
+            "event_type": self.event_type,
+            "channel": self.channel,
+            "content_type": self.content_type,
+            "content_id": self.content_id,
+            "status": self.status,
+            "audience": self.audience,
+            "estimated_recipient_count": self.estimated_recipient_count or 0,
+            "start_date": self.start_date.isoformat() if self.start_date else None,
+            "end_date": self.end_date.isoformat() if self.end_date else None,
+            "all_day": bool(self.all_day),
+            "color": self.color,
+        }
 
 
 class AutomationTemplate(db.Model):

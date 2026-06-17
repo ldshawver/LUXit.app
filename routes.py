@@ -3432,40 +3432,8 @@ def resume_automation(id):
 @main_bp.route('/sms-dashboard')
 @login_required
 def sms_dashboard():
-    """SMS marketing dashboard"""
-    # # from services.sms_service import SMSService
-    company_id = getattr(current_user, 'default_company_id', None)
-    
-    campaigns_query = SMSCampaign.query
-    if company_id:
-        campaigns_query = campaigns_query.filter_by(company_id=company_id)
-    campaigns = campaigns_query.order_by(SMSCampaign.created_at.desc()).all()
-    templates = SMSTemplate.query.order_by(SMSTemplate.created_at.desc()).limit(10).all()
-    
-    # Stats
-    total_campaigns = campaigns_query.count()
-    sent_campaigns = campaigns_query.filter_by(status='sent').count()
-    scheduled_campaigns = campaigns_query.filter_by(status='scheduled').count()
-    
-    # Check if Twilio is configured for this company
-    twilio_configured = False
-    try:
-        from models import TwilioAccount
-        company = current_user.get_default_company() if current_user.is_authenticated else None
-        if company:
-            ta = TwilioAccount.query.filter_by(company_id=company.id).first()
-            twilio_configured = bool(ta and ta.is_configured)
-    except Exception:
-        pass
-
-    return render_template('sms_campaigns.html',
-                         campaigns=campaigns,
-                         templates=templates,
-                         total_campaigns=total_campaigns,
-                         sent_campaigns=sent_campaigns,
-                         scheduled_campaigns=scheduled_campaigns,
-                         sms_enabled=True,
-                         twilio_configured=twilio_configured)
+    """Legacy SMS marketing dashboard routes; redirect to canonical app route."""
+    return redirect(url_for('main.sms_campaigns'), code=302)
 
 @main_bp.route('/sms/create', methods=['GET', 'POST'])
 @login_required
@@ -3487,21 +3455,23 @@ def create_sms_campaign():
                 if scheduled_date and scheduled_time:
                     scheduled_at = datetime.fromisoformat(f"{scheduled_date}T{scheduled_time}")
             
-            company_id = getattr(current_user, 'default_company_id', None)
+            company_id = _current_company_id()
             if not company_id:
                 flash('Company/tenant is required to create an SMS campaign.', 'error')
-                return redirect(url_for('main.sms_dashboard'))
+                return redirect(url_for('main.sms_campaigns'))
 
             # Create campaign
-            company = current_user.get_default_company() if hasattr(current_user, 'get_default_company') else None
-            campaign = SMSService.create_campaign(
+            campaign = SMSCampaign(
+                company_id=company_id,
+                created_by_user_id=current_user.id,
                 name=name,
-                message=message,
+                message=SMSService.ensure_opt_out_language(message or '') if SMSService else message,
+                segment=request.form.get('segment_tags') or None,
+                status='scheduled' if scheduled_at else 'draft',
                 scheduled_at=scheduled_at,
-                company_id=company.id if company else getattr(current_user, 'default_company_id', None)
+                audience_filter={'segment_tags': request.form.get('segment_tags', '')},
+                created_at=datetime.utcnow(),
             )
-            if campaign.message and 'STOP' not in campaign.message.upper():
-                campaign.message = f"{campaign.message.strip()} Reply STOP to opt out."
             db.session.add(campaign)
             db.session.flush()
             
@@ -3550,6 +3520,8 @@ def create_sms_campaign():
                     Contact.sms_consent_status.in_(['opted_in', 'subscribed'])
                 ).all()
             
+            campaign.estimated_recipient_count = len(contacts_to_target)
+
             # Add recipients
             if contacts_to_target:
                 for contact in contacts_to_target:
@@ -3577,7 +3549,7 @@ def create_sms_campaign():
             db.session.commit()
             log_activity(current_user.id, 'Created SMS campaign', name, 'message-square')
             flash('SMS campaign created successfully!', 'success')
-            return redirect(url_for('main.sms_dashboard'))
+            return redirect(url_for('main.sms_campaigns'))
             
         except Exception as e:
             logger.error(f"Error creating SMS campaign: {e}")
@@ -3592,8 +3564,14 @@ def create_sms_campaign():
         Contact.sms_consent_status.in_(['opted_in', 'subscribed'])
     ).all()
     tags = CampaignTaggingService.get_all_tags()
-    templates = SMSTemplate.query.all()
-    segments = Segment.query.all()
+    templates_query = SMSTemplate.query
+    if hasattr(SMSTemplate, 'company_id'):
+        templates_query = templates_query.filter(or_(SMSTemplate.company_id == company_id, SMSTemplate.company_id.is_(None)))
+    templates = templates_query.filter_by(is_active=True).order_by(SMSTemplate.name.asc()).all()
+    segments_query = Segment.query
+    if hasattr(Segment, 'company_id'):
+        segments_query = segments_query.filter_by(company_id=company_id)
+    segments = segments_query.order_by(Segment.name.asc()).all()
     
     return render_template('create_sms_campaign.html',
                          contacts=contacts,
@@ -3619,10 +3597,11 @@ def edit_sms_campaign(campaign_id):
             scheduled_time = request.form.get('scheduled_time')
             if scheduled_date and scheduled_time:
                 campaign.scheduled_at = datetime.fromisoformat(f"{scheduled_date}T{scheduled_time}")
+                campaign.status = 'scheduled'
             
             db.session.commit()
             flash('SMS campaign updated successfully!', 'success')
-            return redirect(url_for('main.sms_dashboard'))
+            return redirect(url_for('main.sms_campaigns'))
         except Exception as e:
             logger.error(f"Error updating SMS campaign: {e}")
             flash('Error updating campaign', 'error')
@@ -3635,7 +3614,10 @@ def edit_sms_campaign(campaign_id):
         Contact.sms_opt_out_at.is_(None),
         Contact.sms_consent_status.in_(['opted_in', 'subscribed'])
     ).all()
-    templates = SMSTemplate.query.all()
+    templates_query = SMSTemplate.query
+    if hasattr(SMSTemplate, 'company_id'):
+        templates_query = templates_query.filter(or_(SMSTemplate.company_id == company_id, SMSTemplate.company_id.is_(None)))
+    templates = templates_query.filter_by(is_active=True).order_by(SMSTemplate.name.asc()).all()
     
     return render_template('edit_sms_campaign.html',
                          campaign=campaign,
@@ -3650,13 +3632,14 @@ def archive_sms_campaign(campaign_id):
         company_id = _current_company_id()
         campaign = SMSCampaign.query.filter_by(id=campaign_id, company_id=company_id).first_or_404()
         campaign.status = 'archived'
+        campaign.scheduled_at = None
         db.session.commit()
         flash('Campaign archived successfully', 'success')
     except Exception as e:
         logger.error(f"Error archiving SMS campaign: {e}")
         flash('Error archiving campaign', 'error')
     
-    return redirect(url_for('main.sms_dashboard'))
+    return redirect(url_for('main.sms_campaigns'))
 
 @main_bp.route('/sms/templates/create', methods=['GET', 'POST'])
 @login_required
@@ -3674,7 +3657,7 @@ def create_sms_template():
             template = SMSService.create_template(name, message, category, tone)
             
             flash(f'SMS template "{name}" created successfully!', 'success')
-            return redirect(url_for('main.sms_dashboard'))
+            return redirect(url_for('main.sms_campaigns'))
             
         except Exception as e:
             logger.error(f"Error creating SMS template: {e}")
@@ -5230,7 +5213,8 @@ def marketing_calendar():
         SMSCampaign.scheduled_at.isnot(None),
         SMSCampaign.scheduled_at >= start_date,
         SMSCampaign.scheduled_at < end_date,
-        SMSCampaign.status.in_(['draft', 'scheduled'])
+        SMSCampaign.status.in_(['draft', 'scheduled']),
+        SMSCampaign.company_id == _current_company_id()
     ).all()
     
     for campaign in sms_campaigns:
@@ -5291,7 +5275,8 @@ def marketing_calendar():
         SMSCampaign.scheduled_at.isnot(None),
         SMSCampaign.scheduled_at >= now,
         SMSCampaign.scheduled_at <= now + timedelta(days=30),
-        SMSCampaign.status.in_(['draft', 'scheduled'])
+        SMSCampaign.status.in_(['draft', 'scheduled']),
+        SMSCampaign.company_id == _current_company_id()
     ).order_by(SMSCampaign.scheduled_at).limit(10).all()
     
     upcoming_social = SocialPost.query.filter(
@@ -5397,7 +5382,8 @@ def api_calendar_events():
         sms_campaigns = SMSCampaign.query.filter(
             SMSCampaign.scheduled_at.isnot(None),
             SMSCampaign.scheduled_at >= start_date,
-            SMSCampaign.scheduled_at <= end_date
+            SMSCampaign.scheduled_at <= end_date,
+            SMSCampaign.company_id == _current_company_id()
         ).all()
         for c in sms_campaigns:
             events.append({
@@ -5410,7 +5396,7 @@ def api_calendar_events():
                 'content_id': c.id,
                 'color': '#28a745',
                 'className': 'event-sms',
-                'extendedProps': {'type': 'sms', 'status': c.status, 'edit_url': f'/sms/campaigns/{c.id}'}
+                'extendedProps': {'type': 'sms', 'status': c.status, 'edit_url': f'/sms/campaign/{c.id}/edit'}
             })
     
     if not event_types or 'social' in event_types:
@@ -5647,7 +5633,7 @@ def api_calendar_get_event(event_id):
                         'scheduled_at': campaign.scheduled_at.isoformat() if campaign.scheduled_at else None,
                         'status': campaign.status,
                         'message': campaign.message,
-                        'edit_url': f'/sms/campaigns/{campaign.id}'
+                        'edit_url': f'/sms/campaign/{campaign.id}/edit'
                     }
                 })
         

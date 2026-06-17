@@ -282,10 +282,7 @@ class OrchestratorAgent:
         try:
             from models import FeatureToggle, Company
             company_id = self._get_current_company_id()
-            if company_id:
-                company = db.session.get(Company, company_id)
-            else:
-                company = Company.query.first()
+            company = db.session.get(Company, company_id) if company_id else None
             if not company:
                 return {'success': True, 'toggles': [], 'total': 0}
 

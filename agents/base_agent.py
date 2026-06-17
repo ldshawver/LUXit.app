@@ -64,6 +64,18 @@ class BaseAgent:
             self._client = None
         return self._client
     
+
+    def _get_current_company_id(self) -> Optional[int]:
+        """Resolve the active request tenant without falling back across tenants."""
+        try:
+            from flask_login import current_user
+            if current_user and current_user.is_authenticated:
+                company = current_user.get_default_company() if hasattr(current_user, "get_default_company") else None
+                return company.id if company else getattr(current_user, "default_company_id", None)
+        except Exception:
+            pass
+        return None
+
     def _define_personality(self) -> str:
         """Define the agent's personality and expertise. Override in subclasses."""
         return f"""
@@ -220,7 +232,7 @@ class BaseAgent:
             task_name: Name/description of task
             task_data: Task configuration and parameters
             scheduled_at: When to execute (None = now)
-            company_id: Company context (falls back to first active company)
+            company_id: Required company context for background tasks
             user_id: User context (optional)
 
         Returns:
@@ -229,18 +241,9 @@ class BaseAgent:
         try:
             from models import AgentTask, Company, db
 
-            # Resolve company_id — required by the NOT NULL constraint.
-            # Scheduled agents run outside any request context, so we fall
-            # back to the first active company rather than crashing.
-            resolved_company_id = company_id
-            if resolved_company_id is None:
-                try:
-                    first_company = Company.query.filter_by(is_active=True).first()
-                    if first_company is None:
-                        first_company = Company.query.first()
-                    resolved_company_id = first_company.id if first_company else None
-                except Exception:
-                    resolved_company_id = None
+            # Resolve company_id from the active tenant only. Scheduled/background
+            # agents must pass company_id explicitly to avoid cross-tenant leakage.
+            resolved_company_id = company_id or self._get_current_company_id()
 
             if resolved_company_id is None:
                 logger.warning(
@@ -355,10 +358,9 @@ class BaseAgent:
         """
         try:
             from services.approval_service import ApprovalService, FeatureToggleService
-            from models import Company
-            
-            company = Company.query.first()
-            company_id = company.id if company else 1
+            company_id = self._get_current_company_id()
+            if not company_id:
+                return {'success': False, 'reason': 'No active company context'}
             
             feature_key = f'agent_{self.agent_type}'
             if not FeatureToggleService.is_enabled(company_id, feature_key):
@@ -405,10 +407,9 @@ class BaseAgent:
         """Check if this agent's feature is enabled"""
         try:
             from services.approval_service import FeatureToggleService
-            from models import Company
-            
-            company = Company.query.first()
-            company_id = company.id if company else 1
+            company_id = self._get_current_company_id()
+            if not company_id:
+                return False
             
             key = feature_key or f'agent_{self.agent_type}'
             return FeatureToggleService.is_enabled(company_id, key)

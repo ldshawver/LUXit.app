@@ -205,3 +205,82 @@ Rollback guidance:
 - [ ] Delivery status callback persists recipient status without secrets.
 - [ ] Tenant routing by To number / tenant Twilio config verified.
 - [ ] Browser QA confirms Social and SMS Campaign pages load and branding/navigation/responsive layout are unchanged.
+
+## 2026-06-17 SMS campaign audit hotfix post-merge checklist
+
+Apply this checklist immediately after deploying the SMS campaign audit fix that added
+`migrations/20260617_sms_campaign_audit_fix.sql`.
+
+### 1. Apply migration
+
+Run with `ON_ERROR_STOP` so deployment fails fast if PostgreSQL rejects any
+schema repair statement:
+
+```bash
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f migrations/20260617_sms_campaign_audit_fix.sql
+```
+
+Recommended idempotency confirmation:
+
+```bash
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f migrations/20260617_sms_campaign_audit_fix.sql
+```
+
+### 2. Restart services
+
+Use the command that matches the production process manager:
+
+```bash
+systemctl restart lux-email-bot
+```
+
+or
+
+```bash
+docker compose restart web lux-email-bot
+```
+
+or
+
+```bash
+pm2 restart all
+```
+
+### 3. Smoke test the SMS campaign flow
+
+In a browser session for an authorized tenant admin/manager/editor:
+
+- Open `/app/sms-campaigns` and confirm it loads.
+- Click the left sidebar **SMS Campaigns** link and confirm it lands on the canonical campaign list.
+- Open `/sms` and confirm it redirects to `/app/sms-campaigns`.
+- Open `/sms-dashboard` and confirm it redirects to `/app/sms-campaigns`.
+- Open `/sms/create` and confirm it loads without a 500.
+- Create a draft SMS campaign.
+- Schedule an SMS campaign.
+- Confirm the scheduled campaign appears on the marketing calendar.
+- Confirm the calendar SMS campaign edit link opens the campaign edit page.
+- Confirm the analytics page loads SMS metrics without crashing.
+- Confirm AI reports/agent context include only the active tenant's SMS campaigns.
+
+### 4. Watch production logs
+
+Watch the web worker and background worker logs during the smoke test and verify
+there are no new occurrences of:
+
+- `UndefinedColumn`
+- `BuildError`
+- `500`
+- `Company.query.first()`
+- cross-tenant SMS campaign/template/contact leakage
+
+Example journal command:
+
+```bash
+journalctl -u lux-email-bot -f | rg "UndefinedColumn|BuildError|\b500\b|Company\.query\.first\(|cross-tenant|sms_campaign|sms_template"
+```
+
+Example Docker command:
+
+```bash
+docker compose logs -f web lux-email-bot | rg "UndefinedColumn|BuildError|\b500\b|Company\.query\.first\(|cross-tenant|sms_campaign|sms_template"
+```
