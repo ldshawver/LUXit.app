@@ -17,6 +17,7 @@ from models import (
     UserCompanyAccess,
     VoiceVoicemailMessage,
     TwilioConversation,
+    TwilioMessage,
 )
 
 
@@ -298,6 +299,95 @@ def test_inbox_conversations_all_excludes_archived_json_tags(client, app, world)
     assert "Archived SMS" not in names
 
 
+def test_inbox_conversations_all_includes_read_and_unread_non_archived(client, app, world):
+    with app.app_context():
+        rows = [
+            TwilioConversation(
+                company_id=world["co_a"],
+                from_number="+15551001001",
+                to_number="+15550001000",
+                contact_name="Unread Persistent SMS",
+                is_read=False,
+                tags=[],
+                last_message_at=datetime(2026, 1, 5),
+            ),
+            TwilioConversation(
+                company_id=world["co_a"],
+                from_number="+15551001002",
+                to_number="+15550001000",
+                contact_name="Read Persistent SMS",
+                is_read=True,
+                tags=[],
+                last_message_at=datetime(2026, 1, 4),
+            ),
+            TwilioConversation(
+                company_id=world["co_a"],
+                from_number="+15551001003",
+                to_number="+15550001000",
+                contact_name="Archived Persistent SMS",
+                is_read=False,
+                tags=["archived"],
+                last_message_at=datetime(2026, 1, 6),
+            ),
+        ]
+        db.session.add_all(rows)
+        db.session.commit()
+    login(client, world["alice"])
+
+    resp = client.get("/api/inbox/conversations?filter=all")
+
+    assert resp.status_code == 200
+    body = resp.get_json()
+    names = {c["contact_name"] for c in body["conversations"]}
+    assert "Unread Persistent SMS" in names
+    assert "Read Persistent SMS" in names
+    assert "Archived Persistent SMS" not in names
+
+
+def test_opening_and_marking_conversation_read_keeps_it_in_all(client, app, world):
+    with app.app_context():
+        conv = TwilioConversation(
+            company_id=world["co_a"],
+            from_number="+15551001004",
+            to_number="+15550001000",
+            contact_name="Read Stable SMS",
+            is_read=False,
+            tags=["lead"],
+            last_message_at=datetime(2026, 1, 7),
+        )
+        db.session.add(conv)
+        db.session.flush()
+        db.session.add(TwilioMessage(
+            conversation_id=conv.id,
+            company_id=world["co_a"],
+            direction="inbound",
+            from_number="+15551001004",
+            to_number="+15550001000",
+            body="hello",
+            status="received",
+            created_at=datetime(2026, 1, 7),
+        ))
+        db.session.commit()
+        conv_id = conv.id
+    login(client, world["alice"])
+
+    opened = client.get(f"/api/inbox/conversations/{conv_id}")
+    marked = client.patch(f"/api/inbox/conversations/{conv_id}/read", json={"is_read": True})
+    again = client.get("/api/inbox/conversations?filter=all")
+
+    assert opened.status_code == 200
+    assert marked.status_code == 200
+    names = {c["contact_name"] for c in again.get_json()["conversations"]}
+    assert "Read Stable SMS" in names
+    with app.app_context():
+        persisted = db.session.get(TwilioConversation, conv_id)
+        assert persisted.is_read is True
+        assert persisted.tags == ["lead"]
+        assert persisted.company_id == world["co_a"]
+        assert persisted.assigned_user_id is None
+        assert TwilioMessage.query.filter_by(conversation_id=conv_id).count() == 1
+
+
 def test_inbox_conversations_archived_filter_uses_python_json_tag_check(client, app, world):
     with app.app_context():
         visible = TwilioConversation(
@@ -406,6 +496,17 @@ def test_inbox_conversations_non_archived_filters_still_work(
     names = {c["contact_name"] for c in resp.get_json()["conversations"]}
     assert expected in names
     assert excluded not in names
+
+
+def test_inbox_pwa_fetch_failure_does_not_clear_conversation_state():
+    html = open("templates/inbox_pwa/index.html", encoding="utf-8").read()
+
+    assert "Could not refresh conversations. Showing saved conversations." in html
+    assert "state.conversations = data.conversations" not in html
+    assert "localStorage.clear()" not in html
+    assert "sessionStorage.clear()" not in html
+    assert "indexedDB.deleteDatabase" not in html
+    assert "mergeConversations(state.conversations, data.conversations)" in html
 
 
 def add_phone_number(company_id, number, **overrides):
