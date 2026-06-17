@@ -970,6 +970,7 @@
 ═══════════════════════════════════════════════════════════════ */
 const CSRF        = '{{ csrf_token() }}';
 const VAPID_PUBLIC = document.documentElement.dataset.vapid ?? '';
+const CONV_CACHE_KEY = 'luxitInboxConversations';
 
 let state = {
   filter:        'all',
@@ -1205,10 +1206,47 @@ async function apiFetch(url, method = 'GET', body = null) {
 async function loadConversations() {
   const qs   = `?filter=${state.filter}&q=${encodeURIComponent(state.search)}`;
   const data = await apiFetch('/api/inbox/conversations' + qs);
-  if (!data) return;
-  state.conversations = data.conversations;
-  renderConvList(data.conversations);
+  if (!data || data.error || data.success === false || !Array.isArray(data.conversations)) {
+    const cached = loadCachedConversations();
+    if (state.conversations.length) {
+      renderConvList(state.conversations);
+    } else if (cached.length) {
+      state.conversations = cached;
+      renderConvList(cached);
+    }
+    toast(data?.error || 'Could not refresh conversations. Showing saved conversations.', 'error');
+    return;
+  }
+  state.conversations = (state.filter === 'all' && !state.search)
+    ? mergeConversations(state.conversations, data.conversations)
+    : data.conversations;
+  renderConvList(state.conversations);
+  cacheConversations(state.conversations);
   updateUnreadBadge(data.unread_count);
+}
+
+function mergeConversations(current, incoming) {
+  if (!incoming.length) return [];
+  const byId = new Map();
+  [...current, ...incoming].forEach(c => { if (c && c.id) byId.set(c.id, c); });
+  return Array.from(byId.values()).sort((a, b) => new Date(b.last_message_at || 0) - new Date(a.last_message_at || 0));
+}
+
+function cacheConversations(convs) {
+  try {
+    if (state.filter === 'all' && !state.search && Array.isArray(convs)) {
+      localStorage.setItem(CONV_CACHE_KEY, JSON.stringify(convs));
+    }
+  } catch {}
+}
+
+function loadCachedConversations() {
+  try {
+    const cached = JSON.parse(localStorage.getItem(CONV_CACHE_KEY) || '[]');
+    return Array.isArray(cached) ? cached : [];
+  } catch {
+    return [];
+  }
 }
 
 function renderConvList(convs) {
@@ -1794,7 +1832,12 @@ async function sendNewMsg() {
 async function markCurrentRead(isRead = true) {
   if (!state.activeConvId) return;
   const data = await apiFetch(`/api/inbox/conversations/${state.activeConvId}/read`, 'PATCH', { is_read: isRead });
-  if (data?.success) { toast(isRead ? 'Marked as read.' : 'Marked as unread.'); loadConversations(); }
+  if (data?.success) {
+    state.conversations = state.conversations.map(c => c.id === state.activeConvId ? { ...c, is_read: isRead } : c);
+    renderConvList(state.conversations);
+    toast(isRead ? 'Marked as read.' : 'Marked as unread.');
+    loadConversations();
+  }
 }
 
 function openRename() {

@@ -301,7 +301,7 @@ def _send_sms_internal(ta, to_number: str, body: str, conversation_id=None):
 
 
 def _conv_to_dict(conv, brief=True):
-    tags = conv.tags or []
+    tags = _safe_conversation_tags(conv.tags)
     contact_source = getattr(conv, "contact_source", None)
     d = {
         "id":                  conv.id,
@@ -328,6 +328,23 @@ def _conv_to_dict(conv, brief=True):
         else:
             d["assigned_user_name"] = None
     return d
+
+
+def _safe_conversation_tags(raw_tags):
+    """Return conversation tags as a normalized list for JSON/null/string values."""
+    if raw_tags is None:
+        return []
+    if isinstance(raw_tags, list):
+        return raw_tags
+    if isinstance(raw_tags, tuple):
+        return list(raw_tags)
+    if isinstance(raw_tags, str):
+        return [tag.strip() for tag in raw_tags.split(",") if tag.strip()]
+    return []
+
+
+def _is_archived_conversation(conv):
+    return "archived" in _safe_conversation_tags(getattr(conv, "tags", None))
 
 
 def _msg_to_dict(m):
@@ -656,15 +673,16 @@ def list_conversations():
 
     convs = q.order_by(TwilioConversation.last_message_at.desc()).all()
     if filter_by == "archived":
-        convs = [c for c in convs if "archived" in (c.tags or [])]
+        convs = [c for c in convs if _is_archived_conversation(c)]
     else:
-        convs = [c for c in convs if "archived" not in (c.tags or [])]
+        convs = [c for c in convs if not _is_archived_conversation(c)]
 
     total = len(convs)
     per_page = 50
     convs = convs[(page - 1) * per_page:page * per_page]
 
     return jsonify({
+        "success":       True,
         "conversations": [_conv_to_dict(c) for c in convs],
         "unread_count":  unread_count,
         "total":         total,
@@ -855,7 +873,7 @@ def archive_conversation(conv_id):
     conv = TwilioConversation.query.filter_by(id=conv_id, company_id=company.id).first_or_404()
     payload  = request.get_json() or {}
     archive  = payload.get("archived", True)
-    tags     = list(conv.tags or [])
+    tags     = _safe_conversation_tags(conv.tags)
     if archive and "archived" not in tags:
         tags.append("archived")
     elif not archive and "archived" in tags:
