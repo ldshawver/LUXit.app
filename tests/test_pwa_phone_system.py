@@ -9,8 +9,10 @@ from models import (
     CallEvent,
     Company,
     PhoneSettings,
+    AutoReplyRule,
     TwilioAccount,
     TwilioCallLog,
+    TwilioPhoneNumber,
     User,
     UserCompanyAccess,
     VoiceVoicemailMessage,
@@ -263,3 +265,261 @@ def test_missed_call_sms_only_sends_when_enabled(app, client, world, monkeypatch
         db.session.add(log); db.session.commit()
     client.post("/twilio/voice/no-answer", data={"To": "+15550001000", "From": "+15551112222", "CallSid": "CAnoanswer", "DialCallStatus": "no-answer"})
     assert sent == []
+
+
+def test_inbox_conversations_all_excludes_archived_json_tags(client, app, world):
+    with app.app_context():
+        visible = TwilioConversation(
+            company_id=world["co_a"],
+            from_number="+15551000001",
+            to_number="+15550001000",
+            contact_name="Visible SMS",
+            tags=["lead"],
+            last_message_at=datetime(2026, 1, 2),
+        )
+        archived = TwilioConversation(
+            company_id=world["co_a"],
+            from_number="+15551000002",
+            to_number="+15550001000",
+            contact_name="Archived SMS",
+            tags=["archived"],
+            last_message_at=datetime(2026, 1, 3),
+        )
+        db.session.add_all([visible, archived])
+        db.session.commit()
+    login(client, world["alice"])
+
+    resp = client.get("/api/inbox/conversations?filter=all")
+
+    assert resp.status_code == 200
+    body = resp.get_json()
+    names = {c["contact_name"] for c in body["conversations"]}
+    assert "Visible SMS" in names
+    assert "Archived SMS" not in names
+
+
+def test_inbox_conversations_archived_filter_uses_python_json_tag_check(client, app, world):
+    with app.app_context():
+        visible = TwilioConversation(
+            company_id=world["co_a"],
+            from_number="+15551000003",
+            to_number="+15550001000",
+            contact_name="Visible SMS 2",
+            tags=[],
+            last_message_at=datetime(2026, 1, 2),
+        )
+        archived = TwilioConversation(
+            company_id=world["co_a"],
+            from_number="+15551000004",
+            to_number="+15550001000",
+            contact_name="Archived SMS 2",
+            tags=["archived", "vip"],
+            last_message_at=datetime(2026, 1, 3),
+        )
+        db.session.add_all([visible, archived])
+        db.session.commit()
+    login(client, world["alice"])
+
+    resp = client.get("/api/inbox/conversations?filter=archived")
+
+    assert resp.status_code == 200
+    body = resp.get_json()
+    names = {c["contact_name"] for c in body["conversations"]}
+    assert "Archived SMS 2" in names
+    assert "Visible SMS 2" not in names
+
+
+@pytest.mark.parametrize(
+    ("filter_name", "expected", "excluded"),
+    [
+        ("unread", "Unread SMS", "Read SMS"),
+        ("mine", "Assigned SMS", "Unassigned SMS"),
+        ("opted_out", "Opted Out SMS", "Opted In SMS"),
+    ],
+)
+def test_inbox_conversations_non_archived_filters_still_work(
+    client, app, world, filter_name, expected, excluded
+):
+    with app.app_context():
+        rows = [
+            TwilioConversation(
+                company_id=world["co_a"],
+                from_number="+15551000101",
+                to_number="+15550001000",
+                contact_name="Unread SMS",
+                is_read=False,
+                tags=[],
+                last_message_at=datetime(2026, 1, 4),
+            ),
+            TwilioConversation(
+                company_id=world["co_a"],
+                from_number="+15551000102",
+                to_number="+15550001000",
+                contact_name="Read SMS",
+                is_read=True,
+                tags=[],
+                last_message_at=datetime(2026, 1, 3),
+            ),
+            TwilioConversation(
+                company_id=world["co_a"],
+                from_number="+15551000103",
+                to_number="+15550001000",
+                contact_name="Assigned SMS",
+                assigned_user_id=world["alice"],
+                tags=[],
+                last_message_at=datetime(2026, 1, 2),
+            ),
+            TwilioConversation(
+                company_id=world["co_a"],
+                from_number="+15551000104",
+                to_number="+15550001000",
+                contact_name="Unassigned SMS",
+                tags=[],
+                last_message_at=datetime(2026, 1, 1),
+            ),
+            TwilioConversation(
+                company_id=world["co_a"],
+                from_number="+15551000105",
+                to_number="+15550001000",
+                contact_name="Opted Out SMS",
+                is_opted_out=True,
+                tags=[],
+                last_message_at=datetime(2026, 1, 6),
+            ),
+            TwilioConversation(
+                company_id=world["co_a"],
+                from_number="+15551000106",
+                to_number="+15550001000",
+                contact_name="Opted In SMS",
+                is_opted_out=False,
+                tags=[],
+                last_message_at=datetime(2026, 1, 5),
+            ),
+        ]
+        db.session.add_all(rows)
+        db.session.commit()
+    login(client, world["alice"])
+
+    resp = client.get(f"/api/inbox/conversations?filter={filter_name}")
+
+    assert resp.status_code == 200
+    names = {c["contact_name"] for c in resp.get_json()["conversations"]}
+    assert expected in names
+    assert excluded not in names
+
+
+def add_phone_number(company_id, number, **overrides):
+    ta = TwilioAccount.query.filter_by(company_id=company_id).one()
+    defaults = {
+        "company_id": company_id,
+        "twilio_account_id": ta.id,
+        "phone_number": number,
+        "is_active": True,
+        "sms_enabled": True,
+        "voice_enabled": True,
+    }
+    defaults.update(overrides)
+    pn = TwilioPhoneNumber(**defaults)
+    db.session.add(pn)
+    db.session.flush()
+    return pn
+
+
+def test_inbound_sms_uses_company_a_number_business_hours_and_auto_reply(app, client, world, monkeypatch):
+    sent = []
+    monkeypatch.setattr("twilio_sms._send_sms", lambda ta, to, body, **kw: sent.append((ta.company_id, ta.from_phone, to, body)) or {"success": True})
+    with app.app_context():
+        save_settings(world["co_a"], business_hours={str(i): {"is_open": False} for i in range(7)})
+        save_settings(world["co_b"], business_hours={str(i): {"is_open": True, "open": "00:00", "close": "23:59"} for i in range(7)})
+        add_phone_number(world["co_a"], "+15550001000", after_hours_text="Company A after-hours SMS")
+        add_phone_number(world["co_b"], "+15550002000", after_hours_text="Company B after-hours SMS")
+        db.session.add(AutoReplyRule(company_id=world["co_a"], name="A after hours", trigger_type="after_hours", action="reply", response="fallback A", is_active=True))
+        db.session.add(AutoReplyRule(company_id=world["co_b"], name="B after hours", trigger_type="after_hours", action="reply", response="fallback B", is_active=True))
+        db.session.commit()
+
+    resp = client.post("/twilio/sms/inbound", data={"From": "+15551110001", "To": "+15550001000", "Body": "hello", "MessageSid": "SMA"})
+
+    assert resp.status_code == 200
+    assert sent == [(world["co_a"], "+15550001000", "+15551110001", "Company A after-hours SMS")]
+
+
+def test_inbound_sms_uses_company_b_number_business_hours_and_auto_reply(app, client, world, monkeypatch):
+    sent = []
+    monkeypatch.setattr("twilio_sms._send_sms", lambda ta, to, body, **kw: sent.append((ta.company_id, ta.from_phone, to, body)) or {"success": True})
+    with app.app_context():
+        save_settings(world["co_a"], business_hours={str(i): {"is_open": True, "open": "00:00", "close": "23:59"} for i in range(7)})
+        save_settings(world["co_b"], business_hours={str(i): {"is_open": False} for i in range(7)})
+        add_phone_number(world["co_a"], "+15550001000", after_hours_text="Company A after-hours SMS")
+        add_phone_number(world["co_b"], "+15550002000", after_hours_text="Company B after-hours SMS")
+        db.session.add(AutoReplyRule(company_id=world["co_a"], name="A after hours", trigger_type="after_hours", action="reply", response="fallback A", is_active=True))
+        db.session.add(AutoReplyRule(company_id=world["co_b"], name="B after hours", trigger_type="after_hours", action="reply", response="fallback B", is_active=True))
+        db.session.commit()
+
+    resp = client.post("/twilio/sms/inbound", data={"From": "+15551110002", "To": "+1 (555) 000-2000", "Body": "hello", "MessageSid": "SMB"})
+
+    assert resp.status_code == 200
+    assert sent == [(world["co_b"], "+15550002000", "+15551110002", "Company B after-hours SMS")]
+
+
+def test_company_a_after_hours_does_not_affect_company_b_open_number(app, client, world, monkeypatch):
+    sent = []
+    monkeypatch.setattr("twilio_sms._send_sms", lambda ta, to, body, **kw: sent.append((ta.company_id, body)) or {"success": True})
+    with app.app_context():
+        save_settings(world["co_a"], business_hours={str(i): {"is_open": False} for i in range(7)})
+        save_settings(world["co_b"], business_hours={str(i): {"is_open": True, "open": "00:00", "close": "23:59"} for i in range(7)})
+        add_phone_number(world["co_a"], "+15550001000", after_hours_text="Company A after-hours SMS")
+        add_phone_number(world["co_b"], "+15550002000", after_hours_text="Company B after-hours SMS")
+        db.session.add(AutoReplyRule(company_id=world["co_a"], name="A after hours", trigger_type="after_hours", action="reply", response="fallback A", is_active=True))
+        db.session.add(AutoReplyRule(company_id=world["co_b"], name="B after hours", trigger_type="after_hours", action="reply", response="fallback B", is_active=True))
+        db.session.commit()
+
+    resp = client.post("/twilio/sms/inbound", data={"From": "+15551110003", "To": "+15550002000", "Body": "hello", "MessageSid": "SMBOPEN"})
+
+    assert resp.status_code == 200
+    assert sent == []
+
+
+def test_inbound_voice_voicemail_greeting_is_selected_by_to_number_company(app, client, world):
+    with app.app_context():
+        save_settings(world["co_a"], business_hours={str(i): {"is_open": False} for i in range(7)}, after_hours_route="voicemail")
+        save_settings(world["co_b"], business_hours={str(i): {"is_open": False} for i in range(7)}, after_hours_route="voicemail")
+        add_phone_number(world["co_a"], "+15550001000", voicemail_greeting_text="Company A voicemail greeting")
+        add_phone_number(world["co_b"], "+15550002000", voicemail_greeting_text="Company B voicemail greeting")
+        db.session.commit()
+
+    resp = client.post("/api/twilio/voice/incoming", data={"From": "+15552220000", "To": "+15550002000", "CallSid": "CABvm", "CallStatus": "ringing"})
+
+    assert resp.status_code == 200
+    assert b"Company B voicemail greeting" in resp.data
+    assert b"Company A voicemail greeting" not in resp.data
+
+
+def test_inbound_voice_forwarding_number_is_selected_by_to_number_company(app, client, world):
+    with app.app_context():
+        save_settings(world["co_a"], during_hours_route="forward", forward_number="+15554440001")
+        save_settings(world["co_b"], during_hours_route="forward", forward_number="+15554440002")
+        add_phone_number(world["co_a"], "+15550001000", call_forward_to="+15553330001")
+        add_phone_number(world["co_b"], "+15550002000", call_forward_to="+15553330002")
+        db.session.commit()
+
+    resp = client.post("/api/twilio/voice/incoming", data={"From": "+15552220001", "To": "+15550002000", "CallSid": "CABfwd", "CallStatus": "ringing"})
+
+    assert resp.status_code == 200
+    assert b"+15553330002" in resp.data
+    assert b"+15553330001" not in resp.data
+    assert b"+15554440002" not in resp.data
+
+
+def test_inbound_sms_conversation_is_assigned_to_to_number_company(app, client, world, monkeypatch):
+    monkeypatch.setattr("twilio_sms._send_sms", lambda *args, **kwargs: {"success": True})
+    with app.app_context():
+        add_phone_number(world["co_a"], "+15550001000")
+        add_phone_number(world["co_b"], "+15550002000")
+        db.session.commit()
+
+    resp = client.post("/twilio/sms/inbound", data={"From": "+15551119999", "To": "+15550002000", "Body": "route me", "MessageSid": "SMROUTE"})
+
+    assert resp.status_code == 200
+    with app.app_context():
+        assert TwilioConversation.query.filter_by(company_id=world["co_b"], from_number="+15551119999").one()
+        assert TwilioConversation.query.filter_by(company_id=world["co_a"], from_number="+15551119999").first() is None

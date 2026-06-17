@@ -103,25 +103,82 @@ def _get_twilio_account_by_number(to_number: str):
     return ta
 
 
+def _normalize_e164(number: str) -> str:
+    """Normalize common US phone formats to E.164 for inbound Twilio lookups."""
+    raw = (number or "").strip()
+    if not raw:
+        return ""
+    if raw.startswith("+") and raw[1:].isdigit():
+        return raw
+    digits = re.sub(r"\D", "", raw)
+    if len(digits) == 10:
+        return f"+1{digits}"
+    if len(digits) == 11 and digits.startswith("1"):
+        return f"+{digits}"
+    return raw
+
+
+class _NumberScopedTwilioConfig:
+    """TwilioAccount view with TwilioPhoneNumber routing overrides applied."""
+
+    _PN_OVERRIDES = (
+        "sms_forward_to",
+        "sms_forwarding_enabled",
+        "auto_reply_enabled",
+        "call_forward_to",
+        "voice_forwarding_enabled",
+        "voicemail_greeting_text",
+        "voicemail_greeting_audio_url",
+        "missed_call_text",
+        "after_hours_text",
+        "after_hours_sms_enabled",
+        "after_hours_voicemail_enabled",
+    )
+
+    def __init__(self, account, phone_number=None):
+        self._account = account
+        self.phone_number = phone_number
+        for key in self._PN_OVERRIDES:
+            value = getattr(phone_number, key, None) if phone_number else None
+            setattr(self, key, value if value not in (None, "") else getattr(account, key, None))
+        self.company_id = phone_number.company_id if phone_number else account.company_id
+        self.from_phone = (
+            phone_number.phone_number
+            if phone_number and getattr(phone_number, "phone_number", None)
+            else account.from_phone
+        )
+        self.messaging_service_sid = account.messaging_service_sid
+
+    def __getattr__(self, name):
+        return getattr(self._account, name)
+
+
+def _effective_twilio_config(ta, phone_number=None):
+    if not ta:
+        return None
+    return _NumberScopedTwilioConfig(ta, phone_number) if phone_number else ta
+
+
 def _resolve_number(to_number: str, msg_service_sid: str = ""):
     """
     Phase A: Resolve inbound Twilio webhook to (TwilioPhoneNumber, TwilioAccount).
 
     Lookup priority:
-      1. TwilioPhoneNumber.phone_number == to_number  (multi-number DB, primary path)
+      1. TwilioPhoneNumber.phone_number == normalized to_number
       2. TwilioAccount.messaging_service_sid == msg_service_sid (messaging service)
-      3. TwilioAccount.from_phone == to_number  (legacy single-number accounts)
-      4. First active TwilioAccount (absolute fallback — existing behaviour)
+      3. TwilioAccount.from_phone == normalized to_number (legacy single-number accounts)
 
     Returns (pn_or_None, ta_or_None).
     """
     from models import TwilioPhoneNumber, TwilioAccount
 
+    normalized_to = _normalize_e164(to_number)
+
     # ── 1. Look up by phone number in new multi-number table ─────────────────
     pn = None
-    if to_number:
+    if normalized_to:
         pn = TwilioPhoneNumber.query.filter_by(
-            phone_number=to_number, is_active=True
+            phone_number=normalized_to, is_active=True
         ).first()
 
     if pn:
@@ -144,17 +201,14 @@ def _resolve_number(to_number: str, msg_service_sid: str = ""):
             return None, ta
 
     # ── 3. Legacy from_phone on TwilioAccount ────────────────────────────────
-    if to_number:
-        ta = TwilioAccount.query.filter_by(from_phone=to_number).first()
+    if normalized_to:
+        ta = TwilioAccount.query.filter_by(from_phone=normalized_to).first()
         if ta:
             logger.debug("_resolve_number: matched legacy from_phone ta=%s", ta.id)
             return None, ta
 
-    # ── 4. Absolute fallback — first active account ───────────────────────────
-    ta = TwilioAccount.query.filter_by(is_active=True).first()
-    if ta:
-        logger.debug("_resolve_number: fallback to first active TwilioAccount id=%s", ta.id)
-    return None, ta
+    logger.warning("_resolve_number: no Twilio number owner found for to=%s", to_number)
+    return None, None
 
 
 def _seed_phone_numbers_from_accounts():
@@ -507,20 +561,21 @@ def _send_sms(ta, to_number: str, body: str,
         else:
             msg = client.messages.create(**kwargs)
 
-        record = TwilioMessage(
-            conversation_id=conversation_id,
-            company_id=ta.company_id,
-            twilio_sid=msg.sid,
-            direction="outbound",
-            from_number=ta.from_phone or ta.messaging_service_sid,
-            to_number=to_number,
-            body=body,
-            status=msg.status,
-            is_auto_reply=is_auto_reply,
-            rule_id=rule_id,
-        )
-        db.session.add(record)
-        db.session.commit()
+        if conversation_id:
+            record = TwilioMessage(
+                conversation_id=conversation_id,
+                company_id=ta.company_id,
+                twilio_sid=msg.sid,
+                direction="outbound",
+                from_number=ta.from_phone or ta.messaging_service_sid,
+                to_number=to_number,
+                body=body,
+                status=msg.status,
+                is_auto_reply=is_auto_reply,
+                rule_id=rule_id,
+            )
+            db.session.add(record)
+            db.session.commit()
         logger.info("Outbound SMS sent: sid=%s to=%s", msg.sid, to_number)
         try:
             from services.posthog_client import track_event
@@ -917,10 +972,11 @@ def inbound_sms():
     )
 
     # ── 1. Find TwilioPhoneNumber + TwilioAccount (Phase A multi-number) ────
-    _pn, ta = _resolve_number(to_number, msg_service_sid)
+    pn, ta = _resolve_number(to_number, msg_service_sid)
     if not ta:
         logger.warning("Inbound SMS: no TwilioAccount found for to=%s", to_number)
         return '<Response></Response>', 200, {"Content-Type": "text/xml"}
+    ta = _effective_twilio_config(ta, pn)
 
     # ── 2. Validate Twilio signature ───────────────────────────────────────
     if not _validate_twilio_signature(ta, "/twilio/sms/inbound"):
@@ -1132,7 +1188,7 @@ def inbound_sms():
                 _capture_lead(conv, body, ta.company_id)
 
             # Run rules only if not opted out
-            if not conv.is_opted_out:
+            if not conv.is_opted_out and getattr(ta, "auto_reply_enabled", True):
                 _apply_auto_reply_rules(conv, body, ta)
         except Exception as rule_exc:
             logger.exception("Error in auto-reply rule engine: %s", rule_exc)
@@ -1285,12 +1341,13 @@ def inbound_call():
     duration    = int(data.get("CallDuration") or 0)
     caller_name = data.get("CallerName", "")
 
-    _pn, ta = _resolve_number(to_number)
+    pn, ta = _resolve_number(to_number)
 
     if not ta:
         twiml = """<?xml version="1.0" encoding="UTF-8"?>
 <Response><Say>Thank you for calling. Goodbye.</Say></Response>"""
         return twiml, 200, {"Content-Type": "text/xml"}
+    ta = _effective_twilio_config(ta, pn)
 
     # Validate Twilio signature
     signature_path = "/twilio/voice/inbound" if request.path.startswith("/twilio/") else "/api/twilio/voice/incoming"
@@ -1326,11 +1383,21 @@ def inbound_call():
 
     # Determine routing
     in_hours = _is_business_hours(ta.company_id)
-    if (not in_hours) and settings and settings.after_hours_sms_enabled and settings.after_hours_sms_body and from_number and log and not log.missed_text_sent:
+    after_hours_sms_enabled = (
+        getattr(ta, "after_hours_sms_enabled", False)
+        if pn and getattr(pn, "after_hours_sms_enabled", None) is not None
+        else bool(settings and settings.after_hours_sms_enabled)
+    )
+    after_hours_sms_body = (
+        getattr(ta, "after_hours_text", None)
+        if pn
+        else (settings.after_hours_sms_body if settings else None) or getattr(ta, "after_hours_text", None)
+    )
+    if (not in_hours) and after_hours_sms_enabled and after_hours_sms_body and from_number and log and not log.missed_text_sent:
         try:
             can_send, reason = _can_send_call_auto_sms(ta.company_id, from_number)
             if can_send:
-                result = _send_sms(ta, from_number, settings.after_hours_sms_body)
+                result = _send_sms(ta, from_number, after_hours_sms_body)
                 if result.get("success"):
                     log.missed_text_sent = True
                     db.session.commit()
@@ -1340,7 +1407,8 @@ def inbound_call():
             logger.warning("After-hours SMS auto-reply failed for call sid=%s: %s", call_sid, exc)
 
     def _voicemail_twiml(after_hours=False):
-        greeting = ((settings.after_hours_voicemail_greeting if after_hours and settings else None) or
+        greeting = ((ta.voicemail_greeting_text if pn else None) or
+                    (settings.after_hours_voicemail_greeting if after_hours and settings else None) or
                     (settings.voicemail_greeting if settings else None) or
                     ta.voicemail_greeting_text or
                     "Thank you for calling. Please leave your name and message after the tone.")
@@ -1363,7 +1431,11 @@ def inbound_call():
         )
 
     route = (settings.during_hours_route if settings and in_hours else settings.after_hours_route if settings else None)
-    forward_to = ((settings.forward_number if in_hours else settings.after_hours_forward_number) if settings else None) or ta.call_forward_to
+    forward_to = (
+        (ta.call_forward_to if pn else None)
+        or ((settings.forward_number if in_hours else settings.after_hours_forward_number) if settings else None)
+        or ta.call_forward_to
+    )
     fallback_to = ((settings.fallback_forward_number if in_hours else settings.after_hours_fallback_forward_number) if settings else None)
     timeout = (settings.ring_duration_seconds if settings else None) or 25
     record_attr = ' record="record-from-answer" recordingStatusCallback="/twilio/voice/recording"' if settings and settings.recording_enabled else ""
@@ -1378,7 +1450,7 @@ def inbound_call():
         return (
             f'<?xml version="1.0" encoding="UTF-8"?>\n'
             f"<Response>\n"
-            f'  <Dial callerId="{caller_id}" timeout="{timeout}" action="/twilio/voice/no-answer" method="POST"{record_attr}>\n'
+            f'  <Dial callerId="{caller_id}" timeout="{timeout}" action="/twilio/voice/no-answer?to={html.escape(to_number or "", quote=True)}" method="POST"{record_attr}>\n'
             f"    <Number>{number}</Number>{fallback_xml}\n"
             f"  </Dial>\n"
             f"</Response>"
@@ -1407,7 +1479,7 @@ def inbound_call():
         twiml = (
             '<?xml version="1.0" encoding="UTF-8"?>\n'
             '<Response>\n'
-            f'  <Dial callerId="{safe_caller_id}" timeout="{timeout}" action="/twilio/voice/no-answer" method="POST"{record_attr}>\n'
+            f'  <Dial callerId="{safe_caller_id}" timeout="{timeout}" action="/twilio/voice/no-answer?to={html.escape(to_number or "", quote=True)}" method="POST"{record_attr}>\n'
             '    <Client>\n'
             f'      <Identity>{client_identity}</Identity>\n'
             f'      <Parameter name="call_log_id" value="{log.id if log else ""}"/>\n'
@@ -1462,9 +1534,10 @@ def voice_no_answer():
     data        = request.form
     call_sid    = data.get("CallSid", "")
     dial_status = data.get("DialCallStatus", "")
-    to_number   = data.get("To", "")
+    to_number   = request.args.get("to") or data.get("To", "")
 
-    _pn, ta = _resolve_number(to_number)
+    pn, ta = _resolve_number(to_number)
+    ta = _effective_twilio_config(ta, pn) if ta else None
 
     logger.info("Voice no-answer: sid=%s dial_status=%s", call_sid, dial_status)
 
@@ -1479,7 +1552,9 @@ def voice_no_answer():
     from_number = data.get("From", "")
     settings = PhoneSettings.query.filter_by(company_id=ta.company_id).first() if ta else None
     sms_body = None
-    if ta and settings and settings.missed_call_sms_enabled:
+    if ta and pn and ta.missed_call_text:
+        sms_body = ta.missed_call_text
+    elif ta and settings and settings.missed_call_sms_enabled:
         sms_body = settings.missed_call_sms_body or ta.missed_call_text
     elif ta and not settings and ta.missed_call_text:
         sms_body = ta.missed_call_text
@@ -1497,7 +1572,8 @@ def voice_no_answer():
 
     # Fall through to voicemail
     if ta:
-        greeting = ((settings.voicemail_greeting if settings else None) or ta.voicemail_greeting_text or
+        greeting = ((ta.voicemail_greeting_text if pn else None) or
+                    (settings.voicemail_greeting if settings else None) or ta.voicemail_greeting_text or
                     "Thank you for calling. Please leave your name and message after the tone.")
         if ta.voicemail_greeting_audio_url:
             greeting_xml = f"<Play>{ta.voicemail_greeting_audio_url}</Play>"

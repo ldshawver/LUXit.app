@@ -639,11 +639,6 @@ def list_conversations():
         q = q.filter_by(is_read=False)
     elif filter_by == "mine":
         q = q.filter_by(assigned_user_id=user.id)
-    elif filter_by == "archived":
-        q = q.filter(TwilioConversation.tags.contains(["archived"]))
-    else:
-        # Default "all" excludes archived
-        q = q.filter(~TwilioConversation.tags.contains(["archived"]))
 
     if filter_by == "opted_out":
         q = q.filter_by(is_opted_out=True)
@@ -655,11 +650,19 @@ def list_conversations():
             TwilioConversation.last_message_preview.ilike(f"%{search}%"),
         ))
 
-    total        = q.count()
     unread_count = TwilioConversation.query.filter_by(
         company_id=company.id, is_read=False
     ).count()
-    convs = q.order_by(TwilioConversation.last_message_at.desc()).offset((page-1)*50).limit(50).all()
+
+    convs = q.order_by(TwilioConversation.last_message_at.desc()).all()
+    if filter_by == "archived":
+        convs = [c for c in convs if "archived" in (c.tags or [])]
+    else:
+        convs = [c for c in convs if "archived" not in (c.tags or [])]
+
+    total = len(convs)
+    per_page = 50
+    convs = convs[(page - 1) * per_page:page * per_page]
 
     return jsonify({
         "conversations": [_conv_to_dict(c) for c in convs],
