@@ -57,7 +57,7 @@
                     
                     <div class="mb-4">
                         <label for="recipient_tags" class="form-label">Recipient Tags</label>
-                        <input type="text" class="form-control" id="recipient_tags" name="recipient_tags" placeholder="customer, newsletter, vip">
+                        <input type="text" class="form-control" id="recipient_tags" name="recipient_tags" placeholder="customer, newsletter, vip" value="{{ selected_segment or '' }}">
                         <div class="form-text">
                             Leave empty to send to all contacts, or specify tags to filter recipients (comma-separated)
                         </div>
@@ -77,7 +77,7 @@
                             Campaign Setup
                         </h6>
                         <ul class="mb-0">
-                            <li>Recipients are selected based on active contacts matching the specified tags</li>
+                            <li>Recipients are selected based on active contacts matching the specified tags{% if selected_segment %}; segment <strong>{{ selected_segment }}</strong> is preselected from the segment detail page{% endif %}</li>
                             <li>If no tags are specified, the campaign will be sent to all active contacts</li>
                             <li>Scheduled campaigns will be sent automatically at the specified time</li>
                             <li>Draft campaigns can be sent manually from the campaigns page</li>

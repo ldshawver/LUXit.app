@@ -1,0 +1,351 @@
+{% extends "base.html" %}
+
+{% block title %}{{ segment.name }} - Segment Detail{% endblock %}
+
+{% macro badge(label) -%}
+  {% set palette = {
+    'Manual': 'bg-primary', 'Dynamic': 'bg-success', 'WooCommerce': 'bg-warning text-dark',
+    'SMS Opt-In': 'bg-info text-dark', 'Email Opt-In': 'bg-info text-dark', 'Affiliate': 'bg-purple',
+    'LUX Verified': 'bg-dark', 'Suppressed': 'bg-danger', 'Do Not Market': 'bg-danger',
+    'Do Not Email': 'bg-danger', 'Do Not SMS': 'bg-danger', 'SMS Opted Out': 'bg-secondary',
+    'Email Unsubscribed': 'bg-secondary', 'Imported': 'bg-secondary'
+  } %}
+  <span class="badge {{ palette.get(label, 'bg-secondary') }} me-1">{{ label }}</span>
+{%- endmacro %}
+
+{% macro contact_name(contact) -%}
+  {% if contact %}
+    <strong>{{ (contact.first_name or '') ~ ' ' ~ (contact.last_name or '') }}</strong>
+    <div class="small text-muted">{{ contact.email or 'No email' }}{% if contact.phone %} · {{ contact.phone }}{% endif %}</div>
+  {% else %}
+    <span class="text-muted">Missing contact</span>
+  {% endif %}
+{%- endmacro %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-start mb-4">
+  <div>
+    <h1 class="mb-1"><i data-feather="filter"></i> {{ segment.name }}</h1>
+    <p class="text-muted mb-0">{{ segment.description or 'No description provided.' }}</p>
+  </div>
+  <div class="btn-toolbar gap-2">
+    <button type="button" class="btn btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#previewSegmentModal">
+      <i data-feather="eye"></i> Preview Segment
+    </button>
+    <form method="POST" action="{{ url_for('main.refresh_segment', segment_id=segment.id) }}" class="d-inline">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+      <button type="submit" class="btn btn-outline-success"><i data-feather="refresh-cw"></i> Refresh Segment</button>
+    </form>
+    <button type="button" class="btn btn-outline-dark" disabled title="Coming soon">
+      <i data-feather="cpu"></i> Optimize Segment with AI <span class="badge bg-secondary">Coming soon</span>
+    </button>
+    <a class="btn btn-primary" href="{{ url_for('main.create_campaign') }}?segment={{ segment.name|urlencode }}">
+      <i data-feather="mail"></i> Create Email Campaign from Segment
+    </a>
+    <a class="btn btn-success" href="{{ url_for('main.create_sms_campaign') }}?segment={{ segment.name|urlencode }}">
+      <i data-feather="message-square"></i> Create SMS Campaign from Segment
+    </a>
+    <button type="button" class="btn btn-outline-danger" data-bs-toggle="modal" data-bs-target="#deleteSegmentModal">
+      <i data-feather="trash-2"></i> Delete Segment
+    </button>
+  </div>
+</div>
+
+<div class="row g-3 mb-4">
+  {% set cards = [
+    ('Total Contacts', metrics.total_contacts, 'users'),
+    ('Excluded Contacts', metrics.excluded_contacts, 'user-x'),
+    ('Suppressed Contacts', metrics.suppressed_contacts, 'slash'),
+    ('Email Eligible', metrics.email_eligible, 'mail'),
+    ('SMS Eligible', metrics.sms_eligible, 'message-square'),
+    ('Email Unsubscribed', metrics.email_unsubscribed, 'mail'),
+    ('SMS Opted Out', metrics.sms_opted_out, 'message-circle'),
+    ('Last Refreshed', metrics.last_refreshed.strftime('%Y-%m-%d %H:%M') if metrics.last_refreshed else '-', 'clock'),
+    ('Added Today', metrics.added_today, 'user-plus'),
+    ('Removed Today', metrics.removed_today, 'user-minus')
+  ] %}
+  {% for label, value, icon in cards %}
+  <div class="col-sm-6 col-lg-3 col-xl-2">
+    <div class="card h-100">
+      <div class="card-body">
+        <div class="text-muted small"><i data-feather="{{ icon }}"></i> {{ label }}</div>
+        <div class="fs-4 fw-bold">{{ value }}</div>
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+
+<ul class="nav nav-tabs" id="segmentTabs" role="tablist">
+  {% for tab in ['Overview', 'Rules', 'Contacts', 'Excluded', 'Suppression', 'Campaigns', 'Audit'] %}
+  <li class="nav-item" role="presentation">
+    <button class="nav-link {% if loop.first %}active{% endif %}" id="{{ tab|lower }}-tab" data-bs-toggle="tab" data-bs-target="#{{ tab|lower }}" type="button" role="tab">{{ tab }}</button>
+  </li>
+  {% endfor %}
+</ul>
+
+<div class="tab-content border border-top-0 p-4 bg-body" id="segmentTabsContent">
+  <div class="tab-pane fade show active" id="overview" role="tabpanel">
+    <div class="row">
+      <div class="col-lg-8">
+        <h4>Segment Overview</h4>
+        <p>{{ segment.description or 'Use the tabs above to manage rules, contacts, exclusions, suppression, campaigns, and audit history.' }}</p>
+        <dl class="row">
+          <dt class="col-sm-3">Type</dt><dd class="col-sm-9">{{ segment.segment_type }}</dd>
+          <dt class="col-sm-3">Category</dt><dd class="col-sm-9">{{ segment.category or '-' }}</dd>
+          <dt class="col-sm-3">Status</dt><dd class="col-sm-9">{{ 'Active' if segment.is_active else 'Inactive' }}</dd>
+          <dt class="col-sm-3">Dynamic</dt><dd class="col-sm-9">{{ 'Yes' if segment.is_dynamic else 'No' }}</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+
+  <div class="tab-pane fade" id="rules" role="tabpanel">
+    <div class="d-flex justify-content-between mb-3">
+      <h4>Rules</h4>
+      <button class="btn btn-outline-primary segment-edit" data-segment-id="{{ segment.id }}"><i data-feather="edit"></i> Edit Rules</button>
+    </div>
+    <div class="mb-3"><strong>Match Mode:</strong> {{ (segment.match_mode or 'all')|upper }}</div>
+    <div class="mb-3"><strong>State:</strong> <span class="badge {{ 'bg-success' if segment.is_active else 'bg-secondary' }}">{{ 'Active' if segment.is_active else 'Inactive' }}</span></div>
+    <div class="row">
+      <div class="col-md-4"><h5>Triggers</h5><pre class="bg-light p-3 rounded">{{ (segment.triggers or [])|tojson(indent=2) }}</pre></div>
+      <div class="col-md-4"><h5>Conditions</h5><pre class="bg-light p-3 rounded">{{ (segment.conditions or [])|tojson(indent=2) }}</pre></div>
+      <div class="col-md-4"><h5>Actions</h5><pre class="bg-light p-3 rounded">{{ (segment.actions or [])|tojson(indent=2) }}</pre></div>
+    </div>
+  </div>
+
+  <div class="tab-pane fade" id="contacts" role="tabpanel">
+    <div class="d-flex flex-wrap justify-content-between gap-2 mb-3">
+      <form method="GET" action="{{ url_for('main.segment_detail', segment_id=segment.id) }}" class="d-flex gap-2">
+        <input class="form-control" name="q" value="{{ q }}" placeholder="Search contacts by name, email, or phone">
+        <button class="btn btn-outline-secondary" type="submit">Search</button>
+      </form>
+      <div class="btn-group">
+        <button class="btn btn-outline-primary" data-bs-toggle="modal" data-bs-target="#addContactModal">Add Contact</button>
+        <button class="btn btn-outline-primary" data-bs-toggle="modal" data-bs-target="#bulkAddModal">Bulk Add</button>
+      </div>
+    </div>
+    <div class="mb-3">
+      <label class="form-label fw-bold">Bulk Actions</label>
+      <div class="btn-group flex-wrap" role="group">
+        <button class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#bulkAddModal">Add to Segment</button>
+        <button class="btn btn-sm btn-outline-secondary" id="bulkRemoveSelected">Remove from Segment</button>
+        <button class="btn btn-sm btn-outline-danger" id="bulkExcludeSelected">Permanently Exclude</button>
+        <button class="btn btn-sm btn-outline-secondary" disabled title="Coming soon">Add Tag <span class="badge bg-secondary">Coming soon</span></button>
+        <button class="btn btn-sm btn-outline-secondary" disabled title="Coming soon">Remove Tag <span class="badge bg-secondary">Coming soon</span></button>
+        <button class="btn btn-sm btn-outline-secondary" disabled title="Coming soon">Export <span class="badge bg-secondary">Coming soon</span></button>
+        <button class="btn btn-sm btn-outline-secondary" disabled title="Coming soon">Start Campaign <span class="badge bg-secondary">Coming soon</span></button>
+      </div>
+    </div>
+    <div class="table-responsive">
+      <table class="table table-hover align-middle">
+        <thead><tr><th><input type="checkbox" aria-label="Select all contacts"></th><th>Contact</th><th>Badges</th><th>Membership Source</th><th>Added</th><th>Added By</th><th>Reason/Source</th><th>Actions</th></tr></thead>
+        <tbody>
+          {% for row in members %}
+          <tr>
+            <td><input class="segment-contact-checkbox" type="checkbox" value="{{ row.contact.id if row.contact else '' }}" aria-label="Select contact {{ row.contact.id if row.contact else '' }}"></td>
+            <td>{{ contact_name(row.contact) }}</td>
+            <td>{% for label in row.badges %}{{ badge(label) }}{% endfor %}</td>
+            <td>{{ row.membership.source }}</td>
+            <td>{{ row.membership.added_at.strftime('%Y-%m-%d') if row.membership.added_at else '-' }}</td>
+            <td>{{ row.membership.added_by_user_id or '-' }}</td>
+            <td>{{ row.contact.source if row.contact and row.contact.source else row.membership.exclusion_reason or '-' }}</td>
+            <td>
+              <div class="btn-group btn-group-sm">
+                <button class="btn btn-outline-secondary remove-contact" data-segment-id="{{ segment.id }}" data-contact-id="{{ row.contact.id if row.contact else '' }}">Remove Contact</button>
+                <button class="btn btn-outline-danger exclude-contact" data-segment-id="{{ segment.id }}" data-contact-id="{{ row.contact.id if row.contact else '' }}">Permanent Exclusion</button>
+              </div>
+            </td>
+          </tr>
+          {% else %}
+          <tr><td colspan="8" class="text-center text-muted py-4">No contacts in this segment.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="tab-pane fade" id="excluded" role="tabpanel">
+    <h4>Permanently Excluded Contacts</h4>
+    <div class="table-responsive">
+      <table class="table table-hover align-middle">
+        <thead><tr><th>Contact</th><th>Exclusion Reason</th><th>Excluded By</th><th>Excluded Date</th><th>Actions</th></tr></thead>
+        <tbody>
+          {% for row in excluded %}
+          <tr>
+            <td>{{ contact_name(row.contact) }}</td>
+            <td>{{ row.membership.exclusion_reason or '-' }}</td>
+            <td>{{ row.membership.removed_by_user_id or '-' }}</td>
+            <td>{{ row.membership.removed_at.strftime('%Y-%m-%d %H:%M') if row.membership.removed_at else '-' }}</td>
+            <td>
+              <form method="POST" action="{{ url_for('main.restore_segment_exclusion', segment_id=segment.id, contact_id=row.contact.id) if row.contact else '#' }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+                <button class="btn btn-sm btn-outline-success" type="submit">Restore</button>
+              </form>
+            </td>
+          </tr>
+          {% else %}
+          <tr><td colspan="5" class="text-center text-muted py-4">No permanently excluded contacts.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="tab-pane fade" id="suppression" role="tabpanel">
+    <h4>Suppression Summary</h4>
+    <p class="text-muted">Campaign sends from this segment still enforce Do Not Market and channel opt-out precedence.</p>
+    <ul>
+      <li>Suppressed Contacts: {{ metrics.suppressed_contacts }}</li>
+      <li>Do Not Market / Email / SMS badges are shown in the Contacts tab.</li>
+      <li>Email Eligible: {{ metrics.email_eligible }}</li>
+      <li>SMS Eligible: {{ metrics.sms_eligible }}</li>
+      <li>Email Unsubscribed: {{ metrics.email_unsubscribed }}</li>
+      <li>SMS Opted Out: {{ metrics.sms_opted_out }}</li>
+    </ul>
+  </div>
+
+  <div class="tab-pane fade" id="campaigns" role="tabpanel">
+    <div class="mb-3">
+      <a class="btn btn-primary" href="{{ url_for('main.create_campaign') }}?segment={{ segment.name|urlencode }}">Create Email Campaign from Segment</a>
+      <a class="btn btn-success" href="{{ url_for('main.create_sms_campaign') }}?segment={{ segment.name|urlencode }}">Create SMS Campaign from Segment</a>
+    </div>
+    <h5>Recent Email Campaigns</h5>
+    <ul>{% for campaign in campaigns.email %}<li>{{ campaign.name }} — {{ campaign.status or 'draft' }}</li>{% else %}<li class="text-muted">No recent email campaigns.</li>{% endfor %}</ul>
+    <h5>Recent SMS Campaigns for this Segment</h5>
+    <ul>{% for campaign in campaigns.sms %}<li>{{ campaign.name }} — {{ campaign.status or 'draft' }}</li>{% else %}<li class="text-muted">No recent SMS campaigns.</li>{% endfor %}</ul>
+  </div>
+
+  <div class="tab-pane fade" id="audit" role="tabpanel">
+    <h4>Audit</h4>
+    <div class="table-responsive">
+      <table class="table table-sm"><thead><tr><th>Event</th><th>User</th><th>Date</th><th>Details</th></tr></thead><tbody>
+        {% for audit in audits %}
+        <tr><td>{{ audit.action }}</td><td>{{ audit.created_by_user_id or '-' }}</td><td>{{ audit.created_at.strftime('%Y-%m-%d %H:%M') if audit.created_at else '-' }}</td><td><code>{{ audit.details|tojson }}</code></td></tr>
+        {% else %}<tr><td colspan="4" class="text-muted text-center py-4">No audit events yet.</td></tr>{% endfor %}
+      </tbody></table>
+    </div>
+  </div>
+</div>
+
+<div class="modal fade" id="previewSegmentModal" tabindex="-1">
+  <div class="modal-dialog"><div class="modal-content">
+    <div class="modal-header"><h5 class="modal-title">Preview Segment</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+    <div class="modal-body">
+      <p class="text-muted">Preview only. This does not send campaigns.</p>
+      <ul class="list-group">
+        <li class="list-group-item d-flex justify-content-between"><span>Matched Contacts</span><strong>{{ preview.total_contacts }}</strong></li>
+        <li class="list-group-item d-flex justify-content-between"><span>Excluded Contacts</span><strong>{{ preview.excluded_contacts }}</strong></li>
+        <li class="list-group-item d-flex justify-content-between"><span>Suppressed Contacts</span><strong>{{ preview.suppressed_contacts }}</strong></li>
+        <li class="list-group-item d-flex justify-content-between"><span>Email Eligible</span><strong>{{ preview.email_eligible }}</strong></li>
+        <li class="list-group-item d-flex justify-content-between"><span>SMS Eligible</span><strong>{{ preview.sms_eligible }}</strong></li>
+      </ul>
+    </div>
+  </div></div>
+</div>
+
+<div class="modal fade" id="deleteSegmentModal" tabindex="-1">
+  <div class="modal-dialog"><div class="modal-content">
+    <div class="modal-header"><h5 class="modal-title">Delete Segment</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+    <div class="modal-body">
+      <p>Deleting this segment will remove segment membership links and rules, but will not delete contacts or campaign history.</p>
+    </div>
+    <div class="modal-footer">
+      <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+      <button type="button" class="btn btn-danger segment-delete-confirm" data-segment-id="{{ segment.id }}">Delete Segment</button>
+    </div>
+  </div></div>
+</div>
+
+<div class="modal fade" id="addContactModal" tabindex="-1"><div class="modal-dialog modal-lg"><div class="modal-content">
+  <div class="modal-header"><h5 class="modal-title">Add Contact</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+  <div class="modal-body">
+    <label class="form-label" for="contactPickerSearch">Search by name, phone, email, or company</label>
+    <input class="form-control" id="contactPickerSearch" placeholder="Search contacts...">
+    <div class="list-group mt-3" id="contactPickerResults"></div>
+  </div>
+</div></div></div>
+
+<div class="modal fade" id="bulkAddModal" tabindex="-1"><div class="modal-dialog modal-lg"><div class="modal-content">
+  <div class="modal-header"><h5 class="modal-title">Bulk Add Contacts</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+  <div class="modal-body">
+    <label class="form-label" for="bulkContactSearch">Search by name, phone, email, or company</label>
+    <input class="form-control" id="bulkContactSearch" placeholder="Search contacts to bulk add...">
+    <div class="list-group mt-3" id="bulkContactResults"></div>
+  </div>
+  <div class="modal-footer"><button class="btn btn-primary" id="bulkAddButton">Bulk Add Selected</button></div>
+</div></div></div>
+
+<script>
+document.querySelectorAll('.segment-edit').forEach(el => el.addEventListener('click', async () => {
+  const name = prompt('Segment name', '{{ segment.name|e }}'); if (!name) return;
+  const description = prompt('Description', '{{ (segment.description or '')|e }}') || '';
+  await fetch(`/api/segments/${el.dataset.segmentId}`, {method: 'PATCH', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({name, description})});
+  window.location.reload();
+}));
+document.querySelector('.segment-delete-confirm')?.addEventListener('click', async (e) => {
+  const res = await fetch(`/api/segments/${e.target.dataset.segmentId}`, {method: 'DELETE'});
+  if (res.ok) window.location.href = '{{ url_for('main.segments') }}';
+});
+document.querySelectorAll('.remove-contact').forEach(el => el.addEventListener('click', async () => {
+  await fetch(`/api/segments/${el.dataset.segmentId}/contacts/${el.dataset.contactId}`, {method: 'DELETE'});
+  window.location.reload();
+}));
+document.querySelectorAll('.exclude-contact').forEach(el => el.addEventListener('click', async () => {
+  await fetch(`/api/segments/${el.dataset.segmentId}/contacts/${el.dataset.contactId}/exclude`, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({reason: 'manual permanent exclusion'})});
+  window.location.reload();
+}));
+function selectedSegmentContactIds() {
+  return Array.from(document.querySelectorAll('.segment-contact-checkbox:checked')).map(el => Number(el.value)).filter(Boolean);
+}
+async function searchContacts(term, containerId, multi=false) {
+  const container = document.getElementById(containerId);
+  if (!container) return;
+  if (!term || term.length < 2) { container.innerHTML = '<div class="text-muted small p-2">Type at least 2 characters to search.</div>'; return; }
+  const response = await fetch(`/api/contacts/search?q=${encodeURIComponent(term)}`);
+  const payload = await response.json();
+  const contacts = payload.contacts || [];
+  container.innerHTML = contacts.length ? contacts.map(contact => {
+    const label = `${contact.first_name || ''} ${contact.last_name || ''}`.trim() || contact.email || contact.phone || `Contact ${contact.id}`;
+    const meta = [contact.email, contact.phone].filter(Boolean).join(' · ');
+    if (multi) {
+      return `<label class="list-group-item d-flex gap-2 align-items-start"><input class="form-check-input bulk-contact-picker" type="checkbox" value="${contact.id}"><span><strong>${label}</strong><br><small class="text-muted">${meta}</small></span></label>`;
+    }
+    return `<button type="button" class="list-group-item list-group-item-action add-contact-result" data-contact-id="${contact.id}"><strong>${label}</strong><br><small class="text-muted">${meta}</small></button>`;
+  }).join('') : '<div class="text-muted small p-2">No contacts found.</div>';
+}
+let contactSearchTimer;
+document.getElementById('contactPickerSearch')?.addEventListener('input', (event) => {
+  clearTimeout(contactSearchTimer);
+  contactSearchTimer = setTimeout(() => searchContacts(event.target.value, 'contactPickerResults', false), 250);
+});
+document.getElementById('bulkContactSearch')?.addEventListener('input', (event) => {
+  clearTimeout(contactSearchTimer);
+  contactSearchTimer = setTimeout(() => searchContacts(event.target.value, 'bulkContactResults', true), 250);
+});
+document.getElementById('contactPickerResults')?.addEventListener('click', async (event) => {
+  const button = event.target.closest('.add-contact-result');
+  if (!button) return;
+  await fetch(`/api/segments/{{ segment.id }}/contacts`, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({contact_id: Number(button.dataset.contactId)})});
+  window.location.reload();
+});
+document.getElementById('bulkAddButton')?.addEventListener('click', async () => {
+  const ids = Array.from(document.querySelectorAll('.bulk-contact-picker:checked')).map(el => Number(el.value)).filter(Boolean);
+  if (!ids.length) return;
+  await fetch(`/api/segments/{{ segment.id }}/contacts/bulk-add`, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({contact_ids: ids})});
+  window.location.reload();
+});
+document.getElementById('bulkRemoveSelected')?.addEventListener('click', async () => {
+  const ids = selectedSegmentContactIds();
+  if (!ids.length) return alert('Select at least one contact.');
+  await fetch(`/api/segments/{{ segment.id }}/contacts/bulk-remove`, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({contact_ids: ids})});
+  window.location.reload();
+});
+document.getElementById('bulkExcludeSelected')?.addEventListener('click', async () => {
+  const ids = selectedSegmentContactIds();
+  if (!ids.length) return alert('Select at least one contact.');
+  await Promise.all(ids.map(id => fetch(`/api/segments/{{ segment.id }}/contacts/${id}/exclude`, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({reason: 'bulk permanent exclusion'})})));
+  window.location.reload();
+});
+</script>
+{% endblock %}

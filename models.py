@@ -727,6 +727,15 @@ class Contact(db.Model):
     sms_marketing_opt_in_source = db.Column(db.String(120))
     sms_opt_out_at = db.Column(db.DateTime)
     sms_consent_status = db.Column(db.String(30), default="unknown", nullable=False)
+    do_not_market = db.Column(db.Boolean, default=False, nullable=False)
+    do_not_email = db.Column(db.Boolean, default=False, nullable=False)
+    do_not_sms = db.Column(db.Boolean, default=False, nullable=False)
+    email_unsubscribed = db.Column(db.Boolean, default=False, nullable=False)
+    sms_opted_out = db.Column(db.Boolean, default=False, nullable=False)
+    marketing_preferences_reason = db.Column(db.String(255))
+    marketing_preferences_source = db.Column(db.String(120))
+    marketing_preferences_updated_by_user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True)
+    marketing_preferences_updated_at = db.Column(db.DateTime)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 
@@ -1013,8 +1022,13 @@ class Segment(db.Model):
     name = db.Column(db.String(255), nullable=False)
     description = db.Column(db.Text, nullable=True)
     segment_type = db.Column(db.String(100), default="behavioral")
+    category = db.Column(db.String(120), nullable=True)
+    match_mode = db.Column(db.String(20), default="all", nullable=False)
+    triggers = db.Column(db.JSON, nullable=True)
     conditions = db.Column(db.JSON, nullable=True)
+    actions = db.Column(db.JSON, nullable=True)
     is_dynamic = db.Column(db.Boolean, default=False)
+    is_active = db.Column(db.Boolean, default=True, nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -1027,7 +1041,18 @@ class SegmentMember(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     segment_id = db.Column(db.Integer, db.ForeignKey("segment.id"), nullable=False)
     contact_id = db.Column(db.Integer, db.ForeignKey("contact.id"), nullable=False)
+    source = db.Column(db.String(80), default="manual", nullable=False)
+    added_by_user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True)
     added_at = db.Column(db.DateTime, default=datetime.utcnow)
+    removed_at = db.Column(db.DateTime)
+    removed_by_user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True)
+    exclusion_reason = db.Column(db.String(255))
+    is_excluded = db.Column(db.Boolean, default=False, nullable=False)
+
+    __table_args__ = (
+        db.UniqueConstraint("segment_id", "contact_id", name="uq_segment_member_contact"),
+        db.Index("ix_segment_member_segment_contact", "segment_id", "contact_id"),
+    )
 
     contact = db.relationship("Contact", backref="segment_memberships")
 

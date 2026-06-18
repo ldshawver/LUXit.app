@@ -21,7 +21,7 @@ try:
         AutomationTest, AutomationTriggerLibrary, AutomationABTest, Company, user_company,
         Deal, LeadScore, PersonalizationRule, KeywordResearch,
         Notification, InboxMessage, CampaignCost, CRMTask, Meeting, SalesStage,
-        TouchpointEvent,
+        TouchpointEvent, MarketingAuditLog, User,
     )
     MODELS_AVAILABLE = True
 except ImportError as exc:
@@ -40,6 +40,7 @@ except ImportError as exc:
     Deal = LeadScore = PersonalizationRule = KeywordResearch = None
     Notification = InboxMessage = CampaignCost = None
     CRMTask = Meeting = SalesStage = TouchpointEvent = None
+    MarketingAuditLog = User = None
 try:
     from email_service import EmailService
 except ImportError as exc:
@@ -2169,21 +2170,21 @@ def billing_cancel():
 @login_required
 def refresh_segment(segment_id):
     """Refresh/recompile a segment to update its members"""
-    segment = Segment.query.get_or_404(segment_id)
+    segment = Segment.query.filter_by(id=segment_id, company_id=getattr(current_user, "default_company_id", None)).first_or_404()
     
     try:
-        SegmentMember.query.filter_by(segment_id=segment_id).delete()
+        SegmentMember.query.filter_by(segment_id=segment_id, is_excluded=False).delete()
         
-        contacts = Contact.query.all()
+        contacts = Contact.query.filter_by(company_id=segment.company_id).all()
         matched = 0
         
         for contact in contacts:
             if segment.segment_type == 'newsletter' and 'newsletter' in (contact.tags or ''):
-                member = SegmentMember(segment_id=segment_id, contact_id=contact.id)
+                member = SegmentMember(segment_id=segment_id, contact_id=contact.id, source="dynamic_rule")
                 db.session.add(member)
                 matched += 1
             elif segment.segment_type == 'all':
-                member = SegmentMember(segment_id=segment_id, contact_id=contact.id)
+                member = SegmentMember(segment_id=segment_id, contact_id=contact.id, source="dynamic_rule")
                 db.session.add(member)
                 matched += 1
         
@@ -2199,12 +2200,107 @@ def refresh_segment(segment_id):
     
     return redirect(url_for('main.segments'))
 
+
+
+def _segment_detail_metrics(segment):
+    """Build segment detail counts without mutating campaign state."""
+    today = datetime.utcnow().date()
+    memberships = SegmentMember.query.filter_by(segment_id=segment.id).all()
+    active_members = [m for m in memberships if not m.removed_at and not m.is_excluded]
+    excluded_members = [m for m in memberships if m.is_excluded]
+    contacts = [m.contact for m in active_members if m.contact and m.contact.company_id == segment.company_id]
+    suppressed = [c for c in contacts if c.do_not_market or c.do_not_email or c.do_not_sms or c.email_unsubscribed or c.sms_opted_out or c.sms_opt_out_at or not c.is_subscribed]
+    email_eligible = [c for c in contacts if c.email and not c.do_not_market and not c.do_not_email and not c.email_unsubscribed and c.is_subscribed]
+    sms_eligible = [c for c in contacts if c.phone and not c.do_not_market and not c.do_not_sms and not c.sms_opted_out and not c.sms_opt_out_at]
+    return {
+        "total_contacts": len(contacts),
+        "excluded_contacts": len(excluded_members),
+        "suppressed_contacts": len(suppressed),
+        "email_eligible": len(email_eligible),
+        "sms_eligible": len(sms_eligible),
+        "email_unsubscribed": sum(1 for c in contacts if c.email_unsubscribed or not c.is_subscribed),
+        "sms_opted_out": sum(1 for c in contacts if c.sms_opted_out or c.sms_opt_out_at),
+        "last_refreshed": segment.updated_at,
+        "added_today": sum(1 for m in memberships if m.added_at and m.added_at.date() == today),
+        "removed_today": sum(1 for m in memberships if m.removed_at and m.removed_at.date() == today),
+    }
+
+
+def _segment_member_view(member):
+    contact = member.contact
+    source = (member.source or "manual").lower()
+    source_badges = {
+        "manual": "Manual",
+        "dynamic_rule": "Dynamic",
+        "imported": "Imported",
+        "woocommerce": "WooCommerce",
+        "sms_opt_in": "SMS Opt-In",
+        "email_opt_in": "Email Opt-In",
+        "affiliate": "Affiliate",
+        "lux_verified": "LUX Verified",
+    }
+    badges = [source_badges.get(source, source.replace("_", " ").title())]
+    if contact:
+        if contact.do_not_market or contact.do_not_email or contact.do_not_sms or contact.email_unsubscribed or contact.sms_opted_out or contact.sms_opt_out_at or not contact.is_subscribed:
+            badges.append("Suppressed")
+        if contact.do_not_market: badges.append("Do Not Market")
+        if contact.do_not_email: badges.append("Do Not Email")
+        if contact.do_not_sms: badges.append("Do Not SMS")
+        if contact.sms_opted_out or contact.sms_opt_out_at: badges.append("SMS Opted Out")
+        if contact.email_unsubscribed or not contact.is_subscribed: badges.append("Email Unsubscribed")
+    return {"membership": member, "contact": contact, "badges": badges}
+
+
+@main_bp.route('/segments/<int:segment_id>')
+@login_required
+def segment_detail(segment_id):
+    """HTML segment detail dashboard with rules, contacts, exclusions, suppression, campaigns, and audit tabs."""
+    company_id = getattr(current_user, "default_company_id", None)
+    segment = Segment.query.filter_by(id=segment_id, company_id=company_id).first_or_404()
+    q = (request.args.get('q') or '').strip()
+    member_query = SegmentMember.query.filter_by(segment_id=segment.id, removed_at=None, is_excluded=False).join(Contact).filter(Contact.company_id == segment.company_id)
+    if q:
+        like = f"%{q}%"
+        member_query = member_query.filter(or_(Contact.email.ilike(like), Contact.first_name.ilike(like), Contact.last_name.ilike(like), Contact.phone.ilike(like)))
+    members = [_segment_member_view(m) for m in member_query.order_by(SegmentMember.added_at.desc()).all()]
+    excluded = [_segment_member_view(m) for m in SegmentMember.query.filter_by(segment_id=segment.id, is_excluded=True).order_by(SegmentMember.removed_at.desc()).all()]
+    metrics = _segment_detail_metrics(segment)
+    preview = metrics.copy()
+    audits = []
+    if MarketingAuditLog is not None:
+        audits = MarketingAuditLog.query.filter_by(company_id=segment.company_id, entity_type='segment', entity_id=segment.id).order_by(MarketingAuditLog.created_at.desc()).limit(50).all()
+    campaigns = {
+        "email": Campaign.query.filter_by(company_id=segment.company_id).order_by(Campaign.created_at.desc()).limit(10).all() if Campaign else [],
+        "sms": SMSCampaign.query.filter_by(company_id=segment.company_id, segment=segment.name).order_by(SMSCampaign.created_at.desc()).limit(10).all() if SMSCampaign else [],
+    }
+    return render_template('segment_detail.html', segment=segment, metrics=metrics, preview=preview, members=members, excluded=excluded, audits=audits, campaigns=campaigns, q=q)
+
+
+@main_bp.route('/segments/<int:segment_id>/excluded/<int:contact_id>/restore', methods=['POST'])
+@login_required
+def restore_segment_exclusion(segment_id, contact_id):
+    company_id = getattr(current_user, "default_company_id", None)
+    segment = Segment.query.filter_by(id=segment_id, company_id=company_id).first_or_404()
+    if not current_user.can_edit_company(company_id):
+        flash('You do not have permission to restore segment contacts.', 'danger')
+        return redirect(url_for('main.segment_detail', segment_id=segment.id))
+    member = SegmentMember.query.filter_by(segment_id=segment.id, contact_id=contact_id).first_or_404()
+    member.is_excluded = False
+    member.exclusion_reason = None
+    member.removed_at = None
+    member.removed_by_user_id = None
+    member.added_at = datetime.utcnow()
+    member.added_by_user_id = current_user.id
+    db.session.commit()
+    flash('Contact restored to segment.', 'success')
+    return redirect(url_for('main.segment_detail', segment_id=segment.id) + '#excluded')
+
 # Contact Segmentation Routes
 @main_bp.route('/segments')
 @login_required
 def segments():
     """Contact segmentation management"""
-    segments = Segment.query.all()
+    segments = Segment.query.filter_by(company_id=getattr(current_user, "default_company_id", None)).all()
     return render_template('segments.html', segments=segments)
 
 @main_bp.route('/segments/create', methods=['POST'])
@@ -2223,6 +2319,10 @@ def create_segment():
         segment.description = description
         segment.segment_type = segment_type
         segment.conditions = json.loads(conditions) if conditions else {}
+        segment.company_id = getattr(current_user, "default_company_id", None)
+        segment.match_mode = request.form.get("match_mode", "all")
+        segment.triggers = json.loads(request.form.get("triggers") or "[]")
+        segment.actions = json.loads(request.form.get("actions") or "[]")
         segment.is_dynamic = is_dynamic
         
         db.session.add(segment)
@@ -3577,7 +3677,8 @@ def create_sms_campaign():
                          contacts=contacts,
                          tags=tags,
                          templates=templates,
-                         segments=segments)
+                         segments=segments,
+                         selected_segment=(request.args.get('segment') or '').strip())
 
 @main_bp.route('/sms/campaign/<int:campaign_id>/edit', methods=['GET', 'POST'])
 @login_required
@@ -7460,7 +7561,7 @@ def lux_crm():
     company = current_user.get_default_company()
     
     deals = Deal.query.filter_by(company_id=company.id).all()
-    all_contacts = Contact.query.all()
+    all_contacts = Contact.query.filter_by(company_id=segment.company_id).all()
     lead_scores = LeadScore.query.all()
     personalization_rules = PersonalizationRule.query.filter_by(company_id=company.id).all()
     keywords = KeywordResearch.query.filter_by(company_id=company.id).all()
@@ -10431,12 +10532,17 @@ def create_campaign():
     except Exception:
         pass
     contact_lists = []
+    selected_segment = (request.args.get('segment') or '').strip()
     try:
         if Segment is not None:
-            contact_lists = Segment.query.all()
+            contact_lists_query = Segment.query
+            company_id = getattr(current_user, 'default_company_id', None)
+            if company_id and hasattr(Segment, 'company_id'):
+                contact_lists_query = contact_lists_query.filter_by(company_id=company_id)
+            contact_lists = contact_lists_query.order_by(Segment.name.asc()).all()
     except Exception:
         pass
-    return render_template('campaign_create.html', templates=tpl_list, segments=contact_lists, contacts=[])
+    return render_template('campaign_create.html', templates=tpl_list, segments=contact_lists, contacts=[], selected_segment=selected_segment)
 
 
 @main_bp.route('/campaigns/<int:campaign_id>/edit', methods=['GET', 'POST'])

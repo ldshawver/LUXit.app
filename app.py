@@ -345,7 +345,7 @@ def create_app() -> Flask:
     from x_auth import x_bp, x_api_bp
     from twilio_sms import twilio_bp, api_twilio_bp
     from saas_mgmt import saas_bp, stripe_webhook_bp
-    from marketing_api import marketing_api_bp
+    from marketing_api import marketing_api_bp, segment_api_bp
 
     # IMPORTANT: Marketing first if it owns "/"
     app.register_blueprint(marketing_bp)
@@ -362,6 +362,7 @@ def create_app() -> Flask:
     app.register_blueprint(saas_bp)
     app.register_blueprint(stripe_webhook_bp)
     app.register_blueprint(marketing_api_bp)
+    app.register_blueprint(segment_api_bp)
     try:
         from feedback import feedback_bp
         app.register_blueprint(feedback_bp)
