@@ -66,6 +66,8 @@ def _append_stop_language(message: str) -> str:
 
 
 def _contact_has_sms_consent(contact: Contact) -> bool:
+    if marketing_skip_reason(contact, "sms") if "marketing_skip_reason" in globals() else False:
+        return False
     if not contact.phone or not contact.is_active or not contact.is_subscribed:
         return False
     tags = (contact.tags or "").lower()
@@ -236,7 +238,14 @@ def api_sms_preview(cid):
 
 def _materialize_recipients(c: SMSCampaign):
     existing = {r.contact_id for r in c.recipients}
-    contacts = [x for x in _audience_query(c.company_id, c.segment).all() if _contact_has_sms_consent(x)]
+    contacts = []
+    for x in _audience_query(c.company_id, c.segment).all():
+        reason = marketing_skip_reason(x, "sms") if "marketing_skip_reason" in globals() else None
+        if reason:
+            _audit(c.company_id, "campaign_contact_skipped_suppression", "sms_campaign", c.id, {"contact_id": x.id, "reason": reason, "channel": "sms"}) if "_audit" in globals() else None
+            continue
+        if _contact_has_sms_consent(x):
+            contacts.append(x)
     for contact in contacts:
         if contact.id not in existing:
             db.session.add(SMSRecipient(company_id=c.company_id, campaign_id=c.id, contact_id=contact.id, status="queued"))
@@ -693,3 +702,345 @@ def ai_suggest_segment(): return jsonify(_ai_payload("suggest-segment", request.
 def ai_compliance_check(): return jsonify(_ai_payload("compliance-check", request.get_json(silent=True) or {}))
 
 csrf.exempt(marketing_api_bp)
+
+# ---------------------------------------------------------------------------
+# Segment management and marketing suppression APIs (/api/*)
+# ---------------------------------------------------------------------------
+from flask import Blueprint
+from sqlalchemy.exc import IntegrityError
+from models import Segment, SegmentMember, CampaignRecipient
+
+segment_api_bp = Blueprint("segment_api", __name__, url_prefix="/api")
+
+SEGMENT_FIELDS = ("name", "description", "segment_type", "category", "match_mode", "triggers", "conditions", "actions", "is_dynamic", "is_active")
+SKIP_REASONS = {"do_not_market", "do_not_email", "email_unsubscribed", "do_not_sms", "sms_opted_out", "missing_email", "missing_phone", "invalid_phone", "tenant_mismatch"}
+
+
+def _can_edit(cid):
+    return bool(cid and current_user.is_authenticated and current_user.can_edit_company(cid))
+
+
+def _can_admin(cid):
+    return bool(cid and current_user.is_authenticated and current_user.can_admin_company(cid))
+
+
+def _require_edit(cid):
+    if not _can_edit(cid):
+        return _json_error("admin, manager, or editor permission is required", 403)
+    return None
+
+
+def _require_admin(cid):
+    if not _can_admin(cid):
+        return _json_error("admin permission is required", 403)
+    return None
+
+
+def _audit(company_id, action, entity_type, entity_id=None, details=None):
+    db.session.add(MarketingAuditLog(
+        company_id=company_id,
+        created_by_user_id=getattr(current_user, "id", None),
+        entity_type=entity_type,
+        entity_id=entity_id,
+        action=action,
+        details=details or {},
+    ))
+
+
+def _segment_or_404(segment_id):
+    return Segment.query.filter_by(id=segment_id, company_id=tenant_id()).first_or_404()
+
+
+def _contact_or_404(contact_id, company_id):
+    return Contact.query.filter_by(id=contact_id, company_id=company_id).first_or_404()
+
+
+def _segment_json(s, include_rules=True):
+    data = {
+        "id": s.id, "name": s.name, "description": s.description, "segment_type": s.segment_type,
+        "category": s.category, "match_mode": s.match_mode, "is_dynamic": s.is_dynamic,
+        "is_active": s.is_active, "member_count": s.members.filter_by(is_excluded=False, removed_at=None).count(),
+        "created_at": s.created_at.isoformat() if s.created_at else None,
+        "updated_at": s.updated_at.isoformat() if s.updated_at else None,
+    }
+    if include_rules:
+        data.update({"triggers": s.triggers or [], "conditions": s.conditions or [], "actions": s.actions or []})
+    return data
+
+
+def _suppression_badges(c):
+    badges = []
+    if c.do_not_market: badges.append("Do Not Market")
+    if c.do_not_email: badges.append("Do Not Email")
+    if c.do_not_sms: badges.append("Do Not SMS")
+    if c.sms_opted_out or c.sms_opt_out_at: badges.append("SMS Opted Out")
+    if c.email_unsubscribed or not c.is_subscribed: badges.append("Email Unsubscribed")
+    return badges
+
+
+def _contact_json(c, membership=None):
+    data = {"id": c.id, "email": c.email, "phone": c.phone, "first_name": c.first_name, "last_name": c.last_name,
+            "do_not_market": c.do_not_market, "do_not_email": c.do_not_email, "do_not_sms": c.do_not_sms,
+            "email_unsubscribed": c.email_unsubscribed or not c.is_subscribed, "sms_opted_out": c.sms_opted_out or bool(c.sms_opt_out_at),
+            "suppression_badges": _suppression_badges(c)}
+    if membership:
+        data["membership"] = {"source": membership.source, "added_by_user_id": membership.added_by_user_id,
+            "added_at": membership.added_at.isoformat() if membership.added_at else None,
+            "removed_at": membership.removed_at.isoformat() if membership.removed_at else None,
+            "removed_by_user_id": membership.removed_by_user_id, "is_excluded": membership.is_excluded,
+            "exclusion_reason": membership.exclusion_reason}
+    return data
+
+
+def marketing_skip_reason(contact, channel):
+    if not contact:
+        return "tenant_mismatch"
+    if contact.do_not_market:
+        return "do_not_market"
+    if channel == "email":
+        if contact.do_not_email: return "do_not_email"
+        if contact.email_unsubscribed or not contact.is_subscribed: return "email_unsubscribed"
+        if not contact.email: return "missing_email"
+    if channel == "sms":
+        if contact.do_not_sms: return "do_not_sms"
+        if contact.sms_opted_out or contact.sms_opt_out_at: return "sms_opted_out"
+        if not contact.phone: return "missing_phone"
+        if "invalid_phone" in (contact.tags or "").lower(): return "invalid_phone"
+    return None
+
+
+def _matching_dynamic_contacts(segment):
+    q = _audience_query(segment.company_id, segment.name if segment.segment_type == "legacy_tag" else None)
+    conditions = segment.conditions or []
+    if isinstance(conditions, dict): conditions = [conditions]
+    for cond in conditions:
+        field, value = cond.get("field"), cond.get("value")
+        if field == "tag": q = q.filter(Contact.tags.ilike(f"%{value}%"))
+        elif field == "segment": q = q.filter(Contact.segment == value)
+        elif field == "source": q = q.filter(Contact.source == value)
+        elif field == "email_opt_in": q = q.filter(Contact.is_subscribed.is_(bool(value)))
+        elif field == "sms_opt_in": q = q.filter(Contact.sms_marketing_opt_in.is_(bool(value)))
+    return q.all()
+
+
+def refresh_dynamic_segment(segment):
+    if not segment.is_dynamic:
+        return 0
+    excluded = {m.contact_id for m in segment.members.filter_by(is_excluded=True).all()}
+    existing = {m.contact_id: m for m in segment.members.all()}
+    matched = 0
+    for contact in _matching_dynamic_contacts(segment):
+        if contact.id in excluded:
+            continue
+        matched += 1
+        member = existing.get(contact.id)
+        if member:
+            member.removed_at = None; member.removed_by_user_id = None; member.source = member.source or "dynamic_rule"
+        else:
+            db.session.add(SegmentMember(segment_id=segment.id, contact_id=contact.id, source="dynamic_rule"))
+    return matched
+
+
+
+
+@segment_api_bp.get("/contacts/search")
+@login_required
+def api_contacts_search_root():
+    """Tenant-scoped contact picker search for segment membership UX."""
+    cid = tenant_id()
+    if not cid:
+        return jsonify({"success": True, "contacts": []})
+    term = (request.args.get("q") or "").strip()
+    query = Contact.query.filter_by(company_id=cid)
+    if term:
+        like = f"%{term}%"
+        query = query.filter(or_(
+            Contact.first_name.ilike(like),
+            Contact.last_name.ilike(like),
+            Contact.email.ilike(like),
+            Contact.phone.ilike(like),
+            Contact.company.ilike(like),
+        ))
+    contacts = query.order_by(Contact.created_at.desc()).limit(25).all()
+    return jsonify({"success": True, "contacts": [_contact_json(c) for c in contacts]})
+
+
+@segment_api_bp.get("/segments")
+@login_required
+def api_segments_root():
+    cid = tenant_id()
+    return jsonify({"success": True, "segments": [_segment_json(s, False) for s in Segment.query.filter_by(company_id=cid).order_by(Segment.name).all()]})
+
+
+@segment_api_bp.post("/segments")
+@login_required
+def api_segment_create_root():
+    cid = tenant_id(); err = _require_edit(cid)
+    if err: return err
+    data = request.get_json(silent=True) or {}
+    s = Segment(company_id=cid, name=data.get("name") or "Untitled Segment")
+    for f in SEGMENT_FIELDS:
+        if f in data: setattr(s, f, data[f])
+    db.session.add(s); db.session.flush(); _audit(cid, "segment_created", "segment", s.id, _segment_json(s)); db.session.commit()
+    return jsonify({"success": True, "segment": _segment_json(s)}), 201
+
+
+@segment_api_bp.get("/segments/<int:sid>")
+@login_required
+def api_segment_get_root(sid):
+    s = _segment_or_404(sid)
+    refresh_dynamic_segment(s); db.session.commit()
+    return jsonify({"success": True, "segment": _segment_json(s)})
+
+
+@segment_api_bp.patch("/segments/<int:sid>")
+@login_required
+def api_segment_patch_root(sid):
+    s = _segment_or_404(sid); err = _require_edit(s.company_id)
+    if err: return err
+    data = request.get_json(silent=True) or {}; was_active = s.is_active
+    for f in SEGMENT_FIELDS:
+        if f in data: setattr(s, f, data[f])
+    action = "segment_updated"
+    if "is_active" in data and bool(data["is_active"]) != bool(was_active):
+        action = "segment_activated" if data["is_active"] else "segment_deactivated"
+    _audit(s.company_id, action, "segment", s.id, data); db.session.commit()
+    return jsonify({"success": True, "segment": _segment_json(s)})
+
+
+@segment_api_bp.post("/segments/<int:sid>/copy")
+@login_required
+def api_segment_copy_root(sid):
+    s = _segment_or_404(sid); err = _require_edit(s.company_id)
+    if err: return err
+    dup = Segment(company_id=s.company_id, name=f"{s.name} Copy", description=s.description, segment_type=s.segment_type,
+        category=s.category, match_mode=s.match_mode, triggers=s.triggers, conditions=s.conditions, actions=s.actions,
+        is_dynamic=s.is_dynamic, is_active=s.is_active)
+    db.session.add(dup); db.session.flush(); _audit(s.company_id, "segment_copied", "segment", dup.id, {"source_segment_id": s.id}); db.session.commit()
+    return jsonify({"success": True, "segment": _segment_json(dup)}), 201
+
+
+@segment_api_bp.delete("/segments/<int:sid>")
+@login_required
+def api_segment_delete_root(sid):
+    s = _segment_or_404(sid); err = _require_admin(s.company_id)
+    if err: return err
+    cid = s.company_id; details = {"name": s.name, "memberships_removed": s.members.count()}
+    db.session.delete(s); _audit(cid, "segment_deleted", "segment", sid, details); db.session.commit()
+    return jsonify({"success": True, "deleted": sid})
+
+
+@segment_api_bp.get("/segments/<int:sid>/contacts")
+@login_required
+def api_segment_contacts_root(sid):
+    s = _segment_or_404(sid); refresh_dynamic_segment(s); db.session.commit()
+    q = SegmentMember.query.filter_by(segment_id=s.id, removed_at=None)
+    if request.args.get("include_excluded") != "true": q = q.filter_by(is_excluded=False)
+    term = (request.args.get("q") or "").strip()
+    rows = q.join(Contact).filter(Contact.company_id == s.company_id)
+    if term: rows = rows.filter(or_(Contact.email.ilike(f"%{term}%"), Contact.first_name.ilike(f"%{term}%"), Contact.last_name.ilike(f"%{term}%"), Contact.phone.ilike(f"%{term}%")))
+    members = rows.order_by(SegmentMember.added_at.desc()).all()
+    return jsonify({"success": True, "contacts": [_contact_json(m.contact, m) for m in members]})
+
+
+def _add_contact_to_segment(s, contact_id, source="manual"):
+    c = _contact_or_404(contact_id, s.company_id)
+    member = SegmentMember.query.filter_by(segment_id=s.id, contact_id=c.id).first()
+    if member:
+        member.removed_at = None; member.is_excluded = False; member.exclusion_reason = None; member.source = source
+    else:
+        member = SegmentMember(segment_id=s.id, contact_id=c.id, source=source)
+        db.session.add(member)
+    member.added_by_user_id = current_user.id; member.added_at = datetime.utcnow()
+    return member
+
+
+@segment_api_bp.post("/segments/<int:sid>/contacts")
+@login_required
+def api_segment_add_contact_root(sid):
+    s = _segment_or_404(sid); err = _require_edit(s.company_id)
+    if err: return err
+    data = request.get_json(silent=True) or {}; m = _add_contact_to_segment(s, data.get("contact_id"), data.get("source") or "manual")
+    _audit(s.company_id, "segment_contact_added", "segment", s.id, {"contact_id": m.contact_id, "source": m.source}); db.session.commit()
+    return jsonify({"success": True, "contact": _contact_json(m.contact, m)}), 201
+
+
+@segment_api_bp.delete("/segments/<int:sid>/contacts/<int:contact_id>")
+@login_required
+def api_segment_remove_contact_root(sid, contact_id):
+    s = _segment_or_404(sid); err = _require_edit(s.company_id)
+    if err: return err
+    permanent = (request.get_json(silent=True) or {}).get("permanent_exclusion") or request.args.get("permanent_exclusion") == "true"
+    m = SegmentMember.query.filter_by(segment_id=s.id, contact_id=contact_id).first_or_404()
+    if permanent:
+        m.is_excluded = True; m.exclusion_reason = "permanent_exclusion"; m.source = m.source or "manual"
+    m.removed_at = datetime.utcnow(); m.removed_by_user_id = current_user.id
+    _audit(s.company_id, "segment_contact_excluded" if permanent else "segment_contact_removed", "segment", s.id, {"contact_id": contact_id}); db.session.commit()
+    return jsonify({"success": True})
+
+
+@segment_api_bp.post("/segments/<int:sid>/contacts/bulk-add")
+@login_required
+def api_segment_bulk_add_root(sid):
+    s = _segment_or_404(sid); err = _require_edit(s.company_id)
+    if err: return err
+    ids = (request.get_json(silent=True) or {}).get("contact_ids") or []
+    added = [_add_contact_to_segment(s, i) for i in ids]
+    _audit(s.company_id, "segment_contact_added", "segment", s.id, {"contact_ids": [m.contact_id for m in added], "bulk": True}); db.session.commit()
+    return jsonify({"success": True, "added": len(added)})
+
+
+@segment_api_bp.post("/segments/<int:sid>/contacts/bulk-remove")
+@login_required
+def api_segment_bulk_remove_root(sid):
+    s = _segment_or_404(sid); err = _require_edit(s.company_id)
+    if err: return err
+    ids = (request.get_json(silent=True) or {}).get("contact_ids") or []
+    now = datetime.utcnow(); count = 0
+    for m in SegmentMember.query.filter(SegmentMember.segment_id == s.id, SegmentMember.contact_id.in_(ids)).all():
+        m.removed_at = now; m.removed_by_user_id = current_user.id; count += 1
+    _audit(s.company_id, "segment_contact_removed", "segment", s.id, {"contact_ids": ids, "bulk": True}); db.session.commit()
+    return jsonify({"success": True, "removed": count})
+
+
+@segment_api_bp.post("/segments/<int:sid>/contacts/<int:contact_id>/exclude")
+@login_required
+def api_segment_exclude_contact_root(sid, contact_id):
+    s = _segment_or_404(sid); err = _require_edit(s.company_id)
+    if err: return err
+    data = request.get_json(silent=True) or {}; _contact_or_404(contact_id, s.company_id)
+    m = SegmentMember.query.filter_by(segment_id=s.id, contact_id=contact_id).first() or SegmentMember(segment_id=s.id, contact_id=contact_id, source="manual")
+    db.session.add(m); m.is_excluded = True; m.removed_at = datetime.utcnow(); m.removed_by_user_id = current_user.id; m.exclusion_reason = data.get("reason") or "permanent_exclusion"
+    _audit(s.company_id, "segment_contact_excluded", "segment", s.id, {"contact_id": contact_id, "reason": m.exclusion_reason}); db.session.commit()
+    return jsonify({"success": True})
+
+
+@segment_api_bp.patch("/contacts/<int:contact_id>/marketing-preferences")
+@login_required
+def api_contact_marketing_preferences(contact_id):
+    cid = tenant_id(); err = _require_edit(cid)
+    if err: return err
+    c = _contact_or_404(contact_id, cid); data = request.get_json(silent=True) or {}; old = {f: getattr(c, f) for f in ("do_not_market", "do_not_email", "do_not_sms")}
+    for f in ("do_not_market", "do_not_email", "do_not_sms", "email_unsubscribed", "sms_opted_out"):
+        if f in data: setattr(c, f, bool(data[f]))
+    c.marketing_preferences_reason = data.get("reason", c.marketing_preferences_reason); c.marketing_preferences_source = data.get("source", c.marketing_preferences_source)
+    c.marketing_preferences_updated_by_user_id = current_user.id; c.marketing_preferences_updated_at = datetime.utcnow()
+    for f, action in (("do_not_market", "contact_do_not_market"), ("do_not_email", "contact_do_not_email"), ("do_not_sms", "contact_do_not_sms")):
+        if f in data and bool(data[f]) != bool(old[f]): _audit(cid, f"{action}_{'enabled' if data[f] else 'disabled'}", "contact", c.id, {"reason": c.marketing_preferences_reason})
+    db.session.commit(); return jsonify({"success": True, "contact": _contact_json(c)})
+
+
+@marketing_api_bp.post("/campaigns/<int:campaign_id>/send")
+@login_required
+def api_email_campaign_send(campaign_id):
+    c = Campaign.query.filter_by(id=campaign_id, company_id=tenant_id()).first_or_404()
+    contacts = _audience_query(c.company_id).all(); sent = 0; skipped = []
+    for contact in contacts:
+        reason = marketing_skip_reason(contact, "email")
+        if reason:
+            skipped.append({"contact_id": contact.id, "reason": reason})
+            _audit(c.company_id, "campaign_contact_skipped_suppression", "campaign", c.id, {"contact_id": contact.id, "reason": reason, "channel": "email"})
+            continue
+        db.session.add(CampaignRecipient(campaign_id=c.id, contact_id=contact.id)); sent += 1
+    c.status = "sent"; c.sent_at = datetime.utcnow(); db.session.commit()
+    return jsonify({"success": True, "sent": sent, "skipped": skipped})

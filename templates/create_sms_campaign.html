@@ -64,9 +64,9 @@
                     <div class="mb-3">
                         <label for="segment_tags" class="form-label">Target Segment</label>
                         <input type="text" class="form-control" id="segment_tags" name="segment_tags" 
-                               placeholder="all, vip, customers (comma-separated)">
+                               placeholder="all, vip, customers (comma-separated)" value="{{ selected_segment or '' }}">
                         <small class="text-muted">
-                            Leave empty to send to all contacts with phone numbers
+                            Leave empty to send to all contacts with phone numbers{% if selected_segment %}; segment <strong>{{ selected_segment }}</strong> is preselected from the segment detail page{% endif %}
                         </small>
                     </div>
                     
