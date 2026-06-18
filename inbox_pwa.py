@@ -559,6 +559,8 @@ def api_pwa_preferences():
         user.pwa_palette_id = palette
         if data.get("theme_mode") in {"dark", "light", "system"}:
             user.pwa_theme_mode = data.get("theme_mode")
+        if "notificationSoundsEnabled" in data or "notification_sounds_enabled" in data:
+            user.notification_sounds_enabled = bool(data.get("notificationSoundsEnabled", data.get("notification_sounds_enabled")))
         user.pwa_preferences_updated_at = datetime.utcnow()
         db.session.commit()
     return jsonify({
@@ -566,6 +568,7 @@ def api_pwa_preferences():
         "preferences": {
             "palette_id": user.pwa_palette_id or "lux",
             "theme_mode": user.pwa_theme_mode or "dark",
+            "notificationSoundsEnabled": user.notification_sounds_enabled is not False,
             "updated_at": user.pwa_preferences_updated_at.isoformat() if user.pwa_preferences_updated_at else None,
         }
     })
@@ -1414,8 +1417,63 @@ def pwa_notifications_read():
     db.session.commit()
     return jsonify({"success": True, "updated": updated})
 
+@inbox_pwa_bp.route("/api/push/public-key")
+@inbox_pwa_bp.route("/api/pwa/push/public-key")
+def push_public_key():
+    return jsonify({"success": True, "publicKey": os.environ.get("VAPID_PUBLIC_KEY", ""), "configured": bool(os.environ.get("VAPID_PUBLIC_KEY") and os.environ.get("VAPID_PRIVATE_KEY") and os.environ.get("VAPID_SUBJECT"))})
+
+
+def _web_push_configured():
+    return bool(os.environ.get("VAPID_PUBLIC_KEY") and os.environ.get("VAPID_PRIVATE_KEY") and os.environ.get("VAPID_SUBJECT"))
+
+def _send_web_push_to_subscriptions(subscriptions, payload: dict):
+    """Server-side Web Push sender; disables expired subscriptions and never broadens caller-provided scope."""
+    if not _web_push_configured():
+        return {"sent": 0, "errors": ["Web push is not configured. Set VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY, and VAPID_SUBJECT."]}
+    import json
+    sent, errors = 0, []
+    for sub in subscriptions:
+        if getattr(sub, "is_active", True) is False:
+            continue
+        try:
+            from pywebpush import webpush
+            webpush(
+                subscription_info={"endpoint": sub.endpoint, "keys": {"p256dh": sub.p256dh, "auth": sub.auth_key}},
+                data=json.dumps(payload),
+                vapid_private_key=os.environ.get("VAPID_PRIVATE_KEY", ""),
+                vapid_claims={"sub": os.environ.get("VAPID_SUBJECT", "mailto:admin@luxit.app")},
+            )
+            sub.last_used_at = datetime.utcnow()
+            sent += 1
+        except Exception as exc:
+            msg = str(exc)
+            errors.append(msg)
+            if "410" in msg or "404" in msg:
+                sub.is_active = False
+                sub.updated_at = datetime.utcnow()
+    db.session.commit()
+    return {"sent": sent, "errors": errors}
+
+def send_pwa_push_notification(company_id: int, *, user_ids, title: str, body: str, link: str = "/app/inbox", tag: str = "luxit-inbox", event_type: str = "notification", phone_number_id=None):
+    """Internal tenant-scoped push helper for notifications already permission-filtered by caller."""
+    from models import PushSubscription
+    ids = [int(uid) for uid in (user_ids or [])]
+    if not ids:
+        return {"sent": 0, "errors": []}
+    subs = PushSubscription.query.filter(
+        PushSubscription.company_id == company_id,
+        PushSubscription.user_id.in_(ids),
+        PushSubscription.is_active.is_(True),
+    ).all()
+    return _send_web_push_to_subscriptions(subs, {
+        "title": title, "body": body, "url": link, "tag": tag, "eventType": event_type,
+        "icon": "/static/favicon.png", "badge": "/static/favicon.png", "sound": "default",
+        "data": {"company_id": company_id, "phone_number_id": phone_number_id, "event_type": event_type},
+    })
+
 # ── API: Push notification subscribe ─────────────────────────────────────────
 
+@inbox_pwa_bp.route("/api/push/subscribe", methods=["POST"])
 @inbox_pwa_bp.route("/api/pwa/push/subscribe", methods=["POST"])
 @inbox_pwa_bp.route("/api/inbox/push/subscribe", methods=["POST"])
 def push_subscribe():
@@ -1451,6 +1509,10 @@ def push_subscribe():
         sub.device_key = device_key or getattr(sub, "device_key", None)
         sub.p256dh   = p256dh
         sub.auth_key = auth_key
+        sub.user_agent = request.headers.get('User-Agent')
+        sub.device_label = payload.get('device_label') or payload.get('deviceName') or device_key
+        sub.is_active = True
+        sub.updated_at = datetime.utcnow()
     if device_key:
         from models import PWADevice
         device = PWADevice.query.filter_by(company_id=company.id, user_id=user.id, device_key=device_key).first()
@@ -1462,6 +1524,30 @@ def push_subscribe():
     return jsonify({"success": True, "device_key": device_key})
 
 
+@inbox_pwa_bp.route("/api/push/unsubscribe", methods=["POST"])
+@inbox_pwa_bp.route("/api/pwa/push/unsubscribe", methods=["POST"])
+@inbox_pwa_bp.route("/api/inbox/push/unsubscribe", methods=["POST"])
+def push_unsubscribe():
+    user = _require_auth()
+    company = _get_company(user)
+    payload = request.get_json() or {}
+    endpoint = payload.get("endpoint", "")
+    from models import PushSubscription
+    q = PushSubscription.query.filter_by(user_id=user.id)
+    if company:
+        q = q.filter_by(company_id=company.id)
+    if endpoint:
+        q = q.filter_by(endpoint=endpoint)
+    count = 0
+    for sub in q.all():
+        sub.is_active = False
+        sub.updated_at = datetime.utcnow()
+        count += 1
+    db.session.commit()
+    return jsonify({"success": True, "disabled": count})
+
+
+@inbox_pwa_bp.route("/api/push/test", methods=["POST"])
 @inbox_pwa_bp.route("/api/pwa/push/test", methods=["POST"])
 @inbox_pwa_bp.route("/api/inbox/push/test", methods=["POST"])
 def push_test():
@@ -1471,45 +1557,24 @@ def push_test():
         return jsonify({"success": False, "error": "No company"}), 400
 
     from models import PushSubscription
-    subs = PushSubscription.query.filter_by(user_id=user.id).all()
+    subs = PushSubscription.query.filter_by(user_id=user.id, company_id=company.id, is_active=True).all()
     if not subs:
         return jsonify({"success": False, "error": "No push subscription found. Enable notifications first."})
 
-    vapid_private = os.environ.get("VAPID_PRIVATE_KEY", "")
-    vapid_public  = os.environ.get("VAPID_PUBLIC_KEY", "")
-    vapid_claims  = {"sub": "mailto:admin@luxit.app"}
-    if not vapid_private or not vapid_public:
-        return jsonify({"success": False, "configured": False, "error": "Web push is not configured. Set VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY."})
+    if not _web_push_configured():
+        return jsonify({"success": False, "configured": False, "error": "Web push is not configured. Set VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY, and VAPID_SUBJECT."})
 
-    sent = 0
-    errors = []
-    for sub in subs:
-        try:
-            from pywebpush import webpush, WebPushException
-            import json
-            webpush(
-                subscription_info={
-                    "endpoint": sub.endpoint,
-                    "keys": {"p256dh": sub.p256dh, "auth": sub.auth_key},
-                },
-                data=json.dumps({
-                    "title": "LUXit Inbox",
-                    "body":  "Push notifications are working!",
-                    "url":   "/app/inbox",
-                }),
-                vapid_private_key=vapid_private,
-                vapid_claims=vapid_claims,
-            )
-            sent += 1
-        except ImportError:
-            errors.append("pywebpush not installed — push not available")
-            break
-        except Exception as exc:
-            errors.append(str(exc))
-            # Remove expired subscription
-            if "410" in str(exc) or "404" in str(exc):
-                db.session.delete(sub)
-                db.session.commit()
+    result = _send_web_push_to_subscriptions(subs, {
+        "title": "LUXit Inbox",
+        "body": "Push notifications are working!",
+        "url": "/app/inbox",
+        "tag": "push-test",
+        "icon": "/static/favicon.png",
+        "badge": "/static/favicon.png",
+        "sound": "default",
+    })
+    sent = result["sent"]
+    errors = result["errors"]
 
     if sent:
         return jsonify({"success": True, "sent": sent})
@@ -1878,52 +1943,23 @@ def _fire_push_notification(company_id: int, conv, message_body: str):
         icon="message-square",
     )
 
-    vapid_private = os.environ.get("VAPID_PRIVATE_KEY", "")
-    vapid_public  = os.environ.get("VAPID_PUBLIC_KEY", "")
-    if not vapid_private or not vapid_public:
-        return
-
-    from models import PushSubscription
     allowed_user_ids = [u.id for u in _authorized_notification_users(company_id, phone_number_id)]
-    if not allowed_user_ids:
-        return
-    subs = PushSubscription.query.filter(
-        PushSubscription.company_id == company_id,
-        PushSubscription.user_id.in_(allowed_user_ids),
-    ).all()
-    if not subs:
-        return
-
-    import json
-    payload = json.dumps({
-        "title": title,
-        "body":  notification_body,
-        "url":   link,
-        "tag":   f"sms-{conv.id}",
-        "vibrate": [80, 40, 80],
-    })
-
-    for sub in subs:
-        try:
-            from pywebpush import webpush
-            webpush(
-                subscription_info={"endpoint": sub.endpoint,
-                                   "keys": {"p256dh": sub.p256dh, "auth": sub.auth_key}},
-                data=payload,
-                vapid_private_key=vapid_private,
-                vapid_claims={"sub": "mailto:admin@luxit.app"},
-            )
-        except Exception as exc:
-            logger.debug("Push send failed for sub %d: %s", sub.id, exc)
-            if "410" in str(exc) or "404" in str(exc):
-                db.session.delete(sub)
-                db.session.commit()
+    send_pwa_push_notification(
+        company_id,
+        user_ids=allowed_user_ids,
+        title=title,
+        body=notification_body,
+        link=link,
+        tag=f"sms-{conv.id}",
+        event_type="inbound_sms",
+        phone_number_id=phone_number_id,
+    )
 
 
 def create_pwa_notification(company_id: int, *, event_type: str, title: str, body: str,
                             link: str = "/app/inbox", phone_number_id=None, icon: str = "bell"):
-    """Public helper for call/voicemail webhooks to persist notification history."""
-    return _create_notification_records(
+    """Public helper for call/voicemail webhooks to persist notification history and push to permitted users."""
+    records = _create_notification_records(
         company_id,
         event_type=event_type,
         title=title,
@@ -1932,6 +1968,18 @@ def create_pwa_notification(company_id: int, *, event_type: str, title: str, bod
         phone_number_id=phone_number_id,
         icon=icon,
     )
+    allowed_user_ids = [u.id for u in _authorized_notification_users(company_id, phone_number_id)]
+    send_pwa_push_notification(
+        company_id,
+        user_ids=allowed_user_ids,
+        title=title,
+        body=body,
+        link=link,
+        tag=f"{event_type}-{phone_number_id or 'company'}",
+        event_type=event_type,
+        phone_number_id=phone_number_id,
+    )
+    return records
 
 
 # ── Google Contacts status + sync (PWA API) ───────────────────────────────────
