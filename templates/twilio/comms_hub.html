@@ -147,7 +147,27 @@
     <input type="hidden" name="action" value="reply">
   </form>
   {% endif %}
-  <div class="card" style="background:#0f1117;border:1px solid #1e2535;">{% for rule in rules %}<form method="POST" action="{{ url_for('twilio.edit_rule', rule_id=rule.id) }}" class="p-3" style="border-bottom:1px solid #1e2535;"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="phone_number_id" value="{{ selected_number.id if selected_number else '' }}"><input type="hidden" name="action" value="reply"><div class="row g-2 align-items-end"><div class="col-md-2"><label class="form-label small text-muted">Name</label><input class="form-control" name="name" value="{{ rule.name }}"></div><div class="col-md-2"><label class="form-label small text-muted">Match type</label><select class="form-select" name="trigger_type">{% for v,l in [('keyword_contains','Keyword contains'),('keyword_exact','Keyword exact'),('first_contact','First contact'),('after_hours','After-hours'),('always','Always')] %}<option value="{{ v }}" {% if rule.trigger_type == v %}selected{% endif %}>{{ l }}</option>{% endfor %}</select></div><div class="col-md-2"><label class="form-label small text-muted">Keyword(s)</label><input class="form-control" name="keywords" value="{{ (rule.keywords or [])|join(', ') }}"></div><div class="col-md-1"><label class="form-label small text-muted">Priority</label><input class="form-control" type="number" name="priority" value="{{ rule.priority or 0 }}"></div><div class="col-md-3"><label class="form-label small text-muted">Reply text</label><textarea class="form-control" name="response" rows="1">{{ rule.response or '' }}</textarea></div><div class="col-md-1"><label class="form-check small"><input class="form-check-input" type="checkbox" name="is_active" value="1" {% if rule.is_active %}checked{% endif %}> Active</label></div><div class="col-md-1 d-flex gap-1"><button class="btn btn-sm btn-primary" type="submit">Save</button><button class="btn btn-sm btn-outline-danger" type="submit" form="delete-rule-{{ rule.id }}">Delete</button></div></div></form><form id="delete-rule-{{ rule.id }}" method="POST" action="{{ url_for('twilio.delete_rule', rule_id=rule.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"></form>{% else %}<div class="p-4 text-muted">No auto-reply rules yet. Create one above.</div>{% endfor %}</div>
+  <div class="card" style="background:#0f1117;border:1px solid #1e2535;">
+    {% for rule in rules %}
+      <form method="POST" action="{{ url_for('twilio.edit_rule', rule_id=rule.id) }}" class="p-3" style="border-bottom:1px solid #1e2535;">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="phone_number_id" value="{{ rule.phone_number_id if rule.phone_number_id is not none else '' }}">
+        <input type="hidden" name="return_number_id" value="{{ selected_number.id if selected_number else '' }}">
+        <input type="hidden" name="action" value="reply">
+        <div class="row g-2 align-items-end">
+          <div class="col-md-2"><label class="form-label small text-muted">Name</label><input class="form-control" name="name" value="{{ rule.name }}"></div>
+          <div class="col-md-2"><label class="form-label small text-muted">Match type</label><select class="form-select" name="trigger_type">{% for v,l in [('keyword_contains','Keyword contains'),('keyword_exact','Keyword exact'),('first_contact','First contact'),('after_hours','After-hours'),('always','Always')] %}<option value="{{ v }}" {% if rule.trigger_type == v %}selected{% endif %}>{{ l }}</option>{% endfor %}</select></div>
+          <div class="col-md-2"><label class="form-label small text-muted">Keyword(s)</label><input class="form-control" name="keywords" value="{{ (rule.keywords or [])|join(', ') }}"></div>
+          <div class="col-md-1"><label class="form-label small text-muted">Priority</label><input class="form-control" type="number" name="priority" value="{{ rule.priority or 0 }}"></div>
+          <div class="col-md-2"><label class="form-label small text-muted">Reply text</label><textarea class="form-control" name="response" rows="1">{{ rule.response or '' }}</textarea></div>
+          <div class="col-md-1"><span class="badge {% if rule.phone_number_id %}bg-primary{% else %}bg-secondary{% endif %}">{% if rule.phone_number_id %}Number-specific{% else %}Global{% endif %}</span><div class="small text-muted mt-1">{{ (rule.trigger_type or 'No match type') | replace('_', ' ') | title }}</div></div>
+          <div class="col-md-1"><label class="form-check small"><input class="form-check-input" type="checkbox" name="is_active" value="1" {% if rule.is_active %}checked{% endif %}> Active</label></div>
+          <div class="col-md-1 d-flex gap-1"><button class="btn btn-sm btn-primary" type="submit">Save</button><button class="btn btn-sm btn-outline-danger" type="submit" form="delete-rule-{{ rule.id }}">Delete</button></div>
+        </div>
+      </form>
+      <form id="delete-rule-{{ rule.id }}" method="POST" action="{{ url_for('twilio.delete_rule', rule_id=rule.id, number_id=selected_number.id if selected_number else None) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"></form>
+    {% else %}<div class="p-4 text-muted">No auto-reply rules yet. Create one above.</div>{% endfor %}
+  </div>
 
   {% elif tab == 'users' %}
   <div class="d-flex mb-3"><h6 class="fw-semibold">Users & Permissions{% if selected_number %} — {{ selected_number.friendly_name or selected_number.phone_number }}{% endif %}</h6><a href="{{ url_for('main.manage_users') }}" class="btn btn-sm btn-outline-secondary ms-auto">Manage users</a></div>

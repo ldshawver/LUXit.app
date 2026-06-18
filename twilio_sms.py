@@ -1989,18 +1989,22 @@ def comms_hub():
         pass
     rules = []
     try:
-        rules = (
-            AutoReplyRule.query
-            .filter_by(company_id=company.id)
-            .filter(db.or_(
+        selected_rule_number_id = selected_number.id if selected_number else None
+        rules_query = AutoReplyRule.query.filter_by(company_id=company.id)
+        if selected_rule_number_id is not None:
+            rules_query = rules_query.filter(db.or_(
+                AutoReplyRule.phone_number_id == selected_rule_number_id,
                 AutoReplyRule.phone_number_id.is_(None),
-                AutoReplyRule.phone_number_id == (selected_number.id if selected_number else None),
             ))
+        else:
+            rules_query = rules_query.filter(AutoReplyRule.phone_number_id.is_(None))
+        rules = (
+            rules_query
             .order_by(AutoReplyRule.priority.desc(), AutoReplyRule.id.asc())
             .all()
         )
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.warning("Could not load Communications Hub auto-reply rules: %s", exc)
     voicemails = []
     try:
         voicemails = VoiceVoicemailMessage.query.filter_by(company_id=company.id, is_deleted=False).order_by(VoiceVoicemailMessage.created_at.desc()).limit(100).all()
@@ -2499,7 +2503,8 @@ def edit_rule(rule_id):
     if request.headers.get("Accept") == "application/json" or request.is_json:
         return jsonify({"success": True, "name": rule.name})
     flash(f'Rule "{rule.name}" updated.', "success")
-    return redirect(url_for("twilio.comms_hub", tab="auto", number_id=rule.phone_number_id))
+    return_number_id = f.get("return_number_id", type=int) or rule.phone_number_id
+    return redirect(url_for("twilio.comms_hub", tab="auto", number_id=return_number_id))
 
 
 @twilio_bp.route("/rules/<int:rule_id>/toggle", methods=["POST"])
@@ -2523,7 +2528,8 @@ def delete_rule(rule_id):
     db.session.delete(rule)
     db.session.commit()
     flash(f'Rule "{name}" deleted.', "success")
-    return redirect(url_for("twilio.comms_hub", tab="auto"))
+    return_number_id = request.args.get("number_id", type=int) or request.form.get("return_number_id", type=int)
+    return redirect(url_for("twilio.comms_hub", tab="auto", number_id=return_number_id))
 
 
 @twilio_bp.route("/hours", methods=["GET", "POST"])

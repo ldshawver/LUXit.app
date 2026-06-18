@@ -382,6 +382,11 @@ def test_comms_auto_replies_inline_crud(client, comms_world):
         follow_redirects=False,
     )
     assert create.status_code == 302
+    assert create.headers["Location"].endswith(f"/twilio/comms?tab=auto&number_id={comms_world['pn1']}")
+    reload_page = client.get(f"/twilio/comms?tab=auto&number_id={comms_world['pn1']}")
+    assert reload_page.status_code == 200
+    assert b"Booking Reply" in reload_page.data
+    assert b"Number-specific" in reload_page.data
     with client.application.app_context():
         rule = AutoReplyRule.query.filter_by(company_id=comms_world["co"], name="Booking Reply").one()
         assert rule.phone_number_id == comms_world["pn1"]
@@ -400,6 +405,7 @@ def test_comms_auto_replies_inline_crud(client, comms_world):
         follow_redirects=False,
     )
     assert edit.status_code == 302
+    assert edit.headers["Location"].endswith(f"/twilio/comms?tab=auto&number_id={comms_world['pn1']}")
     with client.application.app_context():
         rule = db.session.get(AutoReplyRule, rule_id)
         assert rule.name == "Booking Reply Updated"
