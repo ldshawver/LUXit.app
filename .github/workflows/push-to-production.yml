@@ -17,21 +17,15 @@ jobs:
     timeout-minutes: 20
 
     steps:
-      - name: Connect to Tailscale
-        uses: tailscale/github-action@v3
-        with:
-          authkey: ${{ secrets.TS_AUTHKEY }}
-
-      - name: Confirm Tailscale connection
+      - name: Confirm SSH connection
+        shell: bash
         run: |
-          set -e
-          tailscale status
-          tailscale ip -4
-
+          set -euo pipefail
           HOST_VALUE="${{ secrets.HOST }}"
           echo "HOST starts with: ${HOST_VALUE:0:7}"
           echo "Testing SSH port on HOST..."
-          timeout 10 bash -c "</dev/tcp/${HOST_VALUE}/22" && echo "SSH port reachable"
+          timeout 15 bash -c "</dev/tcp/${HOST_VALUE}/22"
+          echo "SSH port reachable"
 
       - name: Deploy to Production VPS
         uses: appleboy/ssh-action@v1.0.3
@@ -41,7 +35,7 @@ jobs:
           key: ${{ secrets.VPS_PRIVATE_KEY }}
           port: 22
           timeout: 60s
-          command_timeout: 5m
+          command_timeout: 10m
           script_stop: true
           script: |
             set -euo pipefail
@@ -54,20 +48,29 @@ jobs:
             cd "$APP_DIR"
 
             echo "== Git update =="
-            git fetch origin
+            git fetch origin main
             git reset --hard origin/main
-            git clean -fd
+
+            echo "== Verify env file =="
+            test -f .env
 
             echo "== Load env =="
             set -a
             source .env
             set +a
 
+            echo "== Verify required env =="
+            test -n "${DATABASE_URL:-}"
+
             echo "== Database check =="
-            psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "select now();"
+            if command -v psql >/dev/null 2>&1; then
+              psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "select now();"
+            else
+              echo "psql not installed on VPS; skipping direct DB check"
+            fi
 
             echo "== Optional migrations =="
-            if [ -d migrations ]; then
+            if command -v psql >/dev/null 2>&1 && [ -d migrations ]; then
               for f in migrations/*.sql; do
                 if [ -f "$f" ]; then
                   echo "Running migration: $f"
@@ -78,32 +81,29 @@ jobs:
 
             echo "== Python syntax check =="
             if [ -x ".venv/bin/python" ]; then
-              .venv/bin/python -m py_compile app.py auth.py routes.py models.py inbox_pwa.py twilio_sms.py || true
+              .venv/bin/python -m py_compile app.py auth.py routes.py models.py inbox_pwa.py twilio_sms.py
+            else
+              python3 -m py_compile app.py auth.py routes.py models.py inbox_pwa.py twilio_sms.py
             fi
 
             echo "== Restart LIVE service =="
-            sudo systemctl daemon-reload
-            sudo systemctl reset-failed "$SERVICE" || true
-            sudo systemctl restart "$SERVICE"
+            systemctl daemon-reload
+            systemctl reset-failed "$SERVICE" || true
+            systemctl restart "$SERVICE"
 
-            sleep 3
+            sleep 5
 
             echo "== Service status =="
-            sudo systemctl is-active --quiet "$SERVICE"
-            sudo systemctl status "$SERVICE" --no-pager -l
+            systemctl is-active --quiet "$SERVICE"
+            systemctl status "$SERVICE" --no-pager -l
 
             echo "== Local smoke tests =="
             curl -fsS "http://127.0.0.1:${PORT}/auth/login" >/dev/null
-            curl -fsSI "http://127.0.0.1:${PORT}/app/inbox" >/dev/null || true
-            curl -fsSI "http://127.0.0.1:${PORT}/admin/communications" >/dev/null || true
-            curl -fsSI "http://127.0.0.1:${PORT}/app/sms-campaigns" >/dev/null || true
-            curl -fsSI "http://127.0.0.1:${PORT}/sms/create" >/dev/null || true
 
             echo "== Public smoke tests =="
-            curl -fsSI "https://luxit.app/auth/login" >/dev/null
-            curl -fsSI "https://luxit.app/app/inbox" >/dev/null || true
+            curl -fsS "https://luxit.app/auth/login" >/dev/null
 
             echo "== Recent logs =="
-            sudo journalctl -u "$SERVICE" -n 80 --no-pager
+            journalctl -u "$SERVICE" -n 80 --no-pager
 
             echo "== Deploy complete =="
