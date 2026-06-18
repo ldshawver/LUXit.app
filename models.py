@@ -200,6 +200,7 @@ class User(UserMixin, db.Model):
     preferred_hub = db.Column(db.String(20), default='marketing')  # 'marketing' or 'sales'
     pwa_palette_id = db.Column(db.String(30), default='lux')
     pwa_theme_mode = db.Column(db.String(20), default='dark')
+    notification_sounds_enabled = db.Column(db.Boolean, default=True)
     pwa_preferences_updated_at = db.Column(db.DateTime)
     
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
@@ -3382,7 +3383,12 @@ class PushSubscription(db.Model):
     endpoint   = db.Column(db.Text, nullable=False, unique=True)
     p256dh     = db.Column(db.Text)
     auth_key   = db.Column(db.Text)
+    user_agent = db.Column(db.Text)
+    device_label = db.Column(db.String(160))
+    is_active = db.Column(db.Boolean, default=True, index=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    last_used_at = db.Column(db.DateTime, nullable=True)
 
     user    = db.relationship("User",    backref="push_subscriptions")
     company = db.relationship("Company", backref="push_subscriptions")

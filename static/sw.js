@@ -46,10 +46,14 @@ self.addEventListener('push', e => {
   e.waitUntil(
     self.registration.showNotification(data.title, {
       body:    data.body,
-      icon:    '/static/favicon.png',
-      badge:   '/static/favicon.png',
-      tag:     'luxit-inbox',
-      data:    { url: data.url || '/app/inbox' },
+      icon:    data.icon || '/static/favicon.png',
+      badge:   data.badge || '/static/favicon.png',
+      tag:     data.tag || 'luxit-inbox',
+      data:    Object.assign({ url: data.url || '/app/inbox' }, data.data || {}),
+      vibrate: data.vibrate || [80, 40, 80],
+      silent:  data.silent === true,
+      // Browsers/OSes may ignore custom push sounds; foreground sounds are handled in-app.
+      sound:   data.sound,
       actions: [{ action: 'open', title: 'Open Inbox' }],
     })
   );

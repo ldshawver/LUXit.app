@@ -699,6 +699,16 @@ def create_app() -> Flask:
                     ("raw_payload", "JSON"),
                     ("created_at", "TIMESTAMP"),
                 ],
+                "user": [
+                    ("notification_sounds_enabled", "BOOLEAN DEFAULT TRUE"),
+                ],
+                "push_subscription": [
+                    ("user_agent", "TEXT"),
+                    ("device_label", "VARCHAR(160)"),
+                    ("is_active", "BOOLEAN DEFAULT TRUE"),
+                    ("updated_at", "TIMESTAMP"),
+                    ("last_used_at", "TIMESTAMP"),
+                ],
                 "twilio_call_log": [
                     ("company_id", "INTEGER"),
                     ("twilio_sid", "VARCHAR(100)"),

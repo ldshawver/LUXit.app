@@ -14,25 +14,53 @@
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css">
   <style>
     :root {
-      --bg:       #000;
-      --surface:  #0b0d14;
-      --border:   #1e2535;
-      --purple:   #7c3aed;
-      --purple-l: #a78bfa;
-      --cyan:     #06b6d4;
-      --pink:     #ec4899;
-      --muted:    #64748b;
-      --text:     #f1f5f9;
-      --text-dim: #94a3b8;
-      --green:    #22c55e;
-      --red:      #ef4444;
+      --color-primary: #7c3aed;
+      --color-secondary: #06b6d4;
+      --color-accent: #ec4899;
+      --color-background: #000000;
+      --color-surface: #0b0d14;
+      --color-text: #f1f5f9;
+      --color-muted-text: #94a3b8;
+      --color-icon: #a78bfa;
+      --color-button: #7c3aed;
+      --color-button-text: #ffffff;
+      --color-border: #1e2535;
+      --color-input-bg: #111827;
+      --color-input-text: #f1f5f9;
+      --color-placeholder: #64748b;
+      --bg: var(--color-background);
+      --surface: var(--color-surface);
+      --border: var(--color-border);
+      --purple: var(--color-primary);
+      --purple-l: var(--color-icon);
+      --cyan: var(--color-secondary);
+      --pink: var(--color-accent);
+      --muted: var(--color-placeholder);
+      --text: var(--color-text);
+      --text-dim: var(--color-muted-text);
+      --green: #22c55e;
+      --red: #ef4444;
       --safe-top: env(safe-area-inset-top, 0px);
       --safe-bot: env(safe-area-inset-bottom, 0px);
     }
-    html[data-palette="ocean"] { --purple:#0891b2; --purple-l:#67e8f9; --cyan:#38bdf8; --pink:#22d3ee; }
-    html[data-palette="forest"] { --purple:#16a34a; --purple-l:#86efac; --cyan:#34d399; --pink:#84cc16; }
-    html[data-palette="sunset"] { --purple:#ea580c; --purple-l:#fdba74; --cyan:#f59e0b; --pink:#f43f5e; }
-    html[data-palette="mono"] { --purple:#64748b; --purple-l:#cbd5e1; --cyan:#94a3b8; --pink:#e2e8f0; }
+    html[data-palette="ocean"] {
+      --color-primary:#0891b2; --color-secondary:#38bdf8; --color-accent:#22d3ee;
+      --color-background:#042f3a; --color-surface:#083b4a; --color-text:#ecfeff; --color-muted-text:#a5f3fc;
+      --color-icon:#67e8f9; --color-button:#0891b2; --color-button-text:#ffffff; --color-border:#155e75;
+      --color-input-bg:#062b35; --color-input-text:#ecfeff; --color-placeholder:#7dd3fc;
+    }
+    html[data-palette="forest"] {
+      --color-primary:#16a34a; --color-secondary:#34d399; --color-accent:#84cc16;
+      --color-background:#041f12; --color-surface:#0b2f1a; --color-text:#f0fdf4; --color-muted-text:#bbf7d0;
+      --color-icon:#86efac; --color-button:#16a34a; --color-button-text:#ffffff; --color-border:#166534;
+      --color-input-bg:#052e16; --color-input-text:#f0fdf4; --color-placeholder:#86efac;
+    }
+    html[data-palette="sunset"] {
+      --color-primary:#ea580c; --color-secondary:#f59e0b; --color-accent:#f43f5e;
+      --color-background:#2a0d05; --color-surface:#431407; --color-text:#fff7ed; --color-muted-text:#fed7aa;
+      --color-icon:#fdba74; --color-button:#ea580c; --color-button-text:#ffffff; --color-border:#9a3412;
+      --color-input-bg:#3b1306; --color-input-text:#fff7ed; --color-placeholder:#fdba74;
+    }
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     html, body { height: 100%; background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; overflow: hidden; }
 
@@ -69,7 +97,7 @@
     }
     .sidebar-head h1 { font-size: 1.05rem; font-weight: 700; flex: 1; }
     .badge-unread {
-      background: var(--purple); color: #fff;
+      background: var(--purple); color: var(--color-button-text);
       border-radius: 20px; font-size: .7rem; padding: 2px 8px; min-width: 24px; text-align: center;
       display: none;
     }
@@ -95,13 +123,13 @@
     .btn-icon.active { border-color: var(--purple); color: var(--purple-l); background: rgba(124,58,237,.15); }
     .btn-compose {
       width: 32px; height: 32px; border-radius: 50%;
-      background: var(--purple); border: none; color: #fff;
+      background: var(--purple); border: none; color: var(--color-button-text);
       display: flex; align-items: center; justify-content: center;
       cursor: pointer; font-size: 1.1rem; flex-shrink: 0;
     }
     .search-wrap { padding: 10px 12px; border-bottom: 1px solid var(--border); }
     .search-wrap input {
-      width: 100%; background: #111827; border: 1px solid var(--border);
+      width: 100%; background: var(--color-input-bg); border: 1px solid var(--border);
       border-radius: 8px; color: var(--text); padding: 7px 12px; font-size: .85rem;
       outline: none;
     }
@@ -122,6 +150,11 @@
     #convList::-webkit-scrollbar { width: 4px; }
     #convList::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
 
+    input::placeholder, textarea::placeholder { color: var(--color-placeholder); opacity: 1; }
+    input, textarea, select { background-color: var(--color-input-bg); color: var(--color-input-text); border-color: var(--color-border); }
+    button, .btn-small, .btn-primary, .btn-compose { background-color: var(--color-button); color: var(--color-button-text); }
+    .btn-icon, .icon-btn, .thread-actions button, svg { color: var(--color-icon); }
+
     /* Conversation row */
     .conv-item-wrap { position: relative; overflow: hidden; }
     .conv-item {
@@ -133,7 +166,7 @@
     }
     .conv-item:hover { background: rgba(255,255,255,.03); }
     .conv-item.active { background: rgba(124,58,237,.12); border-left: 3px solid var(--purple); }
-    .conv-item.unread .conv-name { color: #fff; font-weight: 600; }
+    .conv-item.unread .conv-name { color: var(--color-button-text); font-weight: 600; }
     .conv-item.unread .conv-preview { color: var(--text); }
     .conv-avatar {
       width: 40px; height: 40px; border-radius: 50%; flex-shrink: 0;
@@ -199,8 +232,8 @@
       font-size: .88rem; line-height: 1.45; word-break: normal;
       overflow-wrap: normal; white-space: pre-wrap; min-width: 2.5rem;
     }
-    .bubble.out { background: var(--purple); color: #fff; border-bottom-right-radius: 4px; }
-    .bubble.in  { background: #1e2535; color: var(--text); border-bottom-left-radius: 4px; }
+    .bubble.out { background: var(--purple); color: var(--color-button-text); border-bottom-right-radius: 4px; }
+    .bubble.in  { background: var(--color-surface); color: var(--text); border-bottom-left-radius: 4px; }
     .bubble.auto-reply { background: rgba(6,182,212,.15); color: var(--cyan); border: 1px solid rgba(6,182,212,.25); }
     .msg-meta { font-size: .68rem; color: var(--muted); margin: 2px 4px 0; }
     .msg-meta.out { text-align: right; }
@@ -254,7 +287,7 @@
     }
     .composer-wrap { flex: 1; position: relative; }
     #msgInput {
-      width: 100%; background: #111827; border: 1px solid var(--border);
+      width: 100%; background: var(--color-input-bg); border: 1px solid var(--border);
       border-radius: 12px; color: var(--text); padding: 10px 14px;
       font-size: .88rem; outline: none; resize: none; min-height: 42px;
       max-height: 120px; line-height: 1.4; overflow-y: auto; font-family: inherit;
@@ -265,7 +298,7 @@
     #charCount.over { color: var(--red); }
     #sendBtn {
       width: 42px; height: 42px; border-radius: 50%; border: none;
-      background: var(--purple); color: #fff; cursor: pointer;
+      background: var(--purple); color: var(--color-button-text); cursor: pointer;
       display: flex; align-items: center; justify-content: center;
       flex-shrink: 0; transition: background .15s;
     }
@@ -292,7 +325,7 @@
     .cp-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
     .cp-tag { font-size: .7rem; padding: 2px 8px; border-radius: 20px; background: rgba(124,58,237,.2); color: var(--purple-l); }
     .notes-area {
-      width: 100%; background: #111827; border: 1px solid var(--border);
+      width: 100%; background: var(--color-input-bg); border: 1px solid var(--border);
       color: var(--text); border-radius: 8px; padding: 8px; font-size: .82rem;
       resize: vertical; min-height: 80px; margin-top: 6px; font-family: inherit; outline: none;
     }
@@ -322,14 +355,14 @@
     .modal-title { font-weight: 700; margin-bottom: 16px; }
     .pwa-field label { font-size: .8rem; color: var(--text-dim); display: block; margin-bottom: 4px; }
     .pwa-field input, .pwa-field textarea {
-      width: 100%; background: #111827; border: 1px solid var(--border);
+      width: 100%; background: var(--color-input-bg); border: 1px solid var(--border);
       color: var(--text); border-radius: 8px; padding: 9px 12px;
       font-size: .88rem; outline: none; margin-bottom: 10px; font-family: inherit;
     }
     .pwa-field input:focus, .pwa-field textarea:focus { border-color: var(--purple); }
     .modal-actions { display: flex; gap: 8px; justify-content: flex-end; }
     .btn-cancel  { background: none; border: 1px solid var(--border); color: var(--text-dim); border-radius: 8px; padding: 8px 18px; cursor: pointer; font-size: .85rem; }
-    .btn-primary { background: var(--purple); border: none; color: #fff; border-radius: 8px; padding: 8px 18px; cursor: pointer; font-size: .85rem; }
+    .btn-primary { background: var(--purple); border: none; color: var(--color-button-text); border-radius: 8px; padding: 8px 18px; cursor: pointer; font-size: .85rem; }
     .btn-primary:disabled { background: var(--muted); cursor: not-allowed; }
 
     /* ── Lightbox ────────────────────────────────────── */
@@ -341,14 +374,14 @@
     #lightboxImg { max-width: 95vw; max-height: 90vh; border-radius: 8px; object-fit: contain; }
     #lightboxClose {
       position: fixed; top: 16px; right: 16px; background: rgba(255,255,255,.12);
-      border: none; color: #fff; border-radius: 50%; width: 36px; height: 36px;
+      border: none; color: var(--color-button-text); border-radius: 50%; width: 36px; height: 36px;
       font-size: 1.2rem; cursor: pointer; display: flex; align-items: center; justify-content: center;
     }
 
     /* ── Toast ──────────────────────────────────────── */
     #toast {
       position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
-      background: #1e2535; color: var(--text); padding: 10px 20px;
+      background: var(--color-surface); color: var(--text); padding: 10px 20px;
       border-radius: 20px; font-size: .83rem; z-index: 9999;
       opacity: 0; transition: opacity .2s; pointer-events: none;
       max-width: 90%; text-align: center;
@@ -375,7 +408,7 @@
     .pwa-head-badge {
       position: absolute; top: -5px; right: -5px;
       min-width: 16px; height: 16px; border-radius: 8px;
-      background: var(--red); color: #fff;
+      background: var(--red); color: var(--color-button-text);
       font-size: .6rem; font-weight: 700;
       display: flex; align-items: center; justify-content: center;
       padding: 0 3px; line-height: 1;
@@ -405,7 +438,7 @@
       width: 44px; height: 44px; border-radius: 50%; flex-shrink: 0;
       background: linear-gradient(135deg, var(--purple), var(--cyan));
       display: flex; align-items: center; justify-content: center;
-      font-size: 1.1rem; font-weight: 700; color: #fff;
+      font-size: 1.1rem; font-weight: 700; color: var(--color-button-text);
     }
     .settings-account-info { flex: 1; min-width: 0; }
     .settings-account-name { font-size: .93rem; font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -456,7 +489,7 @@
     /* ── Compose contact search ─────────────────────── */
     .compose-search-results {
       display: none; position: relative; z-index: 10;
-      background: #111827; border: 1px solid var(--border);
+      background: var(--color-input-bg); border: 1px solid var(--border);
       border-radius: 8px; margin-top: 4px;
       max-height: 180px; overflow-y: auto;
     }
@@ -518,7 +551,7 @@
     }
     .dial-pad-overlay.show { opacity: 1; pointer-events: all; }
     .dial-pad-sheet {
-      background: #111827; border-radius: 20px 20px 0 0;
+      background: var(--color-input-bg); border-radius: 20px 20px 0 0;
       width: 100%; max-width: 420px; padding: 16px 20px 36px;
       box-shadow: 0 -8px 40px rgba(0,0,0,.6);
     }
@@ -530,7 +563,7 @@
       display: flex; align-items: center; min-height: 56px; padding: 0 4px 12px;
     }
     .dial-display {
-      flex: 1; font-size: 2.2rem; font-weight: 300; color: #fff;
+      flex: 1; font-size: 2.2rem; font-weight: 300; color: var(--color-button-text);
       letter-spacing: 3px; text-align: center; font-variant-numeric: tabular-nums;
       white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     }
@@ -540,7 +573,7 @@
       cursor: pointer; padding: 8px 4px; line-height: 1; width: 40px; text-align: center;
       transition: color .1s;
     }
-    .dial-back:active { color: #fff; }
+    .dial-back:active { color: var(--color-button-text); }
     .dial-grid {
       display: grid; grid-template-columns: repeat(3, 1fr);
       gap: 10px; margin: 4px 0 20px;
@@ -548,7 +581,7 @@
     .dial-key {
       background: #1f2937; border: none; border-radius: 50%;
       width: 72px; height: 72px; margin: auto;
-      color: #fff; cursor: pointer;
+      color: var(--color-button-text); cursor: pointer;
       display: flex; flex-direction: column; align-items: center; justify-content: center;
       transition: background .1s; user-select: none;
       -webkit-tap-highlight-color: transparent; touch-action: manipulation;
@@ -567,10 +600,10 @@
       cursor: pointer; transition: background .1s, color .1s;
       -webkit-tap-highlight-color: transparent;
     }
-    .dial-side-btn:active { background: #374151; color: #fff; }
+    .dial-side-btn:active { background: #374151; color: var(--color-button-text); }
     .dial-call-btn {
       width: 72px; height: 72px; border-radius: 50%;
-      background: #22c55e; border: none; color: #fff;
+      background: #22c55e; border: none; color: var(--color-button-text);
       display: flex; align-items: center; justify-content: center;
       cursor: pointer; box-shadow: 0 4px 20px rgba(34,197,94,.4);
       transition: background .12s, transform .1s;
@@ -602,7 +635,7 @@
     <div class="sidebar-head">
       <h1>Messages</h1>
       <span class="badge-unread" id="unreadBadge">0</span>
-      <select id="numberSelector" title="Assigned number" onchange="onNumberSelect(this.value)" style="display:none;background:#111827;border:1px solid var(--border);color:var(--text);border-radius:8px;padding:4px 6px;font-size:.72rem;max-width:118px;"></select>
+      <select id="numberSelector" title="Assigned number" onchange="onNumberSelect(this.value)" style="display:none;background:var(--color-input-bg);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:4px 6px;font-size:.72rem;max-width:118px;"></select>
       <div class="live-dot" id="liveDot" title="Connecting..."></div>
       <div class="pwa-head-actions">
         <button class="pwa-head-icon" onclick="openDialPad()" title="Dial Pad">
@@ -767,7 +800,7 @@
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
         <div>
           <span>Message Sound</span>
-          <small>Play a tone on new messages</small>
+          <small>Play a foreground tone after you interact with the app</small>
         </div>
       </div>
       <label class="pwa-toggle">
@@ -793,7 +826,7 @@
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 17H2a3 3 0 0 0 3-3V9a7 7 0 0 1 14 0v5a3 3 0 0 0 3 3z"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
         <div>
           <span>Push Notifications</span>
-          <small id="pushStatusLabel">Tap Enable to allow</small>
+          <small id="pushStatusLabel">Background sounds depend on browser/OS settings</small>
         </div>
       </div>
       <button class="btn-small" id="pushToggleBtn" onclick="togglePushFromSettings()">Enable</button>
@@ -1062,12 +1095,16 @@ let state = {
   sseConnected:  false,
   pollConvTimer: null,
   pollMsgTimer:  null,
-  soundEnabled:   localStorage.getItem('sndEnabled') !== 'false',
+  notificationSoundsEnabled: localStorage.getItem('notificationSoundsEnabled') !== 'false',
+  soundUnlocked: false,
+  seenEventKeys: new Set(),
   vibrateEnabled: localStorage.getItem('vibrateEnabled') !== 'false',
 };
 
 /* ── Init ─────────────────────────────────────────────────────── */
 window.addEventListener('DOMContentLoaded', () => {
+  state.notificationSoundsEnabled = localStorage.getItem('notificationSoundsEnabled') !== 'false';
+  installAudioUnlockHandlers();
   updateSoundBtn();
   loadAssignedNumbers();
   loadConversations();
@@ -1094,21 +1131,24 @@ function registerSW() {
 
 /* ── Sound toggle ─────────────────────────────────────────────── */
 function toggleSound() {
-  setSoundEnabled(!state.soundEnabled);
-  toast(state.soundEnabled ? 'Sound on' : 'Sound off');
+  setSoundEnabled(!state.notificationSoundsEnabled);
+  unlockNotificationAudio();
+  toast(state.notificationSoundsEnabled ? 'Sound on' : 'Sound off');
 }
 function setSoundEnabled(val) {
-  state.soundEnabled = !!val;
-  localStorage.setItem('sndEnabled', state.soundEnabled);
+  state.notificationSoundsEnabled = !!val;
+  localStorage.setItem('notificationSoundsEnabled', state.notificationSoundsEnabled);
+  localStorage.setItem('sndEnabled', state.notificationSoundsEnabled);
+  apiFetch('/api/pwa/preferences', 'PATCH', { notificationSoundsEnabled: state.notificationSoundsEnabled }).catch(() => {});
   updateSoundBtn();
   const cb = document.getElementById('toggleSound');
-  if (cb) cb.checked = state.soundEnabled;
+  if (cb) cb.checked = state.notificationSoundsEnabled;
 }
 function updateSoundBtn() {
   const btn = document.getElementById('soundBtn');
   if (!btn) return;
-  btn.textContent = state.soundEnabled ? '🔔' : '🔕';
-  btn.classList.toggle('active', state.soundEnabled);
+  btn.textContent = state.notificationSoundsEnabled ? '🔔' : '🔕';
+  btn.classList.toggle('active', state.notificationSoundsEnabled);
 }
 
 /* ── Vibrate toggle ───────────────────────────────────────────── */
@@ -1122,11 +1162,32 @@ function vibrateIfEnabled(pattern) {
   if (!state.vibrateEnabled) return;
   if ('vibrate' in navigator) { try { navigator.vibrate(pattern || 200); } catch(e) {} }
 }
-function playSound() {
-  if (!state.soundEnabled) return;
+function installAudioUnlockHandlers() {
+  ['pointerdown', 'keydown', 'touchstart', 'click'].forEach(evt =>
+    window.addEventListener(evt, unlockNotificationAudio, { once: true, passive: true })
+  );
+}
+function unlockNotificationAudio() {
+  if (state.soundUnlocked) return;
+  try {
+    const a = document.getElementById('notifSound');
+    a.volume = 0.001;
+    const p = a.play();
+    if (p && p.then) {
+      p.then(() => { a.pause(); a.currentTime = 0; a.volume = 1; state.soundUnlocked = true; }).catch(() => { a.volume = 1; });
+    } else { state.soundUnlocked = true; a.volume = 1; }
+  } catch (e) {}
+}
+function playSound(eventKey) {
+  if (!state.notificationSoundsEnabled || !state.soundUnlocked) return;
+  if (eventKey) {
+    if (state.seenEventKeys.has(eventKey)) return;
+    state.seenEventKeys.add(eventKey);
+  }
   try {
     const a = document.getElementById('notifSound');
     a.currentTime = 0;
+    a.volume = 1;
     a.play().catch(() => {});
   } catch (e) {}
 }
@@ -1151,7 +1212,10 @@ async function requestPush() {
       userVisibleOnly: true,
       applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC),
     });
-    await apiFetch('/api/inbox/push/subscribe', 'POST', sub.toJSON());
+    const subscription = sub.toJSON();
+    subscription.device_key = pwaDeviceKey();
+    subscription.device_label = localStorage.getItem('luxitPwaDeviceName') || `${browserLabel()} ${deviceTypeLabel()}`;
+    await apiFetch('/api/push/subscribe', 'POST', subscription);
     toast('Push notifications enabled!', 'success');
   } catch (e) {
     toast('Could not enable notifications: ' + e.message, 'error');
@@ -1216,7 +1280,7 @@ function connectSSE() {
 function handleSSEEvent(data) {
   if (data.type === 'new_message') {
     vibrateIfEnabled([80, 40, 80]);
-    playSound();
+    playSound('sms-' + data.conversation_id + '-' + (data.message_id || data.created_at || Date.now()));
 
     // Flash the conversation row if visible
     const ci = document.getElementById('ci-' + data.conversation_id);
@@ -1233,6 +1297,10 @@ function handleSSEEvent(data) {
     if (state.activeConvId === data.conversation_id) {
       refreshMessages(data.conversation_id);
     }
+  } else if (['incoming_call', 'missed_call', 'voicemail'].includes(data.type)) {
+    vibrateIfEnabled([120, 60, 120]);
+    playSound(data.type + '-' + (data.call_id || data.id || data.call_sid || Date.now()));
+    loadBadgeCounts();
   } else if (data.type === 'message_status') {
     if (state.activeConvId === data.conversation_id) {
       refreshMessages(data.conversation_id);
@@ -1754,7 +1822,7 @@ function openSettingsSheet() {
   // Sync checkboxes with current state before opening
   const soundCb = document.getElementById('toggleSound');
   const vibCb   = document.getElementById('toggleVibrate');
-  if (soundCb) soundCb.checked = state.soundEnabled;
+  if (soundCb) soundCb.checked = state.notificationSoundsEnabled;
   if (vibCb)   vibCb.checked   = state.vibrateEnabled;
   loadGoogleContactsStatus();
 
