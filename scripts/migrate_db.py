@@ -222,6 +222,9 @@ MIGRATIONS = [
     # ── Phase A: multi-number VoIP — twilio_conversation / call_log FKs ────────
     ("twilio_conversation", "phone_number_id", "INTEGER",      "DEFAULT NULL"),
     ("auto_reply_rule",     "phone_number_id", "INTEGER",      "DEFAULT NULL"),
+    ("notification",        "phone_number_id", "INTEGER",      "DEFAULT NULL"),
+    ("notification",        "event_type",      "VARCHAR(50)",  "DEFAULT 'system'"),
+    ("push_subscription",   "device_key",      "VARCHAR(120)", "DEFAULT NULL"),
     ("twilio_call_log",     "phone_number_id", "INTEGER",      "DEFAULT NULL"),
     ("twilio_call_log",     "voicemail_url",   "VARCHAR(500)", "DEFAULT NULL"),
     ("twilio_call_log",     "recording_url",   "VARCHAR(500)", "DEFAULT NULL"),

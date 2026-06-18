@@ -22,6 +22,7 @@ Routes:
 import logging
 import os
 import queue as _queue_module
+import re
 import threading
 from datetime import datetime, timezone
 
@@ -270,15 +271,19 @@ def _twilio_send_error_message_LEGACY(exc) -> str:
 
 
 def _send_sms_internal(ta, to_number: str, body: str, conversation_id=None):
-    """Send SMS via Twilio — mirrors twilio_sms._send_sms."""
+    """Send SMS via Twilio — mirrors twilio_sms._send_sms.
+
+    Keep customer SMS content isolated from notification/log text. Only
+    ``sms_body`` is sent to Twilio and persisted as the message body.
+    """
     from models import TwilioMessage
-    body = _sanitize_body(body)
+    sms_body = _sanitize_body(body)
     try:
         from twilio.rest import Client
         sid = ta.get_account_sid() if hasattr(ta, 'get_account_sid') else ta._account_sid
         tok = ta.get_auth_token()  if hasattr(ta, 'get_auth_token')  else ta._auth_token
         client = Client(sid, tok)
-        kwargs = {"body": body, "to": to_number}
+        kwargs = {"body": sms_body, "to": to_number}
         if ta.messaging_service_sid:
             kwargs["messaging_service_sid"] = ta.messaging_service_sid
         elif ta.from_phone:
@@ -293,7 +298,7 @@ def _send_sms_internal(ta, to_number: str, body: str, conversation_id=None):
             direction="outbound",
             from_number=ta.from_phone or ta.messaging_service_sid,
             to_number=to_number,
-            body=body,
+            body=sms_body,
             status=msg.status,
         )
         db.session.add(record)
@@ -938,11 +943,14 @@ def list_conversations():
         q = q.filter_by(is_opted_out=True)
 
     if number_filter:
+        digits = lambda value: re.sub(r"\D", "", value or "")
+        requested_digits = digits(number_filter)
         allowed_numbers = accessible_phone_numbers(user, company.id)
-        if number_filter not in allowed_numbers:
+        matched_number = next((n for n in allowed_numbers if digits(n) == requested_digits), None)
+        if not matched_number:
             q = q.filter(db.text("1=0"))
         else:
-            q = q.filter(TwilioConversation.to_number == number_filter)
+            q = q.filter(TwilioConversation.to_number == matched_number)
 
     if search:
         q = q.filter(db.or_(
@@ -1176,6 +1184,11 @@ def archive_conversation(conv_id):
     elif not archive and "archived" in tags:
         tags.remove("archived")
     conv.tags = tags
+    try:
+        from sqlalchemy.orm.attributes import flag_modified
+        flag_modified(conv, "tags")
+    except Exception:
+        pass
     db.session.commit()
     return jsonify({"success": True, "is_archived": archive})
 
@@ -1251,8 +1264,110 @@ def unread_count():
     return jsonify({"count": count})
 
 
+
+# ── API: PWA notification center ─────────────────────────────────────────────
+
+def _notification_to_dict(row):
+    return {
+        "id": row.id,
+        "title": row.title,
+        "message": row.message or "",
+        "category": row.category or "system",
+        "event_type": getattr(row, "event_type", None) or row.category or "system",
+        "icon": row.icon or "bell",
+        "link": row.link or "",
+        "is_read": bool(row.is_read),
+        "phone_number_id": getattr(row, "phone_number_id", None),
+        "created_at": row.created_at.isoformat() if row.created_at else None,
+    }
+
+
+def _authorized_notification_users(company_id: int, phone_number_id=None):
+    from models import PhoneNumberUserPermission, User, UserCompanyAccess
+    from services.comms_permissions import normalize_role
+
+    rows = UserCompanyAccess.query.filter_by(company_id=company_id).all()
+    users = []
+    for acc in rows:
+        role = normalize_role(getattr(acc, "role", None))
+        allowed = role in {"owner", "admin"} or bool(getattr(acc, "pwa_access_enabled", False) or getattr(acc, "can_access_mobile_inbox", False))
+        if phone_number_id and role not in {"owner", "admin"}:
+            perm = PhoneNumberUserPermission.query.filter_by(
+                company_id=company_id,
+                phone_number_id=phone_number_id,
+                user_id=acc.user_id,
+                can_access_pwa=True,
+            ).first()
+            allowed = bool(perm and (perm.can_view_sms or perm.can_view_calls or perm.can_view_voicemail))
+        if allowed:
+            user = db.session.get(User, acc.user_id)
+            if user:
+                users.append(user)
+    return users
+
+
+def _create_notification_records(company_id: int, *, event_type: str, title: str, notification_body: str,
+                                 link: str = "/app/inbox", phone_number_id=None, category: str = "communications",
+                                 icon: str = "bell"):
+    from models import Notification
+    created = []
+    for user in _authorized_notification_users(company_id, phone_number_id):
+        row = Notification(
+            user_id=user.id,
+            company_id=company_id,
+            phone_number_id=phone_number_id,
+            event_type=event_type,
+            title=title[:200],
+            message=notification_body,
+            category=category,
+            icon=icon,
+            link=link,
+        )
+        db.session.add(row)
+        created.append(row)
+    if created:
+        db.session.commit()
+    return created
+
+
+@inbox_pwa_bp.route("/api/pwa/notifications")
+def pwa_notifications():
+    user = _require_auth()
+    company = _get_company(user)
+    if not company:
+        return jsonify({"success": True, "notifications": [], "unread_count": 0})
+    from models import Notification
+    unread_only = request.args.get("filter") == "unread" or request.args.get("unread") == "1"
+    q = Notification.query.filter_by(user_id=user.id, company_id=company.id)
+    if unread_only:
+        q = q.filter_by(is_read=False)
+    rows = q.order_by(Notification.created_at.desc()).limit(100).all()
+    unread_count = Notification.query.filter_by(user_id=user.id, company_id=company.id, is_read=False).count()
+    return jsonify({"success": True, "notifications": [_notification_to_dict(r) for r in rows], "unread_count": unread_count})
+
+
+@inbox_pwa_bp.route("/api/pwa/notifications/read", methods=["POST"])
+def pwa_notifications_read():
+    user = _require_auth()
+    company = _get_company(user)
+    if not company:
+        return jsonify({"success": False, "error": "No company"}), 400
+    from models import Notification
+    payload = request.get_json(silent=True) or request.form or {}
+    notification_id = payload.get("notification_id") or payload.get("id")
+    q = Notification.query.filter_by(user_id=user.id, company_id=company.id)
+    if notification_id and str(notification_id) != "all":
+        q = q.filter_by(id=int(notification_id))
+    updated = 0
+    for row in q.all():
+        row.is_read = True
+        updated += 1
+    db.session.commit()
+    return jsonify({"success": True, "updated": updated})
+
 # ── API: Push notification subscribe ─────────────────────────────────────────
 
+@inbox_pwa_bp.route("/api/pwa/push/subscribe", methods=["POST"])
 @inbox_pwa_bp.route("/api/inbox/push/subscribe", methods=["POST"])
 def push_subscribe():
     user    = _require_auth()
@@ -1262,6 +1377,7 @@ def push_subscribe():
 
     payload  = request.get_json() or {}
     endpoint = payload.get("endpoint", "")
+    device_key = payload.get("device_key") or payload.get("deviceKey")
     p256dh   = payload.get("keys", {}).get("p256dh", "")
     auth_key = payload.get("keys", {}).get("auth", "")
 
@@ -1274,19 +1390,30 @@ def push_subscribe():
         sub = PushSubscription(
             user_id=user.id,
             company_id=company.id,
+            device_key=device_key,
             endpoint=endpoint,
             p256dh=p256dh,
             auth_key=auth_key,
         )
         db.session.add(sub)
     else:
+        sub.user_id = user.id
+        sub.company_id = company.id
+        sub.device_key = device_key or getattr(sub, "device_key", None)
         sub.p256dh   = p256dh
         sub.auth_key = auth_key
+    if device_key:
+        from models import PWADevice
+        device = PWADevice.query.filter_by(company_id=company.id, user_id=user.id, device_key=device_key).first()
+        if device:
+            device.push_enabled = True
+            device.last_seen_at = datetime.utcnow()
     db.session.commit()
     logger.info("Push subscription saved for user %d", user.id)
-    return jsonify({"success": True})
+    return jsonify({"success": True, "device_key": device_key})
 
 
+@inbox_pwa_bp.route("/api/pwa/push/test", methods=["POST"])
 @inbox_pwa_bp.route("/api/inbox/push/test", methods=["POST"])
 def push_test():
     user    = _require_auth()
@@ -1302,6 +1429,8 @@ def push_test():
     vapid_private = os.environ.get("VAPID_PRIVATE_KEY", "")
     vapid_public  = os.environ.get("VAPID_PUBLIC_KEY", "")
     vapid_claims  = {"sub": "mailto:admin@luxit.app"}
+    if not vapid_private or not vapid_public:
+        return jsonify({"success": False, "configured": False, "error": "Web push is not configured. Set VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY."})
 
     sent = 0
     errors = []
@@ -1684,23 +1813,45 @@ def dial_number():
 
 
 def _fire_push_notification(company_id: int, conv, message_body: str):
-    """Called from the inbound SMS webhook — fires push to all subscribed users."""
+    """Called from inbound SMS webhook; records notification history and sends Web Push."""
+    sender = conv.contact_name or conv.from_number
+    phone_number_id = getattr(conv, "phone_number_id", None)
+    notification_body = (message_body or "(media)")[:160]
+    title = f"New message from {sender}"
+    link = f"/app/inbox?conv={conv.id}"
+    _create_notification_records(
+        company_id,
+        event_type="inbound_sms",
+        title=title,
+        notification_body=notification_body,
+        link=link,
+        phone_number_id=phone_number_id,
+        icon="message-square",
+    )
+
     vapid_private = os.environ.get("VAPID_PRIVATE_KEY", "")
     vapid_public  = os.environ.get("VAPID_PUBLIC_KEY", "")
     if not vapid_private or not vapid_public:
         return
 
     from models import PushSubscription
-    subs = PushSubscription.query.filter_by(company_id=company_id).all()
+    allowed_user_ids = [u.id for u in _authorized_notification_users(company_id, phone_number_id)]
+    if not allowed_user_ids:
+        return
+    subs = PushSubscription.query.filter(
+        PushSubscription.company_id == company_id,
+        PushSubscription.user_id.in_(allowed_user_ids),
+    ).all()
     if not subs:
         return
 
     import json
-    sender = conv.contact_name or conv.from_number
     payload = json.dumps({
-        "title": f"New message from {sender}",
-        "body":  message_body[:100],
-        "url":   f"/app/inbox?conv={conv.id}",
+        "title": title,
+        "body":  notification_body,
+        "url":   link,
+        "tag":   f"sms-{conv.id}",
+        "vibrate": [80, 40, 80],
     })
 
     for sub in subs:
@@ -1718,6 +1869,20 @@ def _fire_push_notification(company_id: int, conv, message_body: str):
             if "410" in str(exc) or "404" in str(exc):
                 db.session.delete(sub)
                 db.session.commit()
+
+
+def create_pwa_notification(company_id: int, *, event_type: str, title: str, body: str,
+                            link: str = "/app/inbox", phone_number_id=None, icon: str = "bell"):
+    """Public helper for call/voicemail webhooks to persist notification history."""
+    return _create_notification_records(
+        company_id,
+        event_type=event_type,
+        title=title,
+        notification_body=body,
+        link=link,
+        phone_number_id=phone_number_id,
+        icon=icon,
+    )
 
 
 # ── Google Contacts status + sync (PWA API) ───────────────────────────────────

@@ -152,6 +152,10 @@ def _cleanup_stale_test_data():
                     "ALTER TABLE twilio_conversation ADD COLUMN IF NOT EXISTS contact_source VARCHAR(50)",
                     "ALTER TABLE twilio_conversation ADD COLUMN IF NOT EXISTS phone_number_id INTEGER",
                     "ALTER TABLE auto_reply_rule ADD COLUMN IF NOT EXISTS phone_number_id INTEGER",
+                    "ALTER TABLE twilio_call_log ADD COLUMN IF NOT EXISTS phone_number_id INTEGER",
+                    "ALTER TABLE notification ADD COLUMN IF NOT EXISTS phone_number_id INTEGER",
+                    "ALTER TABLE notification ADD COLUMN IF NOT EXISTS event_type VARCHAR(50) DEFAULT 'system'",
+                    "ALTER TABLE push_subscription ADD COLUMN IF NOT EXISTS device_key VARCHAR(120)",
                 ]
                 for _ddl in _backfill_ddl:
                     try:

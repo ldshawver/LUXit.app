@@ -16,6 +16,8 @@ from models import (
     TwilioPhoneNumber,
     AutoReplyRule,
     SMSCampaign,
+    Notification,
+    PushSubscription,
     User,
     UserCompanyAccess,
 )
@@ -146,6 +148,135 @@ def test_number_settings_are_independent_per_number(client, comms_world):
     assert upd.json["settings"]["caller_id_display_name"] == "Support Line"
     assert client.get(f"/api/phone/numbers/{comms_world['pn1']}/settings").json["settings"]["caller_id_display_name"] is None
 
+
+
+
+
+def test_outbound_sms_body_excludes_notification_debug_text(client, comms_world, monkeypatch):
+    sent = {}
+
+    class FakeMessages:
+        def create(self, **kwargs):
+            sent.update(kwargs)
+            return type("Msg", (), {"sid": "SMBODYONLY", "status": "sent"})()
+
+    class FakeClient:
+        def __init__(self, *args, **kwargs):
+            self.messages = FakeMessages()
+
+    import twilio.rest
+    monkeypatch.setattr(twilio.rest, "Client", FakeClient)
+    notification_debug_text = "Notifications (sounds and alerts) are still not pushing through"
+
+    login(client, comms_world["admin"])
+    resp = client.post(
+        f"/api/inbox/conversations/{comms_world['c1']}/messages",
+        json={"body": "Actual customer reply"},
+    )
+    assert resp.status_code == 200
+    assert sent["body"] == "Actual customer reply"
+    assert notification_debug_text not in sent["body"]
+
+
+def test_pwa_notifications_and_push_subscription_are_scoped_by_number(client, comms_world):
+    login(client, comms_world["staff"])
+    sub = client.post("/api/pwa/push/subscribe", json={
+        "endpoint": "https://push.example.test/staff-device",
+        "device_key": "staff-phone",
+        "keys": {"p256dh": "key", "auth": "auth"},
+    })
+    assert sub.status_code == 200
+    assert sub.json["success"] is True
+    with client.application.app_context():
+        saved = PushSubscription.query.filter_by(endpoint="https://push.example.test/staff-device").one()
+        assert saved.user_id == comms_world["staff"]
+        assert saved.device_key == "staff-phone"
+
+    with client.application.app_context():
+        from inbox_pwa import create_pwa_notification
+        create_pwa_notification(
+            comms_world["co"],
+            event_type="inbound_sms",
+            title="New message from +15551230001",
+            body="Customer message only",
+            phone_number_id=comms_world["pn1"],
+            link="/app/inbox?conv=1",
+        )
+        create_pwa_notification(
+            comms_world["co"],
+            event_type="missed_call",
+            title="Missed call",
+            body="Missed call from +15551230001",
+            phone_number_id=comms_world["pn1"],
+            link="/app/inbox?tab=calls",
+        )
+        create_pwa_notification(
+            comms_world["co"],
+            event_type="voicemail",
+            title="New voicemail",
+            body="Voicemail from +15551230001",
+            phone_number_id=comms_world["pn1"],
+            link="/app/inbox?tab=voicemail",
+        )
+        create_pwa_notification(
+            comms_world["co"],
+            event_type="inbound_sms",
+            title="Restricted message",
+            body="Should not be visible",
+            phone_number_id=comms_world["pn2"],
+            link="/app/inbox?conv=2",
+        )
+
+    notifications = client.get("/api/pwa/notifications").json["notifications"]
+    assert any(n["message"] == "Customer message only" and n["event_type"] == "inbound_sms" for n in notifications)
+    assert any(n["event_type"] == "missed_call" for n in notifications)
+    assert any(n["event_type"] == "voicemail" for n in notifications)
+    assert all(n["message"] != "Should not be visible" for n in notifications)
+    read = client.post("/api/pwa/notifications/read", json={"notification_id": "all"})
+    assert read.status_code == 200
+    assert read.json["updated"] >= 1
+    assert client.get("/api/pwa/notifications?filter=unread").json["unread_count"] == 0
+
+
+def test_pwa_push_test_reports_missing_configuration_cleanly(client, comms_world, monkeypatch):
+    monkeypatch.delenv("VAPID_PUBLIC_KEY", raising=False)
+    monkeypatch.delenv("VAPID_PRIVATE_KEY", raising=False)
+    login(client, comms_world["staff"])
+    client.post("/api/pwa/push/subscribe", json={
+        "endpoint": "https://push.example.test/no-vapid",
+        "device_key": "staff-phone",
+        "keys": {"p256dh": "key", "auth": "auth"},
+    })
+    resp = client.post("/api/pwa/push/test")
+    assert resp.status_code == 200
+    assert resp.json["success"] is False
+    assert resp.json["configured"] is False
+
+
+def test_pwa_inbox_all_unread_archived_and_number_filters(client, comms_world):
+    login(client, comms_world["admin"])
+    all_convs = client.get("/api/inbox/conversations?filter=all").json["conversations"]
+    assert {c["id"] for c in all_convs} == {comms_world["c1"], comms_world["c2"]}
+
+    unread = client.get("/api/inbox/conversations?filter=unread").json["conversations"]
+    assert {c["id"] for c in unread} == {comms_world["c2"]}
+
+    detail = client.get(f"/api/inbox/conversations/{comms_world['c2']}")
+    assert detail.status_code == 200
+    after_read_all = client.get("/api/inbox/conversations?filter=all").json["conversations"]
+    assert {c["id"] for c in after_read_all} == {comms_world["c1"], comms_world["c2"]}
+    after_read_unread = client.get("/api/inbox/conversations?filter=unread").json["conversations"]
+    assert after_read_unread == []
+
+    archive = client.patch(f"/api/inbox/conversations/{comms_world['c1']}/archive", json={"archived": True})
+    assert archive.status_code == 200
+    visible_all = client.get("/api/inbox/conversations?filter=all").json["conversations"]
+    assert {c["id"] for c in visible_all} == {comms_world["c2"]}
+    archived = client.get("/api/inbox/conversations?filter=archived").json["conversations"]
+    assert {c["id"] for c in archived} == {comms_world["c1"]}
+
+    selected = client.get("/api/inbox/conversations?filter=all&number=+15550002222").json["conversations"]
+    assert {c["id"] for c in selected} == {comms_world["c2"]}
 
 
 def test_legacy_communications_routes_redirect_to_hub(client, comms_world):

@@ -2445,6 +2445,8 @@ class Notification(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
     company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=True)
+    phone_number_id = db.Column(db.Integer, db.ForeignKey("twilio_phone_number.id"), nullable=True, index=True)
+    event_type = db.Column(db.String(50), default='system')
     title = db.Column(db.String(200), nullable=False)
     message = db.Column(db.Text)
     category = db.Column(db.String(50), default='system')
@@ -2454,6 +2456,7 @@ class Notification(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     user = db.relationship('User', backref=db.backref('notifications', lazy='dynamic'))
+    phone_number = db.relationship("TwilioPhoneNumber", backref="notifications")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -3095,6 +3098,7 @@ class TwilioCallLog(db.Model):
 
     id           = db.Column(db.Integer, primary_key=True)
     company_id   = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=False)
+    phone_number_id = db.Column(db.Integer, db.ForeignKey("twilio_phone_number.id"), nullable=True, index=True)
     twilio_sid   = db.Column(db.String(100))
     parent_call_sid = db.Column(db.String(100), nullable=True)
     direction    = db.Column(db.String(20))     # inbound | outbound
@@ -3132,6 +3136,7 @@ class TwilioCallLog(db.Model):
     updated_at   = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     company = db.relationship("Company", backref="twilio_call_logs")
+    phone_number = db.relationship("TwilioPhoneNumber", backref="call_logs")
 
 
 class PhoneSettings(db.Model):
@@ -3348,6 +3353,7 @@ class PushSubscription(db.Model):
     id         = db.Column(db.Integer, primary_key=True)
     user_id    = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
     company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=False)
+    device_key = db.Column(db.String(120), nullable=True, index=True)
     endpoint   = db.Column(db.Text, nullable=False, unique=True)
     p256dh     = db.Column(db.Text)
     auth_key   = db.Column(db.Text)

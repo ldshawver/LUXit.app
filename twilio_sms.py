@@ -1441,6 +1441,7 @@ def inbound_call():
     if not existing and call_sid:
         log = TwilioCallLog(
             company_id=ta.company_id,
+            phone_number_id=getattr(pn, "id", None),
             twilio_sid=call_sid,
             direction="inbound",
             from_number=from_number,
@@ -1541,7 +1542,7 @@ def inbound_call():
             log.status = "ringing"
             db.session.commit()
         try:
-            from inbox_pwa import _push_sse_event
+            from inbox_pwa import _push_sse_event, create_pwa_notification
             _push_sse_event(ta.company_id, "incoming_call", {
                 "call_id": log.id if log else None,
                 "call_sid": call_sid,
@@ -1549,6 +1550,15 @@ def inbound_call():
                 "to_number": to_number,
                 "caller_name": caller_name or from_number,
             })
+            create_pwa_notification(
+                ta.company_id,
+                event_type="incoming_call",
+                title=f"Incoming call from {caller_name or from_number}",
+                body=f"Call to {to_number}",
+                link="/app/inbox?tab=calls",
+                phone_number_id=getattr(pn, "id", None),
+                icon="phone",
+            )
         except Exception as exc:
             logger.debug("PWA incoming call event failed: %s", exc)
         caller_id = ta.from_phone or to_number
@@ -1739,6 +1749,20 @@ def voice_recording():
             if not CallEvent.query.filter_by(call_log_id=log.id, event_type="recording", provider_event_id=recording_sid).first():
                 db.session.add(CallEvent(call_log_id=log.id, event_type="recording", provider_event_id=recording_sid, payload=dict(data)))
             db.session.commit()
+            if is_voicemail:
+                try:
+                    from inbox_pwa import create_pwa_notification
+                    create_pwa_notification(
+                        log.company_id,
+                        event_type="voicemail",
+                        title=f"New voicemail from {log.from_number or 'Unknown caller'}",
+                        body=f"Voicemail recording ({int(recording_dur or 0)}s)",
+                        link="/app/inbox?tab=voicemail",
+                        phone_number_id=getattr(log, "phone_number_id", None),
+                        icon="mic",
+                    )
+                except Exception as exc:
+                    logger.debug("PWA voicemail notification skipped: %s", exc)
 
     return "", 204
 
@@ -1773,6 +1797,22 @@ def voice_status():
                 log.answered_at = log.answered_at or datetime.utcnow()
             if call_status in ("no-answer", "busy", "failed", "canceled"):
                 log.status = "missed"
+                notify_event_id = f"{call_sid}:missed_call_notification"
+                if not CallEvent.query.filter_by(call_log_id=log.id, event_type="pwa_notification:missed_call", provider_event_id=notify_event_id).first():
+                    try:
+                        from inbox_pwa import create_pwa_notification
+                        create_pwa_notification(
+                            log.company_id,
+                            event_type="missed_call",
+                            title=f"Missed call from {log.caller_name or log.from_number or 'Unknown caller'}",
+                            body=f"Missed call to {log.to_number or data.get('To', '')}",
+                            link="/app/inbox?tab=calls",
+                            phone_number_id=getattr(log, "phone_number_id", None),
+                            icon="phone-missed",
+                        )
+                        db.session.add(CallEvent(call_log_id=log.id, event_type="pwa_notification:missed_call", provider_event_id=notify_event_id, payload={"status": call_status}))
+                    except Exception as exc:
+                        logger.debug("PWA missed call notification failed: %s", exc)
             if not CallEvent.query.filter_by(call_log_id=log.id, event_type="status", provider_event_id=f"{call_sid}:{call_status}").first():
                 db.session.add(CallEvent(call_log_id=log.id, event_type="status", provider_event_id=f"{call_sid}:{call_status}", payload=dict(data)))
             db.session.commit()
