@@ -834,12 +834,57 @@ def api_test_forwarding():
     return jsonify({"success": True, "message": f"Forwarding target {number} is syntactically valid. Place a live Twilio test call to verify carrier reachability."})
 
 
-@inbox_pwa_bp.route("/api/phone/voice-token")
-def api_phone_voice_token():
-    """Issue a Twilio Voice SDK access token for the current tenant PWA."""
+@inbox_pwa_bp.route("/api/phone/voice-client-error", methods=["POST"])
+def api_phone_voice_client_error():
+    """Log precise browser Voice SDK setup failures for support diagnostics."""
     user = _require_auth()
     company = _require_company(user)
-    from models import TwilioAccount
+    data = request.get_json(silent=True) or {}
+    logger.warning(
+        "Browser voice client error",
+        extra={
+            "user_id": user.id,
+            "company_id": company.id,
+            "voice_error_code": data.get("code"),
+            "voice_error_message": data.get("message"),
+            "voice_error_detail": data.get("detail"),
+        },
+    )
+    return jsonify({"success": True})
+
+
+@inbox_pwa_bp.route("/api/phone/voice-token")
+def api_phone_voice_token():
+    """Issue a Twilio Voice SDK access token for an authorized PWA user."""
+    user = _require_auth()
+    company = _require_company(user)
+    from models import PhoneNumberUserPermission, TwilioAccount, TwilioPhoneNumber
+    from services.comms_permissions import accessible_phone_numbers
+
+    allowed_numbers = accessible_phone_numbers(user, company.id)
+    if not allowed_numbers:
+        logger.info("Voice token denied: no assigned calling number", extra={"user_id": user.id, "company_id": company.id})
+        return jsonify({"success": False, "code": "NO_ASSIGNED_NUMBER", "error": "No calling number assigned"}), 403
+
+    callable_numbers = [
+        p.phone_number.phone_number for p in PhoneNumberUserPermission.query
+        .join(TwilioPhoneNumber, PhoneNumberUserPermission.phone_number_id == TwilioPhoneNumber.id)
+        .filter(
+            PhoneNumberUserPermission.company_id == company.id,
+            PhoneNumberUserPermission.user_id == user.id,
+            PhoneNumberUserPermission.can_access_pwa.is_(True),
+            PhoneNumberUserPermission.can_call.is_(True),
+            TwilioPhoneNumber.is_active.is_(True),
+        ).all()
+        if p.phone_number and p.phone_number.phone_number
+    ]
+    explicit_call_permissions = PhoneNumberUserPermission.query.filter_by(company_id=company.id, user_id=user.id).count() > 0
+    if explicit_call_permissions:
+        allowed_numbers = [n for n in allowed_numbers if n in set(callable_numbers)]
+    if not allowed_numbers:
+        logger.info("Voice token denied: user lacks call permission", extra={"user_id": user.id, "company_id": company.id})
+        return jsonify({"success": False, "code": "NO_ASSIGNED_NUMBER", "error": "No calling number assigned"}), 403
+
     ta = TwilioAccount.query.filter_by(company_id=company.id).first()
     account_sid = (
         os.environ.get("TWILIO_ACCOUNT_SID")
@@ -848,8 +893,10 @@ def api_phone_voice_token():
     api_key = os.environ.get("TWILIO_API_KEY")
     api_secret = os.environ.get("TWILIO_API_SECRET")
     if not account_sid or not api_key or not api_secret:
+        logger.error("Voice token failed: Twilio Voice SDK credentials are not configured", extra={"user_id": user.id, "company_id": company.id})
         return jsonify({
             "success": False,
+            "code": "TOKEN_ENDPOINT_FAILED",
             "error": "Twilio Voice SDK credentials are not configured. Set TWILIO_ACCOUNT_SID, TWILIO_API_KEY, and TWILIO_API_SECRET.",
         }), 503
     try:
@@ -868,10 +915,12 @@ def api_phone_voice_token():
             "identity": identity,
             "user_id": user.id,
             "company_id": company.id,
+            "calling_number": allowed_numbers[0],
+            "permitted_numbers": allowed_numbers,
         })
     except Exception as exc:
-        logger.exception("Unable to issue Twilio Voice token")
-        return jsonify({"success": False, "error": str(exc)}), 500
+        logger.exception("Unable to issue Twilio Voice token", extra={"user_id": user.id, "company_id": company.id})
+        return jsonify({"success": False, "code": "TOKEN_ENDPOINT_FAILED", "error": str(exc)}), 500
 
 
 def _update_call_action(call_id: int, *, status: str, user_field: str | None = None):
