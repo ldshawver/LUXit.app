@@ -330,6 +330,12 @@ def sync_contacts(user_id: int, company_id: int) -> dict:
             db.session.rollback()
         return {"synced": 0, "matched": 0, "error": err_msg}
 
+    # Populate the local Contact cache for every Google phone number, not only
+    # numbers that already have an SMS conversation. This makes PWA contact
+    # search and future inbound-SMS name resolution work immediately after sync.
+    for norm, name in phone_map.items():
+        _upsert_contact_from_google(db, company_id, norm, name, None)
+
     convs   = TwilioConversation.query.filter_by(company_id=company_id).all()
     matched = 0
 
@@ -342,12 +348,11 @@ def sync_contacts(user_id: int, company_id: int) -> dict:
             conv.id, conv.from_number, norm, name
         )
 
-        if name and conv.contact_name != name:
+        if name:
+            if conv.contact_name != name:
+                matched += 1
             conv.contact_name   = name
             conv.contact_source = "google"
-            matched += 1
-
-            # Upsert Contact table so future inbound convs link by name
             _upsert_contact_from_google(db, company_id, norm, name, conv)
 
     tok.last_sync_at    = datetime.utcnow()
@@ -384,13 +389,16 @@ def _upsert_contact_from_google(db, company_id: int, norm_phone: str,
         if not contact.first_name and not contact.last_name:
             contact.first_name = first_name
             contact.last_name  = last_name
-            contact.source     = contact.source or "google_contacts"
+        contact.name       = contact.name or name
+        contact.source     = contact.source or "google_contacts"
+        contact.is_active  = True
     else:
         contact = Contact(
             company_id = company_id,
             phone      = norm_phone,
             first_name = first_name,
             last_name  = last_name,
+            name       = name,
             source     = "google_contacts",
             is_active  = True,
             is_subscribed = False,

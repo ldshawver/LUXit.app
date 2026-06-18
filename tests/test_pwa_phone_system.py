@@ -8,11 +8,13 @@ from extensions import db
 from models import (
     CallEvent,
     Company,
+    Contact,
     PhoneSettings,
     AutoReplyRule,
     TwilioAccount,
     TwilioCallLog,
     TwilioPhoneNumber,
+    PWADevice,
     User,
     UserCompanyAccess,
     VoiceVoicemailMessage,
@@ -624,3 +626,105 @@ def test_inbound_sms_conversation_is_assigned_to_to_number_company(app, client, 
     with app.app_context():
         assert TwilioConversation.query.filter_by(company_id=world["co_b"], from_number="+15551119999").one()
         assert TwilioConversation.query.filter_by(company_id=world["co_a"], from_number="+15551119999").first() is None
+
+
+def test_pwa_palette_persists_server_side_across_sessions(client, app, world):
+    login(client, world["alice"])
+    resp = client.patch("/api/pwa/preferences", json={"palette_id": "forest"})
+    assert resp.status_code == 200
+    assert resp.get_json()["preferences"]["palette_id"] == "forest"
+    with client.session_transaction() as sess:
+        sess.clear()
+    login(client, world["alice"])
+    loaded = client.get("/api/pwa/preferences")
+    assert loaded.status_code == 200
+    assert loaded.get_json()["preferences"]["palette_id"] == "forest"
+    with app.app_context():
+        assert db.session.get(User, world["alice"]).pwa_palette_id == "forest"
+
+
+def test_pwa_device_registration_heartbeat_settings_and_tenant_isolation(client, app, world):
+    with app.app_context():
+        pn = TwilioPhoneNumber(company_id=world["co_a"], phone_number="+15550001000", friendly_name="Main A", is_active=True, browser_calling_enabled=False, cell_callback_enabled=False, mobile_data_allowed=False, wifi_only=True)
+        db.session.add(pn); db.session.commit(); pn_id = pn.id
+    login(client, world["alice"])
+    payload = {
+        "device_key": "device-a",
+        "device_name": "Alice Work iPhone",
+        "phone_number_id": pn_id,
+        "browser": "Safari",
+        "device_type": "phone",
+        "push_enabled": True,
+        "microphone_permission": "granted",
+        "pwa_installed": True,
+        "wifi_only": True,
+        "cellular_callback_enabled": False,
+        "mobile_data_calling_allowed": False,
+        "default_calling_method": "browser",
+    }
+    reg = client.post("/api/pwa/devices/register", json=payload)
+    assert reg.status_code == 200
+    device_id = reg.get_json()["device"]["id"]
+    listed = client.get("/api/pwa/devices").get_json()["devices"]
+    assert listed[0]["device_name"] == "Alice Work iPhone"
+    assert listed[0]["assigned_phone_number"] == "+15550001000"
+    hb = client.post("/api/pwa/devices/heartbeat", json={"device_key": "device-a", "phone_number_id": pn_id, "microphone_permission": "prompt"})
+    assert hb.status_code == 200
+    patch = client.patch(f"/api/pwa/devices/{device_id}/settings", json={"default_calling_method": "cell_callback", "mobile_data_calling_allowed": True})
+    assert patch.status_code == 200
+    assert patch.get_json()["device"]["default_calling_method"] == "cell_callback"
+    with app.app_context():
+        assert PWADevice.query.filter_by(company_id=world["co_a"]).count() == 1
+        assert PWADevice.query.filter_by(company_id=world["co_b"]).count() == 0
+
+
+def test_voicemail_transcription_metadata_and_read_state(client, app, world):
+    with app.app_context():
+        call = TwilioCallLog(company_id=world["co_a"], twilio_sid="CAvmmeta", direction="inbound", status="voicemail", from_number="+15551110000", to_number="+15550001000", voicemail_url="https://vm", duration=33)
+        db.session.add(call); db.session.flush()
+        vm = VoiceVoicemailMessage(company_id=world["co_a"], call_log_id=call.id, from_number=call.from_number, to_number=call.to_number, call_sid=call.twilio_sid, recording_sid="REvm", recording_url="https://vm", duration_secs=33)
+        db.session.add(vm); db.session.commit(); call_id = call.id
+    client.post("/api/twilio/voice/transcription", data={"To": "+15550001000", "CallSid": "CAvmmeta", "RecordingSid": "REvm", "TranscriptionSid": "TRvm", "TranscriptionStatus": "completed", "TranscriptionText": "Please call back"})
+    login(client, world["alice"])
+    data = client.get("/api/calls/voicemails").get_json()["voicemails"]
+    vm_row = next(c for c in data if c["id"] == call_id)
+    assert vm_row["voicemail_exists"] is True
+    assert vm_row["transcription_text"] == "Please call back"
+    assert vm_row["transcription_status"] == "complete"
+    read = client.post(f"/api/calls/{call_id}/mark-read")
+    assert read.status_code == 200
+    assert read.get_json()["call"]["is_read"] is True
+    with app.app_context():
+        call = db.session.get(TwilioCallLog, call_id)
+        vm = VoiceVoicemailMessage.query.filter_by(call_log_id=call_id).one()
+        assert call.read_by_user_id == world["alice"]
+        assert vm.read_by_user_id == world["alice"]
+        assert vm.transcription_text == "Please call back"
+
+
+def test_pwa_search_matches_contacts_conversations_and_call_logs(client, app, world):
+    with app.app_context():
+        db.session.add(Contact(company_id=world["co_a"], first_name="Jamie", last_name="Rivera", company="Rivera Spa", email="jamie@rivera.test", phone="+15558880000"))
+        db.session.add(TwilioConversation(company_id=world["co_a"], from_number="+15558881111", to_number="+15550001000", contact_name="Recent SMS Guest", last_message_at=datetime.utcnow()))
+        db.session.add(TwilioCallLog(company_id=world["co_a"], direction="inbound", status="missed", from_number="+15558882222", to_number="+15550001000", caller_name="Recent Caller"))
+        db.session.commit()
+    login(client, world["alice"])
+    by_company = client.get("/api/inbox/contacts/search?q=Rivera").get_json()["contacts"]
+    assert any(r["phone"] == "+15558880000" and r["company"] == "Rivera Spa" for r in by_company)
+    by_sms = client.get("/api/inbox/contacts/search?q=Guest").get_json()["contacts"]
+    assert any(r["phone"] == "+15558881111" and r["source"] == "conversation" for r in by_sms)
+    by_call = client.get("/api/inbox/contacts/search?q=Caller").get_json()["contacts"]
+    assert any(r["phone"] == "+15558882222" and r["source"] == "call_log" for r in by_call)
+
+
+def test_disabled_calling_methods_are_blocked_per_number(client, app, world):
+    with app.app_context():
+        pn = TwilioPhoneNumber(company_id=world["co_a"], phone_number="+15550001000", friendly_name="Main A", is_active=True, browser_calling_enabled=False, cell_callback_enabled=False, mobile_data_allowed=False, wifi_only=True)
+        db.session.add(pn); db.session.commit()
+    login(client, world["alice"])
+    browser = client.post("/api/inbox/call/dial", json={"to": "+15559990000", "selected_number": "+15550001000", "calling_method": "browser"})
+    assert browser.status_code == 403
+    assert "Browser/WiFi calling is disabled" in browser.get_json()["error"]
+    cell = client.post("/api/inbox/call/dial", json={"to": "+15559990000", "selected_number": "+15550001000", "calling_method": "cell_callback"})
+    assert cell.status_code == 403
+    assert "Cell callback calling is disabled" in cell.get_json()["error"]
