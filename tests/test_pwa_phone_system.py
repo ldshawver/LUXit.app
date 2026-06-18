@@ -172,9 +172,50 @@ def test_settings_save_load_and_voice_token(client, world):
     assert body["missed_call_sms_enabled"] is True
     token_resp = client.get("/api/phone/voice-token")
     assert token_resp.status_code == 200
-    identity = token_resp.get_json()["identity"]
+    token_body = token_resp.get_json()
+    identity = token_body["identity"]
     assert identity.startswith(f"luxit_c{world['co_a']}_")
     assert identity != f"luxit_company_{world['co_a']}_pwa"
+    assert token_body["calling_number"] == "+15550001000"
+    assert token_body["permitted_numbers"] == ["+15550001000"]
+
+
+
+
+
+
+def test_voice_client_error_log_endpoint_requires_auth_and_returns_json(client, world):
+    resp = client.post("/api/phone/voice-client-error", json={"code": "SDK_MISSING", "message": "Calling SDK failed to load"})
+    assert resp.status_code == 401
+
+    login(client, world["alice"])
+    resp = client.post("/api/phone/voice-client-error", json={"code": "SDK_MISSING", "message": "Calling SDK failed to load"})
+
+    assert resp.status_code == 200
+    assert resp.get_json() == {"success": True}
+
+
+def test_voice_token_requires_call_permission_for_explicit_number_grant(client, app, world):
+    with app.app_context():
+        pn = TwilioPhoneNumber(company_id=world["co_a"], phone_number="+15550001111", voice_enabled=True, is_active=True)
+        db.session.add(pn)
+        db.session.flush()
+        db.session.add(PhoneNumberUserPermission(
+            company_id=world["co_a"],
+            phone_number_id=pn.id,
+            user_id=world["alice"],
+            can_access_pwa=True,
+            can_call=False,
+        ))
+        db.session.commit()
+    login(client, world["alice"])
+
+    token_resp = client.get("/api/phone/voice-token")
+
+    assert token_resp.status_code == 403
+    body = token_resp.get_json()
+    assert body["code"] == "NO_ASSIGNED_NUMBER"
+    assert body["error"] == "No calling number assigned"
 
 
 def test_tenant_isolation_for_calls_and_archive_read(client, app, world):

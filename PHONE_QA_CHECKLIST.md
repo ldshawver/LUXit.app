@@ -153,3 +153,23 @@ Forwarding should contain:
 - [ ] STOP/opt-out contacts do not receive automated SMS.
 - [ ] Existing PWA inbox and messaging still work.
 - [ ] Old `/twilio/calls` call log still loads for desktop/admin workflows.
+
+## 9. Browser Voice SDK live verification gate
+
+Status: **not production-certified** until every item below has dated evidence in the release log. The current implementation intentionally loads the Twilio Voice SDK from the CDN script on `/app/calls`; if the product moves to a bundled frontend, create a separate task to install `@twilio/voice-sdk` in that frontend package and replace the CDN/global access with `import { Device } from "@twilio/voice-sdk"`.
+
+Record the browser, OS/device, signed-in user, assigned business number, and Twilio Call SID for each successful call. Attach screenshots of the page state and browser console/network evidence.
+
+- [ ] Open `https://<public-domain>/app/calls` over HTTPS as a logged-in user with an assigned calling number.
+- [ ] Confirm the browser console has no `Device undefined`, module load, or Twilio SDK load errors.
+- [ ] Confirm `GET /api/phone/voice-token` returns `Content-Type: application/json` with `success: true`, `token`, `identity`, `calling_number`, and `permitted_numbers` — not login HTML, a redirect page, or a 403/500 response.
+- [ ] Confirm the browser microphone permission prompt appears during voice initialization.
+- [ ] Allow microphone access and confirm the page status reaches `Browser phone registered for <assigned number>`.
+- [ ] Confirm inbound readiness status changes correctly between registered and unregistered states during reload/offline/reconnect testing.
+- [ ] Confirm the outbound call control is not usable until SDK loaded, token received, an assigned number exists, microphone permission is allowed, and the Twilio `Device` is registered.
+- [ ] Place a real outbound call and confirm two-way audio.
+- [ ] Confirm the call log records the assigned business number as `from_number`, the dialed customer as `to_number`, and final duration/status after completion.
+- [ ] Deny microphone access and confirm the UI says microphone permission is blocked, not `Twilio Voice SDK unavailable`.
+- [ ] Sign in as a user with no number permission and confirm the UI says `No calling number assigned`.
+- [ ] Sign in as a user with a number permission where `can_call=false` and confirm calling is blocked with `No calling number assigned`/permission-denied JSON, and no token is issued.
+- [ ] Confirm `/api/phone/voice-client-error` receives/logs exact client setup failures with `voice_error_code`, `voice_error_message`, user id, and company id.
