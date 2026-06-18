@@ -14,6 +14,7 @@ from models import (
     TwilioConversation,
     TwilioMessage,
     TwilioPhoneNumber,
+    AutoReplyRule,
     SMSCampaign,
     User,
     UserCompanyAccess,
@@ -145,6 +146,149 @@ def test_number_settings_are_independent_per_number(client, comms_world):
     assert upd.json["settings"]["caller_id_display_name"] == "Support Line"
     assert client.get(f"/api/phone/numbers/{comms_world['pn1']}/settings").json["settings"]["caller_id_display_name"] is None
 
+
+
+def test_legacy_communications_routes_redirect_to_hub(client, comms_world):
+    login(client, comms_world["admin"])
+    expected = {
+        "/twilio/hours": "/twilio/comms?tab=hours",
+        "/twilio/inbox": "/twilio/comms?tab=inbox",
+        "/twilio/rules": "/twilio/comms?tab=auto",
+        "/twilio/settings": "/twilio/comms?tab=integrations",
+        "/twilio/calls": "/twilio/comms?tab=calls",
+    }
+    for old_route, new_path in expected.items():
+        resp = client.get(old_route, follow_redirects=False)
+        assert resp.status_code in (301, 302), old_route
+        assert new_path in resp.headers["Location"], old_route
+
+
+def test_comms_settings_tab_save_label_and_number_settings_persist(client, comms_world):
+    login(client, comms_world["admin"])
+    page = client.get(f"/twilio/comms?tab=settings&number_id={comms_world['pn1']}")
+    assert page.status_code == 200
+    assert b"Save Settings Settings" not in page.data
+    assert b"Save Settings" in page.data
+
+    resp = client.post(
+        f"/twilio/numbers/{comms_world['pn1']}/edit",
+        data={
+            "return_to": "comms",
+            "friendly_name": "Sales Main",
+            "caller_id_display_name": "Sales Main",
+            "timezone": "America/Los_Angeles",
+            "during_hours_route": "ring_pwa",
+            "after_hours_route": "voicemail",
+            "sms_forward_to": "+15551239999",
+            "call_forward_to": "+15551238888",
+            "voicemail_greeting_text": "Please leave a message",
+            "after_hours_text": "We are closed",
+            "browser_calling_enabled": "1",
+            "cell_callback_enabled": "1",
+            "mobile_data_allowed": "1",
+            "sms_forwarding_enabled": "1",
+            "voice_forwarding_enabled": "1",
+            "auto_reply_enabled": "1",
+            "after_hours_sms_enabled": "1",
+            "after_hours_voicemail_enabled": "1",
+            "fallback_behavior": "voicemail",
+            "bh_0_open": "1",
+            "bh_0_start": "08:30",
+            "bh_0_end": "17:30",
+        },
+        follow_redirects=False,
+    )
+    assert resp.status_code == 302
+    with client.application.app_context():
+        pn = db.session.get(TwilioPhoneNumber, comms_world["pn1"])
+        assert pn.friendly_name == "Sales Main"
+        assert pn.business_hours["0"]["open"] == "08:30"
+
+
+def test_comms_users_permissions_form_persists_and_reloads(client, comms_world):
+    login(client, comms_world["admin"])
+    resp = client.post(
+        f"/twilio/comms/numbers/{comms_world['pn2']}/permissions",
+        data={
+            "user_id": comms_world["staff"],
+            "can_access_pwa": "1",
+            "can_view_sms": "1",
+            "can_send_sms": "1",
+            "can_view_calls": "1",
+        },
+        follow_redirects=True,
+    )
+    assert resp.status_code == 200
+    assert b"Permissions updated" in resp.data
+    with client.application.app_context():
+        perm = PhoneNumberUserPermission.query.filter_by(
+            phone_number_id=comms_world["pn2"], user_id=comms_world["staff"]
+        ).one()
+        assert perm.can_access_pwa is True
+        assert perm.can_view_sms is True
+        assert perm.can_call is False
+    page = client.get(f"/twilio/comms?tab=users&number_id={comms_world['pn2']}")
+    assert page.status_code == 200
+
+
+def test_comms_auto_replies_inline_crud(client, comms_world):
+    login(client, comms_world["admin"])
+    auto_page = client.get(f"/twilio/comms?tab=auto&number_id={comms_world['pn1']}")
+    assert auto_page.status_code == 200
+    assert b"Full rule editor" not in auto_page.data
+    create = client.post(
+        "/twilio/rules/create",
+        data={
+            "phone_number_id": comms_world["pn1"],
+            "name": "Booking Reply",
+            "trigger_type": "keyword_exact",
+            "keywords": "BOOK",
+            "response": "Booking link",
+            "priority": "7",
+            "action": "reply",
+            "is_active": "1",
+        },
+        follow_redirects=False,
+    )
+    assert create.status_code == 302
+    with client.application.app_context():
+        rule = AutoReplyRule.query.filter_by(company_id=comms_world["co"], name="Booking Reply").one()
+        assert rule.phone_number_id == comms_world["pn1"]
+        rule_id = rule.id
+    edit = client.post(
+        f"/twilio/rules/{rule_id}/edit",
+        data={
+            "phone_number_id": comms_world["pn1"],
+            "name": "Booking Reply Updated",
+            "trigger_type": "keyword_contains",
+            "keywords": "BOOK, RESERVE",
+            "response": "Updated link",
+            "priority": "9",
+            "action": "reply",
+        },
+        follow_redirects=False,
+    )
+    assert edit.status_code == 302
+    with client.application.app_context():
+        rule = db.session.get(AutoReplyRule, rule_id)
+        assert rule.name == "Booking Reply Updated"
+        assert rule.is_active is False
+    delete = client.post(f"/twilio/rules/{rule_id}/delete", follow_redirects=False)
+    assert delete.status_code == 302
+    with client.application.app_context():
+        assert db.session.get(AutoReplyRule, rule_id) is None
+
+
+def test_duplicate_communications_nav_links_removed():
+    from pathlib import Path
+    base = Path("templates/base.html").read_text()
+    hub = Path("templates/twilio/comms_hub.html").read_text()
+    assert "/twilio/hours" not in base
+    assert "/twilio/rules" not in base
+    assert 'href="/twilio/settings"' not in base
+    assert "url_for('twilio.settings')" not in base
+    assert "Save {{ active_section }} Settings" not in hub
+    assert "Full rule editor" not in hub
 
 def test_left_nav_consolidates_sms_phone_duplicates():
     from pathlib import Path

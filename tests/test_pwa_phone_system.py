@@ -14,6 +14,7 @@ from models import (
     TwilioAccount,
     TwilioCallLog,
     TwilioPhoneNumber,
+    PhoneNumberUserPermission,
     PWADevice,
     User,
     UserCompanyAccess,
@@ -63,6 +64,7 @@ def world(app):
 
 def login(client, user_id):
     with client.session_transaction() as sess:
+        sess.clear()
         sess["_user_id"] = str(user_id)
         sess["_fresh"] = True
 
@@ -627,6 +629,93 @@ def test_inbound_sms_conversation_is_assigned_to_to_number_company(app, client, 
         assert TwilioConversation.query.filter_by(company_id=world["co_b"], from_number="+15551119999").one()
         assert TwilioConversation.query.filter_by(company_id=world["co_a"], from_number="+15551119999").first() is None
 
+
+
+def test_inbound_sms_to_formatted_number_variants_routes_by_to_number(app, client, world, monkeypatch):
+    monkeypatch.setattr("twilio_sms._send_sms", lambda *args, **kwargs: {"success": True})
+    with app.app_context():
+        pn = add_phone_number(world["co_a"], "(916) 598-9519", friendly_name="Sacramento")
+        db.session.commit()
+
+    resp = client.post("/twilio/sms", data={
+        "From": "+19166066620",
+        "To": "+19165989519",
+        "Body": "production repro",
+        "MessageSid": "SMFORMAT",
+        "MessagingServiceSid": "MGa8routebyto",
+    })
+
+    assert resp.status_code == 200
+    with app.app_context():
+        conv = TwilioConversation.query.filter_by(company_id=world["co_a"], from_number="+19166066620").one()
+        assert conv.to_number == "+19165989519"
+        assert conv.phone_number_id == pn.id
+        msg = TwilioMessage.query.filter_by(twilio_sid="SMFORMAT").one()
+        assert msg.conversation_id == conv.id
+        assert msg.direction == "inbound"
+
+
+def test_messaging_service_inbound_routes_by_to_number_before_service_sid(app, client, world, monkeypatch):
+    monkeypatch.setattr("twilio_sms._send_sms", lambda *args, **kwargs: {"success": True})
+    with app.app_context():
+        account_a = TwilioAccount.query.filter_by(company_id=world["co_a"]).one()
+        account_b = TwilioAccount.query.filter_by(company_id=world["co_b"]).one()
+        account_a.messaging_service_sid = "MGa8shared"
+        account_b.messaging_service_sid = "MGa8shared"
+        pn_b = add_phone_number(world["co_b"], "9165989519", friendly_name="Tenant B Sac")
+        db.session.commit()
+
+    resp = client.post("/twilio/sms/inbound", data={
+        "From": "+19166066620",
+        "To": "+19165989519",
+        "Body": "route by to",
+        "MessageSid": "SMTOSERVICE",
+        "MessagingServiceSid": "MGa8shared",
+    })
+
+    assert resp.status_code == 200
+    with app.app_context():
+        conv = TwilioConversation.query.filter_by(from_number="+19166066620").one()
+        assert conv.company_id == world["co_b"]
+        assert conv.phone_number_id == pn_b.id
+        assert TwilioMessage.query.filter_by(twilio_sid="SMTOSERVICE", company_id=world["co_b"]).one()
+
+
+def test_inbound_sms_visibility_respects_number_permissions(app, client, world, monkeypatch):
+    monkeypatch.setattr("twilio_sms._send_sms", lambda *args, **kwargs: {"success": True})
+    with app.app_context():
+        pn_allowed = add_phone_number(world["co_a"], "+19165989519", friendly_name="Allowed")
+        pn_denied = add_phone_number(world["co_a"], "+19165550000", friendly_name="Denied")
+        allowed_user = User(username="allowed_sms", email="allowed_sms@test.com", password_hash="x", default_company_id=world["co_a"])
+        denied_user = User(username="denied_sms", email="denied_sms@test.com", password_hash="x", default_company_id=world["co_a"])
+        db.session.add_all([allowed_user, denied_user])
+        db.session.flush()
+        db.session.add_all([
+            UserCompanyAccess(user_id=allowed_user.id, company_id=world["co_a"], role=UserCompanyAccess.ROLE_STAFF, is_default=True, can_access_mobile_inbox=True),
+            UserCompanyAccess(user_id=denied_user.id, company_id=world["co_a"], role=UserCompanyAccess.ROLE_STAFF, is_default=True, can_access_mobile_inbox=True),
+            PhoneNumberUserPermission(company_id=world["co_a"], phone_number_id=pn_allowed.id, user_id=allowed_user.id, can_access_pwa=True, can_view_sms=True),
+            PhoneNumberUserPermission(company_id=world["co_a"], phone_number_id=pn_denied.id, user_id=denied_user.id, can_access_pwa=True, can_view_sms=True),
+        ])
+        db.session.commit()
+        allowed_id = allowed_user.id
+        denied_id = denied_user.id
+
+    resp = client.post("/twilio/sms/inbound", data={"From": "+19166066620", "To": "+19165989519", "Body": "visible", "MessageSid": "SMVISIBLE"})
+    assert resp.status_code == 200
+
+    with app.test_client() as allowed_client:
+        login(allowed_client, allowed_id)
+        allowed_resp = allowed_client.get("/api/inbox/conversations")
+    assert allowed_resp.status_code == 200
+    assert any(c["from_number"] == "+19166066620" for c in allowed_resp.get_json()["conversations"])
+
+    with app.app_context():
+        from services.comms_permissions import filter_conversations_for_user
+        denied_user = db.session.get(User, denied_id)
+        hidden = filter_conversations_for_user(
+            TwilioConversation.query.filter_by(company_id=world["co_a"]), denied_user, world["co_a"]
+        ).filter_by(from_number="+19166066620").first()
+        assert hidden is None
 
 def test_pwa_palette_persists_server_side_across_sessions(client, app, world):
     login(client, world["alice"])

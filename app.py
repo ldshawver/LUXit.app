@@ -659,6 +659,7 @@ def create_app() -> Flask:
                 ],
                 "twilio_conversation": [
                     ("company_id", "INTEGER"),
+                    ("phone_number_id", "INTEGER"),
                     ("contact_id", "INTEGER"),
                     ("from_number", "VARCHAR(20)"),
                     ("to_number", "VARCHAR(20)"),
