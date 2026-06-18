@@ -24,7 +24,7 @@
     <a href="{{ url_for('twilio.inbox') }}" class="btn btn-sm btn-outline-secondary">
       <i data-feather="inbox" style="width:13px;height:13px;"></i> Inbox
     </a>
-    <a href="{{ url_for('twilio.settings') }}" class="btn btn-sm btn-outline-secondary">
+    <a href="{{ url_for('twilio.comms_hub', tab='integrations') }}" class="btn btn-sm btn-outline-secondary">
       <i data-feather="settings" style="width:13px;height:13px;"></i> Settings
     </a>
     <a href="{{ url_for('twilio.business_hours') }}" class="btn btn-sm btn-outline-secondary">
@@ -48,7 +48,7 @@
   {% if not ta or not ta.automation_enabled %}
   <div class="alert alert-warning d-flex gap-3 align-items-center">
     <i data-feather="alert-triangle" style="width:18px;height:18px;"></i>
-    <span>Automation is disabled. <a href="{{ url_for('twilio.settings') }}" class="alert-link">Enable it in Settings →</a></span>
+    <span>Automation is disabled. <a href="{{ url_for('twilio.comms_hub', tab='integrations') }}" class="alert-link">Enable it in Settings →</a></span>
   </div>
   {% endif %}
 

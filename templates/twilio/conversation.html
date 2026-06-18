@@ -104,7 +104,7 @@
   </div>
   {% else %}
   <div class="alert alert-warning">
-    <a href="{{ url_for('twilio.settings') }}" class="alert-link">Configure Twilio</a> to send replies.
+    <a href="{{ url_for('twilio.comms_hub', tab='integrations') }}" class="alert-link">Configure Twilio</a> to send replies.
   </div>
   {% endif %}
   {% else %}

@@ -36,7 +36,7 @@
        style="background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.2);color:#f87171;">
     <i data-feather="alert-triangle" style="width:18px;height:18px;flex-shrink:0;"></i>
     <div>Twilio is not configured. Add your credentials to enable SMS and calling.
-      <a href="{{ url_for('twilio.settings') }}" class="ms-2" style="color:#f87171;text-decoration:underline;">
+      <a href="{{ url_for('twilio.comms_hub', tab='integrations') }}" class="ms-2" style="color:#f87171;text-decoration:underline;">
         Configure Twilio →
       </a>
     </div>
@@ -52,7 +52,7 @@
         <div class="card-header d-flex align-items-center gap-2" style="border-bottom:1px solid #1e2535;background:transparent;">
           <i data-feather="phone" style="width:15px;height:15px;color:#7c3aed;"></i>
           <strong style="font-size:.88rem;">Twilio Account &amp; Numbers</strong>
-          <a href="{{ url_for('twilio.settings') }}" class="btn btn-sm btn-outline-secondary ms-auto"
+          <a href="{{ url_for('twilio.comms_hub', tab='integrations') }}" class="btn btn-sm btn-outline-secondary ms-auto"
              style="font-size:.76rem;padding:2px 9px;">Configure →</a>
         </div>
         <div class="card-body py-3 px-3" style="font-size:.83rem;">
@@ -111,7 +111,7 @@
         <div class="card-header d-flex align-items-center gap-2" style="border-bottom:1px solid #1e2535;background:transparent;">
           <i data-feather="share-2" style="width:15px;height:15px;color:#7c3aed;"></i>
           <strong style="font-size:.88rem;">Forwarding &amp; After-Hours</strong>
-          <a href="{{ url_for('twilio.settings') }}#forwarding" class="btn btn-sm btn-outline-secondary ms-auto"
+          <a href="{{ url_for('twilio.comms_hub', tab='integrations') }}#forwarding" class="btn btn-sm btn-outline-secondary ms-auto"
              style="font-size:.76rem;padding:2px 9px;">Configure →</a>
         </div>
         <div class="card-body py-3 px-3" style="font-size:.83rem;">

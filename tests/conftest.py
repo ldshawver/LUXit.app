@@ -150,6 +150,8 @@ def _cleanup_stale_test_data():
                 # from the managed PostgreSQL schema (no migration was run).
                 _backfill_ddl = [
                     "ALTER TABLE twilio_conversation ADD COLUMN IF NOT EXISTS contact_source VARCHAR(50)",
+                    "ALTER TABLE twilio_conversation ADD COLUMN IF NOT EXISTS phone_number_id INTEGER",
+                    "ALTER TABLE auto_reply_rule ADD COLUMN IF NOT EXISTS phone_number_id INTEGER",
                 ]
                 for _ddl in _backfill_ddl:
                     try:
