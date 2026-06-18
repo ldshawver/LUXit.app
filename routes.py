@@ -6142,21 +6142,22 @@ def change_password():
 @main_bp.route('/user/manage-users')
 @login_required
 def manage_users():
-    """Manage users page — accessible to platform admins and company admins."""
+    """Manage users page — owner/admin/manage-users scoped by tenant."""
     from models import User, UserCompanyAccess
+    from services.comms_permissions import can_manage_users
     try:
+        company = current_user.get_default_company()
         if current_user.is_admin:
             users = User.query.order_by(User.username).all()
         else:
-            company = current_user.get_default_company()
-            if not company or not current_user.can_admin_company(company.id):
-                flash('Access denied. You need admin or company-admin privileges.', 'danger')
+            if not company or not can_manage_users(current_user, company.id):
+                flash('Access denied. You need owner or manage-users permission.', 'danger')
                 return redirect(url_for('main.dashboard'))
             user_ids = [a.user_id for a in UserCompanyAccess.query.filter_by(company_id=company.id).all()]
             users = User.query.filter(User.id.in_(user_ids)).order_by(User.username).all()
 
-        # Build per-user access map {user_id: access_row} (first row wins)
-        all_access = UserCompanyAccess.query.all()
+        # Build per-user access map {user_id: access_row} (tenant row first)
+        all_access = (UserCompanyAccess.query.filter_by(company_id=company.id).all() if company and not current_user.is_admin else UserCompanyAccess.query.all())
         access_by_user = {}
         for acc in all_access:
             access_by_user.setdefault(acc.user_id, acc)
@@ -6174,19 +6175,31 @@ def manage_users():
 @main_bp.route('/user/edit/<int:user_id>', methods=['GET', 'POST'])
 @login_required
 def edit_user(user_id):
-    """Edit a user (admin only)"""
-    if not current_user.is_admin:
-        flash('Access denied.', 'danger')
-        return redirect(url_for('main.dashboard'))
-    from models import User
+    """Edit a user when platform admin, tenant owner, or manage-users admin."""
+    from models import User, UserCompanyAccess
+    from services.comms_permissions import can_manage_users
     user = User.query.get_or_404(user_id)
+    company = current_user.get_default_company()
+    if not current_user.is_admin:
+        if not company or not can_manage_users(current_user, company.id):
+            flash('Access denied.', 'danger')
+            return redirect(url_for('main.dashboard'))
+        if not UserCompanyAccess.query.filter_by(user_id=user.id, company_id=company.id).first():
+            flash('Access denied for this tenant user.', 'danger')
+            return redirect(url_for('main.manage_users'))
     if request.method == 'POST':
         user.username = request.form.get('username', user.username)
         user.email = request.form.get('email', user.email)
         user.first_name = request.form.get('first_name', '')
         user.last_name = request.form.get('last_name', '')
-        user.role = request.form.get('role', user.role)
-        user.is_admin = request.form.get('is_admin') == 'on'
+        requested_role = request.form.get('role', user.role)
+        user.role = requested_role
+        if current_user.is_admin:
+            user.is_admin = request.form.get('is_admin') == 'on'
+        if company:
+            acc = UserCompanyAccess.query.filter_by(user_id=user.id, company_id=company.id).first()
+            if acc and requested_role:
+                acc.role = UserCompanyAccess.normalize_role(requested_role)
         user.updated_at = datetime.now()
         db.session.commit()
         flash(f'User {user.username} updated successfully!', 'success')
@@ -6196,7 +6209,7 @@ def edit_user(user_id):
 @main_bp.route('/user/delete/<int:user_id>', methods=['POST'])
 @login_required
 def delete_user(user_id):
-    """Delete a user (admin only)"""
+    """Delete a user (platform admin only)."""
     if not current_user.is_admin:
         flash('Access denied.', 'danger')
         return redirect(url_for('main.dashboard'))
@@ -6216,9 +6229,10 @@ def update_user_access(user_id):
     """Toggle per-user PWA / full-app access flags (platform admin or company admin only)."""
     from models import User, UserCompanyAccess
     try:
+        company = current_user.get_default_company()
         if not current_user.is_admin:
-            company = current_user.get_default_company()
-            if not company or not current_user.can_admin_company(company.id):
+            from services.comms_permissions import can_manage_users
+            if not company or not can_manage_users(current_user, company.id):
                 return jsonify({'success': False, 'error': 'Permission denied.'}), 403
 
         target = db.session.get(User, user_id)
@@ -6227,16 +6241,18 @@ def update_user_access(user_id):
 
         payload = request.get_json() or {}
 
-        acc = UserCompanyAccess.query.filter_by(user_id=target.id).first()
+        if not company:
+            return jsonify({'success': False, 'error': 'No company context.'}), 400
+        acc = UserCompanyAccess.query.filter_by(user_id=target.id, company_id=company.id).first()
         if not acc:
-            company = current_user.get_default_company()
-            if not company:
-                return jsonify({'success': False, 'error': 'No company context.'}), 400
+            if not current_user.is_admin:
+                return jsonify({'success': False, 'error': 'Target user is not in this tenant.'}), 403
             acc = UserCompanyAccess(user_id=target.id, company_id=company.id, role='viewer')
             db.session.add(acc)
 
         if 'role' in payload:
             new_role = payload['role']
+            new_role = UserCompanyAccess.normalize_role(new_role)
             valid_roles = ('owner', 'admin', 'manager', 'editor', 'viewer', 'staff', 'inbox_only')
             if new_role not in valid_roles:
                 return jsonify({'success': False, 'error': f'Invalid role. Choose from: {", ".join(valid_roles)}'}), 400
@@ -6245,6 +6261,8 @@ def update_user_access(user_id):
             acc.can_access_mobile_inbox = bool(payload['can_access_mobile_inbox'])
         if 'can_access_full_app' in payload:
             acc.can_access_full_app = bool(payload['can_access_full_app'])
+        if 'manage_users_enabled' in payload:
+            acc.manage_users_enabled = bool(payload['manage_users_enabled'])
 
         db.session.commit()
         return jsonify({
@@ -6253,6 +6271,7 @@ def update_user_access(user_id):
             'role': acc.role,
             'can_access_mobile_inbox': acc.can_access_mobile_inbox,
             'can_access_full_app': acc.can_access_full_app,
+            'manage_users_enabled': acc.manage_users_enabled,
             'has_mobile_inbox_access': acc.has_mobile_inbox_access(),
             'has_full_app_access': acc.has_full_app_access(),
         })
@@ -10912,15 +10931,17 @@ def sms_campaigns():
                 query = query.filter_by(company_id=company_id)
             campaigns_list = query.order_by(SMSCampaign.created_at.desc()).all()
             try:
-                from models import TwilioAccount
+                from models import TwilioAccount, TwilioPhoneNumber
                 ta = TwilioAccount.query.filter_by(company_id=company_id).first() if company_id else None
                 twilio_configured = bool(ta and ta.is_configured)
+                phone_numbers = TwilioPhoneNumber.query.filter_by(company_id=company_id, is_active=True, sms_enabled=True).all() if company_id else []
             except Exception:
                 twilio_configured = False
     except Exception:
         logger.exception("SMS campaigns page failed")
         campaigns_list = []
-    return render_template('sms_campaigns.html', campaigns=campaigns_list, sms_enabled=True, twilio_configured=twilio_configured, scheduled_count=sum(1 for c in campaigns_list if c.status == 'scheduled'))
+        phone_numbers = []
+    return render_template('sms_campaigns.html', campaigns=campaigns_list, sms_enabled=True, twilio_configured=twilio_configured, phone_numbers=locals().get('phone_numbers', []), scheduled_count=sum(1 for c in campaigns_list if c.status == 'scheduled'))
 
 
 @main_bp.route('/sms/campaign/<int:campaign_id>/send', methods=['POST'])
@@ -10933,6 +10954,18 @@ def send_sms_campaign(campaign_id):
             if not campaign:
                 flash('SMS Campaign not found.', 'danger')
                 return redirect(url_for('main.sms_campaigns'))
+            sender_number_id = request.form.get('from_phone_number_id', type=int)
+            if sender_number_id:
+                from models import TwilioPhoneNumber
+                from services.comms_permissions import accessible_phone_numbers
+                pn = TwilioPhoneNumber.query.filter_by(id=sender_number_id, company_id=company_id, sms_enabled=True, is_active=True).first()
+                allowed = accessible_phone_numbers(current_user, company_id)
+                if not pn or pn.phone_number not in allowed:
+                    flash('You do not have permission to send campaigns from that number.', 'danger')
+                    return redirect(url_for('main.sms_campaigns')), 403
+                campaign.from_phone_number_id = pn.id
+                campaign.from_phone_number = pn.phone_number
+                db.session.commit()
             recipient_count = SMSRecipient.query.filter_by(campaign_id=campaign_id, status='pending').count()
             if recipient_count > SMSService.ASYNC_RECIPIENT_THRESHOLD:
                 result = SMSService.queue_campaign_send(campaign_id, app=current_app._get_current_object()) if SMSService else {'success': False, 'error': 'SMS service unavailable'}

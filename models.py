@@ -44,6 +44,7 @@ class UserCompanyAccess(db.Model):
     voicemail_enabled         = db.Column(db.Boolean, default=False)
     ai_comms_enabled          = db.Column(db.Boolean, default=False)
     forwarding_enabled        = db.Column(db.Boolean, default=False)
+    manage_users_enabled      = db.Column(db.Boolean, default=False)
     # License flag — admin explicitly marks user as having a comms license
     communications_license    = db.Column(db.Boolean, default=False)
     # Number assignment — 'shared' = company shared number, 'dedicated' = own DID
@@ -69,6 +70,18 @@ class UserCompanyAccess(db.Model):
     ROLE_STAFF      = "staff"
     ROLE_INBOX_ONLY = "inbox_only"
 
+    ROLE_ALIASES = {
+        "superadmin": ROLE_OWNER,
+        "super_admin": ROLE_OWNER,
+        "super-admin": ROLE_OWNER,
+        "administrator": ROLE_ADMIN,
+        "tenant_admin": ROLE_ADMIN,
+        "company_admin": ROLE_ADMIN,
+        "supervisor": ROLE_MANAGER,
+        "member": ROLE_STAFF,
+        "user": ROLE_VIEWER,
+    }
+
     ROLE_HIERARCHY = {
         ROLE_OWNER:      5,
         ROLE_ADMIN:      4,
@@ -87,14 +100,26 @@ class UserCompanyAccess(db.Model):
     def __repr__(self):
         return f"<UserCompanyAccess user={self.user_id} company={self.company_id} role={self.role}>"
 
+    @classmethod
+    def normalize_role(cls, role):
+        value = (role or cls.ROLE_VIEWER).strip().lower().replace(" ", "_")
+        return cls.ROLE_ALIASES.get(value, value)
+
+    @property
+    def normalized_role(self):
+        return self.normalize_role(self.role)
+
     def can_edit(self):
-        return self.role in {self.ROLE_OWNER, self.ROLE_ADMIN, self.ROLE_MANAGER, self.ROLE_EDITOR}
+        return self.normalized_role in {self.ROLE_OWNER, self.ROLE_ADMIN, self.ROLE_MANAGER, self.ROLE_EDITOR}
 
     def can_admin(self):
-        return self.role in {self.ROLE_OWNER, self.ROLE_ADMIN}
+        return self.normalized_role in {self.ROLE_OWNER, self.ROLE_ADMIN}
 
     def can_own(self):
-        return self.role == self.ROLE_OWNER
+        return self.normalized_role == self.ROLE_OWNER
+
+    def can_manage_users(self):
+        return self.normalized_role == self.ROLE_OWNER or bool(self.manage_users_enabled)
 
     def has_mobile_inbox_access(self) -> bool:
         """Mobile Inbox / PWA requires explicit admin approval.
@@ -105,7 +130,7 @@ class UserCompanyAccess(db.Model):
         - any role with can_access_mobile_inbox=True: allowed (legacy flag, backward compat)
         - all other roles: denied
         """
-        if self.role in (self.ROLE_OWNER, self.ROLE_ADMIN):
+        if self.normalized_role in (self.ROLE_OWNER, self.ROLE_ADMIN):
             return True
         if self.pwa_access_enabled:
             return True
@@ -118,7 +143,7 @@ class UserCompanyAccess(db.Model):
         - any role with comms_hub_enabled=True: allowed
         - any role with communications_license=True: allowed
         """
-        if self.role in (self.ROLE_OWNER, self.ROLE_ADMIN):
+        if self.normalized_role in (self.ROLE_OWNER, self.ROLE_ADMIN):
             return True
         if self.comms_hub_enabled:
             return True
@@ -126,7 +151,7 @@ class UserCompanyAccess(db.Model):
 
     def has_full_app_access(self) -> bool:
         """Inbox-only role never gets full app; all other roles default to True."""
-        if self.role == self.ROLE_INBOX_ONLY:
+        if self.normalized_role == self.ROLE_INBOX_ONLY:
             return False
         if self.can_access_full_app is None:
             return True
@@ -173,6 +198,9 @@ class User(UserMixin, db.Model):
     last_activity = db.Column(db.DateTime)
     bio = db.Column(db.Text)  # User bio/description
     preferred_hub = db.Column(db.String(20), default='marketing')  # 'marketing' or 'sales'
+    pwa_palette_id = db.Column(db.String(30), default='lux')
+    pwa_theme_mode = db.Column(db.String(20), default='dark')
+    pwa_preferences_updated_at = db.Column(db.DateTime)
     
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(
@@ -895,6 +923,8 @@ class SMSCampaign(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=True, index=True)
     created_by_user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True)
+    from_phone_number_id = db.Column(db.Integer, db.ForeignKey("twilio_phone_number.id"), nullable=True)
+    from_phone_number = db.Column(db.String(20), nullable=True)
     name = db.Column(db.String(255))
     objective = db.Column(db.Text)
     message = db.Column(db.String(1000))
@@ -3082,12 +3112,17 @@ class TwilioCallLog(db.Model):
     transcription_text = db.Column(db.Text, nullable=True)
     transcription_status = db.Column(db.String(30), default="not_requested")
     transcription_provider = db.Column(db.String(80), nullable=True)
+    transcription_error = db.Column(db.Text, nullable=True)
+    transcribed_at = db.Column(db.DateTime, nullable=True)
     caller_name  = db.Column(db.String(200))
     notes        = db.Column(db.Text)
     missed_text_sent = db.Column(db.Boolean, default=False)
     raw_payload  = db.Column(JSON)
     metadata_json = db.Column(JSON)
     is_read      = db.Column(db.Boolean, default=False)
+    read_at      = db.Column(db.DateTime, nullable=True)
+    read_by_user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True)
+    callback_target = db.Column(db.String(20), nullable=True)
     is_archived  = db.Column(db.Boolean, default=False)
     created_at   = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at   = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -3460,6 +3495,17 @@ class TwilioPhoneNumber(db.Model):
     voice_forwarding_enabled = db.Column(db.Boolean, default=True)
     ring_timeout             = db.Column(db.Integer, default=25)
 
+    business_hours           = db.Column(JSON, default=dict)
+    timezone                 = db.Column(db.String(80), default="America/Los_Angeles")
+    during_hours_route       = db.Column(db.String(30), default="ring_pwa")
+    after_hours_route        = db.Column(db.String(30), default="voicemail")
+    browser_calling_enabled  = db.Column(db.Boolean, default=True)
+    cell_callback_enabled    = db.Column(db.Boolean, default=True)
+    wifi_only                = db.Column(db.Boolean, default=False)
+    mobile_data_allowed      = db.Column(db.Boolean, default=True)
+    fallback_behavior        = db.Column(db.String(30), default="cell_callback")
+    caller_id_display_name   = db.Column(db.String(120))
+
     voicemail_greeting_text       = db.Column(db.Text)
     voicemail_greeting_audio_url  = db.Column(db.String(500))
     missed_call_text              = db.Column(db.Text)
@@ -3478,6 +3524,71 @@ class TwilioPhoneNumber(db.Model):
 
     def __repr__(self):
         return f"<TwilioPhoneNumber {self.phone_number} co={self.company_id}>"
+
+
+
+
+class PhoneNumberUserPermission(db.Model):
+    """Per-user permissions for a specific Twilio phone number/line."""
+    __tablename__ = "phone_number_user_permission"
+
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=False, index=True)
+    phone_number_id = db.Column(db.Integer, db.ForeignKey("twilio_phone_number.id"), nullable=False, index=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, index=True)
+
+    can_access_pwa = db.Column(db.Boolean, default=True)
+    can_view_sms = db.Column(db.Boolean, default=True)
+    can_send_sms = db.Column(db.Boolean, default=True)
+    can_view_calls = db.Column(db.Boolean, default=True)
+    can_call = db.Column(db.Boolean, default=True)
+    can_view_voicemail = db.Column(db.Boolean, default=True)
+    can_manage_number = db.Column(db.Boolean, default=False)
+    can_send_campaigns = db.Column(db.Boolean, default=False)
+
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    phone_number = db.relationship("TwilioPhoneNumber", backref="user_permissions")
+    user = db.relationship("User", backref="phone_number_permissions")
+    company = db.relationship("Company", backref="phone_number_user_permissions")
+
+    __table_args__ = (
+        db.UniqueConstraint("phone_number_id", "user_id", name="uq_phone_number_user_permission"),
+    )
+
+class PWADevice(db.Model):
+    """Registered PWA/work-phone device for Communications runtime readiness."""
+    __tablename__ = "pwa_device"
+
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=False, index=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, index=True)
+    phone_number_id = db.Column(db.Integer, db.ForeignKey("twilio_phone_number.id"), nullable=True, index=True)
+    device_key = db.Column(db.String(120), nullable=False)
+    device_name = db.Column(db.String(120))
+    browser = db.Column(db.String(120))
+    device_type = db.Column(db.String(80))
+    user_agent = db.Column(db.Text)
+    online_status = db.Column(db.String(20), default="online")
+    last_seen_at = db.Column(db.DateTime, default=datetime.utcnow)
+    push_enabled = db.Column(db.Boolean, default=False)
+    microphone_permission = db.Column(db.String(30), default="unknown")
+    pwa_installed = db.Column(db.Boolean, default=False)
+    wifi_only = db.Column(db.Boolean, default=False)
+    cellular_callback_enabled = db.Column(db.Boolean, default=False)
+    mobile_data_calling_allowed = db.Column(db.Boolean, default=False)
+    default_calling_method = db.Column(db.String(30), default="browser")
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    user = db.relationship("User", backref=db.backref("pwa_devices", lazy="dynamic"))
+    company = db.relationship("Company", backref=db.backref("pwa_devices", lazy="dynamic"))
+    phone_number = db.relationship("TwilioPhoneNumber", backref=db.backref("pwa_devices", lazy="dynamic"))
+
+    __table_args__ = (
+        db.UniqueConstraint("company_id", "user_id", "device_key", name="uq_pwa_device_user_key"),
+    )
 
 
 class VoiceVoicemailBox(db.Model):
@@ -3648,6 +3759,13 @@ class VoiceVoicemailMessage(db.Model):
     recording_url = db.Column(db.String(500))
     duration_secs = db.Column(db.Integer, default=0)
     transcript    = db.Column(db.Text)
+    transcription_text = db.Column(db.Text)
+    transcription_status = db.Column(db.String(30), default="not_requested")
+    transcription_provider = db.Column(db.String(80))
+    transcription_error = db.Column(db.Text)
+    transcribed_at = db.Column(db.DateTime)
+    read_at       = db.Column(db.DateTime)
+    read_by_user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True)
     is_read       = db.Column(db.Boolean, default=False)
     is_deleted    = db.Column(db.Boolean, default=False)
     created_at    = db.Column(db.DateTime, default=datetime.utcnow)

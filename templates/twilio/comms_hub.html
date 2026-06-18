@@ -33,33 +33,130 @@
     </div>
   </div>
 
-  <!-- Tab bar -->
-  <div style="border-bottom:2px solid #1e2535;margin-bottom:1.25rem;display:flex;gap:2px;overflow-x:auto;white-space:nowrap;">
+  <!-- Productized Communications Hub tabs -->
+  <div class="comms-tabs" style="border-bottom:2px solid #1e2535;margin-bottom:1.25rem;display:flex;gap:2px;overflow-x:auto;white-space:nowrap;">
     {% for t_id, t_icon, t_label, t_badge in [
-      ('inbox',    'message-square', 'Inbox',       unread_count),
-      ('calls',    'phone',          'Calls',        missed_calls_count),
-      ('voicemail','mic',            'Voicemail',    0),
-      ('contacts', 'users',          'Contacts',     0),
-      ('team',     'message-circle', 'Team Chat',    0),
-      ('notes',    'file-text',      'Notes',        0),
-      ('ai',       'cpu',            'AI Assistant', 0),
+      ('overview', 'grid', 'Overview', 0),
+      ('numbers', 'hash', 'Numbers', 0),
+      ('settings', 'sliders', 'Number Settings', 0),
+      ('users', 'user-check', 'Users & Permissions', 0),
+      ('hours', 'clock', 'Business Hours', 0),
+      ('auto', 'message-circle', 'Auto Replies', 0),
+      ('routing', 'phone-forwarded', 'Call Routing / Forwarding', 0),
+      ('voicemail','mic', 'Voicemail', 0),
+      ('pwa', 'smartphone', 'PWA Phone App', 0),
+      ('devices', 'monitor', 'Devices', 0),
+      ('calls', 'phone', 'Call Logs', missed_calls_count),
+      ('inbox', 'message-square', 'SMS Conversations', unread_count),
+      ('integrations', 'link', 'Integrations', 0),
+      ('reports', 'bar-chart-2', 'Reports / Activity', 0),
     ] %}
-    <a href="?tab={{ t_id }}"
+    <a href="?tab={{ t_id }}{% if selected_number %}&number_id={{ selected_number.id }}{% endif %}"
        style="display:inline-flex;align-items:center;gap:5px;padding:.55rem .85rem;font-size:.84rem;
               color:{% if tab == t_id %}#7c3aed{% else %}#9ca3af{% endif %};
               border-bottom:2px solid {% if tab == t_id %}#7c3aed{% else %}transparent{% endif %};
               margin-bottom:-2px;text-decoration:none;transition:color .15s;flex-shrink:0;">
       <i data-feather="{{ t_icon }}" style="width:13px;height:13px;flex-shrink:0;"></i>
       {{ t_label }}
-      {% if t_badge > 0 %}
-      <span class="badge ms-1" style="background:#7c3aed;font-size:.6rem;padding:2px 5px;">{{ t_badge }}</span>
-      {% endif %}
+      {% if t_badge > 0 %}<span class="badge ms-1" style="background:#7c3aed;font-size:.6rem;padding:2px 5px;">{{ t_badge }}</span>{% endif %}
     </a>
     {% endfor %}
   </div>
 
+  {% if phone_numbers %}
+  <div class="d-flex align-items-center gap-2 mb-3 flex-wrap">
+    <small class="text-muted">Editing line:</small>
+    {% for pn in phone_numbers %}
+      <a class="btn btn-sm {% if selected_number and selected_number.id == pn.id %}btn-primary{% else %}btn-outline-secondary{% endif %}" href="?tab={{ tab }}&number_id={{ pn.id }}">{{ pn.friendly_name or pn.phone_number }}</a>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  {% macro toggle(name, checked, label) -%}
+  <label class="form-check form-switch mb-2">
+    <input class="form-check-input" type="checkbox" name="{{ name }}" value="1" {% if checked %}checked{% endif %}>
+    <span class="form-check-label">{{ label }}</span>
+  </label>
+  {%- endmacro %}
+
+  {% macro number_settings_form(active_section) -%}
+  {% if selected_number %}
+  <form method="POST" action="{{ url_for('twilio.number_edit', number_id=selected_number.id) }}" class="card p-3" style="background:#0f1117;border:1px solid #1e2535;">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="return_to" value="comms">
+    <div class="row g-3">
+      <div class="col-md-4"><label class="form-label small text-muted">Display name / Caller ID</label><input class="form-control" name="caller_id_display_name" value="{{ selected_number.caller_id_display_name or '' }}" style="background:#0b0d14;border-color:#1e2535;color:#fff;"></div>
+      <div class="col-md-4"><label class="form-label small text-muted">Friendly name</label><input class="form-control" name="friendly_name" value="{{ selected_number.friendly_name or '' }}" style="background:#0b0d14;border-color:#1e2535;color:#fff;"></div>
+      <div class="col-md-4"><label class="form-label small text-muted">Timezone</label><input class="form-control" name="timezone" value="{{ selected_number.timezone or 'America/Los_Angeles' }}" style="background:#0b0d14;border-color:#1e2535;color:#fff;"></div>
+      <div class="col-md-6"><label class="form-label small text-muted">During-hours route</label><select class="form-select" name="during_hours_route" style="background:#0b0d14;border-color:#1e2535;color:#fff;">{% for v in ['ring_pwa','forward','voicemail','message_then_route'] %}<option value="{{ v }}" {% if selected_number.during_hours_route == v %}selected{% endif %}>{{ v.replace('_',' ')|title }}</option>{% endfor %}</select></div>
+      <div class="col-md-6"><label class="form-label small text-muted">After-hours route</label><select class="form-select" name="after_hours_route" style="background:#0b0d14;border-color:#1e2535;color:#fff;">{% for v in ['voicemail','forward','ring_pwa','message_then_route'] %}<option value="{{ v }}" {% if selected_number.after_hours_route == v %}selected{% endif %}>{{ v.replace('_',' ')|title }}</option>{% endfor %}</select></div>
+      <div class="col-md-6"><label class="form-label small text-muted">SMS forward to</label><input class="form-control" name="sms_forward_to" value="{{ selected_number.sms_forward_to or '' }}" style="background:#0b0d14;border-color:#1e2535;color:#fff;"></div>
+      <div class="col-md-6"><label class="form-label small text-muted">Call forward to</label><input class="form-control" name="call_forward_to" value="{{ selected_number.call_forward_to or '' }}" style="background:#0b0d14;border-color:#1e2535;color:#fff;"></div>
+      <div class="col-md-6"><label class="form-label small text-muted">Voicemail greeting</label><textarea class="form-control" name="voicemail_greeting_text" rows="3" style="background:#0b0d14;border-color:#1e2535;color:#fff;">{{ selected_number.voicemail_greeting_text or '' }}</textarea></div>
+      <div class="col-md-6"><label class="form-label small text-muted">After-hours SMS text</label><textarea class="form-control" name="after_hours_text" rows="3" style="background:#0b0d14;border-color:#1e2535;color:#fff;">{{ selected_number.after_hours_text or '' }}</textarea></div>
+      <div class="col-12"><div class="row g-2">{% for i,label in [(0,'Mon'),(1,'Tue'),(2,'Wed'),(3,'Thu'),(4,'Fri'),(5,'Sat'),(6,'Sun')] %}{% set cfg=(selected_number.business_hours or {}).get(i|string,{}) %}<div class="col-md-6 col-lg-4"><div class="p-2 rounded" style="background:#0b0d14;border:1px solid #1e2535;"><label class="form-check"><input class="form-check-input" type="checkbox" name="bh_{{ i }}_open" value="1" {% if cfg.get('is_open', i < 5) %}checked{% endif %}> {{ label }} open</label><div class="d-flex gap-2"><input type="time" class="form-control form-control-sm" name="bh_{{ i }}_start" value="{{ cfg.get('open','09:00') }}"><input type="time" class="form-control form-control-sm" name="bh_{{ i }}_end" value="{{ cfg.get('close','17:00') }}"></div></div></div>{% endfor %}</div></div>
+      <div class="col-md-4">{{ toggle('browser_calling_enabled', selected_number.browser_calling_enabled, 'Browser/WiFi calling') }}</div>
+      <div class="col-md-4">{{ toggle('cell_callback_enabled', selected_number.cell_callback_enabled, 'Cell callback calling') }}</div>
+      <div class="col-md-4">{{ toggle('mobile_data_allowed', selected_number.mobile_data_allowed, 'Allow mobile data') }}</div>
+      <div class="col-md-4">{{ toggle('wifi_only', selected_number.wifi_only, 'WiFi only') }}</div>
+      <div class="col-md-4">{{ toggle('sms_forwarding_enabled', selected_number.sms_forwarding_enabled, 'SMS forwarding') }}</div>
+      <div class="col-md-4">{{ toggle('voice_forwarding_enabled', selected_number.voice_forwarding_enabled, 'Voice forwarding') }}</div>
+      <div class="col-md-4">{{ toggle('auto_reply_enabled', selected_number.auto_reply_enabled, 'Auto replies') }}</div>
+      <div class="col-md-4">{{ toggle('after_hours_sms_enabled', selected_number.after_hours_sms_enabled, 'After-hours SMS') }}</div>
+      <div class="col-md-4">{{ toggle('after_hours_voicemail_enabled', selected_number.after_hours_voicemail_enabled, 'After-hours voicemail') }}</div>
+      <div class="col-md-4"><label class="form-label small text-muted">Fallback behavior</label><select class="form-select" name="fallback_behavior"><option value="cell_callback" {% if selected_number.fallback_behavior == 'cell_callback' %}selected{% endif %}>Cell callback</option><option value="voicemail" {% if selected_number.fallback_behavior == 'voicemail' %}selected{% endif %}>Voicemail</option><option value="none" {% if selected_number.fallback_behavior == 'none' %}selected{% endif %}>None</option></select></div>
+    </div>
+    <button class="btn btn-primary mt-3" type="submit">Save {{ active_section }} Settings</button>
+  </form>
+  {% else %}<div class="alert alert-warning">Add a phone number to configure this tab.</div>{% endif %}
+  {%- endmacro %}
+
+  <!-- ═══════════ OVERVIEW / CONFIG TABS ═══════════ -->
+  {% if tab == 'overview' %}
+  <div class="row g-3">
+    <div class="col-md-3"><div class="card p-3" style="background:#0f1117;border:1px solid #1e2535;"><small class="text-muted">Phone numbers</small><h3>{{ phone_numbers|length }}</h3></div></div>
+    <div class="col-md-3"><div class="card p-3" style="background:#0f1117;border:1px solid #1e2535;"><small class="text-muted">Unread SMS</small><h3>{{ unread_count }}</h3></div></div>
+    <div class="col-md-3"><div class="card p-3" style="background:#0f1117;border:1px solid #1e2535;"><small class="text-muted">Recent calls</small><h3>{{ calls|length }}</h3></div></div>
+    <div class="col-md-3"><div class="card p-3" style="background:#0f1117;border:1px solid #1e2535;"><small class="text-muted">Voicemails</small><h3>{{ voicemails|length }}</h3></div></div>
+  </div>
+  <div class="alert mt-3" style="background:#0f1117;border:1px solid #1e2535;color:#cbd5e1;">Use the tabs above to configure each line independently. Legacy settings pages remain available as deep links but this hub is the primary admin workflow.</div>
+
+  {% elif tab == 'numbers' %}
+  <div class="card" style="background:#0f1117;border:1px solid #1e2535;">
+    {% for pn in phone_numbers %}<div class="p-3 d-flex flex-wrap gap-2 align-items-center" style="border-bottom:1px solid #1e2535;"><strong>{{ pn.friendly_name or pn.phone_number }}</strong><code>{{ pn.phone_number }}</code><span class="badge bg-dark">{{ pn.number_type }}</span><span class="badge {% if pn.sms_enabled %}bg-success{% else %}bg-secondary{% endif %}">SMS</span><span class="badge {% if pn.voice_enabled %}bg-success{% else %}bg-secondary{% endif %}">Voice</span><a class="btn btn-sm btn-outline-secondary ms-auto" href="?tab=settings&number_id={{ pn.id }}">Configure</a></div>{% else %}<div class="p-4 text-muted">No phone numbers found. Use the legacy add flow to seed Twilio numbers.</div>{% endfor %}
+  </div>
+
+  {% elif tab in ['settings','hours','routing'] %}
+  <h6 class="fw-semibold mb-2">{{ tab|title if tab != 'routing' else 'Call Routing / Forwarding' }}</h6>
+  {{ number_settings_form(tab|title) }}
+
+  {% elif tab == 'auto' %}
+  <div class="d-flex mb-3"><h6 class="fw-semibold">Auto Replies</h6><a href="{{ url_for('twilio.rules') }}" class="btn btn-sm btn-outline-secondary ms-auto">Full rule editor</a></div>
+  <div class="card" style="background:#0f1117;border:1px solid #1e2535;">{% for rule in rules %}<div class="p-3" style="border-bottom:1px solid #1e2535;"><strong>{{ rule.name }}</strong><span class="badge bg-dark ms-2">{{ rule.trigger_type }}</span><div class="text-muted small">{{ (rule.response or '')[:140] }}</div></div>{% else %}<div class="p-4 text-muted">No auto-reply rules yet.</div>{% endfor %}</div>
+
+  {% elif tab == 'users' %}
+  <div class="d-flex mb-3"><h6 class="fw-semibold">Users & Permissions{% if selected_number %} — {{ selected_number.friendly_name or selected_number.phone_number }}{% endif %}</h6><a href="{{ url_for('main.manage_users') }}" class="btn btn-sm btn-outline-secondary ms-auto">Manage users</a></div>
+  {% if selected_number %}<div class="card" style="background:#0f1117;border:1px solid #1e2535;">{% for row in users_with_access %}<form method="POST" action="{{ url_for('twilio.comms_number_permissions', number_id=selected_number.id) }}" class="p-3" style="border-bottom:1px solid #1e2535;"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="user_id" value="{{ row.user.id }}"><div class="d-flex flex-wrap gap-2 align-items-center"><strong>{{ row.user.email or row.user.username }}</strong><span class="badge bg-dark">{{ row.access.role }}</span>{% for f,l in [('can_access_pwa','PWA'),('can_view_sms','View SMS'),('can_send_sms','Send SMS'),('can_view_calls','Calls'),('can_call','Dial'),('can_view_voicemail','Voicemail'),('can_send_campaigns','Campaigns'),('can_manage_number','Manage')] %}<label class="form-check form-check-inline small"><input class="form-check-input" type="checkbox" name="{{ f }}" value="1" {% if row.access.role in ['owner','admin'] or row.access.assigned_number == selected_number.phone_number %}checked{% endif %}> {{ l }}</label>{% endfor %}<button class="btn btn-sm btn-primary ms-auto">Save</button></div></form>{% endfor %}</div>{% endif %}
+
+  {% elif tab == 'voicemail' %}
+  <div class="d-flex mb-3"><h6 class="fw-semibold">Visual Voicemail</h6><a href="?tab=settings{% if selected_number %}&number_id={{ selected_number.id }}{% endif %}" class="btn btn-sm btn-outline-secondary ms-auto">Greeting settings</a></div>
+  <div class="card" style="background:#0f1117;border:1px solid #1e2535;">{% for vm in voicemails %}<div class="p-3" style="border-bottom:1px solid #1e2535;"><div class="d-flex justify-content-between"><strong>{{ vm.from_number or 'Unknown caller' }}</strong><span class="badge {% if vm.is_read %}bg-secondary{% else %}bg-primary{% endif %}">{{ 'Read' if vm.is_read else 'Unread' }}</span></div><div class="small text-muted">{{ vm.created_at.strftime('%b %-d %H:%M') if vm.created_at else '' }} · {{ vm.duration_secs or 0 }}s</div>{% if vm.recording_url %}<audio controls src="{{ vm.recording_url }}" style="width:100%;margin-top:8px;"></audio>{% endif %}<div class="mt-2 small text-muted">Transcription: {{ vm.transcription_status or 'not requested' }}{% if vm.transcription_provider %} via {{ vm.transcription_provider }}{% endif %}{% if vm.transcribed_at %} · {{ vm.transcribed_at.strftime('%b %-d %H:%M') }}{% endif %}</div>{% if vm.transcription_text or vm.transcript %}<div class="mt-2 small">{{ vm.transcription_text or vm.transcript }}</div>{% endif %}{% if vm.transcription_error %}<div class="mt-2 small text-danger">{{ vm.transcription_error }}</div>{% endif %}</div>{% else %}<div class="p-4 text-muted">No voicemail messages yet.</div>{% endfor %}</div>
+
+  {% elif tab == 'pwa' %}
+  <div class="card p-4" style="background:#0f1117;border:1px solid #1e2535;"><h6>PWA Phone App</h6><p class="text-muted">Open this link on the work phone, then use Share → Add to Home Screen. Assigned numbers and permissions are enforced server-side.</p><a class="btn btn-primary" href="/app/inbox" target="_blank">Open PWA Phone App</a><div class="mt-3 small text-muted">Assigned users are managed in Users & Permissions. If QR support is enabled elsewhere, point it at <code>/app/inbox</code>.</div></div>
+
+  {% elif tab == 'devices' %}
+  <div class="d-flex mb-3 flex-wrap gap-2"><h6 class="fw-semibold">PWA / Work-Phone Devices</h6><span class="text-muted small ms-auto">Devices update through /api/pwa/devices/register and /api/pwa/devices/heartbeat.</span></div>
+  <div class="card" style="background:#0f1117;border:1px solid #1e2535;overflow-x:auto;"><table class="table table-dark table-sm align-middle mb-0"><thead><tr><th>Device</th><th>User</th><th>Default line</th><th>Browser/type</th><th>Status</th><th>Push</th><th>Mic</th><th>PWA</th><th>Calling controls</th></tr></thead><tbody>{% for d in devices %}<tr><td>{{ d.device_name or 'PWA Device' }}</td><td>{{ d.user.email if d.user else d.user_id }}</td><td>{{ d.phone_number.friendly_name if d.phone_number and d.phone_number.friendly_name else (d.phone_number.phone_number if d.phone_number else 'Not selected') }}</td><td>{{ d.browser or 'Unknown' }}<div class="small text-muted">{{ d.device_type or '' }}</div></td><td><span class="badge {% if d.online_status == 'online' %}bg-success{% else %}bg-secondary{% endif %}">{{ d.online_status or 'offline' }}</span><div class="small text-muted">{{ d.last_seen_at.strftime('%b %-d %H:%M') if d.last_seen_at else 'Never' }}</div></td><td>{{ 'Enabled' if d.push_enabled else 'Disabled' }}</td><td>{{ d.microphone_permission or 'unknown' }}</td><td>{{ 'Installed' if d.pwa_installed else 'Browser' }}</td><td><div class="small">WiFi-only: {{ 'Yes' if d.wifi_only else 'No' }}</div><div class="small">Cell callback: {{ 'Enabled' if d.cellular_callback_enabled else 'Disabled' }}</div><div class="small">Mobile data: {{ 'Allowed' if d.mobile_data_calling_allowed else 'Blocked' }}</div><div class="small">Default: {{ d.default_calling_method or 'browser' }}</div></td></tr>{% else %}<tr><td colspan="9" class="text-muted p-4">No PWA devices have registered yet. Open the PWA Phone App on a work phone to register device status.</td></tr>{% endfor %}</tbody></table></div>
+
+  {% elif tab == 'integrations' %}
+  <div class="card p-4" style="background:#0f1117;border:1px solid #1e2535;"><h6>Integrations</h6><p class="text-muted">Twilio webhooks, Google Contacts, SMS delivery callbacks, and provider health remain connected here.</p><a href="{{ url_for('twilio.google_contacts_connect') }}" class="btn btn-sm btn-outline-secondary">Google Contacts</a><a href="{{ url_for('twilio.settings') }}" class="btn btn-sm btn-outline-secondary ms-2">Twilio Webhooks</a></div>
+
+  {% elif tab == 'reports' %}
+  <div class="card" style="background:#0f1117;border:1px solid #1e2535;">{% for item in activity %}<div class="p-3" style="border-bottom:1px solid #1e2535;"><strong>{{ item.action }}</strong><div class="small text-muted">{{ item.created_at }}</div></div>{% else %}<div class="p-4 text-muted">No recent communications activity.</div>{% endfor %}</div>
+
   <!-- ═══════════ INBOX TAB ═══════════ -->
-  {% if tab == 'inbox' %}
+  {% elif tab == 'inbox' %}
 
   {% if not ta or not ta.is_configured %}
   <div class="alert alert-warning d-flex align-items-center gap-3">

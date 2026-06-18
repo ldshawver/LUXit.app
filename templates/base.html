@@ -546,16 +546,8 @@
                     <a href="{{ url_for('twilio.comms_hub') }}" class="sidebar-nav-item{% if _p.startswith('/twilio/comms') or _p.startswith('/twilio/inbox') or _p.startswith('/twilio/conversation') or _p.startswith('/app/inbox') %} active{% endif %}">
                         <i data-feather="phone-call"></i> Communications Hub
                     </a>
-                    {% if current_user.is_authenticated and (current_user.is_admin or current_user.is_platform_admin) %}
-                    <a href="{{ url_for('admin_communications.communications_admin') }}" class="sidebar-nav-item{% if _p.startswith('/admin/communications') %} active{% endif %}">
-                        <i data-feather="settings"></i> SMS &amp; Calls Admin
-                    </a>
-                    {% endif %}
-                    {% if current_user.is_authenticated and (current_user.is_admin or current_user.is_platform_admin) %}
-                    <a href="{{ url_for('twilio.number_management') }}" class="sidebar-nav-item{% if _p.startswith('/twilio/numbers') %} active{% endif %}">
-                        <i data-feather="hash"></i> Phone Numbers
-                    </a>
-                    {% endif %}
+                    {# Communications configuration is consolidated under Communications Hub.
+                       Legacy deep-link pages remain routed, but are hidden here to avoid duplicate menu items. #}
                     <a href="{{ url_for('main.social_media') }}" class="sidebar-nav-item{% if _p.startswith('/social') %} active{% endif %}">
                         <i data-feather="share-2"></i> Social
                     </a>

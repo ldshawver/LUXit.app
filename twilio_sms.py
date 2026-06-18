@@ -133,6 +133,16 @@ class _NumberScopedTwilioConfig:
         "after_hours_text",
         "after_hours_sms_enabled",
         "after_hours_voicemail_enabled",
+        "business_hours",
+        "timezone",
+        "during_hours_route",
+        "after_hours_route",
+        "browser_calling_enabled",
+        "cell_callback_enabled",
+        "wifi_only",
+        "mobile_data_allowed",
+        "fallback_behavior",
+        "caller_id_display_name",
     )
 
     def __init__(self, account, phone_number=None):
@@ -244,6 +254,15 @@ def _seed_phone_numbers_from_accounts():
                     call_forward_to         = ta.call_forward_to,
                     voice_forwarding_enabled = bool(ta.voice_forwarding_enabled),
                     ring_timeout            = 25,
+                    business_hours          = {},
+                    timezone                = "America/Los_Angeles",
+                    during_hours_route      = "ring_pwa",
+                    after_hours_route       = "voicemail",
+                    browser_calling_enabled = True,
+                    cell_callback_enabled   = True,
+                    wifi_only               = False,
+                    mobile_data_allowed     = True,
+                    fallback_behavior       = "cell_callback",
                     voicemail_greeting_text = ta.voicemail_greeting_text,
                     voicemail_greeting_audio_url = ta.voicemail_greeting_audio_url,
                     missed_call_text        = ta.missed_call_text,
@@ -391,15 +410,18 @@ def _validate_twilio_signature(ta, endpoint_path: str = "/twilio/sms/inbound") -
     return True
 
 
-def _is_business_hours(company_id: int, at_time=None) -> bool:
-    """Return True when *at_time* falls within the company's configured hours.
+def _is_business_hours(company_id: int, at_time=None, phone_config=None) -> bool:
+    """Return True when *at_time* falls within configured hours.
 
-    BusinessHours.timezone is honored per tenant; missing rows mean closed.
+    Prefer per-phone-number business hours when present. Tenant PhoneSettings and
+    legacy BusinessHours rows remain as defaults/backward compatibility.
     """
     from models import BusinessHours, PhoneSettings
 
     settings = PhoneSettings.query.filter_by(company_id=company_id).first()
-    tz_name = (
+    phone_hours = getattr(phone_config, "business_hours", None) if phone_config else None
+    phone_tz = getattr(phone_config, "timezone", None) if phone_config else None
+    tz_name = phone_tz or (
         settings.timezone
         if settings and getattr(settings, "timezone", None)
         else os.environ.get("DEFAULT_PHONE_TIMEZONE")
@@ -413,11 +435,12 @@ def _is_business_hours(company_id: int, at_time=None) -> bool:
     now_local = (at_time or datetime.now(timezone.utc)).astimezone(local_tz)
     day = now_local.weekday()   # 0=Mon … 6=Sun
 
-    if settings and getattr(settings, "business_hours", None):
+    hours_cfg = phone_hours if phone_hours else (settings.business_hours if settings and getattr(settings, "business_hours", None) else None)
+    if hours_cfg:
         day_key = str(day)
         day_cfg = (
-            settings.business_hours.get(day_key)
-            or settings.business_hours.get(DAYS[day].lower())
+            hours_cfg.get(day_key)
+            or hours_cfg.get(DAYS[day].lower())
         )
         if day_cfg:
             if day_cfg.get("closed") or day_cfg.get("is_open") is False:
@@ -461,9 +484,20 @@ def _pwa_voice_identity(company_id: int) -> str:
     return pwa_voice_identity(company_id)
 
 
+
+def _business_hours_from_form(form):
+    hours = {}
+    for i in range(7):
+        hours[str(i)] = {
+            "is_open": form.get(f"bh_{i}_open") == "1",
+            "open": form.get(f"bh_{i}_start") or "09:00",
+            "close": form.get(f"bh_{i}_end") or "17:00",
+        }
+    return hours
+
 def _can_send_call_auto_sms(company_id: int, to_number: str, *, cooldown_hours: int = 24) -> tuple[bool, str]:
     """Guard call-triggered automated SMS for opt-out compliance and cooldown."""
-    from models import TwilioConversation, TwilioCallLog
+    from models import TwilioConversation, TwilioCallLog, TwilioPhoneNumber, UserCompanyAccess, User, AutoReplyRule, VoiceVoicemailMessage, MarketingAuditLog, PWADevice
     if not to_number:
         return False, "missing_number"
     conv = TwilioConversation.query.filter_by(
@@ -486,43 +520,38 @@ def _can_send_call_auto_sms(company_id: int, to_number: str, *, cooldown_hours: 
 
 def _get_or_create_conversation(company_id: int, from_number: str, to_number: str):
     from models import TwilioConversation, Contact
-    from services.google_contacts import normalize_phone, _all_forms
+    from services.google_contacts import normalize_phone, _all_forms, lookup_contact_name
 
-    conv = TwilioConversation.query.filter_by(
-        company_id=company_id,
-        from_number=from_number,
+    forms = _all_forms(from_number)
+    conv = TwilioConversation.query.filter(
+        TwilioConversation.company_id == company_id,
+        TwilioConversation.from_number.in_(forms or [from_number]),
     ).first()
-    if not conv:
-        # Normalize the inbound number and try all common representations
-        norm  = normalize_phone(from_number)
-        forms = _all_forms(from_number)
 
-        contact = None
-        for form in forms:
-            contact = Contact.query.filter_by(
-                company_id=company_id,
-                phone=form,
-                is_active=True,
-            ).first()
-            if contact:
-                break
-
-        contact_name   = None
-        contact_source = None
+    contact = None
+    for form in forms:
+        contact = Contact.query.filter_by(
+            company_id=company_id,
+            phone=form,
+            is_active=True,
+        ).first()
         if contact:
-            contact_name   = f"{contact.first_name or ''} {contact.last_name or ''}".strip() or None
-            contact_source = "crm"
+            break
 
+    contact_name, contact_source = lookup_contact_name(company_id, from_number)
+    if contact and not contact_name:
+        contact_name = (contact.name or f"{contact.first_name or ''} {contact.last_name or ''}".strip() or None)
+        contact_source = contact.source or "crm"
+
+    if not conv:
+        norm = normalize_phone(from_number)
         logger.debug(
-            "_get_or_create_conversation: from=%s norm=%s company=%s "
-            "contact_match=%s name=%s source=%s",
-            from_number, norm, company_id,
-            contact.id if contact else None, contact_name, contact_source,
+            "_get_or_create_conversation: from=%s norm=%s company=%s contact_match=%s name=%s source=%s",
+            from_number, norm, company_id, contact.id if contact else None, contact_name, contact_source,
         )
-
         conv = TwilioConversation(
             company_id=company_id,
-            from_number=from_number,
+            from_number=normalize_phone(from_number) or from_number,
             to_number=to_number,
             contact_id=contact.id if contact else None,
             contact_name=contact_name,
@@ -531,6 +560,12 @@ def _get_or_create_conversation(company_id: int, from_number: str, to_number: st
         )
         db.session.add(conv)
         db.session.flush()
+    else:
+        if contact and not conv.contact_id:
+            conv.contact_id = contact.id
+        if contact_name and conv.contact_name != contact_name:
+            conv.contact_name = contact_name
+            conv.contact_source = contact_source
     return conv
 
 
@@ -723,7 +758,7 @@ def _apply_auto_reply_rules(conv, body: str, ta) -> bool:
 
     now_utc     = datetime.now(timezone.utc)
     reply_sent  = False
-    in_business = _is_business_hours(ta.company_id)
+    in_business = _is_business_hours(ta.company_id, phone_config=ta)
 
     logger.info("%s business_hours=%s first_contact=%s", _tag, in_business, conv.is_first_contact)
 
@@ -1382,7 +1417,7 @@ def inbound_call():
             db.session.commit()
 
     # Determine routing
-    in_hours = _is_business_hours(ta.company_id)
+    in_hours = _is_business_hours(ta.company_id, phone_config=ta)
     after_hours_sms_enabled = (
         getattr(ta, "after_hours_sms_enabled", False)
         if pn and getattr(pn, "after_hours_sms_enabled", None) is not None
@@ -1642,6 +1677,7 @@ def voice_recording():
                         recording_sid=recording_sid,
                         recording_url=recording_url,
                         duration_secs=int(recording_dur or 0),
+                        transcription_status="not_requested",
                     ))
             elif log.status != "voicemail":
                 log.status = log.status or "completed"
@@ -1722,9 +1758,16 @@ def voice_transcription():
         log.transcription_text = text or log.transcription_text
         log.transcription_status = "complete" if status == "completed" else status
         log.transcription_provider = "twilio"
+        log.transcription_error = data.get("TranscriptionError") or data.get("ErrorMessage")
+        log.transcribed_at = datetime.utcnow() if text or status in ("completed", "complete", "failed") else log.transcribed_at
         vm = VoiceVoicemailMessage.query.filter_by(call_log_id=log.id).first()
         if vm:
             vm.transcript = text or vm.transcript
+            vm.transcription_text = text or vm.transcription_text
+            vm.transcription_status = log.transcription_status
+            vm.transcription_provider = "twilio"
+            vm.transcription_error = log.transcription_error
+            vm.transcribed_at = log.transcribed_at
         event_id = transcription_sid or recording_sid or f"{call_sid}:transcription"
         if not CallEvent.query.filter_by(call_log_id=log.id, event_type="transcription", provider_event_id=event_id).first():
             db.session.add(CallEvent(call_log_id=log.id, event_type="transcription", provider_event_id=event_id, payload=dict(data)))
@@ -1813,6 +1856,12 @@ def inbox():
         conversations=conversations,
         unread_count=unread_count,
         ta=ta,
+        phone_numbers=phone_numbers,
+        selected_number=selected_number,
+        users_with_access=users_with_access,
+        rules=rules,
+        voicemails=voicemails,
+        activity=activity,
         status_filter=status_filter,
         search=search,
         gc_connected=gc_connected,
@@ -1826,7 +1875,7 @@ def inbox():
 def comms_hub():
     """Communications Hub — tabbed wrapper for SMS, Calls, Voicemail, Contacts, etc."""
     from flask_login import current_user
-    from models import TwilioConversation, TwilioCallLog
+    from models import TwilioConversation, TwilioCallLog, TwilioPhoneNumber, UserCompanyAccess, User, AutoReplyRule, VoiceVoicemailMessage, MarketingAuditLog
 
     company = _get_company()
     if not company:
@@ -1834,7 +1883,16 @@ def comms_hub():
         return redirect(url_for("main.dashboard"))
 
     ta           = _get_twilio_account(company.id)
-    tab          = request.args.get("tab", "inbox")
+    tab          = request.args.get("tab", "overview")
+    if tab == "sms":
+        tab = "inbox"
+    if tab == "logs":
+        tab = "calls"
+    phone_numbers = TwilioPhoneNumber.query.filter_by(company_id=company.id, is_active=True).order_by(TwilioPhoneNumber.is_primary.desc(), TwilioPhoneNumber.created_at.asc()).all()
+    selected_number_id = request.args.get("number_id", type=int)
+    selected_number = None
+    if phone_numbers:
+        selected_number = next((pn for pn in phone_numbers if pn.id == selected_number_id), None) or phone_numbers[0]
     status_filter = request.args.get("status", "all")
     search       = request.args.get("q", "").strip()
 
@@ -1886,6 +1944,34 @@ def comms_hub():
         pass
 
     is_admin = getattr(current_user, "is_admin", False) or getattr(current_user, "is_platform_admin", False)
+    users_with_access = []
+    try:
+        for acc in UserCompanyAccess.query.filter_by(company_id=company.id).all():
+            u = db.session.get(User, acc.user_id)
+            if u:
+                users_with_access.append({"user": u, "access": acc})
+    except Exception:
+        pass
+    rules = []
+    try:
+        rules = AutoReplyRule.query.filter_by(company_id=company.id).order_by(AutoReplyRule.priority.desc(), AutoReplyRule.id.asc()).all()
+    except Exception:
+        pass
+    voicemails = []
+    try:
+        voicemails = VoiceVoicemailMessage.query.filter_by(company_id=company.id, is_deleted=False).order_by(VoiceVoicemailMessage.created_at.desc()).limit(100).all()
+    except Exception:
+        pass
+    activity = []
+    try:
+        activity = MarketingAuditLog.query.filter_by(company_id=company.id).order_by(MarketingAuditLog.created_at.desc()).limit(25).all()
+    except Exception:
+        pass
+    devices = []
+    try:
+        devices = PWADevice.query.filter_by(company_id=company.id).order_by(PWADevice.last_seen_at.desc()).limit(100).all()
+    except Exception:
+        pass
 
     return render_template(
         "twilio/comms_hub.html",
@@ -1901,8 +1987,39 @@ def comms_hub():
         gc_last_sync=gc_last_sync,
         gc_contacts=gc_contacts,
         is_admin=is_admin,
+        phone_numbers=phone_numbers,
+        selected_number=selected_number,
+        users_with_access=users_with_access,
+        rules=rules,
+        voicemails=voicemails,
+        activity=activity,
+        devices=devices,
     )
 
+
+
+@twilio_bp.route("/comms/numbers/<int:number_id>/permissions", methods=["POST"])
+@login_required
+def comms_number_permissions(number_id):
+    from models import TwilioPhoneNumber, PhoneNumberUserPermission, UserCompanyAccess
+    from services.comms_permissions import can_manage_users
+    company = _get_company()
+    if not company or not can_manage_users(current_user, company.id):
+        abort(403)
+    pn = TwilioPhoneNumber.query.filter_by(id=number_id, company_id=company.id).first_or_404()
+    user_id = request.form.get("user_id", type=int)
+    if not user_id or not UserCompanyAccess.query.filter_by(user_id=user_id, company_id=company.id).first():
+        flash("Select a valid tenant user.", "error")
+        return redirect(url_for("twilio.comms_hub", tab="users", number_id=pn.id))
+    perm = PhoneNumberUserPermission.query.filter_by(phone_number_id=pn.id, user_id=user_id).first()
+    if not perm:
+        perm = PhoneNumberUserPermission(company_id=company.id, phone_number_id=pn.id, user_id=user_id)
+        db.session.add(perm)
+    for field in ("can_access_pwa", "can_view_sms", "can_send_sms", "can_view_calls", "can_call", "can_view_voicemail", "can_manage_number", "can_send_campaigns"):
+        setattr(perm, field, request.form.get(field) == "1")
+    db.session.commit()
+    flash(f"Permissions updated for {pn.phone_number}.", "success")
+    return redirect(url_for("twilio.comms_hub", tab="users", number_id=pn.id))
 
 @twilio_bp.route("/comms/settings")
 @login_required
@@ -2058,24 +2175,29 @@ def send_message():
     body      = (payload.get("body") or "").strip()
     conv_id   = payload.get("conversation_id")
 
-    if not to_number or not body:
-        return jsonify({"success": False, "error": "to and body are required."})
+    if not body:
+        return jsonify({"success": False, "error": "Message body is required."})
 
     conv = None
     if conv_id:
         from models import TwilioConversation
         conv = TwilioConversation.query.filter_by(id=conv_id, company_id=company.id).first()
 
+    if conv and not to_number:
+        to_number = conv.from_number
+    if not to_number:
+        return jsonify({"success": False, "error": "Recipient phone number is required."})
     if not conv:
         conv = _get_or_create_conversation(company.id, to_number, ta.from_phone or "")
 
-    # Update conversation preview
-    conv.last_message_at      = datetime.utcnow()
-    conv.last_message_preview = f"You: {body[:150]}"
-    conv.message_count        = (conv.message_count or 0) + 1
-    db.session.commit()
-
     result = _send_sms(ta, to_number, body, conversation_id=conv.id)
+    if result.get("success"):
+        conv.last_message_at      = datetime.utcnow()
+        conv.last_message_preview = f"You: {body[:150]}"
+        conv.message_count        = (conv.message_count or 0) + 1
+        db.session.commit()
+    else:
+        logger.error("/twilio/send failed company=%s conv=%s to=%s error=%s", company.id, conv.id, to_number, result.get("error"))
     return jsonify(result)
 
 
@@ -2783,6 +2905,17 @@ def number_edit(number_id):
     pn.voice_forwarding_enabled = request.form.get("voice_forwarding_enabled") == "1"
     pn.missed_call_text       = request.form.get("missed_call_text", "").strip() or None
     pn.voicemail_greeting_text = request.form.get("voicemail_greeting_text", "").strip() or None
+    pn.voicemail_greeting_audio_url = request.form.get("voicemail_greeting_audio_url", "").strip() or None
+    pn.business_hours = _business_hours_from_form(request.form) if any(k.startswith("bh_") for k in request.form.keys()) else (pn.business_hours or {})
+    pn.timezone = request.form.get("timezone", pn.timezone or "America/Los_Angeles").strip()
+    pn.during_hours_route = request.form.get("during_hours_route", pn.during_hours_route or "ring_pwa").strip()
+    pn.after_hours_route = request.form.get("after_hours_route", pn.after_hours_route or "voicemail").strip()
+    pn.browser_calling_enabled = request.form.get("browser_calling_enabled") == "1"
+    pn.cell_callback_enabled = request.form.get("cell_callback_enabled") == "1"
+    pn.wifi_only = request.form.get("wifi_only") == "1"
+    pn.mobile_data_allowed = request.form.get("mobile_data_allowed") == "1"
+    pn.fallback_behavior = request.form.get("fallback_behavior", pn.fallback_behavior or "cell_callback").strip()
+    pn.caller_id_display_name = request.form.get("caller_id_display_name", "").strip() or None
     pn.after_hours_sms_enabled = request.form.get("after_hours_sms_enabled") == "1"
     pn.after_hours_voicemail_enabled = request.form.get("after_hours_voicemail_enabled") == "1"
     pn.notes                  = request.form.get("notes", "").strip() or None
@@ -2794,6 +2927,8 @@ def number_edit(number_id):
 
     db.session.commit()
     flash(f"Number {pn.phone_number} updated.", "success")
+    if request.form.get("return_to") == "comms":
+        return redirect(url_for("twilio.comms_hub", tab="settings", number_id=pn.id))
     return redirect(url_for("twilio.number_management"))
 
 

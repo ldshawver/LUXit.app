@@ -144,13 +144,19 @@
                                 {{ campaign.status }}
                             </span>
                         </td>
+                        <td><small>{{ campaign.from_phone_number or 'Default number' }}</small></td>
                         <td>{{ campaign.sent_at.strftime('%Y-%m-%d %H:%M') if campaign.sent_at else '-' }}</td>
                         <td>{{ campaign.created_at.strftime('%Y-%m-%d') }}</td>
                         <td>
                             <div class="btn-group btn-group-sm">
                                 {% if campaign.status == 'draft' %}
-                                <form method="POST" action="{{ url_for('main.send_sms_campaign', campaign_id=campaign.id) }}" style="display: inline;">
+                                <form method="POST" action="{{ url_for('main.send_sms_campaign', campaign_id=campaign.id) }}" class="d-inline-flex gap-1 align-items-center">
                                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+                                    {% if phone_numbers %}
+                                    <select name="from_phone_number_id" class="form-select form-select-sm" title="Sending number" style="width:150px;background:#0b0d14;border-color:#1e2535;color:#fff;">
+                                        {% for pn in phone_numbers %}<option value="{{ pn.id }}" {% if campaign.from_phone_number_id == pn.id %}selected{% endif %}>{{ pn.friendly_name or pn.phone_number }}</option>{% endfor %}
+                                    </select>
+                                    {% endif %}
                                     <button type="submit" class="btn btn-sm btn-success" onclick="return confirm('Send this SMS campaign to {{ campaign.recipients.count() }} recipients?')" title="Send">
                                         <i data-feather="send" style="width:14px;height:14px;"></i>
                                     </button>

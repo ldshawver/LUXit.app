@@ -29,6 +29,10 @@
       --safe-top: env(safe-area-inset-top, 0px);
       --safe-bot: env(safe-area-inset-bottom, 0px);
     }
+    html[data-palette="ocean"] { --purple:#0891b2; --purple-l:#67e8f9; --cyan:#38bdf8; --pink:#22d3ee; }
+    html[data-palette="forest"] { --purple:#16a34a; --purple-l:#86efac; --cyan:#34d399; --pink:#84cc16; }
+    html[data-palette="sunset"] { --purple:#ea580c; --purple-l:#fdba74; --cyan:#f59e0b; --pink:#f43f5e; }
+    html[data-palette="mono"] { --purple:#64748b; --purple-l:#cbd5e1; --cyan:#94a3b8; --pink:#e2e8f0; }
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     html, body { height: 100%; background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; overflow: hidden; }
 
@@ -193,7 +197,7 @@
       display: inline-block;
       max-width: min(72vw, 420px); padding: 9px 14px; border-radius: 16px;
       font-size: .88rem; line-height: 1.45; word-break: normal;
-      overflow-wrap: break-word; white-space: pre-wrap;
+      overflow-wrap: normal; white-space: pre-wrap; min-width: 2.5rem;
     }
     .bubble.out { background: var(--purple); color: #fff; border-bottom-right-radius: 4px; }
     .bubble.in  { background: #1e2535; color: var(--text); border-bottom-left-radius: 4px; }
@@ -598,6 +602,7 @@
     <div class="sidebar-head">
       <h1>Messages</h1>
       <span class="badge-unread" id="unreadBadge">0</span>
+      <select id="numberSelector" title="Assigned number" onchange="onNumberSelect(this.value)" style="display:none;background:#111827;border:1px solid var(--border);color:var(--text);border-radius:8px;padding:4px 6px;font-size:.72rem;max-width:118px;"></select>
       <div class="live-dot" id="liveDot" title="Connecting..."></div>
       <div class="pwa-head-actions">
         <button class="pwa-head-icon" onclick="openDialPad()" title="Dial Pad">
@@ -842,6 +847,18 @@
       <div id="gcErrorBanner" style="display:none;width:100%;padding:6px 8px;border-radius:6px;background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.25);color:#f87171;font-size:.75rem;"></div>
     </div>
 
+
+    <div class="settings-section-label" style="margin-top:20px;">Appearance</div>
+    <div class="settings-toggle-row" style="flex-direction:column;align-items:flex-start;gap:8px;">
+      <div class="settings-toggle-label"><div><span>Color Palette</span><small>Choose a phone-app theme for this device</small></div></div>
+      <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;width:100%;">
+        <button class="btn-small" onclick="setPalette('lux')">LUX Purple</button>
+        <button class="btn-small" onclick="setPalette('ocean')">Ocean</button>
+        <button class="btn-small" onclick="setPalette('forest')">Forest</button>
+        <button class="btn-small" onclick="setPalette('sunset')">Sunset</button>
+      </div>
+    </div>
+
     <!-- App -->
     <div class="settings-section-label" style="margin-top:20px;">App</div>
     <button class="settings-action-btn" onclick="refreshApp()">
@@ -879,7 +896,10 @@
     <div class="dial-handle"></div>
 
     <div class="dial-display-row">
-      <div class="dial-display empty" id="dialDisplay">Enter number</div>
+      <div style="flex:1;min-width:0;">
+        <div class="dial-display empty" id="dialDisplay">Enter number</div>
+        <div id="dialMatch" style="text-align:center;color:var(--cyan);font-size:.8rem;margin-top:4px;min-height:18px;"></div>
+      </div>
       <button class="dial-back" id="dialBack" onclick="dialBackspace()" style="display:none;">⌫</button>
     </div>
 
@@ -969,11 +989,69 @@
    LUXit Inbox PWA — Real-time SSE + full feature set
 ═══════════════════════════════════════════════════════════════ */
 const CSRF        = '{{ csrf_token() }}';
+const SERVER_PALETTE = {{ (user.pwa_palette_id or "lux")|tojson }};
+function applyPalette(name) {
+  const p = name || 'lux';
+  document.documentElement.dataset.palette = p === 'lux' ? '' : p;
+  localStorage.setItem('luxitPwaPalette', p);
+}
+async function setPalette(name) {
+  const p = name || 'lux';
+  applyPalette(p);
+  try { await apiFetch('/api/pwa/preferences', 'PATCH', { palette_id: p }); } catch (e) { console.warn('Palette preference will retry later', e); }
+}
+applyPalette(SERVER_PALETTE || localStorage.getItem('luxitPwaPalette') || 'lux');
 const VAPID_PUBLIC = document.documentElement.dataset.vapid ?? '';
 const CONV_CACHE_KEY = 'luxitInboxConversations';
 
+
+function pwaDeviceKey() {
+  let key = localStorage.getItem('luxitPwaDeviceKey');
+  if (!key) {
+    key = (window.crypto?.randomUUID ? window.crypto.randomUUID() : 'pwa-' + Date.now() + '-' + Math.random().toString(16).slice(2));
+    localStorage.setItem('luxitPwaDeviceKey', key);
+  }
+  return key;
+}
+function browserLabel() {
+  const ua = navigator.userAgent || '';
+  if (/CriOS|Chrome/i.test(ua)) return 'Chrome';
+  if (/Safari/i.test(ua) && !/Chrome/i.test(ua)) return 'Safari';
+  if (/Firefox/i.test(ua)) return 'Firefox';
+  if (/Edg/i.test(ua)) return 'Edge';
+  return 'Browser';
+}
+function deviceTypeLabel() {
+  const ua = navigator.userAgent || '';
+  if (/iPhone|Android.*Mobile/i.test(ua)) return 'phone';
+  if (/iPad|Tablet/i.test(ua)) return 'tablet';
+  return 'desktop';
+}
+async function registerPwaDevice(kind='register') {
+  const selected = state?.selectedNumber || localStorage.getItem('luxitPwaSelectedNumber') || '';
+  let mic = 'unknown';
+  try { if (navigator.permissions?.query) mic = (await navigator.permissions.query({name:'microphone'})).state; } catch (_) {}
+  const payload = {
+    device_key: pwaDeviceKey(),
+    device_name: localStorage.getItem('luxitPwaDeviceName') || `${browserLabel()} ${deviceTypeLabel()}`,
+    browser: browserLabel(),
+    device_type: deviceTypeLabel(),
+    selected_number: selected,
+    push_enabled: ('Notification' in window) && Notification.permission === 'granted',
+    microphone_permission: mic,
+    pwa_installed: window.matchMedia?.('(display-mode: standalone)').matches || window.navigator.standalone === true,
+    default_calling_method: localStorage.getItem('luxitDefaultCallingMethod') || 'browser'
+  };
+  const path = kind === 'heartbeat' ? '/api/pwa/devices/heartbeat' : '/api/pwa/devices/register';
+  try {
+    const data = await apiFetch(path, 'POST', payload);
+    if (data?.preferences?.palette_id) applyPalette(data.preferences.palette_id);
+  } catch (e) { console.warn('PWA device telemetry unavailable', e); }
+}
+
 let state = {
   filter:        'all',
+  selectedNumber: localStorage.getItem('luxitPwaSelectedNumber') || '',
   search:        '',
   activeConvId:  null,
   conversations: [],
@@ -991,8 +1069,11 @@ let state = {
 /* ── Init ─────────────────────────────────────────────────────── */
 window.addEventListener('DOMContentLoaded', () => {
   updateSoundBtn();
+  loadAssignedNumbers();
   loadConversations();
   loadBadgeCounts();
+  registerPwaDevice('register');
+  setInterval(() => registerPwaDevice('heartbeat'), 60000);
   connectSSE();
   registerSW();
   checkNotifPrompt();
@@ -1203,9 +1284,27 @@ async function apiFetch(url, method = 'GET', body = null) {
 }
 
 /* ── Conversation list ────────────────────────────────────────── */
+async function loadAssignedNumbers() {
+  try {
+    const data = await apiFetch('/api/phone/numbers');
+    const sel = document.getElementById('numberSelector');
+    const nums = data?.numbers || [];
+    if (!sel || nums.length <= 1) { if (sel) sel.style.display = 'none'; return; }
+    sel.innerHTML = '<option value="">All lines</option>' + nums.map(n => `<option value="${esc(n.phone_number)}">${esc(n.friendly_name || n.phone_number)}</option>`).join('');
+    sel.value = state.selectedNumber || '';
+    sel.style.display = '';
+  } catch (e) { console.warn('[PWA] number load failed', e); }
+}
+function onNumberSelect(value) {
+  state.selectedNumber = value || '';
+  localStorage.setItem('luxitPwaSelectedNumber', state.selectedNumber);
+  loadConversations();
+}
+
 async function loadConversations() {
-  const qs   = `?filter=${state.filter}&q=${encodeURIComponent(state.search)}`;
-  const data = await apiFetch('/api/inbox/conversations' + qs);
+  const params = new URLSearchParams({ filter: state.filter, q: state.search || '' });
+  if (state.selectedNumber) params.set('number', state.selectedNumber);
+  const data = await apiFetch('/api/inbox/conversations?' + params.toString());
   if (!data || data.error || data.success === false || !Array.isArray(data.conversations)) {
     const cached = loadCachedConversations();
     if (state.conversations.length) {
@@ -1909,7 +2008,7 @@ function formatTime(iso) {
 }
 
 function normalizeSmsBody(str) {
-  let text = String(str || '').replace(/\r\n/g, '\n');
+  let text = String(str || '').replace(/\r\n/g, '\n').replace(/[\u200B-\u200D\uFEFF]/g, '');
   const lines = text.split('\n');
   const nonEmpty = lines.filter(line => line.trim().length);
   // Some provider/webhook payloads arrive with one visible character per line.
@@ -1935,7 +2034,7 @@ document.querySelectorAll('.pwa-modal-overlay').forEach(el => {
 });
 
 /* ── Dial Pad ─────────────────────────────────────────────────── */
-let dialState = { number: '', isCalling: false };
+let dialState = { number: '', isCalling: false, lookupTimer: null };
 
 function openDialPad() {
   dialState.number = '';
@@ -1977,6 +2076,19 @@ function _dialRefresh() {
   // Enable call button when we have ≥7 digits
   const digits = n.replace(/\D/g, '');
   callBtn.disabled = digits.length < 7 || dialState.isCalling;
+  clearTimeout(dialState.lookupTimer);
+  dialState.lookupTimer = setTimeout(dialLookup, 250);
+}
+
+async function dialLookup() {
+  const match = document.getElementById('dialMatch');
+  const q = (dialState.number || '').replace(/[^\d+]/g, '');
+  if (!match || q.replace(/\D/g,'').length < 3) { if (match) match.textContent = ''; return; }
+  try {
+    const data = await apiFetch('/api/inbox/contacts/search?q=' + encodeURIComponent(q));
+    const hit = (data?.contacts || [])[0];
+    match.textContent = hit ? `${hit.name}${hit.company ? ' · ' + hit.company : ''} · ${hit.phone}` : 'New number — call or SMS';
+  } catch (e) { match.textContent = ''; }
 }
 
 function _dialFormat(n) {

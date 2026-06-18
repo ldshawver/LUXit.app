@@ -153,6 +153,11 @@ def _get_twilio_account(company_id):
     return TwilioAccount.query.filter_by(company_id=company_id, is_active=True).first()
 
 
+def _accessible_numbers_for(user, company_id: int) -> list[str]:
+    from services.comms_permissions import accessible_phone_numbers
+    return accessible_phone_numbers(user, company_id)
+
+
 _UNICODE_REPLACEMENTS = str.maketrans({
     "\u2026": "...",   # …  ellipsis
     "\u2019": "'",     # '  right single quotation mark
@@ -404,6 +409,7 @@ def pwa_calls():
 
 
 def _call_to_dict(call):
+    voicemail_text = getattr(call, "transcription_text", None)
     return {
         "id": call.id,
         "twilio_call_sid": call.twilio_sid,
@@ -412,23 +418,220 @@ def _call_to_dict(call):
         "status": call.status,
         "from_number": call.from_number,
         "to_number": call.to_number,
+        "assigned_business_number": call.to_number if call.direction == "inbound" else call.from_number,
         "forwarded_to_number": getattr(call, "forwarded_to_number", None),
         "caller_name": call.caller_name or call.from_number,
+        "contact_name": call.caller_name or call.from_number,
+        "label": "Missed" if call.status in ("missed", "no-answer", "busy", "failed") else ("Outgoing" if call.direction == "outbound" else "Incoming"),
         "duration_seconds": call.duration or 0,
         "recording_url": getattr(call, "recording_url", None),
         "recording_sid": getattr(call, "recording_sid", None),
         "voicemail_url": getattr(call, "voicemail_url", None),
+        "voicemail_exists": bool(getattr(call, "voicemail_url", None) or call.status == "voicemail"),
         "voicemail_sid": getattr(call, "voicemail_sid", None),
-        "transcription_text": getattr(call, "transcription_text", None),
+        "transcription_text": voicemail_text,
+        "transcription_preview": (voicemail_text or "")[:160],
         "transcription_status": getattr(call, "transcription_status", None),
+        "transcription_provider": getattr(call, "transcription_provider", None),
+        "transcription_error": getattr(call, "transcription_error", None),
+        "transcribed_at": call.transcribed_at.isoformat() if getattr(call, "transcribed_at", None) else None,
         "answered_by_user_id": getattr(call, "answered_by_user_id", None),
         "answered_at": call.answered_at.isoformat() if getattr(call, "answered_at", None) else None,
+        "started_at": call.created_at.isoformat() if call.created_at else None,
         "ended_at": call.ended_at.isoformat() if getattr(call, "ended_at", None) else None,
         "is_read": getattr(call, "is_read", False),
+        "read_at": call.read_at.isoformat() if getattr(call, "read_at", None) else None,
+        "callback_target": getattr(call, "callback_target", None) or (call.from_number if call.direction == "inbound" else call.to_number),
         "is_archived": getattr(call, "is_archived", False),
         "created_at": call.created_at.isoformat() if call.created_at else None,
         "updated_at": call.updated_at.isoformat() if getattr(call, "updated_at", None) else None,
     }
+
+
+def _phone_number_for_payload(company_id, user, payload):
+    """Resolve and authorize a TwilioPhoneNumber from an API payload."""
+    from models import TwilioPhoneNumber
+    from services.comms_permissions import accessible_phone_numbers
+    allowed = set(accessible_phone_numbers(user, company_id))
+    number_id = payload.get("phone_number_id")
+    phone_number = payload.get("phone_number") or payload.get("selected_number")
+    q = TwilioPhoneNumber.query.filter_by(company_id=company_id, is_active=True)
+    if number_id:
+        pn = q.filter_by(id=number_id).first()
+    elif phone_number:
+        pn = q.filter_by(phone_number=phone_number).first()
+    else:
+        pn = None
+    if pn and pn.phone_number not in allowed:
+        abort(403, "No access to that phone number")
+    return pn
+
+
+def _device_to_dict(device):
+    pn = getattr(device, "phone_number", None)
+    user = getattr(device, "user", None)
+    return {
+        "id": device.id,
+        "device_name": device.device_name or "PWA Device",
+        "assigned_user": (user.email or user.username) if user else None,
+        "assigned_user_id": device.user_id,
+        "phone_number_id": device.phone_number_id,
+        "assigned_phone_number": pn.phone_number if pn else None,
+        "default_line": pn.friendly_name or pn.phone_number if pn else None,
+        "browser": device.browser,
+        "device_type": device.device_type,
+        "online_status": device.online_status,
+        "last_seen_at": device.last_seen_at.isoformat() if device.last_seen_at else None,
+        "push_enabled": bool(device.push_enabled),
+        "microphone_permission": device.microphone_permission or "unknown",
+        "pwa_installed": bool(device.pwa_installed),
+        "wifi_only": bool(device.wifi_only),
+        "cellular_callback_enabled": bool(device.cellular_callback_enabled),
+        "mobile_data_calling_allowed": bool(device.mobile_data_calling_allowed),
+        "default_calling_method": device.default_calling_method or "browser",
+    }
+
+
+def _upsert_pwa_device(user, company, payload):
+    from models import PWADevice
+    pn = _phone_number_for_payload(company.id, user, payload)
+    device_key = (payload.get("device_key") or payload.get("installation_id") or "").strip()
+    if not device_key:
+        abort(400, "device_key is required")
+    device = PWADevice.query.filter_by(company_id=company.id, user_id=user.id, device_key=device_key).first()
+    if not device:
+        device = PWADevice(company_id=company.id, user_id=user.id, device_key=device_key)
+        db.session.add(device)
+    device.phone_number_id = pn.id if pn else device.phone_number_id
+    for field in ("device_name", "browser", "device_type", "microphone_permission", "default_calling_method"):
+        if field in payload:
+            setattr(device, field, (payload.get(field) or "")[:120])
+    device.user_agent = request.headers.get("User-Agent", "")[:1000]
+    device.online_status = "online"
+    device.last_seen_at = datetime.utcnow()
+    device.push_enabled = bool(payload.get("push_enabled", device.push_enabled))
+    device.pwa_installed = bool(payload.get("pwa_installed", device.pwa_installed))
+    device.wifi_only = bool(payload.get("wifi_only", device.wifi_only))
+    device.cellular_callback_enabled = bool(payload.get("cellular_callback_enabled", device.cellular_callback_enabled))
+    device.mobile_data_calling_allowed = bool(payload.get("mobile_data_calling_allowed", device.mobile_data_calling_allowed))
+    return device
+
+
+# ── API: accessible phone numbers ───────────────────────────────────────────
+
+@inbox_pwa_bp.route("/api/phone/numbers")
+def api_phone_numbers():
+    user = _require_auth()
+    company = _require_company(user)
+    from models import TwilioPhoneNumber, TwilioAccount
+    numbers = _accessible_numbers_for(user, company.id)
+    rows = []
+    for pn in TwilioPhoneNumber.query.filter(TwilioPhoneNumber.company_id == company.id, TwilioPhoneNumber.phone_number.in_(numbers or ["__none__"])).all():
+        rows.append({
+            "id": pn.id,
+            "phone_number": pn.phone_number,
+            "friendly_name": pn.friendly_name or pn.phone_number,
+            "sms_enabled": bool(pn.sms_enabled),
+            "voice_enabled": bool(pn.voice_enabled),
+            "caller_id": pn.friendly_name or pn.phone_number,
+        })
+    known = {r["phone_number"] for r in rows}
+    for ta in TwilioAccount.query.filter_by(company_id=company.id).all():
+        if ta.from_phone in numbers and ta.from_phone not in known:
+            rows.append({"id": None, "phone_number": ta.from_phone, "friendly_name": ta.from_phone, "sms_enabled": True, "voice_enabled": True, "caller_id": ta.from_phone})
+    return jsonify({"success": True, "numbers": rows})
+
+
+@inbox_pwa_bp.route("/api/pwa/preferences", methods=["GET", "PATCH"])
+def api_pwa_preferences():
+    user = _require_auth()
+    _require_company(user)
+    if request.method == "PATCH":
+        data = request.get_json() or {}
+        palette = (data.get("palette_id") or data.get("palette") or "lux").strip()
+        if palette not in {"lux", "ocean", "forest", "sunset"}:
+            return jsonify({"success": False, "error": "Unsupported palette."}), 400
+        user.pwa_palette_id = palette
+        if data.get("theme_mode") in {"dark", "light", "system"}:
+            user.pwa_theme_mode = data.get("theme_mode")
+        user.pwa_preferences_updated_at = datetime.utcnow()
+        db.session.commit()
+    return jsonify({
+        "success": True,
+        "preferences": {
+            "palette_id": user.pwa_palette_id or "lux",
+            "theme_mode": user.pwa_theme_mode or "dark",
+            "updated_at": user.pwa_preferences_updated_at.isoformat() if user.pwa_preferences_updated_at else None,
+        }
+    })
+
+
+@inbox_pwa_bp.route("/api/pwa/devices")
+def api_pwa_devices():
+    user = _require_auth()
+    company = _require_company(user)
+    from models import PWADevice
+    from services.comms_permissions import accessible_phone_numbers, can_manage_users
+    allowed = set(accessible_phone_numbers(user, company.id))
+    q = PWADevice.query.filter_by(company_id=company.id)
+    if not can_manage_users(user, company.id):
+        q = q.filter(PWADevice.user_id == user.id)
+    devices = []
+    for device in q.order_by(PWADevice.last_seen_at.desc()).all():
+        pn = getattr(device, "phone_number", None)
+        if pn and pn.phone_number not in allowed:
+            continue
+        devices.append(_device_to_dict(device))
+    return jsonify({"success": True, "devices": devices})
+
+
+@inbox_pwa_bp.route("/api/pwa/devices/register", methods=["POST"])
+def api_pwa_device_register():
+    user = _require_auth()
+    company = _require_company(user)
+    device = _upsert_pwa_device(user, company, request.get_json() or {})
+    db.session.commit()
+    return jsonify({
+        "success": True,
+        "device": _device_to_dict(device),
+        "preferences": {
+            "palette_id": user.pwa_palette_id or "lux",
+            "theme_mode": user.pwa_theme_mode or "dark",
+        },
+    })
+
+
+@inbox_pwa_bp.route("/api/pwa/devices/heartbeat", methods=["POST"])
+def api_pwa_device_heartbeat():
+    user = _require_auth()
+    company = _require_company(user)
+    device = _upsert_pwa_device(user, company, request.get_json() or {})
+    db.session.commit()
+    return jsonify({"success": True, "device": _device_to_dict(device)})
+
+
+@inbox_pwa_bp.route("/api/pwa/devices/<int:device_id>/settings", methods=["PATCH"])
+def api_pwa_device_settings(device_id):
+    user = _require_auth()
+    company = _require_company(user)
+    from models import PWADevice
+    from services.comms_permissions import can_manage_users
+    device = PWADevice.query.filter_by(id=device_id, company_id=company.id).first_or_404()
+    if device.user_id != user.id and not can_manage_users(user, company.id):
+        abort(403)
+    data = request.get_json() or {}
+    if "phone_number_id" in data or "phone_number" in data or "selected_number" in data:
+        pn = _phone_number_for_payload(company.id, user, data)
+        device.phone_number_id = pn.id if pn else None
+    for field in ("device_name", "microphone_permission", "default_calling_method"):
+        if field in data:
+            setattr(device, field, (data.get(field) or "")[:120])
+    for field in ("push_enabled", "pwa_installed", "wifi_only", "cellular_callback_enabled", "mobile_data_calling_allowed"):
+        if field in data:
+            setattr(device, field, bool(data.get(field)))
+    device.last_seen_at = datetime.utcnow()
+    db.session.commit()
+    return jsonify({"success": True, "device": _device_to_dict(device)})
 
 
 # ── API: conversation list ────────────────────────────────────────────────────
@@ -439,7 +642,8 @@ def api_recent_calls():
     company = _require_company(user)
     from models import TwilioCallLog
     tab = request.args.get("tab", "all")
-    q = TwilioCallLog.query.filter_by(company_id=company.id, is_archived=False)
+    from services.comms_permissions import filter_calls_for_user
+    q = filter_calls_for_user(TwilioCallLog.query.filter_by(company_id=company.id, is_archived=False), user, company.id)
     if tab == "missed":
         q = q.filter(TwilioCallLog.status.in_(["missed", "no-answer", "busy", "failed"]))
     elif tab == "voicemail":
@@ -457,7 +661,8 @@ def api_call_detail(call_id):
     user = _require_auth()
     company = _require_company(user)
     from models import TwilioCallLog
-    call = TwilioCallLog.query.filter_by(id=call_id, company_id=company.id).first_or_404()
+    from services.comms_permissions import filter_calls_for_user
+    call = filter_calls_for_user(TwilioCallLog.query.filter_by(id=call_id, company_id=company.id), user, company.id).first_or_404()
     return jsonify({"call": _call_to_dict(call)})
 
 
@@ -466,11 +671,16 @@ def api_call_mark_read(call_id):
     user = _require_auth()
     company = _require_company(user)
     from models import TwilioCallLog, VoiceVoicemailMessage
-    call = TwilioCallLog.query.filter_by(id=call_id, company_id=company.id).first_or_404()
+    from services.comms_permissions import filter_calls_for_user
+    call = filter_calls_for_user(TwilioCallLog.query.filter_by(id=call_id, company_id=company.id), user, company.id).first_or_404()
     call.is_read = True
+    call.read_at = datetime.utcnow()
+    call.read_by_user_id = user.id
     vm = VoiceVoicemailMessage.query.filter_by(call_log_id=call.id, company_id=company.id).first()
     if vm:
         vm.is_read = True
+        vm.read_at = call.read_at
+        vm.read_by_user_id = user.id
     db.session.commit()
     return jsonify({"success": True, "call": _call_to_dict(call)})
 
@@ -480,7 +690,8 @@ def api_call_archive(call_id):
     user = _require_auth()
     company = _require_company(user)
     from models import TwilioCallLog, VoiceVoicemailMessage
-    call = TwilioCallLog.query.filter_by(id=call_id, company_id=company.id).first_or_404()
+    from services.comms_permissions import filter_calls_for_user
+    call = filter_calls_for_user(TwilioCallLog.query.filter_by(id=call_id, company_id=company.id), user, company.id).first_or_404()
     call.is_archived = True
     vm = VoiceVoicemailMessage.query.filter_by(call_log_id=call.id, company_id=company.id).first()
     if vm:
@@ -494,7 +705,11 @@ def api_voicemails():
     user = _require_auth()
     company = _require_company(user)
     from models import TwilioCallLog
-    calls = TwilioCallLog.query.filter_by(company_id=company.id, status="voicemail", is_archived=False).order_by(TwilioCallLog.created_at.desc()).limit(100).all()
+    from services.comms_permissions import filter_calls_for_user
+    calls = filter_calls_for_user(
+        TwilioCallLog.query.filter_by(company_id=company.id, status="voicemail", is_archived=False),
+        user, company.id,
+    ).order_by(TwilioCallLog.created_at.desc()).limit(100).all()
     return jsonify({"voicemails": [_call_to_dict(c) for c in calls]})
 
 
@@ -523,6 +738,65 @@ def _settings_to_dict(settings):
         "transcription_enabled": settings.transcription_enabled,
     }
 
+
+
+@inbox_pwa_bp.route("/api/phone/numbers/<int:number_id>/settings", methods=["GET", "PUT"])
+def api_phone_number_settings(number_id):
+    user = _require_auth()
+    company = _require_company(user)
+    from models import TwilioPhoneNumber
+    from services.comms_permissions import accessible_phone_numbers, can_manage_users
+    pn = TwilioPhoneNumber.query.filter_by(id=number_id, company_id=company.id, is_active=True).first_or_404()
+    if pn.phone_number not in accessible_phone_numbers(user, company.id):
+        abort(404)
+    editable = can_manage_users(user, company.id)
+    if request.method == "PUT":
+        if not editable:
+            return jsonify({"success": False, "error": "Permission denied."}), 403
+        data = request.get_json() or {}
+        allowed = {
+            "business_hours", "timezone", "during_hours_route", "after_hours_route",
+            "sms_forward_to", "sms_forwarding_enabled", "auto_reply_enabled",
+            "call_forward_to", "voice_forwarding_enabled", "ring_timeout",
+            "voicemail_greeting_text", "voicemail_greeting_audio_url",
+            "after_hours_text", "after_hours_sms_enabled", "after_hours_voicemail_enabled",
+            "browser_calling_enabled", "cell_callback_enabled", "wifi_only",
+            "mobile_data_allowed", "fallback_behavior", "caller_id_display_name",
+        }
+        for key in allowed:
+            if key in data:
+                setattr(pn, key, data[key])
+        db.session.commit()
+    return jsonify({
+        "success": True,
+        "editable": editable,
+        "settings": {
+            "id": pn.id,
+            "phone_number": pn.phone_number,
+            "friendly_name": pn.friendly_name or pn.phone_number,
+            "business_hours": pn.business_hours or _default_business_hours(),
+            "timezone": pn.timezone,
+            "during_hours_route": pn.during_hours_route,
+            "after_hours_route": pn.after_hours_route,
+            "sms_forward_to": pn.sms_forward_to,
+            "sms_forwarding_enabled": pn.sms_forwarding_enabled,
+            "auto_reply_enabled": pn.auto_reply_enabled,
+            "call_forward_to": pn.call_forward_to,
+            "voice_forwarding_enabled": pn.voice_forwarding_enabled,
+            "ring_timeout": pn.ring_timeout,
+            "voicemail_greeting_text": pn.voicemail_greeting_text,
+            "voicemail_greeting_audio_url": pn.voicemail_greeting_audio_url,
+            "after_hours_text": pn.after_hours_text,
+            "after_hours_sms_enabled": pn.after_hours_sms_enabled,
+            "after_hours_voicemail_enabled": pn.after_hours_voicemail_enabled,
+            "browser_calling_enabled": pn.browser_calling_enabled,
+            "cell_callback_enabled": pn.cell_callback_enabled,
+            "wifi_only": pn.wifi_only,
+            "mobile_data_allowed": pn.mobile_data_allowed,
+            "fallback_behavior": pn.fallback_behavior,
+            "caller_id_display_name": pn.caller_id_display_name,
+        }
+    })
 
 @inbox_pwa_bp.route("/api/phone/settings", methods=["GET", "PUT"])
 def api_phone_settings():
@@ -599,7 +873,8 @@ def _update_call_action(call_id: int, *, status: str, user_field: str | None = N
     user = _require_auth()
     company = _require_company(user)
     from models import TwilioCallLog, CallEvent
-    call = TwilioCallLog.query.filter_by(id=call_id, company_id=company.id).first_or_404()
+    from services.comms_permissions import filter_calls_for_user
+    call = filter_calls_for_user(TwilioCallLog.query.filter_by(id=call_id, company_id=company.id), user, company.id).first_or_404()
     call.status = status
     if user_field:
         setattr(call, user_field, user.id)
@@ -649,8 +924,10 @@ def list_conversations():
     filter_by = request.args.get("filter", "all")
     search    = request.args.get("q", "").strip()
     page      = int(request.args.get("page", 1))
+    number_filter = (request.args.get("number") or "").strip()
 
-    q = TwilioConversation.query.filter_by(company_id=company.id)
+    from services.comms_permissions import filter_conversations_for_user, accessible_phone_numbers
+    q = filter_conversations_for_user(TwilioConversation.query.filter_by(company_id=company.id), user, company.id)
 
     if filter_by == "unread":
         q = q.filter_by(is_read=False)
@@ -660,6 +937,13 @@ def list_conversations():
     if filter_by == "opted_out":
         q = q.filter_by(is_opted_out=True)
 
+    if number_filter:
+        allowed_numbers = accessible_phone_numbers(user, company.id)
+        if number_filter not in allowed_numbers:
+            q = q.filter(db.text("1=0"))
+        else:
+            q = q.filter(TwilioConversation.to_number == number_filter)
+
     if search:
         q = q.filter(db.or_(
             TwilioConversation.from_number.ilike(f"%{search}%"),
@@ -667,8 +951,9 @@ def list_conversations():
             TwilioConversation.last_message_preview.ilike(f"%{search}%"),
         ))
 
-    unread_count = TwilioConversation.query.filter_by(
-        company_id=company.id, is_read=False
+    unread_count = filter_conversations_for_user(
+        TwilioConversation.query.filter_by(company_id=company.id, is_read=False),
+        user, company.id,
     ).count()
 
     convs = q.order_by(TwilioConversation.last_message_at.desc()).all()
@@ -697,7 +982,10 @@ def get_conversation(conv_id):
     user    = _require_auth()
     company = _require_company(user)
     from models import TwilioConversation
-    conv = TwilioConversation.query.filter_by(id=conv_id, company_id=company.id).first_or_404()
+    from services.comms_permissions import filter_conversations_for_user
+    conv = filter_conversations_for_user(
+        TwilioConversation.query.filter_by(id=conv_id, company_id=company.id), user, company.id
+    ).first_or_404()
 
     # Mark as read when opened
     if not conv.is_read:
@@ -734,7 +1022,10 @@ def send_message(conv_id):
     user    = _require_auth()
     company = _require_company(user)
     from models import TwilioConversation
-    conv = TwilioConversation.query.filter_by(id=conv_id, company_id=company.id).first_or_404()
+    from services.comms_permissions import filter_conversations_for_user
+    conv = filter_conversations_for_user(
+        TwilioConversation.query.filter_by(id=conv_id, company_id=company.id), user, company.id
+    ).first_or_404()
 
     payload = request.get_json() or {}
     body    = (payload.get("body") or "").strip()
@@ -856,7 +1147,10 @@ def mark_read(conv_id):
     user    = _require_auth()
     company = _get_company(user)
     from models import TwilioConversation
-    conv = TwilioConversation.query.filter_by(id=conv_id, company_id=company.id).first_or_404()
+    from services.comms_permissions import filter_conversations_for_user
+    conv = filter_conversations_for_user(
+        TwilioConversation.query.filter_by(id=conv_id, company_id=company.id), user, company.id
+    ).first_or_404()
     payload  = request.get_json() or {}
     conv.is_read = payload.get("is_read", True)
     db.session.commit()
@@ -870,7 +1164,10 @@ def archive_conversation(conv_id):
     user    = _require_auth()
     company = _get_company(user)
     from models import TwilioConversation
-    conv = TwilioConversation.query.filter_by(id=conv_id, company_id=company.id).first_or_404()
+    from services.comms_permissions import filter_conversations_for_user
+    conv = filter_conversations_for_user(
+        TwilioConversation.query.filter_by(id=conv_id, company_id=company.id), user, company.id
+    ).first_or_404()
     payload  = request.get_json() or {}
     archive  = payload.get("archived", True)
     tags     = _safe_conversation_tags(conv.tags)
@@ -890,7 +1187,10 @@ def assign_conversation(conv_id):
     user    = _require_auth()
     company = _get_company(user)
     from models import TwilioConversation
-    conv = TwilioConversation.query.filter_by(id=conv_id, company_id=company.id).first_or_404()
+    from services.comms_permissions import filter_conversations_for_user
+    conv = filter_conversations_for_user(
+        TwilioConversation.query.filter_by(id=conv_id, company_id=company.id), user, company.id
+    ).first_or_404()
     payload = request.get_json() or {}
     assign_to = payload.get("user_id")  # null to unassign
     conv.assigned_user_id = assign_to
@@ -905,7 +1205,10 @@ def update_notes(conv_id):
     user    = _require_auth()
     company = _get_company(user)
     from models import TwilioConversation
-    conv = TwilioConversation.query.filter_by(id=conv_id, company_id=company.id).first_or_404()
+    from services.comms_permissions import filter_conversations_for_user
+    conv = filter_conversations_for_user(
+        TwilioConversation.query.filter_by(id=conv_id, company_id=company.id), user, company.id
+    ).first_or_404()
     payload  = request.get_json() or {}
     conv.notes = payload.get("notes", conv.notes or "")
     db.session.commit()
@@ -919,7 +1222,10 @@ def rename_contact(conv_id):
     user    = _require_auth()
     company = _get_company(user)
     from models import TwilioConversation
-    conv = TwilioConversation.query.filter_by(id=conv_id, company_id=company.id).first_or_404()
+    from services.comms_permissions import filter_conversations_for_user
+    conv = filter_conversations_for_user(
+        TwilioConversation.query.filter_by(id=conv_id, company_id=company.id), user, company.id
+    ).first_or_404()
     payload  = request.get_json() or {}
     name     = (payload.get("name") or "").strip()
     if name:
@@ -937,8 +1243,10 @@ def unread_count():
     if not company:
         return jsonify({"count": 0})
     from models import TwilioConversation
-    count = TwilioConversation.query.filter_by(
-        company_id=company.id, is_read=False
+    from services.comms_permissions import filter_conversations_for_user
+    count = filter_conversations_for_user(
+        TwilioConversation.query.filter_by(company_id=company.id, is_read=False),
+        user, company.id,
     ).count()
     return jsonify({"count": count})
 
@@ -1136,14 +1444,20 @@ def search_contacts():
     results = []
     try:
         from models import Contact
+        digits = "".join(ch for ch in q if ch.isdigit())
         like = f"%{q}%"
+        digit_like = f"%{digits}%" if digits else like
         contacts = (
             Contact.query
             .filter(
                 Contact.company_id == company.id,
                 db.or_(
-                    Contact.name.ilike(like),
+                    Contact.first_name.ilike(like),
+                    Contact.last_name.ilike(like),
+                    Contact.company.ilike(like),
+                    Contact.email.ilike(like),
                     Contact.phone.ilike(like),
+                    Contact.phone.ilike(digit_like),
                 ),
             )
             .limit(8)
@@ -1151,34 +1465,49 @@ def search_contacts():
         )
         for c in contacts:
             if c.phone:
-                results.append({"name": c.name or c.phone, "phone": c.phone})
+                name = " ".join([part for part in [c.first_name, c.last_name] if part]).strip()
+                results.append({"name": name or c.company or c.email or c.phone, "company": c.company, "email": c.email, "phone": c.phone, "source": "contact"})
     except Exception:
         pass
 
-    if not results:
-        try:
-            from models import TwilioConversation
-            like = f"%{q}%"
-            convs = (
-                TwilioConversation.query
-                .filter(
-                    TwilioConversation.company_id == company.id,
-                    db.or_(
-                        TwilioConversation.contact_name.ilike(like),
-                        TwilioConversation.from_number.ilike(like),
-                    ),
-                )
-                .limit(8)
-                .all()
-            )
-            seen = set()
-            for cv in convs:
-                phone = cv.from_number
-                if phone and phone not in seen:
-                    seen.add(phone)
-                    results.append({"name": cv.contact_name or phone, "phone": phone})
-        except Exception:
-            pass
+    try:
+        from models import TwilioConversation
+        from services.comms_permissions import filter_conversations_for_user
+        like = f"%{q}%"
+        convs = (
+            filter_conversations_for_user(TwilioConversation.query.filter_by(company_id=company.id), user, company.id)
+            .filter(db.or_(TwilioConversation.contact_name.ilike(like), TwilioConversation.from_number.ilike(like)))
+            .limit(8)
+            .all()
+        )
+        seen = {r["phone"] for r in results}
+        for cv in convs:
+            phone = cv.from_number
+            if phone and phone not in seen:
+                seen.add(phone)
+                results.append({"name": cv.contact_name or phone, "phone": phone, "source": "conversation"})
+    except Exception:
+        pass
+
+    try:
+        from models import TwilioCallLog
+        from services.comms_permissions import filter_calls_for_user
+        like = f"%{q}%"
+        calls = (
+            filter_calls_for_user(TwilioCallLog.query.filter_by(company_id=company.id), user, company.id)
+            .filter(db.or_(TwilioCallLog.caller_name.ilike(like), TwilioCallLog.from_number.ilike(like), TwilioCallLog.to_number.ilike(like)))
+            .order_by(TwilioCallLog.created_at.desc())
+            .limit(8)
+            .all()
+        )
+        seen = {r["phone"] for r in results}
+        for call in calls:
+            phone = call.from_number if call.direction == "inbound" else call.to_number
+            if phone and phone not in seen:
+                seen.add(phone)
+                results.append({"name": call.caller_name or phone, "phone": phone, "source": "call_log"})
+    except Exception:
+        pass
 
     return jsonify({"contacts": results})
 
@@ -1197,8 +1526,9 @@ def place_outbound_call(conv_id):
     company = _require_company(user)
 
     from models import TwilioConversation
-    conv = TwilioConversation.query.filter_by(
-        id=conv_id, company_id=company.id
+    from services.comms_permissions import filter_conversations_for_user
+    conv = filter_conversations_for_user(
+        TwilioConversation.query.filter_by(id=conv_id, company_id=company.id), user, company.id
     ).first_or_404()
 
     ta = _get_twilio_account(company.id)
@@ -1215,6 +1545,18 @@ def place_outbound_call(conv_id):
         client = Client(sid, tok)
 
         payload     = request.get_json() or {}
+        from models import TwilioPhoneNumber
+        from services.comms_permissions import accessible_phone_numbers
+        allowed_numbers = set(accessible_phone_numbers(user, company.id))
+        business_number = conv.to_number if conv.to_number in allowed_numbers else ta.from_phone
+        pn = TwilioPhoneNumber.query.filter_by(company_id=company.id, phone_number=business_number, is_active=True).first()
+        method = payload.get("calling_method") or "cell_callback"
+        if method == "browser" and pn and not pn.browser_calling_enabled:
+            return jsonify({"success": False, "error": "Browser/WiFi calling is disabled for this number."}), 403
+        if method == "cell_callback" and pn and not pn.cell_callback_enabled:
+            return jsonify({"success": False, "error": "Cell callback calling is disabled for this number."}), 403
+        if method == "browser" and pn and pn.wifi_only and payload.get("network_type") == "cellular":
+            return jsonify({"success": False, "error": "This line is WiFi-only for browser calling."}), 403
         forward_to  = payload.get("forward_to") or ta.call_forward_to
         customer_no = conv.from_number
 
@@ -1222,7 +1564,7 @@ def place_outbound_call(conv_id):
         twiml_url = url_for(
             "twilio.outbound_call_twiml",
             to=customer_no,
-            caller=ta.from_phone,
+            caller=business_number,
             _external=True,
         )
 
@@ -1230,7 +1572,7 @@ def place_outbound_call(conv_id):
             # Call the agent first; TwiML dials the customer when agent answers
             call = client.calls.create(
                 to=forward_to,
-                from_=ta.from_phone,
+                from_=business_number,
                 url=twiml_url,
             )
             msg = f"Calling your phone ({forward_to}). Answer to be connected to {customer_no}."
@@ -1238,7 +1580,7 @@ def place_outbound_call(conv_id):
             # Call the customer directly (e.g. to leave a voicemail / test)
             call = client.calls.create(
                 to=customer_no,
-                from_=ta.from_phone,
+                from_=business_number,
                 url=twiml_url,
             )
             msg = f"Outbound call initiated to {customer_no}."
@@ -1287,26 +1629,43 @@ def dial_number():
         tok    = ta.get_auth_token()  if hasattr(ta, "get_auth_token")  else ta._auth_token
         client = Client(sid, tok)
 
+        from models import TwilioPhoneNumber
+        from services.comms_permissions import accessible_phone_numbers
+        allowed_numbers = set(accessible_phone_numbers(user, company.id))
+        business_number = payload.get("from_phone_number") or payload.get("selected_number") or ta.from_phone
+        if business_number not in allowed_numbers:
+            return jsonify({"success": False, "error": "No access to the selected business number."}), 403
+        pn = TwilioPhoneNumber.query.filter_by(company_id=company.id, phone_number=business_number, is_active=True).first()
+        method = payload.get("calling_method") or "cell_callback"
+        if method == "browser" and pn and not pn.browser_calling_enabled:
+            return jsonify({"success": False, "error": "Browser/WiFi calling is disabled for this number."}), 403
+        if method == "cell_callback" and pn and not pn.cell_callback_enabled:
+            return jsonify({"success": False, "error": "Cell callback calling is disabled for this number."}), 403
+        if method == "browser" and pn and pn.wifi_only and payload.get("network_type") == "cellular":
+            return jsonify({"success": False, "error": "This line is WiFi-only for browser calling."}), 403
+        if method == "browser" and pn and not pn.mobile_data_allowed and payload.get("network_type") == "cellular":
+            return jsonify({"success": False, "error": "Mobile-data browser calling is blocked for this number."}), 403
+
         forward_to = payload.get("forward_to") or ta.call_forward_to
 
         twiml_url = _url_for(
             "twilio.outbound_call_twiml",
             to=to_number,
-            caller=ta.from_phone,
+            caller=business_number,
             _external=True,
         )
 
         if forward_to:
             call = client.calls.create(
                 to=forward_to,
-                from_=ta.from_phone,
+                from_=business_number,
                 url=twiml_url,
             )
             msg = f"Calling your phone ({forward_to}). Answer to be connected to {to_number}."
         else:
             call = client.calls.create(
                 to=to_number,
-                from_=ta.from_phone,
+                from_=business_number,
                 url=twiml_url,
             )
             msg = f"Outbound call initiated to {to_number}."
