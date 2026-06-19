@@ -1387,7 +1387,7 @@ async function loadConversations() {
   state.conversations = (state.filter === 'all' && !state.search)
     ? mergeConversations(state.conversations, data.conversations)
     : data.conversations;
-  renderConvList(state.conversations);
+  renderConvList(state.conversations, data);
   cacheConversations(state.conversations);
   updateUnreadBadge(data.unread_count);
 }
@@ -1416,10 +1416,12 @@ function loadCachedConversations() {
   }
 }
 
-function renderConvList(convs) {
+function renderConvList(convs, meta = {}) {
   const el = document.getElementById('convList');
   if (!convs.length) {
-    el.innerHTML = '<div id="convEmpty">No conversations found.</div>';
+    const title = meta.empty_title || 'No conversations found.';
+    const message = meta.empty_message ? `<p>${escapeHtml(meta.empty_message)}</p>` : '';
+    el.innerHTML = `<div id="convEmpty"><strong>${escapeHtml(title)}</strong>${message}</div>`;
     return;
   }
   el.innerHTML = convs.map(c => {

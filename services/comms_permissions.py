@@ -90,7 +90,11 @@ def accessible_phone_numbers(user, company_id: int) -> list[str]:
     if assigned:
         return [assigned]
 
-    if acc and (acc.has_mobile_inbox_access() or acc.has_comms_hub_access()):
+    # Mobile-inbox-only staff must be assigned an explicit line; otherwise the
+    # PWA can render a clear no-number state instead of silently exposing every
+    # tenant conversation or looping on empty API results. Full Communications
+    # Hub users keep the legacy company-wide fallback.
+    if acc and acc.has_comms_hub_access():
         return all_numbers
     return []
 
