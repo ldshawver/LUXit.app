@@ -62,7 +62,7 @@ def _guard_sms_feature():
         "/twilio/voice/recording",
         "/twilio/voice/status",
     }
-    if request.path in _WEBHOOK_PATHS:
+    if request.path in _WEBHOOK_PATHS or request.path.startswith("/twilio/google-contacts/"):
         return None
 
     if not current_user.is_authenticated:
@@ -2626,6 +2626,22 @@ def save_note(conv_id):
 
 # ── Google Contacts sync ──────────────────────────────────────────────────
 
+def _mobile_inbox_return_url():
+    """Return the safe post-OAuth destination for mobile-inbox-only users."""
+    try:
+        from models import UserCompanyAccess
+        acc = UserCompanyAccess.query.filter_by(user_id=current_user.id).first()
+        if acc and not acc.has_full_app_access() and acc.has_mobile_inbox_access():
+            return "/app/inbox"
+    except Exception as exc:
+        logger.warning("Google Contacts return URL access check failed: %s", exc)
+    return url_for("twilio.inbox")
+
+
+def _google_contacts_redirect():
+    return redirect(_mobile_inbox_return_url())
+
+
 @twilio_bp.route("/google-contacts/connect")
 @login_required
 def google_contacts_connect():
@@ -2635,7 +2651,7 @@ def google_contacts_connect():
     import os
     if not os.environ.get("GOOGLE_CLIENT_ID"):
         flash("GOOGLE_CLIENT_ID is not configured. Add it in Settings → Secrets.", "danger")
-        return redirect(url_for("twilio.inbox"))
+        return _google_contacts_redirect()
     return redirect(get_auth_url(state=str(current_user.id)))
 
 
@@ -2649,15 +2665,23 @@ def google_contacts_callback():
     error = request.args.get("error")
     if error or not code:
         flash(f"Google sign-in was cancelled or failed: {error or 'no code'}", "warning")
-        return redirect(url_for("twilio.inbox"))
+        return _google_contacts_redirect()
     try:
         exchange_code(current_user.id, code)
     except Exception as exc:
         flash(f"Google Contacts connection failed: {exc}", "danger")
-        return redirect(url_for("twilio.inbox"))
+        return _google_contacts_redirect()
     # Run first sync immediately
     company = _get_company()
-    result  = sync_contacts(current_user.id, company.id)
+    if not company:
+        flash("Google Contacts connected, but no company is assigned to this account.", "warning")
+        return _google_contacts_redirect()
+    try:
+        result  = sync_contacts(current_user.id, company.id)
+    except Exception as exc:
+        logger.exception("Google Contacts initial sync failed for user %s", current_user.id)
+        flash(f"Google Contacts connected, but sync failed: {exc}", "warning")
+        return _google_contacts_redirect()
     if result.get("error"):
         flash(f"Connected but sync failed: {result['error']}", "warning")
     else:
@@ -2666,7 +2690,7 @@ def google_contacts_callback():
             f"{result['matched']} inbox names updated.",
             "success",
         )
-    return redirect(url_for("twilio.inbox"))
+    return _google_contacts_redirect()
 
 
 @twilio_bp.route("/google-contacts/sync", methods=["POST"])
@@ -2712,7 +2736,7 @@ def google_contacts_disconnect():
     from services.google_contacts import disconnect
     disconnect(current_user.id)
     flash("Google Contacts disconnected.", "info")
-    return redirect(url_for("twilio.inbox"))
+    return _google_contacts_redirect()
 
 
 # ===========================================================================

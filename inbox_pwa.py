@@ -149,6 +149,13 @@ def _require_company(user):
     return company
 
 
+def _require_mobile_inbox_api_access(user, company):
+    """Gate PWA JSON APIs with the same permission as the PWA shell."""
+    if not _check_mobile_inbox_access(user, company):
+        return jsonify({"success": False, "error": "Mobile inbox access is not enabled for this account."}), 403
+    return None
+
+
 def _get_twilio_account(company_id):
     from models import TwilioAccount
     return TwilioAccount.query.filter_by(company_id=company_id, is_active=True).first()
@@ -378,8 +385,6 @@ def pwa_index():
     user = _current_user()
     if not user:
         return redirect("/auth/login?next=/app/inbox")
-    if not _is_mobile_request():
-        return redirect(url_for("twilio.inbox"))
     company = _get_company(user)
     # No company assigned → show setup page
     if not company:
@@ -550,7 +555,10 @@ def api_phone_numbers():
 @inbox_pwa_bp.route("/api/pwa/preferences", methods=["GET", "PATCH"])
 def api_pwa_preferences():
     user = _require_auth()
-    _require_company(user)
+    company = _require_company(user)
+    denied = _require_mobile_inbox_api_access(user, company)
+    if denied:
+        return denied
     if request.method == "PATCH":
         data = request.get_json() or {}
         palette = (data.get("palette_id") or data.get("palette") or "lux").strip()
@@ -578,6 +586,9 @@ def api_pwa_preferences():
 def api_pwa_devices():
     user = _require_auth()
     company = _require_company(user)
+    denied = _require_mobile_inbox_api_access(user, company)
+    if denied:
+        return denied
     from models import PWADevice
     from services.comms_permissions import accessible_phone_numbers, can_manage_users
     allowed = set(accessible_phone_numbers(user, company.id))
@@ -597,6 +608,9 @@ def api_pwa_devices():
 def api_pwa_device_register():
     user = _require_auth()
     company = _require_company(user)
+    denied = _require_mobile_inbox_api_access(user, company)
+    if denied:
+        return denied
     device = _upsert_pwa_device(user, company, request.get_json() or {})
     db.session.commit()
     return jsonify({
@@ -613,6 +627,9 @@ def api_pwa_device_register():
 def api_pwa_device_heartbeat():
     user = _require_auth()
     company = _require_company(user)
+    denied = _require_mobile_inbox_api_access(user, company)
+    if denied:
+        return denied
     device = _upsert_pwa_device(user, company, request.get_json() or {})
     db.session.commit()
     return jsonify({"success": True, "device": _device_to_dict(device)})
@@ -622,6 +639,9 @@ def api_pwa_device_heartbeat():
 def api_pwa_device_settings(device_id):
     user = _require_auth()
     company = _require_company(user)
+    denied = _require_mobile_inbox_api_access(user, company)
+    if denied:
+        return denied
     from models import PWADevice
     from services.comms_permissions import can_manage_users
     device = PWADevice.query.filter_by(id=device_id, company_id=company.id).first_or_404()
@@ -976,6 +996,9 @@ def list_conversations():
     company = _get_company(user)
     if not company:
         return jsonify({"conversations": [], "unread_count": 0, "total": 0})
+    denied = _require_mobile_inbox_api_access(user, company)
+    if denied:
+        return denied
 
     from models import TwilioConversation
     filter_by = request.args.get("filter", "all")
@@ -984,6 +1007,18 @@ def list_conversations():
     number_filter = (request.args.get("number") or "").strip()
 
     from services.comms_permissions import filter_conversations_for_user, accessible_phone_numbers
+    allowed_numbers = accessible_phone_numbers(user, company.id)
+    if not allowed_numbers:
+        return jsonify({
+            "success": True,
+            "conversations": [],
+            "unread_count": 0,
+            "total": 0,
+            "page": page,
+            "code": "NO_ASSIGNED_NUMBER",
+            "empty_title": "No phone number assigned",
+            "empty_message": "Ask an admin to assign a phone number before using the mobile inbox.",
+        })
     q = filter_conversations_for_user(TwilioConversation.query.filter_by(company_id=company.id), user, company.id)
 
     if filter_by == "unread":
@@ -997,7 +1032,6 @@ def list_conversations():
     if number_filter:
         digits = lambda value: re.sub(r"\D", "", value or "")
         requested_digits = digits(number_filter)
-        allowed_numbers = accessible_phone_numbers(user, company.id)
         matched_number = next((n for n in allowed_numbers if digits(n) == requested_digits), None)
         if not matched_number:
             q = q.filter(db.text("1=0"))
@@ -1035,12 +1069,51 @@ def list_conversations():
     })
 
 
+@inbox_pwa_bp.route("/api/inbox/messages")
+def list_messages():
+    """List recent messages scoped to conversations the PWA user may access."""
+    user = _require_auth()
+    company = _require_company(user)
+    denied = _require_mobile_inbox_api_access(user, company)
+    if denied:
+        return denied
+
+    from models import TwilioConversation, TwilioMessage
+    from services.comms_permissions import accessible_phone_numbers
+    allowed_numbers = accessible_phone_numbers(user, company.id)
+    if not allowed_numbers:
+        return jsonify({
+            "success": True,
+            "messages": [],
+            "total": 0,
+            "code": "NO_ASSIGNED_NUMBER",
+            "empty_title": "No phone number assigned",
+            "empty_message": "Ask an admin to assign a phone number before using the mobile inbox.",
+        })
+
+    limit = min(int(request.args.get("limit", 100)), 250)
+    rows = (TwilioMessage.query
+        .join(TwilioConversation, TwilioMessage.conversation_id == TwilioConversation.id)
+        .filter(
+            TwilioMessage.company_id == company.id,
+            TwilioConversation.company_id == company.id,
+            TwilioConversation.to_number.in_(allowed_numbers),
+        )
+        .order_by(TwilioMessage.created_at.desc())
+        .limit(limit)
+        .all())
+    return jsonify({"success": True, "messages": [_msg_to_dict(m) for m in rows], "total": len(rows)})
+
+
 # ── API: single conversation + messages ───────────────────────────────────────
 
 @inbox_pwa_bp.route("/api/inbox/conversations/<int:conv_id>")
 def get_conversation(conv_id):
     user    = _require_auth()
     company = _require_company(user)
+    denied = _require_mobile_inbox_api_access(user, company)
+    if denied:
+        return denied
     from models import TwilioConversation
     from services.comms_permissions import filter_conversations_for_user
     conv = filter_conversations_for_user(
@@ -1081,6 +1154,9 @@ def get_conversation(conv_id):
 def send_message(conv_id):
     user    = _require_auth()
     company = _require_company(user)
+    denied = _require_mobile_inbox_api_access(user, company)
+    if denied:
+        return denied
     from models import TwilioConversation
     from services.comms_permissions import filter_conversations_for_user
     conv = filter_conversations_for_user(
@@ -1388,6 +1464,9 @@ def pwa_notifications():
     company = _get_company(user)
     if not company:
         return jsonify({"success": True, "notifications": [], "unread_count": 0})
+    denied = _require_mobile_inbox_api_access(user, company)
+    if denied:
+        return denied
     from models import Notification
     unread_only = request.args.get("filter") == "unread" or request.args.get("unread") == "1"
     q = Notification.query.filter_by(user_id=user.id, company_id=company.id)
@@ -1404,6 +1483,9 @@ def pwa_notifications_read():
     company = _get_company(user)
     if not company:
         return jsonify({"success": False, "error": "No company"}), 400
+    denied = _require_mobile_inbox_api_access(user, company)
+    if denied:
+        return denied
     from models import Notification
     payload = request.get_json(silent=True) or request.form or {}
     notification_id = payload.get("notification_id") or payload.get("id")
@@ -1481,6 +1563,9 @@ def push_subscribe():
     company = _get_company(user)
     if not company:
         return jsonify({"success": False, "error": "No company"}), 400
+    denied = _require_mobile_inbox_api_access(user, company)
+    if denied:
+        return denied
 
     payload  = request.get_json() or {}
     endpoint = payload.get("endpoint", "")
@@ -1555,6 +1640,9 @@ def push_test():
     company = _get_company(user)
     if not company:
         return jsonify({"success": False, "error": "No company"}), 400
+    denied = _require_mobile_inbox_api_access(user, company)
+    if denied:
+        return denied
 
     from models import PushSubscription
     subs = PushSubscription.query.filter_by(user_id=user.id, company_id=company.id, is_active=True).all()

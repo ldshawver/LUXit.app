@@ -1,4 +1,4 @@
-from flask import Blueprint, render_template, request, flash, redirect, url_for, jsonify
+from flask import Blueprint, render_template, request, flash, redirect, url_for, jsonify, make_response
 from flask_login import login_required, current_user
 from werkzeug.security import generate_password_hash, check_password_hash
 from extensions import db
@@ -53,6 +53,10 @@ def change_password():
 @login_required
 def manage_users():
     """Manage all users (admin function)"""
+    company = current_user.get_default_company() if hasattr(current_user, "get_default_company") else None
+    from services.comms_permissions import can_manage_users
+    if not company or not can_manage_users(current_user, company.id):
+        return make_response("Forbidden", 403)
     users = User.query.order_by(User.created_at.desc()).all()
     return render_template('manage_users.html', users=users)
 

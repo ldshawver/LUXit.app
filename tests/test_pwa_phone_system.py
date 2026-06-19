@@ -858,3 +858,160 @@ def test_disabled_calling_methods_are_blocked_per_number(client, app, world):
     cell = client.post("/api/inbox/call/dial", json={"to": "+15559990000", "selected_number": "+15550001000", "calling_method": "cell_callback"})
     assert cell.status_code == 403
     assert "Cell callback calling is disabled" in cell.get_json()["error"]
+
+
+def _create_staff_mobile_inbox_user(app, company_id, *, with_number=True):
+    from werkzeug.security import generate_password_hash
+    with app.app_context():
+        user = User(
+            username=f"staff_mobile_{with_number}",
+            email=f"staff_mobile_{str(with_number).lower()}@test.com",
+            password_hash=generate_password_hash("secret"),
+            default_company_id=company_id,
+        )
+        db.session.add(user)
+        db.session.flush()
+        acc = UserCompanyAccess(
+            user_id=user.id,
+            company_id=company_id,
+            role=UserCompanyAccess.ROLE_STAFF,
+            is_default=True,
+            can_access_mobile_inbox=True,
+            pwa_access_enabled=True,
+            can_access_full_app=False,
+            comms_hub_enabled=False,
+            manage_users_enabled=False,
+        )
+        db.session.add(acc)
+        pn = TwilioPhoneNumber(company_id=company_id, phone_number="+15550007777", sms_enabled=True, voice_enabled=True, is_active=True)
+        db.session.add(pn)
+        db.session.flush()
+        if with_number:
+            db.session.add(PhoneNumberUserPermission(
+                company_id=company_id,
+                phone_number_id=pn.id,
+                user_id=user.id,
+                can_access_pwa=True,
+                can_view_sms=True,
+                can_send_sms=True,
+                can_view_calls=True,
+                can_call=True,
+            ))
+        conv = TwilioConversation(
+            company_id=company_id,
+            from_number="+15551110000",
+            to_number="+15550007777",
+            contact_name="Assigned Customer",
+            last_message_at=datetime(2026, 1, 8),
+        )
+        db.session.add(conv)
+        db.session.flush()
+        db.session.add(TwilioMessage(
+            conversation_id=conv.id,
+            company_id=company_id,
+            direction="inbound",
+            from_number="+15551110000",
+            to_number="+15550007777",
+            body="assigned hello",
+            status="received",
+            created_at=datetime(2026, 1, 8),
+        ))
+        db.session.commit()
+        return user.id, conv.id
+
+
+def test_staff_mobile_inbox_user_can_log_in_and_open_inbox(client, app, world):
+    user_id, _ = _create_staff_mobile_inbox_user(app, world["co_a"])
+
+    resp = client.post("/auth/login", data={"email": "staff_mobile_true@test.com", "password": "secret"}, follow_redirects=False)
+
+    assert resp.status_code == 302
+    assert resp.headers["Location"].endswith("/app/inbox")
+    inbox = client.get("/app/inbox", headers={"User-Agent": "Mozilla/5.0 (Linux; Android 14) Chrome/126 Mobile"})
+    assert inbox.status_code == 200
+
+
+def test_staff_mobile_inbox_user_can_subscribe_to_push(client, app, world):
+    user_id, _ = _create_staff_mobile_inbox_user(app, world["co_a"])
+    login(client, user_id)
+
+    resp = client.post("/api/push/subscribe", json={"endpoint": "https://push.test/1", "keys": {"p256dh": "p", "auth": "a"}})
+
+    assert resp.status_code == 200
+    assert resp.get_json()["success"] is True
+
+
+def test_staff_mobile_inbox_user_can_read_assigned_number_conversations(client, app, world):
+    user_id, conv_id = _create_staff_mobile_inbox_user(app, world["co_a"])
+    login(client, user_id)
+
+    listed = client.get("/api/inbox/conversations").get_json()
+    opened = client.get(f"/api/inbox/conversations/{conv_id}")
+    messages = client.get("/api/inbox/messages").get_json()
+
+    assert listed["success"] is True
+    assert [c["contact_name"] for c in listed["conversations"]] == ["Assigned Customer"]
+    assert opened.status_code == 200
+    assert opened.get_json()["messages"][0]["body"] == "assigned hello"
+    assert messages["messages"][0]["body"] == "assigned hello"
+
+
+def test_staff_mobile_inbox_user_cannot_access_campaigns_or_manage(client, app, world):
+    user_id, _ = _create_staff_mobile_inbox_user(app, world["co_a"])
+    login(client, user_id)
+
+    assert client.get("/campaigns").status_code == 403
+    manage_resp = client.get("/user/manage-users")
+    assert manage_resp.status_code in (302, 403)
+    assert manage_resp.status_code != 200
+
+
+def test_staff_mobile_inbox_no_number_returns_clear_empty_state(client, app, world):
+    user_id, _ = _create_staff_mobile_inbox_user(app, world["co_a"], with_number=False)
+    login(client, user_id)
+
+    resp = client.get("/api/inbox/conversations")
+
+    assert resp.status_code == 200
+    body = resp.get_json()
+    assert body["code"] == "NO_ASSIGNED_NUMBER"
+    assert body["empty_title"] == "No phone number assigned"
+    assert body["conversations"] == []
+
+
+def test_staff_mobile_inbox_direct_link_does_not_loop_on_desktop_safari(client, app, world):
+    user_id, _ = _create_staff_mobile_inbox_user(app, world["co_a"])
+    login(client, user_id)
+
+    resp = client.get("/app/inbox", headers={"User-Agent": "Mozilla/5.0 Safari/605.1.15"}, follow_redirects=False)
+
+    assert resp.status_code == 200
+    assert b"LUXit" in resp.data or b"Inbox" in resp.data
+
+
+def test_staff_mobile_inbox_google_contacts_callback_returns_to_pwa(client, app, world, monkeypatch):
+    user_id, _ = _create_staff_mobile_inbox_user(app, world["co_a"])
+    login(client, user_id)
+    calls = []
+    monkeypatch.setattr("services.google_contacts.exchange_code", lambda user_id_arg, code: calls.append((user_id_arg, code)) or {"access_token": "tok"})
+    monkeypatch.setattr("services.google_contacts.sync_contacts", lambda user_id_arg, company_id: {"synced": 0, "matched": 0, "error": None})
+
+    resp = client.get("/twilio/google-contacts/callback?code=ok", follow_redirects=False)
+
+    assert resp.status_code == 302
+    assert resp.headers["Location"].endswith("/app/inbox")
+    assert calls == [(user_id, "ok")]
+
+
+def test_staff_mobile_inbox_google_contacts_callback_handles_sync_exception(client, app, world, monkeypatch):
+    user_id, _ = _create_staff_mobile_inbox_user(app, world["co_a"])
+    login(client, user_id)
+    monkeypatch.setattr("services.google_contacts.exchange_code", lambda user_id_arg, code: {"access_token": "tok"})
+    def boom(user_id_arg, company_id):
+        raise RuntimeError("people api unavailable")
+    monkeypatch.setattr("services.google_contacts.sync_contacts", boom)
+
+    resp = client.get("/twilio/google-contacts/callback?code=ok", follow_redirects=False)
+
+    assert resp.status_code == 302
+    assert resp.headers["Location"].endswith("/app/inbox")
