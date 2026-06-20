@@ -1,0 +1,96 @@
+name: Documenso VPS Audit
+
+on:
+  workflow_dispatch:
+    inputs:
+      contract_id:
+        description: Contract id to investigate in Documenso logs/metadata
+        required: true
+        default: 735551c2-ec6c-41e6-976d-1eef4e13bfa5
+      documenso_public_url:
+        description: Public Documenso base URL to probe
+        required: true
+        default: https://document.luxit.app
+
+concurrency:
+  group: documenso-vps-audit
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    name: Audit Documenso VPS
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout audit scripts
+        uses: actions/checkout@v4
+
+      - name: Configure SSH key
+        shell: bash
+        run: |
+          set -euo pipefail
+          install -m 700 -d ~/.ssh
+          printf '%s\n' '${{ secrets.VPS_PRIVATE_KEY }}' > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          HOST_VALUE='${{ secrets.HOST }}'
+          ssh-keyscan -p 22 -H "$HOST_VALUE" >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: Upload audit scripts to VPS
+        shell: bash
+        run: |
+          set -euo pipefail
+          HOST_VALUE='${{ secrets.HOST }}'
+          REMOTE_DIR="/tmp/luxit-documenso-audit-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          echo "REMOTE_DIR=$REMOTE_DIR" >> "$GITHUB_ENV"
+          ssh -i ~/.ssh/id_ed25519 root@"$HOST_VALUE" "rm -rf '$REMOTE_DIR' && mkdir -p '$REMOTE_DIR/repo/scripts'"
+          scp -i ~/.ssh/id_ed25519 -r scripts/documenso root@"$HOST_VALUE":"$REMOTE_DIR/repo/scripts/"
+
+      - name: Run Documenso VPS audit over SSH
+        id: remote_audit
+        shell: bash
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          HOST_VALUE='${{ secrets.HOST }}'
+          ssh -i ~/.ssh/id_ed25519 root@"$HOST_VALUE" \
+            "cd '$REMOTE_DIR/repo' && DOCUMENSO_PUBLIC_URL='${{ inputs.documenso_public_url }}' CONTRACT_ID='${{ inputs.contract_id }}' OUT_DIR='$REMOTE_DIR/bundle' scripts/documenso/live_documenso_vps_audit.sh" \
+            2>&1 | tee remote-audit-stdout.log
+          echo "exit_code=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
+
+      - name: Package remote audit bundle
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          HOST_VALUE='${{ secrets.HOST }}'
+          ssh -i ~/.ssh/id_ed25519 root@"$HOST_VALUE" \
+            "cd '$REMOTE_DIR' && tar -czf documenso-live-audit.tgz bundle repo 2>/dev/null || tar -czf documenso-live-audit.tgz ."
+          mkdir -p documenso-live-audit-artifact
+          scp -i ~/.ssh/id_ed25519 root@"$HOST_VALUE":"$REMOTE_DIR/documenso-live-audit.tgz" documenso-live-audit-artifact/
+          cp remote-audit-stdout.log documenso-live-audit-artifact/
+
+      - name: Redact downloaded artifact logs
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          find documenso-live-audit-artifact -type f -name '*.log' -o -name '*.out' -o -name '*.err' | while read -r file; do
+            perl -0pi -e 's/((?:SECRET|TOKEN|KEY|PASSWORD|PASS|PRIVATE|AUTH|CREDENTIAL|SALT)[A-Z0-9_]*=)[^\s]+/$1<redacted>/gi' "$file"
+          done
+
+      - name: Upload audit artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: documenso-live-audit-${{ github.run_id }}-${{ github.run_attempt }}
+          path: documenso-live-audit-artifact
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Fail if remote audit failed
+        if: steps.remote_audit.outputs.exit_code != '0'
+        shell: bash
+        run: |
+          echo "Documenso VPS audit failed with exit code ${{ steps.remote_audit.outputs.exit_code }}. Download the artifact for logs."
+          exit 1
