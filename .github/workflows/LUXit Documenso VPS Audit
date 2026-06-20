@@ -1,0 +1,38 @@
+name: LUXit Documenso VPS Audit
+
+on:
+  workflow_dispatch:
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run LUXit Documenso VPS audit
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.VPS_PORT }}
+          script: |
+            set -euo pipefail
+            echo "Host:"
+            hostname
+            echo "User:"
+            whoami
+            echo "OS:"
+            cat /etc/os-release || true
+            echo "Docker:"
+            docker ps || true
+
+            cd "${{ secrets.APP_DIR }}"
+
+            if [ -f scripts/documenso/live_documenso_vps_audit.sh ]; then
+              bash scripts/documenso/live_documenso_vps_audit.sh
+            else
+              echo "Audit script not found in APP_DIR."
+              find . -maxdepth 4 -type f | grep -i documenso || true
+            fi
