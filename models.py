@@ -935,6 +935,11 @@ class SMSCampaign(db.Model):
     created_by_user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True)
     from_phone_number_id = db.Column(db.Integer, db.ForeignKey("twilio_phone_number.id"), nullable=True)
     from_phone_number = db.Column(db.String(20), nullable=True)
+    media_urls = db.Column(JSON, default=list)
+    batch_size = db.Column(db.Integer, default=50)
+    send_rate_per_minute = db.Column(db.Integer, default=60)
+    canceled_at = db.Column(db.DateTime)
+    archived_at = db.Column(db.DateTime)
     name = db.Column(db.String(255))
     objective = db.Column(db.Text)
     message = db.Column(db.String(1000))
@@ -3527,10 +3532,16 @@ class TwilioPhoneNumber(db.Model):
 
     sms_webhook_url   = db.Column(db.String(500))
     voice_webhook_url = db.Column(db.String(500))
+    status_callback_webhook_url = db.Column(db.String(500))
 
     sms_forward_to         = db.Column(db.String(20))
     sms_forwarding_enabled = db.Column(db.Boolean, default=False)
     auto_reply_enabled     = db.Column(db.Boolean, default=True)
+    number_auto_reply_text = db.Column(db.Text)
+    campaign_sender_enabled = db.Column(db.Boolean, default=True)
+    campaign_default_batch_size = db.Column(db.Integer, default=50)
+    campaign_send_rate_per_minute = db.Column(db.Integer, default=60)
+    allow_global_fallback = db.Column(db.Boolean, default=False)
 
     call_forward_to          = db.Column(db.String(20))
     voice_forwarding_enabled = db.Column(db.Boolean, default=True)
