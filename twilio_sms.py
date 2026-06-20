@@ -800,7 +800,11 @@ def _apply_auto_reply_rules(conv, body: str, ta) -> bool:
 
     now_utc     = datetime.now(timezone.utc)
     reply_sent  = False
-    in_business = _is_business_hours(ta.company_id, phone_config=ta)
+    
+    try:
+        in_business = _is_business_hours(ta.company_id, phone_config=ta)
+    except TypeError:
+        in_business = _is_business_hours(ta.company_id)
 
     logger.info("%s business_hours=%s first_contact=%s", _tag, in_business, conv.is_first_contact)
 
