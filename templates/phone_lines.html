@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block title %}Phone Lines - LUX IT{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <div>
+    <h1><i data-feather="phone"></i> Phone Lines</h1>
+    <p class="text-muted mb-0">Each phone number has its own webhooks, business hours, auto replies, after-hours replies, voicemail greeting, forwarding, missed-call texts, and campaign sender safety. Saving here changes only this number.</p>
+  </div>
+  <a class="btn btn-outline-secondary" href="{{ url_for('main.sms_campaigns') }}">SMS Campaigns</a>
+</div>
+{% for line in phone_numbers %}
+<form class="card mb-3" method="post" action="{{ url_for('main.update_phone_line', number_id=line.id) }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+  <div class="card-header d-flex justify-content-between">
+    <strong>{{ line.friendly_name or line.phone_number }}</strong>
+    <span>{% if line.allow_global_fallback %}<span class="badge bg-warning text-dark">Global fallback allowed</span>{% else %}<span class="badge bg-success">Line-specific</span>{% endif %}</span>
+  </div>
+  <div class="card-body row g-3">
+    <div class="col-md-4"><label class="form-label">Inbound SMS Webhook</label><input class="form-control" name="sms_webhook_url" value="{{ line.sms_webhook_url or '' }}"></div>
+    <div class="col-md-4"><label class="form-label">Inbound Voice Webhook</label><input class="form-control" name="voice_webhook_url" value="{{ line.voice_webhook_url or '' }}"></div>
+    <div class="col-md-4"><label class="form-label">Status Callback Webhook</label><input class="form-control" name="status_callback_webhook_url" value="{{ line.status_callback_webhook_url or '' }}"></div>
+    <div class="col-md-3"><label class="form-label">Timezone</label><input class="form-control" name="timezone" value="{{ line.timezone or 'America/Los_Angeles' }}"></div>
+    <div class="col-md-3"><label class="form-label">Forward SMS To</label><input class="form-control" name="sms_forward_to" value="{{ line.sms_forward_to or '' }}"></div>
+    <div class="col-md-3"><label class="form-label">Forward Calls To</label><input class="form-control" name="call_forward_to" value="{{ line.call_forward_to or '' }}"></div>
+    <div class="col-md-3"><label class="form-label">Campaign Rate/Minute</label><input class="form-control" type="number" min="1" name="campaign_send_rate_per_minute" value="{{ line.campaign_send_rate_per_minute or 60 }}"></div>
+    <div class="col-md-6">
+      <label class="form-label">Business-hours Auto Reply for this number</label>
+      <textarea class="form-control" name="number_auto_reply_text" rows="2">{{ line.number_auto_reply_text or '' }}</textarea>
+      <div class="form-text">Sent from this phone line during open hours when auto replies are enabled.</div>
+    </div>
+    <div class="col-md-6">
+      <label class="form-label">Missed-call Text for this number</label>
+      <textarea class="form-control" name="missed_call_text" rows="2">{{ line.missed_call_text or '' }}</textarea>
+    </div>
+    <div class="col-md-6">
+      <label class="form-label">After-hours Auto Reply for this number</label>
+      <textarea class="form-control" name="after_hours_text" rows="2">{{ line.after_hours_text or '' }}</textarea>
+      <div class="form-text">Sent only when this number is closed and after-hours SMS is enabled.</div>
+    </div>
+    <div class="col-md-6">
+      <label class="form-label">Voicemail Greeting for this number</label>
+      <textarea class="form-control" name="voicemail_greeting_text" rows="2">{{ line.voicemail_greeting_text or '' }}</textarea>
+      <div class="form-text">Used for this line only; it will not change other numbers.</div>
+    </div>
+    <div class="col-md-3 form-check ms-2">
+      <input class="form-check-input" type="checkbox" name="auto_reply_enabled" {% if line.auto_reply_enabled %}checked{% endif %}>
+      <label class="form-check-label">Auto replies enabled</label>
+    </div>
+    <div class="col-md-3 form-check">
+      <input class="form-check-input" type="checkbox" name="after_hours_sms_enabled" {% if line.after_hours_sms_enabled %}checked{% endif %}>
+      <label class="form-check-label">After-hours SMS enabled</label>
+    </div>
+    <div class="col-md-3 form-check">
+      <input class="form-check-input" type="checkbox" name="after_hours_voicemail_enabled" {% if line.after_hours_voicemail_enabled %}checked{% endif %}>
+      <label class="form-check-label">After-hours voicemail enabled</label>
+    </div>
+    <div class="col-md-3 form-check">
+      <input class="form-check-input" type="checkbox" name="campaign_sender_enabled" {% if line.campaign_sender_enabled %}checked{% endif %}>
+      <label class="form-check-label">Campaign sender enabled</label>
+    </div>
+    <div class="col-md-3 form-check"><input class="form-check-input" type="checkbox" name="allow_global_fallback" {% if line.allow_global_fallback %}checked{% endif %}><label class="form-check-label text-warning">Allow global/API fallback</label></div>
+    <div class="col-12"><button class="btn btn-primary" type="submit">Save phone-line settings</button></div>
+  </div>
+</form>
+{% else %}
+<div class="alert alert-warning">No managed Twilio phone lines are configured for this business. Add/sync numbers before scheduling SMS campaigns.</div>
+{% endfor %}
+{% endblock %}

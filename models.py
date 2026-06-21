@@ -201,6 +201,15 @@ class User(UserMixin, db.Model):
     pwa_palette_id = db.Column(db.String(30), default='lux')
     pwa_theme_mode = db.Column(db.String(20), default='dark')
     notification_sounds_enabled = db.Column(db.Boolean, default=True)
+    pwa_text_alerts_enabled = db.Column(db.Boolean, default=True)
+    pwa_call_alerts_enabled = db.Column(db.Boolean, default=True)
+    pwa_voicemail_alerts_enabled = db.Column(db.Boolean, default=True)
+    pwa_unread_reminder_alerts_enabled = db.Column(db.Boolean, default=True)
+    pwa_vibration_enabled = db.Column(db.Boolean, default=True)
+    pwa_alerts_business_hours_only = db.Column(db.Boolean, default=True)
+    pwa_quiet_hours_start = db.Column(db.String(5), nullable=True)
+    pwa_quiet_hours_end = db.Column(db.String(5), nullable=True)
+    pwa_unread_repeat_minutes = db.Column(db.Integer, default=1)
     pwa_preferences_updated_at = db.Column(db.DateTime)
     
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
@@ -714,10 +723,12 @@ class Contact(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=True)
     email = db.Column(db.String(255))
+    name = db.Column(db.String(255))
     first_name = db.Column(db.String(120))
     last_name = db.Column(db.String(120))
     company = db.Column(db.String(255))
     phone = db.Column(db.String(50))
+    normalized_phone = db.Column(db.String(32), index=True)
     tags = db.Column(db.String(255))
     is_active = db.Column(db.Boolean, default=True)
     is_subscribed = db.Column(db.Boolean, default=True)
@@ -935,6 +946,11 @@ class SMSCampaign(db.Model):
     created_by_user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True)
     from_phone_number_id = db.Column(db.Integer, db.ForeignKey("twilio_phone_number.id"), nullable=True)
     from_phone_number = db.Column(db.String(20), nullable=True)
+    media_urls = db.Column(JSON, default=list)
+    batch_size = db.Column(db.Integer, default=50)
+    send_rate_per_minute = db.Column(db.Integer, default=60)
+    canceled_at = db.Column(db.DateTime)
+    archived_at = db.Column(db.DateTime)
     name = db.Column(db.String(255))
     objective = db.Column(db.Text)
     message = db.Column(db.String(1000))
@@ -2398,6 +2414,7 @@ class DemoRequest(db.Model):
     last_name = db.Column(db.String(100), nullable=False)
     email = db.Column(db.String(200), nullable=False)
     phone = db.Column(db.String(50))
+    normalized_phone = db.Column(db.String(32), index=True)
     company_name = db.Column(db.String(200))
     job_title = db.Column(db.String(200))
     team_size = db.Column(db.String(50))
@@ -3527,10 +3544,16 @@ class TwilioPhoneNumber(db.Model):
 
     sms_webhook_url   = db.Column(db.String(500))
     voice_webhook_url = db.Column(db.String(500))
+    status_callback_webhook_url = db.Column(db.String(500))
 
     sms_forward_to         = db.Column(db.String(20))
     sms_forwarding_enabled = db.Column(db.Boolean, default=False)
     auto_reply_enabled     = db.Column(db.Boolean, default=True)
+    number_auto_reply_text = db.Column(db.Text)
+    campaign_sender_enabled = db.Column(db.Boolean, default=True)
+    campaign_default_batch_size = db.Column(db.Integer, default=50)
+    campaign_send_rate_per_minute = db.Column(db.Integer, default=60)
+    allow_global_fallback = db.Column(db.Boolean, default=False)
 
     call_forward_to          = db.Column(db.String(20))
     voice_forwarding_enabled = db.Column(db.Boolean, default=True)
@@ -3790,6 +3813,7 @@ class VoiceVoicemailMessage(db.Model):
 
     id               = db.Column(db.Integer, primary_key=True)
     company_id       = db.Column(db.Integer, db.ForeignKey("company.id"),             nullable=False)
+    phone_number_id  = db.Column(db.Integer, db.ForeignKey("twilio_phone_number.id"), nullable=True, index=True)
     voicemail_box_id = db.Column(db.Integer, db.ForeignKey("voice_voicemail_box.id"), nullable=True)
     call_log_id      = db.Column(db.Integer, db.ForeignKey("twilio_call_log.id"),     nullable=True)
 
@@ -3812,8 +3836,31 @@ class VoiceVoicemailMessage(db.Model):
     created_at    = db.Column(db.DateTime, default=datetime.utcnow)
 
     company  = db.relationship("Company",       backref="voicemail_messages")
+    phone_number = db.relationship("TwilioPhoneNumber", backref="voicemail_messages")
     call_log = db.relationship("TwilioCallLog", backref="voicemail_message", uselist=False)
 
+
+class VoiceGreeting(db.Model):
+    """Per-phone-number voicemail greeting asset/configuration."""
+    __tablename__ = "voice_greeting"
+
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=False, index=True)
+    phone_number_id = db.Column(db.Integer, db.ForeignKey("twilio_phone_number.id"), nullable=False, index=True)
+    name = db.Column(db.String(160), nullable=False)
+    greeting_type = db.Column(db.String(30), nullable=False, default="standard")
+    text_body = db.Column(db.Text)
+    audio_url = db.Column(db.String(500))
+    storage_path = db.Column(db.String(500))
+    voice_name = db.Column(db.String(120))
+    is_active = db.Column(db.Boolean, default=False, nullable=False, index=True)
+    applies_to = db.Column(db.String(40), default="voicemail_default", nullable=False)
+    created_by_user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    company = db.relationship("Company", backref="voice_greetings")
+    phone_number = db.relationship("TwilioPhoneNumber", backref="voice_greetings")
 
 class CallRecording(db.Model):
     """Full call recording (any recorded call leg, not just voicemail)."""

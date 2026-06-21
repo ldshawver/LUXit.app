@@ -72,8 +72,8 @@
             <a href="{{ url_for('twilio.inbox') }}" class="btn btn-sm" style="background:rgba(124,58,237,.2);border:1px solid rgba(124,58,237,.4);color:#a78bfa;">
                 <i data-feather="inbox" style="width:13px;height:13px;"></i> SMS Inbox
             </a>
-            <a href="{{ url_for('twilio.comms_hub', tab='integrations') }}" class="btn btn-sm" style="background:rgba(124,58,237,.2);border:1px solid rgba(124,58,237,.4);color:#a78bfa;">
-                <i data-feather="settings" style="width:13px;height:13px;"></i> Twilio Settings
+            <a href="{{ url_for('main.phone_lines_settings') }}" class="btn btn-sm" style="background:rgba(124,58,237,.2);border:1px solid rgba(124,58,237,.4);color:#a78bfa;">
+                <i data-feather="settings" style="width:13px;height:13px;"></i> Phone Lines & Webhooks
             </a>
             <a href="{{ url_for('twilio.rules') }}" class="btn btn-sm" style="background:rgba(6,182,212,.1);border:1px solid rgba(6,182,212,.3);color:#06b6d4;">
                 <i data-feather="zap" style="width:13px;height:13px;"></i> Auto-Reply Rules
@@ -168,6 +168,14 @@
                                 <a href="{{ url_for('main.edit_sms_campaign', campaign_id=campaign.id) }}" class="btn btn-sm btn-outline-primary" title="Edit">
                                     <i data-feather="edit-2" style="width:14px;height:14px;"></i>
                                 </a>
+                                <form method="POST" action="{{ url_for('main.duplicate_sms_campaign', campaign_id=campaign.id) }}" style="display: inline;">
+                                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+                                    <button type="submit" class="btn btn-sm btn-outline-info" title="Duplicate"><i data-feather="copy" style="width:14px;height:14px;"></i></button>
+                                </form>
+                                <form method="POST" action="{{ url_for('main.cancel_sms_campaign', campaign_id=campaign.id) }}" style="display: inline;">
+                                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+                                    <button type="submit" class="btn btn-sm btn-outline-danger" onclick="return confirm('Cancel this campaign?')" title="Cancel"><i data-feather="x-circle" style="width:14px;height:14px;"></i></button>
+                                </form>
                                 <form method="POST" action="{{ url_for('main.archive_sms_campaign', campaign_id=campaign.id) }}" style="display: inline;">
                                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
                                     <button type="submit" class="btn btn-sm btn-outline-warning" onclick="return confirm('Archive this campaign?')" title="Archive">

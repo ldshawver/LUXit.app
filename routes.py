@@ -3527,6 +3527,36 @@ def resume_automation(id):
         logger.error(f"Error resuming automation: {e}")
         return jsonify({'success': False, 'message': str(e)}), 500
 
+
+@main_bp.route('/settings/phone-lines')
+@main_bp.route('/admin/phone-lines')
+@login_required
+def phone_lines_settings():
+    company_id = _current_company_id()
+    from models import TwilioPhoneNumber
+    phone_numbers = TwilioPhoneNumber.query.filter_by(company_id=company_id).order_by(TwilioPhoneNumber.phone_number.asc()).all() if company_id else []
+    return render_template('phone_lines.html', phone_numbers=phone_numbers)
+
+
+@main_bp.route('/settings/phone-lines/<int:number_id>', methods=['POST'])
+@login_required
+def update_phone_line(number_id):
+    company_id = _current_company_id()
+    from models import TwilioPhoneNumber, IntegrationAuditLog
+    line = TwilioPhoneNumber.query.filter_by(id=number_id, company_id=company_id).first_or_404()
+    for field in ['sms_webhook_url','voice_webhook_url','status_callback_webhook_url','timezone','sms_forward_to','call_forward_to','number_auto_reply_text','missed_call_text','voicemail_greeting_text','voicemail_greeting_audio_url','after_hours_text']:
+        setattr(line, field, request.form.get(field) or None)
+    line.auto_reply_enabled = bool(request.form.get('auto_reply_enabled'))
+    line.after_hours_sms_enabled = bool(request.form.get('after_hours_sms_enabled'))
+    line.after_hours_voicemail_enabled = bool(request.form.get('after_hours_voicemail_enabled'))
+    line.campaign_sender_enabled = bool(request.form.get('campaign_sender_enabled'))
+    line.allow_global_fallback = bool(request.form.get('allow_global_fallback'))
+    line.campaign_send_rate_per_minute = max(1, request.form.get('campaign_send_rate_per_minute', type=int) or 60)
+    db.session.add(IntegrationAuditLog(company_id=company_id, service_slug='phone_line_settings', action='update_phone_line', changes={'phone_number_id': line.id, 'fallback': line.allow_global_fallback}))
+    db.session.commit()
+    flash('Phone-line settings saved.', 'success')
+    return redirect(url_for('main.phone_lines_settings'))
+
 # SMS Marketing Module (Phase 0-1)
 @main_bp.route('/sms')
 @main_bp.route('/sms-dashboard')
@@ -3560,16 +3590,30 @@ def create_sms_campaign():
                 flash('Company/tenant is required to create an SMS campaign.', 'error')
                 return redirect(url_for('main.sms_campaigns'))
 
+            from services.phone_line_service import PhoneLineService
+            sender_id = request.form.get('from_phone_number_id', type=int)
+            sender = {'success': True, 'phone_number': None, 'from_phone': None, 'source': 'not_selected'}
+            if sender_id or scheduled_at:
+                sender = PhoneLineService.resolve_campaign_sender(company_id, sender_id, allow_fallback=bool(request.form.get('allow_global_fallback')), user=current_user)
+                if not sender.get('success'):
+                    flash(sender.get('error'), 'error')
+                    return redirect(url_for('main.create_sms_campaign'))
+            media_urls = [u.strip() for u in (request.form.get('media_urls') or '').replace('\r', '').split('\n') if u.strip()]
             # Create campaign
             campaign = SMSCampaign(
                 company_id=company_id,
                 created_by_user_id=current_user.id,
+                from_phone_number_id=getattr(sender.get('phone_number'), 'id', None),
+                from_phone_number=sender.get('from_phone'),
                 name=name,
                 message=SMSService.ensure_opt_out_language(message or '') if SMSService else message,
+                media_urls=media_urls,
+                batch_size=max(1, request.form.get('batch_size', type=int) or 50),
+                send_rate_per_minute=max(1, request.form.get('send_rate_per_minute', type=int) or 60),
                 segment=request.form.get('segment_tags') or None,
                 status='scheduled' if scheduled_at else 'draft',
                 scheduled_at=scheduled_at,
-                audience_filter={'segment_tags': request.form.get('segment_tags', '')},
+                audience_filter={'segment_tags': request.form.get('segment_tags', ''), 'sender_source': sender.get('source')},
                 created_at=datetime.utcnow(),
             )
             db.session.add(campaign)
@@ -3630,7 +3674,7 @@ def create_sms_campaign():
                         campaign_id=campaign.id,
                         contact_id=contact.id,
                         phone_number=contact.phone,
-                        status='queued',
+                        status='pending',
                     ))
             
             # Add to unified schedule if scheduled
@@ -3672,12 +3716,15 @@ def create_sms_campaign():
     if hasattr(Segment, 'company_id'):
         segments_query = segments_query.filter_by(company_id=company_id)
     segments = segments_query.order_by(Segment.name.asc()).all()
+    from services.phone_line_service import PhoneLineService
+    sender_numbers = PhoneLineService.campaign_sender_options(company_id)
     
     return render_template('create_sms_campaign.html',
                          contacts=contacts,
                          tags=tags,
                          templates=templates,
                          segments=segments,
+                         sender_numbers=sender_numbers,
                          selected_segment=(request.args.get('segment') or '').strip())
 
 @main_bp.route('/sms/campaign/<int:campaign_id>/edit', methods=['GET', 'POST'])
@@ -3691,8 +3738,23 @@ def edit_sms_campaign(campaign_id):
     
     if request.method == 'POST':
         try:
+            if campaign.status not in ('draft', 'scheduled'):
+                flash('Only draft or scheduled campaigns can be edited.', 'error')
+                return redirect(url_for('main.sms_campaigns'))
             campaign.name = request.form.get('name', campaign.name)
-            campaign.message = request.form.get('message', campaign.message)
+            campaign.message = SMSService.ensure_opt_out_language(request.form.get('message', campaign.message))
+            campaign.media_urls = [u.strip() for u in (request.form.get('media_urls') or '').replace('\r', '').split('\n') if u.strip()]
+            campaign.batch_size = max(1, request.form.get('batch_size', type=int) or campaign.batch_size or 50)
+            campaign.send_rate_per_minute = max(1, request.form.get('send_rate_per_minute', type=int) or campaign.send_rate_per_minute or 60)
+            sender_id = request.form.get('from_phone_number_id', type=int)
+            if sender_id:
+                from services.phone_line_service import PhoneLineService
+                sender = PhoneLineService.resolve_campaign_sender(company_id, sender_id, user=current_user)
+                if not sender.get('success'):
+                    flash(sender.get('error'), 'error')
+                    return redirect(url_for('main.edit_sms_campaign', campaign_id=campaign.id))
+                campaign.from_phone_number_id = getattr(sender.get('phone_number'), 'id', None)
+                campaign.from_phone_number = sender.get('from_phone')
             
             scheduled_date = request.form.get('scheduled_date')
             scheduled_time = request.form.get('scheduled_time')
@@ -3719,11 +3781,14 @@ def edit_sms_campaign(campaign_id):
     if hasattr(SMSTemplate, 'company_id'):
         templates_query = templates_query.filter(or_(SMSTemplate.company_id == company_id, SMSTemplate.company_id.is_(None)))
     templates = templates_query.filter_by(is_active=True).order_by(SMSTemplate.name.asc()).all()
+    from services.phone_line_service import PhoneLineService
+    sender_numbers = PhoneLineService.campaign_sender_options(company_id)
     
     return render_template('edit_sms_campaign.html',
                          campaign=campaign,
                          contacts=contacts,
-                         templates=templates)
+                         templates=templates,
+                         sender_numbers=sender_numbers)
 
 @main_bp.route('/sms/campaign/<int:campaign_id>/archive', methods=['POST'])
 @login_required
@@ -3733,6 +3798,7 @@ def archive_sms_campaign(campaign_id):
         company_id = _current_company_id()
         campaign = SMSCampaign.query.filter_by(id=campaign_id, company_id=company_id).first_or_404()
         campaign.status = 'archived'
+        campaign.archived_at = datetime.utcnow()
         campaign.scheduled_at = None
         db.session.commit()
         flash('Campaign archived successfully', 'success')
@@ -3741,6 +3807,81 @@ def archive_sms_campaign(campaign_id):
         flash('Error archiving campaign', 'error')
     
     return redirect(url_for('main.sms_campaigns'))
+
+
+@main_bp.route('/sms/campaign/<int:campaign_id>/duplicate', methods=['POST'])
+@login_required
+def duplicate_sms_campaign(campaign_id):
+    company_id = _current_company_id()
+    campaign = SMSCampaign.query.filter_by(id=campaign_id, company_id=company_id).first_or_404()
+    copy = SMSCampaign(
+        company_id=company_id,
+        created_by_user_id=current_user.id,
+        from_phone_number_id=campaign.from_phone_number_id,
+        from_phone_number=campaign.from_phone_number,
+        name=f"{campaign.name} Copy",
+        objective=campaign.objective,
+        message=campaign.message,
+        media_urls=campaign.media_urls or [],
+        batch_size=campaign.batch_size or 50,
+        send_rate_per_minute=campaign.send_rate_per_minute or 60,
+        segment=campaign.segment,
+        status='draft',
+        audience_filter=campaign.audience_filter or {},
+        estimated_recipient_count=campaign.estimated_recipient_count or 0,
+        created_at=datetime.utcnow(),
+    )
+    db.session.add(copy)
+    db.session.commit()
+    flash('SMS campaign copied as a draft.', 'success')
+    return redirect(url_for('main.edit_sms_campaign', campaign_id=copy.id))
+
+
+@main_bp.route('/sms/campaign/<int:campaign_id>/cancel', methods=['POST'])
+@login_required
+def cancel_sms_campaign(campaign_id):
+    company_id = _current_company_id()
+    campaign = SMSCampaign.query.filter_by(id=campaign_id, company_id=company_id).first_or_404()
+    if campaign.status in ('completed', 'sent'):
+        flash('Completed campaigns cannot be canceled; archive them instead.', 'error')
+    else:
+        campaign.status = 'canceled'
+        campaign.canceled_at = datetime.utcnow()
+        campaign.scheduled_at = None
+        db.session.commit()
+        flash('SMS campaign canceled.', 'success')
+    return redirect(url_for('main.sms_campaigns'))
+
+
+@main_bp.route('/sms/campaign/<int:campaign_id>/delete', methods=['POST'])
+@login_required
+def delete_sms_campaign(campaign_id):
+    company_id = _current_company_id()
+    campaign = SMSCampaign.query.filter_by(id=campaign_id, company_id=company_id).first_or_404()
+    if campaign.status not in ('draft', 'canceled', 'archived'):
+        flash('Only draft, canceled, or archived campaigns can be deleted.', 'error')
+        return redirect(url_for('main.sms_campaigns')), 400
+    SMSRecipient.query.filter_by(campaign_id=campaign.id).delete()
+    db.session.delete(campaign)
+    db.session.commit()
+    flash('SMS campaign deleted.', 'success')
+    return redirect(url_for('main.sms_campaigns'))
+
+
+@main_bp.route('/sms/campaign/<int:campaign_id>/test-send', methods=['POST'])
+@login_required
+def test_send_sms_campaign(campaign_id):
+    company_id = _current_company_id()
+    campaign = SMSCampaign.query.filter_by(id=campaign_id, company_id=company_id).first_or_404()
+    test_number = request.form.get('test_number')
+    if not test_number:
+        return jsonify({'success': False, 'error': 'Test phone number is required.'}), 400
+    result = SMSService.send_sms(test_number, campaign.message, company_id=company_id, from_phone=campaign.from_phone_number, media_urls=campaign.media_urls) if SMSService else {'success': False, 'error': 'SMS service unavailable'}
+    if result.get('success'):
+        campaign.test_sent_at = datetime.utcnow()
+        db.session.commit()
+        return jsonify({'success': True, 'message_sid': result.get('message_sid')})
+    return jsonify({'success': False, 'error': result.get('error', 'Unable to send test SMS.')}), 400
 
 @main_bp.route('/sms/templates/create', methods=['GET', 'POST'])
 @login_required
@@ -11019,6 +11160,97 @@ def analytics_report_print():
         summary=summary,
         generated_at=datetime.utcnow().strftime('%Y-%m-%d %H:%M'))
 
+
+
+CONTACT_IMPORT_TEMPLATE_HEADERS = [
+    'first_name','last_name','phone','email','company','title','tags','segment_names','keyword',
+    'sms_marketing_opt_in','sms_opt_in_at','sms_opt_in_source','email_marketing_opt_in','email_opt_in_at','email_opt_in_source',
+    'do_not_market','do_not_sms','do_not_email','sms_opted_out','email_unsubscribed','notes','custom_fields_json'
+]
+
+
+def _truthy_upload_value(value):
+    return str(value or '').strip().lower() in {'1', 'true', 'yes', 'y', 'opted_in', 'subscribed'}
+
+
+
+@main_bp.route('/api/ai/sms-campaign-context')
+@login_required
+def api_ai_sms_campaign_context():
+    from services.sms_campaign_context_service import SMSCampaignContextService
+    return jsonify({'success': True, 'context': SMSCampaignContextService.ai_context(_current_company_id())})
+
+@main_bp.route('/contacts/import/template.csv')
+@login_required
+def contact_import_template_csv():
+    output = io.StringIO()
+    csv.writer(output).writerow(CONTACT_IMPORT_TEMPLATE_HEADERS)
+    response = make_response(output.getvalue())
+    response.headers['Content-Type'] = 'text/csv'
+    response.headers['Content-Disposition'] = 'attachment; filename=luxit_contact_import_template.csv'
+    return response
+
+
+@main_bp.route('/contacts/import/preview', methods=['POST'])
+@login_required
+def contact_import_preview():
+    company_id = _current_company_id()
+    upload = request.files.get('file')
+    if not upload:
+        return jsonify({'success': False, 'error': 'CSV or XLSX file is required.'}), 400
+    filename = (upload.filename or '').lower()
+    rows = []
+    try:
+        if filename.endswith('.xlsx'):
+            from openpyxl import load_workbook
+            wb = load_workbook(upload, read_only=True, data_only=True)
+            ws = wb.active
+            values = list(ws.iter_rows(values_only=True))
+            headers = [str(h or '').strip() for h in values[0]] if values else []
+            rows = [dict(zip(headers, r)) for r in values[1:]]
+        else:
+            text_stream = io.StringIO(upload.stream.read().decode('utf-8-sig'))
+            reader = csv.DictReader(text_stream)
+            headers = reader.fieldnames or []
+            rows = list(reader)
+    except Exception as exc:
+        return jsonify({'success': False, 'error': f'Unable to read import file: {exc}'}), 400
+
+    normalized_headers = [h.strip() for h in headers]
+    missing_recommended = [h for h in CONTACT_IMPORT_TEMPLATE_HEADERS if h not in normalized_headers]
+    preview = []
+    duplicates = 0
+    for idx, row in enumerate(rows[:50], start=2):
+        phone = (row.get('phone') or '').strip()
+        email = (row.get('email') or '').strip().lower()
+        duplicate = False
+        if phone or email:
+            duplicate = Contact.query.filter(
+                Contact.company_id == company_id,
+                or_(Contact.phone == phone, func.lower(Contact.email) == email if email else False),
+            ).first() is not None
+        duplicates += 1 if duplicate else 0
+        preview.append({
+            'row': idx,
+            'first_name': row.get('first_name'),
+            'last_name': row.get('last_name'),
+            'phone': phone,
+            'email': email,
+            'sms_marketing_opt_in': _truthy_upload_value(row.get('sms_marketing_opt_in')),
+            'do_not_market': _truthy_upload_value(row.get('do_not_market')),
+            'sms_opted_out': _truthy_upload_value(row.get('sms_opted_out')),
+            'email_unsubscribed': _truthy_upload_value(row.get('email_unsubscribed')),
+            'duplicate': duplicate,
+        })
+    return jsonify({
+        'success': True,
+        'headers': normalized_headers,
+        'recommended_headers': CONTACT_IMPORT_TEMPLATE_HEADERS,
+        'missing_recommended_headers': missing_recommended,
+        'row_count': len(rows),
+        'preview': preview,
+        'duplicates': duplicates,
+    })
 
 @main_bp.route('/sms/campaigns')
 @main_bp.route('/app/sms-campaigns')
