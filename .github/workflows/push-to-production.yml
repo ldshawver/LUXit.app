@@ -69,13 +69,11 @@ jobs:
               echo "psql not installed on VPS; skipping direct DB check"
             fi
 
-            echo "== Optional migrations =="
+            echo "== Forward migrations only =="
             if command -v psql >/dev/null 2>&1 && [ -d migrations ]; then
-              for f in migrations/*.sql; do
-                if [ -f "$f" ]; then
-                  echo "Running migration: $f"
-                  psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f "$f"
-                fi
+              find migrations -maxdepth 1 -type f -name "*.sql" ! -iname "*rollback*.sql" | sort | while read -r f; do
+                echo "Running migration: $f"
+                psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f "$f"
               done
             fi
 
@@ -91,7 +89,24 @@ jobs:
             systemctl reset-failed "$SERVICE" || true
             systemctl restart "$SERVICE"
 
-            sleep 5
+            echo "== Wait for app readiness =="
+            READY=0
+            for i in $(seq 1 30); do
+              if curl -fsS "http://127.0.0.1:${PORT}/auth/login" >/dev/null; then
+                echo "App ready"
+                READY=1
+                break
+              fi
+              echo "Waiting for app... attempt $i/30"
+              sleep 2
+            done
+
+            if [ "$READY" -ne 1 ]; then
+              echo "App did not become ready"
+              systemctl status "$SERVICE" --no-pager -l || true
+              journalctl -u "$SERVICE" -n 160 --no-pager || true
+              exit 1
+            fi
 
             echo "== Service status =="
             systemctl is-active --quiet "$SERVICE"
@@ -102,6 +117,12 @@ jobs:
 
             echo "== Public smoke tests =="
             curl -fsS "https://luxit.app/auth/login" >/dev/null
+
+            echo "== Recent error scan =="
+            if journalctl -u "$SERVICE" -n 160 --no-pager | egrep "UndefinedColumn|ProgrammingError|BuildError|InFailedSqlTransaction|Traceback|500"; then
+              echo "Recent production errors detected"
+              exit 1
+            fi
 
             echo "== Recent logs =="
             journalctl -u "$SERVICE" -n 80 --no-pager
