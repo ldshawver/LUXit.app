@@ -856,6 +856,11 @@ def stripe_webhook():
         logger.warning("Stripe webhook %s for unknown customer %s — logging only", ev_type, stripe_cid)
 
     try:
+        try:
+            from services.license_service import sync_license_from_stripe_event
+            sync_license_from_stripe_event(event)
+        except Exception as exc:
+            logger.exception("Stripe[%s] license billing sync failed: %s", ev_id, exc)
         if ev_type == "customer.created":
             logger.info("Stripe[%s] customer.created cid=%s", ev_id, stripe_cid)
             _finalize("success")

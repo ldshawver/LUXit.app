@@ -3254,6 +3254,141 @@ class SaasLicense(db.Model):
 
     company = db.relationship("Company", backref="saas_licenses")
 
+class FeatureModule(db.Model):
+    __tablename__ = "feature_module"
+    id = db.Column(db.Integer, primary_key=True)
+    key = db.Column(db.String(100), unique=True, nullable=False, index=True)
+    name = db.Column(db.String(160), nullable=False)
+    description = db.Column(db.Text)
+    category = db.Column(db.String(80))
+    is_active = db.Column(db.Boolean, default=True)
+    default_monthly_price = db.Column(db.Numeric(10, 2), default=0)
+    stripe_product_id = db.Column(db.String(120))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class TenantLicense(db.Model):
+    __tablename__ = "tenant_license"
+    __table_args__ = (db.UniqueConstraint("company_id", "feature_key", name="uq_tenant_license_company_feature"),)
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=False, index=True)
+    feature_key = db.Column(db.String(100), nullable=False, index=True)
+    status = db.Column(db.String(30), default="active", index=True)
+    seats_included = db.Column(db.Integer, default=1)
+    seats_used = db.Column(db.Integer, default=0)
+    monthly_price = db.Column(db.Numeric(10, 2), default=0)
+    billing_cycle = db.Column(db.String(20), default="monthly")
+    starts_at = db.Column(db.DateTime, default=datetime.utcnow)
+    trial_ends_at = db.Column(db.DateTime)
+    renews_at = db.Column(db.DateTime)
+    canceled_at = db.Column(db.DateTime)
+    suspended_at = db.Column(db.DateTime)
+    suspension_reason = db.Column(db.Text)
+    auto_disable_enabled = db.Column(db.Boolean, default=True)
+    grace_period_days = db.Column(db.Integer, default=7)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    company = db.relationship("Company", backref="tenant_licenses")
+
+
+class TenantBillingAccount(db.Model):
+    __tablename__ = "tenant_billing_account"
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=False, unique=True, index=True)
+    stripe_customer_id = db.Column(db.String(120), index=True)
+    default_payment_method_id = db.Column(db.String(120))
+    billing_email = db.Column(db.String(255))
+    billing_contact_name = db.Column(db.String(255))
+    billing_address_json = db.Column(JSON)
+    autopay_enabled = db.Column(db.Boolean, default=False)
+    payment_status = db.Column(db.String(50), default="none")
+    last_payment_at = db.Column(db.DateTime)
+    last_payment_failed_at = db.Column(db.DateTime)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    company = db.relationship("Company", backref=db.backref("tenant_billing_account", uselist=False))
+
+
+class TenantSubscription(db.Model):
+    __tablename__ = "tenant_subscription"
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=False, index=True)
+    stripe_subscription_id = db.Column(db.String(120), unique=True, index=True)
+    status = db.Column(db.String(50))
+    current_period_start = db.Column(db.DateTime)
+    current_period_end = db.Column(db.DateTime)
+    cancel_at_period_end = db.Column(db.Boolean, default=False)
+    amount_due = db.Column(db.Integer, default=0)
+    currency = db.Column(db.String(10), default="usd")
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    company = db.relationship("Company", backref="tenant_subscriptions")
+
+
+class TenantInvoice(db.Model):
+    __tablename__ = "tenant_invoice"
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=False, index=True)
+    stripe_invoice_id = db.Column(db.String(120), unique=True, index=True)
+    invoice_number = db.Column(db.String(120))
+    status = db.Column(db.String(50), index=True)
+    amount_due = db.Column(db.Integer, default=0)
+    amount_paid = db.Column(db.Integer, default=0)
+    currency = db.Column(db.String(10), default="usd")
+    hosted_invoice_url = db.Column(db.Text)
+    invoice_pdf = db.Column(db.Text)
+    due_date = db.Column(db.DateTime)
+    paid_at = db.Column(db.DateTime)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    company = db.relationship("Company", backref="tenant_invoices")
+
+
+class LicenseEventLog(db.Model):
+    __tablename__ = "license_event_log"
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=False, index=True)
+    license_id = db.Column(db.Integer, db.ForeignKey("tenant_license.id"), nullable=True, index=True)
+    actor_user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True)
+    actor_role = db.Column(db.String(50))
+    event_type = db.Column(db.String(80), nullable=False)
+    old_status = db.Column(db.String(30))
+    new_status = db.Column(db.String(30))
+    details_json = db.Column(JSON)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    license = db.relationship("TenantLicense", backref="event_logs")
+
+
+class BillingEmailTemplate(db.Model):
+    __tablename__ = "billing_email_template"
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=True, index=True)
+    name = db.Column(db.String(160), nullable=False)
+    subject = db.Column(db.String(255))
+    body_html = db.Column(db.Text)
+    body_text = db.Column(db.Text)
+    event_type = db.Column(db.String(80), index=True)
+    is_default = db.Column(db.Boolean, default=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class BillingAutomationRule(db.Model):
+    __tablename__ = "billing_automation_rule"
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=True, index=True)
+    scope = db.Column(db.String(20), default="global")
+    event_type = db.Column(db.String(80), nullable=False, index=True)
+    enabled = db.Column(db.Boolean, default=True, index=True)
+    delay_days = db.Column(db.Integer, default=0)
+    email_template_id = db.Column(db.Integer, db.ForeignKey("billing_email_template.id"), nullable=True)
+    action = db.Column(db.String(80), nullable=False)
+    created_by_user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    template = db.relationship("BillingEmailTemplate", backref="automation_rules")
+
 
 class CustomerOnboardingProject(db.Model):
     """Customer-facing onboarding project created when a deal is won."""

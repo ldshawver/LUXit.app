@@ -94,6 +94,22 @@ sudo systemctl restart lux-email-bot
 sudo systemctl is-active luxit lux-email-bot
 ```
 
+Run the deployment audit script to prove the pushed code is the code running live, migrations ran, rollback migrations were excluded, `lux-email-bot.service` was restarted on port `8001`, and the PWA DOM/CSS/service-worker cache-busting changes are visible after refresh/reinstall:
+
+```bash
+cd /var/www/LUXit.app
+export REPO_DIR="/var/www/LUXit.app"
+export REMOTE="origin"
+export BRANCH="main"
+export SERVICE="lux-email-bot.service"
+export PORT="8001"
+export BASE_URL="http://127.0.0.1:8001"
+export COOKIE_FILE="/tmp/luxit.cookies"
+scripts/audit_vps_deployment.sh
+```
+
+Expected result: the script prints matching `HEAD=` and `origin/main=` SHAs, applies only non-rollback `migrations/*.sql`, confirms `lux-email-bot.service` is active/listening on `:8001`, finds `data-pwa-version`, `manifest.json?v=`, `sw.js?v=`, exact VAPID missing-setting UI text, larger icon / hidden-label bottom-nav CSS, service-worker `SW_VERSION`, and exits with `DEPLOY_AUDIT_OK=1`.
+
 ## Schema drift verification
 
 After migration, verify the tables used by SMS, phone routing, campaign calendar, and PWA history still expose the expected columns:
@@ -435,3 +451,108 @@ When editing a phone line in `/settings/phone-lines` or `/admin/phone-lines`, ve
 3. Send an inbound SMS to the number during open business hours. Expected: if auto replies are enabled and no higher-priority auto-reply rule sends first, the number-specific business-hours auto reply is sent.
 4. Send an inbound SMS to the number after hours. Expected: if after-hours SMS is enabled, the number-specific after-hours auto reply is sent.
 5. Call the number and route to voicemail. Expected: the number-specific voicemail greeting is used; changing one number must not change another number's greeting.
+
+## Tenant license billing and feature management live verification
+
+Run these commands after deploying the license/billing PR to the VPS. They are intentionally executable and should be captured in the deployment log.
+
+### 1. Apply the license migration
+
+```bash
+cd /opt/LUXit.app
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f migrations/20260621_license_billing_feature_management.sql
+```
+
+Expected result: the migration completes without `UndefinedColumn`, duplicate-table, or rollback errors.
+
+### 2. Confirm seeded feature modules and default phone license
+
+```bash
+psql "$DATABASE_URL" -c "SELECT key, is_active FROM feature_module ORDER BY key;"
+psql "$DATABASE_URL" -c "SELECT company_id, feature_key, status FROM tenant_license WHERE feature_key='phone_pwa_communications' ORDER BY company_id;"
+```
+
+Expected result: core modules exist, and company `1` has an `active` `phone_pwa_communications` license so the existing deployment keeps phone/PWA access.
+
+### 3. Verify tenant and global pages after login
+
+```bash
+curl -I -b /tmp/luxit-admin.cookies https://<host>/settings/licenses
+curl -I -b /tmp/luxit-admin.cookies https://<host>/settings/billing
+curl -I -b /tmp/luxit-admin.cookies https://<host>/settings/billing/statements
+curl -I -b /tmp/luxit-global-admin.cookies https://<host>/global-admin/licenses
+curl -I -b /tmp/luxit-global-admin.cookies https://<host>/global-admin/billing
+curl -I -b /tmp/luxit-global-admin.cookies https://<host>/global-admin/features
+```
+
+Expected result: tenant admin routes return `200`; global routes return `200` only for global admins; regular users receive `403` for billing/license admin routes.
+
+### 4. Simulate failed payment and suspension flow
+
+```bash
+psql "$DATABASE_URL" -c "UPDATE tenant_license SET status='past_due', renews_at=now() - interval '10 days', auto_disable_enabled=true, grace_period_days=3 WHERE company_id=1 AND feature_key='phone_pwa_communications';"
+python - <<'PY'
+from app import app
+from extensions import db
+from services.license_service import auto_suspend_past_due
+with app.app_context():
+    print(auto_suspend_past_due())
+    db.session.commit()
+PY
+psql "$DATABASE_URL" -c "SELECT status, suspension_reason FROM tenant_license WHERE company_id=1 AND feature_key='phone_pwa_communications';"
+```
+
+Expected result: the license changes to `suspended` with `suspension_reason='non_payment'`, and `/app/inbox` / `/app/calls` are blocked while `/settings/billing` remains reachable.
+
+### 5. Reactivate and verify phone/PWA access returns
+
+```bash
+python - <<'PY'
+from app import app
+from extensions import db
+from services.license_service import reactivate_license
+with app.app_context():
+    print(reactivate_license(1, 'phone_pwa_communications'))
+    db.session.commit()
+PY
+curl -I -b /tmp/luxit-admin.cookies https://<host>/app/inbox
+curl -I -b /tmp/luxit-admin.cookies https://<host>/app/calls
+```
+
+Expected result: license status returns to `active`, audit events exist in `license_event_log`, and phone/PWA routes work for authorized users.
+
+### 6. Stripe webhook safety checks
+
+```bash
+curl -i -X POST https://<host>/api/stripe/webhook \
+  -H 'Content-Type: application/json' \
+  -H 'Stripe-Signature: invalid' \
+  --data '{"type":"invoice.payment_failed","data":{"object":{"id":"in_invalid"}}}'
+```
+
+Expected result: invalid signatures return `400`; no Stripe secret key or full payment details are exposed in responses or logs. Use the Stripe CLI for signed live/test events when validating `invoice.payment_failed` and `invoice.payment_succeeded` state sync.
+
+### 7. Confirm no runtime regressions
+
+```bash
+journalctl -u lux-email-bot.service --since '30 minutes ago' --no-pager | egrep -i '500|UndefinedColumn|BuildError|ProgrammingError|permission leakage|stripe secret|InFailedSqlTransaction' || true
+```
+
+Expected result: no matching runtime errors after exercising license pages, Stripe webhook sync, suspension/reactivation, `/app/inbox`, `/app/calls`, `/settings/phone-lines`, `/app/sms-campaigns`, and `/sms/create`.
+
+## License billing live proof script
+
+For final production acceptance, run the executable proof script on the VPS after logging in once as tenant admin and global admin and saving their curl cookie jars:
+
+```bash
+cd /opt/LUXit.app
+export LUXIT_BASE_URL="https://<host>"
+export TENANT_ADMIN_COOKIE_FILE="/tmp/luxit-admin.cookies"
+export GLOBAL_ADMIN_COOKIE_FILE="/tmp/luxit-global-admin.cookies"
+export LUXIT_SERVICE_NAME="lux-email-bot.service"
+./scripts/verify_license_live_acceptance.sh | tee /tmp/luxit-license-live-acceptance.log
+```
+
+The script performs the required production proof steps: runs `migrations/20260621_license_billing_feature_management.sql`, confirms `feature_module` rows, confirms company `1` has an active `phone_pwa_communications` license, verifies `/settings/licenses`, `/settings/billing`, and `/global-admin/licenses`, suspends the license and confirms `/app/inbox` returns `402`, posts an inbound Twilio SMS while suspended and verifies it still logs, simulates Stripe `invoice.payment_failed` and `invoice.payment_succeeded` through the license sync service, reactivates the license and confirms `/app/inbox` returns `200`, confirms audit/event logs exist, and scans `journalctl` for `500`, `UndefinedColumn`, `BuildError`, `ProgrammingError`, and `InFailedSqlTransaction`.
+
+Acceptance remains blocked until `/tmp/luxit-license-live-acceptance.log` ends with `LIVE LICENSE ACCEPTANCE: PASS` on the live VPS.

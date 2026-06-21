@@ -615,6 +615,14 @@ def _send_sms(ta, to_number: str, body: str,
     """Send an outbound SMS and persist the TwilioMessage record."""
     from models import TwilioMessage
     from flask import current_app
+    try:
+        from services.license_service import PHONE_PWA_FEATURE, has_feature
+        if getattr(ta, "company_id", None) and not has_feature(ta.company_id, PHONE_PWA_FEATURE):
+            logger.warning("Outbound SMS blocked by inactive license: company_id=%s to=%s auto_reply=%s", ta.company_id, to_number, is_auto_reply)
+            return {"success": False, "error": "Phone/PWA Communications license is not active.", "license_blocked": True}
+    except Exception:
+        logger.exception("License check failed before outbound SMS; blocking send for safety")
+        return {"success": False, "error": "License check failed.", "license_blocked": True}
     client = _build_client(ta)
     if not client:
         return {"success": False, "error": "Twilio client could not be created."}

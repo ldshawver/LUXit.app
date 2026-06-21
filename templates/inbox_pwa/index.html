@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" data-vapid="{{ vapid_public }}">
+<html lang="en" data-vapid="{{ vapid_public }}" data-vapid-missing="{{ (vapid_missing or [])|join(',') }}" data-pwa-version="{{ pwa_version }}">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
@@ -9,7 +9,7 @@
   <meta name="apple-mobile-web-app-title" content="LUXit Inbox">
   <meta name="theme-color" content="var(--pwa-primary)">
   <title>LUXit Inbox</title>
-  <link rel="manifest" href="/static/manifest.json">
+  <link rel="manifest" href="/static/manifest.json?v={{ pwa_version }}">
   <link rel="apple-touch-icon" href="/static/favicon.png">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css">
   <style>
@@ -575,9 +575,9 @@
       letter-spacing: 3px; text-align: center; font-variant-numeric: tabular-nums;
       white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     }
-    .dial-display.empty { font-size: 1rem; color: #4b5563; font-weight: 400; letter-spacing: 0; }
+    .dial-display.empty { font-size: 1rem; color: var(--pwa-muted); font-weight: 400; letter-spacing: 0; }
     .dial-back {
-      background: none; border: none; color: #6b7280; font-size: 1.4rem;
+      background: none; border: none; color: var(--pwa-muted); font-size: 1.4rem;
       cursor: pointer; padding: 8px 4px; line-height: 1; width: 40px; text-align: center;
       transition: color .1s;
     }
@@ -587,38 +587,54 @@
       gap: 10px; margin: 4px 0 20px;
     }
     .dial-key {
-      background: #1f2937; border: none; border-radius: 50%;
+      background: color-mix(in srgb,var(--pwa-card-bg) 72%,var(--pwa-primary) 14%);
+      border: 1.5px solid color-mix(in srgb,var(--pwa-primary) 30%,var(--pwa-border));
+      border-radius: 50%;
       width: 72px; height: 72px; margin: auto;
-      color: var(--color-button-text); cursor: pointer;
+      color: var(--pwa-text); cursor: pointer;
       display: flex; flex-direction: column; align-items: center; justify-content: center;
-      transition: background .1s; user-select: none;
+      box-shadow: inset 0 1px 0 color-mix(in srgb,var(--pwa-primary-contrast) 10%,transparent), 0 8px 20px rgba(0,0,0,.24);
+      transition: background .1s, border-color .1s, color .1s, transform .08s, box-shadow .1s; user-select: none;
       -webkit-tap-highlight-color: transparent; touch-action: manipulation;
     }
-    .dial-key:active { background: #374151; }
+    .dial-key:hover,
+    .dial-key:focus-visible {
+      background: color-mix(in srgb,var(--pwa-primary) 20%,var(--pwa-card-bg));
+      border-color: color-mix(in srgb,var(--pwa-primary) 65%,var(--pwa-border));
+      outline: none;
+    }
+    .dial-key:active {
+      background: color-mix(in srgb,var(--pwa-primary) 34%,var(--pwa-card-bg));
+      border-color: var(--pwa-primary);
+      transform: scale(.96);
+      box-shadow: inset 0 2px 8px rgba(0,0,0,.35);
+    }
     .dial-key .dk-num { font-size: 1.5rem; font-weight: 400; line-height: 1.1; }
-    .dial-key .dk-sub { font-size: .52rem; letter-spacing: .1em; color: #6b7280; margin-top: 2px; text-transform: uppercase; }
+    .dial-key .dk-sub { font-size: .52rem; letter-spacing: .1em; color: var(--pwa-muted); margin-top: 2px; text-transform: uppercase; }
     .dial-actions {
       display: flex; align-items: center; justify-content: space-between;
       padding: 0 10px;
     }
     .dial-side-btn {
       width: 52px; height: 52px; border-radius: 50%;
-      background: #1f2937; border: none; color: #9ca3af;
+      background: color-mix(in srgb,var(--pwa-card-bg) 78%,var(--pwa-primary) 10%);
+      border: 1px solid color-mix(in srgb,var(--pwa-primary) 24%,var(--pwa-border));
+      color: var(--pwa-muted);
       display: flex; align-items: center; justify-content: center;
       cursor: pointer; transition: background .1s, color .1s;
       -webkit-tap-highlight-color: transparent;
     }
-    .dial-side-btn:active { background: #374151; color: var(--color-button-text); }
+    .dial-side-btn:active { background: color-mix(in srgb,var(--pwa-primary) 28%,var(--pwa-card-bg)); color: var(--pwa-primary-contrast); }
     .dial-call-btn {
       width: 72px; height: 72px; border-radius: 50%;
-      background: #22c55e; border: none; color: var(--color-button-text);
+      background: var(--green); border: 1px solid color-mix(in srgb,var(--green) 70%,var(--pwa-border)); color: var(--color-button-text);
       display: flex; align-items: center; justify-content: center;
       cursor: pointer; box-shadow: 0 4px 20px rgba(34,197,94,.4);
       transition: background .12s, transform .1s;
       -webkit-tap-highlight-color: transparent; touch-action: manipulation;
     }
-    .dial-call-btn:active  { background: #16a34a; transform: scale(.94); }
-    .dial-call-btn:disabled { background: #374151; box-shadow: none; cursor: not-allowed; }
+    .dial-call-btn:active  { background: color-mix(in srgb,var(--green) 82%,black); transform: scale(.94); }
+    .dial-call-btn:disabled { background: color-mix(in srgb,var(--pwa-muted) 25%,var(--pwa-card-bg)); box-shadow: none; cursor: not-allowed; }
     /* compose contact picker */
     .compose-picker-row {
       display: flex; gap: 8px; align-items: center; margin-top: 8px;
@@ -669,6 +685,9 @@
       <button class="btn-small" onclick="requestPush()">Enable</button>
       <button class="btn-small" onclick="document.getElementById('notifBanner').classList.remove('show')" style="font-size:.7rem;">✕</button>
     </div>
+    {% if g.license_warning %}
+    <div class="alert alert-warning m-2 py-2 small">{{ g.license_warning }} <a href="/settings/billing">Update billing</a></div>
+    {% endif %}
 
     <div class="search-wrap">
       <input type="search" id="searchInput" placeholder="Search name or number..." oninput="onSearch(this.value)">
@@ -1031,6 +1050,7 @@
 ═══════════════════════════════════════════════════════════════ */
 const CSRF        = '{{ csrf_token() }}';
 const SERVER_PALETTE = {{ (user.pwa_palette_id or "lux")|tojson }};
+const PWA_VERSION = document.documentElement.dataset.pwaVersion || '{{ pwa_version }}';
 function applyPalette(name) {
   const p = name || 'lux';
   document.documentElement.dataset.palette = p === 'lux' ? '' : p;
@@ -1043,6 +1063,7 @@ async function setPalette(name) {
 }
 applyPalette(SERVER_PALETTE || localStorage.getItem('luxitPwaPalette') || 'lux');
 const VAPID_PUBLIC = document.documentElement.dataset.vapid ?? '';
+const VAPID_MISSING = (document.documentElement.dataset.vapidMissing || '').split(',').filter(Boolean);
 const CONV_CACHE_KEY = 'luxitInboxConversations';
 
 
@@ -1133,7 +1154,9 @@ window.addEventListener('DOMContentLoaded', () => {
 /* ── Service Worker ───────────────────────────────────────────── */
 function registerSW() {
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('/static/sw.js').catch(e => console.warn('SW:', e));
+    navigator.serviceWorker.register(`/static/sw.js?v=${encodeURIComponent(PWA_VERSION)}`).then(reg => {
+      reg.update().catch(() => {});
+    }).catch(e => console.warn('SW:', e));
   }
 }
 
@@ -1210,7 +1233,15 @@ function checkNotifPrompt() {
 }
 
 async function requestPush() {
-  if (!VAPID_PUBLIC) { toast('Push notifications not configured on server.', 'error'); return; }
+  if (!VAPID_PUBLIC) {
+    let missing = VAPID_MISSING.length ? VAPID_MISSING.join(', ') : 'VAPID_PUBLIC_KEY';
+    try {
+      const status = await apiFetch('/api/pwa/push/status');
+      missing = (status.missing && status.missing.length) ? status.missing.join(', ') : missing;
+    } catch (e) {}
+    toast(`Push setup incomplete. Missing: ${missing}`, 'error');
+    return;
+  }
   const perm = await Notification.requestPermission();
   if (perm !== 'granted') { toast('Notification permission denied.', 'error'); return; }
   document.getElementById('notifBanner').classList.remove('show');

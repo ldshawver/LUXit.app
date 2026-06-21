@@ -1,5 +1,6 @@
 /* LUXit Inbox — Service Worker */
-const CACHE = 'luxit-inbox-v1';
+const SW_VERSION = new URL(self.location.href).searchParams.get('v') || '20260621-pwa-communications';
+const CACHE = `luxit-inbox-${SW_VERSION}`;
 const APP_SHELL = [
   '/app/inbox',
   '/static/manifest.json',
@@ -20,13 +21,13 @@ self.addEventListener('activate', e => {
   );
 });
 
-/* Network-first for API calls, cache-first for static assets */
+/* Network-first for API/app shell calls, cache-first for versioned static assets */
 self.addEventListener('fetch', e => {
   const url = new URL(e.request.url);
-  if (url.pathname.startsWith('/api/')) {
-    e.respondWith(fetch(e.request).catch(() => new Response('{"error":"offline"}', {
+  if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/app/')) {
+    e.respondWith(fetch(e.request).catch(() => caches.match(e.request).then(cached => cached || new Response('{"error":"offline"}', {
       headers: {'Content-Type': 'application/json'}
-    })));
+    }))));
     return;
   }
   e.respondWith(

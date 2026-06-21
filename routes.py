@@ -129,6 +129,41 @@ from extensions import db
 main_bp = Blueprint('main', __name__)
 
 
+@main_bp.before_request
+def _licensed_feature_route_gate():
+    """Server-side license enforcement for tenant feature entry routes."""
+    path = request.path or ""
+    feature_paths = (
+        "/settings/phone-lines",
+        "/admin/phone-lines",
+        "/app/sms-campaigns",
+        "/sms/create",
+    )
+    if not any(path == p or path.startswith(p + "/") for p in feature_paths):
+        return None
+    if not current_user.is_authenticated:
+        return None
+    try:
+        company = current_user.get_default_company()
+        company_id = getattr(company, "id", None)
+    except Exception:
+        company_id = getattr(current_user, "default_company_id", None)
+    if not company_id:
+        return None
+    from services.license_service import PHONE_PWA_FEATURE, license_status_details
+    details = license_status_details(company_id, PHONE_PWA_FEATURE)
+    g.license_warning = details.get("warning")
+    if details["allowed"]:
+        return None
+    if path.startswith("/api/"):
+        return jsonify({"success": False, "error": "Licensed feature is not active.", "status": details["status"]}), 402
+    return render_template(
+        "licenses/feature_blocked.html",
+        status=details["status"],
+        message="Phone/PWA/SMS communications are suspended or not licensed. Update billing or contact support.",
+    ), 402
+
+
 @main_bp.context_processor
 def inject_company_context():
     """Inject current_company, user_companies, quick links, activity, and usage into every template."""

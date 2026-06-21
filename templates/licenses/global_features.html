@@ -1,0 +1,1 @@
+{% extends "base.html" %}{% block title %}Features{% endblock %}{% block content %}<h1>Feature Modules</h1><table class="table">{% for m in modules %}<tr><td>{{ m.key }}</td><td>{{ m.name }}</td><td>{{ m.category }}</td><td>{{ m.default_monthly_price }}</td><td>{{ m.is_active }}</td></tr>{% endfor %}</table>{% endblock %}

@@ -38,6 +38,45 @@ logger = logging.getLogger(__name__)
 inbox_pwa_bp = Blueprint("inbox_pwa", __name__)
 
 
+@inbox_pwa_bp.before_request
+def _phone_pwa_license_gate():
+    """Server-side feature gate for the licensed Phone/PWA Communications module."""
+    path = request.path or ""
+    gated = (
+        path in {"/app/inbox", "/app/calls", "/app/calls/settings"}
+        or path.startswith("/api/inbox/")
+        or path.startswith("/api/calls/")
+        or path.startswith("/api/phone/")
+        or path.startswith("/api/pwa/")
+        or path.startswith("/api/push/")
+    )
+    if not gated:
+        return None
+    # Keep auth redirects/403s owned by existing route logic.
+    user = _current_user()
+    company = _get_company(user) if user else None
+    if not user or not company:
+        return None
+    from services.license_service import PHONE_PWA_FEATURE, license_status_details
+    details = license_status_details(company.id, PHONE_PWA_FEATURE)
+    g.license_warning = details.get("warning")
+    if details["allowed"]:
+        return None
+    if path.startswith("/api/"):
+        return jsonify({
+            "success": False,
+            "error": "Phone/PWA Communications license is not active.",
+            "feature_key": PHONE_PWA_FEATURE,
+            "status": details["status"],
+            "billing_url": "/settings/billing",
+        }), 402
+    return render_template(
+        "licenses/feature_blocked.html",
+        status=details["status"],
+        message="Phone/PWA Communications is suspended or not licensed. Update billing or contact support.",
+    ), 402
+
+
 def _name_is_phone_number(value, phone_number=None):
     if not value:
         return True
@@ -355,6 +394,9 @@ def _send_sms_internal(ta, to_number: str, body: str, conversation_id=None):
     """
     from models import TwilioMessage
     sms_body = _sanitize_body(body)
+    from services.license_service import PHONE_PWA_FEATURE, has_feature
+    if getattr(ta, "company_id", None) and not has_feature(ta.company_id, PHONE_PWA_FEATURE):
+        return None, "Phone/PWA Communications license is not active."
     try:
         from twilio.rest import Client
         sid = ta.get_account_sid() if hasattr(ta, 'get_account_sid') else ta._account_sid
@@ -466,11 +508,20 @@ def pwa_index():
             "inbox_access_denied.html", user=user, company=company
         ), 403
     vapid_public = os.environ.get("VAPID_PUBLIC_KEY", "")
+    vapid_missing = _web_push_missing_settings()
+    pwa_version = (
+        os.environ.get("LUXIT_ASSET_VERSION")
+        or os.environ.get("GIT_SHA")
+        or os.environ.get("RENDER_GIT_COMMIT")
+        or "20260621-pwa-communications"
+    )
     return render_template(
         "inbox_pwa/index.html",
         user=user,
         company=company,
         vapid_public=vapid_public,
+        vapid_missing=vapid_missing,
+        pwa_version=pwa_version,
     )
 
 
@@ -486,7 +537,13 @@ def pwa_calls():
         return render_template("no_company.html", user=user)
     if not _check_mobile_inbox_access(user, company):
         return render_template("inbox_access_denied.html", user=user, company=company), 403
-    return render_template("inbox_pwa/calls.html", user=user, company=company)
+    pwa_version = (
+        os.environ.get("LUXIT_ASSET_VERSION")
+        or os.environ.get("GIT_SHA")
+        or os.environ.get("RENDER_GIT_COMMIT")
+        or "20260621-pwa-communications"
+    )
+    return render_template("inbox_pwa/calls.html", user=user, company=company, pwa_version=pwa_version)
 
 
 def _call_to_dict(call):

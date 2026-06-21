@@ -1,0 +1,1 @@
+{% extends "base.html" %}{% block title %}Feature unavailable{% endblock %}{% block content %}<div class="alert alert-danger"><h1>Feature unavailable</h1><p>{{ message or 'This licensed feature is not currently active.' }}</p><p>Status: {{ status }}</p><a class="btn btn-primary" href="/settings/billing">Open billing</a></div>{% endblock %}

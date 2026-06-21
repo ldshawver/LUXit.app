@@ -1,0 +1,1 @@
+{% extends "base.html" %}{% block title %}Billing Automations{% endblock %}{% block content %}<h1>Billing Automations</h1><table class="table">{% for r in rules %}<tr><td>{{ r.event_type }}</td><td>{{ r.action }}</td><td>{{ r.enabled }}</td></tr>{% endfor %}</table>{% endblock %}

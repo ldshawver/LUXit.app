@@ -59,6 +59,7 @@ class SMSService:
     def begin_send(cls, campaign_id, queued=False):
         from extensions import db
         from models import SMSCampaign
+        from services.license_service import PHONE_PWA_FEATURE, has_feature
 
         # The per-process lock prevents double-click/rapid-repeat requests handled by this app worker.
         # The DB status transition below remains the cross-worker safety net; PostgreSQL also honors
@@ -73,6 +74,15 @@ class SMSService:
             campaign = query.first()
             if not campaign:
                 return None, {'success': False, 'error': 'Campaign not found', 'status_code': 404}
+            if campaign.company_id and not has_feature(campaign.company_id, PHONE_PWA_FEATURE):
+                cls._audit_campaign_event(campaign.company_id, 'send_rejected_license_inactive', campaign.id, campaign.status)
+                db.session.commit()
+                return campaign, {
+                    'success': False,
+                    'error': 'Phone/PWA Communications license is not active.',
+                    'status_code': 402,
+                    'license_blocked': True,
+                }
             if campaign.status in cls.ACTIVE_STATUSES or campaign.status in cls.BLOCKED_SEND_STATUSES:
                 cls._audit_campaign_event(campaign.company_id, 'duplicate_send_rejected', campaign.id, campaign.status)
                 db.session.commit()
@@ -259,6 +269,15 @@ class SMSService:
     def send_sms(cls, to_number, message, company_id=None, from_phone=None, media_urls=None):
         selected_from_phone = from_phone
         """Send an SMS message via tenant Twilio config, falling back to platform config."""
+        if company_id:
+            from services.license_service import PHONE_PWA_FEATURE, has_feature
+            if not has_feature(company_id, PHONE_PWA_FEATURE):
+                return {
+                    'success': False,
+                    'error': 'Phone/PWA Communications license is not active.',
+                    'status_code': 402,
+                    'license_blocked': True,
+                }
         tenant_config = cls._tenant_twilio_config(company_id)
         if tenant_config:
             client = tenant_config['client']
