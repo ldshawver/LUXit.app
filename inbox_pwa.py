@@ -19,12 +19,14 @@ Routes:
   POST /api/inbox/google-contacts/sync            — trigger manual Google Contacts sync
 """
 
+import base64
 import logging
 import os
 import queue as _queue_module
 import re
 import threading
 from datetime import datetime, timezone
+from urllib.parse import urlparse
 
 from flask import (Blueprint, Response, abort, current_app, g, jsonify,
                    render_template, request, session)
@@ -34,6 +36,113 @@ from extensions import db
 logger = logging.getLogger(__name__)
 
 inbox_pwa_bp = Blueprint("inbox_pwa", __name__)
+
+
+@inbox_pwa_bp.before_request
+def _phone_pwa_license_gate():
+    """Server-side feature gate for the licensed Phone/PWA Communications module."""
+    path = request.path or ""
+    gated = (
+        path in {"/app/inbox", "/app/calls", "/app/calls/settings"}
+        or path.startswith("/api/inbox/")
+        or path.startswith("/api/calls/")
+        or path.startswith("/api/phone/")
+        or path.startswith("/api/pwa/")
+        or path.startswith("/api/push/")
+    )
+    if not gated:
+        return None
+    # Keep auth redirects/403s owned by existing route logic.
+    user = _current_user()
+    company = _get_company(user) if user else None
+    if not user or not company:
+        return None
+    from services.license_service import PHONE_PWA_FEATURE, license_status_details
+    details = license_status_details(company.id, PHONE_PWA_FEATURE)
+    g.license_warning = details.get("warning")
+    if details["allowed"]:
+        return None
+    if path.startswith("/api/"):
+        return jsonify({
+            "success": False,
+            "error": "Phone/PWA Communications license is not active.",
+            "feature_key": PHONE_PWA_FEATURE,
+            "status": details["status"],
+            "billing_url": "/settings/billing",
+        }), 402
+    return render_template(
+        "licenses/feature_blocked.html",
+        status=details["status"],
+        message="Phone/PWA Communications is suspended or not licensed. Update billing or contact support.",
+    ), 402
+
+
+def _name_is_phone_number(value, phone_number=None):
+    if not value:
+        return True
+    digits = re.sub(r"\D", "", value or "")
+    if phone_number and digits and digits == re.sub(r"\D", "", phone_number or ""):
+        return True
+    return bool(digits and len(digits) >= 7 and not re.search(r"[A-Za-z]", value or ""))
+
+
+def _lookup_contact_display(company_id, phone_number, current_name=None):
+    """Resolve display metadata for a phone number from CRM/Google cache."""
+    current = (current_name or "").strip()
+    if not phone_number:
+        return {"name": current, "source": None, "contact_id": None}
+    if current and not _name_is_phone_number(current, phone_number):
+        return {"name": current, "source": None, "contact_id": None}
+    try:
+        from services.google_contacts import lookup_contact_for_phone
+        info = lookup_contact_for_phone(company_id, phone_number)
+        name = (info.get("name") or "").strip()
+        if name and not _name_is_phone_number(name, phone_number):
+            return info
+    except Exception:
+        logger.exception("Contact display-name lookup failed", extra={"company_id": company_id})
+    return {"name": current or phone_number, "source": None, "contact_id": None}
+
+
+def _refresh_conversation_contact_name(conv):
+    info = _lookup_contact_display(conv.company_id, conv.from_number, conv.contact_name)
+    resolved = info.get("name") or conv.from_number
+    changed = False
+    if info.get("contact_id") and conv.contact_id != info["contact_id"]:
+        conv.contact_id = info["contact_id"]
+        changed = True
+    if resolved and resolved != conv.contact_name and not _name_is_phone_number(resolved, conv.from_number):
+        conv.contact_name = resolved
+        if hasattr(conv, "contact_source") and (info.get("source") or not getattr(conv, "contact_source", None)):
+            conv.contact_source = info.get("source") or "contacts_cache"
+        changed = True
+    if changed:
+        try:
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+            logger.exception("Unable to refresh conversation contact_name", extra={"conversation_id": conv.id, "company_id": conv.company_id})
+    return resolved or conv.from_number
+
+
+def _refresh_call_contact_name(call):
+    lookup_number = call.from_number if call.direction == "inbound" else call.to_number
+    info = _lookup_contact_display(call.company_id, lookup_number, call.caller_name)
+    resolved = info.get("name") or lookup_number
+    changed = False
+    if info.get("contact_id") and getattr(call, "contact_id", None) != info["contact_id"]:
+        call.contact_id = info["contact_id"]
+        changed = True
+    if resolved and resolved != call.caller_name and not _name_is_phone_number(resolved, lookup_number):
+        call.caller_name = resolved
+        changed = True
+    if changed:
+        try:
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+            logger.exception("Unable to refresh call caller_name", extra={"call_id": call.id, "company_id": call.company_id})
+    return resolved or lookup_number
 
 
 # Access is controlled via UserCompanyAccess.has_mobile_inbox_access() — no PostHog required.
@@ -285,6 +394,9 @@ def _send_sms_internal(ta, to_number: str, body: str, conversation_id=None):
     """
     from models import TwilioMessage
     sms_body = _sanitize_body(body)
+    from services.license_service import PHONE_PWA_FEATURE, has_feature
+    if getattr(ta, "company_id", None) and not has_feature(ta.company_id, PHONE_PWA_FEATURE):
+        return None, "Phone/PWA Communications license is not active."
     try:
         from twilio.rest import Client
         sid = ta.get_account_sid() if hasattr(ta, 'get_account_sid') else ta._account_sid
@@ -320,11 +432,12 @@ def _send_sms_internal(ta, to_number: str, body: str, conversation_id=None):
 def _conv_to_dict(conv, brief=True):
     tags = _safe_conversation_tags(conv.tags)
     contact_source = getattr(conv, "contact_source", None)
+    display_name = _refresh_conversation_contact_name(conv)
     d = {
         "id":                  conv.id,
         "from_number":         conv.from_number,
-        "contact_name":        conv.contact_name or conv.from_number,
-        "display_name":        conv.contact_name or conv.from_number,
+        "contact_name":        display_name,
+        "display_name":        display_name,
         "contact_id":          conv.contact_id,
         "contact_source":      contact_source,
         "is_read":             conv.is_read,
@@ -395,11 +508,20 @@ def pwa_index():
             "inbox_access_denied.html", user=user, company=company
         ), 403
     vapid_public = os.environ.get("VAPID_PUBLIC_KEY", "")
+    vapid_missing = _web_push_missing_settings()
+    pwa_version = (
+        os.environ.get("LUXIT_ASSET_VERSION")
+        or os.environ.get("GIT_SHA")
+        or os.environ.get("RENDER_GIT_COMMIT")
+        or "20260621-pwa-communications"
+    )
     return render_template(
         "inbox_pwa/index.html",
         user=user,
         company=company,
         vapid_public=vapid_public,
+        vapid_missing=vapid_missing,
+        pwa_version=pwa_version,
     )
 
 
@@ -415,11 +537,18 @@ def pwa_calls():
         return render_template("no_company.html", user=user)
     if not _check_mobile_inbox_access(user, company):
         return render_template("inbox_access_denied.html", user=user, company=company), 403
-    return render_template("inbox_pwa/calls.html", user=user, company=company)
+    pwa_version = (
+        os.environ.get("LUXIT_ASSET_VERSION")
+        or os.environ.get("GIT_SHA")
+        or os.environ.get("RENDER_GIT_COMMIT")
+        or "20260621-pwa-communications"
+    )
+    return render_template("inbox_pwa/calls.html", user=user, company=company, pwa_version=pwa_version)
 
 
 def _call_to_dict(call):
     voicemail_text = getattr(call, "transcription_text", None)
+    display_name = _refresh_call_contact_name(call)
     return {
         "id": call.id,
         "twilio_call_sid": call.twilio_sid,
@@ -430,8 +559,8 @@ def _call_to_dict(call):
         "to_number": call.to_number,
         "assigned_business_number": call.to_number if call.direction == "inbound" else call.from_number,
         "forwarded_to_number": getattr(call, "forwarded_to_number", None),
-        "caller_name": call.caller_name or call.from_number,
-        "contact_name": call.caller_name or call.from_number,
+        "caller_name": display_name,
+        "contact_name": display_name,
         "label": "Missed" if call.status in ("missed", "no-answer", "busy", "failed") else ("Outgoing" if call.direction == "outbound" else "Incoming"),
         "duration_seconds": call.duration or 0,
         "recording_url": getattr(call, "recording_url", None),
@@ -567,8 +696,25 @@ def api_pwa_preferences():
         user.pwa_palette_id = palette
         if data.get("theme_mode") in {"dark", "light", "system"}:
             user.pwa_theme_mode = data.get("theme_mode")
-        if "notificationSoundsEnabled" in data or "notification_sounds_enabled" in data:
-            user.notification_sounds_enabled = bool(data.get("notificationSoundsEnabled", data.get("notification_sounds_enabled")))
+        pref_map = {
+            "notificationSoundsEnabled": "notification_sounds_enabled",
+            "textAlertsEnabled": "pwa_text_alerts_enabled",
+            "callAlertsEnabled": "pwa_call_alerts_enabled",
+            "voicemailAlertsEnabled": "pwa_voicemail_alerts_enabled",
+            "unreadReminderAlertsEnabled": "pwa_unread_reminder_alerts_enabled",
+            "vibrationEnabled": "pwa_vibration_enabled",
+            "businessHoursOnly": "pwa_alerts_business_hours_only",
+        }
+        for json_key, attr in pref_map.items():
+            snake_key = re.sub(r"(?<!^)(?=[A-Z])", "_", json_key).lower()
+            if json_key in data or snake_key in data:
+                setattr(user, attr, bool(data.get(json_key, data.get(snake_key))))
+        if "quietHoursStart" in data or "quiet_hours_start" in data:
+            user.pwa_quiet_hours_start = (data.get("quietHoursStart") or data.get("quiet_hours_start") or "")[:5] or None
+        if "quietHoursEnd" in data or "quiet_hours_end" in data:
+            user.pwa_quiet_hours_end = (data.get("quietHoursEnd") or data.get("quiet_hours_end") or "")[:5] or None
+        if "unreadRepeatMinutes" in data or "unread_repeat_minutes" in data:
+            user.pwa_unread_repeat_minutes = max(1, min(60, int(data.get("unreadRepeatMinutes") or data.get("unread_repeat_minutes") or 1)))
         user.pwa_preferences_updated_at = datetime.utcnow()
         db.session.commit()
     return jsonify({
@@ -577,6 +723,15 @@ def api_pwa_preferences():
             "palette_id": user.pwa_palette_id or "lux",
             "theme_mode": user.pwa_theme_mode or "dark",
             "notificationSoundsEnabled": user.notification_sounds_enabled is not False,
+            "textAlertsEnabled": getattr(user, "pwa_text_alerts_enabled", True) is not False,
+            "callAlertsEnabled": getattr(user, "pwa_call_alerts_enabled", True) is not False,
+            "voicemailAlertsEnabled": getattr(user, "pwa_voicemail_alerts_enabled", True) is not False,
+            "unreadReminderAlertsEnabled": getattr(user, "pwa_unread_reminder_alerts_enabled", True) is not False,
+            "vibrationEnabled": getattr(user, "pwa_vibration_enabled", True) is not False,
+            "businessHoursOnly": getattr(user, "pwa_alerts_business_hours_only", True) is not False,
+            "quietHoursStart": getattr(user, "pwa_quiet_hours_start", None),
+            "quietHoursEnd": getattr(user, "pwa_quiet_hours_end", None),
+            "unreadRepeatMinutes": getattr(user, "pwa_unread_repeat_minutes", None) or 1,
             "updated_at": user.pwa_preferences_updated_at.isoformat() if user.pwa_preferences_updated_at else None,
         }
     })
@@ -728,6 +883,55 @@ def api_call_archive(call_id):
     return jsonify({"success": True})
 
 
+def _twilio_recording_auth(company_id):
+    from models import TwilioAccount
+    ta = TwilioAccount.query.filter_by(company_id=company_id).first()
+    sid = os.environ.get("TWILIO_ACCOUNT_SID") or (ta.get_account_sid() if ta and hasattr(ta, "get_account_sid") else None)
+    token = os.environ.get("TWILIO_AUTH_TOKEN") or (ta.get_auth_token() if ta and hasattr(ta, "get_auth_token") else None)
+    return sid, token
+
+
+@inbox_pwa_bp.route("/api/calls/<int:call_id>/voicemail/audio")
+def api_call_voicemail_audio(call_id):
+    """Proxy voicemail media through the server so users never need Twilio credentials."""
+    user = _require_auth()
+    company = _require_company(user)
+    denied = _require_mobile_inbox_api_access(user, company)
+    if denied:
+        return denied
+    from models import TwilioCallLog, VoiceVoicemailMessage
+    from services.comms_permissions import filter_calls_for_user
+    call = filter_calls_for_user(TwilioCallLog.query.filter_by(id=call_id, company_id=company.id), user, company.id).first_or_404()
+    vm = VoiceVoicemailMessage.query.filter_by(call_log_id=call.id, company_id=company.id).order_by(VoiceVoicemailMessage.created_at.desc()).first()
+    media_url = (getattr(vm, "recording_url", None) if vm else None) or getattr(call, "voicemail_url", None) or getattr(call, "recording_url", None)
+    if not media_url:
+        return jsonify({"success": False, "error": "No voicemail audio is available for this call."}), 404
+    if media_url.startswith("data:"):
+        header, encoded = media_url.split(",", 1)
+        mime = header.split(";")[0].replace("data:", "") or "audio/mpeg"
+        data = base64.b64decode(encoded)
+        return Response(data, mimetype=mime, headers={"Content-Disposition": f"inline; filename=voicemail-{call.id}.mp3"})
+    parsed = urlparse(media_url)
+    auth = None
+    if "twilio.com" in parsed.netloc.lower():
+        sid, token = _twilio_recording_auth(company.id)
+        if not sid or not token:
+            return jsonify({"success": False, "error": "Voicemail playback is not configured. Ask an admin to verify Twilio credentials."}), 503
+        auth = (sid, token)
+    try:
+        import requests
+        upstream = requests.get(media_url, auth=auth, timeout=15)
+        upstream.raise_for_status()
+    except Exception:
+        logger.exception("Voicemail media proxy failed", extra={"company_id": company.id, "call_id": call.id})
+        return jsonify({"success": False, "error": "Voicemail audio could not be loaded. Please try again or contact support."}), 502
+    return Response(
+        upstream.content,
+        mimetype=upstream.headers.get("Content-Type", "audio/mpeg"),
+        headers={"Content-Disposition": f"inline; filename=voicemail-{call.id}.mp3"},
+    )
+
+
 @inbox_pwa_bp.route("/api/calls/voicemails")
 def api_voicemails():
     user = _require_auth()
@@ -773,20 +977,22 @@ def api_phone_number_settings(number_id):
     user = _require_auth()
     company = _require_company(user)
     from models import TwilioPhoneNumber
-    from services.comms_permissions import accessible_phone_numbers, can_manage_users
+    from services.comms_permissions import accessible_phone_numbers, can_manage_users, normalize_role, user_access_for_company
     pn = TwilioPhoneNumber.query.filter_by(id=number_id, company_id=company.id, is_active=True).first_or_404()
     if pn.phone_number not in accessible_phone_numbers(user, company.id):
         abort(404)
-    editable = can_manage_users(user, company.id)
+    acc = user_access_for_company(user, company.id)
+    role = normalize_role(getattr(acc, "role", None)) if acc else "viewer"
+    editable = can_manage_users(user, company.id) or role in {"owner", "admin"} or getattr(user, "is_admin", False)
     if request.method == "PUT":
         if not editable:
             return jsonify({"success": False, "error": "Permission denied."}), 403
         data = request.get_json() or {}
         allowed = {
             "business_hours", "timezone", "during_hours_route", "after_hours_route",
-            "sms_forward_to", "sms_forwarding_enabled", "auto_reply_enabled",
+            "sms_forward_to", "sms_forwarding_enabled", "auto_reply_enabled", "number_auto_reply_text",
             "call_forward_to", "voice_forwarding_enabled", "ring_timeout",
-            "voicemail_greeting_text", "voicemail_greeting_audio_url",
+            "voicemail_greeting_text", "voicemail_greeting_audio_url", "missed_call_text",
             "after_hours_text", "after_hours_sms_enabled", "after_hours_voicemail_enabled",
             "browser_calling_enabled", "cell_callback_enabled", "wifi_only",
             "mobile_data_allowed", "fallback_behavior", "caller_id_display_name",
@@ -809,11 +1015,13 @@ def api_phone_number_settings(number_id):
             "sms_forward_to": pn.sms_forward_to,
             "sms_forwarding_enabled": pn.sms_forwarding_enabled,
             "auto_reply_enabled": pn.auto_reply_enabled,
+            "number_auto_reply_text": pn.number_auto_reply_text,
             "call_forward_to": pn.call_forward_to,
             "voice_forwarding_enabled": pn.voice_forwarding_enabled,
             "ring_timeout": pn.ring_timeout,
             "voicemail_greeting_text": pn.voicemail_greeting_text,
             "voicemail_greeting_audio_url": pn.voicemail_greeting_audio_url,
+            "missed_call_text": pn.missed_call_text,
             "after_hours_text": pn.after_hours_text,
             "after_hours_sms_enabled": pn.after_hours_sms_enabled,
             "after_hours_voicemail_enabled": pn.after_hours_voicemail_enabled,
@@ -844,6 +1052,78 @@ def api_phone_settings():
                 setattr(settings, key, data[key])
         db.session.commit()
     return jsonify({"settings": _settings_to_dict(settings)})
+
+
+def _voice_greeting_to_dict(greeting):
+    return {
+        "id": greeting.id,
+        "company_id": greeting.company_id,
+        "phone_number_id": greeting.phone_number_id,
+        "name": greeting.name,
+        "greeting_type": greeting.greeting_type,
+        "text_body": greeting.text_body,
+        "audio_url": greeting.audio_url,
+        "storage_path": greeting.storage_path,
+        "voice_name": greeting.voice_name,
+        "is_active": bool(greeting.is_active),
+        "applies_to": greeting.applies_to,
+        "created_at": greeting.created_at.isoformat() if greeting.created_at else None,
+        "updated_at": greeting.updated_at.isoformat() if greeting.updated_at else None,
+    }
+
+
+@inbox_pwa_bp.route("/api/phone/numbers/<int:number_id>/greetings", methods=["GET", "POST"])
+def api_phone_number_greetings(number_id):
+    user = _require_auth()
+    company = _require_company(user)
+    denied = _require_mobile_inbox_api_access(user, company)
+    if denied:
+        return denied
+    from models import TwilioPhoneNumber, VoiceGreeting
+    from services.comms_permissions import accessible_phone_numbers
+    pn = TwilioPhoneNumber.query.filter_by(id=number_id, company_id=company.id, is_active=True).first_or_404()
+    if pn.phone_number not in accessible_phone_numbers(user, company.id):
+        abort(403, "No access to that phone number")
+    if request.method == "POST":
+        data = request.get_json(silent=True) or request.form or {}
+        greeting_type = (data.get("greeting_type") or "standard").strip()
+        if greeting_type not in {"upload", "recorded", "text_to_speech", "standard"}:
+            return jsonify({"success": False, "error": "Unsupported greeting type."}), 400
+        applies_to = (data.get("applies_to") or "voicemail_default").strip()
+        if applies_to not in {"business_hours", "after_hours", "voicemail_default"}:
+            return jsonify({"success": False, "error": "Unsupported greeting scope."}), 400
+        greeting = VoiceGreeting(
+            company_id=company.id, phone_number_id=pn.id,
+            name=(data.get("name") or "Voicemail greeting")[:160],
+            greeting_type=greeting_type, text_body=data.get("text_body") or data.get("greeting_text"),
+            audio_url=data.get("audio_url"), storage_path=data.get("storage_path"), voice_name=data.get("voice_name"),
+            applies_to=applies_to, is_active=bool(data.get("is_active")), created_by_user_id=user.id,
+        )
+        if greeting.is_active:
+            VoiceGreeting.query.filter_by(company_id=company.id, phone_number_id=pn.id, applies_to=applies_to, is_active=True).update({"is_active": False})
+        db.session.add(greeting); db.session.commit()
+        return jsonify({"success": True, "greeting": _voice_greeting_to_dict(greeting)}), 201
+    greetings = VoiceGreeting.query.filter_by(company_id=company.id, phone_number_id=pn.id).order_by(VoiceGreeting.created_at.desc()).all()
+    return jsonify({"success": True, "greetings": [_voice_greeting_to_dict(g) for g in greetings]})
+
+
+@inbox_pwa_bp.route("/api/phone/greetings/<int:greeting_id>/activate", methods=["POST"])
+def api_activate_voice_greeting(greeting_id):
+    user = _require_auth()
+    company = _require_company(user)
+    denied = _require_mobile_inbox_api_access(user, company)
+    if denied:
+        return denied
+    from models import TwilioPhoneNumber, VoiceGreeting
+    from services.comms_permissions import accessible_phone_numbers
+    greeting = VoiceGreeting.query.filter_by(id=greeting_id, company_id=company.id).first_or_404()
+    pn = TwilioPhoneNumber.query.filter_by(id=greeting.phone_number_id, company_id=company.id, is_active=True).first_or_404()
+    if pn.phone_number not in accessible_phone_numbers(user, company.id):
+        abort(403, "No access to that phone number")
+    VoiceGreeting.query.filter_by(company_id=company.id, phone_number_id=pn.id, applies_to=greeting.applies_to, is_active=True).update({"is_active": False})
+    greeting.is_active = True
+    db.session.commit()
+    return jsonify({"success": True, "greeting": _voice_greeting_to_dict(greeting)})
 
 
 @inbox_pwa_bp.route("/api/phone/test-forwarding", methods=["POST"])
@@ -1434,12 +1714,36 @@ def _authorized_notification_users(company_id: int, phone_number_id=None):
     return users
 
 
+def _event_allowed_for_user(user, event_type: str) -> bool:
+    event_type = (event_type or "").lower()
+    if event_type in {"inbound_sms", "new_message", "unread_message_reminder"}:
+        attr = "pwa_unread_reminder_alerts_enabled" if event_type == "unread_message_reminder" else "pwa_text_alerts_enabled"
+    elif event_type in {"incoming_call", "missed_call", "call"}:
+        attr = "pwa_call_alerts_enabled"
+    elif event_type in {"voicemail", "new_voicemail"}:
+        attr = "pwa_voicemail_alerts_enabled"
+    else:
+        attr = None
+    return True if not attr else getattr(user, attr, True) is not False
+
+
+def _notification_payload_preferences(user):
+    return {
+        "soundEnabled": getattr(user, "notification_sounds_enabled", True) is not False,
+        "vibrationEnabled": getattr(user, "pwa_vibration_enabled", True) is not False,
+        "quietHoursStart": getattr(user, "pwa_quiet_hours_start", None),
+        "quietHoursEnd": getattr(user, "pwa_quiet_hours_end", None),
+    }
+
+
 def _create_notification_records(company_id: int, *, event_type: str, title: str, notification_body: str,
                                  link: str = "/app/inbox", phone_number_id=None, category: str = "communications",
                                  icon: str = "bell"):
     from models import Notification
     created = []
     for user in _authorized_notification_users(company_id, phone_number_id):
+        if not _event_allowed_for_user(user, event_type):
+            continue
         row = Notification(
             user_id=user.id,
             company_id=company_id,
@@ -1499,14 +1803,25 @@ def pwa_notifications_read():
     db.session.commit()
     return jsonify({"success": True, "updated": updated})
 
+def _web_push_missing_settings():
+    return [key for key in ("VAPID_PUBLIC_KEY", "VAPID_PRIVATE_KEY", "VAPID_SUBJECT") if not os.environ.get(key)]
+
+
 @inbox_pwa_bp.route("/api/push/public-key")
 @inbox_pwa_bp.route("/api/pwa/push/public-key")
 def push_public_key():
-    return jsonify({"success": True, "publicKey": os.environ.get("VAPID_PUBLIC_KEY", ""), "configured": bool(os.environ.get("VAPID_PUBLIC_KEY") and os.environ.get("VAPID_PRIVATE_KEY") and os.environ.get("VAPID_SUBJECT"))})
+    missing = _web_push_missing_settings()
+    return jsonify({"success": True, "publicKey": os.environ.get("VAPID_PUBLIC_KEY", ""), "configured": not missing, "missing": missing})
+
+
+@inbox_pwa_bp.route("/api/pwa/push/status")
+def push_setup_status():
+    missing = _web_push_missing_settings()
+    return jsonify({"success": True, "configured": not missing, "missing": missing, "message": "Web Push is configured." if not missing else "Web Push server setup is incomplete: " + ", ".join(missing)})
 
 
 def _web_push_configured():
-    return bool(os.environ.get("VAPID_PUBLIC_KEY") and os.environ.get("VAPID_PRIVATE_KEY") and os.environ.get("VAPID_SUBJECT"))
+    return not _web_push_missing_settings()
 
 def _send_web_push_to_subscriptions(subscriptions, payload: dict):
     """Server-side Web Push sender; disables expired subscriptions and never broadens caller-provided scope."""
@@ -1539,7 +1854,11 @@ def _send_web_push_to_subscriptions(subscriptions, payload: dict):
 def send_pwa_push_notification(company_id: int, *, user_ids, title: str, body: str, link: str = "/app/inbox", tag: str = "luxit-inbox", event_type: str = "notification", phone_number_id=None):
     """Internal tenant-scoped push helper for notifications already permission-filtered by caller."""
     from models import PushSubscription
+    from models import User
     ids = [int(uid) for uid in (user_ids or [])]
+    if ids:
+        users = User.query.filter(User.id.in_(ids)).all()
+        ids = [u.id for u in users if _event_allowed_for_user(u, event_type)]
     if not ids:
         return {"sent": 0, "errors": []}
     subs = PushSubscription.query.filter(
@@ -2068,6 +2387,53 @@ def create_pwa_notification(company_id: int, *, event_type: str, title: str, bod
         phone_number_id=phone_number_id,
     )
     return records
+
+
+def create_unread_message_reminders(now=None, dry_run: bool = False):
+    """Create one-minute unread SMS reminders without duplicate storms."""
+    from datetime import timedelta
+    from models import Notification, TwilioConversation
+    now = now or datetime.utcnow()
+    created = []
+    would_create = 0
+    unread = TwilioConversation.query.filter_by(is_read=False).all()
+    for conv in unread:
+        if _is_archived_conversation(conv):
+            continue
+        last = Notification.query.filter_by(
+            company_id=conv.company_id,
+            phone_number_id=getattr(conv, "phone_number_id", None),
+            event_type="unread_message_reminder",
+            link=f"/app/inbox?conv={conv.id}",
+        ).filter(Notification.created_at >= now - timedelta(minutes=1)).first()
+        if last:
+            continue
+        if dry_run:
+            would_create += 1
+            continue
+        rows = _create_notification_records(
+            conv.company_id,
+            event_type="unread_message_reminder",
+            title=f"Unread message from {conv.contact_name or conv.from_number}",
+            notification_body=conv.last_message_preview or "Unread message needs attention",
+            link=f"/app/inbox?conv={conv.id}",
+            phone_number_id=getattr(conv, "phone_number_id", None),
+            icon="message-circle",
+        )
+        created.extend(rows)
+    return {"created": len(created), "would_create": would_create, "dry_run": dry_run}
+
+
+@inbox_pwa_bp.route("/api/pwa/reminders/unread/run", methods=["POST"])
+def api_run_unread_reminders():
+    user = _require_auth()
+    company = _require_company(user)
+    denied = _require_mobile_inbox_api_access(user, company)
+    if denied:
+        return denied
+    dry_run = str(request.args.get("dry_run", "")).lower() in {"1", "true", "yes"}
+    result = create_unread_message_reminders(dry_run=dry_run)
+    return jsonify({"success": True, **result})
 
 
 # ── Google Contacts status + sync (PWA API) ───────────────────────────────────

@@ -27,6 +27,19 @@
                     </div>
                     
                     <div class="mb-3">
+                        <label for="from_phone_number_id" class="form-label">Sender Phone Line</label>
+                        <select class="form-select" id="from_phone_number_id" name="from_phone_number_id">
+                            <option value="">Choose when scheduling/sending</option>
+                            {% for number in sender_numbers|default([]) %}
+                            <option value="{{ number.id }}" {% if campaign is defined and campaign.from_phone_number_id == number.id %}selected{% endif %}>
+                                {{ number.friendly_name or number.phone_number }} — {{ number.phone_number }}{% if number.allow_global_fallback %} (fallback allowed){% endif %}
+                            </option>
+                            {% endfor %}
+                        </select>
+                        <small class="text-warning">If no number is selected for a scheduled/send action, LUXit will block the send instead of silently using global/API defaults.</small>
+                    </div>
+
+                    <div class="mb-3">
                         <label for="message" class="form-label">
                             SMS Message * 
                             <span id="charCount" class="badge bg-secondary">{{ campaign.message|length }}/160</span>
@@ -38,7 +51,7 @@
                         </small>
                     </div>
                     
-                    {% if campaign.status == 'draft' %}
+                    {% if campaign.status in ['draft', 'scheduled'] %}
                     <div class="mb-3">
                         <label class="form-label">Schedule (Optional)</label>
                         <div class="row">
@@ -56,6 +69,23 @@
                     </div>
                     {% endif %}
                     
+                    <div class="mb-3">
+                        <label for="media_urls" class="form-label">Image/Media URLs (MMS optional)</label>
+                        <textarea class="form-control" id="media_urls" name="media_urls" rows="2" placeholder="One public image URL per line">{% if campaign is defined %}{{ (campaign.media_urls or [])|join('\n') }}{% endif %}</textarea>
+                        <small class="text-muted">Clickable links belong in the SMS body; MMS images themselves are not reliably hyperlinked by carriers.</small>
+                    </div>
+
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label for="batch_size" class="form-label">Batch Size</label>
+                            <input type="number" class="form-control" id="batch_size" name="batch_size" min="1" value="{{ campaign.batch_size if campaign is defined and campaign.batch_size else 50 }}">
+                        </div>
+                        <div class="col-md-6">
+                            <label for="send_rate_per_minute" class="form-label">Send Rate / Minute</label>
+                            <input type="number" class="form-control" id="send_rate_per_minute" name="send_rate_per_minute" min="1" value="{{ campaign.send_rate_per_minute if campaign is defined and campaign.send_rate_per_minute else 60 }}">
+                        </div>
+                    </div>
+
                     <div class="d-flex gap-2">
                         <button type="submit" class="btn btn-primary">
                             <i data-feather="save"></i> Save Changes

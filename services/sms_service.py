@@ -59,6 +59,7 @@ class SMSService:
     def begin_send(cls, campaign_id, queued=False):
         from extensions import db
         from models import SMSCampaign
+        from services.license_service import PHONE_PWA_FEATURE, has_feature
 
         # The per-process lock prevents double-click/rapid-repeat requests handled by this app worker.
         # The DB status transition below remains the cross-worker safety net; PostgreSQL also honors
@@ -73,6 +74,15 @@ class SMSService:
             campaign = query.first()
             if not campaign:
                 return None, {'success': False, 'error': 'Campaign not found', 'status_code': 404}
+            if campaign.company_id and not has_feature(campaign.company_id, PHONE_PWA_FEATURE):
+                cls._audit_campaign_event(campaign.company_id, 'send_rejected_license_inactive', campaign.id, campaign.status)
+                db.session.commit()
+                return campaign, {
+                    'success': False,
+                    'error': 'Phone/PWA Communications license is not active.',
+                    'status_code': 402,
+                    'license_blocked': True,
+                }
             if campaign.status in cls.ACTIVE_STATUSES or campaign.status in cls.BLOCKED_SEND_STATUSES:
                 cls._audit_campaign_event(campaign.company_id, 'duplicate_send_rejected', campaign.id, campaign.status)
                 db.session.commit()
@@ -229,7 +239,9 @@ class SMSService:
     def contact_can_receive_marketing(contact):
         if not contact or not getattr(contact, "phone", None):
             return False
-        if getattr(contact, "sms_opt_out_at", None):
+        if getattr(contact, "do_not_market", False) or getattr(contact, "do_not_sms", False):
+            return False
+        if getattr(contact, "sms_opt_out_at", None) or getattr(contact, "sms_opted_out", False):
             return False
         return bool(
             getattr(contact, "sms_marketing_opt_in", False)
@@ -254,13 +266,23 @@ class SMSService:
         return template
     
     @classmethod
-    def send_sms(cls, to_number, message, company_id=None):
+    def send_sms(cls, to_number, message, company_id=None, from_phone=None, media_urls=None):
+        selected_from_phone = from_phone
         """Send an SMS message via tenant Twilio config, falling back to platform config."""
+        if company_id:
+            from services.license_service import PHONE_PWA_FEATURE, has_feature
+            if not has_feature(company_id, PHONE_PWA_FEATURE):
+                return {
+                    'success': False,
+                    'error': 'Phone/PWA Communications license is not active.',
+                    'status_code': 402,
+                    'license_blocked': True,
+                }
         tenant_config = cls._tenant_twilio_config(company_id)
         if tenant_config:
             client = tenant_config['client']
             messaging_service_sid = tenant_config.get('messaging_service_sid')
-            from_phone = tenant_config.get('from_phone')
+            from_phone = selected_from_phone or tenant_config.get('from_phone')
         else:
             if not cls._init_twilio():
                 return {
@@ -269,7 +291,7 @@ class SMSService:
                 }
             client = cls._twilio_client
             messaging_service_sid = None
-            from_phone = cls._twilio_phone
+            from_phone = selected_from_phone or cls._twilio_phone
         
         try:
             clean_number = to_number.replace('+', '').replace('-', '').replace(' ', '').replace('(', '').replace(')', '')
@@ -279,7 +301,9 @@ class SMSService:
             
             message = _sanitize_body(cls.ensure_opt_out_language(message))
             send_kwargs = {'body': message, 'to': formatted_number}
-            if messaging_service_sid:
+            if media_urls:
+                send_kwargs['media_url'] = media_urls
+            if messaging_service_sid and not selected_from_phone:
                 send_kwargs['messaging_service_sid'] = messaging_service_sid
             else:
                 send_kwargs['from_'] = from_phone
@@ -319,6 +343,8 @@ class SMSService:
         recipients = (
             SMSRecipient.query
             .filter_by(campaign_id=campaign_id, status='pending')
+            .order_by(SMSRecipient.id.asc())
+            .limit(max(1, int(getattr(campaign, 'batch_size', None) or 50)))
             .all()
         )
         
@@ -326,7 +352,11 @@ class SMSService:
         failed = 0
         
         for recipient in recipients:
-            result = cls.send_sms(recipient.phone_number, campaign.message, company_id=campaign.company_id)
+            try:
+                result = cls.send_sms(recipient.phone_number, campaign.message, company_id=campaign.company_id, from_phone=getattr(campaign, 'from_phone_number', None), media_urls=getattr(campaign, 'media_urls', None))
+            except TypeError:
+                # Backward-compatible for tests/integrations monkeypatching send_sms with the legacy signature.
+                result = cls.send_sms(recipient.phone_number, campaign.message, company_id=campaign.company_id)
             if result['success']:
                 recipient.status = 'sent'
                 recipient.sent_at = datetime.utcnow()
@@ -338,11 +368,11 @@ class SMSService:
                 recipient.error_message = result.get('error', 'Unknown error')
                 failed += 1
         
-        if failed > 0 and sent == 0:
+        remaining = SMSRecipient.query.filter_by(campaign_id=campaign_id, status='pending').count()
+        if remaining:
+            campaign.status = 'scheduled'
+        elif failed > 0 and sent == 0:
             campaign.status = 'failed'
-        elif failed > 0:
-            campaign.status = 'failed' if sent == 0 else 'completed'
-            campaign.sent_at = datetime.utcnow()
         else:
             campaign.status = 'completed'
             campaign.sent_at = datetime.utcnow()

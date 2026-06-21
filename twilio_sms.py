@@ -34,9 +34,10 @@ from zoneinfo import ZoneInfo
 
 from flask import (
     Blueprint, abort, flash, jsonify, redirect,
-    render_template, request, url_for
+    render_template, request, url_for, g, has_request_context
 )
 from flask_login import current_user, login_required
+from werkzeug.exceptions import HTTPException
 
 from extensions import db, csrf
 
@@ -131,6 +132,7 @@ class _NumberScopedTwilioConfig:
         "sms_forward_to",
         "sms_forwarding_enabled",
         "auto_reply_enabled",
+        "number_auto_reply_text",
         "call_forward_to",
         "voice_forwarding_enabled",
         "voicemail_greeting_text",
@@ -613,6 +615,14 @@ def _send_sms(ta, to_number: str, body: str,
     """Send an outbound SMS and persist the TwilioMessage record."""
     from models import TwilioMessage
     from flask import current_app
+    try:
+        from services.license_service import PHONE_PWA_FEATURE, has_feature
+        if getattr(ta, "company_id", None) and not has_feature(ta.company_id, PHONE_PWA_FEATURE):
+            logger.warning("Outbound SMS blocked by inactive license: company_id=%s to=%s auto_reply=%s", ta.company_id, to_number, is_auto_reply)
+            return {"success": False, "error": "Phone/PWA Communications license is not active.", "license_blocked": True}
+    except Exception:
+        logger.exception("License check failed before outbound SMS; blocking send for safety")
+        return {"success": False, "error": "License check failed.", "license_blocked": True}
     client = _build_client(ta)
     if not client:
         return {"success": False, "error": "Twilio client could not be created."}
@@ -747,6 +757,38 @@ def _update_contact_sms_consent(company_id, phone_number, opted_in, source):
     return contact
 
 
+def _send_number_configured_auto_reply(conv, ta, *, in_business=None) -> bool:
+    """Fallback per-number auto replies when no AutoReplyRule sends a reply."""
+    if not getattr(ta, "auto_reply_enabled", True) or conv.is_opted_out:
+        return False
+    if in_business is None:
+        try:
+            in_business = _is_business_hours(ta.company_id, phone_config=ta)
+        except TypeError:
+            in_business = _is_business_hours(ta.company_id)
+    response_body = None
+    if not in_business and getattr(ta, "after_hours_sms_enabled", False):
+        response_body = getattr(ta, "after_hours_text", None)
+    if not response_body and in_business:
+        response_body = getattr(ta, "number_auto_reply_text", None)
+    if not response_body:
+        return False
+    cooldown_minutes = getattr(ta, "after_hours_cooldown_minutes", None) or 720
+    cutoff = datetime.now(timezone.utc) - timedelta(minutes=cooldown_minutes)
+    from models import TwilioMessage
+    recent = TwilioMessage.query.filter(
+        TwilioMessage.conversation_id == conv.id,
+        TwilioMessage.is_auto_reply == True,
+        TwilioMessage.created_at >= cutoff,
+    ).first()
+    if recent:
+        logger.info("[auto-reply company=%s conv=%s] configured number auto reply skipped due to cooldown", ta.company_id, conv.id)
+        return False
+    result = _send_sms(ta, conv.from_number, response_body, conversation_id=conv.id, is_auto_reply=True)
+    logger.info("[auto-reply company=%s conv=%s] configured number auto reply sent success=%s", ta.company_id, conv.id, result.get("success"))
+    return bool(result.get("success"))
+
+
 def _apply_auto_reply_rules(conv, body: str, ta) -> bool:
     """
     Evaluate auto-reply rules in priority order.
@@ -785,10 +827,14 @@ def _apply_auto_reply_rules(conv, body: str, ta) -> bool:
 
     if not rules_raw:
         logger.info(
-            "%s no active auto-reply rules found for company_id=%s",
+            "%s no active auto-reply rules found for company_id=%s; checking per-number configured replies",
             _tag, ta.company_id,
         )
-        return False
+        try:
+            in_business = _is_business_hours(ta.company_id, phone_config=ta)
+        except TypeError:
+            in_business = _is_business_hours(ta.company_id)
+        return _send_number_configured_auto_reply(conv, ta, in_business=in_business)
 
     logger.info("%s evaluating %d active rules for body=%.60r", _tag, len(rules_raw), body)
 
@@ -800,7 +846,11 @@ def _apply_auto_reply_rules(conv, body: str, ta) -> bool:
 
     now_utc     = datetime.now(timezone.utc)
     reply_sent  = False
-    in_business = _is_business_hours(ta.company_id, phone_config=ta)
+    
+    try:
+        in_business = _is_business_hours(ta.company_id, phone_config=ta)
+    except TypeError:
+        in_business = _is_business_hours(ta.company_id)
 
     logger.info("%s business_hours=%s first_contact=%s", _tag, in_business, conv.is_first_contact)
 
@@ -1055,6 +1105,9 @@ def inbound_sms():
         logger.warning("Inbound SMS: no TwilioAccount found for to=%s", to_number)
         return '<Response></Response>', 200, {"Content-Type": "text/xml"}
     ta = _effective_twilio_config(ta, pn)
+    if not hasattr(g, "voice_inbound_debug"):
+        g.voice_inbound_debug = {}
+    g.voice_inbound_debug.update({"company_id": getattr(ta, "company_id", None), "caller_id": getattr(ta, "from_phone", None) or to_number})
 
     # ── 2. Validate Twilio signature ───────────────────────────────────────
     if not _validate_twilio_signature(ta, "/twilio/sms/inbound"):
@@ -1403,6 +1456,51 @@ def outbound_call_twiml():
 @twilio_bp.route("/voice/inbound", methods=["POST"])
 @csrf.exempt
 def inbound_call():
+    """Rollback-safe Twilio voice webhook wrapper."""
+    try:
+        return _inbound_call_impl()
+    except HTTPException:
+        raise
+    except Exception:
+        ctx = getattr(g, "voice_inbound_debug", {}) if has_request_context() else {}
+        logger.exception(
+            "FIRST_EXCEPTION voice inbound failed call_sid=%s to=%s from=%s company_id=%s phone_number_id=%s route_decision=%s forward_to=%s",
+            ctx.get("call_sid"), ctx.get("to_number"), ctx.get("from_number"),
+            ctx.get("company_id"), ctx.get("phone_number_id"), ctx.get("route_decision"), ctx.get("forward_to"),
+        )
+        try:
+            db.session.rollback()
+        except Exception:
+            logger.exception("Voice inbound rollback failed after first exception")
+        return _voice_inbound_safe_fallback_twiml(ctx), 200, {"Content-Type": "text/xml"}
+
+
+def _voice_inbound_safe_fallback_twiml(ctx=None):
+    ctx = ctx or {}
+    forward_to = ctx.get("forward_to")
+    to_number = html.escape(ctx.get("to_number") or "", quote=True)
+    caller_id = html.escape(ctx.get("caller_id") or ctx.get("to_number") or "", quote=True)
+    if forward_to:
+        safe_forward = html.escape(forward_to, quote=True)
+        return (
+            '<?xml version="1.0" encoding="UTF-8"?>\n'
+            '<Response>\n'
+            f'  <Dial callerId="{caller_id}" timeout="25" action="/twilio/voice/no-answer?to={to_number}" method="POST">\n'
+            f'    <Number>{safe_forward}</Number>\n'
+            '  </Dial>\n'
+            '</Response>'
+        )
+    return (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<Response>\n'
+        '  <Say>Thank you for calling. Please leave a message after the tone.</Say>\n'
+        '  <Record maxLength="180" playBeep="true" recordingStatusCallback="/twilio/voice/recording" recordingStatusCallbackMethod="POST" />\n'
+        '  <Say>We did not receive a recording. Goodbye.</Say>\n'
+        '</Response>'
+    )
+
+
+def _inbound_call_impl():
     """
     Twilio voice webhook — business-hours-aware call routing.
 
@@ -1420,14 +1518,30 @@ def inbound_call():
     call_status = data.get("CallStatus", "")
     duration    = int(data.get("CallDuration") or 0)
     caller_name = data.get("CallerName", "")
+    g.voice_inbound_debug = {
+        "call_sid": call_sid,
+        "to_number": to_number,
+        "from_number": from_number,
+        "company_id": None,
+        "phone_number_id": None,
+        "route_decision": "received",
+        "forward_to": None,
+        "caller_id": to_number,
+    }
 
     pn, ta = _resolve_number(to_number)
+    g.voice_inbound_debug.update({
+        "company_id": getattr(ta, "company_id", None) or getattr(pn, "company_id", None),
+        "phone_number_id": getattr(pn, "id", None),
+        "route_decision": "resolved" if ta else "unresolved",
+    })
 
     if not ta:
         twiml = """<?xml version="1.0" encoding="UTF-8"?>
 <Response><Say>Thank you for calling. Goodbye.</Say></Response>"""
         return twiml, 200, {"Content-Type": "text/xml"}
     ta = _effective_twilio_config(ta, pn)
+    g.voice_inbound_debug.update({"company_id": getattr(ta, "company_id", None), "caller_id": getattr(ta, "from_phone", None) or to_number})
 
     # Validate Twilio signature
     signature_path = "/twilio/voice/inbound" if request.path.startswith("/twilio/") else "/api/twilio/voice/incoming"
@@ -1511,15 +1625,23 @@ def inbound_call():
             f"</Response>"
         )
 
-    route = (settings.during_hours_route if settings and in_hours else settings.after_hours_route if settings else None)
+    route = (
+        (getattr(ta, "during_hours_route", None) if in_hours else getattr(ta, "after_hours_route", None))
+        or (settings.during_hours_route if settings and in_hours else settings.after_hours_route if settings else None)
+    )
     forward_to = (
-        (ta.call_forward_to if pn else None)
+        (getattr(ta, "call_forward_to", None) if pn else None)
         or ((settings.forward_number if in_hours else settings.after_hours_forward_number) if settings else None)
-        or ta.call_forward_to
+        or getattr(ta, "call_forward_to", None)
     )
     fallback_to = ((settings.fallback_forward_number if in_hours else settings.after_hours_fallback_forward_number) if settings else None)
     timeout = (settings.ring_duration_seconds if settings else None) or 25
     record_attr = ' record="record-from-answer" recordingStatusCallback="/twilio/voice/recording"' if settings and settings.recording_enabled else ""
+    g.voice_inbound_debug.update({
+        "route_decision": route or ("ring_pwa" if in_hours else "voicemail"),
+        "forward_to": forward_to,
+        "in_hours": in_hours,
+    })
 
     def _dial_twiml(number, fallback=None):
         caller_id = ta.from_phone or to_number
@@ -1627,7 +1749,8 @@ def voice_no_answer():
     to_number   = request.args.get("to") or data.get("To", "")
 
     pn, ta = _resolve_number(to_number)
-    ta = _effective_twilio_config(ta, pn) if ta else None
+    ta = _effective_twilio_config(ta, pn)
+    g.voice_inbound_debug.update({"company_id": getattr(ta, "company_id", None), "caller_id": getattr(ta, "from_phone", None) or to_number}) if ta else None
 
     logger.info("Voice no-answer: sid=%s dial_status=%s", call_sid, dial_status)
 

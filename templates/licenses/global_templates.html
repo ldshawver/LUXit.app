@@ -1,0 +1,1 @@
+{% extends "base.html" %}{% block title %}Billing Email Templates{% endblock %}{% block content %}<h1>Billing Email Templates</h1><ul>{% for t in templates %}<li>{{ t.name }} — {{ t.event_type }}</li>{% endfor %}</ul>{% endblock %}

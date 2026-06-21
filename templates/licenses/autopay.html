@@ -1,0 +1,1 @@
+{% extends "base.html" %}{% block title %}Autopay{% endblock %}{% block content %}<h1>Autopay</h1><p>Autopay is {{ 'enabled' if account and account.autopay_enabled else 'disabled' }}.</p>{% endblock %}

@@ -1,0 +1,1 @@
+{% extends "base.html" %}{% block title %}Tenant Licenses{% endblock %}{% block content %}<h1>{{ company.name }} Licenses</h1><table class="table">{% for l in licenses %}<tr><td>{{ l.feature_key }}</td><td>{{ l.status }}</td><td>{{ l.suspension_reason or '' }}</td></tr>{% endfor %}</table>{% endblock %}
