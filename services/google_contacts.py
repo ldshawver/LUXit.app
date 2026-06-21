@@ -241,6 +241,103 @@ def _fetch_all_contacts(access_token: str) -> dict:
     return phone_map
 
 
+
+
+def _contact_display_name(contact) -> str | None:
+    if not contact:
+        return None
+    return (
+        (getattr(contact, "name", None) or "").strip()
+        or f"{contact.first_name or ''} {contact.last_name or ''}".strip()
+        or None
+    )
+
+
+def _find_contact_by_phone(company_id: int, phone: str):
+    from models import Contact
+    norm = normalize_phone(phone)
+    contact = Contact.query.filter_by(company_id=company_id, normalized_phone=norm, is_active=True).first()
+    if contact:
+        return contact
+    for form in _all_forms(phone):
+        contact = Contact.query.filter_by(company_id=company_id, phone=form, is_active=True).first()
+        if contact:
+            if not getattr(contact, "normalized_phone", None):
+                contact.normalized_phone = norm
+            return contact
+    for contact in Contact.query.filter_by(company_id=company_id, is_active=True).yield_per(200):
+        if normalize_phone(getattr(contact, "phone", None)) == norm:
+            contact.normalized_phone = norm
+            return contact
+    return None
+
+
+def lookup_contact_for_phone(company_id: int, phone: str) -> dict:
+    """Return matched contact metadata for a phone number using normalized matching."""
+    contact = _find_contact_by_phone(company_id, phone)
+    if not contact:
+        return {"name": None, "source": None, "contact_id": None, "normalized_phone": normalize_phone(phone)}
+    name = _contact_display_name(contact)
+    return {
+        "name": name,
+        "source": getattr(contact, "source", None) or "crm",
+        "contact_id": contact.id,
+        "normalized_phone": getattr(contact, "normalized_phone", None) or normalize_phone(phone),
+    }
+
+
+def _conversation_name_is_replaceable(conv) -> bool:
+    current = (getattr(conv, "contact_name", None) or "").strip()
+    if not current:
+        return True
+    if normalize_phone(current) == normalize_phone(getattr(conv, "from_number", None)):
+        return True
+    if re.sub(r"\D", "", current) and len(re.sub(r"\D", "", current)) >= 7:
+        return True
+    return (getattr(conv, "contact_source", None) or "").lower() in {"google", "google_contacts", "contacts_cache"}
+
+
+def _apply_contact_to_conversation(conv, contact_info: dict) -> bool:
+    name = (contact_info.get("name") or "").strip()
+    if not name:
+        return False
+    changed = False
+    if contact_info.get("contact_id") and conv.contact_id != contact_info["contact_id"]:
+        conv.contact_id = contact_info["contact_id"]
+        changed = True
+    if _conversation_name_is_replaceable(conv) and conv.contact_name != name:
+        conv.contact_name = name
+        conv.contact_source = contact_info.get("source") or "crm"
+        changed = True
+    return changed
+
+
+def backfill_conversation_contact_names(company_id: int | None = None, dry_run: bool = False) -> dict:
+    """Backfill existing TwilioConversation contact_id/contact_name from Contact rows."""
+    from extensions import db
+    from models import TwilioConversation
+    q = TwilioConversation.query
+    if company_id:
+        q = q.filter_by(company_id=company_id)
+    scanned = matched = updated = 0
+    samples = []
+    for conv in q.yield_per(200):
+        scanned += 1
+        info = lookup_contact_for_phone(conv.company_id, conv.from_number)
+        if not info.get("name"):
+            continue
+        matched += 1
+        before = {"id": conv.id, "from_number": conv.from_number, "old": conv.contact_name, "new": info["name"]}
+        if _apply_contact_to_conversation(conv, info):
+            updated += 1
+            if len(samples) < 20:
+                samples.append(before)
+    if not dry_run:
+        db.session.commit()
+    else:
+        db.session.rollback()
+    return {"scanned": scanned, "matched": matched, "updated": updated, "dry_run": dry_run, "samples": samples}
+
 # ---------------------------------------------------------------------------
 # Contact lookup (on-demand, no network call)
 # ---------------------------------------------------------------------------
@@ -264,19 +361,14 @@ def lookup_contact_name(company_id: int, phone: str) -> tuple:
         company_id, phone, norm, forms
     )
 
-    # 1. CRM Contact table
-    for form in forms:
-        contact = Contact.query.filter_by(
-            company_id=company_id, phone=form, is_active=True
-        ).first()
-        if contact:
-            name = f"{contact.first_name or ''} {contact.last_name or ''}".strip() or None
-            if name:
-                logger.debug(
-                    "lookup_contact_name: CRM match contact_id=%s name=%s form=%s",
-                    contact.id, name, form
-                )
-                return name, "crm"
+    # 1. CRM / Google Contacts cache using normalized phone matching.
+    contact_info = lookup_contact_for_phone(company_id, phone)
+    if contact_info.get("name"):
+        logger.debug(
+            "lookup_contact_name: contact match contact_id=%s name=%s norm=%s",
+            contact_info.get("contact_id"), contact_info.get("name"), norm
+        )
+        return contact_info["name"], contact_info.get("source") or "crm"
 
     # 2. Existing conversation with a synced name
     for form in forms:
@@ -349,11 +441,10 @@ def sync_contacts(user_id: int, company_id: int) -> dict:
         )
 
         if name:
-            if conv.contact_name != name:
+            contact = _upsert_contact_from_google(db, company_id, norm, name, conv)
+            info = {"name": name, "source": "google_contacts", "contact_id": contact.id if contact else None, "normalized_phone": norm}
+            if _apply_contact_to_conversation(conv, info):
                 matched += 1
-            conv.contact_name   = name
-            conv.contact_source = "google"
-            _upsert_contact_from_google(db, company_id, norm, name, conv)
 
     tok.last_sync_at    = datetime.utcnow()
     tok.contacts_synced = len(phone_map)
@@ -389,7 +480,8 @@ def _upsert_contact_from_google(db, company_id: int, norm_phone: str,
         if not contact.first_name and not contact.last_name:
             contact.first_name = first_name
             contact.last_name  = last_name
-        contact.name       = contact.name or name
+        contact.name       = getattr(contact, "name", None) or name
+        contact.normalized_phone = norm_phone
         contact.source     = contact.source or "google_contacts"
         contact.is_active  = True
     else:
@@ -399,6 +491,7 @@ def _upsert_contact_from_google(db, company_id: int, norm_phone: str,
             first_name = first_name,
             last_name  = last_name,
             name       = name,
+            normalized_phone = norm_phone,
             source     = "google_contacts",
             is_active  = True,
             is_subscribed = False,
@@ -407,5 +500,6 @@ def _upsert_contact_from_google(db, company_id: int, norm_phone: str,
         db.session.flush()
 
     # Link conversation to contact if not already linked
-    if conv and not conv.contact_id and contact.id:
+    if conv and contact.id:
         conv.contact_id = contact.id
+    return contact

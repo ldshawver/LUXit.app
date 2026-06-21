@@ -58,6 +58,10 @@ def test_phone_line_management_ui_saves_per_number_webhooks(client_ctx):
         "number_auto_reply_text": "Thanks for texting Main",
         "missed_call_text": "Sorry we missed you",
         "voicemail_greeting_text": "Leave a message",
+        "after_hours_text": "We are closed",
+        "auto_reply_enabled": "on",
+        "after_hours_sms_enabled": "on",
+        "after_hours_voicemail_enabled": "on",
         "campaign_sender_enabled": "on",
         "campaign_send_rate_per_minute": "12",
     })
@@ -66,6 +70,13 @@ def test_phone_line_management_ui_saves_per_number_webhooks(client_ctx):
         saved = db.session.get(TwilioPhoneNumber, line1.id)
         assert saved.sms_webhook_url.endswith("/sms")
         assert saved.status_callback_webhook_url.endswith("/status")
+        assert saved.number_auto_reply_text == "Thanks for texting Main"
+        assert saved.missed_call_text == "Sorry we missed you"
+        assert saved.voicemail_greeting_text == "Leave a message"
+        assert saved.after_hours_text == "We are closed"
+        assert saved.auto_reply_enabled is True
+        assert saved.after_hours_sms_enabled is True
+        assert saved.after_hours_voicemail_enabled is True
         assert saved.campaign_send_rate_per_minute == 12
         assert saved.allow_global_fallback is False
 
@@ -273,6 +284,35 @@ def test_codex_instructions_require_audit_find_fix_retest_report_workflow():
         "/api/inbox/conversations?filter=all",
         "UndefinedColumn",
         "Company\\.query\\.first",
+    ]
+    for phrase in required_phrases:
+        assert phrase in doc
+
+
+def test_pwa_deployment_verification_has_executable_vps_steps():
+    doc = open("docs/SMS_PHONE_LINE_DEPLOYMENT_VERIFICATION.md", encoding="utf-8").read()
+    required_phrases = [
+        "psql \"$DATABASE_URL\" -v ON_ERROR_STOP=1 -f migrations/20260621_pwa_alerts_greetings.sql",
+        "python scripts/verify_pwa_live_acceptance.py --write-tests --run-live-reminder",
+        "SUMMARY failed=0",
+        "VAPID_PUBLIC_KEY",
+        "VAPID_PRIVATE_KEY",
+        "VAPID_SUBJECT",
+        "luxit-pwa-unread-reminders.timer",
+        "scripts/run_pwa_unread_reminders.py",
+        "python scripts/run_pwa_unread_reminders.py --dry-run",
+        "sudo systemctl restart lux-email-bot",
+        "$APP_URL/api/pwa/push/status",
+        "$APP_URL/api/pwa/preferences",
+        "$APP_URL/api/calls/<call_id>/voicemail/audio",
+        "$APP_URL/api/phone/numbers/<phone_number_id>/greetings",
+        "$APP_URL/api/phone/greetings/${GREETING_ID}/activate",
+        "$APP_URL/api/pwa/reminders/unread/run",
+        "$APP_URL/api/pwa/reminders/unread/run?dry_run=1",
+        "would_create",
+        "InFailedSqlTransaction",
+        "iOS and some browsers restrict background notification sound",
+        "`/twilio/voice/inbound` 500 handling is fixed by this PR",
     ]
     for phrase in required_phrases:
         assert phrase in doc

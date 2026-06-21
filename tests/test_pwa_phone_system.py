@@ -1015,3 +1015,55 @@ def test_staff_mobile_inbox_google_contacts_callback_handles_sync_exception(clie
 
     assert resp.status_code == 302
     assert resp.headers["Location"].endswith("/app/inbox")
+
+
+def test_number_settings_save_greeting_and_auto_reply_messages(app, client, world):
+    login(client, world["alice"])
+    with app.app_context():
+        pn = add_phone_number(world["co_a"], "+15550003000")
+        pn_id = pn.id
+        db.session.commit()
+    resp = client.put(f"/api/phone/numbers/{pn_id}/settings", json={
+        "auto_reply_enabled": True,
+        "number_auto_reply_text": "Open hours line reply",
+        "after_hours_sms_enabled": True,
+        "after_hours_text": "Closed line reply",
+        "missed_call_text": "Missed you from this line",
+        "voicemail_greeting_text": "Line-specific voicemail greeting",
+    })
+    assert resp.status_code == 200
+    body = resp.get_json()["settings"]
+    assert body["number_auto_reply_text"] == "Open hours line reply"
+    assert body["after_hours_text"] == "Closed line reply"
+    assert body["missed_call_text"] == "Missed you from this line"
+    assert body["voicemail_greeting_text"] == "Line-specific voicemail greeting"
+    again = client.get(f"/api/phone/numbers/{pn_id}/settings")
+    assert again.get_json()["settings"]["voicemail_greeting_text"] == "Line-specific voicemail greeting"
+
+
+def test_per_number_business_and_after_hours_auto_replies_work_without_rules(app, client, world, monkeypatch):
+    sent = []
+    monkeypatch.setattr("twilio_sms._send_sms", lambda ta, to, body, **kw: sent.append((ta.company_id, ta.from_phone, to, body, kw.get("is_auto_reply"))) or {"success": True})
+    with app.app_context():
+        add_phone_number(
+            world["co_a"],
+            "+15550003001",
+            business_hours={str(i): {"is_open": True, "open": "00:00", "close": "23:59"} for i in range(7)},
+            number_auto_reply_text="Open hours line reply",
+            auto_reply_enabled=True,
+        )
+        add_phone_number(
+            world["co_a"],
+            "+15550003002",
+            business_hours={str(i): {"is_open": False} for i in range(7)},
+            after_hours_text="Closed line reply",
+            after_hours_sms_enabled=True,
+            auto_reply_enabled=True,
+        )
+        db.session.commit()
+    open_resp = client.post("/twilio/sms/inbound", data={"From": "+15551113001", "To": "+15550003001", "Body": "hello", "MessageSid": "SMOPENREPLY"})
+    closed_resp = client.post("/twilio/sms/inbound", data={"From": "+15551113002", "To": "+15550003002", "Body": "hello", "MessageSid": "SMCLOSEDREPLY"})
+    assert open_resp.status_code == 200
+    assert closed_resp.status_code == 200
+    assert (world["co_a"], "+15550003001", "+15551113001", "Open hours line reply", True) in sent
+    assert (world["co_a"], "+15550003002", "+15551113002", "Closed line reply", True) in sent

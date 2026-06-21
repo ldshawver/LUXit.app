@@ -7,22 +7,22 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="LUXit Inbox">
-  <meta name="theme-color" content="#7c3aed">
+  <meta name="theme-color" content="var(--pwa-primary)">
   <title>LUXit Inbox</title>
   <link rel="manifest" href="/static/manifest.json">
   <link rel="apple-touch-icon" href="/static/favicon.png">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css">
   <style>
     :root {
-      --color-primary: #7c3aed;
+      --color-primary: var(--pwa-primary);
       --color-secondary: #06b6d4;
       --color-accent: #ec4899;
       --color-background: #000000;
       --color-surface: #0b0d14;
       --color-text: #f1f5f9;
       --color-muted-text: #94a3b8;
-      --color-icon: #a78bfa;
-      --color-button: #7c3aed;
+      --color-icon: var(--color-icon);
+      --color-button: var(--pwa-primary);
       --color-button-text: #ffffff;
       --color-border: #1e2535;
       --color-input-bg: #111827;
@@ -40,6 +40,14 @@
       --text-dim: var(--color-muted-text);
       --green: #22c55e;
       --red: #ef4444;
+      --pwa-primary: var(--color-primary);
+      --pwa-primary-contrast: var(--color-button-text);
+      --pwa-accent: var(--color-accent);
+      --pwa-card-bg: var(--color-surface);
+      --pwa-surface: var(--color-surface);
+      --pwa-border: var(--color-border);
+      --pwa-text: var(--color-text);
+      --pwa-muted: var(--color-muted-text);
       --safe-top: env(safe-area-inset-top, 0px);
       --safe-bot: env(safe-area-inset-bottom, 0px);
     }
@@ -120,7 +128,7 @@
       transition: border-color .15s, color .15s;
     }
     .btn-icon:hover  { border-color: var(--purple); color: var(--purple-l); }
-    .btn-icon.active { border-color: var(--purple); color: var(--purple-l); background: rgba(124,58,237,.15); }
+    .btn-icon.active { border-color: var(--purple); color: var(--purple-l); background: color-mix(in srgb,var(--pwa-primary) 15%,transparent); }
     .btn-compose {
       width: 32px; height: 32px; border-radius: 50%;
       background: var(--purple); border: none; color: var(--color-button-text);
@@ -145,7 +153,7 @@
       border-radius: 20px; border: 1px solid var(--border);
       background: transparent; color: var(--text-dim); cursor: pointer;
     }
-    .ftab.active { background: rgba(124,58,237,.2); border-color: var(--purple); color: var(--purple-l); }
+    .ftab.active { background: color-mix(in srgb,var(--pwa-primary) 20%,transparent); border-color: var(--purple); color: var(--purple-l); }
     #convList { flex: 1; overflow-y: auto; }
     #convList::-webkit-scrollbar { width: 4px; }
     #convList::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
@@ -165,12 +173,12 @@
       touch-action: pan-y;
     }
     .conv-item:hover { background: rgba(255,255,255,.03); }
-    .conv-item.active { background: rgba(124,58,237,.12); border-left: 3px solid var(--purple); }
+    .conv-item.active { background: color-mix(in srgb,var(--pwa-primary) 12%,transparent); border-left: 3px solid var(--purple); }
     .conv-item.unread .conv-name { color: var(--color-button-text); font-weight: 600; }
     .conv-item.unread .conv-preview { color: var(--text); }
     .conv-avatar {
       width: 40px; height: 40px; border-radius: 50%; flex-shrink: 0;
-      background: rgba(124,58,237,.25); color: var(--purple-l);
+      background: color-mix(in srgb,var(--pwa-primary) 25%,transparent); color: var(--purple-l);
       display: flex; align-items: center; justify-content: center;
       font-size: .85rem; font-weight: 700;
     }
@@ -271,11 +279,11 @@
     #quickReplies::-webkit-scrollbar { display: none; }
     .qr-chip {
       white-space: nowrap; font-size: .78rem; padding: 5px 14px;
-      border-radius: 20px; border: 1px solid rgba(124,58,237,.4);
-      background: rgba(124,58,237,.1); color: var(--purple-l);
+      border-radius: 20px; border: 1px solid color-mix(in srgb,var(--pwa-primary) 40%,transparent);
+      background: color-mix(in srgb,var(--pwa-primary) 10%,transparent); color: var(--purple-l);
       cursor: pointer; flex-shrink: 0; transition: background .15s;
     }
-    .qr-chip:hover { background: rgba(124,58,237,.25); }
+    .qr-chip:hover { background: color-mix(in srgb,var(--pwa-primary) 25%,transparent); }
 
     /* Composer */
     .composer {
@@ -323,7 +331,7 @@
     .cp-label { font-size: .72rem; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; margin-bottom: 4px; }
     .cp-value { font-size: .84rem; color: var(--text); word-break: break-all; }
     .cp-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
-    .cp-tag { font-size: .7rem; padding: 2px 8px; border-radius: 20px; background: rgba(124,58,237,.2); color: var(--purple-l); }
+    .cp-tag { font-size: .7rem; padding: 2px 8px; border-radius: 20px; background: color-mix(in srgb,var(--pwa-primary) 20%,transparent); color: var(--purple-l); }
     .notes-area {
       width: 100%; background: var(--color-input-bg); border: 1px solid var(--border);
       color: var(--text); border-radius: 8px; padding: 8px; font-size: .82rem;
@@ -332,10 +340,10 @@
     .notes-area:focus { border-color: var(--purple); }
     .btn-small {
       font-size: .75rem; padding: 5px 12px; border-radius: 8px;
-      background: rgba(124,58,237,.2); border: 1px solid rgba(124,58,237,.3);
+      background: color-mix(in srgb,var(--pwa-primary) 20%,transparent); border: 1px solid color-mix(in srgb,var(--pwa-primary) 30%,transparent);
       color: var(--purple-l); cursor: pointer; transition: background .15s;
     }
-    .btn-small:hover { background: rgba(124,58,237,.35); }
+    .btn-small:hover { background: color-mix(in srgb,var(--pwa-primary) 35%,transparent); }
     .btn-small.danger { background: rgba(239,68,68,.15); border-color: rgba(239,68,68,.3); color: var(--red); }
 
     /* ── Modals ─────────────────────────────────────── */
@@ -499,13 +507,13 @@
       flex-direction: column; gap: 2px; transition: background .12s;
     }
     .csr-item:last-child { border-bottom: none; }
-    .csr-item:hover { background: rgba(124,58,237,.15); }
+    .csr-item:hover { background: color-mix(in srgb,var(--pwa-primary) 15%,transparent); }
     .csr-item strong { color: var(--text); }
     .csr-item small { color: var(--muted); font-size: .76rem; }
     .csr-empty { padding: 10px 12px; font-size: .8rem; color: var(--muted); text-align: center; }
     .compose-selected-pill {
       display: flex; align-items: center; gap: 8px;
-      background: rgba(124,58,237,.15); border: 1px solid rgba(124,58,237,.3);
+      background: color-mix(in srgb,var(--pwa-primary) 15%,transparent); border: 1px solid color-mix(in srgb,var(--pwa-primary) 30%,transparent);
       border-radius: 8px; padding: 8px 12px; font-size: .84rem;
     }
     .compose-selected-pill span { flex: 1; color: var(--text); }
@@ -518,15 +526,15 @@
     /* ── Notification prompt ────────────────────────── */
     #notifBanner {
       display: none; align-items: center; gap: 10px;
-      padding: 8px 12px; background: rgba(124,58,237,.12);
-      border-bottom: 1px solid rgba(124,58,237,.25); font-size: .8rem;
+      padding: 8px 12px; background: color-mix(in srgb,var(--pwa-primary) 12%,transparent);
+      border-bottom: 1px solid color-mix(in srgb,var(--pwa-primary) 25%,transparent); font-size: .8rem;
     }
     #notifBanner.show { display: flex; }
     #notifBanner span { flex: 1; }
 
     /* ── New message flash ───────────────────────────── */
     @keyframes flash-in {
-      from { background: rgba(124,58,237,.3); }
+      from { background: color-mix(in srgb,var(--pwa-primary) 30%,transparent); }
       to   { background: transparent; }
     }
     .conv-item.new-flash { animation: flash-in 1s ease-out; }
@@ -678,7 +686,7 @@
   <!-- ── Main: thread ──────────────────────────────────────────────── -->
   <div id="main">
     <div id="threadPlaceholder">
-      <svg width="56" height="56" fill="none" viewBox="0 0 24 24" stroke="#7c3aed" stroke-width="1.2">
+      <svg width="56" height="56" fill="none" viewBox="0 0 24 24" stroke="var(--pwa-primary)" stroke-width="1.2">
         <path stroke-linecap="round" stroke-linejoin="round"
           d="M8 10h.01M12 10h.01M16 10h.01M21 12c0 4.418-4.03 8-9 8a9.9 9.9 0 01-4-.8L3 20l.9-3.6A7.9 7.9 0 013 12C3 7.582 7.03 4 12 4s9 3.582 9 8z"/>
       </svg>
