@@ -673,7 +673,7 @@
         <button class="pwa-head-icon" onclick="openSettingsSheet()" title="SMS Settings">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
         </button>
-        <button class="btn-icon" id="soundBtn" onclick="toggleSound()" title="Toggle notification sound">🔔</button>
+        <button class="btn-icon" id="soundBtn" onclick="toggleSound()" title="Toggle notification sound" aria-label="Toggle notification sound"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg></button>
       </div>
       <button class="btn-compose" onclick="openCompose()" title="New Message">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
@@ -710,7 +710,7 @@
           d="M8 10h.01M12 10h.01M16 10h.01M21 12c0 4.418-4.03 8-9 8a9.9 9.9 0 01-4-.8L3 20l.9-3.6A7.9 7.9 0 013 12C3 7.582 7.03 4 12 4s9 3.582 9 8z"/>
       </svg>
       <p style="color:var(--muted);font-size:.9rem;">Select a conversation</p>
-      <button class="btn-small" onclick="openCompose()">+ New message</button>
+      <button class="btn-small" onclick="openCompose()">New message</button>
     </div>
 
     <div id="thread">
@@ -724,9 +724,9 @@
           <button id="callBtn" type="button" class="thread-act-call" title="Call via the LUXit Twilio number" onclick="placeTwilioCall()">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 12 19.79 19.79 0 0 1 1.62 3.42 2 2 0 0 1 3.6 1.26h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L7.91 8.83a16 16 0 0 0 6.29 6.29l1.13-.91a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
           </button>
-          <button onclick="markCurrentRead(false)" title="Mark unread">◎</button>
-          <button onclick="toggleContactPanel()"   title="Contact info">👤</button>
-          <button onclick="openRename()"           title="Rename">✏</button>
+          <button onclick="markCurrentRead(false)" title="Mark unread" aria-label="Mark unread"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M8 12h8"/></svg></button>
+          <button onclick="toggleContactPanel()"   title="Contact info" aria-label="Contact info"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></button>
+          <button onclick="openRename()"           title="Rename" aria-label="Rename"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></button>
         </div>
       </div>
 
@@ -766,6 +766,8 @@
     </div>
   </div>
 </div>
+
+{% include "inbox_pwa/_bottom_nav.html" %}
 
 <!-- ── Modals ─────────────────────────────────────────────────────── -->
 <div class="pwa-modal-overlay" id="composeModal">
@@ -1147,6 +1149,11 @@ window.addEventListener('DOMContentLoaded', () => {
   const params = new URLSearchParams(location.search);
   const convId = params.get('conv');
   if (convId) openConversation(parseInt(convId));
+  if (params.has('settings')) setTimeout(openSettingsSheet, 50);
+  if (params.has('compose')) setTimeout(openCompose, 50);
+  if (params.has('keypad')) setTimeout(openDialPad, 50);
+  if (params.has('contacts')) setTimeout(() => { openCompose(); setTimeout(pickComposeContact, 150); }, 50);
+  if (params.has('favorites')) setFilter('mine', document.querySelector('.ftab[onclick*="mine"]'));
   // Refresh badge counts every 2 minutes
   setInterval(loadBadgeCounts, 120000);
 });
@@ -1178,7 +1185,9 @@ function setSoundEnabled(val) {
 function updateSoundBtn() {
   const btn = document.getElementById('soundBtn');
   if (!btn) return;
-  btn.textContent = state.notificationSoundsEnabled ? '🔔' : '🔕';
+  btn.innerHTML = state.notificationSoundsEnabled
+    ? '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>'
+    : '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13.73 21a2 2 0 0 1-3.46 0"/><path d="M18.63 13A17.89 17.89 0 0 1 18 8"/><path d="M6.26 6.26A6 6 0 0 0 6 8c0 7-3 9-3 9h14"/><line x1="2" y1="2" x2="22" y2="22"/></svg>';
   btn.classList.toggle('active', state.notificationSoundsEnabled);
 }
 

@@ -1,0 +1,103 @@
+<style>
+  .pwa-bottom-nav {
+    position: fixed;
+    left: max(12px, env(safe-area-inset-left));
+    right: max(12px, env(safe-area-inset-right));
+    bottom: calc(10px + env(safe-area-inset-bottom));
+    z-index: 60;
+    max-width: 620px;
+    margin: 0 auto;
+    padding: 8px;
+    border: 1px solid var(--pwa-border, var(--color-border, #273044));
+    border-radius: 26px;
+    background: color-mix(in srgb, var(--pwa-bg, var(--color-background, #060712)) 90%, transparent);
+    box-shadow: 0 18px 55px rgba(0, 0, 0, .38);
+    backdrop-filter: blur(18px);
+    -webkit-backdrop-filter: blur(18px);
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(44px, 1fr);
+    gap: 4px;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .pwa-bottom-nav::-webkit-scrollbar { display: none; }
+  .pwa-bottom-nav__item {
+    min-width: 44px;
+    min-height: 48px;
+    border-radius: 18px;
+    color: var(--pwa-muted, var(--color-muted-text, #94a3b8));
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    text-decoration: none;
+    transition: background .15s ease, color .15s ease, transform .15s ease;
+  }
+  .pwa-bottom-nav__item svg {
+    width: 22px;
+    height: 22px;
+    stroke-width: 2;
+    color: currentColor;
+  }
+  .pwa-bottom-nav__label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+  .pwa-bottom-nav__item:hover,
+  .pwa-bottom-nav__item:focus-visible,
+  .pwa-bottom-nav__item.is-active {
+    background: var(--pwa-primary-soft, color-mix(in srgb, var(--pwa-primary, var(--color-primary, #8b5cf6)) 22%, transparent));
+    color: var(--pwa-primary-contrast, var(--color-button-text, #fff));
+    outline: none;
+  }
+  .pwa-bottom-nav__item:active { transform: scale(.96); }
+  body.has-pwa-bottom-nav #shell { bottom: calc(76px + env(safe-area-inset-bottom)); height: auto; }
+  body.has-pwa-bottom-nav .shell { padding-bottom: calc(112px + env(safe-area-inset-bottom)); }
+</style>
+<nav class="pwa-bottom-nav" aria-label="PWA primary navigation">
+  <a class="pwa-bottom-nav__item" data-pwa-nav="messages" href="/app/inbox" title="Messages" aria-label="Messages">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a4 4 0 0 1-4 4H7l-4 4V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z"/></svg><span class="pwa-bottom-nav__label">Messages</span>
+  </a>
+  <a class="pwa-bottom-nav__item" data-pwa-nav="calls" href="/app/calls" title="Calls" aria-label="Calls">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6A19.79 19.79 0 0 1 2.12 4.18 2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.12.91.33 1.8.62 2.65a2 2 0 0 1-.45 2.11L8 9.76a16 16 0 0 0 6.24 6.24l1.28-1.28a2 2 0 0 1 2.11-.45c.85.29 1.74.5 2.65.62A2 2 0 0 1 22 16.92z"/></svg><span class="pwa-bottom-nav__label">Calls</span>
+  </a>
+  <a class="pwa-bottom-nav__item" data-pwa-nav="favorites" href="/app/inbox?favorites=1" title="Favorites" aria-label="Favorites">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg><span class="pwa-bottom-nav__label">Favorites</span>
+  </a>
+  <a class="pwa-bottom-nav__item" data-pwa-nav="contacts" href="/app/inbox?contacts=1" title="Contacts" aria-label="Contacts">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg><span class="pwa-bottom-nav__label">Contacts</span>
+  </a>
+  <a class="pwa-bottom-nav__item" data-pwa-nav="keypad" href="/app/inbox?keypad=1" title="Keypad" aria-label="Keypad">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="4" height="4" rx="1"/><rect x="10" y="4" width="4" height="4" rx="1"/><rect x="16" y="4" width="4" height="4" rx="1"/><rect x="4" y="10" width="4" height="4" rx="1"/><rect x="10" y="10" width="4" height="4" rx="1"/><rect x="16" y="10" width="4" height="4" rx="1"/><rect x="4" y="16" width="4" height="4" rx="1"/><rect x="10" y="16" width="4" height="4" rx="1"/><rect x="16" y="16" width="4" height="4" rx="1"/></svg><span class="pwa-bottom-nav__label">Keypad</span>
+  </a>
+  <a class="pwa-bottom-nav__item" data-pwa-nav="new-text" href="/app/inbox?compose=1" title="New Text" aria-label="New Text">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg><span class="pwa-bottom-nav__label">New Text</span>
+  </a>
+  <a class="pwa-bottom-nav__item" data-pwa-nav="voicemail" href="/app/calls?tab=voicemail" title="Voicemail" aria-label="Voicemail">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><circle cx="5.5" cy="12.5" r="3.5"/><circle cx="18.5" cy="12.5" r="3.5"/><path d="M5.5 16h13"/></svg><span class="pwa-bottom-nav__label">Voicemail</span>
+  </a>
+  <a class="pwa-bottom-nav__item" data-pwa-nav="settings" href="{% if request and request.path.startswith('/app/calls') %}/app/calls/settings{% else %}/app/inbox?settings=1{% endif %}" title="Settings" aria-label="Settings">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06A2 2 0 1 1 7.04 4.3l.06.06A1.65 1.65 0 0 0 8.92 4a1.65 1.65 0 0 0 1-1.51V2a2 2 0 1 1 4 0v.09A1.65 1.65 0 0 0 15 3.6a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9c.36.37.56.87.56 1.39V10H21a2 2 0 1 1 0 4h-.09c-.52 0-1.02.2-1.39.56z"/></svg><span class="pwa-bottom-nav__label">Settings</span>
+  </a>
+</nav>
+<script>
+(function(){
+  document.body.classList.add('has-pwa-bottom-nav');
+  const params = new URLSearchParams(location.search);
+  let active = 'messages';
+  if (location.pathname.startsWith('/app/calls')) active = params.get('tab') === 'voicemail' ? 'voicemail' : 'calls';
+  if (params.has('settings') || location.pathname.endsWith('/settings')) active = 'settings';
+  if (params.has('keypad')) active = 'keypad';
+  if (params.has('compose')) active = 'new-text';
+  if (params.has('contacts')) active = 'contacts';
+  if (params.has('favorites')) active = 'favorites';
+  document.querySelectorAll('.pwa-bottom-nav__item').forEach(item => item.classList.toggle('is-active', item.dataset.pwaNav === active));
+})();
+</script>
