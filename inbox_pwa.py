@@ -43,7 +43,7 @@ def _phone_pwa_license_gate():
     """Server-side feature gate for the licensed Phone/PWA Communications module."""
     path = request.path or ""
     gated = (
-        path in {"/app/inbox", "/app/calls", "/app/calls/settings"}
+        path in {"/app/inbox", "/app/calls", "/app/calls/settings", "/app/new-text", "/app/dial-pad", "/app/recents", "/app/settings", "/app/favorites", "/app/contacts", "/app/voicemail", "/app/greetings"}
         or path.startswith("/api/inbox/")
         or path.startswith("/api/calls/")
         or path.startswith("/api/phone/")
@@ -493,6 +493,12 @@ def _msg_to_dict(m):
 # ── PWA shell page ────────────────────────────────────────────────────────────
 
 @inbox_pwa_bp.route("/app/inbox")
+@inbox_pwa_bp.route("/app/new-text")
+@inbox_pwa_bp.route("/app/dial-pad")
+@inbox_pwa_bp.route("/app/settings")
+@inbox_pwa_bp.route("/app/favorites")
+@inbox_pwa_bp.route("/app/contacts")
+@inbox_pwa_bp.route("/app/greetings")
 def pwa_index():
     from flask import redirect, url_for
     user = _current_user()
@@ -527,6 +533,8 @@ def pwa_index():
 
 @inbox_pwa_bp.route("/app/calls")
 @inbox_pwa_bp.route("/app/calls/settings")
+@inbox_pwa_bp.route("/app/recents")
+@inbox_pwa_bp.route("/app/voicemail")
 def pwa_calls():
     from flask import redirect
     user = _current_user()
@@ -656,6 +664,69 @@ def _upsert_pwa_device(user, company, payload):
     return device
 
 
+
+
+def _favorite_to_dict(fav):
+    return {
+        "id": fav.id,
+        "display_name": fav.display_name,
+        "phone_number": fav.phone_number,
+        "avatar_url": fav.avatar_url,
+        "sort_order": fav.sort_order or 0,
+        "contact_id": fav.contact_id,
+    }
+
+
+@inbox_pwa_bp.route("/api/pwa/favorites", methods=["GET", "POST", "PUT"])
+def api_pwa_favorites():
+    user = _require_auth()
+    company = _require_company(user)
+    denied = _require_mobile_inbox_api_access(user, company)
+    if denied:
+        return denied
+    from models import PinnedPhoneFavorite
+    if request.method == "POST":
+        data = request.get_json() or {}
+        fav = PinnedPhoneFavorite(
+            user_id=user.id, company_id=company.id,
+            display_name=(data.get("display_name") or data.get("name") or "Favorite")[:100],
+            phone_number=(data.get("phone_number") or data.get("number") or "")[:20],
+            avatar_url=data.get("avatar_url"), contact_id=data.get("contact_id"),
+            sort_order=int(data.get("sort_order") or 0),
+        )
+        if not fav.phone_number:
+            return jsonify({"success": False, "error": "phone_number is required"}), 400
+        db.session.add(fav); db.session.commit()
+        return jsonify({"success": True, "favorite": _favorite_to_dict(fav)}), 201
+    if request.method == "PUT":
+        for idx, row in enumerate((request.get_json() or {}).get("favorites") or []):
+            fav = PinnedPhoneFavorite.query.filter_by(id=row.get("id"), user_id=user.id, company_id=company.id).first()
+            if fav:
+                fav.sort_order = int(row.get("sort_order", idx))
+        db.session.commit()
+    favorites = PinnedPhoneFavorite.query.filter_by(user_id=user.id, company_id=company.id).order_by(PinnedPhoneFavorite.sort_order.asc(), PinnedPhoneFavorite.created_at.asc()).all()
+    return jsonify({"success": True, "favorites": [_favorite_to_dict(f) for f in favorites]})
+
+
+@inbox_pwa_bp.route("/api/pwa/favorites/<int:favorite_id>", methods=["PATCH", "DELETE"])
+def api_pwa_favorite_detail(favorite_id):
+    user = _require_auth()
+    company = _require_company(user)
+    denied = _require_mobile_inbox_api_access(user, company)
+    if denied:
+        return denied
+    from models import PinnedPhoneFavorite
+    fav = PinnedPhoneFavorite.query.filter_by(id=favorite_id, user_id=user.id, company_id=company.id).first_or_404()
+    if request.method == "DELETE":
+        db.session.delete(fav); db.session.commit()
+        return jsonify({"success": True})
+    data = request.get_json() or {}
+    for key in ("display_name", "phone_number", "avatar_url", "contact_id", "sort_order"):
+        if key in data:
+            setattr(fav, key, data[key])
+    db.session.commit()
+    return jsonify({"success": True, "favorite": _favorite_to_dict(fav)})
+
 # ── API: accessible phone numbers ───────────────────────────────────────────
 
 @inbox_pwa_bp.route("/api/phone/numbers")
@@ -691,7 +762,7 @@ def api_pwa_preferences():
     if request.method == "PATCH":
         data = request.get_json() or {}
         palette = (data.get("palette_id") or data.get("palette") or "lux").strip()
-        if palette not in {"lux", "ocean", "forest", "sunset"}:
+        if palette not in {"lux", "ocean", "forest", "sunset", "slate", "rose"}:
             return jsonify({"success": False, "error": "Unsupported palette."}), 400
         user.pwa_palette_id = palette
         if data.get("theme_mode") in {"dark", "light", "system"}:
@@ -864,6 +935,25 @@ def api_call_mark_read(call_id):
         vm.is_read = True
         vm.read_at = call.read_at
         vm.read_by_user_id = user.id
+    db.session.commit()
+    return jsonify({"success": True, "call": _call_to_dict(call)})
+
+
+@inbox_pwa_bp.route("/api/calls/<int:call_id>/mark-unread", methods=["POST"])
+def api_call_mark_unread(call_id):
+    user = _require_auth()
+    company = _require_company(user)
+    from models import TwilioCallLog, VoiceVoicemailMessage
+    from services.comms_permissions import filter_calls_for_user
+    call = filter_calls_for_user(TwilioCallLog.query.filter_by(id=call_id, company_id=company.id), user, company.id).first_or_404()
+    call.is_read = False
+    call.read_at = None
+    call.read_by_user_id = None
+    vm = VoiceVoicemailMessage.query.filter_by(call_log_id=call.id, company_id=company.id).first()
+    if vm:
+        vm.is_read = False
+        vm.read_at = None
+        vm.read_by_user_id = None
     db.session.commit()
     return jsonify({"success": True, "call": _call_to_dict(call)})
 
@@ -1054,6 +1144,37 @@ def api_phone_settings():
     return jsonify({"settings": _settings_to_dict(settings)})
 
 
+
+def _backfill_legacy_greetings(company, pn, user_id=None):
+    from models import PhoneSettings, VoiceGreeting
+    created = False
+    existing = VoiceGreeting.query.filter_by(company_id=company.id, phone_number_id=pn.id).first()
+    if existing:
+        return False
+    settings = PhoneSettings.query.filter_by(company_id=company.id).first()
+    legacy_text = (getattr(pn, "voicemail_greeting_text", None) or (settings.voicemail_greeting if settings else None) or "").strip()
+    legacy_audio = (getattr(pn, "voicemail_greeting_audio_url", None) or "").strip()
+    if legacy_audio or legacy_text:
+        db.session.add(VoiceGreeting(
+            company_id=company.id, phone_number_id=pn.id,
+            name="Migrated voicemail greeting",
+            greeting_type="upload" if legacy_audio else "standard",
+            text_body=legacy_text or None, audio_url=legacy_audio or None,
+            applies_to="voicemail_default", is_active=True, created_by_user_id=user_id,
+        ))
+        created = True
+    after_text = (settings.after_hours_voicemail_greeting if settings else "") or ""
+    if after_text.strip():
+        db.session.add(VoiceGreeting(
+            company_id=company.id, phone_number_id=pn.id,
+            name="Migrated after-hours greeting", greeting_type="standard",
+            text_body=after_text.strip(), applies_to="after_hours", is_active=True, created_by_user_id=user_id,
+        ))
+        created = True
+    if created:
+        db.session.commit()
+    return created
+
 def _voice_greeting_to_dict(greeting):
     return {
         "id": greeting.id,
@@ -1084,9 +1205,11 @@ def api_phone_number_greetings(number_id):
     pn = TwilioPhoneNumber.query.filter_by(id=number_id, company_id=company.id, is_active=True).first_or_404()
     if pn.phone_number not in accessible_phone_numbers(user, company.id):
         abort(403, "No access to that phone number")
+    _backfill_legacy_greetings(company, pn, user.id)
     if request.method == "POST":
         data = request.get_json(silent=True) or request.form or {}
         greeting_type = (data.get("greeting_type") or "standard").strip()
+        if greeting_type in {"ai", "ai_voice"}: greeting_type = "text_to_speech"
         if greeting_type not in {"upload", "recorded", "text_to_speech", "standard"}:
             return jsonify({"success": False, "error": "Unsupported greeting type."}), 400
         applies_to = (data.get("applies_to") or "voicemail_default").strip()
@@ -1105,6 +1228,21 @@ def api_phone_number_greetings(number_id):
         return jsonify({"success": True, "greeting": _voice_greeting_to_dict(greeting)}), 201
     greetings = VoiceGreeting.query.filter_by(company_id=company.id, phone_number_id=pn.id).order_by(VoiceGreeting.created_at.desc()).all()
     return jsonify({"success": True, "greetings": [_voice_greeting_to_dict(g) for g in greetings]})
+
+
+@inbox_pwa_bp.route("/api/phone/greetings/<int:greeting_id>", methods=["DELETE"])
+def api_delete_voice_greeting(greeting_id):
+    user = _require_auth()
+    company = _require_company(user)
+    denied = _require_mobile_inbox_api_access(user, company)
+    if denied:
+        return denied
+    from models import VoiceGreeting
+    greeting = VoiceGreeting.query.filter_by(id=greeting_id, company_id=company.id).first_or_404()
+    if greeting.is_active:
+        return jsonify({"success": False, "error": "Active greetings cannot be deleted until another greeting is activated."}), 400
+    db.session.delete(greeting); db.session.commit()
+    return jsonify({"success": True})
 
 
 @inbox_pwa_bp.route("/api/phone/greetings/<int:greeting_id>/activate", methods=["POST"])

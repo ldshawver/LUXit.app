@@ -1,0 +1,94 @@
+<style>
+  .pwa-bottom-nav {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 80;
+    padding: 8px max(16px, env(safe-area-inset-left)) calc(8px + env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-right));
+    border-top: 1px solid var(--pwa-border, var(--color-border, #273044));
+    background: color-mix(in srgb, var(--pwa-surface, var(--color-surface, #0b0d14)) 96%, transparent);
+    box-shadow: 0 -14px 32px rgba(0, 0, 0, .28);
+    backdrop-filter: blur(18px);
+    -webkit-backdrop-filter: blur(18px);
+    display: grid;
+    grid-template-columns: repeat(4, minmax(44px, 1fr));
+    gap: 8px;
+  }
+  .pwa-bottom-nav__item {
+    min-width: 44px;
+    min-height: 52px;
+    border-radius: 18px;
+    color: var(--pwa-muted, var(--color-muted-text, #94a3b8));
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    text-decoration: none;
+    transition: background .15s ease, color .15s ease, transform .15s ease;
+  }
+  .pwa-bottom-nav__item svg {
+    width: 28px;
+    height: 28px;
+    stroke-width: 2.15;
+    color: currentColor;
+  }
+  .pwa-bottom-nav__label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+  .pwa-bottom-nav__item:hover,
+  .pwa-bottom-nav__item:focus-visible,
+  .pwa-bottom-nav__item.is-active {
+    background: var(--pwa-primary-soft, color-mix(in srgb, var(--pwa-primary, var(--color-primary, #2563eb)) 22%, transparent));
+    color: var(--pwa-primary-contrast, var(--color-button-text, #fff));
+    outline: none;
+  }
+  .pwa-bottom-nav__item:active { transform: scale(.96); }
+  body.has-pwa-bottom-nav #shell { bottom: calc(68px + env(safe-area-inset-bottom)); height: auto; }
+  body.has-pwa-bottom-nav .shell { padding-bottom: calc(96px + env(safe-area-inset-bottom)); }
+  .pwa-safe-top-control { min-width: 44px; min-height: 44px; padding: 8px; }
+</style>
+<nav class="pwa-bottom-nav" aria-label="PWA primary navigation" data-test="shared-pwa-bottom-nav">
+  <a class="pwa-bottom-nav__item" data-pwa-nav="keypad" href="/app/dial-pad" title="Dial Pad" aria-label="Dial Pad">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6A19.79 19.79 0 0 1 2.12 4.18 2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.12.91.33 1.8.62 2.65a2 2 0 0 1-.45 2.11L8 9.76a16 16 0 0 0 6.24 6.24l1.28-1.28a2 2 0 0 1 2.11-.45c.85.29 1.74.5 2.65.62A2 2 0 0 1 22 16.92z"/></svg><span class="pwa-bottom-nav__label">Dial Pad</span>
+  </a>
+  <a class="pwa-bottom-nav__item" data-pwa-nav="recents" href="/app/recents" title="Recents" aria-label="Recents">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg><span class="pwa-bottom-nav__label">Recents</span>
+  </a>
+  <a class="pwa-bottom-nav__item" data-pwa-nav="settings" href="/app/settings" title="Settings" aria-label="Settings">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06A2 2 0 1 1 7.04 4.3l.06.06A1.65 1.65 0 0 0 8.92 4a1.65 1.65 0 0 0 1-1.51V2a2 2 0 1 1 4 0v.09A1.65 1.65 0 0 0 15 3.6a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9c.36.37.56.87.56 1.39V10H21a2 2 0 1 1 0 4h-.09c-.52 0-1.02.2-1.39.56z"/></svg><span class="pwa-bottom-nav__label">Settings</span>
+  </a>
+  <a class="pwa-bottom-nav__item" data-pwa-nav="messages" href="/app/inbox" title="Conversations" aria-label="Conversations">
+    <svg class="pwa-icon-message" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a4 4 0 0 1-4 4H7l-4 4V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z"/></svg>
+    <svg class="pwa-icon-compose" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" style="display:none"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+    <span class="pwa-bottom-nav__label">Conversations</span>
+  </a>
+</nav>
+<script>
+(function(){
+  document.body.classList.add('has-pwa-bottom-nav');
+  const params = new URLSearchParams(location.search);
+  const path = location.pathname;
+  let active = 'messages';
+  if (path.includes('/dial-pad') || params.has('keypad')) active = 'keypad';
+  else if (path.includes('/recents') || path.includes('/calls') || path.includes('/voicemail')) active = 'recents';
+  else if (path.includes('/settings') || path.includes('/favorites') || path.includes('/contacts') || path.includes('/greetings') || params.has('settings')) active = 'settings';
+  const messageItem = document.querySelector('[data-pwa-nav="messages"]');
+  if (messageItem && (path.includes('/inbox') || active === 'messages')) {
+    messageItem.href = '/app/new-text';
+    messageItem.title = 'New Text';
+    messageItem.setAttribute('aria-label', 'New Text');
+    messageItem.querySelector('.pwa-icon-message').style.display = 'none';
+    messageItem.querySelector('.pwa-icon-compose').style.display = '';
+    messageItem.querySelector('.pwa-bottom-nav__label').textContent = 'New Text';
+  }
+  document.querySelectorAll('.pwa-bottom-nav__item').forEach(item => item.classList.toggle('is-active', item.dataset.pwaNav === active));
+})();
+</script>

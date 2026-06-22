@@ -268,9 +268,17 @@ def test_pwa_calls_visual_nav_sdk_and_voicemail_static_requirements():
     for token in ("--pwa-primary", "--pwa-primary-contrast", "--pwa-accent", "--pwa-card-bg", "--pwa-surface", "--pwa-border", "--pwa-text", "--pwa-muted"):
         assert token in index
         assert token in calls
-    for label in ("Favorites", "Recents", "Contacts", "Keypad", "Settings"):
-        assert label in calls
-    assert "env(safe-area-inset-bottom)" in calls and "min-width:44px" in calls
-    assert "Play Voicemail" in calls and "Transcription" in calls and "Twilio login" not in calls
+    nav = open("templates/inbox_pwa/_bottom_nav.html", encoding="utf-8").read()
+    assert 'data-test="shared-pwa-bottom-nav"' in nav
+    assert "position: fixed" in nav and "bottom: 0" in nav and "env(safe-area-inset-bottom)" in nav
+    assert "min-width: 44px" in nav and "min-height: 52px" in nav
+    for label in ("Dial Pad", "Recents", "Settings", "Conversations", "New Text"):
+        assert label in nav
+    for route in ("/app/dial-pad", "/app/recents", "/app/settings", "/app/inbox", "/app/new-text"):
+        assert route in nav
+    assert "Play" in calls and "Transcript" in calls and "Twilio login" not in calls
     assert "Greeting management" in calls and "text_to_speech" in calls and "recorded" in calls and "upload" in calls
     assert "SDK_MISSING" in calls and "TOKEN_ENDPOINT_FAILED" in calls and "NO_ASSIGNED_NUMBER" in calls
+    assert "favoritesScreen" in index and "saveFavorite" in index and "removeFavorite" in index and "moveFavorite" in index
+    assert "setPalette('slate')" in index and "setPalette('rose')" in index
+    assert "mark-unread" in calls and "/api/calls/${id}/${read?'mark-read':'mark-unread'}" in calls
