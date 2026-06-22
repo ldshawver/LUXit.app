@@ -31,8 +31,8 @@
       --bg: var(--color-background);
       --surface: var(--color-surface);
       --border: var(--color-border);
-      --purple: var(--color-primary);
-      --purple-l: var(--color-icon);
+      --brand: var(--color-primary);
+      --brand-l: var(--color-icon);
       --cyan: var(--color-secondary);
       --pink: var(--color-accent);
       --muted: var(--color-placeholder);
@@ -68,6 +68,18 @@
       --color-background:#2a0d05; --color-surface:#431407; --color-text:#fff7ed; --color-muted-text:#fed7aa;
       --color-icon:#fdba74; --color-button:#ea580c; --color-button-text:#ffffff; --color-border:#9a3412;
       --color-input-bg:#3b1306; --color-input-text:#fff7ed; --color-placeholder:#fdba74;
+    }
+    html[data-palette="slate"] {
+      --color-primary:#2563eb; --color-secondary:#38bdf8; --color-accent:#14b8a6;
+      --color-background:#020617; --color-surface:#0f172a; --color-text:#f8fafc; --color-muted-text:#cbd5e1;
+      --color-icon:#93c5fd; --color-button:#2563eb; --color-button-text:#ffffff; --color-border:#334155;
+      --color-input-bg:#111827; --color-input-text:#f8fafc; --color-placeholder:#94a3b8;
+    }
+    html[data-palette="rose"] {
+      --color-primary:#e11d48; --color-secondary:#fb7185; --color-accent:#f97316;
+      --color-background:#2a0612; --color-surface:#4a0f1f; --color-text:#fff1f2; --color-muted-text:#fecdd3;
+      --color-icon:#fda4af; --color-button:#e11d48; --color-button-text:#ffffff; --color-border:#9f1239;
+      --color-input-bg:#3f0a19; --color-input-text:#fff1f2; --color-placeholder:#fda4af;
     }
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     html, body { height: 100%; background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; overflow: hidden; }
@@ -105,7 +117,7 @@
     }
     .sidebar-head h1 { font-size: 1.05rem; font-weight: 700; flex: 1; }
     .badge-unread {
-      background: var(--purple); color: var(--color-button-text);
+      background: var(--brand); color: var(--color-button-text);
       border-radius: 20px; font-size: .7rem; padding: 2px 8px; min-width: 24px; text-align: center;
       display: none;
     }
@@ -127,11 +139,11 @@
       cursor: pointer; font-size: .85rem; flex-shrink: 0;
       transition: border-color .15s, color .15s;
     }
-    .btn-icon:hover  { border-color: var(--purple); color: var(--purple-l); }
-    .btn-icon.active { border-color: var(--purple); color: var(--purple-l); background: color-mix(in srgb,var(--pwa-primary) 15%,transparent); }
+    .btn-icon:hover  { border-color: var(--brand); color: var(--brand-l); }
+    .btn-icon.active { border-color: var(--brand); color: var(--brand-l); background: color-mix(in srgb,var(--pwa-primary) 15%,transparent); }
     .btn-compose {
       width: 32px; height: 32px; border-radius: 50%;
-      background: var(--purple); border: none; color: var(--color-button-text);
+      background: var(--brand); border: none; color: var(--color-button-text);
       display: flex; align-items: center; justify-content: center;
       cursor: pointer; font-size: 1.1rem; flex-shrink: 0;
     }
@@ -141,7 +153,7 @@
       border-radius: 8px; color: var(--text); padding: 7px 12px; font-size: .85rem;
       outline: none;
     }
-    .search-wrap input:focus { border-color: var(--purple); }
+    .search-wrap input:focus { border-color: var(--brand); }
     .filter-tabs {
       display: flex; gap: 4px; padding: 8px 12px;
       overflow-x: auto; border-bottom: 1px solid var(--border);
@@ -153,7 +165,7 @@
       border-radius: 20px; border: 1px solid var(--border);
       background: transparent; color: var(--text-dim); cursor: pointer;
     }
-    .ftab.active { background: color-mix(in srgb,var(--pwa-primary) 20%,transparent); border-color: var(--purple); color: var(--purple-l); }
+    .ftab.active { background: color-mix(in srgb,var(--pwa-primary) 20%,transparent); border-color: var(--brand); color: var(--brand-l); }
     #convList { flex: 1; overflow-y: auto; }
     #convList::-webkit-scrollbar { width: 4px; }
     #convList::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
@@ -173,12 +185,12 @@
       touch-action: pan-y;
     }
     .conv-item:hover { background: rgba(255,255,255,.03); }
-    .conv-item.active { background: color-mix(in srgb,var(--pwa-primary) 12%,transparent); border-left: 3px solid var(--purple); }
+    .conv-item.active { background: color-mix(in srgb,var(--pwa-primary) 12%,transparent); border-left: 3px solid var(--brand); }
     .conv-item.unread .conv-name { color: var(--color-button-text); font-weight: 600; }
     .conv-item.unread .conv-preview { color: var(--text); }
     .conv-avatar {
       width: 40px; height: 40px; border-radius: 50%; flex-shrink: 0;
-      background: color-mix(in srgb,var(--pwa-primary) 25%,transparent); color: var(--purple-l);
+      background: color-mix(in srgb,var(--pwa-primary) 25%,transparent); color: var(--brand-l);
       display: flex; align-items: center; justify-content: center;
       font-size: .85rem; font-weight: 700;
     }
@@ -188,7 +200,7 @@
     .conv-preview { font-size: .78rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px; }
     .conv-right { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; flex-shrink: 0; }
     .conv-time { font-size: .7rem; color: var(--muted); }
-    .conv-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--purple); }
+    .conv-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--brand); }
     #convEmpty { padding: 32px 16px; text-align: center; color: var(--muted); font-size: .85rem; }
 
     /* ── Main thread panel ──────────────────────────── */
@@ -220,7 +232,7 @@
       background: none; border: 1px solid var(--border); color: var(--text-dim);
       border-radius: 6px; padding: 4px 10px; font-size: .75rem; cursor: pointer;
     }
-    .thread-actions button:hover { border-color: var(--purple); color: var(--purple-l); }
+    .thread-actions button:hover { border-color: var(--brand); color: var(--brand-l); }
 
     /* Messages */
     #messages {
@@ -240,7 +252,7 @@
       font-size: .88rem; line-height: 1.45; word-break: normal;
       overflow-wrap: normal; white-space: pre-wrap; min-width: 2.5rem;
     }
-    .bubble.out { background: var(--purple); color: var(--color-button-text); border-bottom-right-radius: 4px; }
+    .bubble.out { background: var(--brand); color: var(--color-button-text); border-bottom-right-radius: 4px; }
     .bubble.in  { background: var(--color-surface); color: var(--text); border-bottom-left-radius: 4px; }
     .bubble.auto-reply { background: rgba(6,182,212,.15); color: var(--cyan); border: 1px solid rgba(6,182,212,.25); }
     .msg-meta { font-size: .68rem; color: var(--muted); margin: 2px 4px 0; }
@@ -280,7 +292,7 @@
     .qr-chip {
       white-space: nowrap; font-size: .78rem; padding: 5px 14px;
       border-radius: 20px; border: 1px solid color-mix(in srgb,var(--pwa-primary) 40%,transparent);
-      background: color-mix(in srgb,var(--pwa-primary) 10%,transparent); color: var(--purple-l);
+      background: color-mix(in srgb,var(--pwa-primary) 10%,transparent); color: var(--brand-l);
       cursor: pointer; flex-shrink: 0; transition: background .15s;
     }
     .qr-chip:hover { background: color-mix(in srgb,var(--pwa-primary) 25%,transparent); }
@@ -300,13 +312,13 @@
       font-size: .88rem; outline: none; resize: none; min-height: 42px;
       max-height: 120px; line-height: 1.4; overflow-y: auto; font-family: inherit;
     }
-    #msgInput:focus { border-color: var(--purple); }
+    #msgInput:focus { border-color: var(--brand); }
     #charCount { position: absolute; bottom: 6px; right: 10px; font-size: .65rem; color: var(--muted); }
     #charCount.warn { color: #f97316; }
     #charCount.over { color: var(--red); }
     #sendBtn {
       width: 42px; height: 42px; border-radius: 50%; border: none;
-      background: var(--purple); color: var(--color-button-text); cursor: pointer;
+      background: var(--brand); color: var(--color-button-text); cursor: pointer;
       display: flex; align-items: center; justify-content: center;
       flex-shrink: 0; transition: background .15s;
     }
@@ -331,17 +343,17 @@
     .cp-label { font-size: .72rem; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; margin-bottom: 4px; }
     .cp-value { font-size: .84rem; color: var(--text); word-break: break-all; }
     .cp-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
-    .cp-tag { font-size: .7rem; padding: 2px 8px; border-radius: 20px; background: color-mix(in srgb,var(--pwa-primary) 20%,transparent); color: var(--purple-l); }
+    .cp-tag { font-size: .7rem; padding: 2px 8px; border-radius: 20px; background: color-mix(in srgb,var(--pwa-primary) 20%,transparent); color: var(--brand-l); }
     .notes-area {
       width: 100%; background: var(--color-input-bg); border: 1px solid var(--border);
       color: var(--text); border-radius: 8px; padding: 8px; font-size: .82rem;
       resize: vertical; min-height: 80px; margin-top: 6px; font-family: inherit; outline: none;
     }
-    .notes-area:focus { border-color: var(--purple); }
+    .notes-area:focus { border-color: var(--brand); }
     .btn-small {
       font-size: .75rem; padding: 5px 12px; border-radius: 8px;
       background: color-mix(in srgb,var(--pwa-primary) 20%,transparent); border: 1px solid color-mix(in srgb,var(--pwa-primary) 30%,transparent);
-      color: var(--purple-l); cursor: pointer; transition: background .15s;
+      color: var(--brand-l); cursor: pointer; transition: background .15s;
     }
     .btn-small:hover { background: color-mix(in srgb,var(--pwa-primary) 35%,transparent); }
     .btn-small.danger { background: rgba(239,68,68,.15); border-color: rgba(239,68,68,.3); color: var(--red); }
@@ -367,10 +379,10 @@
       color: var(--text); border-radius: 8px; padding: 9px 12px;
       font-size: .88rem; outline: none; margin-bottom: 10px; font-family: inherit;
     }
-    .pwa-field input:focus, .pwa-field textarea:focus { border-color: var(--purple); }
+    .pwa-field input:focus, .pwa-field textarea:focus { border-color: var(--brand); }
     .modal-actions { display: flex; gap: 8px; justify-content: flex-end; }
     .btn-cancel  { background: none; border: 1px solid var(--border); color: var(--text-dim); border-radius: 8px; padding: 8px 18px; cursor: pointer; font-size: .85rem; }
-    .btn-primary { background: var(--purple); border: none; color: var(--color-button-text); border-radius: 8px; padding: 8px 18px; cursor: pointer; font-size: .85rem; }
+    .btn-primary { background: var(--brand); border: none; color: var(--color-button-text); border-radius: 8px; padding: 8px 18px; cursor: pointer; font-size: .85rem; }
     .btn-primary:disabled { background: var(--muted); cursor: not-allowed; }
 
     /* ── Lightbox ────────────────────────────────────── */
@@ -400,11 +412,14 @@
 
     /* ── PWA header action icons ────────────────────── */
     .pwa-head-actions {
-      display: flex; align-items: center; gap: 4px; flex: 1; justify-content: flex-end;
+      display: flex; align-items: center; gap: 8px; flex: 1; justify-content: flex-end;
+      padding-right: max(4px, env(safe-area-inset-right));
     }
+    .pwa-head-actions .pwa-head-icon:not(#soundBtn) { display: none; }
     .pwa-head-icon {
       position: relative;
-      width: 32px; height: 32px;
+      min-width: 44px; min-height: 44px;
+      width: 44px; height: 44px;
       display: flex; align-items: center; justify-content: center;
       border-radius: 8px; border: 1px solid var(--border);
       background: rgba(255,255,255,.05);
@@ -444,7 +459,7 @@
     }
     .settings-account-avatar {
       width: 44px; height: 44px; border-radius: 50%; flex-shrink: 0;
-      background: linear-gradient(135deg, var(--purple), var(--cyan));
+      background: linear-gradient(135deg, var(--brand), var(--cyan));
       display: flex; align-items: center; justify-content: center;
       font-size: 1.1rem; font-weight: 700; color: var(--color-button-text);
     }
@@ -491,7 +506,7 @@
       background: #fff; top: 3px; left: 3px;
       transition: transform .2s; box-shadow: 0 1px 3px rgba(0,0,0,.4);
     }
-    .pwa-toggle input:checked + .pwa-toggle-track { background: var(--purple); }
+    .pwa-toggle input:checked + .pwa-toggle-track { background: var(--brand); }
     .pwa-toggle input:checked + .pwa-toggle-track::before { transform: translateX(18px); }
 
     /* ── Compose contact search ─────────────────────── */
@@ -646,7 +661,7 @@
       display: flex; align-items: center; gap: 5px; transition: border-color .15s, color .15s;
       white-space: nowrap;
     }
-    .compose-picker-btn:hover { border-color: var(--purple); color: var(--purple-l); }
+    .compose-picker-btn:hover { border-color: var(--brand); color: var(--brand-l); }
   </style>
 </head>
 <body>
@@ -683,7 +698,7 @@
     <div id="notifBanner">
       <span>Enable push notifications for new messages</span>
       <button class="btn-small" onclick="requestPush()">Enable</button>
-      <button class="btn-small" onclick="document.getElementById('notifBanner').classList.remove('show')" style="font-size:.7rem;">✕</button>
+      <button class="btn-small" onclick="document.getElementById('notifBanner').classList.remove('show')" style="font-size:.7rem;" aria-label="Dismiss"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
     </div>
     {% if g.license_warning %}
     <div class="alert alert-warning m-2 py-2 small">{{ g.license_warning }} <a href="/settings/billing">Update billing</a></div>
@@ -715,9 +730,9 @@
 
     <div id="thread">
       <div class="thread-head">
-        <button class="btn-back" onclick="closeThread()">‹</button>
+        <button class="btn-back pwa-safe-top-control" onclick="closeThread()" aria-label="Back to conversations"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg></button>
         <div class="thread-info">
-          <div class="thread-name"   id="threadName">—</div>
+          <div class="thread-name"   id="threadName">-</div>
           <div class="thread-number" id="threadNumber"></div>
         </div>
         <div class="thread-actions">
@@ -770,6 +785,21 @@
 {% include "inbox_pwa/_bottom_nav.html" %}
 
 <!-- ── Modals ─────────────────────────────────────────────────────── -->
+
+<div class="pwa-modal-overlay" id="favoritesScreen" data-pwa-page="favorites">
+  <div class="pwa-modal">
+    <div class="modal-title">Favorites</div>
+    <p class="small" style="color:var(--pwa-muted);margin-bottom:10px;">Add, edit, remove, and reorder favorite contacts for fast call or text actions.</p>
+    <div id="favoritesList" class="pwa-card-list"></div>
+    <div class="pwa-field"><label>Name</label><input id="favoriteName" placeholder="Favorite name"></div>
+    <div class="pwa-field"><label>Phone</label><input id="favoritePhone" placeholder="+15551234567"></div>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeModal('favoritesScreen')">Done</button>
+      <button class="btn-primary" onclick="saveFavorite()">Add Favorite</button>
+    </div>
+  </div>
+</div>
+
 <div class="pwa-modal-overlay" id="composeModal">
   <div class="pwa-modal">
     <div class="modal-title">New Message</div>
@@ -781,7 +811,7 @@
       <div id="composeSelectedWrap" style="display:none;margin-top:6px;">
         <div class="compose-selected-pill">
           <span id="composeSelectedLabel"></span>
-          <button class="clear-contact-btn" onclick="clearComposeContact()">✕</button>
+          <button class="clear-contact-btn" onclick="clearComposeContact()" aria-label="Clear selected contact"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
         </div>
       </div>
       <input type="hidden" id="composeTo">
@@ -910,14 +940,24 @@
     </div>
 
 
+    <div class="settings-section-label" style="margin-top:20px;">Phone App Pages</div>
+    <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;width:100%;">
+      <a class="btn-small" href="/app/favorites" style="text-decoration:none;text-align:center;">Favorites</a>
+      <a class="btn-small" href="/app/contacts" style="text-decoration:none;text-align:center;">Contacts</a>
+      <a class="btn-small" href="/app/voicemail" style="text-decoration:none;text-align:center;">Voicemail</a>
+      <a class="btn-small" href="/app/greetings" style="text-decoration:none;text-align:center;">Greeting Management</a>
+    </div>
+
     <div class="settings-section-label" style="margin-top:20px;">Appearance</div>
     <div class="settings-toggle-row" style="flex-direction:column;align-items:flex-start;gap:8px;">
       <div class="settings-toggle-label"><div><span>Color Palette</span><small>Choose a phone-app theme for this device</small></div></div>
       <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;width:100%;">
-        <button class="btn-small" onclick="setPalette('lux')">LUX Purple</button>
+        <button class="btn-small" onclick="setPalette('lux')">LUX</button>
         <button class="btn-small" onclick="setPalette('ocean')">Ocean</button>
         <button class="btn-small" onclick="setPalette('forest')">Forest</button>
         <button class="btn-small" onclick="setPalette('sunset')">Sunset</button>
+        <button class="btn-small" onclick="setPalette('slate')">Slate</button>
+        <button class="btn-small" onclick="setPalette('rose')">Rose</button>
       </div>
     </div>
 
@@ -1034,7 +1074,7 @@
 
 <!-- ── Lightbox ────────────────────────────────────────────────────── -->
 <div id="lightbox" onclick="closeLightbox()">
-  <button id="lightboxClose" onclick="closeLightbox()">✕</button>
+  <button id="lightboxClose" onclick="closeLightbox()" aria-label="Close preview"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
   <img id="lightboxImg" src="" alt="">
 </div>
 
@@ -1149,11 +1189,13 @@ window.addEventListener('DOMContentLoaded', () => {
   const params = new URLSearchParams(location.search);
   const convId = params.get('conv');
   if (convId) openConversation(parseInt(convId));
-  if (params.has('settings')) setTimeout(openSettingsSheet, 50);
-  if (params.has('compose')) setTimeout(openCompose, 50);
-  if (params.has('keypad')) setTimeout(openDialPad, 50);
-  if (params.has('contacts')) setTimeout(() => { openCompose(); setTimeout(pickComposeContact, 150); }, 50);
-  if (params.has('favorites')) setFilter('mine', document.querySelector('.ftab[onclick*="mine"]'));
+  const path = location.pathname;
+  if (params.has('settings') || path.includes('/settings')) setTimeout(openSettingsSheet, 50);
+  if (params.has('compose') || path.includes('/new-text')) setTimeout(openCompose, 50);
+  if (params.has('keypad') || path.includes('/dial-pad')) setTimeout(openDialPad, 50);
+  if (params.has('contacts') || path.includes('/contacts')) setTimeout(() => { openCompose(); setTimeout(pickComposeContact, 150); }, 50);
+  if (params.has('favorites') || path.includes('/favorites')) setTimeout(openFavoritesScreen, 50);
+  if (path.includes('/greetings')) setTimeout(openSettingsSheet, 50);
   // Refresh badge counts every 2 minutes
   setInterval(loadBadgeCounts, 120000);
 });
@@ -1485,7 +1527,7 @@ function renderConvList(convs, meta = {}) {
         <div class="conv-avatar ${optOut}">${initials}</div>
         <div class="conv-meta">
           <div class="conv-name">${esc(c.display_name)}</div>
-          <div class="conv-preview">${esc(c.last_message_preview||'—')}</div>
+          <div class="conv-preview">${esc(c.last_message_preview||'-')}</div>
         </div>
         <div class="conv-right">
           <span class="conv-time">${time}</span>
@@ -1799,6 +1841,67 @@ function removeOptimisticMsg(uid) {
 function scrollThreadToBottom() {
   const el = document.getElementById('messages');
   if (el) el.scrollTop = el.scrollHeight;
+}
+
+
+/* ── Favorites screen ─────────────────────────────────────────── */
+async function openFavoritesScreen() {
+  openModal('favoritesScreen');
+  await loadFavorites();
+}
+async function loadFavorites() {
+  const list = document.getElementById('favoritesList');
+  if (!list) return;
+  const data = await apiFetch('/api/pwa/favorites');
+  const favorites = data.favorites || [];
+  list.innerHTML = favorites.length ? favorites.map((f, idx) => `
+    <div class="pwa-card favorite-card" data-favorite-id="${f.id}" draggable="true">
+      <div style="display:flex;align-items:center;gap:10px;">
+        <div class="conv-avatar">${esc((f.display_name||'?').slice(0,2).toUpperCase())}</div>
+        <div style="flex:1;min-width:0;"><strong>${esc(f.display_name)}</strong><div class="small">${esc(f.phone_number)}</div></div>
+      </div>
+      <div class="actions" style="margin-top:10px;">
+        <a class="btn-small" href="tel:${esc(f.phone_number)}">Call</a>
+        <a class="btn-small" href="sms:${esc(f.phone_number)}">Text</a>
+        <button class="btn-small" onclick="editFavorite(${f.id}, '${esc(f.display_name)}', '${esc(f.phone_number)}')">Edit</button>
+        <button class="btn-small" onclick="removeFavorite(${f.id})">Remove</button>
+        <button class="btn-small" onclick="moveFavorite(${idx}, -1)">Move Up</button>
+        <button class="btn-small" onclick="moveFavorite(${idx}, 1)">Move Down</button>
+      </div>
+    </div>`).join('') : '<div class="pwa-card empty">No favorites yet. Add one below.</div>';
+  window.__pwaFavorites = favorites;
+}
+async function saveFavorite() {
+  const name = document.getElementById('favoriteName').value.trim();
+  const phone = document.getElementById('favoritePhone').value.trim();
+  if (!phone) return toast('Phone number is required', 'error');
+  const editing = document.getElementById('favoriteName').dataset.editingId;
+  if (editing) {
+    await apiFetch(`/api/pwa/favorites/${editing}`, 'PATCH', { display_name: name || phone, phone_number: phone });
+    delete document.getElementById('favoriteName').dataset.editingId;
+  } else {
+    await apiFetch('/api/pwa/favorites', 'POST', { display_name: name || phone, phone_number: phone, sort_order: (window.__pwaFavorites||[]).length });
+  }
+  document.getElementById('favoriteName').value = '';
+  document.getElementById('favoritePhone').value = '';
+  loadFavorites();
+}
+function editFavorite(id, name, phone) {
+  document.getElementById('favoriteName').value = name;
+  document.getElementById('favoritePhone').value = phone;
+  document.getElementById('favoriteName').dataset.editingId = id;
+}
+async function removeFavorite(id) {
+  await apiFetch(`/api/pwa/favorites/${id}`, 'DELETE');
+  loadFavorites();
+}
+async function moveFavorite(idx, delta) {
+  const favs = [...(window.__pwaFavorites || [])];
+  const target = idx + delta;
+  if (target < 0 || target >= favs.length) return;
+  [favs[idx], favs[target]] = [favs[target], favs[idx]];
+  await apiFetch('/api/pwa/favorites', 'PUT', { favorites: favs.map((f, sort_order) => ({ id: f.id, sort_order })) });
+  loadFavorites();
 }
 
 /* ── Google Contacts status + sync ─────────────────────────────── */
