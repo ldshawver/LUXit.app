@@ -1,0 +1,9 @@
+[Unit]
+Description=LUXit PWA unread SMS reminder runner
+After=network.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/var/www/LUXit.app
+EnvironmentFile=-/etc/luxit/lux-email-bot.env
+ExecStart=/usr/bin/env python scripts/run_pwa_unread_reminders.py

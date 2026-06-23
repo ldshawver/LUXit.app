@@ -474,7 +474,8 @@ def _safe_conversation_tags(raw_tags):
 
 
 def _is_archived_conversation(conv):
-    return "archived" in _safe_conversation_tags(getattr(conv, "tags", None))
+    tags = set(_safe_conversation_tags(getattr(conv, "tags", None)))
+    return bool(tags.intersection({"archived", "resolved", "closed"}))
 
 
 def _msg_to_dict(m):
@@ -775,6 +776,7 @@ def api_pwa_preferences():
             "unreadReminderAlertsEnabled": "pwa_unread_reminder_alerts_enabled",
             "vibrationEnabled": "pwa_vibration_enabled",
             "businessHoursOnly": "pwa_alerts_business_hours_only",
+            "afterHoursPushEnabled": "pwa_after_hours_push_enabled",
         }
         for json_key, attr in pref_map.items():
             snake_key = re.sub(r"(?<!^)(?=[A-Z])", "_", json_key).lower()
@@ -800,6 +802,7 @@ def api_pwa_preferences():
             "unreadReminderAlertsEnabled": getattr(user, "pwa_unread_reminder_alerts_enabled", True) is not False,
             "vibrationEnabled": getattr(user, "pwa_vibration_enabled", True) is not False,
             "businessHoursOnly": getattr(user, "pwa_alerts_business_hours_only", True) is not False,
+            "afterHoursPushEnabled": getattr(user, "pwa_after_hours_push_enabled", False) is True,
             "quietHoursStart": getattr(user, "pwa_quiet_hours_start", None),
             "quietHoursEnd": getattr(user, "pwa_quiet_hours_end", None),
             "unreadRepeatMinutes": getattr(user, "pwa_unread_repeat_minutes", None) or 1,
@@ -1036,7 +1039,7 @@ def api_voicemails():
 
 
 def _default_business_hours():
-    return {str(i): {"is_open": i < 5, "open": "09:00", "close": "17:00"} for i in range(7)}
+    return {str(i): {"is_open": True, "open": "14:00", "close": "02:00"} for i in range(7)}
 
 
 def _settings_to_dict(settings):
@@ -1083,13 +1086,16 @@ def api_phone_number_settings(number_id):
             "sms_forward_to", "sms_forwarding_enabled", "auto_reply_enabled", "number_auto_reply_text",
             "call_forward_to", "voice_forwarding_enabled", "ring_timeout",
             "voicemail_greeting_text", "voicemail_greeting_audio_url", "missed_call_text",
-            "after_hours_text", "after_hours_sms_enabled", "after_hours_voicemail_enabled",
+            "after_hours_text", "after_hours_sms_body", "after_hours_cooldown_minutes", "after_hours_sms_enabled", "after_hours_voicemail_enabled",
             "browser_calling_enabled", "cell_callback_enabled", "wifi_only",
             "mobile_data_allowed", "fallback_behavior", "caller_id_display_name",
         }
         for key in allowed:
             if key in data:
-                setattr(pn, key, data[key])
+                if key == "after_hours_sms_body":
+                    pn.after_hours_text = data[key]
+                else:
+                    setattr(pn, key, data[key])
         db.session.commit()
     return jsonify({
         "success": True,
@@ -1113,6 +1119,8 @@ def api_phone_number_settings(number_id):
             "voicemail_greeting_audio_url": pn.voicemail_greeting_audio_url,
             "missed_call_text": pn.missed_call_text,
             "after_hours_text": pn.after_hours_text,
+            "after_hours_sms_body": pn.after_hours_text,
+            "after_hours_cooldown_minutes": pn.after_hours_cooldown_minutes,
             "after_hours_sms_enabled": pn.after_hours_sms_enabled,
             "after_hours_voicemail_enabled": pn.after_hours_voicemail_enabled,
             "browser_calling_enabled": pn.browser_calling_enabled,
@@ -1865,10 +1873,11 @@ def _event_allowed_for_user(user, event_type: str) -> bool:
     return True if not attr else getattr(user, attr, True) is not False
 
 
-def _notification_payload_preferences(user):
+def _notification_payload_preferences(user, *, silent: bool = False):
     return {
-        "soundEnabled": getattr(user, "notification_sounds_enabled", True) is not False,
-        "vibrationEnabled": getattr(user, "pwa_vibration_enabled", True) is not False,
+        "soundEnabled": (getattr(user, "notification_sounds_enabled", True) is not False) and not silent,
+        "vibrationEnabled": (getattr(user, "pwa_vibration_enabled", True) is not False) and not silent,
+        "silent": bool(silent),
         "quietHoursStart": getattr(user, "pwa_quiet_hours_start", None),
         "quietHoursEnd": getattr(user, "pwa_quiet_hours_end", None),
     }
@@ -1989,7 +1998,7 @@ def _send_web_push_to_subscriptions(subscriptions, payload: dict):
     db.session.commit()
     return {"sent": sent, "errors": errors}
 
-def send_pwa_push_notification(company_id: int, *, user_ids, title: str, body: str, link: str = "/app/inbox", tag: str = "luxit-inbox", event_type: str = "notification", phone_number_id=None):
+def send_pwa_push_notification(company_id: int, *, user_ids, title: str, body: str, link: str = "/app/inbox", tag: str = "luxit-inbox", event_type: str = "notification", phone_number_id=None, silent: bool = False):
     """Internal tenant-scoped push helper for notifications already permission-filtered by caller."""
     from models import PushSubscription
     from models import User
@@ -2006,8 +2015,9 @@ def send_pwa_push_notification(company_id: int, *, user_ids, title: str, body: s
     ).all()
     return _send_web_push_to_subscriptions(subs, {
         "title": title, "body": body, "url": link, "tag": tag, "eventType": event_type,
-        "icon": "/static/favicon.png", "badge": "/static/favicon.png", "sound": "default",
-        "data": {"company_id": company_id, "phone_number_id": phone_number_id, "event_type": event_type},
+        "icon": "/static/favicon.png", "badge": "/static/favicon.png", "sound": None if silent else "default",
+        "silent": bool(silent), "vibrate": [] if silent else [80, 40, 80],
+        "data": {"company_id": company_id, "phone_number_id": phone_number_id, "event_type": event_type, "silent": bool(silent)},
     })
 
 # ── API: Push notification subscribe ─────────────────────────────────────────
@@ -2471,7 +2481,34 @@ def dial_number():
         return jsonify({"success": False, "error": _twilio_send_error_message(exc)}), 400
 
 
-def _fire_push_notification(company_id: int, conv, message_body: str):
+def _conversation_in_business_hours(conv) -> bool:
+    phone_config = getattr(conv, "phone_number", None)
+    # Legacy rows without explicit per-number hours should not suddenly silence
+    # alerts/reminders because no schedule was configured.
+    if not (getattr(phone_config, "business_hours", None) if phone_config else None):
+        return True
+    try:
+        import twilio_sms
+        return twilio_sms._is_business_hours(conv.company_id, phone_config=phone_config)
+    except Exception:
+        return True
+
+
+def _conversation_has_stop_condition(conv, now=None) -> bool:
+    if getattr(conv, "is_read", False):
+        return True
+    if _is_archived_conversation(conv):
+        return True
+    from models import TwilioMessage
+    latest = conv.messages.order_by(TwilioMessage.created_at.desc()).first()
+    if latest and latest.direction == "outbound":
+        return True
+    if latest and getattr(latest, "is_auto_reply", False):
+        return True
+    return False
+
+
+def _fire_push_notification(company_id: int, conv, message_body: str, *, silent: bool | None = None):
     """Called from inbound SMS webhook; records notification history and sends Web Push."""
     sender = conv.contact_name or conv.from_number
     phone_number_id = getattr(conv, "phone_number_id", None)
@@ -2489,6 +2526,10 @@ def _fire_push_notification(company_id: int, conv, message_body: str):
     )
 
     allowed_user_ids = [u.id for u in _authorized_notification_users(company_id, phone_number_id)]
+    in_business = _conversation_in_business_hours(conv)
+    silent = (not in_business) if silent is None else bool(silent)
+    if silent:
+        allowed_user_ids = [u.id for u in _authorized_notification_users(company_id, phone_number_id) if getattr(u, "pwa_after_hours_push_enabled", False) is True]
     send_pwa_push_notification(
         company_id,
         user_ids=allowed_user_ids,
@@ -2498,11 +2539,12 @@ def _fire_push_notification(company_id: int, conv, message_body: str):
         tag=f"sms-{conv.id}",
         event_type="inbound_sms",
         phone_number_id=phone_number_id,
+        silent=silent,
     )
 
 
 def create_pwa_notification(company_id: int, *, event_type: str, title: str, body: str,
-                            link: str = "/app/inbox", phone_number_id=None, icon: str = "bell"):
+                            link: str = "/app/inbox", phone_number_id=None, icon: str = "bell", silent: bool = False, emit_sse: bool = True):
     """Public helper for call/voicemail webhooks to persist notification history and push to permitted users."""
     records = _create_notification_records(
         company_id,
@@ -2523,7 +2565,17 @@ def create_pwa_notification(company_id: int, *, event_type: str, title: str, bod
         tag=f"{event_type}-{phone_number_id or 'company'}",
         event_type=event_type,
         phone_number_id=phone_number_id,
+        silent=silent,
     )
+    if emit_sse:
+        _push_sse_event(company_id, event_type, {
+            "title": title,
+            "body": body,
+            "link": link,
+            "url": link,
+            "phone_number_id": phone_number_id,
+            "silent": bool(silent),
+        })
     return records
 
 
@@ -2536,7 +2588,9 @@ def create_unread_message_reminders(now=None, dry_run: bool = False):
     would_create = 0
     unread = TwilioConversation.query.filter_by(is_read=False).all()
     for conv in unread:
-        if _is_archived_conversation(conv):
+        if _conversation_has_stop_condition(conv, now=now):
+            continue
+        if not _conversation_in_business_hours(conv):
             continue
         last = Notification.query.filter_by(
             company_id=conv.company_id,
@@ -2549,11 +2603,11 @@ def create_unread_message_reminders(now=None, dry_run: bool = False):
         if dry_run:
             would_create += 1
             continue
-        rows = _create_notification_records(
+        rows = create_pwa_notification(
             conv.company_id,
             event_type="unread_message_reminder",
             title=f"Unread message from {conv.contact_name or conv.from_number}",
-            notification_body=conv.last_message_preview or "Unread message needs attention",
+            body=conv.last_message_preview or "Unread message needs attention",
             link=f"/app/inbox?conv={conv.id}",
             phone_number_id=getattr(conv, "phone_number_id", None),
             icon="message-circle",

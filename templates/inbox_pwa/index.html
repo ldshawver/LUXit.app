@@ -1369,8 +1369,10 @@ function connectSSE() {
 
 function handleSSEEvent(data) {
   if (data.type === 'new_message') {
-    vibrateIfEnabled([80, 40, 80]);
-    playSound('sms-' + data.conversation_id + '-' + (data.message_id || data.created_at || Date.now()));
+    if (!data.silent) {
+      vibrateIfEnabled([80, 40, 80]);
+      playSound('sms-' + data.conversation_id + '-' + (data.message_id || data.created_at || Date.now()));
+    }
 
     // Flash the conversation row if visible
     const ci = document.getElementById('ci-' + data.conversation_id);
@@ -1387,9 +1389,11 @@ function handleSSEEvent(data) {
     if (state.activeConvId === data.conversation_id) {
       refreshMessages(data.conversation_id);
     }
-  } else if (['incoming_call', 'missed_call', 'voicemail'].includes(data.type)) {
-    vibrateIfEnabled([120, 60, 120]);
-    playSound(data.type + '-' + (data.call_id || data.id || data.call_sid || Date.now()));
+  } else if (['incoming_call', 'missed_call', 'voicemail', 'unread_message_reminder'].includes(data.type)) {
+    if (!data.silent) {
+      vibrateIfEnabled([120, 60, 120]);
+      playSound(data.type + '-' + (data.call_id || data.id || data.call_sid || Date.now()));
+    }
     loadBadgeCounts();
   } else if (data.type === 'message_status') {
     if (state.activeConvId === data.conversation_id) {

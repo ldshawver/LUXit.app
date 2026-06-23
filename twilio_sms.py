@@ -32,6 +32,9 @@ import html
 from datetime import datetime, timezone, timedelta
 from zoneinfo import ZoneInfo
 
+REQUIRED_AFTER_HOURS_SMS_COPY = "Thanks for reaching out. Our business hours are daily from 2 PM to 2 AM. We’ll respond as soon as we’re back online."
+DEFAULT_PHONE_BUSINESS_HOURS = {str(i): {"is_open": True, "open": "14:00", "close": "02:00"} for i in range(7)}
+
 from flask import (
     Blueprint, abort, flash, jsonify, redirect,
     render_template, request, url_for, g, has_request_context
@@ -139,6 +142,7 @@ class _NumberScopedTwilioConfig:
         "voicemail_greeting_audio_url",
         "missed_call_text",
         "after_hours_text",
+        "after_hours_cooldown_minutes",
         "after_hours_sms_enabled",
         "after_hours_voicemail_enabled",
         "business_hours",
@@ -273,7 +277,7 @@ def _seed_phone_numbers_from_accounts():
                     call_forward_to         = ta.call_forward_to,
                     voice_forwarding_enabled = bool(ta.voice_forwarding_enabled),
                     ring_timeout            = 25,
-                    business_hours          = {},
+                    business_hours          = dict(DEFAULT_PHONE_BUSINESS_HOURS),
                     timezone                = "America/Los_Angeles",
                     during_hours_route      = "ring_pwa",
                     after_hours_route       = "voicemail",
@@ -337,8 +341,6 @@ def _twiml_message(text: str):
 
 _UNICODE_REPLACEMENTS = str.maketrans({
     "\u2026": "...",   # …  ellipsis
-    "\u2019": "'",     # '  right single quotation mark
-    "\u2018": "'",     # '  left single quotation mark
     "\u201c": '"',     # "  left double quotation mark
     "\u201d": '"',     # "  right double quotation mark
     "\u2013": "-",     # –  en dash
@@ -363,8 +365,6 @@ def _safe_sms_text(value):
              .replace("–", "-")
              .replace("“", '"')
              .replace("”", '"')
-             .replace("‘", "'")
-             .replace("’", "'")
              .replace("\u00a0", " ")
     )
 
@@ -773,8 +773,10 @@ def _send_number_configured_auto_reply(conv, ta, *, in_business=None) -> bool:
         response_body = getattr(ta, "number_auto_reply_text", None)
     if not response_body:
         return False
-    cooldown_minutes = getattr(ta, "after_hours_cooldown_minutes", None) or 720
-    cutoff = datetime.now(timezone.utc) - timedelta(minutes=cooldown_minutes)
+    cooldown_minutes = getattr(ta, "after_hours_cooldown_minutes", None)
+    if cooldown_minutes is None:
+        cooldown_minutes = 720
+    cutoff = datetime.now(timezone.utc) - timedelta(minutes=int(cooldown_minutes))
     from models import TwilioMessage
     recent = TwilioMessage.query.filter(
         TwilioMessage.conversation_id == conv.id,
@@ -874,8 +876,10 @@ def _apply_auto_reply_rules(conv, body: str, ta) -> bool:
                 matched = False
                 skip_reason = "currently in business hours"
             else:
-                cooldown_minutes = getattr(ta, "after_hours_cooldown_minutes", None) or 720
-                cutoff = datetime.now(timezone.utc) - timedelta(minutes=cooldown_minutes)
+                cooldown_minutes = getattr(ta, "after_hours_cooldown_minutes", None)
+                if cooldown_minutes is None:
+                    cooldown_minutes = 720
+                cutoff = datetime.now(timezone.utc) - timedelta(minutes=int(cooldown_minutes))
                 from models import TwilioMessage
                 recent = TwilioMessage.query.filter(
                     TwilioMessage.conversation_id == conv.id,
@@ -955,7 +959,7 @@ def _apply_auto_reply_rules(conv, body: str, ta) -> bool:
             response_body = rule.response
             if rule.trigger_type == "after_hours":
                 response_body = (getattr(ta, "after_hours_text", None) or rule.response or
-                                 "Thanks for reaching out. We’re currently closed, but your message has been received. A team member will reply as soon as we’re back during business hours. Reply STOP to opt out.")
+                                 REQUIRED_AFTER_HOURS_SMS_COPY)
             if reply_sent:
                 logger.debug("%s rule id=%s skipped — reply already sent", _tag, rule.id)
                 continue
@@ -975,7 +979,8 @@ def _apply_auto_reply_rules(conv, body: str, ta) -> bool:
             logger.warning("%s rule id=%s action=reply but response is empty — skipped", _tag, rule.id)
 
     if not reply_sent:
-        logger.info("%s no rule produced a reply for this message", _tag)
+        logger.info("%s no rule produced a reply for this message; checking canonical per-number/company fallback", _tag)
+        reply_sent = _send_number_configured_auto_reply(conv, ta, in_business=in_business)
     return reply_sent
 
 
@@ -1043,7 +1048,7 @@ def _seed_default_rules(company_id: int):
 
 def _seed_default_hours(company_id: int):
     """
-    Seed business hours for a new company: 11:00 AM – 1:00 AM (next day),
+    Seed business hours for a new company: 2:00 PM – 2:00 AM (next day),
     America/Los_Angeles, every day of the week.
     Times are stored in local LA time; _is_business_hours() handles the
     midnight-crossing comparison correctly.
@@ -1057,12 +1062,12 @@ def _seed_default_hours(company_id: int):
             company_id=company_id,
             day_of_week=day,
             is_open=True,
-            open_time="11:00",
-            close_time="01:00",   # 1 AM next day — midnight-crossing
+            open_time="14:00",
+            close_time="02:00",   # 2 AM next day — midnight-crossing
         )
         db.session.add(bh)
     db.session.commit()
-    logger.info("Seeded default business hours (11 AM–1 AM LA) for company %s", company_id)
+    logger.info("Seeded default business hours (2 PM–2 AM LA) for company %s", company_id)
 
 
 # ---------------------------------------------------------------------------
@@ -1314,6 +1319,7 @@ def inbound_sms():
         except Exception as campaign_rule_exc:
             logger.exception("Error in campaign SMS keyword engine: %s", campaign_rule_exc)
 
+        auto_reply_sent = False
         # ── 6. Auto-reply rule engine ──────────────────────────────────────
         try:
             # Auto-capture lead on first contact
@@ -1322,9 +1328,12 @@ def inbound_sms():
 
             # Run rules only if not opted out
             if not conv.is_opted_out and getattr(ta, "auto_reply_enabled", True):
-                _apply_auto_reply_rules(conv, body, ta)
+                auto_reply_sent = _apply_auto_reply_rules(conv, body, ta)
         except Exception as rule_exc:
             logger.exception("Error in auto-reply rule engine: %s", rule_exc)
+        if auto_reply_sent:
+            msg_record.auto_responded = True
+            db.session.commit()
 
         # Clear first-contact flag after first processed message
         if conv.is_first_contact:
@@ -1351,6 +1360,11 @@ def inbound_sms():
         try:
             from inbox_pwa import _fire_push_notification, _push_sse_event
             sender = conv.contact_name or from_number
+            try:
+                in_business_for_alert = _is_business_hours(ta.company_id, phone_config=ta)
+            except Exception:
+                in_business_for_alert = True
+            alert_silent = (not in_business_for_alert) or bool(auto_reply_sent)
             _push_sse_event(ta.company_id, "new_message", {
                 "conversation_id":      conv.id,
                 "from_number":          from_number,
@@ -1359,8 +1373,10 @@ def inbound_sms():
                 "has_media":            num_media > 0,
                 "last_message_at":      conv.last_message_at.isoformat() if conv.last_message_at else None,
                 "last_message_preview": conv.last_message_preview or "",
+                "silent":               alert_silent,
+                "auto_responded":       bool(auto_reply_sent),
             })
-            _fire_push_notification(ta.company_id, conv, body or "(media)")
+            _fire_push_notification(ta.company_id, conv, body or "(media)", silent=alert_silent)
         except Exception as push_exc:
             logger.debug("Push/SSE notification skipped: %s", push_exc)
 
@@ -1625,10 +1641,14 @@ def _inbound_call_impl():
             f"</Response>"
         )
 
-    route = (
-        (getattr(ta, "during_hours_route", None) if in_hours else getattr(ta, "after_hours_route", None))
-        or (settings.during_hours_route if settings and in_hours else settings.after_hours_route if settings else None)
-    )
+    number_route = getattr(ta, "during_hours_route", None) if in_hours else getattr(ta, "after_hours_route", None)
+    settings_route = (settings.during_hours_route if settings and in_hours else settings.after_hours_route if settings else None)
+    # Treat model defaults as unset so tenant PhoneSettings keep routing calls unless
+    # the selected phone number has a non-default explicit route.
+    if settings_route and number_route in (None, "", "ring_pwa") and settings_route != number_route:
+        route = settings_route
+    else:
+        route = number_route or settings_route
     forward_to = (
         (getattr(ta, "call_forward_to", None) if pn else None)
         or ((settings.forward_number if in_hours else settings.after_hours_forward_number) if settings else None)
@@ -1680,6 +1700,7 @@ def _inbound_call_impl():
                 link="/app/inbox?tab=calls",
                 phone_number_id=getattr(pn, "id", None),
                 icon="phone",
+                emit_sse=False,
             )
         except Exception as exc:
             logger.debug("PWA incoming call event failed: %s", exc)
