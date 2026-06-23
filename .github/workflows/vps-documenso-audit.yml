@@ -1,4 +1,4 @@
-name: LUXit Documenso VPS Audit
+name: VPS MyOrder Audit
 
 on:
   workflow_dispatch:
@@ -8,31 +8,58 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - name: Run LUXit Documenso VPS audit
+      - name: Connect Tailscale
+        uses: tailscale/github-action@v3
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:github-actions
+
+      - name: Verify Tailnet
+        run: |
+          tailscale status
+          tailscale ping 100.85.15.43
+
+      - name: VPS apply 0027 and inspect orders
         uses: appleboy/ssh-action@v1.0.3
         with:
-          host: ${{ secrets.VPS_HOST }}
-          username: ${{ secrets.VPS_USER }}
-          key: ${{ secrets.VPS_SSH_KEY }}
-          port: ${{ secrets.VPS_PORT }}
+          host: 100.85.15.43
+          username: serveradmin
+          key: ${{ secrets.VPS_PRIVATE_KEY }}
+          port: 22
+          timeout: 60s
+          command_timeout: 10m
+          script_stop: true
           script: |
             set -euo pipefail
-            echo "Host:"
-            hostname
-            echo "User:"
-            whoami
-            echo "OS:"
-            cat /etc/os-release || true
-            echo "Docker:"
-            docker ps || true
 
-            cd "${{ secrets.APP_DIR }}"
+            cd /opt/alavont
 
-            if [ -f scripts/documenso/live_documenso_vps_audit.sh ]; then
-              bash scripts/documenso/live_documenso_vps_audit.sh
-            else
-              echo "Audit script not found in APP_DIR."
-              find . -maxdepth 4 -type f | grep -i documenso || true
-            fi
+            echo "== git =="
+            git log --oneline -5
+
+            echo "== backup =="
+            docker exec deploy-db-1 pg_dump -U alavont_user -d alavont > ~/alavont-before-0027-$(date +%F-%H%M).sql
+
+            echo "== apply 0027 =="
+            docker exec -i deploy-db-1 psql -U alavont_user -d alavont < lib/db/drizzle/0027_orders_shift_schema_drift.sql
+
+            echo "== restart api/nginx =="
+            docker compose --env-file deploy/.env -f deploy/docker-compose.yml -p deploy up -d api nginx
+
+            echo "== health =="
+            curl -I http://127.0.0.1/api/healthz || true
+
+            echo "== orders columns =="
+            docker exec -i deploy-db-1 psql -U alavont_user -d alavont <<'SQL'
+            SELECT column_name
+            FROM information_schema.columns
+            WHERE table_name='orders'
+            ORDER BY ordinal_position;
+            SQL
+
+            echo "== api logs =="
+            docker logs deploy-api-1 --tail=160
