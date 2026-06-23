@@ -282,3 +282,103 @@ def test_pwa_calls_visual_nav_sdk_and_voicemail_static_requirements():
     assert "favoritesScreen" in index and "saveFavorite" in index and "removeFavorite" in index and "moveFavorite" in index
     assert "setPalette('slate')" in index and "setPalette('rose')" in index
     assert "mark-unread" in calls and "/api/calls/${id}/${read?'mark-read':'mark-unread'}" in calls
+
+
+def test_unread_reminders_obey_business_hours_and_stop_conditions(pwa_app, monkeypatch):
+    app, _client, ids = pwa_app
+    import inbox_pwa
+    with app.app_context():
+        open_line = db.session.get(TwilioPhoneNumber, ids["line"])
+        open_line.business_hours = {str(i): {"is_open": True, "open": "00:00", "close": "23:59"} for i in range(7)}
+        closed_line = TwilioPhoneNumber(company_id=ids["company"], phone_number="+15550003000", sms_enabled=True, voice_enabled=True, is_active=True, business_hours={str(i): {"is_open": False} for i in range(7)})
+        db.session.add(closed_line); db.session.flush()
+        open_conv = TwilioConversation(company_id=ids["company"], phone_number_id=ids["line"], from_number="+14155550001", to_number="+15550001000", is_read=False, last_message_preview="Open unread")
+        closed_conv = TwilioConversation(company_id=ids["company"], phone_number_id=closed_line.id, from_number="+14155550002", to_number="+15550003000", is_read=False, last_message_preview="Closed unread")
+        replied_conv = TwilioConversation(company_id=ids["company"], phone_number_id=ids["line"], from_number="+14155550003", to_number="+15550001000", is_read=False, last_message_preview="Already replied")
+        auto_conv = TwilioConversation(company_id=ids["company"], phone_number_id=ids["line"], from_number="+14155550004", to_number="+15550001000", is_read=False, last_message_preview="Auto replied")
+        db.session.add_all([open_conv, closed_conv, replied_conv, auto_conv]); db.session.flush()
+        from models import TwilioMessage
+        db.session.add_all([
+            TwilioMessage(conversation_id=open_conv.id, company_id=ids["company"], direction="inbound", body="Open unread"),
+            TwilioMessage(conversation_id=closed_conv.id, company_id=ids["company"], direction="inbound", body="Closed unread"),
+            TwilioMessage(conversation_id=replied_conv.id, company_id=ids["company"], direction="outbound", body="Human reply"),
+            TwilioMessage(conversation_id=auto_conv.id, company_id=ids["company"], direction="outbound", body="Auto reply", is_auto_reply=True),
+        ])
+        db.session.commit()
+        sent = []
+        monkeypatch.setattr(inbox_pwa, "send_pwa_push_notification", lambda company_id, **kw: sent.append(kw) or {"sent": 1, "errors": []})
+        result = inbox_pwa.create_unread_message_reminders()
+        assert result["created"] >= 1
+        reminders = Notification.query.filter_by(event_type="unread_message_reminder").all()
+        assert reminders
+        assert {r.link for r in reminders} == {f"/app/inbox?conv={open_conv.id}"}
+        assert sent and sent[0]["event_type"] == "unread_message_reminder"
+
+
+def test_after_hours_sms_push_is_silent_and_requires_after_hours_opt_in(pwa_app, monkeypatch):
+    app, _client, ids = pwa_app
+    import inbox_pwa
+    with app.app_context():
+        user = db.session.get(User, ids["staff"])
+        user.pwa_after_hours_push_enabled = False
+        line = db.session.get(TwilioPhoneNumber, ids["line"])
+        line.business_hours = {str(i): {"is_open": False} for i in range(7)}
+        conv = TwilioConversation(company_id=ids["company"], phone_number_id=ids["line"], from_number="+14155559999", to_number="+15550001000", is_read=False)
+        db.session.add(conv); db.session.commit()
+        sent = []
+        monkeypatch.setattr(inbox_pwa, "send_pwa_push_notification", lambda company_id, **kw: sent.append(kw) or {"sent": len(kw.get("user_ids", [])), "errors": []})
+        inbox_pwa._fire_push_notification(ids["company"], conv, "after hours", silent=None)
+        assert sent[-1]["silent"] is True
+        assert ids["staff"] not in sent[-1]["user_ids"]
+        user.pwa_after_hours_push_enabled = True
+        db.session.commit()
+        inbox_pwa._fire_push_notification(ids["company"], conv, "after hours", silent=None)
+        assert sent[-1]["silent"] is True
+        assert ids["staff"] in sent[-1]["user_ids"]
+
+
+def test_service_worker_and_in_app_alerts_honor_silent_sound_vibration_flags():
+    index = open("templates/inbox_pwa/index.html", encoding="utf-8").read()
+    sw = open("static/sw.js", encoding="utf-8").read()
+    assert "if (!data.silent)" in index
+    assert "vibrateIfEnabled([80, 40, 80])" in index
+    assert "playSound('sms-'" in index
+    assert "silent:  data.silent === true" in sw
+    assert "vibrate: data.vibrate || [80, 40, 80]" in sw
+
+
+def test_call_missed_voicemail_and_reminder_notifications_emit_push_and_sse(pwa_app, monkeypatch):
+    app, _client, ids = pwa_app
+    import inbox_pwa
+    with app.app_context():
+        sent_push = []
+        sent_sse = []
+        monkeypatch.setattr(inbox_pwa, "send_pwa_push_notification", lambda company_id, **kw: sent_push.append(kw) or {"sent": 1, "errors": []})
+        monkeypatch.setattr(inbox_pwa, "_push_sse_event", lambda company_id, event_type, data: sent_sse.append((event_type, data)))
+        for event_type in ("missed_call", "voicemail", "unread_message_reminder"):
+            inbox_pwa.create_pwa_notification(
+                ids["company"],
+                event_type=event_type,
+                title=f"Test {event_type}",
+                body="Alert body",
+                link="/app/inbox?tab=calls" if event_type != "unread_message_reminder" else "/app/inbox?conv=1",
+                phone_number_id=ids["line"],
+            )
+        assert [p["event_type"] for p in sent_push] == ["missed_call", "voicemail", "unread_message_reminder"]
+        assert [e[0] for e in sent_sse] == ["missed_call", "voicemail", "unread_message_reminder"]
+        assert all(e[1]["silent"] is False for e in sent_sse)
+
+
+def test_unread_reminder_stops_for_resolved_or_closed_tags(pwa_app, monkeypatch):
+    app, _client, ids = pwa_app
+    import inbox_pwa
+    with app.app_context():
+        line = db.session.get(TwilioPhoneNumber, ids["line"])
+        line.business_hours = {str(i): {"is_open": True, "open": "00:00", "close": "23:59"} for i in range(7)}
+        resolved_conv = TwilioConversation(company_id=ids["company"], phone_number_id=ids["line"], from_number="+14155550101", to_number="+15550001000", is_read=False, tags=["resolved"], last_message_preview="Resolved")
+        closed_conv = TwilioConversation(company_id=ids["company"], phone_number_id=ids["line"], from_number="+14155550102", to_number="+15550001000", is_read=False, tags=["closed"], last_message_preview="Closed")
+        db.session.add_all([resolved_conv, closed_conv]); db.session.commit()
+        monkeypatch.setattr(inbox_pwa, "send_pwa_push_notification", lambda company_id, **kw: {"sent": 1, "errors": []})
+        result = inbox_pwa.create_unread_message_reminders()
+        assert result["created"] == 0
+        assert Notification.query.filter_by(event_type="unread_message_reminder").count() == 0

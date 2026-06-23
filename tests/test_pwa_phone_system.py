@@ -1,5 +1,5 @@
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 
 import pytest
 
@@ -1067,3 +1067,76 @@ def test_per_number_business_and_after_hours_auto_replies_work_without_rules(app
     assert closed_resp.status_code == 200
     assert (world["co_a"], "+15550003001", "+15551113001", "Open hours line reply", True) in sent
     assert (world["co_a"], "+15550003002", "+15551113002", "Closed line reply", True) in sent
+
+
+def test_cross_midnight_business_hours_two_pm_to_two_am(app, world):
+    import twilio_sms
+    with app.app_context():
+        pn = TwilioPhoneNumber(
+            company_id=world["co_a"],
+            phone_number="+15550003333",
+            timezone="America/New_York",
+            business_hours={str(i): {"is_open": True, "open": "14:00", "close": "02:00"} for i in range(7)},
+        )
+        db.session.add(pn); db.session.commit()
+        cases = [
+            (datetime(2026, 6, 22, 15, 0), False),  # 11 AM ET
+            (datetime(2026, 6, 22, 17, 59), False), # 1:59 PM ET
+            (datetime(2026, 6, 22, 18, 0), True),   # 2 PM ET
+            (datetime(2026, 6, 23, 3, 0), True),    # 11 PM ET
+            (datetime(2026, 6, 23, 5, 59), True),   # 1:59 AM ET
+            (datetime(2026, 6, 23, 6, 0), False),   # 2 AM ET
+        ]
+        for at_utc, expected in cases:
+            assert twilio_sms._is_business_hours(world["co_a"], at_time=at_utc.replace(tzinfo=timezone.utc), phone_config=pn) is expected
+
+
+def test_number_after_hours_copy_alias_persists_and_reloads(client, app, world):
+    login(client, world["alice"])
+    required = "Thanks for reaching out. Our business hours are daily from 2 PM to 2 AM. We’ll respond as soon as we’re back online."
+    with app.app_context():
+        pn = TwilioPhoneNumber(company_id=world["co_a"], phone_number="+15550004444", sms_enabled=True, is_active=True)
+        db.session.add(pn); db.session.commit(); number_id = pn.id
+    resp = client.put(f"/api/phone/numbers/{number_id}/settings", json={"after_hours_sms_body": required, "after_hours_sms_enabled": True, "after_hours_cooldown_minutes": 30})
+    assert resp.status_code == 200
+    body = client.get(f"/api/phone/numbers/{number_id}/settings").get_json()["settings"]
+    assert body["after_hours_text"] == required
+    assert body["after_hours_sms_body"] == required
+    assert body["after_hours_cooldown_minutes"] == 30
+
+
+def test_after_hours_auto_reply_fallback_creates_outbound_and_marks_inbound(app, client, world, monkeypatch):
+    import twilio_sms
+    required = "Thanks for reaching out. Our business hours are daily from 2 PM to 2 AM. We’ll respond as soon as we’re back online."
+    with app.app_context():
+        ta = TwilioAccount.query.filter_by(company_id=world["co_a"]).one()
+        ta._account_sid = "ACtest"; ta._auth_token = "auth"; ta.automation_enabled = True; ta.after_hours_sms_enabled = True
+        pn = TwilioPhoneNumber(company_id=world["co_a"], twilio_account_id=ta.id, phone_number="+15550005555", sms_enabled=True, is_active=True, auto_reply_enabled=True, after_hours_sms_enabled=True, after_hours_text=required, business_hours={str(i): {"is_open": True, "open": "14:00", "close": "02:00"} for i in range(7)}, timezone="America/New_York")
+        db.session.add(pn); db.session.commit()
+    monkeypatch.setattr(twilio_sms, "_validate_twilio_signature", lambda *a, **k: True)
+    monkeypatch.setattr(twilio_sms, "_is_business_hours", lambda *a, **k: False)
+    monkeypatch.setattr(twilio_sms, "_build_client", lambda ta: object())
+    resp = client.post("/twilio/sms/inbound", data={"From": "+15551112222", "To": "+15550005555", "Body": "hello", "MessageSid": "SMINAH1"})
+    assert resp.status_code == 200
+    with app.app_context():
+        conv = TwilioConversation.query.filter_by(company_id=world["co_a"], from_number="+15551112222").one()
+        inbound = TwilioMessage.query.filter_by(conversation_id=conv.id, direction="inbound").one()
+        outbound = TwilioMessage.query.filter_by(conversation_id=conv.id, direction="outbound", is_auto_reply=True).one()
+        assert inbound.auto_responded is True
+        assert outbound.body == required
+        assert outbound.to_number == "+15551112222"
+
+
+def test_stop_opt_out_does_not_receive_after_hours_auto_reply(app, client, world, monkeypatch):
+    import twilio_sms
+    with app.app_context():
+        ta = TwilioAccount.query.filter_by(company_id=world["co_a"]).one()
+        ta._account_sid = "ACtest"; ta._auth_token = "auth"; ta.automation_enabled = True; ta.after_hours_sms_enabled = True
+        db.session.add(TwilioPhoneNumber(company_id=world["co_a"], twilio_account_id=ta.id, phone_number="+15550006666", sms_enabled=True, is_active=True, after_hours_sms_enabled=True, after_hours_text="closed")); db.session.commit()
+    monkeypatch.setattr(twilio_sms, "_validate_twilio_signature", lambda *a, **k: True)
+    resp = client.post("/twilio/sms/inbound", data={"From": "+15551113333", "To": "+15550006666", "Body": "STOP", "MessageSid": "SMSTOP1"})
+    assert resp.status_code == 200
+    with app.app_context():
+        conv = TwilioConversation.query.filter_by(company_id=world["co_a"], from_number="+15551113333").one()
+        assert conv.is_opted_out is True
+        assert TwilioMessage.query.filter_by(conversation_id=conv.id, direction="outbound", is_auto_reply=True).count() == 0

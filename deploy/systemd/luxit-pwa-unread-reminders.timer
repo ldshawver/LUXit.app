@@ -1,0 +1,11 @@
+[Unit]
+Description=Run LUXit PWA unread SMS reminders every minute
+
+[Timer]
+OnBootSec=60
+OnUnitActiveSec=60
+AccuracySec=1s
+Unit=luxit-pwa-unread-reminders.service
+
+[Install]
+WantedBy=timers.target

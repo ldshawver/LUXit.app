@@ -207,6 +207,7 @@ class User(UserMixin, db.Model):
     pwa_unread_reminder_alerts_enabled = db.Column(db.Boolean, default=True)
     pwa_vibration_enabled = db.Column(db.Boolean, default=True)
     pwa_alerts_business_hours_only = db.Column(db.Boolean, default=True)
+    pwa_after_hours_push_enabled = db.Column(db.Boolean, default=False)
     pwa_quiet_hours_start = db.Column(db.String(5), nullable=True)
     pwa_quiet_hours_end = db.Column(db.String(5), nullable=True)
     pwa_unread_repeat_minutes = db.Column(db.Integer, default=1)
@@ -2960,7 +2961,7 @@ class TwilioAccount(db.Model):
     ai_mode              = db.Column(db.String(20), default="off")   # off | assist | auto
     ai_system_prompt     = db.Column(db.Text)
     missed_call_text     = db.Column(db.Text, default="Sorry we missed your call! Reply to schedule a callback.")
-    after_hours_text     = db.Column(db.Text, default="Thanks for reaching out. We’re currently closed, but your message has been received. A team member will reply as soon as we’re back during business hours. Reply STOP to opt out.")
+    after_hours_text     = db.Column(db.Text, default="Thanks for reaching out. Our business hours are daily from 2 PM to 2 AM. We’ll respond as soon as we’re back online.")
     after_hours_cooldown_minutes = db.Column(db.Integer, default=720, server_default="720")
     sms_forward_to       = db.Column(db.String(20))   # Forward all inbound SMS to this number
     call_forward_to      = db.Column(db.String(20))   # Forward all inbound calls to this number
@@ -3080,6 +3081,7 @@ class TwilioMessage(db.Model):
     num_segments    = db.Column(db.Integer, default=1)
     media_urls      = db.Column(JSON)
     is_auto_reply   = db.Column(db.Boolean, default=False)
+    auto_responded  = db.Column(db.Boolean, default=False)
     rule_id         = db.Column(db.Integer, db.ForeignKey("auto_reply_rule.id"), nullable=True)
     error_code      = db.Column(db.String(20))
     error_message   = db.Column(db.Text)
@@ -3709,6 +3711,7 @@ class TwilioPhoneNumber(db.Model):
     voicemail_greeting_audio_url  = db.Column(db.String(500))
     missed_call_text              = db.Column(db.Text)
     after_hours_text              = db.Column(db.Text)
+    after_hours_cooldown_minutes  = db.Column(db.Integer, default=720, server_default="720")
     after_hours_sms_enabled       = db.Column(db.Boolean, default=True)
     after_hours_voicemail_enabled = db.Column(db.Boolean, default=True)
 
