@@ -331,6 +331,16 @@ def create_app() -> Flask:
             response.headers["Pragma"] = "no-cache"
             response.headers["Expires"] = "0"
 
+        try:
+            from services.api_json_guard import should_warn_api_non_json
+            if should_warn_api_non_json(request.path, response.status_code, response.mimetype):
+                logging.warning(
+                    "[API JSON guard] Non-JSON response sent path=%s status=%s mimetype=%s",
+                    request.path, response.status_code, response.mimetype
+                )
+        except Exception:
+            pass
+
         return response
 
     # --------------------------------------------------------
@@ -436,6 +446,23 @@ def create_app() -> Flask:
         import models  # noqa
 
         db.create_all()
+
+        # Documenso startup validation: never prints key/secret values.
+        try:
+            from services.documenso_service import validate_documenso_startup
+            _documenso_cfg = validate_documenso_startup()
+            if _documenso_cfg.api_key_present:
+                logging.info("[Documenso] API key present; send-for-signature enabled.")
+            else:
+                logging.warning("[Documenso] DOCUMENSO_API_KEY missing; send-for-signature disabled.")
+            if _documenso_cfg.webhook_secret_present:
+                logging.info("[Documenso] Webhook secret present; incoming events will be verified.")
+            else:
+                logging.warning("[Documenso] DOCUMENSO_WEBHOOK_SECRET missing; incoming events are unverified until configured.")
+        except Exception as _documenso_exc:
+            logging.error("[Documenso] Startup validation failed: %s", _documenso_exc)
+            if os.environ.get("DOCUMENSO_REQUIRED", "").lower() in {"1", "true", "yes"}:
+                raise
 
         # Self-heal guard: ensure at least one company exists and users are linked.
         # This prevents post-sync "no company" outages when ops scripts were skipped.
