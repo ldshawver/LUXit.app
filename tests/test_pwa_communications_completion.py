@@ -112,8 +112,8 @@ def test_push_subscription_and_notifications_are_permission_scoped(pwa_app, monk
         conv = TwilioConversation(company_id=ids["company"], phone_number_id=ids["line"], from_number="+14155551212", to_number="+15550001000", contact_name="John Smith")
         db.session.add(conv); db.session.commit()
         inbox_pwa._fire_push_notification(ids["company"], conv, "Hello")
-        assert Notification.query.filter_by(user_id=ids["staff"], event_type="inbound_sms").count() == 1
-        assert Notification.query.filter_by(user_id=ids["denied"], event_type="inbound_sms").count() == 0
+        assert Notification.query.filter_by(user_id=ids["staff"], event_type="incoming_sms").count() == 1
+        assert Notification.query.filter_by(user_id=ids["denied"], event_type="incoming_sms").count() == 0
         assert ids["staff"] in sent["payload"]["user_ids"]
         assert ids["denied"] not in sent["payload"]["user_ids"]
         inbox_pwa.create_pwa_notification(ids["company"], event_type="voicemail", title="New voicemail", body="Voicemail", phone_number_id=ids["line"], link="/app/calls")
@@ -128,6 +128,7 @@ def test_pwa_static_assets_support_unified_theme_voicemail_and_push_behaviors():
     assert "--pwa-primary" in calls and "pwa-card" in calls and "voicemail/audio" in calls
     assert "Play Voicemail" in calls and "Call Recording" in calls
     assert "self.addEventListener('push'" in sw
+    assert "self.registration.setAppBadge" in sw and "self.registration.clearAppBadge" in sw
     assert "notificationclick" in sw and "clients.openWindow" in sw
     assert "function playSound" in index and "notificationSoundsEnabled" in index
     assert "vibrate" in index and "EventSource('/api/inbox/stream')" in index
@@ -315,7 +316,7 @@ def test_unread_reminders_obey_business_hours_and_stop_conditions(pwa_app, monke
         assert sent and sent[0]["event_type"] == "unread_message_reminder"
 
 
-def test_after_hours_sms_push_is_silent_and_requires_after_hours_opt_in(pwa_app, monkeypatch):
+def test_after_hours_sms_push_is_not_silent_and_defers_skip_decision_to_user_preferences(pwa_app, monkeypatch):
     app, _client, ids = pwa_app
     import inbox_pwa
     with app.app_context():
@@ -328,12 +329,9 @@ def test_after_hours_sms_push_is_silent_and_requires_after_hours_opt_in(pwa_app,
         sent = []
         monkeypatch.setattr(inbox_pwa, "send_pwa_push_notification", lambda company_id, **kw: sent.append(kw) or {"sent": len(kw.get("user_ids", [])), "errors": []})
         inbox_pwa._fire_push_notification(ids["company"], conv, "after hours", silent=None)
-        assert sent[-1]["silent"] is True
-        assert ids["staff"] not in sent[-1]["user_ids"]
-        user.pwa_after_hours_push_enabled = True
-        db.session.commit()
-        inbox_pwa._fire_push_notification(ids["company"], conv, "after hours", silent=None)
-        assert sent[-1]["silent"] is True
+        assert sent[-1]["silent"] is False
+        assert sent[-1]["event_type"] == "incoming_sms"
+        assert sent[-1]["in_business_hours"] is False
         assert ids["staff"] in sent[-1]["user_ids"]
 
 
@@ -343,8 +341,10 @@ def test_service_worker_and_in_app_alerts_honor_silent_sound_vibration_flags():
     assert "if (!data.silent)" in index
     assert "vibrateIfEnabled([80, 40, 80])" in index
     assert "playSound('sms-'" in index
+    assert "navigator.setAppBadge" in index and "navigator.clearAppBadge" in index
     assert "silent:  data.silent === true" in sw
-    assert "vibrate: data.vibrate || [80, 40, 80]" in sw
+    assert "renotify: data.renotify !== false" in sw
+    assert "vibrate: data.silent === true ? [] : (data.vibrate || [200, 100, 200])" in sw
 
 
 def test_call_missed_voicemail_and_reminder_notifications_emit_push_and_sse(pwa_app, monkeypatch):
@@ -382,3 +382,53 @@ def test_unread_reminder_stops_for_resolved_or_closed_tags(pwa_app, monkeypatch)
         result = inbox_pwa.create_unread_message_reminders()
         assert result["created"] == 0
         assert Notification.query.filter_by(event_type="unread_message_reminder").count() == 0
+
+def test_pwa_badge_count_endpoint_is_user_and_company_scoped(pwa_app):
+    app, client, ids = pwa_app
+    with app.app_context():
+        conv = TwilioConversation(company_id=ids["company"], phone_number_id=ids["line"], from_number="+14155550001", to_number="+15550001000", is_read=False, last_message_preview="Unread")
+        hidden_conv = TwilioConversation(company_id=ids["company"], phone_number_id=ids["other_line"], from_number="+14155550002", to_number="+15550002000", is_read=False, last_message_preview="Hidden")
+        call = TwilioCallLog(company_id=ids["company"], phone_number_id=ids["line"], twilio_sid="CAmissed", direction="inbound", from_number="+14155550003", to_number="+15550001000", status="missed", is_read=False)
+        vm_call = TwilioCallLog(company_id=ids["company"], phone_number_id=ids["line"], twilio_sid="CAvoice", direction="inbound", from_number="+14155550004", to_number="+15550001000", status="voicemail", is_read=False)
+        db.session.add_all([conv, hidden_conv, call, vm_call]); db.session.flush()
+        vm = VoiceVoicemailMessage(company_id=ids["company"], call_log_id=vm_call.id, phone_number_id=ids["line"], recording_url="https://example.test/vm.mp3", is_read=False)
+        note = Notification(user_id=ids["staff"], company_id=ids["company"], event_type="missed_call", title="Pending", message="Pending", is_read=False)
+        db.session.add_all([vm, note]); db.session.commit()
+        call_id = call.id
+        conv_id = conv.id
+    login(client, ids["staff"])
+    data = client.get("/api/pwa/badge-count").get_json()
+    assert data == {"count": 4, "smsUnread": 1, "missedCalls": 1, "voicemails": 1, "notifications": 1}
+    client.patch(f"/api/inbox/conversations/{conv_id}/read", json={"is_read": True})
+    client.post(f"/api/calls/{call_id}/mark-read")
+    data = client.get("/api/pwa/badge-count").get_json()
+    assert data["smsUnread"] == 0
+    assert data["missedCalls"] == 0
+    assert data["count"] == 2
+
+
+def test_push_payload_non_silent_vibration_badge_and_quiet_hours(pwa_app, monkeypatch):
+    app, _client, ids = pwa_app
+    import inbox_pwa
+    with app.app_context():
+        user = db.session.get(User, ids["staff"])
+        db.session.add(PushSubscription(user_id=ids["staff"], company_id=ids["company"], endpoint="https://push.example/sub/ios", p256dh="p", auth_key="a", is_active=True))
+        db.session.add(TwilioConversation(company_id=ids["company"], phone_number_id=ids["line"], from_number="+14155550005", to_number="+15550001000", is_read=False))
+        db.session.commit()
+        payloads = []
+        monkeypatch.setattr(inbox_pwa, "_send_web_push_to_subscriptions", lambda subs, payload: payloads.append(payload) or {"sent": len(subs), "errors": []})
+        inbox_pwa.send_pwa_push_notification(ids["company"], user_ids=[ids["staff"]], title="SMS", body="Body", event_type="incoming_sms", phone_number_id=ids["line"])
+        assert payloads[-1]["silent"] is False
+        assert payloads[-1]["vibrate"] == [200, 100, 200]
+        assert payloads[-1]["renotify"] is True
+        assert payloads[-1]["data"]["badgeCount"] >= 1
+        user.pwa_vibration_enabled = False
+        db.session.commit()
+        inbox_pwa.send_pwa_push_notification(ids["company"], user_ids=[ids["staff"]], title="iOS", body="Body", event_type="missed_call", phone_number_id=ids["line"])
+        assert payloads[-1]["silent"] is False
+        assert payloads[-1]["vibrate"] == []
+        user.pwa_quiet_hours_start = "00:00"
+        user.pwa_quiet_hours_end = "23:59"
+        db.session.commit()
+        inbox_pwa.send_pwa_push_notification(ids["company"], user_ids=[ids["staff"]], title="Quiet", body="Body", event_type="voicemail", phone_number_id=ids["line"])
+        assert payloads[-1]["silent"] is True

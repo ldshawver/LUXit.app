@@ -44,19 +44,32 @@ self.addEventListener('fetch', e => {
 self.addEventListener('push', e => {
   let data = { title: 'LUXit Inbox', body: 'New message', url: '/app/inbox' };
   try { data = e.data ? e.data.json() : data; } catch {}
+  const badgeCount = data.badgeCount ?? (data.data && data.data.badgeCount);
+  const updateBadge = () => {
+    if (!self.registration.setAppBadge && !self.registration.clearAppBadge) return Promise.resolve();
+    if (!Number.isFinite(Number(badgeCount)) || Number(badgeCount) <= 0) {
+      return self.registration.clearAppBadge ? self.registration.clearAppBadge() : Promise.resolve();
+    }
+    return self.registration.setAppBadge ? self.registration.setAppBadge(Number(badgeCount)) : Promise.resolve();
+  };
   e.waitUntil(
-    self.registration.showNotification(data.title, {
+    Promise.all([
+      updateBadge(),
+      self.registration.showNotification(data.title, {
       body:    data.body,
       icon:    data.icon || '/static/favicon.png',
       badge:   data.badge || '/static/favicon.png',
       tag:     data.tag || 'luxit-inbox',
       data:    Object.assign({ url: data.url || '/app/inbox' }, data.data || {}),
-      vibrate: data.vibrate || [80, 40, 80],
+      renotify: data.renotify !== false,
+      requireInteraction: data.requireInteraction === true,
+      vibrate: data.silent === true ? [] : (data.vibrate || [200, 100, 200]),
       silent:  data.silent === true,
-      // Browsers/OSes may ignore custom push sounds; foreground sounds are handled in-app.
-      sound:   data.sound,
-      actions: [{ action: 'open', title: 'Open Inbox' }],
-    })
+      // Android Chrome/PWA uses the app/channel default sound when silent is false.
+      sound:   data.sound || 'default',
+        actions: [{ action: 'open', title: 'Open Inbox' }],
+      })
+    ])
   );
 });
 

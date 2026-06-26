@@ -1364,7 +1364,7 @@ def inbound_sms():
                 in_business_for_alert = _is_business_hours(ta.company_id, phone_config=ta)
             except Exception:
                 in_business_for_alert = True
-            alert_silent = (not in_business_for_alert) or bool(auto_reply_sent)
+            alert_silent = False
             _push_sse_event(ta.company_id, "new_message", {
                 "conversation_id":      conv.id,
                 "from_number":          from_number,

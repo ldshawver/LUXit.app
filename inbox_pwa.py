@@ -1819,6 +1819,65 @@ def unread_count():
 
 
 
+
+def _pwa_badge_counts_for(user, company):
+    """Tenant- and user-scoped communication badge counts for installed PWAs."""
+    from models import Notification, TwilioCallLog, TwilioConversation, VoiceVoicemailMessage
+    from services.comms_permissions import filter_calls_for_user, filter_conversations_for_user
+
+    sms_unread = filter_conversations_for_user(
+        TwilioConversation.query.filter_by(company_id=company.id, is_read=False),
+        user, company.id,
+    ).all()
+    sms_unread = [c for c in sms_unread if not _is_archived_conversation(c)]
+
+    missed_calls = filter_calls_for_user(
+        TwilioCallLog.query.filter_by(company_id=company.id, direction="inbound", is_read=False, is_archived=False),
+        user, company.id,
+    ).filter(TwilioCallLog.status.in_(["missed", "no-answer", "busy", "failed"])).count()
+
+    voicemails = VoiceVoicemailMessage.query.filter_by(
+        company_id=company.id,
+        is_read=False,
+        is_deleted=False,
+    )
+    try:
+        from models import TwilioPhoneNumber
+        accessible_numbers = _accessible_numbers_for(user, company.id)
+        accessible_ids = [pn.id for pn in TwilioPhoneNumber.query.filter(TwilioPhoneNumber.company_id == company.id, TwilioPhoneNumber.phone_number.in_(accessible_numbers or ["__none__"])).all()]
+        if accessible_ids:
+            voicemails = voicemails.filter(db.or_(VoiceVoicemailMessage.phone_number_id.is_(None), VoiceVoicemailMessage.phone_number_id.in_(accessible_ids)))
+    except Exception:
+        pass
+    voicemails = voicemails.count()
+
+    notifications = Notification.query.filter_by(
+        user_id=user.id,
+        company_id=company.id,
+        is_read=False,
+    ).count()
+
+    total = len(sms_unread) + missed_calls + voicemails + notifications
+    return {
+        "count": total,
+        "smsUnread": len(sms_unread),
+        "missedCalls": missed_calls,
+        "voicemails": voicemails,
+        "notifications": notifications,
+    }
+
+
+@inbox_pwa_bp.route("/api/pwa/badge-count")
+def pwa_badge_count():
+    user = _require_auth()
+    company = _get_company(user)
+    if not company:
+        return jsonify({"count": 0, "smsUnread": 0, "missedCalls": 0, "voicemails": 0, "notifications": 0})
+    denied = _require_mobile_inbox_api_access(user, company)
+    if denied:
+        return denied
+    return jsonify(_pwa_badge_counts_for(user, company))
+
 # ── API: PWA notification center ─────────────────────────────────────────────
 
 def _notification_to_dict(row):
@@ -1862,8 +1921,8 @@ def _authorized_notification_users(company_id: int, phone_number_id=None):
 
 def _event_allowed_for_user(user, event_type: str) -> bool:
     event_type = (event_type or "").lower()
-    if event_type in {"inbound_sms", "new_message", "unread_message_reminder"}:
-        attr = "pwa_unread_reminder_alerts_enabled" if event_type == "unread_message_reminder" else "pwa_text_alerts_enabled"
+    if event_type in {"inbound_sms", "incoming_sms", "new_message", "unread_message_reminder", "unread_reminder"}:
+        attr = "pwa_unread_reminder_alerts_enabled" if event_type in {"unread_message_reminder", "unread_reminder"} else "pwa_text_alerts_enabled"
     elif event_type in {"incoming_call", "missed_call", "call"}:
         attr = "pwa_call_alerts_enabled"
     elif event_type in {"voicemail", "new_voicemail"}:
@@ -1872,6 +1931,58 @@ def _event_allowed_for_user(user, event_type: str) -> bool:
         attr = None
     return True if not attr else getattr(user, attr, True) is not False
 
+
+
+def _canonical_push_event_type(event_type: str) -> str:
+    aliases = {
+        "inbound_sms": "incoming_sms",
+        "new_message": "incoming_sms",
+        "unread_message_reminder": "unread_reminder",
+        "new_voicemail": "voicemail",
+        "call": "missed_call",
+    }
+    return aliases.get((event_type or "notification").lower(), (event_type or "notification").lower())
+
+
+def _hm_to_minutes(value):
+    try:
+        hour, minute = [int(part) for part in (value or "").split(":", 1)]
+        if 0 <= hour <= 23 and 0 <= minute <= 59:
+            return hour * 60 + minute
+    except Exception:
+        return None
+    return None
+
+
+def _now_in_user_quiet_hours(user, now=None) -> bool:
+    start = _hm_to_minutes(getattr(user, "pwa_quiet_hours_start", None))
+    end = _hm_to_minutes(getattr(user, "pwa_quiet_hours_end", None))
+    if start is None or end is None or start == end:
+        return False
+    now = now or datetime.now()
+    current = now.hour * 60 + now.minute
+    return start <= current < end if start < end else (current >= start or current < end)
+
+
+def _push_debug_decision(user, event_type: str, *, requested_silent: bool, in_business_hours=True):
+    canonical = _canonical_push_event_type(event_type)
+    if not _event_allowed_for_user(user, event_type) and not _event_allowed_for_user(user, canonical):
+        return {"send": False, "reason": "user_alert_preference_disabled", "event_type": canonical}
+    if getattr(user, "pwa_alerts_business_hours_only", True) is not False and in_business_hours is False and getattr(user, "pwa_after_hours_push_enabled", False) is not True:
+        return {"send": False, "reason": "outside_business_hours_and_after_hours_push_disabled", "event_type": canonical}
+    quiet = _now_in_user_quiet_hours(user)
+    sound_enabled = getattr(user, "notification_sounds_enabled", True) is not False
+    silent = bool(requested_silent or quiet or not sound_enabled)
+    vibration_enabled = getattr(user, "pwa_vibration_enabled", True) is not False
+    return {
+        "send": True,
+        "reason": "quiet_hours" if quiet else ("sound_preference_disabled" if not sound_enabled else "alert_enabled"),
+        "event_type": canonical,
+        "silent": silent,
+        "vibrate": [200, 100, 200] if (vibration_enabled and not silent) else [],
+        "sound": None if silent else "default",
+        "renotify": True,
+    }
 
 def _notification_payload_preferences(user, *, silent: bool = False):
     return {
@@ -1998,27 +2109,79 @@ def _send_web_push_to_subscriptions(subscriptions, payload: dict):
     db.session.commit()
     return {"sent": sent, "errors": errors}
 
-def send_pwa_push_notification(company_id: int, *, user_ids, title: str, body: str, link: str = "/app/inbox", tag: str = "luxit-inbox", event_type: str = "notification", phone_number_id=None, silent: bool = False):
+def send_pwa_push_notification(company_id: int, *, user_ids, title: str, body: str, link: str = "/app/inbox", tag: str = "luxit-inbox", event_type: str = "notification", phone_number_id=None, silent: bool = False, in_business_hours=True):
     """Internal tenant-scoped push helper for notifications already permission-filtered by caller."""
-    from models import PushSubscription
-    from models import User
+    from models import PushSubscription, User
     ids = [int(uid) for uid in (user_ids or [])]
-    if ids:
-        users = User.query.filter(User.id.in_(ids)).all()
-        ids = [u.id for u in users if _event_allowed_for_user(u, event_type)]
     if not ids:
-        return {"sent": 0, "errors": []}
-    subs = PushSubscription.query.filter(
-        PushSubscription.company_id == company_id,
-        PushSubscription.user_id.in_(ids),
-        PushSubscription.is_active.is_(True),
-    ).all()
-    return _send_web_push_to_subscriptions(subs, {
-        "title": title, "body": body, "url": link, "tag": tag, "eventType": event_type,
-        "icon": "/static/favicon.png", "badge": "/static/favicon.png", "sound": None if silent else "default",
-        "silent": bool(silent), "vibrate": [] if silent else [80, 40, 80],
-        "data": {"company_id": company_id, "phone_number_id": phone_number_id, "event_type": event_type, "silent": bool(silent)},
-    })
+        return {"sent": 0, "errors": [], "debug": []}
+
+    users = User.query.filter(User.id.in_(ids)).all()
+    total = 0
+    errors = []
+    debug = []
+    for user in users:
+        decision = _push_debug_decision(user, event_type, requested_silent=silent, in_business_hours=in_business_hours)
+        decision.update({"user_id": user.id})
+        debug.append(decision)
+        if not decision.get("send"):
+            continue
+        subs = PushSubscription.query.filter_by(
+            company_id=company_id,
+            user_id=user.id,
+            is_active=True,
+        ).all()
+        decision["active_subscriptions"] = len(subs)
+        try:
+            from models import Company
+            company = db.session.get(Company, company_id)
+            badge_count = _pwa_badge_counts_for(user, company)["count"] if company else None
+        except Exception:
+            badge_count = None
+        payload = {
+            "title": title,
+            "body": body,
+            "url": link,
+            "tag": tag,
+            "renotify": True,
+            "requireInteraction": False,
+            "eventType": decision["event_type"],
+            "icon": "/static/icons/icon-192.png",
+            "badge": "/static/icons/badge-72.png",
+            "sound": decision["sound"],
+            "silent": bool(decision["silent"]),
+            "vibrate": decision["vibrate"],
+            "data": {
+                "company_id": company_id,
+                "phone_number_id": phone_number_id,
+                "event_type": decision["event_type"],
+                "silent": bool(decision["silent"]),
+                "debug_reason": decision["reason"],
+                "badgeCount": badge_count,
+            },
+            "badgeCount": badge_count,
+        }
+        result = _send_web_push_to_subscriptions(subs, payload)
+        total += result.get("sent", 0)
+        errors.extend(result.get("errors", []))
+    return {"sent": total, "errors": errors, "debug": debug}
+
+
+@inbox_pwa_bp.route("/api/pwa/push/debug")
+def pwa_push_debug():
+    """Explain whether the current user's next PWA push would alert, vibrate, or be skipped."""
+    user = _require_auth()
+    company = _require_company(user)
+    denied = _require_mobile_inbox_api_access(user, company)
+    if denied:
+        return denied
+    event_type = request.args.get("event_type") or "incoming_sms"
+    in_business = str(request.args.get("in_business_hours", "1")).lower() not in {"0", "false", "no"}
+    decision = _push_debug_decision(user, event_type, requested_silent=False, in_business_hours=in_business)
+    from models import PushSubscription
+    active_subscriptions = PushSubscription.query.filter_by(company_id=company.id, user_id=user.id, is_active=True).count()
+    return jsonify({"success": True, "active_subscription": active_subscriptions > 0, "active_subscriptions": active_subscriptions, "decision": decision})
+
 
 # ── API: Push notification subscribe ─────────────────────────────────────────
 
@@ -2127,6 +2290,11 @@ def push_test():
         "icon": "/static/favicon.png",
         "badge": "/static/favicon.png",
         "sound": "default",
+        "silent": False,
+        "vibrate": [200, 100, 200],
+        "renotify": True,
+        "requireInteraction": False,
+        "data": {"event_type": "push_test", "silent": False},
     })
     sent = result["sent"]
     errors = result["errors"]
@@ -2517,7 +2685,7 @@ def _fire_push_notification(company_id: int, conv, message_body: str, *, silent:
     link = f"/app/inbox?conv={conv.id}"
     _create_notification_records(
         company_id,
-        event_type="inbound_sms",
+        event_type="incoming_sms",
         title=title,
         notification_body=notification_body,
         link=link,
@@ -2527,9 +2695,7 @@ def _fire_push_notification(company_id: int, conv, message_body: str, *, silent:
 
     allowed_user_ids = [u.id for u in _authorized_notification_users(company_id, phone_number_id)]
     in_business = _conversation_in_business_hours(conv)
-    silent = (not in_business) if silent is None else bool(silent)
-    if silent:
-        allowed_user_ids = [u.id for u in _authorized_notification_users(company_id, phone_number_id) if getattr(u, "pwa_after_hours_push_enabled", False) is True]
+    silent = False if silent is None else bool(silent)
     send_pwa_push_notification(
         company_id,
         user_ids=allowed_user_ids,
@@ -2537,9 +2703,10 @@ def _fire_push_notification(company_id: int, conv, message_body: str, *, silent:
         body=notification_body,
         link=link,
         tag=f"sms-{conv.id}",
-        event_type="inbound_sms",
+        event_type="incoming_sms",
         phone_number_id=phone_number_id,
         silent=silent,
+        in_business_hours=in_business,
     )
 
 
