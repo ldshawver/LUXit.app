@@ -847,7 +847,7 @@
         <div class="settings-account-sub">{{ user.email or '' }}</div>
       </div>
     </div>
-    <a href="/logout" class="settings-action-btn settings-signout">
+    <a href="/logout" class="settings-action-btn settings-signout" onclick="updateAppBadge(0)">
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
       Sign Out
     </a>
@@ -1382,8 +1382,9 @@ function handleSSEEvent(data) {
       ci.classList.add('new-flash');
     }
 
-    // Refresh conversations list
+    // Refresh conversations list and app badge
     loadConversations();
+    loadBadgeCounts();
 
     // If we're in this conversation, append the message immediately
     if (state.activeConvId === data.conversation_id) {
@@ -1484,6 +1485,7 @@ async function loadConversations() {
   renderConvList(state.conversations, data);
   cacheConversations(state.conversations);
   updateUnreadBadge(data.unread_count);
+  loadBadgeCounts();
 }
 
 function mergeConversations(current, incoming) {
@@ -2044,17 +2046,26 @@ async function refreshApp() {
   }
 }
 
-/* ── Badge counts (missed calls + voicemail) ───────────────────── */
+/* ── PWA app badge counts ─────────────────────────────────────── */
+async function updateAppBadge(count) {
+  try {
+    const n = Number(count || 0);
+    if (n > 0 && 'setAppBadge' in navigator) await navigator.setAppBadge(n);
+    else if (n <= 0 && 'clearAppBadge' in navigator) await navigator.clearAppBadge();
+  } catch (e) {}
+}
+
 async function loadBadgeCounts() {
   try {
-    const data = await apiFetch('/api/inbox/badge-counts');
+    const data = await apiFetch('/api/pwa/badge-count');
     if (!data) return;
-    const mc = data.missed_calls || 0;
-    const vm = data.voicemails   || 0;
+    const mc = data.missedCalls || 0;
+    const vm = data.voicemails  || 0;
     const mcBadge = document.getElementById('missedCallsBadge');
     const vmBadge = document.getElementById('vmBadge');
     if (mcBadge) { mcBadge.textContent = mc; mcBadge.style.display = mc > 0 ? 'flex' : 'none'; }
     if (vmBadge) { vmBadge.textContent = vm; vmBadge.style.display = vm > 0 ? 'flex' : 'none'; }
+    await updateAppBadge(data.count || 0);
   } catch (e) {}
 }
 
@@ -2161,6 +2172,7 @@ async function markCurrentRead(isRead = true) {
     renderConvList(state.conversations);
     toast(isRead ? 'Marked as read.' : 'Marked as unread.');
     loadConversations();
+    loadBadgeCounts();
   }
 }
 
