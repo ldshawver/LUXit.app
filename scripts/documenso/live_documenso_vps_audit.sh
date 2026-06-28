@@ -5,6 +5,11 @@ CONTRACT_ID="${CONTRACT_ID:-735551c2-ec6c-41e6-976d-1eef4e13bfa5}"
 BROKEN_PATH="/app/contractor-hub/contracts/"
 DOCUMENSO_PUBLIC_URL="${DOCUMENSO_PUBLIC_URL:-${DOCUMENSO_BASE_URL:-https://document.luxit.app}}"
 OUT_DIR="${OUT_DIR:-./documenso-live-audit-$(date -u +%Y%m%dT%H%M%SZ)}"
+MYPAYLINK_PRODUCTION_URL="${MYPAYLINK_PRODUCTION_URL:-https://app.mypaylink.app}"
+MYPAYLINK_WEBHOOK_PATH_RE="${MYPAYLINK_WEBHOOK_PATH_RE:-/api/(documenso|webhooks/documenso|contracts/documenso)}"
+SIGNER_EMAILS_CSV="${SIGNER_EMAILS_CSV:-luke@adiken.com,hexxicjunk@gmail.com}"
+SIGNER_NAMES_CSV="${SIGNER_NAMES_CSV:-Luke Shawver,Marek Hastings}"
+AFFECTED_DOCUMENSO_DOCUMENT_ID="${AFFECTED_DOCUMENSO_DOCUMENT_ID:-}"
 mkdir -p "$OUT_DIR"
 
 log() { printf '\n== %s ==\n' "$*" | tee -a "$OUT_DIR/summary.txt"; }
@@ -29,6 +34,11 @@ log "audit_context"
 {
   echo "contract_id=$CONTRACT_ID"
   echo "documenso_public_url=$DOCUMENSO_PUBLIC_URL"
+  echo "mypaylink_production_url=$MYPAYLINK_PRODUCTION_URL"
+  echo "mypaylink_webhook_path_re=$MYPAYLINK_WEBHOOK_PATH_RE"
+  echo "signer_emails_csv=$SIGNER_EMAILS_CSV"
+  echo "signer_names_csv=$SIGNER_NAMES_CSV"
+  echo "affected_documenso_document_id=${AFFECTED_DOCUMENSO_DOCUMENT_ID:-<not-provided>}"
   date -u '+utc=%Y-%m-%dT%H:%M:%SZ'
   uname -a || true
 } | tee -a "$OUT_DIR/summary.txt"
@@ -57,7 +67,7 @@ while IFS= read -r container; do
 
   docker inspect "$container" --format '{{range .Config.Env}}{{println .}}{{end}}' \
     | sort \
-    | grep -E '^(APP_URL|NEXT_PUBLIC_WEBAPP_URL|NEXTAUTH_URL|WEBAPP_URL|DOCUMENSO_|MAIL_|SMTP_|WEBHOOK_|API_|NEXT_PUBLIC_|PUBLIC_)=' \
+    | grep -E '^(APP_URL|NEXT_PUBLIC_WEBAPP_URL|NEXTAUTH_URL|WEBAPP_URL|DOCUMENSO_|MYPAYLINK_|MAIL_|SMTP_|WEBHOOK_|API_|NEXT_PUBLIC_|PUBLIC_)=' \
     | redact_env > "$OUT_DIR/${safe_name}_runtime_env.redacted.txt" || true
   sed -n '1,200p' "$OUT_DIR/${safe_name}_runtime_env.redacted.txt" | tee -a "$OUT_DIR/summary.txt"
 
@@ -119,10 +129,116 @@ SQL
   docker cp "$OUT_DIR/${pg_safe}_search.sql" "$pg_container:/tmp/luxit_documenso_search.sql" >/dev/null 2>&1 || true
   run "${pg_safe}_contract_metadata_search" docker exec "$pg_container" psql -U "$pg_user" -d "$pg_db" -v ON_ERROR_STOP=1 -f /tmp/luxit_documenso_search.sql
   run "${pg_safe}_candidate_document_rows" docker exec "$pg_container" psql -U "$pg_user" -d "$pg_db" -v ON_ERROR_STOP=1 -Atc "select 'documents table exists: '||to_regclass('public.Document')::text union all select 'documents lowercase exists: '||to_regclass('public.document')::text union all select 'recipients exists: '||to_regclass('public.Recipient')::text union all select 'webhooks exists: '||to_regclass('public.Webhook')::text;"
+
+  # Read-only, schema-tolerant Documenso business-state snapshot for the
+  # affected Luke/Marek signing packet. These queries intentionally avoid
+  # selecting binary document contents and redact secrets/credentials.
+  cat > "$OUT_DIR/${pg_safe}_documenso_ticket.sql" <<SQL
+\pset pager off
+\pset tuples_only off
+\x on
+CREATE TEMP TABLE luxit_audit_input(key text, value text);
+INSERT INTO luxit_audit_input(key, value) VALUES
+  ('contract_id', '$CONTRACT_ID'),
+  ('document_id', '$AFFECTED_DOCUMENSO_DOCUMENT_ID'),
+  ('signer_emails_csv', '$SIGNER_EMAILS_CSV'),
+  ('signer_names_csv', '$SIGNER_NAMES_CSV'),
+  ('mypaylink_url', '$MYPAYLINK_PRODUCTION_URL'),
+  ('mypaylink_webhook_path_re', '$MYPAYLINK_WEBHOOK_PATH_RE');
+
+SELECT 'audit_inputs' AS section, * FROM luxit_audit_input;
+
+-- Candidate Documenso documents are found by explicit document id, contract id
+-- metadata, or affected signer emails/names. Output includes document id,
+-- status, completion timestamp columns when present, recipient ids/emails/status,
+-- webhook/event/delivery rows, and final-PDF-like asset rows if those tables are
+-- present in the installed Documenso version.
+DO $do$
+DECLARE
+  r record;
+  sql text;
+  needle text;
+BEGIN
+  CREATE TEMP TABLE luxit_documenso_ticket_rows(section text, source text, row_data jsonb);
+  CREATE TEMP TABLE luxit_documenso_candidate_documents(document_id text PRIMARY KEY);
+
+  FOR r IN
+    SELECT table_schema, table_name, column_name
+    FROM information_schema.columns
+    WHERE table_schema NOT IN ('pg_catalog','information_schema')
+      AND data_type IN ('text','character varying','character','json','jsonb','uuid','integer','bigint')
+  LOOP
+    FOREACH needle IN ARRAY ARRAY[
+      '$CONTRACT_ID',
+      '$AFFECTED_DOCUMENSO_DOCUMENT_ID',
+      'luke@adiken.com',
+      'hexxicjunk@gmail.com',
+      'Luke Shawver',
+      'Marek Hastings'
+    ] LOOP
+      IF needle IS NOT NULL AND needle <> '' THEN
+        sql := format('INSERT INTO luxit_documenso_ticket_rows(section, source, row_data) SELECT %L, %L, to_jsonb(t) FROM %I.%I t WHERE %I::text ILIKE %L LIMIT 25',
+          'candidate_match', r.table_schema||'.'||r.table_name||'.'||r.column_name, r.table_schema, r.table_name, r.column_name, '%'||needle||'%');
+        BEGIN EXECUTE sql; EXCEPTION WHEN OTHERS THEN NULL; END;
+      END IF;
+    END LOOP;
+  END LOOP;
+
+  -- Harvest likely document ids from candidate rows and known Documenso table names.
+  INSERT INTO luxit_documenso_candidate_documents(document_id)
+  SELECT DISTINCT COALESCE(row_data->>'documentId', row_data->>'document_id', row_data->>'id')
+  FROM luxit_documenso_ticket_rows
+  WHERE COALESCE(row_data->>'documentId', row_data->>'document_id', row_data->>'id') IS NOT NULL
+  ON CONFLICT DO NOTHING;
+
+  FOR r IN
+    SELECT table_schema, table_name
+    FROM information_schema.tables
+    WHERE table_schema NOT IN ('pg_catalog','information_schema')
+      AND table_name IN ('Document','documents','document')
+  LOOP
+    sql := format('INSERT INTO luxit_documenso_ticket_rows(section, source, row_data) SELECT %L, %L, to_jsonb(t) FROM %I.%I t WHERE t::text ILIKE ANY (ARRAY[%L,%L,%L,%L,%L,%L]) LIMIT 50',
+      'document_rows', r.table_schema||'.'||r.table_name, r.table_schema, r.table_name,
+      '%'||'$CONTRACT_ID'||'%', '%'||'$AFFECTED_DOCUMENSO_DOCUMENT_ID'||'%', '%luke@adiken.com%', '%hexxicjunk@gmail.com%', '%Luke Shawver%', '%Marek Hastings%');
+    BEGIN EXECUTE sql; EXCEPTION WHEN OTHERS THEN NULL; END;
+  END LOOP;
+
+  FOR r IN
+    SELECT table_schema, table_name
+    FROM information_schema.tables
+    WHERE table_schema NOT IN ('pg_catalog','information_schema')
+      AND table_name ~* '(Recipient|Signer|Document|Webhook|Event|Audit|Log|File|Asset|Attachment|Email|Mail)'
+  LOOP
+    sql := format('INSERT INTO luxit_documenso_ticket_rows(section, source, row_data) SELECT %L, %L, to_jsonb(t) FROM %I.%I t WHERE t::text ILIKE ANY (ARRAY[%L,%L,%L,%L,%L,%L]) LIMIT 100',
+      'related_rows', r.table_schema||'.'||r.table_name, r.table_schema, r.table_name,
+      '%'||'$CONTRACT_ID'||'%', '%'||'$AFFECTED_DOCUMENSO_DOCUMENT_ID'||'%', '%luke@adiken.com%', '%hexxicjunk@gmail.com%', '%Luke Shawver%', '%Marek Hastings%');
+    BEGIN EXECUTE sql; EXCEPTION WHEN OTHERS THEN NULL; END;
+  END LOOP;
+END
+$do$;
+
+SELECT section, source, row_data
+FROM luxit_documenso_ticket_rows
+ORDER BY section, source, row_data::text;
+
+SELECT 'webhook_endpoint_candidates' AS section, source, row_data
+FROM luxit_documenso_ticket_rows
+WHERE row_data::text ~* '(webhook|callback|url|endpoint)'
+  AND row_data::text ~* '(mypaylink|luxit|documenso)'
+ORDER BY source, row_data::text;
+
+SELECT 'event_support_candidates' AS section, source, row_data
+FROM luxit_documenso_ticket_rows
+WHERE row_data::text ~* '(recipient.*sign|document.*complete|declin|cancel|expire|webhook|event)'
+ORDER BY source, row_data::text;
+SQL
+  docker cp "$OUT_DIR/${pg_safe}_documenso_ticket.sql" "$pg_container:/tmp/luxit_documenso_ticket.sql" >/dev/null 2>&1 || true
+  run "${pg_safe}_documenso_ticket_snapshot" docker exec "$pg_container" psql -U "$pg_user" -d "$pg_db" -v ON_ERROR_STOP=1 -f /tmp/luxit_documenso_ticket.sql
+
 done < "$OUT_DIR/postgres_containers.txt"
 
-run compose_file_search sh -c "find / -name 'docker-compose*.yml' -o -name 'docker-compose*.yaml' -o -name 'compose*.yml' -o -name 'compose*.yaml' 2>/dev/null | xargs -r grep -nE 'APP_URL|NEXT_PUBLIC_WEBAPP_URL|NEXTAUTH_URL|WEBAPP_URL|DOCUMENSO_|WEBHOOK_|MAIL_|SMTP_|contractor-hub' | sed -E 's/(SECRET|TOKEN|KEY|PASSWORD|PASS|PRIVATE|AUTH|CREDENTIAL|SALT)=([^[:space:]]+)/\\1=<redacted>/Ig'"
-run env_file_search sh -c "find / -name '.env' -o -name '*.env' 2>/dev/null | xargs -r grep -nE 'APP_URL|NEXT_PUBLIC_WEBAPP_URL|NEXTAUTH_URL|WEBAPP_URL|DOCUMENSO_|WEBHOOK_|MAIL_|SMTP_|contractor-hub' | sed -E 's/(SECRET|TOKEN|KEY|PASSWORD|PASS|PRIVATE|AUTH|CREDENTIAL|SALT)=([^[:space:]]+)/\\1=<redacted>/Ig'"
+run compose_file_search sh -c "find / -name 'docker-compose*.yml' -o -name 'docker-compose*.yaml' -o -name 'compose*.yml' -o -name 'compose*.yaml' 2>/dev/null | xargs -r grep -nE 'APP_URL|NEXT_PUBLIC_WEBAPP_URL|NEXTAUTH_URL|WEBAPP_URL|DOCUMENSO_|MYPAYLINK_|WEBHOOK_|MAIL_|SMTP_|contractor-hub' | sed -E 's/(SECRET|TOKEN|KEY|PASSWORD|PASS|PRIVATE|AUTH|CREDENTIAL|SALT)=([^[:space:]]+)/\\1=<redacted>/Ig'"
+run env_file_search sh -c "find / -name '.env' -o -name '*.env' 2>/dev/null | xargs -r grep -nE 'APP_URL|NEXT_PUBLIC_WEBAPP_URL|NEXTAUTH_URL|WEBAPP_URL|DOCUMENSO_|MYPAYLINK_|WEBHOOK_|MAIL_|SMTP_|contractor-hub' | sed -E 's/(SECRET|TOKEN|KEY|PASSWORD|PASS|PRIVATE|AUTH|CREDENTIAL|SALT)=([^[:space:]]+)/\\1=<redacted>/Ig'"
 python3 - <<PY > "$OUT_DIR/public_url_check.out" 2> "$OUT_DIR/public_url_check.err" || true
 import os, urllib.request
 url = os.environ.get('DOCUMENSO_PUBLIC_URL') or os.environ.get('DOCUMENSO_BASE_URL') or '$DOCUMENSO_PUBLIC_URL'
@@ -142,9 +258,11 @@ fi
 
 log "operator_next_steps"
 cat <<'EOF' | tee -a "$OUT_DIR/summary.txt"
-Use the redacted runtime env and search outputs above to record before/after URL values.
-For database metadata, connect to the Documenso Postgres container and query tables/columns containing metadata, redirect, return, sign, webhook, and the affected contract id.
-Do not paste secrets into tickets or PRs; include only redacted host/path/status values.
+Use the *_documenso_ticket_snapshot.out file to fill the ticket fields for the affected document: document id, recipient ids/emails/statuses, document status, completed timestamp, webhook endpoint/delivery/response rows, final-PDF asset rows, and Documenso completion-email rows.
+Confirm webhook endpoints use the MyPayLink production host from audit_context and expected Documenso path regex from audit_context, not luxit.app.
+Compare Documenso webhook secret fingerprints manually against MyPayLink env values (DOCUMENSO_WEBHOOK_SECRET or MYPAYLINK_DOCUMENSO_WEBHOOK_SECRET). This script redacts secret values and must not print them.
+If final-PDF rows are absent but the document is complete, MyPayLink likely must retrieve the final PDF through Documenso's API using the document id rather than relying on an attachment in the webhook.
+Do not paste secrets or final signed agreements into tickets or PRs; include only redacted host/path/status values.
 EOF
 
 printf '\nAudit bundle written to %s\n' "$OUT_DIR" | tee -a "$OUT_DIR/summary.txt"

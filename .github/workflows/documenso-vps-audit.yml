@@ -11,6 +11,22 @@ on:
         description: Public Documenso base URL to probe
         required: true
         default: https://document.luxit.app
+      mypaylink_production_url:
+        description: Production MyPayLink base URL expected in Documenso webhooks
+        required: true
+        default: https://app.mypaylink.app
+      signer_emails_csv:
+        description: Comma-separated affected signer emails to locate in Documenso
+        required: true
+        default: luke@adiken.com,hexxicjunk@gmail.com
+      signer_names_csv:
+        description: Comma-separated affected signer names to locate in Documenso
+        required: true
+        default: Luke Shawver,Marek Hastings
+      affected_documenso_document_id:
+        description: Optional known Documenso document id
+        required: false
+        default: ''
 
 concurrency:
   group: documenso-vps-audit
@@ -54,7 +70,7 @@ jobs:
           set -o pipefail
           HOST_VALUE='${{ secrets.HOST }}'
           ssh -i ~/.ssh/id_ed25519 root@"$HOST_VALUE" \
-            "cd '$REMOTE_DIR/repo' && DOCUMENSO_PUBLIC_URL='${{ inputs.documenso_public_url }}' CONTRACT_ID='${{ inputs.contract_id }}' OUT_DIR='$REMOTE_DIR/bundle' scripts/documenso/live_documenso_vps_audit.sh" \
+            "cd '$REMOTE_DIR/repo' && DOCUMENSO_PUBLIC_URL='${{ inputs.documenso_public_url }}' CONTRACT_ID='${{ inputs.contract_id }}' MYPAYLINK_PRODUCTION_URL='${{ inputs.mypaylink_production_url }}' SIGNER_EMAILS_CSV='${{ inputs.signer_emails_csv }}' SIGNER_NAMES_CSV='${{ inputs.signer_names_csv }}' AFFECTED_DOCUMENSO_DOCUMENT_ID='${{ inputs.affected_documenso_document_id }}' OUT_DIR='$REMOTE_DIR/bundle' scripts/documenso/live_documenso_vps_audit.sh" \
             2>&1 | tee remote-audit-stdout.log
           echo "exit_code=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
 
