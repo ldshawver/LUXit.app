@@ -141,7 +141,6 @@ class _NumberScopedTwilioConfig:
         "voicemail_greeting_text",
         "voicemail_greeting_audio_url",
         "missed_call_text",
-        "after_hours_text",
         "after_hours_cooldown_minutes",
         "after_hours_sms_enabled",
         "after_hours_voicemail_enabled",
@@ -289,7 +288,6 @@ def _seed_phone_numbers_from_accounts():
                     voicemail_greeting_text = ta.voicemail_greeting_text,
                     voicemail_greeting_audio_url = ta.voicemail_greeting_audio_url,
                     missed_call_text        = ta.missed_call_text,
-                    after_hours_text        = ta.after_hours_text,
                     after_hours_sms_enabled = bool(ta.after_hours_sms_enabled),
                     after_hours_voicemail_enabled = bool(ta.after_hours_voicemail_enabled),
                     is_active  = True,
@@ -757,6 +755,25 @@ def _update_contact_sms_consent(company_id, phone_number, opted_in, source):
     return contact
 
 
+def _after_hours_rule_response(company_id: int, phone_number_id: int | None = None) -> str | None:
+    from models import AutoReplyRule
+    rule_query = AutoReplyRule.query.filter_by(
+        company_id=company_id,
+        trigger_type="after_hours",
+        action="reply",
+        is_active=True,
+    )
+    if phone_number_id is not None:
+        rule_query = rule_query.filter(db.or_(
+            AutoReplyRule.phone_number_id == phone_number_id,
+            AutoReplyRule.phone_number_id.is_(None),
+        ))
+    else:
+        rule_query = rule_query.filter(AutoReplyRule.phone_number_id.is_(None))
+    rule = rule_query.order_by(AutoReplyRule.phone_number_id.desc().nullslast(), AutoReplyRule.priority.desc()).first()
+    return (rule.response or "").strip() if rule and rule.response else None
+
+
 def _send_number_configured_auto_reply(conv, ta, *, in_business=None) -> bool:
     """Fallback per-number auto replies when no AutoReplyRule sends a reply."""
     if not getattr(ta, "auto_reply_enabled", True) or conv.is_opted_out:
@@ -767,8 +784,9 @@ def _send_number_configured_auto_reply(conv, ta, *, in_business=None) -> bool:
         except TypeError:
             in_business = _is_business_hours(ta.company_id)
     response_body = None
-    if not in_business and getattr(ta, "after_hours_sms_enabled", False):
-        response_body = getattr(ta, "after_hours_text", None)
+    # After-hours reply copy is canonical in AutoReplyRule.response.
+    # Do not fall back to per-number/account text fields here; those legacy
+    # fields are intentionally no longer editable so the copy has one home.
     if not response_body and in_business:
         response_body = getattr(ta, "number_auto_reply_text", None)
     if not response_body:
@@ -958,8 +976,7 @@ def _apply_auto_reply_rules(conv, body: str, ta) -> bool:
         elif rule.action == "reply" and (rule.response or rule.trigger_type == "after_hours"):
             response_body = rule.response
             if rule.trigger_type == "after_hours":
-                response_body = (getattr(ta, "after_hours_text", None) or rule.response or
-                                 REQUIRED_AFTER_HOURS_SMS_COPY)
+                response_body = rule.response or REQUIRED_AFTER_HOURS_SMS_COPY
             if reply_sent:
                 logger.debug("%s rule id=%s skipped — reply already sent", _tag, rule.id)
                 continue
@@ -989,14 +1006,27 @@ def _capture_lead(conv, body: str, company_id: int):
     from models import Contact
     if conv.contact_id or conv.lead_captured:
         return
+
+    tags = ["new-lead"]
+    inbound_to = _normalize_e164(getattr(conv, "to_number", None) or "")
+    if inbound_to == "+19165989519":
+        tags.append("MyOrder Customer")
+
+    from services.contact_source import CONTACT_SOURCE_SMS_INBOUND, apply_contact_source
+
     contact = Contact(
         company_id=company_id,
         phone=conv.from_number,
+        normalized_phone=_normalize_e164(conv.from_number),
         first_name=conv.contact_name or "",
-        source="sms_inbound",
-        tags="new-lead",
+        tags=", ".join(tags),
         is_active=True,
         is_subscribed=True,
+    )
+    apply_contact_source(
+        contact,
+        CONTACT_SOURCE_SMS_INBOUND,
+        detail=f"Inbound SMS to {inbound_to or 'unknown number'} from {conv.from_number}",
     )
     db.session.add(contact)
     db.session.flush()
@@ -1599,10 +1629,9 @@ def _inbound_call_impl():
         if pn and getattr(pn, "after_hours_sms_enabled", None) is not None
         else bool(settings and settings.after_hours_sms_enabled)
     )
-    after_hours_sms_body = (
-        getattr(ta, "after_hours_text", None)
-        if pn
-        else (settings.after_hours_sms_body if settings else None) or getattr(ta, "after_hours_text", None)
+    after_hours_sms_body = _after_hours_rule_response(
+        ta.company_id,
+        getattr(pn, "id", None) or getattr(ta, "phone_number_id", None),
     )
     if (not in_hours) and after_hours_sms_enabled and after_hours_sms_body and from_number and log and not log.missed_text_sent:
         try:
@@ -2164,6 +2193,13 @@ def comms_hub():
         devices = PWADevice.query.filter_by(company_id=company.id).order_by(PWADevice.last_seen_at.desc()).limit(100).all()
     except Exception:
         pass
+    dedupe_preview = None
+    if tab == "reports" and is_admin:
+        try:
+            from services.contact_dedupe import preview_duplicate_contacts
+            dedupe_preview = preview_duplicate_contacts(company.id)
+        except Exception as exc:
+            logger.warning("Could not preview contact dedupe: %s", exc)
 
     return render_template(
         "twilio/comms_hub.html",
@@ -2186,6 +2222,7 @@ def comms_hub():
         voicemails=voicemails,
         activity=activity,
         devices=devices,
+        dedupe_preview=dedupe_preview,
     )
 
 
@@ -2741,6 +2778,41 @@ def analytics():
     )
 
 
+
+
+@twilio_bp.route("/contacts/dedupe", methods=["POST"])
+@login_required
+def contact_dedupe_run():
+    """Admin-only safe duplicate contact merge preview/run."""
+    from services.comms_permissions import can_manage_users, normalize_role, user_access_for_company
+
+    company = _get_company()
+    acc = user_access_for_company(current_user, company.id) if company else None
+    role = normalize_role(getattr(acc, "role", None)) if acc else "viewer"
+    is_admin = getattr(current_user, "is_admin", False) or getattr(current_user, "is_platform_admin", False)
+    if not company or not (is_admin or can_manage_users(current_user, company.id) or role in {"owner", "admin"}):
+        abort(403)
+
+    dry_run = request.form.get("mode", "dry_run") != "run"
+    from services.contact_dedupe import merge_duplicate_contacts
+    result = merge_duplicate_contacts(company.id, dry_run=dry_run, actor_user_id=getattr(current_user, "id", None))
+    if request.headers.get("Accept") == "application/json" or request.is_json:
+        return jsonify({"success": True, "result": result})
+    if dry_run:
+        flash(
+            f"Duplicate contact preview: {result['duplicate_groups']} group(s), "
+            f"{result['contacts_merged']} contact(s) would be merged.",
+            "info",
+        )
+    else:
+        flash(
+            f"Duplicate contact merge complete: {result['contacts_merged']} contact(s) merged; "
+            f"{result['references_updated']} related record(s) repointed.",
+            "success",
+        )
+    return redirect(url_for("twilio.comms_hub", tab="reports"))
+
+
 @twilio_bp.route("/conversation/<int:conv_id>/tag", methods=["POST"])
 @login_required
 def tag_conversation(conv_id):
@@ -3022,6 +3094,7 @@ def number_edit(number_id):
     pn.mobile_data_allowed = request.form.get("mobile_data_allowed") == "1"
     pn.fallback_behavior = request.form.get("fallback_behavior", pn.fallback_behavior or "cell_callback").strip()
     pn.caller_id_display_name = request.form.get("caller_id_display_name", "").strip() or None
+    # SMS auto-reply copy lives in Auto Reply Rules. Keep only routing/toggles here.
     pn.after_hours_sms_enabled = request.form.get("after_hours_sms_enabled") == "1"
     pn.after_hours_voicemail_enabled = request.form.get("after_hours_voicemail_enabled") == "1"
     pn.notes                  = request.form.get("notes", "").strip() or None

@@ -3579,7 +3579,7 @@ def update_phone_line(number_id):
     company_id = _current_company_id()
     from models import TwilioPhoneNumber, IntegrationAuditLog
     line = TwilioPhoneNumber.query.filter_by(id=number_id, company_id=company_id).first_or_404()
-    for field in ['sms_webhook_url','voice_webhook_url','status_callback_webhook_url','timezone','sms_forward_to','call_forward_to','number_auto_reply_text','missed_call_text','voicemail_greeting_text','voicemail_greeting_audio_url','after_hours_text']:
+    for field in ['sms_webhook_url','voice_webhook_url','status_callback_webhook_url','timezone','sms_forward_to','call_forward_to','number_auto_reply_text','missed_call_text','voicemail_greeting_text','voicemail_greeting_audio_url']:
         setattr(line, field, request.form.get(field) or None)
     line.auto_reply_enabled = bool(request.form.get('auto_reply_enabled'))
     line.after_hours_sms_enabled = bool(request.form.get('after_hours_sms_enabled'))

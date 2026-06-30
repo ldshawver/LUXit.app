@@ -92,8 +92,8 @@
       <div class="col-md-6"><label class="form-label small text-muted">After-hours route</label><select class="form-select" name="after_hours_route" style="background:#0b0d14;border-color:#1e2535;color:#fff;">{% for v in ['voicemail','forward','ring_pwa','message_then_route'] %}<option value="{{ v }}" {% if selected_number.after_hours_route == v %}selected{% endif %}>{{ v.replace('_',' ')|title }}</option>{% endfor %}</select></div>
       <div class="col-md-6"><label class="form-label small text-muted">SMS forward to</label><input class="form-control" name="sms_forward_to" value="{{ selected_number.sms_forward_to or '' }}" style="background:#0b0d14;border-color:#1e2535;color:#fff;"></div>
       <div class="col-md-6"><label class="form-label small text-muted">Call forward to</label><input class="form-control" name="call_forward_to" value="{{ selected_number.call_forward_to or '' }}" style="background:#0b0d14;border-color:#1e2535;color:#fff;"></div>
-      <div class="col-md-6"><label class="form-label small text-muted">Voicemail greeting</label><textarea class="form-control" name="voicemail_greeting_text" rows="3" style="background:#0b0d14;border-color:#1e2535;color:#fff;">{{ selected_number.voicemail_greeting_text or '' }}</textarea></div>
-      <div class="col-md-6"><label class="form-label small text-muted">After-hours SMS text</label><textarea class="form-control" name="after_hours_text" rows="3" style="background:#0b0d14;border-color:#1e2535;color:#fff;">{{ selected_number.after_hours_text or '' }}</textarea></div>
+      <div class="col-md-12"><label class="form-label small text-muted">Voicemail greeting</label><textarea class="form-control" name="voicemail_greeting_text" rows="3" style="background:#0b0d14;border-color:#1e2535;color:#fff;">{{ selected_number.voicemail_greeting_text or '' }}</textarea></div>
+      <div class="col-12"><div class="alert alert-info py-2 mb-0">After-hours SMS copy is edited in the Auto Replies tab with the other auto-reply messages.</div></div>
       <div class="col-12"><div class="row g-2">{% for i,label in [(0,'Mon'),(1,'Tue'),(2,'Wed'),(3,'Thu'),(4,'Fri'),(5,'Sat'),(6,'Sun')] %}{% set cfg=(selected_number.business_hours or {}).get(i|string,{}) %}<div class="col-md-6 col-lg-4"><div class="p-2 rounded" style="background:#0b0d14;border:1px solid #1e2535;"><label class="form-check"><input class="form-check-input" type="checkbox" name="bh_{{ i }}_open" value="1" {% if cfg.get('is_open', i < 5) %}checked{% endif %}> {{ label }} open</label><div class="d-flex gap-2"><input type="time" class="form-control form-control-sm" name="bh_{{ i }}_start" value="{{ cfg.get('open','09:00') }}"><input type="time" class="form-control form-control-sm" name="bh_{{ i }}_end" value="{{ cfg.get('close','17:00') }}"></div></div></div>{% endfor %}</div></div>
       <div class="col-md-4">{{ toggle('browser_calling_enabled', selected_number.browser_calling_enabled, 'Browser/WiFi calling') }}</div>
       <div class="col-md-4">{{ toggle('cell_callback_enabled', selected_number.cell_callback_enabled, 'Cell callback calling') }}</div>
@@ -188,6 +188,27 @@
   <div class="card p-4" style="background:#0f1117;border:1px solid #1e2535;"><h6>Integrations</h6><p class="text-muted">Twilio webhooks, Google Contacts, SMS delivery callbacks, and provider health remain connected here.</p><a href="{{ url_for('twilio.google_contacts_connect') }}" class="btn btn-sm btn-outline-secondary">Google Contacts</a><a href="{{ url_for('twilio.comms_settings') }}" class="btn btn-sm btn-outline-secondary ms-2">Twilio Webhooks</a></div>
 
   {% elif tab == 'reports' %}
+  {% if is_admin %}
+  <div class="card p-3 mb-3" style="background:#0f1117;border:1px solid #1e2535;">
+    <div class="d-flex flex-wrap gap-2 align-items-center">
+      <div>
+        <h6 class="mb-1">Duplicate contact merge</h6>
+        <div class="small text-muted">Conservative weekly job: same tenant only, normalized phone/email only, deactivates duplicates, and writes audit logs for real merges.</div>
+        {% if dedupe_preview %}<div class="small mt-1">Current preview: {{ dedupe_preview.duplicate_groups }} group(s), {{ dedupe_preview.contacts_merged }} contact(s) would merge.</div>{% endif %}
+      </div>
+      <form method="POST" action="{{ url_for('twilio.contact_dedupe_run') }}" class="ms-auto">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="mode" value="dry_run">
+        <button class="btn btn-sm btn-outline-secondary" type="submit">Preview duplicates</button>
+      </form>
+      <form method="POST" action="{{ url_for('twilio.contact_dedupe_run') }}" onsubmit="return confirm('Merge duplicate contacts for this tenant? Duplicates are deactivated, not deleted.');">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="mode" value="run">
+        <button class="btn btn-sm btn-primary" type="submit">Run merge</button>
+      </form>
+    </div>
+  </div>
+  {% endif %}
   <div class="card" style="background:#0f1117;border:1px solid #1e2535;">{% for item in activity %}<div class="p-3" style="border-bottom:1px solid #1e2535;"><strong>{{ item.action }}</strong><div class="small text-muted">{{ item.created_at }}</div></div>{% else %}<div class="p-4 text-muted">No recent communications activity.</div>{% endfor %}</div>
 
   <!-- ═══════════ INBOX TAB ═══════════ -->

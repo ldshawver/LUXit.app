@@ -33,9 +33,7 @@
       <textarea class="form-control" name="missed_call_text" rows="2">{{ line.missed_call_text or '' }}</textarea>
     </div>
     <div class="col-md-6">
-      <label class="form-label">After-hours Auto Reply for this number</label>
-      <textarea class="form-control" name="after_hours_text" rows="2">{{ line.after_hours_text or '' }}</textarea>
-      <div class="form-text">Sent only when this number is closed and after-hours SMS is enabled.</div>
+      <div class="alert alert-info mb-0">After-hours SMS copy is managed in Communications → Auto Replies with the other auto-reply messages.</div>
     </div>
     <div class="col-md-6">
       <label class="form-label">Voicemail Greeting for this number</label>
