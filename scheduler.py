@@ -1,5 +1,6 @@
 import logging
 from datetime import datetime
+from apscheduler.triggers.cron import CronTrigger
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.jobstores.sqlalchemy import SQLAlchemyJobStore
 from apscheduler.executors.pool import ThreadPoolExecutor
@@ -84,6 +85,13 @@ def schedule_campaign(campaign, app=None):
     except Exception as e:
         logging.error(f"Error scheduling campaign {campaign.id}: {str(e)}")
 
+def run_weekly_contact_dedupe(app):
+    """Merge duplicate contacts weekly inside the Flask app context."""
+    with app.app_context():
+        from services.contact_dedupe import merge_duplicate_contacts
+        return merge_duplicate_contacts()
+
+
 def init_scheduler(app):
     """Initialize the background scheduler"""
     global scheduler
@@ -112,6 +120,16 @@ def init_scheduler(app):
         timezone='UTC'
     )
     
+    scheduler.add_job(
+        func=run_weekly_contact_dedupe,
+        trigger=CronTrigger(day_of_week="sun", hour=3, minute=0, timezone="UTC"),
+        args=[app],
+        id="weekly_contact_dedupe",
+        name="Weekly contact duplicate merge",
+        replace_existing=True,
+        misfire_grace_time=3600,
+    )
+
     # Start scheduler
     scheduler.start()
     

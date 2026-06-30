@@ -19,6 +19,8 @@ from models import (
     TwilioAccount,
     TwilioConversation,
     TwilioMessage,
+    TwilioPhoneNumber,
+    IntegrationAuditLog,
     User,
     UserCompanyAccess,
 )
@@ -147,7 +149,7 @@ def test_after_hours_custom_text_timezone_disabled_and_cooldown(app_client, monk
         monkeypatch.setattr(twilio_sms, "_send_sms", lambda ta, to, body, **kw: sent.append(body) or {"success": True, "sid": "SM-AH"})
 
         assert twilio_sms._apply_auto_reply_rules(conv, "hello", ta) is True
-        assert sent == ["Custom tenant closed text. Reply STOP to opt out."]
+        assert sent == ["Thanks for reaching out. Our business hours are daily from 2 PM to 2 AM. We’ll respond as soon as we’re back online."]
 
         db.session.add(TwilioMessage(
             conversation_id=conv.id,
@@ -291,3 +293,154 @@ def test_bulk_sms_prefers_tenant_twilio_config(app_client, monkeypatch):
         assert created["messaging_service_sid"] == "MG_TENANT"
         assert "from_" not in created
         assert created["body"].endswith("Reply STOP to opt out.")
+
+
+def test_after_hours_uses_rule_response_not_legacy_account_text(app_client, monkeypatch):
+    app, _, company, _ = app_client
+    import twilio_sms
+    with app.app_context():
+        ta = TwilioAccount(company_id=company.id, automation_enabled=True, after_hours_sms_enabled=True, after_hours_text="Legacy text")
+        conv = TwilioConversation(company_id=company.id, from_number="+15551230001", to_number="+15557650001")
+        rule = AutoReplyRule(company_id=company.id, name="After Hours", trigger_type="after_hours", response="Canonical rule text", is_active=True, action="reply")
+        db.session.add_all([ta, conv, rule])
+        db.session.commit()
+        sent = []
+        monkeypatch.setattr(twilio_sms, "_is_business_hours", lambda company_id, phone_config=None: False)
+        monkeypatch.setattr(twilio_sms, "_send_sms", lambda ta, to, body, **kw: sent.append(body) or {"success": True})
+        assert twilio_sms._apply_auto_reply_rules(conv, "hello", ta) is True
+        assert sent == ["Canonical rule text"]
+
+
+def test_inbound_myorder_first_contact_creates_tagged_contact(app_client):
+    app, _, company, _ = app_client
+    import twilio_sms
+    with app.app_context():
+        conv = TwilioConversation(company_id=company.id, from_number="+15551230002", to_number="+19165989519", is_first_contact=True)
+        db.session.add(conv)
+        db.session.commit()
+        twilio_sms._capture_lead(conv, "hello", company.id)
+        contact = Contact.query.filter_by(company_id=company.id, phone="+15551230002").one()
+        assert "MyOrder Customer" in contact.tags
+        assert contact.source == "sms_inbound"
+        assert contact.source_detail == "Inbound SMS to +19165989519 from +15551230002"
+        assert contact.source_added_at is not None
+        assert conv.contact_id == contact.id
+
+
+def test_duplicate_contacts_merge_weekly_job_preserves_info(app_client):
+    app, _, company, _ = app_client
+    from services.contact_dedupe import merge_duplicate_contacts
+    with app.app_context():
+        c1 = Contact(company_id=company.id, email="dupe@example.com", phone="9165989519", first_name="First", tags="Newsletter", source="newsletter", source_detail="Subscribed to newsletter", is_active=True)
+        c2 = Contact(company_id=company.id, email="DUPE@example.com", phone="+19165989519", last_name="Last", tags="MyOrder Customer", source="sms_inbound", source_detail="Inbound SMS to +19165989519", is_active=True)
+        db.session.add_all([c1, c2])
+        db.session.commit()
+        result = merge_duplicate_contacts(company.id)
+        assert result["contacts_merged"] == 1
+        kept = Contact.query.filter_by(company_id=company.id, is_active=True).one()
+        assert kept.first_name == "First"
+        assert kept.last_name == "Last"
+        assert "Newsletter" in kept.tags and "MyOrder Customer" in kept.tags
+        assert "Subscribed to newsletter" in kept.source_detail
+        assert "Inbound SMS to +19165989519" in kept.source_detail
+
+
+def test_comms_settings_has_no_after_hours_message_editor_and_auto_tab_persists(app_client):
+    app, client, company, _ = app_client
+    with app.app_context():
+        from models import TwilioPhoneNumber
+        pn = TwilioPhoneNumber(company_id=company.id, phone_number="+19165989519", friendly_name="MyOrder", is_active=True, sms_enabled=True, voice_enabled=True)
+        rule = AutoReplyRule(company_id=company.id, phone_number_id=None, name="After Hours", trigger_type="after_hours", response="Original after-hours", action="reply", is_active=True, priority=50)
+        db.session.add_all([pn, rule])
+        db.session.commit()
+        pn_id = pn.id
+        rule_id = rule.id
+
+    settings_body = client.get(f"/twilio/comms?tab=settings&number_id={pn_id}").get_data(as_text=True)
+    assert 'name="after_hours_text"' not in settings_body
+    assert "After-hours SMS copy is edited in the Auto Replies tab" in settings_body
+
+    auto_body = client.get(f"/twilio/comms?tab=auto&number_id={pn_id}").get_data(as_text=True)
+    assert "Original after-hours" in auto_body
+
+    response = client.post(
+        f"/twilio/rules/{rule_id}/edit",
+        data={
+            "name": "After Hours",
+            "phone_number_id": "",
+            "return_number_id": str(pn_id),
+            "trigger_type": "after_hours",
+            "keywords": "",
+            "response": "Saved after-hours from Auto Replies",
+            "action": "reply",
+            "priority": "50",
+            "is_active": "1",
+        },
+        follow_redirects=False,
+    )
+    assert response.status_code in (302, 303)
+    refreshed = client.get(f"/twilio/comms?tab=auto&number_id={pn_id}").get_data(as_text=True)
+    assert "Saved after-hours from Auto Replies" in refreshed
+
+    with app.app_context():
+        import twilio_sms
+        ta = TwilioAccount(company_id=company.id, automation_enabled=True, after_hours_sms_enabled=True)
+        conv = TwilioConversation(company_id=company.id, from_number="+15551239999", to_number="+19165989519")
+        db.session.add_all([ta, conv])
+        db.session.commit()
+        sent = []
+        with patch.object(twilio_sms, "_is_business_hours", lambda company_id, phone_config=None: False), patch.object(twilio_sms, "_send_sms", lambda ta, to, body, **kw: sent.append(body) or {"success": True}):
+            assert twilio_sms._apply_auto_reply_rules(conv, "hello", ta) is True
+        assert sent == ["Saved after-hours from Auto Replies"]
+
+
+def test_contact_dedupe_is_tenant_safe_and_audited(app_client):
+    app, client, company, _ = app_client
+    with app.app_context():
+        from models import IntegrationAuditLog
+        other = Company(name="Other Tenant")
+        db.session.add(other)
+        db.session.flush()
+        other_id = other.id
+        c1 = Contact(company_id=company.id, email="safe@example.com", phone="9165989519", first_name="Keep", tags="A", source="upload", source_detail="CSV upload", is_active=True)
+        c2 = Contact(company_id=company.id, email="SAFE@example.com", phone="+19165989519", last_name="Merge", tags="B", source="facebook", source_detail="Facebook lead ad", is_active=True)
+        c3 = Contact(company_id=other.id, email="safe@example.com", phone="+19165989519", first_name="Other", tags="Other", source="api_import", source_detail="API import", is_active=True)
+        name_only = Contact(company_id=company.id, first_name="Keep", last_name="Merge", tags="NameOnly", source="manual", source_detail="Manual entry by Luke", is_active=True)
+        db.session.add_all([c1, c2, c3, name_only])
+        db.session.commit()
+
+    preview = client.post("/twilio/contacts/dedupe", data={"mode": "dry_run"}, headers={"Accept": "application/json"}).get_json()
+    assert preview["success"] is True
+    assert preview["result"]["dry_run"] is True
+    assert preview["result"]["contacts_merged"] == 1
+
+    result = client.post("/twilio/contacts/dedupe", data={"mode": "run"}, headers={"Accept": "application/json"}).get_json()
+    assert result["success"] is True
+    assert result["result"]["contacts_merged"] == 1
+    assert result["result"]["audit_entries"] == 1
+
+    with app.app_context():
+        from models import IntegrationAuditLog
+        active_company_contacts = Contact.query.filter_by(company_id=company.id, is_active=True).all()
+        active_other_contacts = Contact.query.filter_by(company_id=other_id, is_active=True).all()
+        assert len(active_company_contacts) == 2  # merged duplicate + name-only untouched
+        assert len(active_other_contacts) == 1
+        kept = Contact.query.filter(Contact.company_id == company.id, Contact.email.ilike("safe@example.com"), Contact.is_active == True).one()
+        assert "A" in kept.tags and "B" in kept.tags
+        assert "CSV upload" in kept.source_detail and "Facebook lead ad" in kept.source_detail
+        assert Contact.query.filter_by(company_id=company.id, source_detail="Manual entry by Luke", is_active=True).count() == 1
+        audit = IntegrationAuditLog.query.filter_by(company_id=company.id, service_slug="contact_dedupe", action="merge").one()
+        assert audit.changes["kept_contact_id"] == kept.id
+        assert audit.changes["merged_contact_id"] != kept.id
+
+
+def test_contact_source_helper_supports_expected_future_sources(app_client):
+    from services.contact_source import SUPPORTED_CONTACT_SOURCES, apply_contact_source
+    expected = {"newsletter", "upload", "facebook", "manual", "sms_inbound", "api_import"}
+    assert expected.issubset(SUPPORTED_CONTACT_SOURCES)
+    contact = Contact(first_name="Luke Entry")
+    apply_contact_source(contact, "manual", detail="Manual entry by Luke", user_id=123)
+    assert contact.source == "manual"
+    assert contact.source_detail == "Manual entry by Luke"
+    assert contact.source_added_by_user_id == 123
+    assert contact.source_added_at is not None
