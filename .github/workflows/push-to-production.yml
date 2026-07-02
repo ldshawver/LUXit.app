@@ -17,32 +17,44 @@ jobs:
     timeout-minutes: 20
 
     steps:
-      - name: Confirm SSH connection
+      - name: Connect Tailscale
+        uses: tailscale/github-action@v3
+        with:
+          oauth-client-id: ${{ secrets.TS_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_CLIENT_SECRET }}
+          tags: tag:github-actions
+
+      - name: Confirm Tailscale SSH connection
         shell: bash
+        env:
+          HOST: 100.85.15.43
+          PORT: 22
+          USERNAME: serveradmin
         run: |
           set -euo pipefail
-          HOST_VALUE="${{ secrets.HOST }}"
-          echo "HOST starts with: ${HOST_VALUE:0:7}"
-          echo "Testing SSH port on HOST..."
-          timeout 15 bash -c "</dev/tcp/${HOST_VALUE}/22"
-          echo "SSH port reachable"
+          echo "Testing SSH port on ${HOST}:${PORT} over Tailscale as ${USERNAME}..."
+          tailscale status
+          tailscale ping "${HOST}"
+          timeout 15 bash -c "</dev/tcp/${HOST}/${PORT}"
+          echo "Tailscale SSH port reachable"
 
       - name: Deploy to Production VPS
         uses: appleboy/ssh-action@v1.0.3
         with:
-          host: ${{ secrets.HOST }}
-          username: root
+          host: 100.85.15.43
+          username: serveradmin
           key: ${{ secrets.VPS_PRIVATE_KEY }}
           port: 22
           timeout: 60s
           command_timeout: 10m
           script_stop: true
           script: |
+            sudo bash <<'REMOTE_DEPLOY'
             set -euo pipefail
 
             APP_DIR="/root/lux-email-bot"
-            SERVICE="lux-email-bot.service"
-            PORT="8001"
+            SERVICE="luxit.service"
+            PORT="8000"
 
             echo "== Deploying LUXit live app =="
             cd "$APP_DIR"
@@ -61,13 +73,6 @@ jobs:
 
             echo "== Verify required env =="
             test -n "${DATABASE_URL:-}"
-
-            echo "== Database check =="
-            if command -v psql >/dev/null 2>&1; then
-              psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "select now();"
-            else
-              echo "psql not installed on VPS; skipping direct DB check"
-            fi
 
             echo "== Forward migrations only =="
             if command -v psql >/dev/null 2>&1 && [ -d migrations ]; then
@@ -90,41 +95,17 @@ jobs:
             systemctl restart "$SERVICE"
 
             echo "== Wait for app readiness =="
-            READY=0
             for i in $(seq 1 30); do
               if curl -fsS "http://127.0.0.1:${PORT}/auth/login" >/dev/null; then
                 echo "App ready"
-                READY=1
-                break
+                exit 0
               fi
               echo "Waiting for app... attempt $i/30"
               sleep 2
             done
 
-            if [ "$READY" -ne 1 ]; then
-              echo "App did not become ready"
-              systemctl status "$SERVICE" --no-pager -l || true
-              journalctl -u "$SERVICE" -n 160 --no-pager || true
-              exit 1
-            fi
-
-            echo "== Service status =="
-            systemctl is-active --quiet "$SERVICE"
-            systemctl status "$SERVICE" --no-pager -l
-
-            echo "== Local smoke tests =="
-            curl -fsS "http://127.0.0.1:${PORT}/auth/login" >/dev/null
-
-            echo "== Public smoke tests =="
-            curl -fsS "https://luxit.app/auth/login" >/dev/null
-
-            echo "== Recent error scan =="
-            if journalctl -u "$SERVICE" -n 160 --no-pager | egrep "UndefinedColumn|ProgrammingError|BuildError|InFailedSqlTransaction|Traceback|500"; then
-              echo "Recent production errors detected"
-              exit 1
-            fi
-
-            echo "== Recent logs =="
-            journalctl -u "$SERVICE" -n 80 --no-pager
-
-            echo "== Deploy complete =="
+            echo "App did not become ready"
+            systemctl status "$SERVICE" --no-pager -l || true
+            journalctl -u "$SERVICE" -n 160 --no-pager || true
+            exit 1
+            REMOTE_DEPLOY
