@@ -299,7 +299,7 @@
 
     /* Composer */
     .composer {
-      padding: 10px 12px calc(10px + var(--safe-bot)); border-top: 1px solid var(--border);
+      padding: 10px 12px calc(10px + var(--safe-bot) + var(--keyboard-offset, 0px)); border-top: 1px solid var(--border);
       background: var(--surface); flex-shrink: 0;
       display: flex; gap: 8px; align-items: flex-end;
       /* always anchored at the bottom of the visible area */
@@ -324,6 +324,7 @@
     }
     #sendBtn:hover { background: #6d28d9; }
     #sendBtn:disabled { background: var(--muted); cursor: not-allowed; }
+    body.pwa-keyboard-open .pwa-bottom-nav { transform: translateY(110%); pointer-events: none; }
     #optOutBanner {
       display: none; padding: 8px 16px; text-align: center;
       background: rgba(239,68,68,.1); border-top: 1px solid rgba(239,68,68,.3);
@@ -920,6 +921,26 @@
       </label>
     </div>
 
+
+
+    <!-- Call forwarding / business-hours auto reply / push diagnostics -->
+    <div class="settings-section-label" style="margin-top:20px;">Line Settings</div>
+    <div class="settings-toggle-row" style="flex-direction:column;align-items:stretch;gap:8px;">
+      <label class="settings-toggle-label" style="justify-content:space-between;"><div><span>Call Forwarding</span><small id="callForwardStatus">Only inbound calls forward; SMS never forwards.</small></div><input type="checkbox" id="callForwardEnabled"></label>
+      <input id="callForwardNumber" class="form-control" placeholder="+15551234567" inputmode="tel" style="background:var(--color-input-bg);color:var(--text);border-color:var(--border);">
+      <label class="settings-toggle-label" style="justify-content:space-between;"><div><span>Business-hours SMS auto reply</span><small>Separate from canonical after-hours Auto Replies.</small></div><input type="checkbox" id="bhAutoReplyEnabled"></label>
+      <textarea id="bhAutoReplyText" class="form-control" rows="3" placeholder="Thanks for texting. We will reply shortly." style="background:var(--color-input-bg);color:var(--text);border-color:var(--border);"></textarea>
+      <button class="btn-primary" onclick="saveLineSettings()">Save Line Settings</button>
+      <small id="lineSettingsStatus" style="color:var(--muted);"></small>
+    </div>
+
+    <div class="settings-section-label" style="margin-top:20px;">Push Diagnostics</div>
+    <div class="settings-toggle-row" style="flex-direction:column;align-items:stretch;gap:6px;">
+      <pre id="pushDiagnostics" style="white-space:pre-wrap;font-size:.72rem;background:#05070c;border:1px solid var(--border);border-radius:10px;padding:10px;color:var(--text);max-height:220px;overflow:auto;">Loading…</pre>
+      <button class="btn-small" onclick="refreshPushDiagnostics()">Refresh diagnostics</button>
+      <small style="color:var(--muted);">If this shows silent:false, remaining sound issues are OS/browser notification-channel settings.</small>
+    </div>
+
     <!-- Google Contacts -->
     <div class="settings-section-label" style="margin-top:20px;">Contacts</div>
     <div id="gcStatusRow" class="settings-toggle-row" style="flex-direction:column;align-items:flex-start;gap:6px;">
@@ -967,6 +988,11 @@
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
       Check for Updates &amp; Refresh
     </button>
+    <button class="settings-action-btn" onclick="runPushDebug()" style="margin-top:6px;">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 17H2a3 3 0 0 0 3-3V9a7 7 0 0 1 14 0v5a3 3 0 0 0 3 3z"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+      Run Push Diagnostics
+    </button>
+    <div id="pushDebugResult" style="display:none;margin-top:8px;padding:8px;border-radius:8px;background:rgba(15,23,42,.72);border:1px solid rgba(148,163,184,.22);color:var(--pwa-muted);font-size:.78rem;white-space:pre-wrap;"></div>
     <a href="/dashboard" class="settings-action-btn" style="margin-top:6px;text-decoration:none;">
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
       Back to Dashboard
@@ -1177,6 +1203,7 @@ window.addEventListener('DOMContentLoaded', () => {
   state.notificationSoundsEnabled = localStorage.getItem('notificationSoundsEnabled') !== 'false';
   installAudioUnlockHandlers();
   updateSoundBtn();
+  installPwaNavPerformanceHandlers();
   loadAssignedNumbers();
   loadConversations();
   loadBadgeCounts();
@@ -1436,19 +1463,27 @@ async function apiFetch(url, method = 'GET', body = null) {
   try {
     data = await res.json();
   } catch {
-    const label = res.status === 403 ? 'Permission denied for this phone line.'
-      : res.status === 404 ? 'Conversation or phone line was not found.'
-      : `Request failed (${res.status}).`;
-    return { success: false, error: label, status: res.status };
-  }
-  // Promote non-OK HTTP responses while preserving useful API messages.
-  if (!res.ok) {
-    return {
-      success: false,
-      error: data.error || data.message || `Request failed (${res.status}).`,
-      status: res.status,
-      code: data.code,
-    };
+if (res.status === 401) {
+  location.href = '/auth/login?next=/app/inbox';
+  return null;
+}
+
+// Promote non-OK HTTP responses while preserving useful API messages.
+if (!res.ok) {
+  return {
+    success: false,
+    error:
+      data?.error ||
+      data?.message ||
+      (res.status === 403
+        ? 'Permission denied for this phone line.'
+        : res.status === 404
+          ? 'Conversation or phone line was not found.'
+          : `Request failed (${res.status}).`),
+    status: res.status,
+    code: data?.code,
+  };
+}
   }
   return data;
 }
@@ -1459,6 +1494,7 @@ async function loadAssignedNumbers() {
     const data = await apiFetch('/api/phone/numbers');
     const sel = document.getElementById('numberSelector');
     const nums = data?.numbers || [];
+    state.assignedNumbers = nums;
     if (!sel || nums.length <= 1) { if (sel) sel.style.display = 'none'; return; }
     sel.innerHTML = '<option value="">All lines</option>' + nums.map(n => `<option value="${esc(n.phone_number)}">${esc(n.friendly_name || n.phone_number)}</option>`).join('');
     sel.value = state.selectedNumber || '';
@@ -1561,8 +1597,12 @@ function updateUnreadBadge(count) {
 function setupKeyboardResize() {
   const shell = document.getElementById('shell');
   function applyHeight() {
-    const h = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+    const vv = window.visualViewport;
+    const h = vv ? vv.height : window.innerHeight;
+    const keyboardOffset = vv ? Math.max(0, window.innerHeight - vv.height - vv.offsetTop) : 0;
     shell.style.height = h + 'px';
+    document.documentElement.style.setProperty('--keyboard-offset', keyboardOffset + 'px');
+    document.body.classList.toggle('pwa-keyboard-open', keyboardOffset > 80);
     // Scroll messages to bottom when keyboard closes/opens
     if (state.activeConvId) scrollThreadToBottom();
   }
@@ -1987,6 +2027,8 @@ async function triggerGoogleSync() {
   } finally {
     if (syncBtn) { syncBtn.disabled = false; syncBtn.textContent = 'Sync'; }
     loadGoogleContactsStatus();
+  loadLineSettings();
+  refreshPushDiagnostics();
   }
 }
 
@@ -1998,6 +2040,8 @@ function openSettingsSheet() {
   if (soundCb) soundCb.checked = state.notificationSoundsEnabled;
   if (vibCb)   vibCb.checked   = state.vibrateEnabled;
   loadGoogleContactsStatus();
+  loadLineSettings();
+  refreshPushDiagnostics();
 
   // Update push button label
   const pushBtn   = document.getElementById('pushToggleBtn');
@@ -2021,6 +2065,91 @@ function openSettingsSheet() {
   openModal('settingsSheet');
 }
 
+
+function selectedNumberRow() {
+  return (state.assignedNumbers || []).find(n => n.phone_number === state.selectedNumber) || (state.assignedNumbers || [])[0];
+}
+async function loadLineSettings() {
+  const row = selectedNumberRow();
+  const status = document.getElementById('lineSettingsStatus');
+  if (!row || !row.id) { if (status) status.textContent = 'Select an assigned phone line to edit line settings.'; return; }
+  try {
+    const data = await apiFetch(`/api/phone/numbers/${row.id}/settings`);
+    const st = data.settings || {};
+    document.getElementById('callForwardEnabled').checked = !!st.call_forwarding_enabled;
+    document.getElementById('callForwardNumber').value = st.call_forwarding_number || st.call_forward_to || '';
+    document.getElementById('bhAutoReplyEnabled').checked = !!st.business_hours_auto_reply_enabled;
+    document.getElementById('bhAutoReplyText').value = st.business_hours_auto_reply_text || '';
+    document.getElementById('callForwardStatus').textContent = st.call_forwarding_enabled ? `Forwarding calls to ${st.call_forwarding_number || st.call_forward_to || 'not set'}` : 'Disabled — calls use PWA ringing/voicemail. SMS never forwards.';
+    if (status) status.textContent = `Loaded ${st.friendly_name || row.phone_number}`;
+  } catch(e) { if (status) status.textContent = 'Could not load line settings.'; }
+}
+async function saveLineSettings() {
+  const row = selectedNumberRow();
+  const status = document.getElementById('lineSettingsStatus');
+  if (!row || !row.id) { toast('Select a phone line first', 'error'); return; }
+  const payload = {
+    call_forwarding_enabled: document.getElementById('callForwardEnabled').checked,
+    voice_forwarding_enabled: document.getElementById('callForwardEnabled').checked,
+    call_forwarding_number: document.getElementById('callForwardNumber').value.trim(),
+    call_forward_to: document.getElementById('callForwardNumber').value.trim(),
+    business_hours_auto_reply_enabled: document.getElementById('bhAutoReplyEnabled').checked,
+    business_hours_auto_reply_text: document.getElementById('bhAutoReplyText').value.trim(),
+  };
+  try {
+    if (status) status.textContent = 'Saving…';
+    const data = await apiFetch(`/api/phone/numbers/${row.id}/settings`, 'PUT', payload);
+    if (data.success === false) throw new Error(data.error || 'Save failed');
+    await loadLineSettings();
+    toast('Line settings saved', 'success');
+  } catch(e) { if (status) status.textContent = e.message; toast(e.message, 'error'); }
+}
+async function refreshPushDiagnostics() {
+  const el = document.getElementById('pushDiagnostics');
+  if (!el) return;
+  const localDebug = JSON.parse(localStorage.getItem('luxitPushDiagnostics') || '{}');
+  let regVersion = null;
+  try {
+    if (navigator.serviceWorker?.controller) {
+      navigator.serviceWorker.controller.postMessage({type:'GET_SW_VERSION'});
+    }
+    const api = await apiFetch('/api/pwa/push/debug?event_type=incoming_sms&in_business_hours=1');
+    el.textContent = JSON.stringify({
+      notificationPermission: ('Notification' in window) ? Notification.permission : 'unsupported',
+      pushSubscriptionActive: !!api.active_subscription,
+      serviceWorkerVersion: localDebug.swVersion || api.service_worker_version || regVersion || PWA_VERSION,
+      lastPushReceivedAt: localDebug.lastPushReceivedAt || null,
+      lastEventType: localDebug.lastEventType || null,
+      lastNotificationSilent: localDebug.lastNotificationSilent ?? null,
+      lastNotificationTag: localDebug.lastNotificationTag || null,
+      lastNotificationRenotify: localDebug.lastNotificationRenotify ?? null,
+      lastNotificationVibrate: localDebug.lastNotificationVibrate || null,
+      badgeCount: localDebug.badgeCount ?? null,
+      serverDecision: api.decision,
+      deviceInstructions: api.device_instructions,
+    }, null, 2);
+  } catch(e) { el.textContent = JSON.stringify({error:e.message, localDebug}, null, 2); }
+}
+function installPwaNavPerformanceHandlers() {
+  document.querySelectorAll('[data-pwa-nav]').forEach(a => a.addEventListener('click', () => {
+    performance.mark?.('pwa-tab-tap');
+    document.querySelectorAll('[data-pwa-nav]').forEach(x => x.classList.remove('is-active'));
+    a.classList.add('is-active');
+    document.body.classList.add('pwa-tab-loading');
+    setTimeout(() => document.body.classList.remove('pwa-tab-loading'), 900);
+  }, {passive:true}));
+}
+if ('serviceWorker' in navigator) navigator.serviceWorker.addEventListener('message', event => {
+  if (event.data?.type === 'PUSH_DIAGNOSTICS') {
+    localStorage.setItem('luxitPushDiagnostics', JSON.stringify(event.data.debug));
+    refreshPushDiagnostics();
+  } else if (event.data?.type === 'SW_VERSION') {
+    const d = JSON.parse(localStorage.getItem('luxitPushDiagnostics') || '{}');
+    d.swVersion = event.data.version;
+    localStorage.setItem('luxitPushDiagnostics', JSON.stringify(d));
+  }
+});
+
 /* ── Push toggle from settings ─────────────────────────────────── */
 async function togglePushFromSettings() {
   if (!('Notification' in window)) return;
@@ -2030,6 +2159,31 @@ async function togglePushFromSettings() {
   }
   await requestPush();
   openSettingsSheet(); // refresh labels
+}
+
+async function runPushDebug() {
+  const box = document.getElementById('pushDebugResult');
+  if (box) {
+    box.style.display = 'block';
+    box.textContent = 'Checking push diagnostics…';
+  }
+  const data = await apiFetch('/api/pwa/push/debug');
+  if (!data) return;
+  if (!data.success) {
+    if (box) box.textContent = data.error || 'Push diagnostics failed.';
+    toast(data.error || 'Push diagnostics failed');
+    return;
+  }
+  const decision = data.decision || {};
+  const lines = [
+    `Signed in as: ${(data.user && (data.user.email || data.user.username)) || 'current user'}`,
+    `Company: ${(data.company && data.company.name) || 'current company'}`,
+    `Active push subscriptions: ${data.active_subscriptions || 0}`,
+    `Decision: ${decision.send ? 'will send' : 'will not send'} (${decision.reason || 'unknown'})`,
+    `Sound: ${decision.sound || 'none'} · Vibration: ${(decision.vibrate || []).length ? 'on' : 'off'}`,
+  ];
+  if (box) box.textContent = lines.join('\n');
+  toast('Push diagnostics complete');
 }
 
 /* ── Refresh / check for updates ───────────────────────────────── */

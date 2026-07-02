@@ -1,5 +1,5 @@
 /* LUXit Inbox — Service Worker */
-const SW_VERSION = new URL(self.location.href).searchParams.get('v') || '20260702-pwa-sms-send-fix';
+const SW_VERSION = new URL(self.location.href).searchParams.get('v') || '20260702-push-sound-diagnostics';
 const CACHE = `luxit-inbox-${SW_VERSION}`;
 const APP_SHELL = [
   '/app/inbox',
@@ -20,6 +20,32 @@ self.addEventListener('activate', e => {
     ).then(() => self.clients.claim())
   );
 });
+
+self.addEventListener('message', e => {
+  if (e.data && e.data.type === 'GET_SW_VERSION') {
+    e.source && e.source.postMessage({ type: 'SW_VERSION', version: SW_VERSION });
+  }
+  if (e.data && e.data.type === 'SKIP_WAITING') self.skipWaiting();
+});
+
+async function storePushDebug(payload, options) {
+  const debug = {
+    swVersion: SW_VERSION,
+    lastPushReceivedAt: new Date().toISOString(),
+    lastPushPayload: payload,
+    lastEventType: payload.eventType || (payload.data && payload.data.event_type) || null,
+    lastNotificationOptions: options,
+    lastNotificationSilent: options.silent === true,
+    lastNotificationTag: options.tag || '',
+    lastNotificationRenotify: options.renotify === true,
+    lastNotificationVibrate: options.vibrate || [],
+    badgeCount: payload.badgeCount ?? (payload.data && payload.data.badgeCount) ?? null,
+  };
+  const clientsList = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+  clientsList.forEach(c => c.postMessage({ type: 'PUSH_DIAGNOSTICS', debug }));
+  const cache = await caches.open(`luxit-push-debug-${SW_VERSION}`);
+  await cache.put('/__luxit_push_debug__', new Response(JSON.stringify(debug), { headers: { 'Content-Type': 'application/json' } }));
+}
 
 /* Network-first for API/app shell calls, cache-first for versioned static assets */
 self.addEventListener('fetch', e => {
@@ -52,23 +78,28 @@ self.addEventListener('push', e => {
     }
     return self.registration.setAppBadge ? self.registration.setAppBadge(Number(badgeCount)) : Promise.resolve();
   };
+  const notificationOptions = {
+    body:    data.body,
+    icon:    data.icon || '/static/favicon.png',
+    badge:   data.badge || '/static/favicon.png',
+    tag:     data.tag || `luxit-${data.eventType || (data.data && data.data.event_type) || 'notification'}`,
+    data:    Object.assign({ url: data.url || '/app/inbox' }, data.data || {}),
+    renotify: data.renotify !== false,
+    requireInteraction: data.requireInteraction === true,
+    vibrate: data.silent === true ? [] : (data.vibrate || [200, 100, 200]),
+    silent:  data.silent === true,
+    // Android Chrome/PWA uses the app/channel default sound when silent is false.
+    sound:   data.sound || 'default',
+    actions: [{ action: 'open', title: 'Open Inbox' }],
+  };
+  if (notificationOptions.renotify && !notificationOptions.tag) {
+    notificationOptions.tag = `luxit-${Date.now()}`;
+  }
   e.waitUntil(
     Promise.all([
       updateBadge(),
-      self.registration.showNotification(data.title, {
-      body:    data.body,
-      icon:    data.icon || '/static/favicon.png',
-      badge:   data.badge || '/static/favicon.png',
-      tag:     data.tag || 'luxit-inbox',
-      data:    Object.assign({ url: data.url || '/app/inbox' }, data.data || {}),
-      renotify: data.renotify !== false,
-      requireInteraction: data.requireInteraction === true,
-      vibrate: data.silent === true ? [] : (data.vibrate || [200, 100, 200]),
-      silent:  data.silent === true,
-      // Android Chrome/PWA uses the app/channel default sound when silent is false.
-      sound:   data.sound || 'default',
-        actions: [{ action: 'open', title: 'Open Inbox' }],
-      })
+      storePushDebug(data, notificationOptions),
+      self.registration.showNotification(data.title, notificationOptions)
     ])
   );
 });

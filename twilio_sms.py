@@ -136,6 +136,9 @@ class _NumberScopedTwilioConfig:
         "sms_forwarding_enabled",
         "auto_reply_enabled",
         "number_auto_reply_text",
+        "after_hours_text",
+        "business_hours_auto_reply_enabled",
+        "business_hours_auto_reply_text",
         "call_forward_to",
         "voice_forwarding_enabled",
         "voicemail_greeting_text",
@@ -756,7 +759,11 @@ def _update_contact_sms_consent(company_id, phone_number, opted_in, source):
 
 
 def _after_hours_rule_response(company_id: int, phone_number_id: int | None = None) -> str | None:
-    from models import AutoReplyRule
+    from models import AutoReplyRule, TwilioPhoneNumber
+    if phone_number_id is not None:
+        pn = db.session.get(TwilioPhoneNumber, phone_number_id)
+        if pn and pn.company_id == company_id and getattr(pn, "after_hours_text", None):
+            return (pn.after_hours_text or "").strip()
     rule_query = AutoReplyRule.query.filter_by(
         company_id=company_id,
         trigger_type="after_hours",
@@ -784,11 +791,11 @@ def _send_number_configured_auto_reply(conv, ta, *, in_business=None) -> bool:
         except TypeError:
             in_business = _is_business_hours(ta.company_id)
     response_body = None
-    # After-hours reply copy is canonical in AutoReplyRule.response.
-    # Do not fall back to per-number/account text fields here; those legacy
-    # fields are intentionally no longer editable so the copy has one home.
-    if not response_body and in_business:
-        response_body = getattr(ta, "number_auto_reply_text", None)
+    if in_business:
+        response_body = getattr(ta, "business_hours_auto_reply_text", None) if getattr(ta, "business_hours_auto_reply_enabled", False) else None
+        response_body = response_body or getattr(ta, "number_auto_reply_text", None)
+    else:
+        response_body = getattr(ta, "after_hours_text", None) if getattr(ta, "after_hours_sms_enabled", False) else None
     if not response_body:
         return False
     cooldown_minutes = getattr(ta, "after_hours_cooldown_minutes", None)
@@ -976,7 +983,7 @@ def _apply_auto_reply_rules(conv, body: str, ta) -> bool:
         elif rule.action == "reply" and (rule.response or rule.trigger_type == "after_hours"):
             response_body = rule.response
             if rule.trigger_type == "after_hours":
-                response_body = rule.response or REQUIRED_AFTER_HOURS_SMS_COPY
+                response_body = _after_hours_rule_response(ta.company_id, getattr(getattr(ta, "phone_number", None), "id", None)) or rule.response or REQUIRED_AFTER_HOURS_SMS_COPY
             if reply_sent:
                 logger.debug("%s rule id=%s skipped — reply already sent", _tag, rule.id)
                 continue
@@ -1629,9 +1636,9 @@ def _inbound_call_impl():
         if pn and getattr(pn, "after_hours_sms_enabled", None) is not None
         else bool(settings and settings.after_hours_sms_enabled)
     )
-    after_hours_sms_body = _after_hours_rule_response(
-        ta.company_id,
-        getattr(pn, "id", None) or getattr(ta, "phone_number_id", None),
+    after_hours_sms_body = (
+        _after_hours_rule_response(ta.company_id, getattr(pn, "id", None) or getattr(ta, "phone_number_id", None))
+        or (settings.after_hours_sms_body if settings else None)
     )
     if (not in_hours) and after_hours_sms_enabled and after_hours_sms_body and from_number and log and not log.missed_text_sent:
         try:
@@ -1645,6 +1652,20 @@ def _inbound_call_impl():
                 logger.info("After-hours SMS auto-reply skipped for call sid=%s reason=%s", call_sid, reason)
         except Exception as exc:
             logger.warning("After-hours SMS auto-reply failed for call sid=%s: %s", call_sid, exc)
+
+    # Business-hours auto reply is separate from canonical after-hours rules and only runs in hours.
+    if in_hours and getattr(ta, "business_hours_auto_reply_enabled", False) and getattr(ta, "business_hours_auto_reply_text", None) and from_number and log and not log.missed_text_sent:
+        try:
+            can_send, reason = _can_send_call_auto_sms(ta.company_id, from_number)
+            if can_send:
+                result = _send_sms(ta, from_number, ta.business_hours_auto_reply_text)
+                if result.get("success"):
+                    log.missed_text_sent = True
+                    db.session.commit()
+            else:
+                logger.info("Business-hours SMS auto-reply skipped for call sid=%s reason=%s", call_sid, reason)
+        except Exception as exc:
+            logger.warning("Business-hours SMS auto-reply failed for call sid=%s: %s", call_sid, exc)
 
     def _voicemail_twiml(after_hours=False):
         greeting = ((ta.voicemail_greeting_text if pn else None) or
@@ -1678,10 +1699,11 @@ def _inbound_call_impl():
         route = settings_route
     else:
         route = number_route or settings_route
+    configured_call_forward_to = getattr(ta, "call_forwarding_number", None) or getattr(ta, "call_forward_to", None)
     forward_to = (
-        (getattr(ta, "call_forward_to", None) if pn else None)
+        (configured_call_forward_to if pn else None)
         or ((settings.forward_number if in_hours else settings.after_hours_forward_number) if settings else None)
-        or getattr(ta, "call_forward_to", None)
+        or configured_call_forward_to
     )
     fallback_to = ((settings.fallback_forward_number if in_hours else settings.after_hours_fallback_forward_number) if settings else None)
     timeout = (settings.ring_duration_seconds if settings else None) or 25
@@ -1697,6 +1719,9 @@ def _inbound_call_impl():
         if log:
             log.status = "forwarded"
             log.forwarded_to_number = number
+            log.forwarded = True
+            log.forwarded_to = number
+            log.final_status = "forwarded"
             db.session.commit()
         fallback_xml = f"<Number>{fallback}</Number>" if fallback else ""
         return (
@@ -1755,13 +1780,13 @@ def _inbound_call_impl():
         twiml = _dial_twiml(forward_to, fallback_to)
     elif route == "voicemail":
         twiml = _voicemail_twiml(after_hours=not in_hours)
-    elif in_hours and ta.voice_forwarding_enabled and ta.call_forward_to:
-        twiml = _dial_twiml(ta.call_forward_to)
+    elif in_hours and (ta.voice_forwarding_enabled or getattr(ta, "call_forwarding_enabled", False)) and configured_call_forward_to:
+        twiml = _dial_twiml(configured_call_forward_to)
     elif not in_hours and ta.after_hours_voicemail_enabled:
         twiml = _voicemail_twiml(after_hours=True)
-    elif ta.call_forward_to and ta.voice_forwarding_enabled:
+    elif configured_call_forward_to and (ta.voice_forwarding_enabled or getattr(ta, "call_forwarding_enabled", False)):
         # Always forward regardless of hours when explicitly configured
-        twiml = _dial_twiml(ta.call_forward_to)
+        twiml = _dial_twiml(configured_call_forward_to)
     else:
         twiml = _voicemail_twiml()
 
@@ -1963,6 +1988,7 @@ def voice_status():
         if log:
             log.status   = call_status
             log.duration = duration
+            log.final_status = "answered" if call_status in ("completed", "in-progress") else call_status
             if call_status == "completed":
                 log.ended_at = datetime.utcnow()
             if call_status == "in-progress":
@@ -1970,6 +1996,7 @@ def voice_status():
                 log.answered_at = log.answered_at or datetime.utcnow()
             if call_status in ("no-answer", "busy", "failed", "canceled"):
                 log.status = "missed"
+                log.final_status = "missed"
                 notify_event_id = f"{call_sid}:missed_call_notification"
                 if not CallEvent.query.filter_by(call_log_id=log.id, event_type="pwa_notification:missed_call", provider_event_id=notify_event_id).first():
                     try:
