@@ -520,7 +520,7 @@ def pwa_index():
         os.environ.get("LUXIT_ASSET_VERSION")
         or os.environ.get("GIT_SHA")
         or os.environ.get("RENDER_GIT_COMMIT")
-        or "20260621-pwa-communications"
+        or "20260702-push-sound-diagnostics"
     )
     return render_template(
         "inbox_pwa/index.html",
@@ -550,7 +550,7 @@ def pwa_calls():
         os.environ.get("LUXIT_ASSET_VERSION")
         or os.environ.get("GIT_SHA")
         or os.environ.get("RENDER_GIT_COMMIT")
-        or "20260621-pwa-communications"
+        or "20260702-push-sound-diagnostics"
     )
     return render_template("inbox_pwa/calls.html", user=user, company=company, pwa_version=pwa_version)
 
@@ -1065,6 +1065,18 @@ def _settings_to_dict(settings):
 
 
 
+
+def _normalize_e164(value):
+    raw = (value or "").strip()
+    if not raw:
+        return ""
+    digits = re.sub(r"\D", "", raw)
+    if len(digits) == 10:
+        digits = "1" + digits
+    if 8 <= len(digits) <= 15:
+        return "+" + digits
+    return None
+
 @inbox_pwa_bp.route("/api/phone/numbers/<int:number_id>/settings", methods=["GET", "PUT"])
 def api_phone_number_settings(number_id):
     user = _require_auth()
@@ -1084,18 +1096,28 @@ def api_phone_number_settings(number_id):
         allowed = {
             "business_hours", "timezone", "during_hours_route", "after_hours_route",
             "sms_forward_to", "sms_forwarding_enabled", "auto_reply_enabled", "number_auto_reply_text",
-            "call_forward_to", "voice_forwarding_enabled", "ring_timeout",
+            "call_forward_to", "voice_forwarding_enabled", "call_forwarding_enabled", "call_forwarding_number", "business_hours_auto_reply_enabled", "business_hours_auto_reply_text", "ring_timeout",
             "voicemail_greeting_text", "voicemail_greeting_audio_url", "missed_call_text",
             "after_hours_text", "after_hours_sms_body", "after_hours_cooldown_minutes", "after_hours_sms_enabled", "after_hours_voicemail_enabled",
             "browser_calling_enabled", "cell_callback_enabled", "wifi_only",
             "mobile_data_allowed", "fallback_behavior", "caller_id_display_name",
         }
+        if "call_forwarding_number" in data or "call_forward_to" in data:
+            normalized = _normalize_e164(data.get("call_forwarding_number") or data.get("call_forward_to"))
+            if normalized is None:
+                return jsonify({"success": False, "error": "Forwarding number must be E.164 (for example +15551234567)."}), 400
+            data["call_forwarding_number"] = normalized
+            data["call_forward_to"] = normalized
         for key in allowed:
             if key in data:
                 if key == "after_hours_sms_body":
                     pn.after_hours_text = data[key]
                 else:
                     setattr(pn, key, data[key])
+        if "call_forwarding_enabled" in data:
+            pn.voice_forwarding_enabled = bool(data["call_forwarding_enabled"])
+        if "voice_forwarding_enabled" in data:
+            pn.call_forwarding_enabled = bool(data["voice_forwarding_enabled"])
         db.session.commit()
     return jsonify({
         "success": True,
@@ -1114,6 +1136,10 @@ def api_phone_number_settings(number_id):
             "number_auto_reply_text": pn.number_auto_reply_text,
             "call_forward_to": pn.call_forward_to,
             "voice_forwarding_enabled": pn.voice_forwarding_enabled,
+            "call_forwarding_number": pn.call_forwarding_number or pn.call_forward_to,
+            "call_forwarding_enabled": bool(pn.call_forwarding_enabled or pn.voice_forwarding_enabled),
+            "business_hours_auto_reply_enabled": bool(pn.business_hours_auto_reply_enabled),
+            "business_hours_auto_reply_text": pn.business_hours_auto_reply_text or "",
             "ring_timeout": pn.ring_timeout,
             "voicemail_greeting_text": pn.voicemail_greeting_text,
             "voicemail_greeting_audio_url": pn.voicemail_greeting_audio_url,
@@ -2162,6 +2188,12 @@ def send_pwa_push_notification(company_id: int, *, user_ids, title: str, body: s
             "badgeCount": badge_count,
         }
         result = _send_web_push_to_subscriptions(subs, payload)
+        logger.info("PWA push send", extra={
+            "user_id": user.id, "company_id": company_id, "phone_number_id": phone_number_id,
+            "event_type": decision["event_type"], "silent": payload["silent"], "sound": payload["sound"],
+            "vibrate": payload["vibrate"], "renotify": payload["renotify"], "tag": payload["tag"],
+            "badgeCount": badge_count, "push_provider_result": result,
+        })
         total += result.get("sent", 0)
         errors.extend(result.get("errors", []))
     return {"sent": total, "errors": errors, "debug": debug}
@@ -2194,6 +2226,17 @@ def pwa_push_debug():
     active_subscriptions = PushSubscription.query.filter_by(company_id=company.id, user_id=user.id, is_active=True).count()
     return jsonify({
         "success": True,
+        "notification_permission": "client-reported",
+        "active_subscription": active_subscriptions > 0,
+        "active_subscriptions": active_subscriptions,
+        "service_worker_version": os.environ.get("LUXIT_ASSET_VERSION") or os.environ.get("GIT_SHA") or os.environ.get("RENDER_GIT_COMMIT") or "20260702-push-sound-diagnostics",
+        "decision": decision,
+        "device_instructions": [
+            "Android: Chrome/LUXit PWA notification channel cannot be Silent or Low Importance.",
+            "Android: enable sound and vibration for the Chrome/LUXit PWA notification category.",
+            "iPhone: install to Home Screen, then enable Settings > Notifications > LUXit > Sounds.",
+            "Disable Focus / Do Not Disturb during notification sound tests.",
+        ],
         "user": {"id": user.id, "email": user.email, "username": user.username},
         "company": {"id": company.id, "name": company.name},
         "mobile_inbox_access": True,
