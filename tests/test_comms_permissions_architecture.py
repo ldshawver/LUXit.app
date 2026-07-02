@@ -178,6 +178,79 @@ def test_outbound_sms_body_excludes_notification_debug_text(client, comms_world,
     assert notification_debug_text not in sent["body"]
 
 
+def test_pwa_sms_send_uses_canonical_endpoint_and_appends_message(client, comms_world, monkeypatch):
+    sent = {}
+
+    class FakeMessages:
+        def create(self, **kwargs):
+            sent.update(kwargs)
+            return type("Msg", (), {"sid": "SMCANONICAL", "status": "sent"})()
+
+    class FakeClient:
+        def __init__(self, *args, **kwargs):
+            self.messages = FakeMessages()
+
+    import twilio.rest
+    monkeypatch.setattr(twilio.rest, "Client", FakeClient)
+
+    login(client, comms_world["staff"])
+    resp = client.post(
+        f"/api/inbox/conversations/{comms_world['c1']}/messages",
+        json={"body": "Canonical PWA send"},
+    )
+
+    assert resp.status_code == 200
+    assert resp.json["success"] is True
+    assert sent["from_"] == "+15550001111"
+    assert sent["to"] == "+15551230001"
+    assert sent["body"] == "Canonical PWA send"
+
+    detail = client.get(f"/api/inbox/conversations/{comms_world['c1']}")
+    assert any(m["body"] == "Canonical PWA send" for m in detail.json["messages"])
+
+
+def test_pwa_sms_invalid_conversation_returns_useful_404(client, comms_world):
+    login(client, comms_world["staff"])
+    resp = client.post("/api/inbox/conversations/999999/messages", json={"body": "hello"})
+
+    assert resp.status_code == 404
+    assert resp.json["success"] is False
+    assert resp.json["code"] == "conversation_not_found"
+    assert "Conversation not found" in resp.json["error"]
+
+
+def test_pwa_sms_unassigned_phone_line_returns_403_not_generic_404(client, comms_world):
+    with client.application.app_context():
+        perm = PhoneNumberUserPermission.query.filter_by(
+            user_id=comms_world["staff"], phone_number_id=comms_world["pn1"]
+        ).first()
+        perm.can_send_sms = False
+        db.session.commit()
+
+    login(client, comms_world["staff"])
+    resp = client.post(
+        f"/api/inbox/conversations/{comms_world['c1']}/messages",
+        json={"body": "blocked"},
+    )
+
+    assert resp.status_code == 403
+    assert resp.json["code"] == "phone_line_forbidden"
+    assert "permission" in resp.json["error"].lower()
+
+
+def test_pwa_shell_and_service_worker_bump_sms_send_version():
+    html = (os.path.join(os.getcwd(), "templates/inbox_pwa/index.html"))
+    sw = (os.path.join(os.getcwd(), "static/sw.js"))
+    with open(html) as f:
+        page = f.read()
+    with open(sw) as f:
+        worker = f.read()
+
+    assert "/api/inbox/conversations/${state.activeConvId}/messages" in page
+    assert "/twilio/send" not in page
+    assert "Server error (${res.status}). Please try again." not in page
+    assert "20260702-pwa-sms-send-fix" in worker
+
 def test_pwa_notifications_and_push_subscription_are_scoped_by_number(client, comms_world):
     login(client, comms_world["staff"])
     sub = client.post("/api/pwa/push/subscribe", json={

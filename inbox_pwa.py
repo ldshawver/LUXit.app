@@ -275,6 +275,41 @@ def _accessible_numbers_for(user, company_id: int) -> list[str]:
     return accessible_phone_numbers(user, company_id)
 
 
+def _can_send_sms_from_number(user, company_id: int, from_number: str) -> bool:
+    """Return whether the user may send SMS from a tenant-owned line."""
+    if not user or not company_id or not from_number:
+        return False
+    from services.comms_permissions import normalize_role, user_access_for_company
+    acc = user_access_for_company(user, company_id)
+    role = normalize_role(getattr(acc, "role", None)) if acc else "viewer"
+    if getattr(user, "is_admin", False) or role in {"owner", "admin"}:
+        return True
+
+    from models import PhoneNumberUserPermission, TwilioPhoneNumber
+    explicit_count = PhoneNumberUserPermission.query.filter_by(company_id=company_id, user_id=user.id).count()
+    pn = TwilioPhoneNumber.query.filter_by(company_id=company_id, phone_number=from_number, is_active=True).first()
+    if pn:
+        perm = PhoneNumberUserPermission.query.filter_by(
+            company_id=company_id, user_id=user.id, phone_number_id=pn.id
+        ).first()
+        if perm:
+            return bool(perm.can_access_pwa and perm.can_view_sms and perm.can_send_sms)
+        if explicit_count:
+            return False
+
+    assigned = getattr(acc, "assigned_number", None) if acc else None
+    if assigned:
+        return assigned == from_number
+    return bool(acc and acc.has_comms_hub_access())
+
+
+def _json_error(message: str, status: int, code: str | None = None):
+    payload = {"success": False, "error": message}
+    if code:
+        payload["code"] = code
+    return jsonify(payload), status
+
+
 _UNICODE_REPLACEMENTS = str.maketrans({
     "\u2026": "...",   # …  ellipsis
     "\u2019": "'",     # '  right single quotation mark
@@ -386,7 +421,7 @@ def _twilio_send_error_message_LEGACY(exc) -> str:
     return raw
 
 
-def _send_sms_internal(ta, to_number: str, body: str, conversation_id=None):
+def _send_sms_internal(ta, to_number: str, body: str, conversation_id=None, from_number: str | None = None):
     """Send SMS via Twilio — mirrors twilio_sms._send_sms.
 
     Keep customer SMS content isolated from notification/log text. Only
@@ -403,7 +438,9 @@ def _send_sms_internal(ta, to_number: str, body: str, conversation_id=None):
         tok = ta.get_auth_token()  if hasattr(ta, 'get_auth_token')  else ta._auth_token
         client = Client(sid, tok)
         kwargs = {"body": sms_body, "to": to_number}
-        if ta.messaging_service_sid:
+        if from_number:
+            kwargs["from_"] = from_number
+        elif ta.messaging_service_sid:
             kwargs["messaging_service_sid"] = ta.messaging_service_sid
         elif ta.from_phone:
             kwargs["from_"] = ta.from_phone
@@ -415,7 +452,7 @@ def _send_sms_internal(ta, to_number: str, body: str, conversation_id=None):
             company_id=ta.company_id,
             twilio_sid=msg.sid,
             direction="outbound",
-            from_number=ta.from_phone or ta.messaging_service_sid,
+            from_number=from_number or ta.from_phone or ta.messaging_service_sid,
             to_number=to_number,
             body=sms_body,
             status=msg.status,
@@ -520,7 +557,7 @@ def pwa_index():
         os.environ.get("LUXIT_ASSET_VERSION")
         or os.environ.get("GIT_SHA")
         or os.environ.get("RENDER_GIT_COMMIT")
-        or "20260621-pwa-communications"
+        or "20260702-pwa-sms-send-fix"
     )
     return render_template(
         "inbox_pwa/index.html",
@@ -550,7 +587,7 @@ def pwa_calls():
         os.environ.get("LUXIT_ASSET_VERSION")
         or os.environ.get("GIT_SHA")
         or os.environ.get("RENDER_GIT_COMMIT")
-        or "20260621-pwa-communications"
+        or "20260702-pwa-sms-send-fix"
     )
     return render_template("inbox_pwa/calls.html", user=user, company=company, pwa_version=pwa_version)
 
@@ -1587,37 +1624,44 @@ def send_message(conv_id):
     from services.comms_permissions import filter_conversations_for_user
     conv = filter_conversations_for_user(
         TwilioConversation.query.filter_by(id=conv_id, company_id=company.id), user, company.id
-    ).first_or_404()
+    ).first()
+    if not conv:
+        return _json_error("Conversation not found or is not assigned to one of your phone lines.", 404, "conversation_not_found")
 
-    payload = request.get_json() or {}
+    payload = request.get_json(silent=True) or {}
     body    = (payload.get("body") or "").strip()
     if not body:
-        return jsonify({"success": False, "error": "Message body is required."}), 400
+        return _json_error("Message body is required.", 422, "invalid_message")
+    if not conv.from_number:
+        return _json_error("Conversation has no recipient phone number.", 422, "invalid_recipient")
+    if not conv.to_number:
+        return _json_error("Conversation has no sending phone line.", 404, "phone_line_not_found")
+    if not _can_send_sms_from_number(user, company.id, conv.to_number):
+        return _json_error("You do not have permission to send SMS from this phone line.", 403, "phone_line_forbidden")
 
     ta = _get_twilio_account(company.id)
     if not ta:
         logger.warning("send_message: no Twilio account for company=%d user=%d conv=%d",
                        company.id, user.id, conv_id)
-        return jsonify({
-            "success": False,
-            "error": "Twilio is not configured for this account. Add your Twilio credentials in SMS Settings."
-        }), 400
+        return _json_error(
+            "Twilio is not configured for this account. Add your Twilio credentials in SMS Settings.",
+            404,
+            "phone_line_not_found",
+        )
     if not ta.is_configured:
         logger.warning("send_message: Twilio account incomplete for company=%d user=%d conv=%d",
                        company.id, user.id, conv_id)
-        return jsonify({
-            "success": False,
-            "error": "Twilio credentials are incomplete. Check your Account SID, Auth Token, and phone number in SMS Settings."
-        }), 400
+        return _json_error(
+            "Twilio credentials are incomplete. Check your Account SID, Auth Token, and phone number in SMS Settings.",
+            422,
+            "twilio_not_configured",
+        )
 
-    if not conv.from_number:
-        return jsonify({"success": False, "error": "Conversation has no destination phone number."}), 400
-
-    record, err = _send_sms_internal(ta, conv.from_number, body, conversation_id=conv.id)
+    record, err = _send_sms_internal(ta, conv.from_number, body, conversation_id=conv.id, from_number=conv.to_number)
     if err:
         logger.error("send_message failed: user=%d company=%d conv=%d to=%s error=%s",
                      user.id, company.id, conv_id, conv.from_number, err)
-        return jsonify({"success": False, "error": err}), 500
+        return _json_error(err, 502, "provider_failure")
 
     # Update conversation preview
     conv.last_message_at      = datetime.utcnow()
@@ -1650,25 +1694,39 @@ def _normalize_phone(raw: str) -> str:
 def new_conversation():
     user    = _require_auth()
     company = _require_company(user)
-    payload = request.get_json() or {}
+    denied = _require_mobile_inbox_api_access(user, company)
+    if denied:
+        return denied
+    payload = request.get_json(silent=True) or {}
     to_raw  = (payload.get("to") or "").strip()
     body    = (payload.get("body") or "").strip()
 
     if not to_raw:
-        return jsonify({"success": False, "error": "Recipient phone number is required."}), 400
+        return _json_error("Recipient phone number is required.", 422, "invalid_recipient")
     if not body:
-        return jsonify({"success": False, "error": "Message body is required."}), 400
+        return _json_error("Message body is required.", 422, "invalid_message")
 
     to_num = _normalize_phone(to_raw)
     if len(to_num) < 7:
-        return jsonify({"success": False, "error": f"Invalid phone number: {to_raw}"}), 400
+        return _json_error(f"Invalid phone number: {to_raw}", 422, "invalid_recipient")
 
     ta = _get_twilio_account(company.id)
-    if not ta or not ta.is_configured:
-        return jsonify({
-            "success": False,
-            "error": "Twilio is not configured for this account. Add your Twilio credentials in SMS Settings."
-        }), 400
+    if not ta:
+        return _json_error(
+            "No active sending phone line was found for this company.",
+            404,
+            "phone_line_not_found",
+        )
+    if not ta.is_configured:
+        return _json_error(
+            "Twilio is not configured for this account. Add your Twilio credentials in SMS Settings.",
+            422,
+            "twilio_not_configured",
+        )
+    if not ta.from_phone:
+        return _json_error("No sending phone line is configured for this company.", 404, "phone_line_not_found")
+    if not _can_send_sms_from_number(user, company.id, ta.from_phone):
+        return _json_error("You do not have permission to send SMS from this phone line.", 403, "phone_line_forbidden")
 
     from models import TwilioConversation
     # Look up by both the normalised form and the raw form so existing convs are found
@@ -1686,11 +1744,11 @@ def new_conversation():
         db.session.add(conv)
         db.session.flush()
 
-    record, err = _send_sms_internal(ta, to_num, body, conversation_id=conv.id)
+    record, err = _send_sms_internal(ta, to_num, body, conversation_id=conv.id, from_number=ta.from_phone)
     if err:
         logger.error("new_conversation send failed user=%d company=%d to=%s: %s",
                      user.id, company.id, to_num, err)
-        return jsonify({"success": False, "error": err}), 500
+        return _json_error(err, 502, "provider_failure")
 
     conv.last_message_at      = datetime.utcnow()
     conv.last_message_preview = f"You: {body[:150]}"
