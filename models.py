@@ -3154,6 +3154,9 @@ class TwilioCallLog(db.Model):
     from_number  = db.Column(db.String(20))
     to_number    = db.Column(db.String(20))
     forwarded_to_number = db.Column(db.String(20), nullable=True)
+    forwarded    = db.Column(db.Boolean, default=False)
+    forwarded_to = db.Column(db.String(20), nullable=True)
+    final_status = db.Column(db.String(50), nullable=True)
     contact_id   = db.Column(db.Integer, db.ForeignKey("contact.id"), nullable=True)
     customer_id  = db.Column(db.Integer, nullable=True)
     assigned_user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True)
@@ -3698,6 +3701,10 @@ class TwilioPhoneNumber(db.Model):
 
     call_forward_to          = db.Column(db.String(20))
     voice_forwarding_enabled = db.Column(db.Boolean, default=True)
+    call_forwarding_enabled  = db.Column(db.Boolean, default=False)
+    call_forwarding_number   = db.Column(db.String(20))
+    business_hours_auto_reply_enabled = db.Column(db.Boolean, default=False)
+    business_hours_auto_reply_text    = db.Column(db.Text)
     ring_timeout             = db.Column(db.Integer, default=25)
 
     business_hours           = db.Column(JSON, default=dict)
