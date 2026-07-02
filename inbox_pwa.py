@@ -1757,10 +1757,10 @@ def _normalize_phone(raw: str) -> str:
 def new_conversation():
     user    = _require_auth()
     company = _require_company(user)
-denied = _require_pwa_communications_access(user, company)
-if denied:
-    return denied
-payload = request.get_json(silent=True) or {}
+    denied = _require_pwa_communications_access(user, company)
+    if denied:
+        return denied
+    payload = request.get_json(silent=True) or {}
     to_raw  = (payload.get("to") or "").strip()
     body    = (payload.get("body") or "").strip()
 
