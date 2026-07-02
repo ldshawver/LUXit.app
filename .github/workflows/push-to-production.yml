@@ -17,71 +17,24 @@ jobs:
     timeout-minutes: 20
 
     steps:
-      - name: Connect Tailscale
-        uses: tailscale/github-action@v3
-        with:
-          oauth-client-id: ${{ secrets.TS_CLIENT_ID }}
-          oauth-secret: ${{ secrets.TS_CLIENT_SECRET }}
-          tags: tag:github-actions
-
-      - name: Resolve LUXit Tailscale peer
-        id: resolve-luxit-peer
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          echo "Resolving LUXit VPS Tailscale peer..."
-          tailscale status
-          tailscale status --json > tailscale-status.json
-
-          rejected_ip="100.85.15.$((40 + 3))"
-          mapfile -t candidates < <(
-            jq -r --arg rejected_ip "$rejected_ip" '
-              .Peer[]
-              | {
-                  ip: (.TailscaleIPs[0] // ""),
-                  label: ([.HostName, .DNSName, .Name] | map(. // "") | join(" "))
-                }
-              | select(.ip != "")
-              | select((.label | test("(^|[^a-z0-9])(luxit|lux-email|lux)([^a-z0-9]|$)"; "i")))
-              | select((.label | test("myorder|documenso"; "i") | not))
-              | select(.ip != $rejected_ip)
-              | [.ip, .label] | @tsv
-            ' tailscale-status.json
-          )
-
-          if [ "${#candidates[@]}" -eq 0 ]; then
-            echo "No LUXit Tailscale peer found. Expected a peer hostname/name matching luxit, lux-email, or lux; rejecting myorder/documenso peers." >&2
-            jq -r '.Peer[] | "- ip=\((.TailscaleIPs[0] // "unknown")) hostname=\(.HostName // "") name=\(.Name // "") dns=\(.DNSName // "")"' tailscale-status.json >&2
-            exit 1
-          fi
-
-          if [ "${#candidates[@]}" -gt 1 ]; then
-            echo "Multiple LUXit-like Tailscale peers found; refusing to guess:" >&2
-            printf '%s\n' "${candidates[@]}" >&2
-            exit 1
-          fi
-
-          HOST="${candidates[0]%%$'\t'*}"
-          echo "Resolved LUXit Tailscale HOST=${HOST}"
-          echo "HOST=${HOST}" >> "$GITHUB_OUTPUT"
-
-      - name: Probe SSH over Tailscale
+      - name: Probe SSH on public LUXit VPS
         shell: bash
         env:
-          HOST: ${{ steps.resolve-luxit-peer.outputs.HOST }}
+          HOST: ${{ secrets.VPS_HOST }}
         run: |
           set -euo pipefail
-          echo "Probing SSH on ${HOST}:22 over Tailscale..."
-          tailscale status
-          tailscale ping "$HOST"
+          if [ -z "${HOST:-}" ]; then
+            echo "VPS_HOST secret is required for the public LUXit VPS host." >&2
+            exit 1
+          fi
+          echo "Probing SSH on public LUXit VPS ${HOST}:22..."
           timeout 15 bash -c "</dev/tcp/${HOST}/22"
-          echo "Tailscale SSH port reachable"
+          echo "Public LUXit VPS SSH port reachable"
 
       - name: Deploy to Production VPS
         uses: appleboy/ssh-action@v1.0.3
         with:
-          host: ${{ steps.resolve-luxit-peer.outputs.HOST }}
+          host: ${{ secrets.VPS_HOST }}
           username: serveradmin
           key: ${{ secrets.VPS_PRIVATE_KEY }}
           port: 22
@@ -89,6 +42,7 @@ jobs:
           command_timeout: 10m
           script_stop: true
           script: |
+            sudo -n true
             sudo bash <<'REMOTE_DEPLOY'
             set -euo pipefail
             APP_DIR="/root/lux-email-bot"
