@@ -17,21 +17,32 @@ jobs:
     timeout-minutes: 20
 
     steps:
-      - name: Confirm SSH connection
+      - name: Connect Tailscale
+        uses: tailscale/github-action@v3
+        with:
+          oauth-client-id: ${{ secrets.TS_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_CLIENT_SECRET }}
+          tags: tag:github-actions
+
+      - name: Confirm Tailscale SSH connection
         shell: bash
+        env:
+          HOST: 100.85.15.43
+          PORT: 22
+          USERNAME: serveradmin
         run: |
           set -euo pipefail
-          HOST_VALUE="${{ secrets.HOST }}"
-          echo "HOST starts with: ${HOST_VALUE:0:7}"
-          echo "Testing SSH port on HOST..."
-          timeout 15 bash -c "</dev/tcp/${HOST_VALUE}/22"
-          echo "SSH port reachable"
+          echo "Testing SSH port on ${HOST}:${PORT} over Tailscale as ${USERNAME}..."
+          tailscale status
+          tailscale ping "${HOST}"
+          timeout 15 bash -c "</dev/tcp/${HOST}/${PORT}"
+          echo "Tailscale SSH port reachable"
 
       - name: Deploy to Production VPS
         uses: appleboy/ssh-action@v1.0.3
         with:
-          host: ${{ secrets.HOST }}
-          username: root
+          host: 100.85.15.43
+          username: serveradmin
           key: ${{ secrets.VPS_PRIVATE_KEY }}
           port: 22
           timeout: 60s
