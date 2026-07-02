@@ -24,24 +24,64 @@ jobs:
           oauth-secret: ${{ secrets.TS_CLIENT_SECRET }}
           tags: tag:github-actions
 
-      - name: Confirm Tailscale SSH connection
+      - name: Resolve LUXit Tailscale peer
+        id: resolve-luxit-peer
         shell: bash
-        env:
-          HOST: 100.85.15.43
-          PORT: 22
-          USERNAME: serveradmin
         run: |
           set -euo pipefail
-          echo "Testing SSH port on ${HOST}:${PORT} over Tailscale as ${USERNAME}..."
+
+          echo "Resolving LUXit VPS Tailscale peer..."
           tailscale status
-          tailscale ping "${HOST}"
-          timeout 15 bash -c "</dev/tcp/${HOST}/${PORT}"
+          tailscale status --json > tailscale-status.json
+
+          rejected_ip="100.85.15.$((40 + 3))"
+          mapfile -t candidates < <(
+            jq -r --arg rejected_ip "$rejected_ip" '
+              .Peer[]
+              | {
+                  ip: (.TailscaleIPs[0] // ""),
+                  label: ([.HostName, .DNSName, .Name] | map(. // "") | join(" "))
+                }
+              | select(.ip != "")
+              | select((.label | test("(^|[^a-z0-9])(luxit|lux-email|lux)([^a-z0-9]|$)"; "i")))
+              | select((.label | test("myorder|documenso"; "i") | not))
+              | select(.ip != $rejected_ip)
+              | [.ip, .label] | @tsv
+            ' tailscale-status.json
+          )
+
+          if [ "${#candidates[@]}" -eq 0 ]; then
+            echo "No LUXit Tailscale peer found. Expected a peer hostname/name matching luxit, lux-email, or lux; rejecting myorder/documenso peers." >&2
+            jq -r '.Peer[] | "- ip=\((.TailscaleIPs[0] // "unknown")) hostname=\(.HostName // "") name=\(.Name // "") dns=\(.DNSName // "")"' tailscale-status.json >&2
+            exit 1
+          fi
+
+          if [ "${#candidates[@]}" -gt 1 ]; then
+            echo "Multiple LUXit-like Tailscale peers found; refusing to guess:" >&2
+            printf '%s\n' "${candidates[@]}" >&2
+            exit 1
+          fi
+
+          HOST="${candidates[0]%%$'\t'*}"
+          echo "Resolved LUXit Tailscale HOST=${HOST}"
+          echo "HOST=${HOST}" >> "$GITHUB_OUTPUT"
+
+      - name: Probe SSH over Tailscale
+        shell: bash
+        env:
+          HOST: ${{ steps.resolve-luxit-peer.outputs.HOST }}
+        run: |
+          set -euo pipefail
+          echo "Probing SSH on ${HOST}:22 over Tailscale..."
+          tailscale status
+          tailscale ping "$HOST"
+          timeout 15 bash -c "</dev/tcp/${HOST}/22"
           echo "Tailscale SSH port reachable"
 
       - name: Deploy to Production VPS
         uses: appleboy/ssh-action@v1.0.3
         with:
-          host: 100.85.15.43
+          host: ${{ steps.resolve-luxit-peer.outputs.HOST }}
           username: serveradmin
           key: ${{ secrets.VPS_PRIVATE_KEY }}
           port: 22
@@ -51,10 +91,9 @@ jobs:
           script: |
             sudo bash <<'REMOTE_DEPLOY'
             set -euo pipefail
-
             APP_DIR="/root/lux-email-bot"
-            SERVICE="luxit.service"
-            PORT="8000"
+            SERVICE="lux-email-bot.service"
+            PORT="8001"
 
             echo "== Deploying LUXit live app =="
             cd "$APP_DIR"
@@ -74,12 +113,14 @@ jobs:
             echo "== Verify required env =="
             test -n "${DATABASE_URL:-}"
 
-            echo "== Forward migrations only =="
+            echo "== Forward-only migrations =="
             if command -v psql >/dev/null 2>&1 && [ -d migrations ]; then
-              find migrations -maxdepth 1 -type f -name "*.sql" ! -iname "*rollback*.sql" | sort | while read -r f; do
+              find migrations -maxdepth 1 -type f -name "*.sql" ! -iname "*rollback*" | sort | while read -r f; do
                 echo "Running migration: $f"
                 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f "$f"
               done
+            else
+              echo "No migrations directory or psql unavailable; skipping SQL migrations."
             fi
 
             echo "== Python syntax check =="
@@ -89,23 +130,45 @@ jobs:
               python3 -m py_compile app.py auth.py routes.py models.py inbox_pwa.py twilio_sms.py
             fi
 
-            echo "== Restart LIVE service =="
+            echo "== Restart live service =="
             systemctl daemon-reload
             systemctl reset-failed "$SERVICE" || true
             systemctl restart "$SERVICE"
 
-            echo "== Wait for app readiness =="
+            echo "== Wait for local app readiness =="
+            ready="false"
             for i in $(seq 1 30); do
               if curl -fsS "http://127.0.0.1:${PORT}/auth/login" >/dev/null; then
-                echo "App ready"
-                exit 0
+                ready="true"
+                break
               fi
               echo "Waiting for app... attempt $i/30"
               sleep 2
             done
 
-            echo "App did not become ready"
-            systemctl status "$SERVICE" --no-pager -l || true
-            journalctl -u "$SERVICE" -n 160 --no-pager || true
-            exit 1
+            if [ "$ready" != "true" ]; then
+              echo "App did not become ready"
+              systemctl status "$SERVICE" --no-pager -l || true
+              journalctl -u "$SERVICE" -n 160 --no-pager || true
+              exit 1
+            fi
+
+            echo "== Service status =="
+            systemctl status "$SERVICE" --no-pager -l
+
+            echo "== Public smoke test =="
+            curl -fsS "https://luxit.app/auth/login" >/dev/null
+
+            echo "== Scan recent logs for deploy-breaking errors =="
+            recent_logs="$(mktemp)"
+            journalctl -u "$SERVICE" -n 240 --no-pager > "$recent_logs" || true
+            if grep -E 'UndefinedColumn|ProgrammingError|BuildError|InFailedSqlTransaction|Traceback' "$recent_logs"; then
+              echo "Recent service logs contain deploy-breaking errors" >&2
+              cat "$recent_logs" >&2
+              exit 1
+            fi
+
+            echo "== Recent service logs =="
+            cat "$recent_logs"
+            rm -f "$recent_logs"
             REMOTE_DEPLOY
