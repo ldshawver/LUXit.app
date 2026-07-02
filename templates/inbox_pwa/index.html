@@ -967,6 +967,11 @@
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
       Check for Updates &amp; Refresh
     </button>
+    <button class="settings-action-btn" onclick="runPushDebug()" style="margin-top:6px;">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 17H2a3 3 0 0 0 3-3V9a7 7 0 0 1 14 0v5a3 3 0 0 0 3 3z"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+      Run Push Diagnostics
+    </button>
+    <div id="pushDebugResult" style="display:none;margin-top:8px;padding:8px;border-radius:8px;background:rgba(15,23,42,.72);border:1px solid rgba(148,163,184,.22);color:var(--pwa-muted);font-size:.78rem;white-space:pre-wrap;"></div>
     <a href="/dashboard" class="settings-action-btn" style="margin-top:6px;text-decoration:none;">
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
       Back to Dashboard
@@ -1430,15 +1435,17 @@ async function apiFetch(url, method = 'GET', body = null) {
   } catch (networkErr) {
     return { success: false, error: 'Network error — check your connection and try again.' };
   }
-  if (res.status === 401) { location.href = '/auth/login?next=/app/inbox'; return null; }
-  if (res.status === 403) return { success: false, error: 'Permission denied.' };
   // Parse JSON safely — server may return HTML on uncaught exceptions
   let data;
   try {
     data = await res.json();
   } catch {
+    if (res.status === 401) { location.href = '/auth/login?next=/app/inbox'; return null; }
+    if (res.status === 403) return { success: false, error: 'Permission denied.' };
     return { success: false, error: `Server error (${res.status}). Please try again.` };
   }
+  if (res.status === 401) { location.href = '/auth/login?next=/app/inbox'; return null; }
+  if (res.status === 403) return { success: false, error: data.error || 'Permission denied.' };
   // Promote non-OK HTTP responses that have JSON bodies
   if (!res.ok && data.error === undefined) {
     return { success: false, error: `Request failed (${res.status}).` };
@@ -2016,6 +2023,31 @@ async function togglePushFromSettings() {
   }
   await requestPush();
   openSettingsSheet(); // refresh labels
+}
+
+async function runPushDebug() {
+  const box = document.getElementById('pushDebugResult');
+  if (box) {
+    box.style.display = 'block';
+    box.textContent = 'Checking push diagnostics…';
+  }
+  const data = await apiFetch('/api/pwa/push/debug');
+  if (!data) return;
+  if (!data.success) {
+    if (box) box.textContent = data.error || 'Push diagnostics failed.';
+    toast(data.error || 'Push diagnostics failed');
+    return;
+  }
+  const decision = data.decision || {};
+  const lines = [
+    `Signed in as: ${(data.user && (data.user.email || data.user.username)) || 'current user'}`,
+    `Company: ${(data.company && data.company.name) || 'current company'}`,
+    `Active push subscriptions: ${data.active_subscriptions || 0}`,
+    `Decision: ${decision.send ? 'will send' : 'will not send'} (${decision.reason || 'unknown'})`,
+    `Sound: ${decision.sound || 'none'} · Vibration: ${(decision.vibrate || []).length ? 'on' : 'off'}`,
+  ];
+  if (box) box.textContent = lines.join('\n');
+  toast('Push diagnostics complete');
 }
 
 /* ── Refresh / check for updates ───────────────────────────────── */

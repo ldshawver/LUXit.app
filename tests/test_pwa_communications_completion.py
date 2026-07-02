@@ -432,3 +432,45 @@ def test_push_payload_non_silent_vibration_badge_and_quiet_hours(pwa_app, monkey
         db.session.commit()
         inbox_pwa.send_pwa_push_notification(ids["company"], user_ids=[ids["staff"]], title="Quiet", body="Body", event_type="voicemail", phone_number_id=ids["line"])
         assert payloads[-1]["silent"] is True
+
+
+def test_push_debug_uses_logged_in_pwa_user_session(pwa_app):
+    app, client, ids = pwa_app
+    login(client, ids["staff"])
+    with app.app_context():
+        db.session.add(PushSubscription(
+            user_id=ids["staff"],
+            company_id=ids["company"],
+            endpoint="https://push.example/sub/debug",
+            p256dh="p",
+            auth_key="a",
+            is_active=True,
+        ))
+        db.session.commit()
+    resp = client.get("/api/pwa/push/debug")
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data["success"] is True
+    assert data["user"]["id"] == ids["staff"]
+    assert data["company"]["id"] == ids["company"]
+    assert data["mobile_inbox_access"] is True
+    assert data["active_subscriptions"] == 1
+    assert data["decision"]["event_type"] == "incoming_sms"
+
+
+def test_push_debug_returns_clear_auth_and_permission_responses(pwa_app):
+    app, client, ids = pwa_app
+    unauth = client.get("/api/pwa/push/debug")
+    assert unauth.status_code == 401
+    assert unauth.get_json()["code"] == "AUTHENTICATION_REQUIRED"
+    with app.app_context():
+        blocked = User(username="pwa_blocked", email="pwa_blocked@example.com", password_hash=generate_password_hash("pw"), default_company_id=ids["company"])
+        db.session.add(blocked)
+        db.session.flush()
+        db.session.add(UserCompanyAccess(user_id=blocked.id, company_id=ids["company"], role="staff", is_default=True, can_access_mobile_inbox=False, pwa_access_enabled=False))
+        db.session.commit()
+        blocked_id = blocked.id
+    login(client, blocked_id)
+    forbidden = client.get("/api/pwa/push/debug")
+    assert forbidden.status_code == 403
+    assert forbidden.get_json()["error"] == "Mobile inbox access is not enabled for this account."
