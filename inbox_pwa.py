@@ -2202,8 +2202,20 @@ def send_pwa_push_notification(company_id: int, *, user_ids, title: str, body: s
 @inbox_pwa_bp.route("/api/pwa/push/debug")
 def pwa_push_debug():
     """Explain whether the current user's next PWA push would alert, vibrate, or be skipped."""
-    user = _require_auth()
-    company = _require_company(user)
+    user = _current_user()
+    if not user:
+        return jsonify({
+            "success": False,
+            "code": "AUTHENTICATION_REQUIRED",
+            "error": "Authentication required. Open the PWA and sign in again.",
+        }), 401
+    company = _get_company(user)
+    if not company:
+        return jsonify({
+            "success": False,
+            "code": "NO_COMPANY",
+            "error": "No company is configured for this user.",
+        }), 409
     denied = _require_mobile_inbox_api_access(user, company)
     if denied:
         return denied
@@ -2225,6 +2237,12 @@ def pwa_push_debug():
             "iPhone: install to Home Screen, then enable Settings > Notifications > LUXit > Sounds.",
             "Disable Focus / Do Not Disturb during notification sound tests.",
         ],
+        "user": {"id": user.id, "email": user.email, "username": user.username},
+        "company": {"id": company.id, "name": company.name},
+        "mobile_inbox_access": True,
+        "active_subscription": active_subscriptions > 0,
+        "active_subscriptions": active_subscriptions,
+        "decision": decision,
     })
 
 
