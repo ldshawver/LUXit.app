@@ -1,5 +1,5 @@
 /* LUXit Inbox — Service Worker */
-const SW_VERSION = new URL(self.location.href).searchParams.get('v') || '20260702-push-sound-diagnostics';
+const SW_VERSION = new URL(self.location.href).searchParams.get('v') || '20260702-pwa-sms-send-fix';
 const CACHE = `luxit-inbox-${SW_VERSION}`;
 const APP_SHELL = [
   '/app/inbox',
