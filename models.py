@@ -577,6 +577,7 @@ class Company(db.Model):
     apply_brand_colors = db.Column(db.Boolean, default=False)
     industry = db.Column(db.String(100))
     description = db.Column(Text)
+    require_approved_pwa_devices = db.Column(db.Boolean, default=False, nullable=False)
 
     # ── SaaS / Billing Integration ───────────────────────────────────────────
     stripe_customer_id         = db.Column(db.String(100))
@@ -3791,10 +3792,17 @@ class PWADevice(db.Model):
     cellular_callback_enabled = db.Column(db.Boolean, default=False)
     mobile_data_calling_allowed = db.Column(db.Boolean, default=False)
     default_calling_method = db.Column(db.String(30), default="browser")
+    last_login_at = db.Column(db.DateTime)
+    last_ip = db.Column(db.String(64))
+    approved_status = db.Column(db.String(20), default="pending", nullable=False)
+    approved_at = db.Column(db.DateTime)
+    approved_by_user_id = db.Column(db.Integer, db.ForeignKey("user.id"))
+    revoked_at = db.Column(db.DateTime)
+    revoked_by_user_id = db.Column(db.Integer, db.ForeignKey("user.id"))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
-    user = db.relationship("User", backref=db.backref("pwa_devices", lazy="dynamic"))
+    user = db.relationship("User", foreign_keys=[user_id], backref=db.backref("pwa_devices", lazy="dynamic"))
     company = db.relationship("Company", backref=db.backref("pwa_devices", lazy="dynamic"))
     phone_number = db.relationship("TwilioPhoneNumber", backref=db.backref("pwa_devices", lazy="dynamic"))
 

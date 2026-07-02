@@ -667,6 +667,11 @@ def _device_to_dict(device):
         "device_type": device.device_type,
         "online_status": device.online_status,
         "last_seen_at": device.last_seen_at.isoformat() if device.last_seen_at else None,
+        "last_login_at": device.last_login_at.isoformat() if getattr(device, "last_login_at", None) else None,
+        "last_ip": getattr(device, "last_ip", None),
+        "approved_status": getattr(device, "approved_status", "pending") or "pending",
+        "is_approved": getattr(device, "approved_status", "pending") == "approved",
+        "is_revoked": getattr(device, "approved_status", "pending") == "revoked",
         "push_enabled": bool(device.push_enabled),
         "microphone_permission": device.microphone_permission or "unknown",
         "pwa_installed": bool(device.pwa_installed),
@@ -684,16 +689,23 @@ def _upsert_pwa_device(user, company, payload):
     if not device_key:
         abort(400, "device_key is required")
     device = PWADevice.query.filter_by(company_id=company.id, user_id=user.id, device_key=device_key).first()
+    is_new = device is None
     if not device:
         device = PWADevice(company_id=company.id, user_id=user.id, device_key=device_key)
         db.session.add(device)
+    if is_new and not getattr(company, "require_approved_pwa_devices", False):
+        device.approved_status = "approved"
+        device.approved_at = datetime.utcnow()
     device.phone_number_id = pn.id if pn else device.phone_number_id
     for field in ("device_name", "browser", "device_type", "microphone_permission", "default_calling_method"):
         if field in payload:
             setattr(device, field, (payload.get(field) or "")[:120])
     device.user_agent = request.headers.get("User-Agent", "")[:1000]
     device.online_status = "online"
-    device.last_seen_at = datetime.utcnow()
+    now = datetime.utcnow()
+    device.last_seen_at = now
+    device.last_login_at = now if payload.get("login", True) else getattr(device, "last_login_at", None)
+    device.last_ip = (request.headers.get("X-Forwarded-For", request.remote_addr or "").split(",")[0].strip())[:64]
     device.push_enabled = bool(payload.get("push_enabled", device.push_enabled))
     device.pwa_installed = bool(payload.get("pwa_installed", device.pwa_installed))
     device.wifi_only = bool(payload.get("wifi_only", device.wifi_only))
@@ -702,6 +714,31 @@ def _upsert_pwa_device(user, company, payload):
     return device
 
 
+
+
+def _device_approval_denied(user, company):
+    if not getattr(company, "require_approved_pwa_devices", False):
+        return None
+    key = (request.headers.get("X-PWA-Device-Key") or request.args.get("device_key") or "").strip()
+    if not key and request.is_json:
+        key = ((request.get_json(silent=True) or {}).get("device_key") or "").strip()
+    if not key:
+        return jsonify({"success": False, "code": "PWA_DEVICE_PENDING_APPROVAL", "error": "This device is waiting for admin approval."}), 403
+    from models import PWADevice
+    device = PWADevice.query.filter_by(company_id=company.id, user_id=user.id, device_key=key).first()
+    if not device or getattr(device, "approved_status", "pending") == "pending":
+        return jsonify({"success": False, "code": "PWA_DEVICE_PENDING_APPROVAL", "error": "This device is waiting for admin approval."}), 403
+    if getattr(device, "approved_status", "pending") == "revoked":
+        return jsonify({"success": False, "code": "PWA_DEVICE_REVOKED", "error": "This device has been revoked by an admin."}), 403
+    device.last_seen_at = datetime.utcnow()
+    device.last_ip = (request.headers.get("X-Forwarded-For", request.remote_addr or "").split(",")[0].strip())[:64]
+    return None
+
+def _require_pwa_communications_access(user, company):
+    denied = _require_mobile_inbox_api_access(user, company)
+    if denied:
+        return denied
+    return _device_approval_denied(user, company)
 
 
 def _favorite_to_dict(fav):
@@ -1485,7 +1522,7 @@ def list_conversations():
     company = _get_company(user)
     if not company:
         return jsonify({"conversations": [], "unread_count": 0, "total": 0})
-    denied = _require_mobile_inbox_api_access(user, company)
+    denied = _require_pwa_communications_access(user, company)
     if denied:
         return denied
 
@@ -1563,7 +1600,7 @@ def list_messages():
     """List recent messages scoped to conversations the PWA user may access."""
     user = _require_auth()
     company = _require_company(user)
-    denied = _require_mobile_inbox_api_access(user, company)
+    denied = _require_pwa_communications_access(user, company)
     if denied:
         return denied
 
@@ -1600,7 +1637,7 @@ def list_messages():
 def get_conversation(conv_id):
     user    = _require_auth()
     company = _require_company(user)
-    denied = _require_mobile_inbox_api_access(user, company)
+    denied = _require_pwa_communications_access(user, company)
     if denied:
         return denied
     from models import TwilioConversation
@@ -1643,7 +1680,7 @@ def get_conversation(conv_id):
 def send_message(conv_id):
     user    = _require_auth()
     company = _require_company(user)
-    denied = _require_mobile_inbox_api_access(user, company)
+    denied = _require_pwa_communications_access(user, company)
     if denied:
         return denied
     from models import TwilioConversation
@@ -1720,10 +1757,10 @@ def _normalize_phone(raw: str) -> str:
 def new_conversation():
     user    = _require_auth()
     company = _require_company(user)
-    denied = _require_mobile_inbox_api_access(user, company)
-    if denied:
-        return denied
-    payload = request.get_json(silent=True) or {}
+denied = _require_pwa_communications_access(user, company)
+if denied:
+    return denied
+payload = request.get_json(silent=True) or {}
     to_raw  = (payload.get("to") or "").strip()
     body    = (payload.get("body") or "").strip()
 
@@ -2314,7 +2351,7 @@ def push_subscribe():
     company = _get_company(user)
     if not company:
         return jsonify({"success": False, "error": "No company"}), 400
-    denied = _require_mobile_inbox_api_access(user, company)
+    denied = _require_pwa_communications_access(user, company)
     if denied:
         return denied
 

@@ -1140,3 +1140,44 @@ def test_stop_opt_out_does_not_receive_after_hours_auto_reply(app, client, world
         conv = TwilioConversation.query.filter_by(company_id=world["co_a"], from_number="+15551113333").one()
         assert conv.is_opted_out is True
         assert TwilioMessage.query.filter_by(conversation_id=conv.id, direction="outbound", is_auto_reply=True).count() == 0
+
+
+def test_pwa_device_approval_gate_pending_approved_revoked(client, app, world):
+    with app.app_context():
+        company = db.session.get(Company, world["co_a"])
+        company.require_approved_pwa_devices = True
+        conv = TwilioConversation(company_id=world["co_a"], from_number="+15551234567", to_number="+15550001000", is_read=True, last_message_at=datetime.utcnow())
+        db.session.add(conv)
+        db.session.commit()
+    login(client, world["alice"])
+    reg = client.post("/api/pwa/devices/register", json={"device_key": "approval-device", "device_name": "Approval iPhone", "device_type": "iPhone"})
+    assert reg.status_code == 200
+    assert reg.get_json()["device"]["approved_status"] == "pending"
+
+    pending = client.get("/api/inbox/conversations", headers={"X-PWA-Device-Key": "approval-device"})
+    assert pending.status_code == 403
+    assert pending.get_json()["code"] == "PWA_DEVICE_PENDING_APPROVAL"
+
+    with app.app_context():
+        device = PWADevice.query.filter_by(company_id=world["co_a"], device_key="approval-device").one()
+        device.approved_status = "approved"
+        db.session.commit()
+    approved = client.get("/api/inbox/conversations", headers={"X-PWA-Device-Key": "approval-device"})
+    assert approved.status_code == 200
+
+    with app.app_context():
+        device = PWADevice.query.filter_by(company_id=world["co_a"], device_key="approval-device").one()
+        device.approved_status = "revoked"
+        db.session.commit()
+    revoked = client.get("/api/inbox/conversations", headers={"X-PWA-Device-Key": "approval-device"})
+    assert revoked.status_code == 403
+    assert revoked.get_json()["code"] == "PWA_DEVICE_REVOKED"
+
+
+def test_pwa_device_approval_disabled_allows_registered_device(client, app, world):
+    login(client, world["alice"])
+    reg = client.post("/api/pwa/devices/register", json={"device_key": "auto-approved-device", "device_type": "Android"})
+    assert reg.status_code == 200
+    assert reg.get_json()["device"]["approved_status"] == "approved"
+    ok = client.get("/api/inbox/conversations", headers={"X-PWA-Device-Key": "auto-approved-device"})
+    assert ok.status_code == 200

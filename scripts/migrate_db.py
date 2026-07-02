@@ -149,6 +149,7 @@ MIGRATIONS = [
     ("company", "apply_brand_colors", "BOOLEAN",      "DEFAULT 0"),
     ("company", "industry",           "VARCHAR(100)", "DEFAULT NULL"),
     ("company", "description",        "TEXT",         "DEFAULT NULL"),
+    ("company", "require_approved_pwa_devices", "BOOLEAN", "DEFAULT 0"),
 
     # feedback_ticket — extended fields (PostHog, rating, screen, follow-up, admin notes)
     ("feedback_ticket", "rating",             "SMALLINT",     "DEFAULT NULL"),
@@ -174,6 +175,15 @@ MIGRATIONS = [
     ("user_company_access", "communications_license",  "BOOLEAN",      "DEFAULT 0"),
     ("user_company_access", "assigned_number",         "VARCHAR(20)",  "DEFAULT NULL"),
     ("user_company_access", "number_type",             "VARCHAR(20)",  "DEFAULT 'shared'"),
+
+    # PWA device approval/access control
+    ("pwa_device", "last_login_at",       "DATETIME",     "DEFAULT NULL"),
+    ("pwa_device", "last_ip",             "VARCHAR(64)",  "DEFAULT NULL"),
+    ("pwa_device", "approved_status",     "VARCHAR(20)",  "DEFAULT 'pending'"),
+    ("pwa_device", "approved_at",         "DATETIME",     "DEFAULT NULL"),
+    ("pwa_device", "approved_by_user_id", "INTEGER",      "DEFAULT NULL"),
+    ("pwa_device", "revoked_at",          "DATETIME",     "DEFAULT NULL"),
+    ("pwa_device", "revoked_by_user_id",  "INTEGER",      "DEFAULT NULL"),
 
     # saas_automation_log — Stripe webhook audit columns
     ("saas_automation_log", "stripe_event_id", "VARCHAR(120)", "DEFAULT NULL"),

@@ -181,8 +181,41 @@
   <div class="card p-4" style="background:#0f1117;border:1px solid #1e2535;"><h6>PWA Phone App</h6><p class="text-muted">Open this link on the work phone, then use Share → Add to Home Screen. Assigned numbers and permissions are enforced server-side.</p><a class="btn btn-primary" href="/app/inbox" target="_blank">Open PWA Phone App</a><div class="mt-3 small text-muted">Assigned users are managed in Users & Permissions. If QR support is enabled elsewhere, point it at <code>/app/inbox</code>.</div></div>
 
   {% elif tab == 'devices' %}
-  <div class="d-flex mb-3 flex-wrap gap-2"><h6 class="fw-semibold">PWA / Work-Phone Devices</h6><span class="text-muted small ms-auto">Devices update through /api/pwa/devices/register and /api/pwa/devices/heartbeat.</span></div>
-  <div class="card" style="background:#0f1117;border:1px solid #1e2535;overflow-x:auto;"><table class="table table-dark table-sm align-middle mb-0"><thead><tr><th>Device</th><th>User</th><th>Default line</th><th>Browser/type</th><th>Status</th><th>Push</th><th>Mic</th><th>PWA</th><th>Calling controls</th></tr></thead><tbody>{% for d in devices %}<tr><td>{{ d.device_name or 'PWA Device' }}</td><td>{{ d.user.email if d.user else d.user_id }}</td><td>{{ d.phone_number.friendly_name if d.phone_number and d.phone_number.friendly_name else (d.phone_number.phone_number if d.phone_number else 'Not selected') }}</td><td>{{ d.browser or 'Unknown' }}<div class="small text-muted">{{ d.device_type or '' }}</div></td><td><span class="badge {% if d.online_status == 'online' %}bg-success{% else %}bg-secondary{% endif %}">{{ d.online_status or 'offline' }}</span><div class="small text-muted">{{ d.last_seen_at.strftime('%b %-d %H:%M') if d.last_seen_at else 'Never' }}</div></td><td>{{ 'Enabled' if d.push_enabled else 'Disabled' }}</td><td>{{ d.microphone_permission or 'unknown' }}</td><td>{{ 'Installed' if d.pwa_installed else 'Browser' }}</td><td><div class="small">WiFi-only: {{ 'Yes' if d.wifi_only else 'No' }}</div><div class="small">Cell callback: {{ 'Enabled' if d.cellular_callback_enabled else 'Disabled' }}</div><div class="small">Mobile data: {{ 'Allowed' if d.mobile_data_calling_allowed else 'Blocked' }}</div><div class="small">Default: {{ d.default_calling_method or 'browser' }}</div></td></tr>{% else %}<tr><td colspan="9" class="text-muted p-4">No PWA devices have registered yet. Open the PWA Phone App on a work phone to register device status.</td></tr>{% endfor %}</tbody></table></div>
+  <div class="d-flex mb-3 flex-wrap gap-2 align-items-start">
+    <div>
+      <h6 class="fw-semibold mb-1">PWA / Work-Phone Devices</h6>
+      <div class="text-muted small">Approved devices can access PWA communications. Revoked devices are blocked.</div>
+    </div>
+    {% if is_admin %}
+    <form method="POST" action="{{ url_for('twilio.comms_device_settings') }}" class="ms-auto card p-2" style="background:#0f1117;border:1px solid #1e2535;">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <label class="form-check form-switch small mb-0">
+        <input class="form-check-input" type="checkbox" name="require_approved_pwa_devices" value="1" {% if company.require_approved_pwa_devices %}checked{% endif %} onchange="this.form.submit()">
+        <span class="form-check-label">Require approved devices for PWA communications</span>
+      </label>
+    </form>
+    {% endif %}
+  </div>
+  <div class="card" style="background:#0f1117;border:1px solid #1e2535;overflow-x:auto;">
+    <table class="table table-dark table-sm align-middle mb-0">
+      <thead><tr><th>Device</th><th>User</th><th>Type</th><th>Push active</th><th>Approved status</th><th>Last seen</th><th>Last IP</th><th>Actions</th></tr></thead>
+      <tbody>{% for d in devices %}<tr>
+        <td><strong>{{ d.device_name or 'PWA Device' }}</strong><div class="small text-muted">{{ d.browser or 'Unknown browser' }}</div></td>
+        <td>{{ d.user.email if d.user else d.user_id }}</td>
+        <td>{{ d.device_type or 'unknown' }}<div class="small text-muted">{{ 'Installed PWA' if d.pwa_installed else 'Browser' }}</div></td>
+        <td><span class="badge {% if d.push_enabled %}bg-success{% else %}bg-secondary{% endif %}">{{ 'Active' if d.push_enabled else 'Inactive' }}</span></td>
+        <td><span class="badge {% if d.approved_status == 'approved' %}bg-success{% elif d.approved_status == 'revoked' %}bg-danger{% else %}bg-warning text-dark{% endif %}">{{ d.approved_status or 'pending' }}</span></td>
+        <td>{{ d.last_seen_at.strftime('%b %-d %H:%M') if d.last_seen_at else 'Never' }}</td>
+        <td>{{ d.last_ip or '—' }}</td>
+        <td>{% if is_admin %}<div class="d-flex gap-1 flex-wrap">
+          <form method="POST" action="{{ url_for('twilio.comms_device_action', device_id=d.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="approve"><button class="btn btn-sm btn-outline-success">Approve</button></form>
+          <form method="POST" action="{{ url_for('twilio.comms_device_action', device_id=d.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="revoke"><button class="btn btn-sm btn-outline-danger">Revoke</button></form>
+          <form method="POST" action="{{ url_for('twilio.comms_device_action', device_id=d.id) }}" class="d-flex gap-1"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="rename"><input class="form-control form-control-sm" name="device_name" value="{{ d.device_name or '' }}" style="width:130px;background:#0b0d14;color:#fff;border-color:#1e2535;"><button class="btn btn-sm btn-outline-secondary">Rename</button></form>
+        </div>{% else %}<span class="text-muted small">Admin only</span>{% endif %}</td>
+      </tr>{% else %}<tr><td colspan="8" class="text-muted p-4">No devices registered yet. Devices appear here after a user logs into the installed PWA.</td></tr>{% endfor %}</tbody>
+    </table>
+  </div>
+
 
   {% elif tab == 'integrations' %}
   <div class="card p-4" style="background:#0f1117;border:1px solid #1e2535;"><h6>Integrations</h6><p class="text-muted">Twilio webhooks, Google Contacts, SMS delivery callbacks, and provider health remain connected here.</p><a href="{{ url_for('twilio.google_contacts_connect') }}" class="btn btn-sm btn-outline-secondary">Google Contacts</a><a href="{{ url_for('twilio.comms_settings') }}" class="btn btn-sm btn-outline-secondary ms-2">Twilio Webhooks</a></div>
