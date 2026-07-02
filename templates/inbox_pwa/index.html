@@ -250,7 +250,7 @@
       display: inline-block;
       max-width: min(72vw, 420px); padding: 9px 14px; border-radius: 16px;
       font-size: .88rem; line-height: 1.45; word-break: normal;
-      overflow-wrap: normal; white-space: pre-wrap; min-width: 2.5rem;
+      overflow-wrap: break-word; white-space: pre-wrap; min-width: 2.5rem;
     }
     .bubble.out { background: var(--brand); color: var(--color-button-text); border-bottom-right-radius: 4px; }
     .bubble.in  { background: var(--color-surface); color: var(--text); border-bottom-left-radius: 4px; }
@@ -1457,20 +1457,33 @@ async function apiFetch(url, method = 'GET', body = null) {
   } catch (networkErr) {
     return { success: false, error: 'Network error — check your connection and try again.' };
   }
+  if (res.status === 401) { location.href = '/auth/login?next=/app/inbox'; return null; }
   // Parse JSON safely — server may return HTML on uncaught exceptions
   let data;
   try {
     data = await res.json();
   } catch {
-    if (res.status === 401) { location.href = '/auth/login?next=/app/inbox'; return null; }
-    if (res.status === 403) return { success: false, error: 'Permission denied.' };
-    return { success: false, error: `Server error (${res.status}). Please try again.` };
-  }
-  if (res.status === 401) { location.href = '/auth/login?next=/app/inbox'; return null; }
-  if (res.status === 403) return { success: false, error: data.error || 'Permission denied.' };
-  // Promote non-OK HTTP responses that have JSON bodies
-  if (!res.ok && data.error === undefined) {
-    return { success: false, error: `Request failed (${res.status}).` };
+if (res.status === 401) {
+  location.href = '/auth/login?next=/app/inbox';
+  return null;
+}
+
+// Promote non-OK HTTP responses while preserving useful API messages.
+if (!res.ok) {
+  return {
+    success: false,
+    error:
+      data?.error ||
+      data?.message ||
+      (res.status === 403
+        ? 'Permission denied for this phone line.'
+        : res.status === 404
+          ? 'Conversation or phone line was not found.'
+          : `Request failed (${res.status}).`),
+    status: res.status,
+    code: data?.code,
+  };
+}
   }
   return data;
 }
@@ -1901,7 +1914,7 @@ async function loadFavorites() {
         <div style="flex:1;min-width:0;"><strong>${esc(f.display_name)}</strong><div class="small">${esc(f.phone_number)}</div></div>
       </div>
       <div class="actions" style="margin-top:10px;">
-        <a class="btn-small" href="tel:${esc(f.phone_number)}">Call</a>
+        <button class="btn-small" onclick="callFavorite('${esc(f.phone_number)}')">Call</button>
         <a class="btn-small" href="sms:${esc(f.phone_number)}">Text</a>
         <button class="btn-small" onclick="editFavorite(${f.id}, '${esc(f.display_name)}', '${esc(f.phone_number)}')">Edit</button>
         <button class="btn-small" onclick="removeFavorite(${f.id})">Remove</button>
@@ -1911,6 +1924,13 @@ async function loadFavorites() {
     </div>`).join('') : '<div class="pwa-card empty">No favorites yet. Add one below.</div>';
   window.__pwaFavorites = favorites;
 }
+async function callFavorite(phone) {
+  dialState.number = phone || '';
+  openDialPad();
+  _dialRefresh();
+  await dialPlaceCall();
+}
+
 async function saveFavorite() {
   const name = document.getElementById('favoriteName').value.trim();
   const phone = document.getElementById('favoritePhone').value.trim();
