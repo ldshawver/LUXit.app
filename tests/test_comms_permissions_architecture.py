@@ -559,3 +559,143 @@ def test_communications_hub_tabs_and_pwa_api_smoke(client, comms_world):
     assert client.get("/api/calls/recent?tab=all").status_code == 200
     assert client.get("/api/calls/voicemails").status_code == 200
     assert client.get("/api/pwa/devices").status_code == 200
+
+
+def test_pwa_sms_success_stores_sid_and_dispatched_status(client, comms_world, monkeypatch):
+    sent = {}
+
+    class FakeMessages:
+        def create(self, **kwargs):
+            sent.update(kwargs)
+            return type("Msg", (), {"sid": "SMQUEUEDACCEPTED", "status": "queued"})()
+
+    class FakeClient:
+        def __init__(self, *args, **kwargs):
+            self.messages = FakeMessages()
+
+    import twilio.rest
+    monkeypatch.setattr(twilio.rest, "Client", FakeClient)
+
+    login(client, comms_world["staff"])
+    resp = client.post(
+        f"/api/inbox/conversations/{comms_world['c1']}/messages",
+        json={"body": "conversation 35 style valid mapping"},
+    )
+
+    assert resp.status_code == 200
+    assert resp.json["success"] is True
+    assert sent["from_"] == "+15550001111"
+    assert sent["to"] == "+15551230001"
+    with client.application.app_context():
+        msg = TwilioMessage.query.filter_by(twilio_sid="SMQUEUEDACCEPTED").one()
+        assert msg.status == "sent"
+        assert msg.error_message is None
+        assert msg.raw_payload["provider_status"] == "queued"
+
+
+def test_pwa_sms_failure_persists_failed_row_and_useful_502(client, comms_world, monkeypatch):
+    class FakeMessages:
+        def create(self, **kwargs):
+            raise RuntimeError("Twilio provider exploded")
+
+    class FakeClient:
+        def __init__(self, *args, **kwargs):
+            self.messages = FakeMessages()
+
+    import twilio.rest
+    monkeypatch.setattr(twilio.rest, "Client", FakeClient)
+
+    login(client, comms_world["staff"])
+    resp = client.post(
+        f"/api/inbox/conversations/{comms_world['c1']}/messages",
+        json={"body": "will fail"},
+    )
+
+    assert resp.status_code == 502
+    assert resp.json["success"] is False
+    assert resp.json["code"] == "provider_failure"
+    assert "Twilio provider exploded" in resp.json["error"]
+    with client.application.app_context():
+        msg = TwilioMessage.query.filter_by(conversation_id=comms_world["c1"], body="will fail").one()
+        assert msg.status == "failed"
+        assert "Twilio provider exploded" in msg.error_message
+        assert msg.twilio_sid is None
+
+
+def test_retry_queued_outbound_messages_dispatches_legacy_stuck_rows(client, comms_world, monkeypatch):
+    sent = {}
+
+    class FakeMessages:
+        def create(self, **kwargs):
+            sent.update(kwargs)
+            return type("Msg", (), {"sid": "SMRETRIED", "status": "queued"})()
+
+    class FakeClient:
+        def __init__(self, *args, **kwargs):
+            self.messages = FakeMessages()
+
+    import twilio.rest
+    monkeypatch.setattr(twilio.rest, "Client", FakeClient)
+
+    with client.application.app_context():
+        stuck = TwilioMessage(
+            conversation_id=comms_world["c1"],
+            company_id=comms_world["co"],
+            direction="outbound",
+            from_number="+15550001111",
+            to_number="+15551230001",
+            body="stuck queued",
+            status="queued",
+        )
+        db.session.add(stuck)
+        db.session.commit()
+        stuck_id = stuck.id
+
+        from inbox_pwa import retry_queued_outbound_messages
+        result = retry_queued_outbound_messages(comms_world["co"])
+
+        assert result["retried"] == 1
+        assert result["failed"] == 0
+        row = db.session.get(TwilioMessage, stuck_id)
+        assert row.twilio_sid == "SMRETRIED"
+        assert row.status == "sent"
+        assert row.error_message is None
+        assert sent["from_"] == "+15550001111"
+        assert sent["to"] == "+15551230001"
+
+
+def test_retry_queued_outbound_messages_marks_provider_failure(client, comms_world, monkeypatch):
+    class FakeMessages:
+        def create(self, **kwargs):
+            raise RuntimeError("retry provider failed")
+
+    class FakeClient:
+        def __init__(self, *args, **kwargs):
+            self.messages = FakeMessages()
+
+    import twilio.rest
+    monkeypatch.setattr(twilio.rest, "Client", FakeClient)
+
+    with client.application.app_context():
+        stuck = TwilioMessage(
+            conversation_id=comms_world["c1"],
+            company_id=comms_world["co"],
+            direction="outbound",
+            from_number="+15550001111",
+            to_number="+15551230001",
+            body="stuck fails",
+            status="queued",
+        )
+        db.session.add(stuck)
+        db.session.commit()
+        stuck_id = stuck.id
+
+        from inbox_pwa import retry_queued_outbound_messages
+        result = retry_queued_outbound_messages(comms_world["co"])
+
+        assert result["retried"] == 0
+        assert result["failed"] == 1
+        row = db.session.get(TwilioMessage, stuck_id)
+        assert row.status == "failed"
+        assert "retry provider failed" in row.error_message
+        assert row.twilio_sid is None

@@ -447,6 +447,8 @@ def _send_sms_internal(ta, to_number: str, body: str, conversation_id=None, from
         else:
             return None, "No From number or Messaging Service SID configured."
         msg = client.messages.create(**kwargs)
+        provider_status = (getattr(msg, "status", None) or "sent").lower()
+        dispatched_status = provider_status if provider_status in {"sent", "delivered", "failed", "undelivered"} else "sent"
         record = TwilioMessage(
             conversation_id=conversation_id,
             company_id=ta.company_id,
@@ -455,15 +457,112 @@ def _send_sms_internal(ta, to_number: str, body: str, conversation_id=None, from
             from_number=from_number or ta.from_phone or ta.messaging_service_sid,
             to_number=to_number,
             body=sms_body,
-            status=msg.status,
+            status=dispatched_status,
+            raw_payload={"provider_status": provider_status},
         )
         db.session.add(record)
         db.session.commit()
-        logger.info("PWA Inbox outbound SMS: sid=%s to=%s", msg.sid, to_number)
+        logger.info("PWA Inbox outbound SMS dispatched: sid=%s status=%s to=%s", msg.sid, dispatched_status, to_number)
         return record, None
     except Exception as exc:
         logger.error("PWA Inbox SMS send error: %s", exc)
-        return None, _twilio_send_error_message(exc)
+        error = _twilio_send_error_message(exc)
+        if conversation_id:
+            try:
+                failed = TwilioMessage(
+                    conversation_id=conversation_id,
+                    company_id=ta.company_id,
+                    direction="outbound",
+                    from_number=from_number or ta.from_phone or ta.messaging_service_sid,
+                    to_number=to_number,
+                    body=sms_body,
+                    status="failed",
+                    error_code=str(getattr(exc, "code", "") or getattr(exc, "status", "") or "") or None,
+                    error_message=error,
+                )
+                db.session.add(failed)
+                db.session.commit()
+            except Exception:
+                db.session.rollback()
+                logger.exception("Unable to persist failed outbound SMS record", extra={"conversation_id": conversation_id})
+        return None, error
+
+
+def retry_queued_outbound_messages(company_id: int, limit: int = 100, dry_run: bool = False) -> dict:
+    """Admin-safe retry for legacy PWA outbound rows stuck as queued without a Twilio SID."""
+    from models import TwilioConversation, TwilioMessage
+
+    ta = _get_twilio_account(company_id)
+    if not ta or not ta.is_configured:
+        return {"success": False, "error": "Twilio is not configured for this company.", "retried": 0, "failed": 0}
+
+    rows = (TwilioMessage.query
+        .join(TwilioConversation, TwilioConversation.id == TwilioMessage.conversation_id)
+        .filter(
+            TwilioMessage.company_id == company_id,
+            TwilioMessage.direction == "outbound",
+            TwilioMessage.status == "queued",
+            TwilioMessage.twilio_sid.is_(None),
+            TwilioConversation.company_id == company_id,
+        )
+        .order_by(TwilioMessage.created_at.asc(), TwilioMessage.id.asc())
+        .limit(max(1, min(int(limit or 100), 500)))
+        .all())
+    if dry_run:
+        return {"success": True, "dry_run": True, "matched": len(rows), "retried": 0, "failed": 0}
+
+    retried = failed = 0
+    errors = []
+    for row in rows:
+        conv = row.conversation
+        from_number = row.from_number or getattr(conv, "to_number", None) or getattr(ta, "from_phone", None)
+        to_number = row.to_number or getattr(conv, "from_number", None)
+        if not to_number:
+            row.status = "failed"
+            row.error_message = "Queued outbound message has no recipient phone number."
+            failed += 1
+            errors.append({"id": row.id, "error": row.error_message})
+            db.session.commit()
+            continue
+        sent, err = _dispatch_existing_outbound_message(ta, row, to_number, from_number)
+        if err:
+            failed += 1
+            errors.append({"id": row.id, "error": err})
+        else:
+            retried += 1
+    return {"success": failed == 0, "matched": len(rows), "retried": retried, "failed": failed, "errors": errors[:20]}
+
+
+def _dispatch_existing_outbound_message(ta, row, to_number: str, from_number: str | None):
+    try:
+        from twilio.rest import Client
+        sid = ta.get_account_sid() if hasattr(ta, "get_account_sid") else ta._account_sid
+        tok = ta.get_auth_token() if hasattr(ta, "get_auth_token") else ta._auth_token
+        client = Client(sid, tok)
+        kwargs = {"body": _sanitize_body(row.body or ""), "to": to_number}
+        if from_number:
+            kwargs["from_"] = from_number
+        elif ta.messaging_service_sid:
+            kwargs["messaging_service_sid"] = ta.messaging_service_sid
+        else:
+            raise RuntimeError("No From number or Messaging Service SID configured.")
+        msg = client.messages.create(**kwargs)
+        provider_status = (getattr(msg, "status", None) or "sent").lower()
+        row.twilio_sid = msg.sid
+        row.from_number = from_number or ta.from_phone or ta.messaging_service_sid
+        row.to_number = to_number
+        row.status = provider_status if provider_status in {"sent", "delivered", "failed", "undelivered"} else "sent"
+        row.error_message = None
+        row.raw_payload = {"provider_status": provider_status, "retried_from_queue": True}
+        db.session.commit()
+        return row, None
+    except Exception as exc:
+        error = _twilio_send_error_message(exc)
+        row.status = "failed"
+        row.error_code = str(getattr(exc, "code", "") or getattr(exc, "status", "") or "") or None
+        row.error_message = error
+        db.session.commit()
+        return None, error
 
 
 def _conv_to_dict(conv, brief=True):
