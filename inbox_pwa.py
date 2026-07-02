@@ -2170,8 +2170,20 @@ def send_pwa_push_notification(company_id: int, *, user_ids, title: str, body: s
 @inbox_pwa_bp.route("/api/pwa/push/debug")
 def pwa_push_debug():
     """Explain whether the current user's next PWA push would alert, vibrate, or be skipped."""
-    user = _require_auth()
-    company = _require_company(user)
+    user = _current_user()
+    if not user:
+        return jsonify({
+            "success": False,
+            "code": "AUTHENTICATION_REQUIRED",
+            "error": "Authentication required. Open the PWA and sign in again.",
+        }), 401
+    company = _get_company(user)
+    if not company:
+        return jsonify({
+            "success": False,
+            "code": "NO_COMPANY",
+            "error": "No company is configured for this user.",
+        }), 409
     denied = _require_mobile_inbox_api_access(user, company)
     if denied:
         return denied
@@ -2180,7 +2192,15 @@ def pwa_push_debug():
     decision = _push_debug_decision(user, event_type, requested_silent=False, in_business_hours=in_business)
     from models import PushSubscription
     active_subscriptions = PushSubscription.query.filter_by(company_id=company.id, user_id=user.id, is_active=True).count()
-    return jsonify({"success": True, "active_subscription": active_subscriptions > 0, "active_subscriptions": active_subscriptions, "decision": decision})
+    return jsonify({
+        "success": True,
+        "user": {"id": user.id, "email": user.email, "username": user.username},
+        "company": {"id": company.id, "name": company.name},
+        "mobile_inbox_access": True,
+        "active_subscription": active_subscriptions > 0,
+        "active_subscriptions": active_subscriptions,
+        "decision": decision,
+    })
 
 
 # ── API: Push notification subscribe ─────────────────────────────────────────
