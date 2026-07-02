@@ -51,6 +51,17 @@
     outline: none;
   }
   .pwa-bottom-nav__item:active { transform: scale(.96); }
+  body.pwa-tab-loading .pwa-bottom-nav::before {
+    content: "";
+    position: absolute;
+    top: -2px;
+    left: 0;
+    width: 38%;
+    height: 2px;
+    background: var(--pwa-primary, #7c3aed);
+    animation: pwa-tab-progress .8s ease-in-out infinite alternate;
+  }
+  @keyframes pwa-tab-progress { from { transform: translateX(0); } to { transform: translateX(165%); } }
   body.has-pwa-bottom-nav #shell { bottom: calc(68px + env(safe-area-inset-bottom)); height: auto; }
   body.has-pwa-bottom-nav .shell { padding-bottom: calc(96px + env(safe-area-inset-bottom)); }
   .pwa-safe-top-control { min-width: 44px; min-height: 44px; padding: 8px; }
