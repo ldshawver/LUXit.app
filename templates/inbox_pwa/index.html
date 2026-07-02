@@ -1127,9 +1127,11 @@ function browserLabel() {
 }
 function deviceTypeLabel() {
   const ua = navigator.userAgent || '';
-  if (/iPhone|Android.*Mobile/i.test(ua)) return 'phone';
+  if (/iPhone/i.test(ua)) return 'iPhone';
+  if (/Android/i.test(ua) && /Mobile/i.test(ua)) return 'Android';
   if (/iPad|Tablet/i.test(ua)) return 'tablet';
-  return 'desktop';
+  if (/Windows|Macintosh|Linux/i.test(ua)) return 'desktop';
+  return 'unknown';
 }
 async function registerPwaDevice(kind='register') {
   const selected = state?.selectedNumber || localStorage.getItem('luxitPwaSelectedNumber') || '';
@@ -1421,7 +1423,7 @@ async function apiFetch(url, method = 'GET', body = null) {
   const opts = {
     method,
     credentials: 'same-origin',
-    headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF },
+    headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF, 'X-PWA-Device-Key': pwaDeviceKey() },
   };
   if (body !== null) opts.body = JSON.stringify(body);
   let res;

@@ -2072,6 +2072,55 @@ def inbox():
     return redirect(url_for("twilio.comms_hub", tab="inbox"))
 
 
+@twilio_bp.route("/comms/devices/<int:device_id>", methods=["POST"])
+@login_required
+def comms_device_action(device_id):
+    from models import PWADevice, MarketingAuditLog
+    from services.comms_permissions import can_manage_users
+    company = _get_company()
+    if not company:
+        abort(404)
+    if not can_manage_users(current_user, company.id):
+        abort(403)
+    device = PWADevice.query.filter_by(id=device_id, company_id=company.id).first_or_404()
+    action = (request.form.get("action") or "").strip().lower()
+    now = datetime.utcnow()
+    if action == "approve":
+        device.approved_status = "approved"
+        device.approved_at = now
+        device.approved_by_user_id = current_user.id
+        flash("Device approved.", "success")
+    elif action in {"revoke", "block"}:
+        device.approved_status = "revoked"
+        device.revoked_at = now
+        device.revoked_by_user_id = current_user.id
+        device.push_enabled = False
+        flash("Device revoked.", "success")
+    elif action == "rename":
+        device.device_name = (request.form.get("device_name") or device.device_name or "PWA Device")[:120]
+        flash("Device renamed.", "success")
+    else:
+        abort(400)
+    db.session.add(MarketingAuditLog(company_id=company.id, created_by_user_id=current_user.id, entity_type="pwa_device", entity_id=device.id, action=f"pwa_device_{action}", details={"device_key": device.device_key, "user_id": device.user_id}))
+    db.session.commit()
+    return redirect(url_for("twilio.comms_hub", tab="devices"))
+
+@twilio_bp.route("/comms/devices/settings", methods=["POST"])
+@login_required
+def comms_device_settings():
+    from models import MarketingAuditLog
+    from services.comms_permissions import can_manage_users
+    company = _get_company()
+    if not company:
+        abort(404)
+    if not can_manage_users(current_user, company.id):
+        abort(403)
+    company.require_approved_pwa_devices = bool(request.form.get("require_approved_pwa_devices"))
+    db.session.add(MarketingAuditLog(company_id=company.id, created_by_user_id=current_user.id, entity_type="company", entity_id=company.id, action="pwa_device_approval_setting_updated", details={"required": company.require_approved_pwa_devices}))
+    db.session.commit()
+    flash("PWA device approval setting updated.", "success")
+    return redirect(url_for("twilio.comms_hub", tab="devices"))
+
 @twilio_bp.route("/comms")
 @login_required
 def comms_hub():
@@ -2204,6 +2253,7 @@ def comms_hub():
     return render_template(
         "twilio/comms_hub.html",
         tab=tab,
+        company=company,
         conversations=conversations,
         unread_count=unread_count,
         ta=ta,
