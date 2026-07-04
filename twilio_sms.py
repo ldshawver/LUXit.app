@@ -541,7 +541,8 @@ def _can_send_call_auto_sms(company_id: int, to_number: str, *, cooldown_hours: 
 def _get_or_create_conversation(
     company_id: int, from_number: str, to_number: str, phone_number_id: int = None
 ):
-    from models import TwilioConversation, Contact
+    from models import TwilioConversation
+    from services.contact_audience import upsert_contact_from_source
     from services.google_contacts import normalize_phone, _all_forms, lookup_contact_name
 
     forms = _all_forms(from_number)
@@ -559,15 +560,14 @@ def _get_or_create_conversation(
     if not conv:
         conv = conv_query.first()
 
-    contact = None
-    for form in forms:
-        contact = Contact.query.filter_by(
-            company_id=company_id,
-            phone=form,
-            is_active=True,
-        ).first()
-        if contact:
-            break
+    contact = upsert_contact_from_source(
+        company_id,
+        phone=from_number,
+        source_channel="sms",
+        source_phone_number=to_number,
+        source_provider="twilio",
+        source_context="inbound_message",
+    )
 
     contact_name, contact_source = lookup_contact_name(company_id, from_number)
     if contact and not contact_name:
@@ -1009,33 +1009,31 @@ def _apply_auto_reply_rules(conv, body: str, ta) -> bool:
 
 
 def _capture_lead(conv, body: str, company_id: int):
-    """Auto-create a Contact record from the conversation if one doesn't exist."""
-    from models import Contact
-    if conv.contact_id or conv.lead_captured:
+    """Create/update the canonical CRM Contact from the conversation."""
+    if conv.lead_captured and conv.contact_id:
         return
-
-    tags = ["new-lead"]
     inbound_to = _normalize_e164(getattr(conv, "to_number", None) or "")
-    if inbound_to == "+19165989519":
-        tags.append("MyOrder Customer")
+    from services.contact_audience import upsert_contact_from_source, add_contact_tag
 
-    from services.contact_source import CONTACT_SOURCE_SMS_INBOUND, apply_contact_source
-
-    contact = Contact(
-        company_id=company_id,
+    contact = upsert_contact_from_source(
+        company_id,
         phone=conv.from_number,
-        normalized_phone=_normalize_e164(conv.from_number),
-        first_name=conv.contact_name or "",
-        tags=", ".join(tags),
-        is_active=True,
-        is_subscribed=True,
+        full_name=conv.contact_name,
+        tags=["new-lead"],
+        source_channel="sms",
+        source_phone_number=inbound_to,
+        source_provider="twilio",
+        source_context="auto_reply" if conv.is_first_contact else "inbound_message",
     )
-    apply_contact_source(
-        contact,
-        CONTACT_SOURCE_SMS_INBOUND,
-        detail=f"Inbound SMS to {inbound_to or 'unknown number'} from {conv.from_number}",
-    )
-    db.session.add(contact)
+    # Keep legacy source fields populated for existing CRM views/tests while
+    # the normalized source_* fields above power segment and campaign logic.
+    if not contact.source or contact.source == "sms":
+        contact.source = "sms_inbound"
+    legacy_detail = f"Inbound SMS to {inbound_to or 'unknown number'} from {conv.from_number}"
+    if not contact.source_detail or contact.source_detail in {"auto_reply", "inbound_message", "sms"}:
+        contact.source_detail = legacy_detail
+    contact.source_added_at = contact.source_added_at or datetime.utcnow()
+    add_contact_tag(contact, "new-lead")
     db.session.flush()
     conv.contact_id   = contact.id
     conv.lead_captured = True
@@ -1359,9 +1357,8 @@ def inbound_sms():
         auto_reply_sent = False
         # ── 6. Auto-reply rule engine ──────────────────────────────────────
         try:
-            # Auto-capture lead on first contact
-            if conv.is_first_contact:
-                _capture_lead(conv, body, ta.company_id)
+            # Auto-capture/update CRM contact for every non-system inbound SMS.
+            _capture_lead(conv, body, ta.company_id)
 
             # Run rules only if not opted out
             if not conv.is_opted_out and getattr(ta, "auto_reply_enabled", True):

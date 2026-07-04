@@ -738,6 +738,17 @@ class Contact(db.Model):
     source_detail = db.Column(db.String(255))
     source_added_at = db.Column(db.DateTime)
     source_added_by_user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True)
+    tenant_id = db.Column(db.Integer, nullable=True, index=True)
+    source_channel = db.Column(db.String(50), nullable=True, index=True)
+    source_phone_number = db.Column(db.String(32), nullable=True, index=True)
+    source_provider = db.Column(db.String(80), nullable=True)
+    source_context = db.Column(db.String(255), nullable=True)
+    first_seen_at = db.Column(db.DateTime, nullable=True)
+    last_seen_at = db.Column(db.DateTime, nullable=True)
+    email_opt_in = db.Column(db.Boolean, default=False, nullable=False)
+    email_subscribed = db.Column(db.Boolean, default=True, nullable=False)
+    imported_batch_id = db.Column(db.Integer, nullable=True, index=True)
+    imported_list = db.Column(db.String(255), nullable=True, index=True)
     segment = db.Column(db.String(100))
     sms_marketing_opt_in = db.Column(db.Boolean, default=False, nullable=False)
     sms_marketing_opt_in_at = db.Column(db.DateTime)
@@ -753,6 +764,25 @@ class Contact(db.Model):
     marketing_preferences_source = db.Column(db.String(120))
     marketing_preferences_updated_by_user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True)
     marketing_preferences_updated_at = db.Column(db.DateTime)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class ContactImportBatch(db.Model):
+    __tablename__ = "contact_import_batch"
+
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=True, index=True)
+    tenant_id = db.Column(db.Integer, nullable=True, index=True)
+    source_provider = db.Column(db.String(80), nullable=True)
+    source_channel = db.Column(db.String(50), default="csv_import", nullable=False)
+    filename = db.Column(db.String(255), nullable=True)
+    imported_list = db.Column(db.String(255), nullable=True)
+    applied_tags = db.Column(JSON, default=list)
+    field_mapping = db.Column(JSON, default=dict)
+    total_rows = db.Column(db.Integer, default=0, nullable=False)
+    success_count = db.Column(db.Integer, default=0, nullable=False)
+    failure_count = db.Column(db.Integer, default=0, nullable=False)
+    error_report = db.Column(JSON, default=list)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 

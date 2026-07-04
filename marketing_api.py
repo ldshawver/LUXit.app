@@ -230,26 +230,33 @@ def api_sms_update(cid):
 @login_required
 def api_sms_preview(cid):
     c = SMSCampaign.query.filter_by(id=cid, company_id=tenant_id()).first_or_404()
-    contacts = _audience_query(c.company_id, c.segment).limit(100).all()
-    eligible = [x for x in contacts if _contact_has_sms_consent(x)]
-    excluded = len(contacts) - len(eligible)
-    return jsonify({"success": True, "recipients_selected": len(eligible), "excluded": excluded, "recipients": [{"id": x.id, "phone": x.phone, "name": f"{x.first_name or ''} {x.last_name or ''}".strip()} for x in eligible[:25]]})
+    from services.contact_audience import resolve_segment_contacts, normalize_phone
+    contacts = resolve_segment_contacts(c.company_id, c.segment, c.audience_filter or {})
+    seen = set()
+    eligible = []
+    counts = {"total_matched": len(contacts), "duplicates_removed": 0, "invalid_numbers_removed": 0, "opt_outs_removed": 0, "final_recipients": 0}
+    for x in contacts:
+        phone = normalize_phone(x.normalized_phone or x.phone)
+        if not phone:
+            counts["invalid_numbers_removed"] += 1; continue
+        if x.sms_opted_out or x.do_not_sms or x.sms_opt_out_at or not _contact_has_sms_consent(x):
+            counts["opt_outs_removed"] += 1; continue
+        if phone in seen:
+            counts["duplicates_removed"] += 1; continue
+        seen.add(phone); eligible.append((x, phone))
+    counts["final_recipients"] = len(eligible)
+    if not eligible:
+        counts["explanation"] = "No recipients found because all matched contacts are missing SMS numbers or are opted out." if contacts else "No recipients found because the selected audience did not match any contacts."
+    return jsonify({"success": True, **counts, "recipients_selected": len(eligible), "excluded": len(contacts) - len(eligible), "recipients": [{"id": x.id, "phone": phone, "name": f"{x.first_name or ''} {x.last_name or ''}".strip()} for x, phone in eligible[:25]]})
 
 
 def _materialize_recipients(c: SMSCampaign):
-    existing = {r.contact_id for r in c.recipients}
-    contacts = []
-    for x in _audience_query(c.company_id, c.segment).all():
-        reason = marketing_skip_reason(x, "sms") if "marketing_skip_reason" in globals() else None
-        if reason:
-            _audit(c.company_id, "campaign_contact_skipped_suppression", "sms_campaign", c.id, {"contact_id": x.id, "reason": reason, "channel": "sms"}) if "_audit" in globals() else None
-            continue
-        if _contact_has_sms_consent(x):
-            contacts.append(x)
-    for contact in contacts:
-        if contact.id not in existing:
-            db.session.add(SMSRecipient(company_id=c.company_id, campaign_id=c.id, contact_id=contact.id, status="queued"))
-    return contacts
+    from services.contact_audience import build_sms_recipient_snapshot, resolve_segment_contacts
+    if c.recipients.count() > 0:
+        return resolve_segment_contacts(c.company_id, c.segment, c.audience_filter or {})
+    counts = build_sms_recipient_snapshot(c)
+    c.audience_filter = dict(c.audience_filter or {}, recipient_counts=counts)
+    return resolve_segment_contacts(c.company_id, c.segment, c.audience_filter or {})
 
 
 @marketing_api_bp.post("/sms-campaigns/<int:cid>/schedule")
@@ -286,9 +293,10 @@ def api_sms_send(cid):
         return _json_error("message body is empty")
     if not c.segment:
         return _json_error("no audience selected")
-    contacts = _materialize_recipients(c)
-    if not contacts:
-        return _json_error("no eligible recipients with SMS consent")
+    _materialize_recipients(c)
+    if c.recipients.count() == 0:
+        counts = (c.audience_filter or {}).get("recipient_counts") or {}
+        return _json_error(counts.get("explanation") or "no eligible recipients with SMS consent", 400, counts=counts)
     batch_size = min(max(int(data.get("batch_size") or 100), 1), 100)
     retry_failed = bool(data.get("retry_failed", False))
     sendable_statuses = {"queued", "draft", "pending", None}
@@ -411,6 +419,66 @@ def api_sms_cancel(cid):
 def api_sms_analytics(cid):
     c = SMSCampaign.query.filter_by(id=cid, company_id=tenant_id()).first_or_404()
     return jsonify({"success": True, "analytics": _serialize_sms(c)["metrics"]})
+
+
+def _contact_duplicate_json(contact: Contact):
+    return {
+        "id": contact.id,
+        "name": contact.name or f"{contact.first_name or ''} {contact.last_name or ''}".strip(),
+        "first_name": contact.first_name,
+        "last_name": contact.last_name,
+        "company": contact.company,
+        "email": contact.email,
+        "phone": contact.phone,
+        "normalized_phone": contact.normalized_phone,
+        "tags": contact.tags,
+        "source_channel": getattr(contact, "source_channel", None),
+        "source_phone_number": getattr(contact, "source_phone_number", None),
+        "sms_opted_out": bool(contact.sms_opted_out or contact.do_not_sms or contact.sms_opt_out_at),
+        "email_unsubscribed": bool(contact.email_unsubscribed or contact.do_not_email),
+        "created_at": contact.created_at.isoformat() if contact.created_at else None,
+    }
+
+
+@marketing_api_bp.get("/contacts/duplicates")
+@login_required
+def api_contact_duplicates():
+    cid = tenant_id()
+    if not cid:
+        return _json_error("tenant/company is required", 400)
+    from services.contact_dedupe import find_duplicate_contacts
+    groups = []
+    for group in find_duplicate_contacts(cid):
+        groups.append({
+            "match_key": group["match_key"],
+            "contact_ids": group["contact_ids"],
+            "contacts": [_contact_duplicate_json(c) for c in group["contacts"]],
+        })
+    return jsonify({"success": True, "duplicate_groups": groups, "count": len(groups)})
+
+
+@marketing_api_bp.post("/contacts/duplicates/merge")
+@login_required
+def api_contact_duplicates_merge():
+    cid = tenant_id()
+    if not cid:
+        return _json_error("tenant/company is required", 400)
+    data = request.get_json(silent=True) or {}
+    primary_id = data.get("primary_contact_id")
+    duplicate_ids = data.get("duplicate_contact_ids") or []
+    if not primary_id or not duplicate_ids:
+        return _json_error("primary_contact_id and duplicate_contact_ids are required", 400)
+    from services.contact_dedupe import merge_contacts
+    try:
+        result = merge_contacts(
+            int(primary_id),
+            [int(x) for x in duplicate_ids],
+            actor_user_id=current_user.id,
+            company_id=cid,
+        )
+    except ValueError as exc:
+        return _json_error(str(exc), 400)
+    return jsonify({"success": True, "merge": result})
 
 
 @marketing_api_bp.get("/sms-keywords")
