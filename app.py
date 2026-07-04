@@ -386,6 +386,18 @@ def create_app() -> Flask:
     except Exception as exc:
         app.logger.warning("Failed to register integrations blueprint: %s", exc)
     try:
+        from services.tiktok_service import TikTokService
+        _tiktok_config_ok, _tiktok_config_error = TikTokService().validate_configuration()
+        if not _tiktok_config_ok:
+            raise RuntimeError(_tiktok_config_error)
+        from tiktok_auth import tiktok_bp
+        app.register_blueprint(tiktok_bp)
+        csrf.exempt(tiktok_bp)
+    except Exception as exc:
+        app.logger.warning("Failed to register TikTok blueprint: %s", exc)
+        if os.environ.get("TIKTOK_CLIENT_KEY") or os.environ.get("TIKTOK_CLIENT_SECRET"):
+            raise
+    try:
         from admin_communications import admin_communications_bp
         app.register_blueprint(admin_communications_bp)
     except Exception as exc:

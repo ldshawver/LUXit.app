@@ -540,8 +540,8 @@ class TikTokOAuth(db.Model):
     company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=True)
 
     open_id = db.Column(db.String(255), nullable=False)
-    access_token = db.Column(db.Text, nullable=False)
-    refresh_token = db.Column(db.Text)
+    _access_token = db.Column("access_token", db.Text, nullable=False)
+    _refresh_token = db.Column("refresh_token", db.Text)
     expires_at = db.Column(db.DateTime)
     refresh_expires_at = db.Column(db.DateTime)
     scope = db.Column(db.String(500))
@@ -549,13 +549,92 @@ class TikTokOAuth(db.Model):
 
     display_name = db.Column(db.String(255))
     avatar_url = db.Column(db.String(500))
+    creator_username = db.Column(db.String(255))
+    creator_nickname = db.Column(db.String(255))
+    creator_info = db.Column(JSON)
     raw_token = db.Column(JSON)
     status = db.Column(db.String(50), default="active")
+    disconnected_at = db.Column(db.DateTime)
 
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(
         db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
     )
+
+    def set_access_token(self, token: str):
+        self._access_token = self._encrypt_secret(token)
+
+    def get_access_token(self) -> str:
+        return self._decrypt_secret(self._access_token)
+
+    def set_refresh_token(self, token: str):
+        self._refresh_token = self._encrypt_secret(token)
+
+    def get_refresh_token(self) -> str:
+        return self._decrypt_secret(self._refresh_token)
+
+    @staticmethod
+    def _encrypt_secret(value):
+        if not value:
+            return None
+        try:
+            from services.secret_vault import vault
+            return vault.encrypt(value)
+        except Exception:
+            return value
+
+    @staticmethod
+    def _decrypt_secret(value):
+        if not value:
+            return None
+        try:
+            from services.secret_vault import vault
+            return vault.decrypt(value)
+        except Exception:
+            return value
+
+    @property
+    def is_expired(self) -> bool:
+        return bool(self.expires_at and datetime.utcnow() >= self.expires_at)
+
+    @property
+    def needs_refresh(self) -> bool:
+        return bool(self.expires_at and datetime.utcnow() >= self.expires_at - timedelta(minutes=10))
+
+    def has_scope(self, scope: str) -> bool:
+        scopes = (self.scope or "").replace(",", " ").split()
+        return scope in scopes
+
+
+class TikTokPost(db.Model):
+    __tablename__ = "tiktok_post"
+
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=False, index=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, index=True)
+    tiktok_account_id = db.Column(db.Integer, db.ForeignKey("tiktok_oauth.id"), nullable=False, index=True)
+    publish_id = db.Column(db.String(255), index=True)
+    media_type = db.Column(db.String(20), nullable=False)
+    source_type = db.Column(db.String(30), nullable=False)
+    title = db.Column(db.String(220))
+    description = db.Column(db.Text)
+    privacy_level = db.Column(db.String(80))
+    status = db.Column(db.String(80), default="initialized")
+    status_payload = db.Column(JSON)
+    error_code = db.Column(db.String(120))
+    error_message = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class TikTokPostStatusHistory(db.Model):
+    __tablename__ = "tiktok_post_status_history"
+
+    id = db.Column(db.Integer, primary_key=True)
+    tiktok_post_id = db.Column(db.Integer, db.ForeignKey("tiktok_post.id"), nullable=False, index=True)
+    status = db.Column(db.String(80))
+    payload = db.Column(JSON)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 
 class Company(db.Model):

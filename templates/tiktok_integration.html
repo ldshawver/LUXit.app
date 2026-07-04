@@ -1,0 +1,43 @@
+<!doctype html>
+<title>TikTok Integration</title>
+<h1>TikTok Integration</h1>
+<div id="error" style="color:#c00"></div>
+<a id="connect" href="/api/oauth/tiktok/start"><button>Connect TikTok</button></a>
+<button id="disconnect">Disconnect</button>
+<a href="/api/oauth/tiktok/start"><button>Re-authenticate</button></a>
+<section id="status">Loading status…</section>
+<section id="creator"></section>
+<h2>TikTok Post Composer</h2>
+<form id="composer">
+  <select id="account" name="account_id"></select>
+  <select name="source"><option>FILE_UPLOAD</option><option>PULL_FROM_URL</option></select>
+  <input name="video" type="file" accept="video/mp4">
+  <input name="video_url" placeholder="Verified video URL">
+  <textarea name="photo_images" placeholder="Photo URLs, one per line"></textarea>
+  <input name="title" placeholder="Title/caption">
+  <select name="privacy_level" id="privacy"><option>SELF_ONLY</option></select>
+  <label><input name="disable_comment" type="checkbox"> Disable comments</label>
+  <label><input name="disable_duet" type="checkbox"> Disable duet</label>
+  <label><input name="disable_stitch" type="checkbox"> Disable stitch</label>
+  <input name="video_cover_timestamp_ms" type="number" value="1000">
+  <button type="submit">Submit post</button>
+</form>
+<pre id="progress"></pre>
+<script>
+const $ = (id) => document.getElementById(id);
+async function loadStatus(){
+ const r = await fetch('/api/integrations/tiktok/accounts'); const data = await r.json();
+ $('status').textContent = data.connected ? 'Connected' : 'Not connected';
+ $('account').innerHTML = (data.accounts||[]).map(a=>`<option value="${a.id}">${a.creator_username||a.display_name||a.open_id}</option>`).join('');
+ if(data.connected) loadCreator();
+}
+async function loadCreator(){
+ const r = await fetch('/api/integrations/tiktok/creator-info?account_id='+$('account').value); const data = await r.json();
+ if(!data.success){ $('error').textContent=data.error||'Creator info failed'; return; }
+ const d=data.data||{}; $('creator').innerHTML=`<h2>${d.creator_nickname||d.nickname||''}</h2><img src="${d.creator_avatar_url||d.avatar_url||''}" width="64"><p>${d.creator_username||d.username||''}</p><p>Max duration: ${d.max_video_post_duration_sec||''}</p>`;
+ const opts=d.privacy_level_options||d.privacy_options||[]; $('privacy').innerHTML=opts.map(o=>`<option>${o.privacy_level||o}</option>`).join('') || '<option>SELF_ONLY</option>';
+}
+$('disconnect').onclick=async()=>{ const r=await fetch('/api/integrations/tiktok/disconnect',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({account_id:$('account').value})}); $('progress').textContent=JSON.stringify(await r.json(),null,2); loadStatus(); };
+$('composer').onsubmit=async(e)=>{ e.preventDefault(); const fd=new FormData(e.target); const endpoint=fd.get('photo_images')?'/api/integrations/tiktok/posts/photo':'/api/integrations/tiktok/posts/video'; let opt={method:'POST', body:fd}; if(endpoint.includes('photo')){ opt={method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(Object.fromEntries([...fd.entries()].map(([k,v])=>[k,k==='photo_images'?String(v).split('\n').filter(Boolean):v])))} } const r=await fetch(endpoint,opt); $('progress').textContent=JSON.stringify(await r.json(),null,2); };
+loadStatus();
+</script>
