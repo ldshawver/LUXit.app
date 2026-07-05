@@ -22,7 +22,7 @@ def client(monkeypatch):
         company = Company(name="TikTok Test Co")
         user = User(username="tiktok-user", email="tiktok@example.com", default_company=company)
         db.session.add_all([company, user]); db.session.commit()
-        user.default_company_id = company.id; db.session.commit()
+        user.default_company_id = company.id; user.ensure_company_access(company.id, "owner"); db.session.commit()
         with app.test_client() as c:
             with c.session_transaction() as sess:
                 sess["_user_id"] = str(user.id)
@@ -194,3 +194,81 @@ def test_invalid_enabled_redirect_configuration_rejected(monkeypatch):
     ok, error = svc.validate_configuration()
     assert not ok
     assert "TIKTOK_REDIRECT_URI" in error
+
+
+def test_connections_saves_tiktok_config_and_oauth_reads_db(client, monkeypatch):
+    monkeypatch.delenv("TIKTOK_CLIENT_KEY", raising=False)
+    monkeypatch.delenv("TIKTOK_CLIENT_SECRET", raising=False)
+    payload = {
+        "TIKTOK_CLIENT_KEY": "db-client-key",
+        "TIKTOK_CLIENT_SECRET": "db-client-secret",
+        "TIKTOK_REDIRECT_URI": "http://127.0.0.1:8765/callback/",
+        "TIKTOK_OAUTH_MODE": "desktop",
+        "TIKTOK_SCOPES": "user.info.basic video.publish",
+        "TIKTOK_ALLOWED_MEDIA_DOMAINS": "db-cdn.example.com",
+    }
+    r = client.post(f"/api/company/{client.company_id}/secrets/save", json=payload)
+    assert r.status_code == 200 and r.json["success"]
+
+    service = TikTokService.from_company(db.session.get(Company, client.company_id))
+    assert service.client_key == "db-client-key"
+    assert service.client_secret == "db-client-secret"
+    assert service.scopes == ["user.info.basic", "video.publish"]
+
+    r = client.get("/api/oauth/tiktok/start")
+    assert r.status_code == 302
+    q = parse_qs(urlparse(r.location).query)
+    assert q["client_key"] == ["db-client-key"]
+
+
+def test_test_configuration_and_write_only_secret_response(client):
+    payload = {
+        "TIKTOK_CLIENT_KEY": "write-only-key",
+        "TIKTOK_CLIENT_SECRET": "super-secret-value",
+        "TIKTOK_REDIRECT_URI": "http://127.0.0.1:8765/callback/",
+        "TIKTOK_OAUTH_MODE": "desktop",
+        "TIKTOK_SCOPES": "user.info.basic video.publish",
+    }
+    assert client.post(f"/api/company/{client.company_id}/secrets/save", json=payload).json["success"]
+    test = client.post(f"/api/company/{client.company_id}/integrations/tiktok/test", json={})
+    assert test.status_code == 200 and test.json["success"]
+    assert test.json["checks"]["runtime_can_resolve_config"]
+
+    listed = client.get(f"/api/company/{client.company_id}/secrets")
+    body = listed.get_data(as_text=True)
+    assert listed.status_code == 200
+    assert "super-secret-value" not in body
+    assert "write-only-key" not in body
+
+
+def test_env_fallback_and_specific_missing_diagnostics(client, monkeypatch):
+    company = db.session.get(Company, client.company_id)
+    assert TikTokService.from_company(company).client_key == "ck"
+    monkeypatch.delenv("TIKTOK_CLIENT_KEY", raising=False)
+    monkeypatch.delenv("TIKTOK_CLIENT_SECRET", raising=False)
+    svc = TikTokService.from_company(company)
+    ok, error = svc.validate_configuration()
+    assert not ok
+    assert "client key and client secret" in error
+    assert "No key found in DB or env" not in error
+
+
+def test_legacy_integration_pages_redirect_to_connections(client):
+    for path in ("/platform/api-hub", "/global-admin/integrations", "/platform/integrations"):
+        r = client.get(path, follow_redirects=False)
+        assert r.status_code == 302
+        assert "/connections" in r.location
+
+
+def test_company_scoped_tiktok_config_does_not_cross_contaminate(client, monkeypatch):
+    monkeypatch.delenv("TIKTOK_CLIENT_KEY", raising=False)
+    monkeypatch.delenv("TIKTOK_CLIENT_SECRET", raising=False)
+    company = db.session.get(Company, client.company_id)
+    other = Company(name="Other TikTok Config")
+    db.session.add(other); db.session.commit()
+    company.set_secret("TIKTOK_CLIENT_KEY", "tenant-one")
+    company.set_secret("TIKTOK_CLIENT_SECRET", "tenant-one-secret")
+    other.set_secret("TIKTOK_CLIENT_KEY", "tenant-two")
+    other.set_secret("TIKTOK_CLIENT_SECRET", "tenant-two-secret")
+    assert TikTokService.from_company(company).client_key == "tenant-one"
+    assert TikTokService.from_company(other).client_key == "tenant-two"

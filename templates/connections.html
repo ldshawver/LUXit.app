@@ -370,6 +370,7 @@
                     {% if not can_edit %}disabled title="View-only access"{% endif %}>
                 💾 Save
             </button>
+            <button class="btn-cancel" id="modal-test-btn" onclick="testProvider()">Test Configuration</button>
             <button class="btn-cancel" onclick="closeModal()">Cancel</button>
             <span class="save-msg" id="modal-save-msg"></span>
         </div>
@@ -594,6 +595,31 @@ async function clearField(storedKey) {
     } catch(e) { alert('Error clearing field'); }
 }
 
+async function testProvider() {
+    if (!currentSlug) return;
+    const msg = document.getElementById('modal-save-msg');
+    const btn = document.getElementById('modal-test-btn');
+    btn.disabled = true;
+    btn.textContent = 'Testing…';
+    msg.textContent = '';
+    try {
+        const r = await fetch(`/api/company/${COMPANY_ID}/integrations/${currentSlug}/test`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF_TOKEN },
+            body: JSON.stringify({}),
+        });
+        const d = await r.json();
+        msg.textContent = d.success ? `✓ ${d.message}` : `✗ ${d.message || d.error}`;
+        msg.className = d.success ? 'save-msg ok' : 'save-msg err';
+    } catch(e) {
+        msg.textContent = '✗ Test failed';
+        msg.className = 'save-msg err';
+    } finally {
+        btn.disabled = false;
+        btn.textContent = 'Test Configuration';
+    }
+}
+
 async function saveProvider() {
     if (!CAN_EDIT || !currentSlug) return;
     const btn = document.getElementById('modal-save-btn');
@@ -625,7 +651,7 @@ async function saveProvider() {
         });
         const d = await r.json();
         if (d.success) {
-            msg.textContent = `✓ ${d.secrets_saved} secret(s) saved`;
+            msg.textContent = `✓ Saved ${d.secrets_saved} value(s). Secrets remain write-only.`;
             msg.className = 'save-msg ok';
             await loadSecrets();
             openModal(currentSlug);

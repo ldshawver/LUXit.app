@@ -6695,6 +6695,40 @@ def save_company_secrets(company_id):
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
+@main_bp.route('/api/company/<int:company_id>/integrations/<slug>/test', methods=['POST'])
+@login_required
+def test_company_integration(company_id, slug):
+    """Validate an integration using the same company-scoped source runtime code reads."""
+    try:
+        company = Company.query.get_or_404(company_id)
+        if not current_user.can_edit_company(company_id):
+            return jsonify({'success': False, 'error': 'Permission denied'}), 403
+
+        if slug != 'tiktok':
+            return jsonify({'success': False, 'error': 'Test Configuration is not implemented for this integration yet.'}), 400
+
+        from services.tiktok_service import TikTokService
+        service = TikTokService.from_company(company)
+        diagnostics = service.configuration_diagnostics()
+        checks = {
+            'client_key_configured': diagnostics['client_key_configured'],
+            'client_secret_configured': diagnostics['client_secret_configured'],
+            'redirect_uri_valid': diagnostics['redirect_uri_valid'] and diagnostics['runtime_redirect_uri_valid'],
+            'scopes_configured': diagnostics['scopes_configured'],
+            'runtime_can_resolve_config': diagnostics['ok'],
+        }
+        return jsonify({
+            'success': diagnostics['ok'],
+            'provider': slug,
+            'message': 'TikTok configuration is ready for OAuth.' if diagnostics['ok'] else diagnostics['error'],
+            'checks': checks,
+            'diagnostics': diagnostics,
+        }), 200 if diagnostics['ok'] else 422
+    except Exception as e:
+        logger.error(f"Test integration error: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 @main_bp.route('/api/company/<int:company_id>/secrets/delete', methods=['POST'])
 @login_required
 def delete_company_secret(company_id):

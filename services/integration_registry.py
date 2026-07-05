@@ -187,11 +187,43 @@ class IntegrationServiceRegistry:
             'icon': '🎵',
             'description': 'Publish videos and manage TikTok for Business account',
             'color': '#ff0050',
-            'config_fields': {},
+            'config_fields': {
+                'redirect_uri': {
+                    'label': 'Redirect URI', 'type': 'url', 'stored_key': 'TIKTOK_REDIRECT_URI',
+                    'placeholder': 'https://app.example.com/api/oauth/tiktok/callback', 'required': True,
+                    'help_text': 'Use HTTPS for web mode, or loopback http://127.0.0.1:PORT/callback/ for desktop mode.',
+                },
+                'oauth_mode': {
+                    'label': 'OAuth Mode: web/desktop', 'type': 'text', 'stored_key': 'TIKTOK_OAUTH_MODE',
+                    'placeholder': 'web', 'required': True, 'help_text': 'Allowed values: web or desktop.',
+                },
+                'scopes': {
+                    'label': 'Scopes', 'type': 'textarea', 'stored_key': 'TIKTOK_SCOPES',
+                    'placeholder': 'user.info.basic video.publish', 'required': True,
+                    'help_text': 'Space or comma-separated TikTok scopes.',
+                },
+                'allowed_media_domains': {
+                    'label': 'Allowed/verified media domains', 'type': 'textarea', 'stored_key': 'TIKTOK_ALLOWED_MEDIA_DOMAINS',
+                    'placeholder': 'cdn.example.com, media.example.com', 'required': False,
+                    'help_text': 'Comma-separated domains permitted for pull-from-url posting.',
+                },
+                'enable_login_kit': {
+                    'label': 'Enable Login Kit', 'type': 'text', 'stored_key': 'TIKTOK_ENABLE_LOGIN_KIT',
+                    'placeholder': 'true', 'required': False,
+                },
+                'enable_content_posting_api': {
+                    'label': 'Enable Content Posting API', 'type': 'text', 'stored_key': 'TIKTOK_ENABLE_CONTENT_POSTING_API',
+                    'placeholder': 'true', 'required': False,
+                },
+                'enable_direct_post': {
+                    'label': 'Enable Direct Post', 'type': 'text', 'stored_key': 'TIKTOK_ENABLE_DIRECT_POST',
+                    'placeholder': 'true', 'required': False,
+                },
+            },
             'secret_fields': {
                 'client_key': {
-                    'label': 'Client Key (OAuth)',
-                    'type': 'text',
+                    'label': 'Client Key',
+                    'type': 'password',
                     'stored_key': 'TIKTOK_CLIENT_KEY',
                     'placeholder': 'awxxxxxxxxx',
                     'required': True,
