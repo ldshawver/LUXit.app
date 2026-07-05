@@ -69,8 +69,9 @@ def _ensure_fresh(account, company):
 def oauth_start():
     company = get_current_company()
     service = get_tiktok_service(company)
-    if not service.is_configured():
-        return jsonify({"success": False, "error": "TikTok OAuth is not configured"}), 503
+    ok, error = service.validate_configuration()
+    if not ok:
+        return jsonify({"success": False, "error": error, "diagnostics": service.configuration_diagnostics()}), 503
     auth_url, state, verifier = service.build_auth_url()
     session["tiktok_oauth_state"] = state
     session["tiktok_pkce_verifier"] = verifier
@@ -176,7 +177,7 @@ def post_video():
         source_info = {"source": "FILE_UPLOAD", "video_size": size, "chunk_size": chunk_size, "total_chunk_count": count}
     else:
         video_url = data.get("video_url")
-        if not video_url or not is_allowed_media_url(video_url): return jsonify({"success": False, "error": "Video URL domain is not verified/allowed."}), 400
+        if not video_url or not is_allowed_media_url(video_url, company): return jsonify({"success": False, "error": "Video URL domain is not verified/allowed."}), 400
         source_info = {"source": "PULL_FROM_URL", "video_url": video_url}
     result = get_tiktok_service(company).init_video(account.get_access_token(), post_info, source_info)
     if not result.get("success"): return jsonify(result), 502
@@ -202,7 +203,7 @@ def post_photo():
     invalid = _validate_post(account, privacy)
     if invalid: return jsonify({"success": False, "error": invalid}), 400
     images = data.get("photo_images") or []
-    if not images or any(not is_allowed_media_url(u) for u in images): return jsonify({"success": False, "error": "Photo URL domain is not verified/allowed."}), 400
+    if not images or any(not is_allowed_media_url(u, company) for u in images): return jsonify({"success": False, "error": "Photo URL domain is not verified/allowed."}), 400
     result = get_tiktok_service(company).init_photo(account.get_access_token(), {"title": data.get("title", "")[:150], "description": data.get("description", ""), "privacy_level": privacy, "disable_comment": bool(data.get("disable_comment")), "auto_add_music": bool(data.get("auto_add_music"))}, {"source": "PULL_FROM_URL", "photo_cover_index": int(data.get("photo_cover_index", 0)), "photo_images": images})
     if not result.get("success"): return jsonify(result), 502
     d = result.get("data", {})

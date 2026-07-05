@@ -27,6 +27,7 @@ class TikTokService:
         scopes=None,
         runtime_redirect_uri=None,
         oauth_mode=None,
+        allowed_media_domains=None,
     ):
         self.client_key = client_key or os.getenv("TIKTOK_CLIENT_KEY")
         self.client_secret = client_secret or os.getenv("TIKTOK_CLIENT_SECRET")
@@ -39,9 +40,18 @@ class TikTokService:
             "TIKTOK_RUNTIME_REDIRECT_URI"
         )
         self.oauth_mode = (oauth_mode or os.getenv("TIKTOK_OAUTH_MODE", "desktop")).lower()
-        self.scopes = scopes or os.getenv("TIKTOK_SCOPES", "user.info.basic").replace(
-            ",", " "
-        ).split()
+        raw_scopes = scopes if scopes is not None else os.getenv("TIKTOK_SCOPES", "user.info.basic")
+        if isinstance(raw_scopes, str):
+            self.scopes = raw_scopes.replace(",", " ").split()
+        else:
+            self.scopes = list(raw_scopes or [])
+        self.allowed_media_domains = self._parse_domains(
+            allowed_media_domains or os.getenv("TIKTOK_ALLOWED_MEDIA_DOMAINS", "localhost,127.0.0.1")
+        )
+
+    @staticmethod
+    def _parse_domains(value):
+        return [d.strip().lower() for d in str(value or "").replace("\n", ",").split(",") if d.strip()]
 
     @classmethod
     def from_company(cls, company):
@@ -54,6 +64,7 @@ class TikTokService:
             secret("TIKTOK_SCOPES"),
             secret("TIKTOK_RUNTIME_REDIRECT_URI"),
             secret("TIKTOK_OAUTH_MODE"),
+            secret("TIKTOK_ALLOWED_MEDIA_DOMAINS"),
         )
 
     @staticmethod
@@ -99,9 +110,13 @@ class TikTokService:
 
     def validate_configuration(self):
         if not (self.client_key or self.client_secret):
-            return True, None
-        if not self.client_key or not self.client_secret:
-            return False, "TikTok OAuth requires both TIKTOK_CLIENT_KEY and TIKTOK_CLIENT_SECRET."
+            return False, "TikTok OAuth client key and client secret are missing in company settings and environment."
+        if not self.client_key:
+            return False, "TikTok client key is missing in company settings and TIKTOK_CLIENT_KEY."
+        if not self.client_secret:
+            return False, "TikTok client secret is missing in company settings and TIKTOK_CLIENT_SECRET."
+        if not self.scopes:
+            return False, "TikTok scopes are missing in company settings and TIKTOK_SCOPES."
         if not self.is_valid_redirect_uri(
             self.redirect_uri,
             self.oauth_mode,
@@ -116,6 +131,22 @@ class TikTokService:
         ):
             return False, "TikTok runtime redirect URI must be concrete and valid."
         return True, None
+
+    def configuration_diagnostics(self):
+        ok, error = self.validate_configuration()
+        return {
+            "ok": ok,
+            "error": error,
+            "client_key_configured": bool(self.client_key),
+            "client_secret_configured": bool(self.client_secret),
+            "redirect_uri_configured": bool(self.redirect_uri),
+            "redirect_uri_valid": self.is_valid_redirect_uri(self.redirect_uri, self.oauth_mode, allow_wildcard=self.oauth_mode == "desktop"),
+            "runtime_redirect_uri": self.resolved_redirect_uri(),
+            "runtime_redirect_uri_valid": self.is_valid_redirect_uri(self.resolved_redirect_uri(), self.oauth_mode, allow_wildcard=False),
+            "scopes_configured": bool(self.scopes),
+            "oauth_mode": self.oauth_mode,
+            "allowed_media_domains_configured": bool(self.allowed_media_domains),
+        }
 
     def is_configured(self):
         ok, _ = self.validate_configuration()
@@ -227,8 +258,9 @@ class TikTokService:
         return self.fetch_status(access_token, publish_id)
 
 
-def is_allowed_media_url(url):
-    allowed = [d.strip().lower() for d in os.getenv("TIKTOK_ALLOWED_MEDIA_DOMAINS", "localhost,127.0.0.1").split(",") if d.strip()]
+def is_allowed_media_url(url, company=None):
+    service = TikTokService.from_company(company) if company else TikTokService()
+    allowed = service.allowed_media_domains
     host = (urlparse(url).hostname or "").lower()
     return bool(host and any(host == d or host.endswith("." + d) for d in allowed))
 

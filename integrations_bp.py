@@ -39,7 +39,7 @@ Endpoints:
 import json
 import logging
 
-from flask import Blueprint, jsonify, request, render_template, abort
+from flask import Blueprint, jsonify, request, render_template, abort, redirect, url_for
 from flask_login import current_user, login_required
 
 logger = logging.getLogger(__name__)
@@ -596,6 +596,9 @@ def _build_provider_card(slug, display_name, category, scope, icon, env_keys, co
 @integrations_bp.route("/platform/api-hub")
 @login_required
 def api_hub():
+    return redirect(url_for("main.connections_hub"), code=302)
+
+def _legacy_api_hub():
     """
     API Hub — tiered credential management by role:
 
@@ -1047,6 +1050,9 @@ def api_hub_import_from_env():
 @integrations_bp.route("/global-admin/integrations")
 @login_required
 def platform_integrations():
+    return redirect(url_for("main.connections_hub"), code=302)
+
+def _legacy_platform_integrations():
     from models import IntegrationConnection
     # Pull last-known statuses from DB (fast — no live network call)
     rows = IntegrationConnection.query.filter_by(company_id=None).all()
