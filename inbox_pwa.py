@@ -421,73 +421,6 @@ def _twilio_send_error_message_LEGACY(exc) -> str:
     return raw
 
 
-def _send_sms_internal(ta, to_number: str, body: str, conversation_id=None, from_number: str | None = None):
-    """Send SMS via Twilio — mirrors twilio_sms._send_sms.
-
-    Keep customer SMS content isolated from notification/log text. Only
-    ``sms_body`` is sent to Twilio and persisted as the message body.
-    """
-    from models import TwilioMessage
-    sms_body = _sanitize_body(body)
-    from services.license_service import PHONE_PWA_FEATURE, has_feature
-    if getattr(ta, "company_id", None) and not has_feature(ta.company_id, PHONE_PWA_FEATURE):
-        return None, "Phone/PWA Communications license is not active."
-    try:
-        from twilio.rest import Client
-        sid = ta.get_account_sid() if hasattr(ta, 'get_account_sid') else ta._account_sid
-        tok = ta.get_auth_token()  if hasattr(ta, 'get_auth_token')  else ta._auth_token
-        client = Client(sid, tok)
-        kwargs = {"body": sms_body, "to": to_number}
-        if from_number:
-            kwargs["from_"] = from_number
-        elif ta.messaging_service_sid:
-            kwargs["messaging_service_sid"] = ta.messaging_service_sid
-        elif ta.from_phone:
-            kwargs["from_"] = ta.from_phone
-        else:
-            return None, "No From number or Messaging Service SID configured."
-        msg = client.messages.create(**kwargs)
-        provider_status = (getattr(msg, "status", None) or "sent").lower()
-        dispatched_status = provider_status if provider_status in {"sent", "delivered", "failed", "undelivered"} else "sent"
-        record = TwilioMessage(
-            conversation_id=conversation_id,
-            company_id=ta.company_id,
-            twilio_sid=msg.sid,
-            direction="outbound",
-            from_number=from_number or ta.from_phone or ta.messaging_service_sid,
-            to_number=to_number,
-            body=sms_body,
-            status=dispatched_status,
-            raw_payload={"provider_status": provider_status},
-        )
-        db.session.add(record)
-        db.session.commit()
-        logger.info("PWA Inbox outbound SMS dispatched: sid=%s status=%s to=%s", msg.sid, dispatched_status, to_number)
-        return record, None
-    except Exception as exc:
-        logger.error("PWA Inbox SMS send error: %s", exc)
-        error = _twilio_send_error_message(exc)
-        if conversation_id:
-            try:
-                failed = TwilioMessage(
-                    conversation_id=conversation_id,
-                    company_id=ta.company_id,
-                    direction="outbound",
-                    from_number=from_number or ta.from_phone or ta.messaging_service_sid,
-                    to_number=to_number,
-                    body=sms_body,
-                    status="failed",
-                    error_code=str(getattr(exc, "code", "") or getattr(exc, "status", "") or "") or None,
-                    error_message=error,
-                )
-                db.session.add(failed)
-                db.session.commit()
-            except Exception:
-                db.session.rollback()
-                logger.exception("Unable to persist failed outbound SMS record", extra={"conversation_id": conversation_id})
-        return None, error
-
-
 def retry_queued_outbound_messages(company_id: int, limit: int = 100, dry_run: bool = False) -> dict:
     """Admin-safe retry for legacy PWA outbound rows stuck as queued without a Twilio SID."""
     from models import TwilioConversation, TwilioMessage
@@ -515,7 +448,6 @@ def retry_queued_outbound_messages(company_id: int, limit: int = 100, dry_run: b
     errors = []
     for row in rows:
         conv = row.conversation
-        from_number = row.from_number or getattr(conv, "to_number", None) or getattr(ta, "from_phone", None)
         to_number = row.to_number or getattr(conv, "from_number", None)
         if not to_number:
             row.status = "failed"
@@ -524,45 +456,21 @@ def retry_queued_outbound_messages(company_id: int, limit: int = 100, dry_run: b
             errors.append({"id": row.id, "error": row.error_message})
             db.session.commit()
             continue
-        sent, err = _dispatch_existing_outbound_message(ta, row, to_number, from_number)
-        if err:
+        from twilio_sms import sendConversationSms
+        result = sendConversationSms(conv.id, row.body or "", twilio_account=ta, to_number=to_number)
+        if not result.get("success"):
+            row.status = "failed"
+            row.error_message = result.get("error") or "SMS retry failed."
+            db.session.commit()
             failed += 1
-            errors.append({"id": row.id, "error": err})
+            errors.append({"id": row.id, "error": row.error_message})
         else:
+            row.status = "sent"
+            row.error_message = None
+            row.raw_payload = {"retried_from_queue": True, "resent_via": "sendConversationSms"}
+            db.session.commit()
             retried += 1
     return {"success": failed == 0, "matched": len(rows), "retried": retried, "failed": failed, "errors": errors[:20]}
-
-
-def _dispatch_existing_outbound_message(ta, row, to_number: str, from_number: str | None):
-    try:
-        from twilio.rest import Client
-        sid = ta.get_account_sid() if hasattr(ta, "get_account_sid") else ta._account_sid
-        tok = ta.get_auth_token() if hasattr(ta, "get_auth_token") else ta._auth_token
-        client = Client(sid, tok)
-        kwargs = {"body": _sanitize_body(row.body or ""), "to": to_number}
-        if from_number:
-            kwargs["from_"] = from_number
-        elif ta.messaging_service_sid:
-            kwargs["messaging_service_sid"] = ta.messaging_service_sid
-        else:
-            raise RuntimeError("No From number or Messaging Service SID configured.")
-        msg = client.messages.create(**kwargs)
-        provider_status = (getattr(msg, "status", None) or "sent").lower()
-        row.twilio_sid = msg.sid
-        row.from_number = from_number or ta.from_phone or ta.messaging_service_sid
-        row.to_number = to_number
-        row.status = provider_status if provider_status in {"sent", "delivered", "failed", "undelivered"} else "sent"
-        row.error_message = None
-        row.raw_payload = {"provider_status": provider_status, "retried_from_queue": True}
-        db.session.commit()
-        return row, None
-    except Exception as exc:
-        error = _twilio_send_error_message(exc)
-        row.status = "failed"
-        row.error_code = str(getattr(exc, "code", "") or getattr(exc, "status", "") or "") or None
-        row.error_message = error
-        db.session.commit()
-        return None, error
 
 
 def _conv_to_dict(conv, brief=True):
@@ -656,7 +564,7 @@ def pwa_index():
         os.environ.get("LUXIT_ASSET_VERSION")
         or os.environ.get("GIT_SHA")
         or os.environ.get("RENDER_GIT_COMMIT")
-        or "20260702-push-sound-diagnostics"
+        or "20260705-push-sound-forwarding-bh-autoreply"
     )
     return render_template(
         "inbox_pwa/index.html",
@@ -686,7 +594,7 @@ def pwa_calls():
         os.environ.get("LUXIT_ASSET_VERSION")
         or os.environ.get("GIT_SHA")
         or os.environ.get("RENDER_GIT_COMMIT")
-        or "20260702-push-sound-diagnostics"
+        or "20260705-push-sound-forwarding-bh-autoreply"
     )
     return render_template("inbox_pwa/calls.html", user=user, company=company, pwa_version=pwa_version)
 
@@ -1819,11 +1727,14 @@ def send_message(conv_id):
             "twilio_not_configured",
         )
 
-    record, err = _send_sms_internal(ta, conv.from_number, body, conversation_id=conv.id, from_number=conv.to_number)
-    if err:
+    from twilio_sms import sendConversationSms
+    result = sendConversationSms(conv.id, body, twilio_account=ta)
+    if not result.get("success"):
         logger.error("send_message failed: user=%d company=%d conv=%d to=%s error=%s",
-                     user.id, company.id, conv_id, conv.from_number, err)
-        return _json_error(err, 502, "provider_failure")
+                     user.id, company.id, conv_id, conv.from_number, result.get("error"))
+        return _json_error(result.get("error") or "SMS send failed", 502, "provider_failure")
+    from models import TwilioMessage
+    record = TwilioMessage.query.filter_by(conversation_id=conv.id, direction="outbound").order_by(TwilioMessage.id.desc()).first()
 
     # Update conversation preview
     conv.last_message_at      = datetime.utcnow()
@@ -1906,11 +1817,14 @@ def new_conversation():
         db.session.add(conv)
         db.session.flush()
 
-    record, err = _send_sms_internal(ta, to_num, body, conversation_id=conv.id, from_number=ta.from_phone)
-    if err:
+    from twilio_sms import sendConversationSms
+    result = sendConversationSms(conv.id, body, twilio_account=ta, to_number=to_num)
+    if not result.get("success"):
         logger.error("new_conversation send failed user=%d company=%d to=%s: %s",
-                     user.id, company.id, to_num, err)
-        return _json_error(err, 502, "provider_failure")
+                     user.id, company.id, to_num, result.get("error"))
+        return _json_error(result.get("error") or "SMS send failed", 502, "provider_failure")
+    from models import TwilioMessage
+    record = TwilioMessage.query.filter_by(conversation_id=conv.id, direction="outbound").order_by(TwilioMessage.id.desc()).first()
 
     conv.last_message_at      = datetime.utcnow()
     conv.last_message_preview = f"You: {body[:150]}"
@@ -2192,15 +2106,19 @@ def _push_debug_decision(user, event_type: str, *, requested_silent: bool, in_bu
         return {"send": False, "reason": "outside_business_hours_and_after_hours_push_disabled", "event_type": canonical}
     quiet = _now_in_user_quiet_hours(user)
     sound_enabled = getattr(user, "notification_sounds_enabled", True) is not False
-    silent = bool(requested_silent or quiet or not sound_enabled)
+    allow_silent_override = os.environ.get("LUXIT_ALLOW_SILENT_PUSH", "").lower() in {"1", "true", "yes"}
+    would_silence = bool(requested_silent or quiet or not sound_enabled)
+    silent = bool(would_silence and allow_silent_override)
     vibration_enabled = getattr(user, "pwa_vibration_enabled", True) is not False
     return {
         "send": True,
         "reason": "quiet_hours" if quiet else ("sound_preference_disabled" if not sound_enabled else "alert_enabled"),
+        "would_silence_without_lock": would_silence,
+        "silent_override_locked": would_silence and not allow_silent_override,
         "event_type": canonical,
         "silent": silent,
-        "vibrate": [200, 100, 200] if (vibration_enabled and not silent) else [],
-        "sound": None if silent else "default",
+        "vibrate": [200, 100, 200] if vibration_enabled else [],
+        "sound": "default",
         "renotify": True,
     }
 
@@ -2364,13 +2282,16 @@ def send_pwa_push_notification(company_id: int, *, user_ids, title: str, body: s
             "url": link,
             "tag": tag,
             "renotify": True,
-            "requireInteraction": False,
+            "requireInteraction": event_type in {"incoming_sms", "missed_call", "voicemail"},
             "eventType": decision["event_type"],
             "icon": "/static/icons/icon-192.png",
             "badge": "/static/icons/badge-72.png",
             "sound": decision["sound"],
             "silent": bool(decision["silent"]),
             "vibrate": decision["vibrate"],
+            "channel_id": "high_priority_messages",
+            "channelId": "high_priority_messages",
+            "importance": "high",
             "data": {
                 "company_id": company_id,
                 "phone_number_id": phone_number_id,
@@ -2378,6 +2299,9 @@ def send_pwa_push_notification(company_id: int, *, user_ids, title: str, body: s
                 "silent": bool(decision["silent"]),
                 "debug_reason": decision["reason"],
                 "badgeCount": badge_count,
+                "channel_id": "high_priority_messages",
+                "channelId": "high_priority_messages",
+                "importance": "high",
             },
             "badgeCount": badge_count,
         }
@@ -2386,7 +2310,9 @@ def send_pwa_push_notification(company_id: int, *, user_ids, title: str, body: s
             "user_id": user.id, "company_id": company_id, "phone_number_id": phone_number_id,
             "event_type": decision["event_type"], "silent": payload["silent"], "sound": payload["sound"],
             "vibrate": payload["vibrate"], "renotify": payload["renotify"], "tag": payload["tag"],
-            "badgeCount": badge_count, "push_provider_result": result,
+            "badgeCount": badge_count, "channel": payload["channelId"], "importance": payload["importance"],
+            "sw_version": os.environ.get("LUXIT_ASSET_VERSION") or os.environ.get("GIT_SHA") or os.environ.get("RENDER_GIT_COMMIT") or "20260705-push-sound-forwarding-bh-autoreply",
+            "push_provider_result": result,
         })
         total += result.get("sent", 0)
         errors.extend(result.get("errors", []))
@@ -2423,7 +2349,7 @@ def pwa_push_debug():
         "notification_permission": "client-reported",
         "active_subscription": active_subscriptions > 0,
         "active_subscriptions": active_subscriptions,
-        "service_worker_version": os.environ.get("LUXIT_ASSET_VERSION") or os.environ.get("GIT_SHA") or os.environ.get("RENDER_GIT_COMMIT") or "20260702-push-sound-diagnostics",
+        "service_worker_version": os.environ.get("LUXIT_ASSET_VERSION") or os.environ.get("GIT_SHA") or os.environ.get("RENDER_GIT_COMMIT") or "20260705-push-sound-forwarding-bh-autoreply",
         "decision": decision,
         "device_instructions": [
             "Android: Chrome/LUXit PWA notification channel cannot be Silent or Low Importance.",
