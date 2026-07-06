@@ -140,6 +140,8 @@ class _NumberScopedTwilioConfig:
         "business_hours_auto_reply_enabled",
         "business_hours_auto_reply_text",
         "call_forward_to",
+        "call_forwarding_enabled",
+        "call_forwarding_number",
         "voice_forwarding_enabled",
         "voicemail_greeting_text",
         "voicemail_greeting_audio_url",
@@ -610,12 +612,37 @@ def _get_or_create_conversation(
     return conv
 
 
-def _send_sms(ta, to_number: str, body: str,
-              conversation_id: int = None, is_auto_reply: bool = False,
-              rule_id: int = None) -> dict:
-    """Send an outbound SMS and persist the TwilioMessage record."""
-    from models import TwilioMessage
+def resolve_sms_sender(inbound_message) -> str:
+    """Canonical conversational SMS sender resolver.
+
+    For every reply/forward/auto-reply associated with an inbound message, the
+    sender must be the business line that received that inbound message:
+    ``sender = inbound_message.to_number``.
+    """
+    if isinstance(inbound_message, dict):
+        return (inbound_message.get("to_number") or inbound_message.get("To") or "").strip()
+    return (getattr(inbound_message, "to_number", None) or getattr(inbound_message, "To", None) or "").strip()
+
+
+def sendConversationSms(conversation_id: int, message: str, *,
+                        to_number: str = None, twilio_account=None,
+                        is_auto_reply: bool = False, rule_id: int = None) -> dict:
+    """Single entry point for all conversational SMS sends.
+
+    Every outbound reply/forward/auto-reply resolves its sender from the
+    inbound conversation via ``resolve_sms_sender(conversation)``. No caller is
+    allowed to provide a parallel sender override, MessagingServiceSid, or
+    fallback sender pool.
+    """
+    from models import TwilioMessage, TwilioConversation, TwilioPhoneNumber
     from flask import current_app
+    conv = db.session.get(TwilioConversation, conversation_id) if conversation_id else None
+    if not conv:
+        return {"success": False, "error": "Conversation is required for SMS send."}
+    ta = twilio_account or _get_twilio_account(conv.company_id)
+    if not ta:
+        return {"success": False, "error": "Twilio account is not configured for this conversation."}
+    to_number = to_number or conv.from_number
     try:
         from services.license_service import PHONE_PWA_FEATURE, has_feature
         if getattr(ta, "company_id", None) and not has_feature(ta.company_id, PHONE_PWA_FEATURE):
@@ -627,39 +654,41 @@ def _send_sms(ta, to_number: str, body: str,
     client = _build_client(ta)
     if not client:
         return {"success": False, "error": "Twilio client could not be created."}
-    body = _sanitize_body(body)
+    body = _sanitize_body(message)
     try:
+        canonical_sender = resolve_sms_sender(conv)
+        if not canonical_sender:
+            return {"success": False, "error": "No inbound phone line is available for this SMS reply."}
+        pn = TwilioPhoneNumber.query.filter_by(company_id=ta.company_id, phone_number=canonical_sender, is_active=True).first()
+        if not pn:
+            return {"success": False, "error": "Sender phone line is not active for this company."}
+        if conv and pn.id != conv.phone_number_id and conv.phone_number_id is not None:
+            return {"success": False, "error": "Sender phone line does not match the conversation."}
         kwargs = {
             "body": body,
             "to":   to_number,
+            "from_": canonical_sender,
         }
-        if ta.messaging_service_sid:
-            kwargs["messaging_service_sid"] = ta.messaging_service_sid
-        elif ta.from_phone:
-            kwargs["from_"] = ta.from_phone
-        else:
-            return {"success": False, "error": "No From number or Messaging Service SID configured."}
 
         if current_app.config.get("TESTING"):
             msg = type("TwilioTestMessage", (), {"sid": f"SMTEST{int(datetime.utcnow().timestamp())}", "status": "sent"})()
         else:
             msg = client.messages.create(**kwargs)
 
-        if conversation_id:
-            record = TwilioMessage(
-                conversation_id=conversation_id,
-                company_id=ta.company_id,
-                twilio_sid=msg.sid,
-                direction="outbound",
-                from_number=ta.from_phone or ta.messaging_service_sid,
-                to_number=to_number,
-                body=body,
-                status=msg.status,
-                is_auto_reply=is_auto_reply,
-                rule_id=rule_id,
-            )
-            db.session.add(record)
-            db.session.commit()
+        record = TwilioMessage(
+            conversation_id=conversation_id,
+            company_id=ta.company_id,
+            twilio_sid=msg.sid,
+            direction="outbound",
+            from_number=canonical_sender,
+            to_number=to_number,
+            body=body,
+            status=msg.status,
+            is_auto_reply=is_auto_reply,
+            rule_id=rule_id,
+        )
+        db.session.add(record)
+        db.session.commit()
         logger.info("Outbound SMS sent: sid=%s to=%s", msg.sid, to_number)
         try:
             from services.posthog_client import track_event
@@ -811,7 +840,7 @@ def _send_number_configured_auto_reply(conv, ta, *, in_business=None) -> bool:
     if recent:
         logger.info("[auto-reply company=%s conv=%s] configured number auto reply skipped due to cooldown", ta.company_id, conv.id)
         return False
-    result = _send_sms(ta, conv.from_number, response_body, conversation_id=conv.id, is_auto_reply=True)
+    result = sendConversationSms(conv.id, response_body, twilio_account=ta, is_auto_reply=True)
     logger.info("[auto-reply company=%s conv=%s] configured number auto reply sent success=%s", ta.company_id, conv.id, result.get("success"))
     return bool(result.get("success"))
 
@@ -959,8 +988,7 @@ def _apply_auto_reply_rules(conv, body: str, ta) -> bool:
         if rule.action == "opt_out" or rule.trigger_type == "stop_keyword":
             conv.is_opted_out = True
             if rule.response:
-                result = _send_sms(ta, conv.from_number, rule.response,
-                                   conversation_id=conv.id, is_auto_reply=True, rule_id=rule.id)
+                result = sendConversationSms(conv.id, rule.response, twilio_account=ta, is_auto_reply=True, rule_id=rule.id)
                 logger.info("%s opt-out reply sent: success=%s", _tag, result.get("success"))
             rule.match_count = (rule.match_count or 0) + 1
             db.session.commit()
@@ -974,8 +1002,7 @@ def _apply_auto_reply_rules(conv, body: str, ta) -> bool:
             rule.match_count = (rule.match_count or 0) + 1
             db.session.commit()
             if rule.response and not reply_sent:
-                result = _send_sms(ta, conv.from_number, rule.response,
-                                   conversation_id=conv.id, is_auto_reply=True, rule_id=rule.id)
+                result = sendConversationSms(conv.id, rule.response, twilio_account=ta, is_auto_reply=True, rule_id=rule.id)
                 reply_sent = result.get("success", False)
                 logger.info("%s tag rule reply: success=%s err=%s", _tag, result.get("success"), result.get("error"))
             # Continue — after_hours must still have a chance to fire
@@ -987,8 +1014,7 @@ def _apply_auto_reply_rules(conv, body: str, ta) -> bool:
             if reply_sent:
                 logger.debug("%s rule id=%s skipped — reply already sent", _tag, rule.id)
                 continue
-            result = _send_sms(ta, conv.from_number, response_body,
-                               conversation_id=conv.id, is_auto_reply=True, rule_id=rule.id)
+            result = sendConversationSms(conv.id, response_body, twilio_account=ta, is_auto_reply=True, rule_id=rule.id)
             rule.match_count = (rule.match_count or 0) + 1
             db.session.commit()
             reply_sent = result.get("success", False)
@@ -1173,20 +1199,19 @@ def inbound_sms():
             if not target_number.startswith("+"):
                 target_number = "+" + target_number
             relay_body = relay_match.group(2).strip()
+            admin_conv = _get_or_create_conversation(ta.company_id, ta.sms_forward_to, to_number, getattr(pn, "id", None))
             if not relay_body:
                 logger.warning("Owner relay: empty message body to %s — ignored", target_number)
-                _send_sms(ta, ta.sms_forward_to,
-                          f"[{company_name}] Reply not sent — message was empty.")
+                sendConversationSms(admin_conv.id, f"[{company_name}] Reply not sent — message was empty.", twilio_account=ta)
                 return '<Response></Response>', 200, {"Content-Type": "text/xml"}
             target_conv = _get_or_create_conversation(ta.company_id, target_number, to_number)
-            result = _send_sms(ta, target_number, relay_body, conversation_id=target_conv.id)
+            result = sendConversationSms(target_conv.id, relay_body, twilio_account=ta, to_number=target_number)
             logger.info(
                 "Owner relay: %s → %s (success=%s err=%s)",
                 from_number, target_number, result.get("success"), result.get("error")
             )
             if not result.get("success"):
-                _send_sms(ta, ta.sms_forward_to,
-                          f"[{company_name}] Failed to send to {target_number}: {result.get('error')}")
+                sendConversationSms(admin_conv.id, f"[{company_name}] Failed to send to {target_number}: {result.get('error')}", twilio_account=ta)
             return '<Response></Response>', 200, {"Content-Type": "text/xml"}
 
         # r <message> — reply to the most recent customer conversation
@@ -1203,19 +1228,18 @@ def inbound_sms():
                 .first()
             )
             if last_conv:
-                result = _send_sms(ta, last_conv.from_number, relay_body,
-                                   conversation_id=last_conv.id)
+                result = sendConversationSms(last_conv.id, relay_body, twilio_account=ta)
                 logger.info(
                     "Owner 'r' relay → %s (success=%s err=%s)",
                     last_conv.from_number, result.get("success"), result.get("error"),
                 )
                 if not result.get("success"):
-                    _send_sms(ta, ta.sms_forward_to,
-                              f"[{company_name}] Failed to reply to {last_conv.from_number}: {result.get('error')}")
+                    admin_conv = _get_or_create_conversation(ta.company_id, ta.sms_forward_to, to_number, getattr(pn, "id", None))
+                    sendConversationSms(admin_conv.id, f"[{company_name}] Failed to reply to {last_conv.from_number}: {result.get('error')}", twilio_account=ta)
             else:
                 logger.warning("Owner 'r' relay: no recent conversation found")
-                _send_sms(ta, ta.sms_forward_to,
-                          f"[{company_name}] No recent customer conversation found to reply to.")
+                admin_conv = _get_or_create_conversation(ta.company_id, ta.sms_forward_to, to_number, getattr(pn, "id", None))
+                sendConversationSms(admin_conv.id, f"[{company_name}] No recent customer conversation found to reply to.", twilio_account=ta)
             return '<Response></Response>', 200, {"Content-Type": "text/xml"}
 
         # Unrecognised command — send help back to admin
@@ -1231,7 +1255,8 @@ def inbound_sms():
             f"r +1XXXXXXXXXX your message\n"
             f"  → Shorthand reply to specific customer"
         )
-        _send_sms(ta, ta.sms_forward_to, help_msg)
+        admin_conv = _get_or_create_conversation(ta.company_id, ta.sms_forward_to, to_number, getattr(pn, "id", None))
+        sendConversationSms(admin_conv.id, help_msg, twilio_account=ta)
         return '<Response></Response>', 200, {"Content-Type": "text/xml"}
 
     try:
@@ -1327,7 +1352,7 @@ def inbound_sms():
                     f"Reply using:\n"
                     f"reply {from_number} your message"
                 )
-                _send_sms(ta, ta.sms_forward_to, fwd_body, conversation_id=conv.id)
+                sendConversationSms(conv.id, fwd_body, twilio_account=ta, to_number=ta.sms_forward_to)
                 logger.info(
                     "SMS forwarded: customer=%s → admin=%s company=%s",
                     from_number, ta.sms_forward_to, company_name,
@@ -1344,13 +1369,7 @@ def inbound_sms():
             attribute_inbound_reply(ta.company_id, from_number, body, conv.id)
             campaign_reply = process_keyword_rules(ta.company_id, body, conv, ta)
             if campaign_reply:
-                _send_sms(
-                    ta,
-                    from_number,
-                    campaign_reply,
-                    conversation_id=conv.id,
-                    is_auto_reply=True,
-                )
+                sendConversationSms(conv.id, campaign_reply, twilio_account=ta, is_auto_reply=True)
         except Exception as campaign_rule_exc:
             logger.exception("Error in campaign SMS keyword engine: %s", campaign_rule_exc)
 
@@ -1641,7 +1660,8 @@ def _inbound_call_impl():
         try:
             can_send, reason = _can_send_call_auto_sms(ta.company_id, from_number)
             if can_send:
-                result = _send_sms(ta, from_number, after_hours_sms_body)
+                sms_conv = _get_or_create_conversation(ta.company_id, from_number, to_number, getattr(pn, "id", None))
+                result = sendConversationSms(sms_conv.id, after_hours_sms_body, twilio_account=ta, is_auto_reply=True)
                 if result.get("success"):
                     log.missed_text_sent = True
                     db.session.commit()
@@ -1655,7 +1675,8 @@ def _inbound_call_impl():
         try:
             can_send, reason = _can_send_call_auto_sms(ta.company_id, from_number)
             if can_send:
-                result = _send_sms(ta, from_number, ta.business_hours_auto_reply_text)
+                sms_conv = _get_or_create_conversation(ta.company_id, from_number, to_number, getattr(pn, "id", None))
+                result = sendConversationSms(sms_conv.id, ta.business_hours_auto_reply_text, twilio_account=ta, is_auto_reply=True)
                 if result.get("success"):
                     log.missed_text_sent = True
                     db.session.commit()
@@ -1730,7 +1751,11 @@ def _inbound_call_impl():
             f"</Response>"
         )
 
-    if in_hours and (route in (None, "ring_pwa")):
+    if configured_call_forward_to and (ta.voice_forwarding_enabled or getattr(ta, "call_forwarding_enabled", False)):
+        # Explicit per-line call forwarding wins over browser ringing. This
+        # applies only to voice webhooks; SMS routing never reads these fields.
+        twiml = _dial_twiml(configured_call_forward_to)
+    elif in_hours and (route in (None, "ring_pwa")):
         if log:
             log.status = "ringing"
             db.session.commit()
@@ -1777,13 +1802,8 @@ def _inbound_call_impl():
         twiml = _dial_twiml(forward_to, fallback_to)
     elif route == "voicemail":
         twiml = _voicemail_twiml(after_hours=not in_hours)
-    elif in_hours and (ta.voice_forwarding_enabled or getattr(ta, "call_forwarding_enabled", False)) and configured_call_forward_to:
-        twiml = _dial_twiml(configured_call_forward_to)
     elif not in_hours and ta.after_hours_voicemail_enabled:
         twiml = _voicemail_twiml(after_hours=True)
-    elif configured_call_forward_to and (ta.voice_forwarding_enabled or getattr(ta, "call_forwarding_enabled", False)):
-        # Always forward regardless of hours when explicitly configured
-        twiml = _dial_twiml(configured_call_forward_to)
     else:
         twiml = _voicemail_twiml()
 
@@ -1846,7 +1866,8 @@ def voice_no_answer():
     if ta and sms_body and from_number:
         can_send, reason = _can_send_call_auto_sms(ta.company_id, from_number)
         if can_send:
-            result = _send_sms(ta, from_number, sms_body)
+            sms_conv = _get_or_create_conversation(ta.company_id, from_number, to_number, getattr(pn, "id", None))
+            result = sendConversationSms(sms_conv.id, sms_body, twilio_account=ta, is_auto_reply=True)
             if result.get("success"):
                 log = TwilioCallLog.query.filter_by(twilio_sid=call_sid).first()
                 if log and not log.missed_text_sent:
@@ -2500,7 +2521,7 @@ def send_message():
     if not conv:
         conv = _get_or_create_conversation(company.id, to_number, ta.from_phone or "")
 
-    result = _send_sms(ta, to_number, body, conversation_id=conv.id)
+    result = sendConversationSms(conv.id, body, twilio_account=ta, to_number=to_number)
     if result.get("success"):
         conv.last_message_at      = datetime.utcnow()
         conv.last_message_preview = f"You: {body[:150]}"

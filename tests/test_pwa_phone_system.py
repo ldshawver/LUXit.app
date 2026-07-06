@@ -1181,3 +1181,47 @@ def test_pwa_device_approval_disabled_allows_registered_device(client, app, worl
     assert reg.get_json()["device"]["approved_status"] == "approved"
     ok = client.get("/api/inbox/conversations", headers={"X-PWA-Device-Key": "auto-approved-device"})
     assert ok.status_code == 200
+
+
+def test_resolve_sms_sender_and_send_sms_use_inbound_to_number_not_messaging_service(app, world, monkeypatch):
+    import twilio_sms
+    monkeypatch.setattr("services.license_service.has_feature", lambda *a, **k: True)
+    with app.app_context():
+        ta = TwilioAccount.query.filter_by(company_id=world["co_a"]).first()
+        ta.messaging_service_sid = "MG_should_not_be_used_for_replies"
+        pn = add_phone_number(world["co_a"], "+15550009991")
+        conv = TwilioConversation(
+            company_id=world["co_a"],
+            phone_number_id=pn.id,
+            from_number="+15551119991",
+            to_number="+15550009991",
+        )
+        db.session.add(conv)
+        db.session.commit()
+        result = twilio_sms.sendConversationSms(conv.id, "Reply from same line", twilio_account=ta, is_auto_reply=True)
+        assert result["success"] is True
+        outbound = TwilioMessage.query.filter_by(conversation_id=conv.id, direction="outbound").one()
+        assert twilio_sms.resolve_sms_sender(conv) == "+15550009991"
+        assert outbound.from_number == "+15550009991"
+        assert outbound.from_number != ta.messaging_service_sid
+
+
+def test_send_sms_blocks_cross_number_sender_leakage(app, world, monkeypatch):
+    import twilio_sms
+    monkeypatch.setattr("services.license_service.has_feature", lambda *a, **k: True)
+    with app.app_context():
+        ta = TwilioAccount.query.filter_by(company_id=world["co_a"]).first()
+        line_a = add_phone_number(world["co_a"], "+15550009992")
+        add_phone_number(world["co_a"], "+15550009993")
+        conv = TwilioConversation(
+            company_id=world["co_a"],
+            phone_number_id=line_a.id,
+            from_number="+15551119992",
+            to_number="+15550009993",
+        )
+        db.session.add(conv)
+        db.session.commit()
+        result = twilio_sms.sendConversationSms(conv.id, "Wrong-line reply", twilio_account=ta, is_auto_reply=True)
+        assert result["success"] is False
+        assert "does not match" in result["error"]
+        assert TwilioMessage.query.filter_by(conversation_id=conv.id, direction="outbound").count() == 0

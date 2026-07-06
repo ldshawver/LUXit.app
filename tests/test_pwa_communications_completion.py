@@ -342,9 +342,9 @@ def test_service_worker_and_in_app_alerts_honor_silent_sound_vibration_flags():
     assert "vibrateIfEnabled([80, 40, 80])" in index
     assert "playSound('sms-'" in index
     assert "navigator.setAppBadge" in index and "navigator.clearAppBadge" in index
-    assert "silent:  data.silent === true" in sw
+    assert "silent:  false" in sw
     assert "renotify: data.renotify !== false" in sw
-    assert "vibrate: data.silent === true ? [] : (data.vibrate || [200, 100, 200])" in sw
+    assert "vibrate: [200, 100, 200]" in sw
 
 
 def test_call_missed_voicemail_and_reminder_notifications_emit_push_and_sse(pwa_app, monkeypatch):
@@ -431,7 +431,8 @@ def test_push_payload_non_silent_vibration_badge_and_quiet_hours(pwa_app, monkey
         user.pwa_quiet_hours_end = "23:59"
         db.session.commit()
         inbox_pwa.send_pwa_push_notification(ids["company"], user_ids=[ids["staff"]], title="Quiet", body="Body", event_type="voicemail", phone_number_id=ids["line"])
-        assert payloads[-1]["silent"] is True
+        assert payloads[-1]["silent"] is False
+        assert payloads[-1]["data"]["debug_reason"] == "quiet_hours"
 
 
 def test_push_debug_uses_logged_in_pwa_user_session(pwa_app):
@@ -474,3 +475,26 @@ def test_push_debug_returns_clear_auth_and_permission_responses(pwa_app):
     forbidden = client.get("/api/pwa/push/debug")
     assert forbidden.status_code == 403
     assert forbidden.get_json()["error"] == "Mobile inbox access is not enabled for this account."
+
+
+def test_pwa_sound_forwarding_autoreply_static_requirements():
+    sw = open("static/sw.js", encoding="utf-8").read()
+    html = open("templates/inbox_pwa/index.html", encoding="utf-8").read()
+    nav = open("templates/inbox_pwa/_bottom_nav.html", encoding="utf-8").read()
+    migration = open("migrations/20260705_pwa_sound_forwarding_autoreply.sql", encoding="utf-8").read()
+    assert "20260705-push-sound-forwarding-bh-autoreply" in sw
+    assert "silent:  false" in sw
+    assert "renotify: data.renotify !== false" in sw
+    assert "[200, 100, 200]" in sw
+    assert "high_priority_messages" in sw and "channel_id" in sw and "importance" in sw
+    assert "requireInteraction: data.requireInteraction !== false" in sw
+    assert "PUSH_DIAGNOSTICS" in sw and "lastNotificationSilent" in sw
+    assert "Call Forwarding" in html and "Business-hours SMS auto reply" in html
+    assert "Push Diagnostics" in html and "lastNotificationSilent" in html
+    assert "installPwaNavPerformanceHandlers" in html
+    assert "pwa-tab-loading" in nav
+    assert "env(safe-area-inset-bottom)" in nav
+    assert "visualViewport" in html
+    assert "call_forwarding_enabled" in migration
+    assert "business_hours_auto_reply_enabled" in migration
+    assert "final_status" in migration
