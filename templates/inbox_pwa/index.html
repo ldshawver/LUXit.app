@@ -87,14 +87,18 @@
     /* ── Shell ──────────────────────────────────────── */
     #shell {
       display: flex;
-      height: 100dvh;
-      height: -webkit-fill-available; /* iOS Safari */
+      height: var(--vvh, 100dvh);
+      min-height: 0;
       padding-top: var(--safe-top);
       padding-bottom: var(--safe-bot);
       position: fixed;
-      top: 0; left: 0; right: 0; bottom: 0;
+      top: 0; left: 0; right: 0;
       width: 100%;
       overflow: hidden;
+      transform: translateY(var(--vv-offset-top, 0px));
+    }
+    @supports not (height: 100dvh) {
+      #shell { height: var(--vvh, -webkit-fill-available); }
     }
 
     /* ── Sidebar ────────────────────────────────────── */
@@ -299,11 +303,11 @@
 
     /* Composer */
     .composer {
-      padding: 10px 12px calc(10px + var(--safe-bot) + var(--keyboard-offset, 0px)); border-top: 1px solid var(--border);
+      padding: 10px 12px calc(10px + var(--safe-bot)); border-top: 1px solid var(--border);
       background: var(--surface); flex-shrink: 0;
       display: flex; gap: 8px; align-items: flex-end;
-      /* always anchored at the bottom of the visible area */
       position: sticky; bottom: 0; z-index: 20;
+      will-change: transform;
     }
     .composer-wrap { flex: 1; position: relative; }
     #msgInput {
@@ -324,7 +328,9 @@
     }
     #sendBtn:hover { background: #6d28d9; }
     #sendBtn:disabled { background: var(--muted); cursor: not-allowed; }
-    body.pwa-keyboard-open .pwa-bottom-nav { transform: translateY(110%); pointer-events: none; }
+    body.pwa-keyboard-open .pwa-bottom-nav { transform: translateY(calc(110% + var(--safe-bot))); opacity: 0; pointer-events: none; visibility: hidden; }
+    body.pwa-keyboard-open { overflow: hidden; touch-action: none; }
+    body.pwa-keyboard-open #messages, body.pwa-keyboard-open #msgInput { touch-action: pan-y; }
     #optOutBanner {
       display: none; padding: 8px 16px; text-align: center;
       background: rgba(239,68,68,.1); border-top: 1px solid rgba(239,68,68,.3);
@@ -561,8 +567,8 @@
       #sidebar { width: 100%; max-width: 100%; border-right: none; min-width: 0; }
       #main { display: none; width: 100%; }
       #shell.thread-open #sidebar { display: none; }
-      #shell.thread-open #main  { display: flex; flex: 1; min-width: 0; overflow: hidden; }
-      #shell.thread-open #thread { display: flex !important; flex: 1; min-height: 0; }
+      #shell.thread-open #main  { display: flex; flex: 1; min-width: 0; min-height: 0; overflow: hidden; }
+      #shell.thread-open #thread { display: flex !important; flex: 1 1 0; min-height: 0; height: 100%; }
       .btn-back { display: flex; }
     }
     @media (min-width: 641px) { #thread { display: flex !important; } }
@@ -1595,25 +1601,46 @@ function updateUnreadBadge(count) {
   el.classList.toggle('show', count > 0);
 }
 
-/* ── Keyboard resize (Android Chrome visual viewport fix) ─────── */
+/* ── Keyboard / visual viewport resize (iOS Safari + installed PWA) ─────── */
 function setupKeyboardResize() {
-  const shell = document.getElementById('shell');
-  function applyHeight() {
+  const root = document.documentElement;
+  let lastKeyboardOpen = false;
+
+  function isTextComposerFocused() {
+    return document.activeElement && document.activeElement.id === 'msgInput';
+  }
+
+  function applyViewport() {
     const vv = window.visualViewport;
-    const h = vv ? vv.height : window.innerHeight;
+    const viewportHeight = vv ? vv.height : window.innerHeight;
+    const offsetTop = vv ? vv.offsetTop : 0;
     const keyboardOffset = vv ? Math.max(0, window.innerHeight - vv.height - vv.offsetTop) : 0;
-    shell.style.height = h + 'px';
-    document.documentElement.style.setProperty('--keyboard-offset', keyboardOffset + 'px');
-    document.body.classList.toggle('pwa-keyboard-open', keyboardOffset > 80);
-    // Scroll messages to bottom when keyboard closes/opens
-    if (state.activeConvId) scrollThreadToBottom();
+    const keyboardOpen = keyboardOffset > 80 || (isTextComposerFocused() && window.innerHeight - viewportHeight > 80);
+
+    root.style.setProperty('--vvh', viewportHeight + 'px');
+    root.style.setProperty('--vv-offset-top', offsetTop + 'px');
+    root.style.setProperty('--keyboard-offset', keyboardOffset + 'px');
+    document.body.classList.toggle('pwa-keyboard-open', keyboardOpen);
+
+    if (state.activeConvId && keyboardOpen && !lastKeyboardOpen) {
+      requestAnimationFrame(scrollThreadToBottom);
+    }
+    lastKeyboardOpen = keyboardOpen;
   }
+
   if (window.visualViewport) {
-    window.visualViewport.addEventListener('resize',  applyHeight);
-    window.visualViewport.addEventListener('scroll',  applyHeight);
+    window.visualViewport.addEventListener('resize', applyViewport, { passive: true });
+    window.visualViewport.addEventListener('scroll', applyViewport, { passive: true });
   }
-  window.addEventListener('resize', applyHeight);
-  applyHeight();
+  window.addEventListener('resize', applyViewport, { passive: true });
+  document.getElementById('msgInput')?.addEventListener('focus', () => requestAnimationFrame(applyViewport));
+  document.getElementById('msgInput')?.addEventListener('blur', () => setTimeout(applyViewport, 80));
+  document.addEventListener('touchmove', (event) => {
+    if (!document.body.classList.contains('pwa-keyboard-open')) return;
+    if (event.target.closest('#messages') || event.target.closest('#msgInput')) return;
+    event.preventDefault();
+  }, { passive: false });
+  applyViewport();
 }
 
 /* ── Open conversation ────────────────────────────────────────── */
