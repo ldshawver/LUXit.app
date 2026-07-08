@@ -62,7 +62,8 @@
     animation: pwa-tab-progress .8s ease-in-out infinite alternate;
   }
   @keyframes pwa-tab-progress { from { transform: translateX(0); } to { transform: translateX(165%); } }
-  body.has-pwa-bottom-nav #shell { bottom: calc(68px + env(safe-area-inset-bottom)); height: auto; }
+  body.has-pwa-bottom-nav:not(.pwa-keyboard-open) #shell { height: calc(var(--vvh, 100dvh) - 68px - env(safe-area-inset-bottom)); }
+  body.has-pwa-bottom-nav.pwa-keyboard-open #shell { height: var(--vvh, 100dvh); }
   body.has-pwa-bottom-nav .shell { padding-bottom: calc(96px + env(safe-area-inset-bottom)); }
   .pwa-safe-top-control { min-width: 44px; min-height: 44px; padding: 8px; }
 </style>

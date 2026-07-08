@@ -26,3 +26,18 @@ def test_desktop_sidebar_shows_communications_hub():
     assert "Mobile Inbox PWA" not in html
     assert "Communications Hub" in html
     assert "comms_hub" in html
+
+
+def test_pwa_keyboard_viewport_contract():
+    html = (ROOT / "templates" / "inbox_pwa" / "index.html").read_text()
+    nav = (ROOT / "templates" / "inbox_pwa" / "_bottom_nav.html").read_text()
+
+    assert "window.visualViewport" in html
+    assert "--vvh" in html
+    assert "100dvh" in html
+    assert "env(safe-area-inset-bottom" in html
+    assert "scrollIntoView" not in html
+    assert "pwa-keyboard-open" in html
+    assert "body.pwa-keyboard-open .pwa-bottom-nav" in html
+    assert "body.has-pwa-bottom-nav.pwa-keyboard-open #shell" in nav
+    assert "body.has-pwa-bottom-nav #shell { bottom:" not in nav
