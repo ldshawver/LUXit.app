@@ -747,6 +747,9 @@ def create_app() -> Flask:
                     ("email_subscribed", "BOOLEAN DEFAULT TRUE"),
                     ("imported_batch_id", "INTEGER"),
                     ("imported_list", "VARCHAR(255)"),
+                    ("external_google_contact_id", "VARCHAR(255)"),
+                    ("avatar_url", "VARCHAR(500)"),
+                    ("updated_at", "TIMESTAMP"),
                 ],
                 "contact_import_batch": [
                     ("company_id", "INTEGER"),
@@ -765,6 +768,17 @@ def create_app() -> Flask:
                 ],
                 "user": [
                     ("notification_sounds_enabled", "BOOLEAN DEFAULT TRUE"),
+                ],
+                "google_oauth_token": [
+                    ("contacts_created", "INTEGER DEFAULT 0"),
+                    ("contacts_updated", "INTEGER DEFAULT 0"),
+                    ("contacts_merged", "INTEGER DEFAULT 0"),
+                    ("contacts_skipped", "INTEGER DEFAULT 0"),
+                    ("last_successful_sync_at", "TIMESTAMP"),
+                    ("last_sync_duration_ms", "INTEGER"),
+                    ("last_sync_status", "VARCHAR(30)"),
+                    ("google_account_email", "VARCHAR(255)"),
+                    ("google_sync_token", "TEXT"),
                 ],
                 "push_subscription": [
                     ("user_agent", "TEXT"),

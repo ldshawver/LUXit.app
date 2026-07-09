@@ -810,6 +810,8 @@ class Contact(db.Model):
     company = db.Column(db.String(255))
     phone = db.Column(db.String(50))
     normalized_phone = db.Column(db.String(32), index=True)
+    external_google_contact_id = db.Column(db.String(255), nullable=True, index=True)
+    avatar_url = db.Column(db.String(500), nullable=True)
     tags = db.Column(db.String(255))
     is_active = db.Column(db.Boolean, default=True)
     is_subscribed = db.Column(db.Boolean, default=True)
@@ -844,6 +846,7 @@ class Contact(db.Model):
     marketing_preferences_updated_by_user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True)
     marketing_preferences_updated_at = db.Column(db.DateTime)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
 class ContactImportBatch(db.Model):
@@ -2529,6 +2532,8 @@ class DemoRequest(db.Model):
     email = db.Column(db.String(200), nullable=False)
     phone = db.Column(db.String(50))
     normalized_phone = db.Column(db.String(32), index=True)
+    external_google_contact_id = db.Column(db.String(255), nullable=True, index=True)
+    avatar_url = db.Column(db.String(500), nullable=True)
     company_name = db.Column(db.String(200))
     job_title = db.Column(db.String(200))
     team_size = db.Column(db.String(50))
@@ -3675,10 +3680,70 @@ class GoogleOAuthToken(db.Model):
     token_expiry   = db.Column(db.DateTime, nullable=True)
     last_sync_at   = db.Column(db.DateTime, nullable=True)
     contacts_synced = db.Column(db.Integer, default=0)
+    contacts_created = db.Column(db.Integer, default=0)
+    contacts_updated = db.Column(db.Integer, default=0)
+    contacts_merged = db.Column(db.Integer, default=0)
+    contacts_skipped = db.Column(db.Integer, default=0)
+    last_successful_sync_at = db.Column(db.DateTime, nullable=True)
+    last_sync_duration_ms = db.Column(db.Integer, nullable=True)
+    last_sync_status = db.Column(db.String(30), nullable=True)
+    google_account_email = db.Column(db.String(255), nullable=True)
+    google_sync_token = db.Column(db.Text, nullable=True)
     sync_error     = db.Column(db.Text, nullable=True)
     created_at     = db.Column(db.DateTime, default=datetime.utcnow)
 
     user = db.relationship("User", backref=db.backref("google_oauth_token", uselist=False))
+
+
+
+
+class GoogleContactsSyncJob(db.Model):
+    """Audit trail for every Google Contacts sync/preview run."""
+    __tablename__ = "google_contacts_sync_job"
+
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=False, index=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, index=True)
+    google_account_email = db.Column(db.String(255), nullable=True)
+    status = db.Column(db.String(30), default="running", nullable=False, index=True)
+    dry_run = db.Column(db.Boolean, default=False, nullable=False)
+    started_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    completed_at = db.Column(db.DateTime, nullable=True)
+    duration_ms = db.Column(db.Integer, nullable=True)
+    contacts_retrieved = db.Column(db.Integer, default=0, nullable=False)
+    contacts_created = db.Column(db.Integer, default=0, nullable=False)
+    contacts_updated = db.Column(db.Integer, default=0, nullable=False)
+    contacts_merged = db.Column(db.Integer, default=0, nullable=False)
+    contacts_skipped = db.Column(db.Integer, default=0, nullable=False)
+    errors = db.Column(JSON, default=list)
+    api_failures = db.Column(JSON, default=list)
+    oauth_failures = db.Column(JSON, default=list)
+    preview_payload = db.Column(JSON, default=dict)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class ContactMergeAudit(db.Model):
+    """Permanent audit record for Audience contact merges."""
+    __tablename__ = "contact_merge_audit"
+
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=False, index=True)
+    source_contact_id = db.Column(db.Integer, nullable=False, index=True)
+    destination_contact_id = db.Column(db.Integer, nullable=False, index=True)
+    merge_reason = db.Column(db.String(255), nullable=True)
+    google_resource_id = db.Column(db.String(255), nullable=True)
+    phone_match = db.Column(db.Boolean, default=False, nullable=False)
+    email_match = db.Column(db.Boolean, default=False, nullable=False)
+    match_confidence = db.Column(db.Integer, default=0, nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True, index=True)
+    sync_job_id = db.Column(db.Integer, db.ForeignKey("google_contacts_sync_job.id"), nullable=True, index=True)
+    updated_fields = db.Column(JSON, default=list)
+    preserved_fields = db.Column(JSON, default=list)
+    skipped_fields = db.Column(JSON, default=list)
+    fields_before = db.Column(JSON, default=dict)
+    fields_after = db.Column(JSON, default=dict)
+    reference_mappings = db.Column(JSON, default=list)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
 
 
 # ============================================================

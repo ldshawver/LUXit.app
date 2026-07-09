@@ -958,15 +958,17 @@
         <div style="display:flex;align-items:center;gap:8px;">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
           <div>
-            <span>Google Contacts</span>
+            <span>Sync & Enrich from Google Contacts</span>
             <small id="gcStatusLabel" style="display:block;">Checking…</small>
           </div>
         </div>
         <div style="display:flex;gap:6px;align-items:center;">
-          <button id="gcSyncBtn" class="btn-small" onclick="triggerGoogleSync()" style="display:none;">Sync</button>
+          <button id="gcPreviewBtn" class="btn-small" onclick="triggerGoogleSync(true)" style="display:none;">Preview changes</button>
+          <button id="gcSyncBtn" class="btn-small" onclick="triggerGoogleSync(false)" style="display:none;">Run sync</button>
           <a id="gcConnectBtn" href="/twilio/google-contacts/connect" class="btn-small" style="display:none;text-decoration:none;">Connect</a>
         </div>
       </div>
+      <div id="gcMetrics" style="display:none;width:100%;font-size:.72rem;color:var(--muted);line-height:1.5;"></div>
       <div id="gcErrorBanner" style="display:none;width:100%;padding:6px 8px;border-radius:6px;background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.25);color:#f87171;font-size:.75rem;"></div>
     </div>
 
@@ -2008,8 +2010,10 @@ async function moveFavorite(idx, delta) {
 async function loadGoogleContactsStatus() {
   const label     = document.getElementById('gcStatusLabel');
   const syncBtn   = document.getElementById('gcSyncBtn');
+  const previewBtn= document.getElementById('gcPreviewBtn');
   const connectBtn= document.getElementById('gcConnectBtn');
   const errBanner = document.getElementById('gcErrorBanner');
+  const metrics = document.getElementById('gcMetrics');
   if (!label) return;
 
   try {
@@ -2020,6 +2024,8 @@ async function loadGoogleContactsStatus() {
       label.textContent = 'Not connected — names will not show';
       if (connectBtn) { connectBtn.textContent = 'Connect'; connectBtn.style.display = 'inline-flex'; }
       if (syncBtn)    syncBtn.style.display    = 'none';
+      if (previewBtn) previewBtn.style.display = 'none';
+      if (metrics) metrics.style.display = 'none';
       return;
     }
 
@@ -2028,13 +2034,25 @@ async function loadGoogleContactsStatus() {
       label.style.color = '#f59e0b';
       if (connectBtn) { connectBtn.textContent = 'Reconnect Google Contacts'; connectBtn.style.display = 'inline-flex'; }
       if (syncBtn)    syncBtn.style.display    = 'none';
+      if (previewBtn) previewBtn.style.display = 'none';
+      if (metrics) metrics.style.display = 'none';
       return;
     }
 
     const lastSync = d.last_sync_at ? `Last sync: ${d.last_sync_at}` : 'Not synced yet';
-    label.textContent = `Connected · ${d.contacts_synced || 0} contacts · ${lastSync}`;
+    const reviewNote = (d.contacts_skipped || 0) > 0 ? ` · ${d.contacts_skipped} review required` : '';
+    label.textContent = `Connected · ${d.contacts_synced || 0} contacts · ${lastSync}${reviewNote}`;
+    if (metrics) {
+      const duration = d.last_sync_duration_ms ? `${Math.round(d.last_sync_duration_ms / 1000)}s` : '—';
+      const statusLabel = d.reconnect_required ? 'Reconnect required' : (d.sync_error ? 'Failed/partial' : (d.sync_status || '—'));
+      metrics.innerHTML = `Account: ${esc(d.google_account_email || 'Connected Google account')}<br>` +
+        `Last successful: ${esc(d.last_successful_sync_at || '—')} · Status: ${esc(statusLabel)} · Duration: ${duration}<br>` +
+        `Created ${d.contacts_created || 0} · Updated ${d.contacts_updated || 0} · Merged ${d.contacts_merged || 0} · Skipped ${d.contacts_skipped || 0}`;
+      metrics.style.display = 'block';
+    }
     label.style.color = '';
     if (syncBtn)    syncBtn.style.display    = 'inline-flex';
+    if (previewBtn) previewBtn.style.display = 'inline-flex';
     if (connectBtn) { connectBtn.textContent = 'Connect'; connectBtn.style.display = 'none'; }
 
     if (d.sync_error) {
@@ -2050,22 +2068,29 @@ async function loadGoogleContactsStatus() {
   }
 }
 
-async function triggerGoogleSync() {
+async function triggerGoogleSync(previewOnly = false) {
   const syncBtn = document.getElementById('gcSyncBtn');
+  const previewBtn = document.getElementById('gcPreviewBtn');
+  const activeBtn = previewOnly ? previewBtn : syncBtn;
   const label   = document.getElementById('gcStatusLabel');
-  if (syncBtn) { syncBtn.disabled = true; syncBtn.textContent = 'Syncing…'; }
+  if (activeBtn) { activeBtn.disabled = true; activeBtn.textContent = previewOnly ? 'Previewing…' : 'Syncing…'; }
   try {
-    const d = await apiFetch('/api/inbox/google-contacts/sync', 'POST', {});
+    const d = await apiFetch('/api/inbox/google-contacts/sync', 'POST', { dry_run: previewOnly });
     if (d && !d.error) {
-      toast(`Synced ${d.synced || 0} contacts · ${d.matched || 0} names updated`);
-      loadConversations();
+      if (previewOnly) {
+        toast(`${d.updated || 0} contacts will be updated · ${d.merged || 0} duplicates will be merged · ${d.created || 0} contacts will be created · ${d.skipped || 0} skipped/review`);
+      } else {
+        toast(`Sync job ${d.sync_job_id || ''} complete · ${d.updated || 0} updated · ${d.merged || 0} merged · ${d.created || 0} created · ${d.skipped || 0} skipped`);
+        loadConversations();
+      }
     } else {
       toast((d && d.error) || 'Sync failed — check Google connection', true);
     }
   } catch (e) {
     toast('Sync request failed', true);
   } finally {
-    if (syncBtn) { syncBtn.disabled = false; syncBtn.textContent = 'Sync'; }
+    if (syncBtn) { syncBtn.disabled = false; syncBtn.textContent = 'Run sync'; }
+    if (previewBtn) { previewBtn.disabled = false; previewBtn.textContent = 'Preview changes'; }
     loadGoogleContactsStatus();
   loadLineSettings();
   refreshPushDiagnostics();
