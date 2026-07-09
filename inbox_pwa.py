@@ -587,7 +587,7 @@ def pwa_index():
         os.environ.get("LUXIT_ASSET_VERSION")
         or os.environ.get("GIT_SHA")
         or os.environ.get("RENDER_GIT_COMMIT")
-        or "20260705-push-sound-forwarding-bh-autoreply"
+        or "20260709-push-subscription-repair-diagnostics"
     )
     return render_template(
         "inbox_pwa/index.html",
@@ -617,7 +617,7 @@ def pwa_calls():
         os.environ.get("LUXIT_ASSET_VERSION")
         or os.environ.get("GIT_SHA")
         or os.environ.get("RENDER_GIT_COMMIT")
-        or "20260705-push-sound-forwarding-bh-autoreply"
+        or "20260709-push-subscription-repair-diagnostics"
     )
     return render_template("inbox_pwa/calls.html", user=user, company=company, pwa_version=pwa_version)
 
@@ -2383,7 +2383,7 @@ def send_pwa_push_notification(company_id: int, *, user_ids, title: str, body: s
             "event_type": decision["event_type"], "silent": payload["silent"], "sound": payload["sound"],
             "vibrate": payload["vibrate"], "renotify": payload["renotify"], "tag": payload["tag"],
             "badgeCount": badge_count, "channel": payload["channelId"], "importance": payload["importance"],
-            "sw_version": os.environ.get("LUXIT_ASSET_VERSION") or os.environ.get("GIT_SHA") or os.environ.get("RENDER_GIT_COMMIT") or "20260705-push-sound-forwarding-bh-autoreply",
+            "sw_version": os.environ.get("LUXIT_ASSET_VERSION") or os.environ.get("GIT_SHA") or os.environ.get("RENDER_GIT_COMMIT") or "20260709-push-subscription-repair-diagnostics",
             "push_provider_result": result,
         })
         total += result.get("sent", 0)
@@ -2415,13 +2415,24 @@ def pwa_push_debug():
     in_business = str(request.args.get("in_business_hours", "1")).lower() not in {"0", "false", "no"}
     decision = _push_debug_decision(user, event_type, requested_silent=False, in_business_hours=in_business)
     from models import PushSubscription
-    active_subscriptions = PushSubscription.query.filter_by(company_id=company.id, user_id=user.id, is_active=True).count()
+    device_key = (request.headers.get("X-PWA-Device-Key") or request.args.get("device_key") or "").strip()
+    active_query = PushSubscription.query.filter_by(company_id=company.id, user_id=user.id, is_active=True)
+    active_subscriptions = active_query.count()
+    device_active_subscriptions = active_query.filter_by(device_key=device_key).count() if device_key else 0
+    subscriptions = active_query.order_by(PushSubscription.updated_at.desc(), PushSubscription.id.desc()).limit(10).all()
+    missing = _web_push_missing_settings()
     return jsonify({
         "success": True,
         "notification_permission": "client-reported",
         "active_subscription": active_subscriptions > 0,
         "active_subscriptions": active_subscriptions,
-        "service_worker_version": os.environ.get("LUXIT_ASSET_VERSION") or os.environ.get("GIT_SHA") or os.environ.get("RENDER_GIT_COMMIT") or "20260705-push-sound-forwarding-bh-autoreply",
+        "device_key": device_key,
+        "device_active_subscription": device_active_subscriptions > 0,
+        "device_active_subscriptions": device_active_subscriptions,
+        "vapid_configured": not missing,
+        "vapid_public_key_present": bool(os.environ.get("VAPID_PUBLIC_KEY")),
+        "vapid_missing": missing,
+        "service_worker_version": os.environ.get("LUXIT_ASSET_VERSION") or os.environ.get("GIT_SHA") or os.environ.get("RENDER_GIT_COMMIT") or "20260709-push-subscription-repair-diagnostics",
         "decision": decision,
         "device_instructions": [
             "Android: Chrome/LUXit PWA notification channel cannot be Silent or Low Importance.",
@@ -2429,12 +2440,17 @@ def pwa_push_debug():
             "iPhone: install to Home Screen, then enable Settings > Notifications > LUXit > Sounds.",
             "Disable Focus / Do Not Disturb during notification sound tests.",
         ],
+        "subscriptions": [{
+            "id": sub.id,
+            "device_key": sub.device_key,
+            "endpoint_host": (sub.endpoint or "").split("/")[2] if "/" in (sub.endpoint or "") else "",
+            "endpoint_tail": (sub.endpoint or "")[-18:],
+            "is_active": sub.is_active,
+            "updated_at": sub.updated_at.isoformat() if sub.updated_at else None,
+        } for sub in subscriptions],
         "user": {"id": user.id, "email": user.email, "username": user.username},
         "company": {"id": company.id, "name": company.name},
         "mobile_inbox_access": True,
-        "active_subscription": active_subscriptions > 0,
-        "active_subscriptions": active_subscriptions,
-        "decision": decision,
     })
 
 
@@ -2454,12 +2470,15 @@ def push_subscribe():
 
     payload  = request.get_json() or {}
     endpoint = payload.get("endpoint", "")
-    device_key = payload.get("device_key") or payload.get("deviceKey")
-    p256dh   = payload.get("keys", {}).get("p256dh", "")
-    auth_key = payload.get("keys", {}).get("auth", "")
+    device_key = (payload.get("device_key") or payload.get("deviceKey") or request.headers.get("X-PWA-Device-Key") or "").strip()
+    keys = payload.get("keys") or {}
+    p256dh   = keys.get("p256dh", "")
+    auth_key = keys.get("auth", "")
 
     if not endpoint:
-        return jsonify({"success": False, "error": "endpoint required"}), 400
+        return jsonify({"success": False, "error": "endpoint required", "code": "MISSING_ENDPOINT"}), 400
+    if not p256dh or not auth_key:
+        return jsonify({"success": False, "error": "subscription keys p256dh and auth are required", "code": "MISSING_SUBSCRIPTION_KEYS"}), 400
 
     from models import PushSubscription
     sub = PushSubscription.query.filter_by(endpoint=endpoint).first()
@@ -2489,13 +2508,41 @@ def push_subscribe():
     if device_key:
         from models import PWADevice
         device = PWADevice.query.filter_by(company_id=company.id, user_id=user.id, device_key=device_key).first()
-        if device:
+        if not device:
+            device = PWADevice(
+                company_id=company.id,
+                user_id=user.id,
+                device_key=device_key,
+                device_name=payload.get('device_label') or payload.get('deviceName') or device_key,
+                browser=(request.user_agent.browser or None),
+                push_enabled=True,
+                last_seen_at=datetime.utcnow(),
+            )
+            db.session.add(device)
+        else:
             device.push_enabled = True
             device.last_seen_at = datetime.utcnow()
     db.session.commit()
-    logger.info("Push subscription saved for user %d", user.id)
-    active_subscriptions = PushSubscription.query.filter_by(user_id=user.id, company_id=company.id, is_active=True).count()
-    return jsonify({"success": True, "device_key": device_key, "active_subscription": active_subscriptions > 0, "active_subscriptions": active_subscriptions})
+    active_query = PushSubscription.query.filter_by(user_id=user.id, company_id=company.id, is_active=True)
+    active_subscriptions = active_query.count()
+    device_active_subscriptions = active_query.filter_by(device_key=device_key).count() if device_key else 0
+    logger.info("Push subscription saved", extra={
+        "user_id": user.id,
+        "company_id": company.id,
+        "device_key": device_key,
+        "endpoint_host": endpoint.split("/")[2] if "/" in endpoint else "",
+        "active_subscriptions": active_subscriptions,
+        "device_active_subscriptions": device_active_subscriptions,
+    })
+    return jsonify({
+        "success": True,
+        "device_key": device_key,
+        "endpoint_saved": True,
+        "active_subscription": active_subscriptions > 0,
+        "active_subscriptions": active_subscriptions,
+        "device_active_subscription": device_active_subscriptions > 0,
+        "device_active_subscriptions": device_active_subscriptions,
+    })
 
 
 @inbox_pwa_bp.route("/api/push/unsubscribe", methods=["POST"])

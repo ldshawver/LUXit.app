@@ -1144,6 +1144,14 @@ const VAPID_PUBLIC = document.documentElement.dataset.vapid ?? '';
 const VAPID_MISSING = (document.documentElement.dataset.vapidMissing || '').split(',').filter(Boolean);
 const CONV_CACHE_KEY = 'luxitInboxConversations';
 
+async function currentVapidPublicKey() {
+  if (VAPID_PUBLIC) return VAPID_PUBLIC;
+  const status = await apiFetch('/api/pwa/push/public-key');
+  if (status?.publicKey) return status.publicKey;
+  const missing = (status?.missing?.length ? status.missing : VAPID_MISSING).join(', ') || 'VAPID_PUBLIC_KEY';
+  throw new Error(`Push setup incomplete. Missing: ${missing}`);
+}
+
 
 function pwaDeviceKey() {
   let key = localStorage.getItem('luxitPwaDeviceKey');
@@ -1323,13 +1331,11 @@ function checkNotifPrompt() {
 }
 
 async function requestPush() {
-  if (!VAPID_PUBLIC) {
-    let missing = VAPID_MISSING.length ? VAPID_MISSING.join(', ') : 'VAPID_PUBLIC_KEY';
-    try {
-      const status = await apiFetch('/api/pwa/push/status');
-      missing = (status.missing && status.missing.length) ? status.missing.join(', ') : missing;
-    } catch (e) {}
-    toast(`Push setup incomplete. Missing: ${missing}`, 'error');
+  let vapidPublic;
+  try {
+    vapidPublic = await currentVapidPublicKey();
+  } catch (e) {
+    toast(e.message, 'error');
     return;
   }
   const perm = await Notification.requestPermission();
@@ -1339,7 +1345,7 @@ async function requestPush() {
     const reg = await navigator.serviceWorker.ready;
     const sub = await reg.pushManager.subscribe({
       userVisibleOnly: true,
-      applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC),
+      applicationServerKey: urlBase64ToUint8Array(vapidPublic),
     });
     const subscription = sub.toJSON();
     subscription.device_key = pwaDeviceKey();
@@ -2161,6 +2167,11 @@ async function refreshPushDiagnostics() {
       badgeCount: localDebug.badgeCount ?? null,
       serverDecision: api.decision,
       activeSubscriptions: api.active_subscriptions || 0,
+      deviceKey: api.device_key || pwaDeviceKey(),
+      deviceActiveSubscriptions: api.device_active_subscriptions || 0,
+      vapidPublicKeyPresent: !!api.vapid_public_key_present,
+      vapidMissing: api.vapid_missing || [],
+      subscriptions: api.subscriptions || [],
       deviceInstructions: api.device_instructions,
     }, null, 2);
     updatePushRepairUi(api);
@@ -2192,7 +2203,7 @@ async function repairPushNotifications() {
   const btn = document.getElementById('repairPushBtn');
   const reason = document.getElementById('pushRepairReason');
   try {
-    if (!VAPID_PUBLIC) throw new Error(`Push setup incomplete. Missing: ${VAPID_MISSING.join(', ') || 'VAPID_PUBLIC_KEY'}`);
+    const vapidPublic = await currentVapidPublicKey();
     if (!('Notification' in window)) throw new Error('This browser does not support Notifications.');
     if (Notification.permission !== 'granted') throw new Error(`Notification permission is ${Notification.permission}; allow notifications before repair.`);
     const iosReason = iosPushBlockReason();
@@ -2206,13 +2217,16 @@ async function repairPushNotifications() {
     await navigator.serviceWorker.ready;
     let sub = await reg.pushManager.getSubscription();
     if (!sub) {
-      sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC) });
+      sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlBase64ToUint8Array(vapidPublic) });
     }
     const subscription = sub.toJSON();
     subscription.device_key = pwaDeviceKey();
     subscription.device_label = localStorage.getItem('luxitPwaDeviceName') || `${browserLabel()} ${deviceTypeLabel()}`;
     const saved = await apiFetch('/api/push/subscribe', 'POST', subscription);
     if (!saved?.success) throw new Error(saved?.error || 'Backend did not save the subscription.');
+    if (Number(saved.device_active_subscriptions || saved.active_subscriptions || 0) < 1) {
+      throw new Error('Backend accepted the subscription but diagnostics still reports zero active subscriptions for this device.');
+    }
     await registerPwaDevice('heartbeat');
     toast('Push notifications repaired', 'success');
     await refreshPushDiagnostics();
