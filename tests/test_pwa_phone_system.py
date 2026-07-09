@@ -1225,3 +1225,36 @@ def test_send_sms_blocks_cross_number_sender_leakage(app, world, monkeypatch):
         assert result["success"] is False
         assert "does not match" in result["error"]
         assert TwilioMessage.query.filter_by(conversation_id=conv.id, direction="outbound").count() == 0
+
+
+def test_twilio_message_media_url_is_proxied_in_conversation_payload(client, app, world):
+    login(client, world["alice"])
+    with app.app_context():
+        conv = TwilioConversation(
+            company_id=world["co_a"],
+            from_number="+15551112222",
+            to_number="+15550001000",
+            contact_name="Media Customer",
+            last_message_at=datetime.utcnow(),
+        )
+        db.session.add(conv)
+        db.session.flush()
+        msg = TwilioMessage(
+            conversation_id=conv.id,
+            company_id=world["co_a"],
+            direction="inbound",
+            from_number="+15551112222",
+            to_number="+15550001000",
+            body="photo",
+            media_urls=["https://api.twilio.com/2010-04-01/Accounts/ACtest/Messages/MM123/Media/ME123"],
+            created_at=datetime.utcnow(),
+        )
+        db.session.add(msg)
+        db.session.commit()
+        conv_id = conv.id
+
+    resp = client.get(f"/api/inbox/conversations/{conv_id}")
+    assert resp.status_code == 200
+    payload = resp.get_json()
+    assert payload["messages"][0]["media_urls"] == [f"/api/inbox/messages/{payload['messages'][0]['id']}/media/0"]
+    assert "api.twilio.com" not in payload["messages"][0]["media_urls"][0]

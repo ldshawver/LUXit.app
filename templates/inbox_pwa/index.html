@@ -1732,11 +1732,12 @@ function renderMessages(msgs) {
         if (!url) return;
         const lc = url.toLowerCase().split('?')[0];
         if (/\.(jpg|jpeg|png|gif|webp)$/.test(lc) || url.includes('image')) {
-          mediaHtml += `<img class="msg-img" src="${url}" alt="MMS image" loading="lazy"
-                             onclick="openLightbox('${url.replace(/'/g,"\\'")}')">`;
+          const safeUrl = safeHref(url);
+          mediaHtml += `<img class="msg-img" src="${safeUrl}" alt="MMS image" loading="lazy"
+                             onclick="openLightbox('${jsStringEscape(safeUrl)}')">`;
         } else {
           const name = url.split('/').pop().split('?')[0] || 'Attachment';
-          mediaHtml += `<a class="msg-file-link" href="${url}" target="_blank" rel="noopener">📎 ${esc(name)}</a>`;
+          mediaHtml += `<a class="msg-file-link" href="${safeHref(url)}" target="_blank" rel="noopener noreferrer">📎 ${esc(name)}</a>`;
         }
       });
       mediaHtml += '</div>';
@@ -1744,7 +1745,7 @@ function renderMessages(msgs) {
 
     // If text-only and media present, skip empty text bubble
     const bodyHtml = (m.body || '').trim()
-      ? `<div class="bubble ${dir} ${ar}">${esc(m.body)}</div>`
+      ? `<div class="bubble ${dir} ${ar}">${renderMessageText(m.body)}</div>`
       : '';
 
     html += `<div class="msg-row ${dir}">
@@ -2451,6 +2452,57 @@ function normalizeSmsBody(str) {
     text = lines.map(line => line.trim()).join('');
   }
   return text;
+}
+
+function safeHref(url) {
+  const raw = String(url || '').trim();
+  if (!raw) return '#';
+  if (raw.startsWith('/')) return raw;
+  try {
+    const parsed = new URL(raw, window.location.origin);
+    if (['http:', 'https:', 'mailto:', 'tel:'].includes(parsed.protocol)) return parsed.href;
+  } catch (e) {}
+  return '#';
+}
+
+function jsStringEscape(str) {
+  return String(str || '')
+    .replace(/\\/g, '\\\\')
+    .replace(/'/g, "\\'")
+    .replace(/\n/g, '\\n')
+    .replace(/\r/g, '\\r');
+}
+
+function isProtectedProviderUrl(url) {
+  try {
+    const host = new URL(url, window.location.origin).hostname.toLowerCase();
+    return host === 'api.twilio.com' || host.endsWith('.twilio.com');
+  } catch (e) { return false; }
+}
+
+function renderMessageText(text) {
+  const normalized = normalizeSmsBody(text || '');
+  const urlRe = /https?:\/\/[^\s<]+/gi;
+  let out = '';
+  let last = 0;
+  normalized.replace(urlRe, (match, offset) => {
+    out += esc(normalized.slice(last, offset));
+    const trimmed = match.replace(/[),.;!?]+$/, '');
+    const trailing = match.slice(trimmed.length);
+    if (isProtectedProviderUrl(trimmed)) {
+      out += esc(trimmed);
+    } else {
+      const href = safeHref(trimmed);
+      const internal = href.startsWith(window.location.origin + '/') || href.startsWith('/');
+      const title = internal ? 'Open LUXit link with your current signed-in session' : 'External site controls any username or password prompt';
+      out += `<a href="${esc(href)}" target="_blank" rel="noopener noreferrer" title="${esc(title)}">${esc(trimmed)}</a>`;
+    }
+    out += esc(trailing);
+    last = offset + match.length;
+    return match;
+  });
+  out += esc(normalized.slice(last));
+  return out;
 }
 
 function esc(str) {

@@ -41,3 +41,35 @@ def test_pwa_keyboard_viewport_contract():
     assert "body.pwa-keyboard-open .pwa-bottom-nav" in html
     assert "body.has-pwa-bottom-nav.pwa-keyboard-open #shell" in nav
     assert "body.has-pwa-bottom-nav #shell { bottom:" not in nav
+
+
+def test_pwa_external_links_render_safely_with_new_tab_warning():
+    html = (ROOT / "templates" / "inbox_pwa" / "index.html").read_text()
+
+    assert "function renderMessageText" in html
+    assert "target=\"_blank\"" in html
+    assert "rel=\"noopener noreferrer\"" in html
+    assert "External site controls any username or password prompt" in html
+
+
+def test_pwa_twilio_media_urls_are_not_auto_embedded_from_provider():
+    html = (ROOT / "templates" / "inbox_pwa" / "index.html").read_text()
+
+    assert "function isProtectedProviderUrl" in html
+    assert "host === 'api.twilio.com'" in html
+    assert "host.endsWith('.twilio.com')" in html
+
+
+def test_pwa_luxit_internal_links_use_signed_in_session_hint():
+    html = (ROOT / "templates" / "inbox_pwa" / "index.html").read_text()
+
+    assert "Open LUXit link with your current signed-in session" in html
+    assert "window.location.origin" in html
+
+
+def test_frontend_does_not_hard_code_twilio_credentials():
+    html = (ROOT / "templates" / "inbox_pwa" / "index.html").read_text()
+
+    forbidden = ["TWILIO_AUTH_TOKEN", "auth_token", "Account SID", "ACtest", "api.twilio.com/2010"]
+    for value in forbidden:
+        assert value not in html
