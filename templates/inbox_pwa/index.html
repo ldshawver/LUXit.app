@@ -943,7 +943,11 @@
     <div class="settings-section-label" style="margin-top:20px;">Push Diagnostics</div>
     <div class="settings-toggle-row" style="flex-direction:column;align-items:stretch;gap:6px;">
       <pre id="pushDiagnostics" style="white-space:pre-wrap;font-size:.72rem;background:#05070c;border:1px solid var(--border);border-radius:10px;padding:10px;color:var(--text);max-height:220px;overflow:auto;">Loading…</pre>
-      <button class="btn-small" onclick="refreshPushDiagnostics()">Refresh diagnostics</button>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;">
+        <button class="btn-small" onclick="refreshPushDiagnostics()">Refresh diagnostics</button>
+        <button id="repairPushBtn" class="btn-small" onclick="repairPushNotifications()" style="display:none;">Repair Push Notifications</button>
+      </div>
+      <small id="pushRepairReason" style="color:var(--muted);"></small>
       <small style="color:var(--muted);">If this shows silent:false, remaining sound issues are OS/browser notification-channel settings.</small>
     </div>
 
@@ -2008,15 +2012,15 @@ async function loadGoogleContactsStatus() {
 
     if (!d.connected) {
       label.textContent = 'Not connected — names will not show';
-      if (connectBtn) connectBtn.style.display = 'inline-flex';
+      if (connectBtn) { connectBtn.textContent = 'Connect'; connectBtn.style.display = 'inline-flex'; }
       if (syncBtn)    syncBtn.style.display    = 'none';
       return;
     }
 
-    if (d.oauth_expired) {
+    if (d.oauth_expired || d.reconnect_required) {
       label.textContent = 'Session expired — reconnect to sync';
       label.style.color = '#f59e0b';
-      if (connectBtn) connectBtn.style.display = 'inline-flex';
+      if (connectBtn) { connectBtn.textContent = 'Reconnect Google Contacts'; connectBtn.style.display = 'inline-flex'; }
       if (syncBtn)    syncBtn.style.display    = 'none';
       return;
     }
@@ -2025,7 +2029,7 @@ async function loadGoogleContactsStatus() {
     label.textContent = `Connected · ${d.contacts_synced || 0} contacts · ${lastSync}`;
     label.style.color = '';
     if (syncBtn)    syncBtn.style.display    = 'inline-flex';
-    if (connectBtn) connectBtn.style.display = 'none';
+    if (connectBtn) { connectBtn.textContent = 'Connect'; connectBtn.style.display = 'none'; }
 
     if (d.sync_error) {
       if (errBanner) {
@@ -2156,9 +2160,68 @@ async function refreshPushDiagnostics() {
       lastNotificationVibrate: localDebug.lastNotificationVibrate || null,
       badgeCount: localDebug.badgeCount ?? null,
       serverDecision: api.decision,
+      activeSubscriptions: api.active_subscriptions || 0,
       deviceInstructions: api.device_instructions,
     }, null, 2);
+    updatePushRepairUi(api);
   } catch(e) { el.textContent = JSON.stringify({error:e.message, localDebug}, null, 2); }
+}
+
+function iosPushBlockReason() {
+  const ua = navigator.userAgent || '';
+  const isIOS = /iPhone|iPad|iPod/i.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  if (!isIOS) return '';
+  const standalone = window.matchMedia?.('(display-mode: standalone)').matches || window.navigator.standalone === true;
+  if (!standalone) return 'iOS blocks Web Push unless LUXit is installed to the Home Screen and opened from the app icon.';
+  if (!('PushManager' in window)) return 'iOS Web Push is unavailable in this browser/version. Use Safari on iOS 16.4+ from the installed Home Screen app.';
+  return '';
+}
+
+function updatePushRepairUi(api={}) {
+  const btn = document.getElementById('repairPushBtn');
+  const reason = document.getElementById('pushRepairReason');
+  if (!btn) return;
+  const permission = ('Notification' in window) ? Notification.permission : 'unsupported';
+  const shouldRepair = permission === 'granted' && Number(api.active_subscriptions || 0) === 0;
+  const iosReason = iosPushBlockReason();
+  btn.style.display = shouldRepair ? 'inline-flex' : 'none';
+  if (reason) reason.textContent = iosReason || (shouldRepair ? 'Permission is granted, but no active backend subscription is linked to this user/device.' : '');
+}
+
+async function repairPushNotifications() {
+  const btn = document.getElementById('repairPushBtn');
+  const reason = document.getElementById('pushRepairReason');
+  try {
+    if (!VAPID_PUBLIC) throw new Error(`Push setup incomplete. Missing: ${VAPID_MISSING.join(', ') || 'VAPID_PUBLIC_KEY'}`);
+    if (!('Notification' in window)) throw new Error('This browser does not support Notifications.');
+    if (Notification.permission !== 'granted') throw new Error(`Notification permission is ${Notification.permission}; allow notifications before repair.`);
+    const iosReason = iosPushBlockReason();
+    if (iosReason) throw new Error(iosReason);
+    if (!('serviceWorker' in navigator)) throw new Error('This browser does not support service workers.');
+    if (!('PushManager' in window)) throw new Error('This browser does not support PushManager/Web Push.');
+    if (btn) { btn.disabled = true; btn.textContent = 'Repairing…'; }
+    let reg = await navigator.serviceWorker.getRegistration();
+    if (!reg) reg = await navigator.serviceWorker.register(`/static/sw.js?v=${encodeURIComponent(PWA_VERSION)}`);
+    await reg.update().catch(() => {});
+    await navigator.serviceWorker.ready;
+    let sub = await reg.pushManager.getSubscription();
+    if (!sub) {
+      sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC) });
+    }
+    const subscription = sub.toJSON();
+    subscription.device_key = pwaDeviceKey();
+    subscription.device_label = localStorage.getItem('luxitPwaDeviceName') || `${browserLabel()} ${deviceTypeLabel()}`;
+    const saved = await apiFetch('/api/push/subscribe', 'POST', subscription);
+    if (!saved?.success) throw new Error(saved?.error || 'Backend did not save the subscription.');
+    await registerPwaDevice('heartbeat');
+    toast('Push notifications repaired', 'success');
+    await refreshPushDiagnostics();
+  } catch (e) {
+    if (reason) reason.textContent = e.message;
+    toast('Push repair failed: ' + e.message, 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Repair Push Notifications'; }
+  }
 }
 function installPwaNavPerformanceHandlers() {
   document.querySelectorAll('[data-pwa-nav]').forEach(a => a.addEventListener('click', () => {

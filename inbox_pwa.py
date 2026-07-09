@@ -2471,6 +2471,9 @@ def push_subscribe():
             endpoint=endpoint,
             p256dh=p256dh,
             auth_key=auth_key,
+            user_agent=request.headers.get('User-Agent'),
+            device_label=payload.get('device_label') or payload.get('deviceName') or device_key,
+            is_active=True,
         )
         db.session.add(sub)
     else:
@@ -2491,7 +2494,8 @@ def push_subscribe():
             device.last_seen_at = datetime.utcnow()
     db.session.commit()
     logger.info("Push subscription saved for user %d", user.id)
-    return jsonify({"success": True, "device_key": device_key})
+    active_subscriptions = PushSubscription.query.filter_by(user_id=user.id, company_id=company.id, is_active=True).count()
+    return jsonify({"success": True, "device_key": device_key, "active_subscription": active_subscriptions > 0, "active_subscriptions": active_subscriptions})
 
 
 @inbox_pwa_bp.route("/api/push/unsubscribe", methods=["POST"])
@@ -3058,7 +3062,7 @@ def gc_status():
     user = _require_auth()
     if isinstance(user, tuple):
         return user
-    from services.google_contacts import get_token, is_token_expired
+    from services.google_contacts import get_token, token_needs_reconnect
     tok = get_token(user.id)
     if not tok:
         return jsonify({
@@ -3071,10 +3075,11 @@ def gc_status():
         })
     return jsonify({
         "connected":       True,
-        "oauth_expired":   is_token_expired(tok),
+        "oauth_expired":   token_needs_reconnect(tok),
         "last_sync_at":    tok.last_sync_at.strftime("%b %-d %H:%M") if tok.last_sync_at else None,
         "contacts_synced": tok.contacts_synced or 0,
         "sync_error":      getattr(tok, "sync_error", None),
+        "reconnect_required": token_needs_reconnect(tok),
         "connect_url":     "/twilio/google-contacts/connect",
     })
 
