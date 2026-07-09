@@ -536,3 +536,301 @@ def test_pwa_sound_forwarding_autoreply_static_requirements():
     assert "call_forwarding_enabled" in migration
     assert "business_hours_auto_reply_enabled" in migration
     assert "final_status" in migration
+
+
+def test_google_contacts_enriches_phone_only_contact_and_preserves_existing_tags(pwa_app, monkeypatch):
+    app, _client, ids = pwa_app
+    import services.google_contacts as google_contacts
+
+    class DummyToken:
+        last_sync_at = None; contacts_synced = 0; sync_error = None
+
+    with app.app_context():
+        contact = Contact(company_id=ids["company"], phone="4155551212", normalized_phone="+14155551212", tags="MyOrder Customer", is_active=True)
+        db.session.add(contact); db.session.commit(); contact_id = contact.id
+        monkeypatch.setattr(google_contacts, "get_token", lambda user_id: DummyToken())
+        monkeypatch.setattr(google_contacts, "_refresh_if_needed", lambda token: "access")
+        monkeypatch.setattr(google_contacts, "_fetch_all_contacts", lambda access: {
+            "+14155551212": {"resource_name": "people/g1", "name": "Jane Doe", "first_name": "Jane", "last_name": "Doe", "email": "jane@example.com", "phone": "+14155551212", "normalized_phone": "+14155551212", "company": "Acme"}
+        })
+        result = google_contacts.sync_contacts(ids["staff"], ids["company"])
+        enriched = db.session.get(Contact, contact_id)
+        assert result["updated"] == 1
+        assert enriched.first_name == "Jane"
+        assert enriched.last_name == "Doe"
+        assert enriched.email == "jane@example.com"
+        assert enriched.company == "Acme"
+        assert enriched.source == "google_contacts"
+        assert enriched.source_detail == "Google Contacts sync"
+        assert enriched.external_google_contact_id == "people/g1"
+        assert "MyOrder Customer" in enriched.tags and "Google Contact" in enriched.tags
+
+
+def test_google_contacts_enriches_email_only_contact_without_overwriting_existing_name(pwa_app, monkeypatch):
+    app, _client, ids = pwa_app
+    import services.google_contacts as google_contacts
+
+    class DummyToken:
+        last_sync_at = None; contacts_synced = 0; sync_error = None
+
+    with app.app_context():
+        contact = Contact(company_id=ids["company"], email="person@example.com", first_name="Existing", name="Existing Name", is_active=True)
+        db.session.add(contact); db.session.commit(); contact_id = contact.id
+        monkeypatch.setattr(google_contacts, "get_token", lambda user_id: DummyToken())
+        monkeypatch.setattr(google_contacts, "_refresh_if_needed", lambda token: "access")
+        monkeypatch.setattr(google_contacts, "_fetch_all_contacts", lambda access: {
+            "+14155550000": {"resource_name": "people/g2", "name": "Google Name", "first_name": "Google", "last_name": "Name", "email": "person@example.com", "phone": "+14155550000", "normalized_phone": "+14155550000"}
+        })
+        google_contacts.sync_contacts(ids["staff"], ids["company"])
+        enriched = db.session.get(Contact, contact_id)
+        assert enriched.first_name == "Existing"
+        assert enriched.name == "Existing Name"
+        assert enriched.last_name == "Name"
+        assert enriched.phone == "+14155550000"
+
+
+def test_google_contacts_duplicate_merge_repoints_twilio_and_unions_tags(pwa_app, monkeypatch):
+    app, _client, ids = pwa_app
+    import services.google_contacts as google_contacts
+
+    class DummyToken:
+        last_sync_at = None; contacts_synced = 0; sync_error = None
+
+    with app.app_context():
+        survivor = Contact(company_id=ids["company"], phone="+14155551212", is_active=True, tags="MyOrder Customer")
+        duplicate = Contact(company_id=ids["company"], phone="4155551212", email="jane@example.com", first_name="Jane", tags="VIP", is_active=True)
+        db.session.add_all([survivor, duplicate]); db.session.flush()
+        conv = TwilioConversation(company_id=ids["company"], phone_number_id=ids["line"], contact_id=duplicate.id, from_number="+14155551212", to_number="+15550001000", contact_name="4155551212")
+        db.session.add(conv); db.session.commit(); survivor_id = survivor.id; duplicate_id = duplicate.id; conv_id = conv.id
+        monkeypatch.setattr(google_contacts, "get_token", lambda user_id: DummyToken())
+        monkeypatch.setattr(google_contacts, "_refresh_if_needed", lambda token: "access")
+        monkeypatch.setattr(google_contacts, "_fetch_all_contacts", lambda access: {"+14155551212": {"name": "Jane Doe", "email": "jane@example.com", "phone": "+14155551212", "normalized_phone": "+14155551212"}})
+        result = google_contacts.sync_contacts(ids["staff"], ids["company"])
+        kept = db.session.get(Contact, survivor_id)
+        old = db.session.get(Contact, duplicate_id)
+        refreshed = db.session.get(TwilioConversation, conv_id)
+        assert result["merged"] == 1
+        assert old.is_active is False
+        assert refreshed.contact_id == survivor_id
+        assert kept.name == "Jane Doe"
+        assert "MyOrder Customer" in kept.tags and "VIP" in kept.tags and "Google Contact" in kept.tags
+
+
+def test_google_contacts_cross_company_contacts_do_not_merge_and_preview_counts(pwa_app, monkeypatch):
+    app, _client, ids = pwa_app
+    import services.google_contacts as google_contacts
+
+    class DummyToken:
+        last_sync_at = None; contacts_synced = 0; sync_error = None
+
+    with app.app_context():
+        other = Company(name="Other Co", is_active=True); db.session.add(other); db.session.flush()
+        db.session.add(Contact(company_id=other.id, phone="+14155551212", first_name="Other", is_active=True))
+        local = Contact(company_id=ids["company"], phone="+14155551212", is_active=True)
+        db.session.add(local); db.session.commit(); local_id = local.id; other_id = other.id
+        monkeypatch.setattr(google_contacts, "get_token", lambda user_id: DummyToken())
+        monkeypatch.setattr(google_contacts, "_refresh_if_needed", lambda token: "access")
+        monkeypatch.setattr(google_contacts, "_fetch_all_contacts", lambda access: {"+14155551212": "Jane Doe", "+14155559999": "New Person"})
+        preview = google_contacts.sync_contacts(ids["staff"], ids["company"], dry_run=True)
+        assert preview["updated"] == 1
+        assert preview["merged"] == 0
+        assert preview["created"] == 1
+        assert db.session.get(Contact, local_id).name is None
+        assert Contact.query.filter_by(company_id=other_id, is_active=True).count() == 1
+
+
+def test_google_contacts_status_reports_expired_token_reconnect_required(pwa_app):
+    app, client, ids = pwa_app
+    from datetime import datetime, timedelta
+    from models import GoogleOAuthToken
+    with app.app_context():
+        db.session.add(GoogleOAuthToken(user_id=ids["staff"], access_token="old", refresh_token=None, token_expiry=datetime.utcnow() - timedelta(hours=1)))
+        db.session.commit()
+    login(client, ids["staff"])
+    resp = client.get("/api/inbox/google-contacts/status")
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data["reconnect_required"] is True
+    assert data["oauth_expired"] is True
+
+
+def test_google_contacts_sync_job_and_merge_audit_records_created(pwa_app, monkeypatch):
+    app, _client, ids = pwa_app
+    import services.google_contacts as google_contacts
+    from models import ContactMergeAudit, GoogleContactsSyncJob
+
+    class DummyToken:
+        last_sync_at = None; contacts_synced = 0; sync_error = None; google_sync_token = None; google_account_email = "owner@example.com"
+
+    with app.app_context():
+        survivor = Contact(company_id=ids["company"], phone="+14155551212", normalized_phone="+14155551212", tags="MyOrder Customer", is_active=True)
+        duplicate = Contact(company_id=ids["company"], phone="4155551212", email="audit@example.com", tags="VIP", is_active=True)
+        db.session.add_all([survivor, duplicate]); db.session.flush()
+        conv = TwilioConversation(company_id=ids["company"], phone_number_id=ids["line"], contact_id=duplicate.id, from_number="+14155551212", to_number="+15550001000")
+        db.session.add(conv); db.session.commit(); survivor_id = survivor.id; duplicate_id = duplicate.id; conv_id = conv.id
+        monkeypatch.setattr(google_contacts, "get_token", lambda user_id: DummyToken())
+        monkeypatch.setattr(google_contacts, "_refresh_if_needed", lambda token: "access")
+        monkeypatch.setattr(google_contacts, "_fetch_all_contacts", lambda access: {"+14155551212": {"resource_name": "people/audit", "name": "Audit Person", "email": "audit@example.com", "phone": "+14155551212", "normalized_phone": "+14155551212"}})
+        result = google_contacts.sync_contacts(ids["staff"], ids["company"])
+        job = db.session.get(GoogleContactsSyncJob, result["sync_job_id"])
+        audit = ContactMergeAudit.query.filter_by(sync_job_id=job.id, source_contact_id=duplicate_id, destination_contact_id=survivor_id).one()
+        assert job.status == "completed"
+        assert job.google_account_email == "owner@example.com"
+        assert job.contacts_merged == 1
+        assert audit.google_resource_id == "people/audit"
+        assert audit.phone_match is True
+        assert audit.match_confidence >= 95
+        assert audit.reference_mappings[0]["to_contact_id"] == survivor_id
+        assert db.session.get(TwilioConversation, conv_id).contact_id == survivor_id
+
+
+def test_google_contacts_low_confidence_email_merge_requires_review(pwa_app, monkeypatch):
+    app, _client, ids = pwa_app
+    import services.google_contacts as google_contacts
+    from models import ContactMergeAudit
+
+    class DummyToken:
+        last_sync_at = None; contacts_synced = 0; sync_error = None; google_sync_token = None
+
+    with app.app_context():
+        survivor = Contact(company_id=ids["company"], phone="+14155551212", normalized_phone="+14155551212", is_active=True)
+        contact = Contact(company_id=ids["company"], email="Case@Test.COM", first_name="Case", is_active=True)
+        db.session.add_all([survivor, contact]); db.session.commit(); contact_id = contact.id
+        monkeypatch.setenv("GOOGLE_CONTACTS_AUTO_MERGE_THRESHOLD", "80")
+        monkeypatch.setattr(google_contacts, "get_token", lambda user_id: DummyToken())
+        monkeypatch.setattr(google_contacts, "_refresh_if_needed", lambda token: "access")
+        monkeypatch.setattr(google_contacts, "_fetch_all_contacts", lambda access: {"+14155551212": {"resource_name": "people/email", "name": "Case Email", "email": " case@test.com ", "phone": "+14155551212", "normalized_phone": "+14155551212"}})
+        result = google_contacts.sync_contacts(ids["staff"], ids["company"], dry_run=True)
+        assert result["preview"]["will_update"]
+        assert result["preview"]["possible_merge_requires_review"]
+        assert result["preview"]["possible_merge_requires_review"][0]["confidence"] == 75
+        assert db.session.get(Contact, contact_id).last_name is None
+        assert ContactMergeAudit.query.count() == 0
+
+
+def test_google_contacts_preview_payload_and_dry_run_do_not_modify_database(pwa_app, monkeypatch):
+    app, _client, ids = pwa_app
+    import services.google_contacts as google_contacts
+    from models import GoogleContactsSyncJob
+
+    class DummyToken:
+        last_sync_at = None; contacts_synced = 0; sync_error = None; google_sync_token = None
+
+    with app.app_context():
+        contact = Contact(company_id=ids["company"], phone="(415) 555-1212 x99", is_active=True)
+        db.session.add(contact); db.session.commit(); contact_id = contact.id
+        monkeypatch.setattr(google_contacts, "get_token", lambda user_id: DummyToken())
+        monkeypatch.setattr(google_contacts, "_refresh_if_needed", lambda token: "access")
+        monkeypatch.setattr(google_contacts, "_fetch_all_contacts", lambda access: {"+14155551212": "Dry Run"})
+        result = google_contacts.sync_contacts(ids["staff"], ids["company"], dry_run=True)
+        unchanged = db.session.get(Contact, contact_id)
+        job = db.session.get(GoogleContactsSyncJob, result["sync_job_id"])
+        assert result["preview"]["will_update"][0]["fields_to_update"]
+        assert unchanged.name is None
+        assert unchanged.normalized_phone is None
+        assert job.dry_run is True and job.preview_payload["will_update"]
+
+
+def test_google_contacts_incremental_sync_token_and_avatar_metadata_refresh(pwa_app, monkeypatch):
+    app, _client, ids = pwa_app
+    import services.google_contacts as google_contacts
+    from models import GoogleOAuthToken
+
+    with app.app_context():
+        tok = GoogleOAuthToken(user_id=ids["staff"], access_token="tok", refresh_token="ref", google_sync_token="sync-1")
+        db.session.add(tok); db.session.commit(); seen = {}
+        monkeypatch.setattr(google_contacts, "get_token", lambda user_id: tok)
+        monkeypatch.setattr(google_contacts, "_refresh_if_needed", lambda token: "access")
+        def fake_fetch(access, sync_token=None):
+            seen["sync_token"] = sync_token
+            return {"+14155550101": {"resource_name": "people/avatar", "name": "Avatar Person", "phone": "+14155550101", "normalized_phone": "+14155550101", "avatar_url": "https://lh3.googleusercontent.com/a/photo"}, "__meta__": {"next_sync_token": "sync-2", "incremental": bool(sync_token)}}
+        monkeypatch.setattr(google_contacts, "_fetch_all_contacts", fake_fetch)
+        result = google_contacts.sync_contacts(ids["staff"], ids["company"])
+        contact = Contact.query.filter_by(company_id=ids["company"], external_google_contact_id="people/avatar").one()
+        assert seen["sync_token"] == "sync-1"
+        assert result["incremental"] is True
+        assert tok.google_sync_token == "sync-2"
+        assert contact.avatar_url == "https://lh3.googleusercontent.com/a/photo"
+
+
+def test_google_contact_normalization_handles_phone_and_email_variants():
+    from services.google_contacts import normalize_email, normalize_phone
+    assert normalize_phone("001 44 7911 123456 ext. 9") == "+447911123456"
+    assert normalize_phone("(415) 555-1212 x123") == "+14155551212"
+    assert normalize_phone("+1 415-555-1212") == "+14155551212"
+    assert normalize_email("  CASE@Example.COM ") == "case@example.com"
+
+
+def test_google_contacts_default_phone_only_duplicate_requires_review(pwa_app, monkeypatch):
+    app, _client, ids = pwa_app
+    import services.google_contacts as google_contacts
+    from models import ContactMergeAudit
+
+    class DummyToken:
+        last_sync_at = None; contacts_synced = 0; sync_error = None; google_sync_token = None
+
+    with app.app_context():
+        survivor = Contact(company_id=ids["company"], phone="+14155551212", normalized_phone="+14155551212", is_active=True)
+        duplicate = Contact(company_id=ids["company"], phone="4155551212", tags="VIP", is_active=True)
+        db.session.add_all([survivor, duplicate]); db.session.commit(); duplicate_id = duplicate.id
+        monkeypatch.delenv("GOOGLE_CONTACTS_AUTO_MERGE_THRESHOLD", raising=False)
+        monkeypatch.setattr(google_contacts, "get_token", lambda user_id: DummyToken())
+        monkeypatch.setattr(google_contacts, "_refresh_if_needed", lambda token: "access")
+        monkeypatch.setattr(google_contacts, "_fetch_all_contacts", lambda access: {"+14155551212": "Phone Only"})
+        result = google_contacts.sync_contacts(ids["staff"], ids["company"])
+        assert result["merged"] == 0
+        assert result["review_required"] is True
+        assert result["preview"]["possible_merge_requires_review"][0]["confidence"] == 70
+        assert db.session.get(Contact, duplicate_id).is_active is True
+        assert ContactMergeAudit.query.count() == 0
+
+
+def test_google_contacts_merge_repointing_is_company_scoped(pwa_app, monkeypatch):
+    app, _client, ids = pwa_app
+    import services.google_contacts as google_contacts
+
+    class DummyToken:
+        last_sync_at = None; contacts_synced = 0; sync_error = None; google_sync_token = None
+
+    with app.app_context():
+        other = Company(name="Scoped Other", is_active=True); db.session.add(other); db.session.flush()
+        survivor = Contact(company_id=ids["company"], phone="+14155551212", normalized_phone="+14155551212", is_active=True)
+        duplicate = Contact(company_id=ids["company"], phone="4155551212", email="scope@example.com", is_active=True)
+        db.session.add_all([survivor, duplicate]); db.session.flush()
+        same_company_call = TwilioCallLog(company_id=ids["company"], contact_id=duplicate.id, twilio_sid="CAsame", direction="inbound", from_number="+14155551212", to_number="+15550001000")
+        other_company_call = TwilioCallLog(company_id=other.id, contact_id=duplicate.id, twilio_sid="CAother", direction="inbound", from_number="+14155551212", to_number="+15550001000")
+        db.session.add_all([same_company_call, other_company_call]); db.session.commit()
+        survivor_id = survivor.id; duplicate_id = duplicate.id; same_id = same_company_call.id; other_id = other_company_call.id
+        monkeypatch.setattr(google_contacts, "get_token", lambda user_id: DummyToken())
+        monkeypatch.setattr(google_contacts, "_refresh_if_needed", lambda token: "access")
+        monkeypatch.setattr(google_contacts, "_fetch_all_contacts", lambda access: {"+14155551212": {"name": "Scoped", "email": "scope@example.com", "phone": "+14155551212", "normalized_phone": "+14155551212"}})
+        result = google_contacts.sync_contacts(ids["staff"], ids["company"])
+        assert result["merged"] == 1
+        assert db.session.get(TwilioCallLog, same_id).contact_id == survivor_id
+        assert db.session.get(TwilioCallLog, other_id).contact_id == duplicate_id
+
+
+def test_google_contacts_preview_payload_is_bounded_and_token_metadata_unchanged_on_dry_run(pwa_app, monkeypatch):
+    app, _client, ids = pwa_app
+    import services.google_contacts as google_contacts
+    from models import GoogleContactsSyncJob, GoogleOAuthToken
+
+    with app.app_context():
+        tok = GoogleOAuthToken(user_id=ids["staff"], access_token="secret-access", refresh_token="secret-refresh", contacts_synced=99, google_sync_token="sync-old")
+        db.session.add(tok); db.session.commit()
+        monkeypatch.setenv("GOOGLE_CONTACTS_PREVIEW_LIMIT", "2")
+        monkeypatch.setattr(google_contacts, "get_token", lambda user_id: tok)
+        monkeypatch.setattr(google_contacts, "_refresh_if_needed", lambda token: "access")
+        monkeypatch.setattr(google_contacts, "_fetch_all_contacts", lambda access, sync_token=None: {
+            f"+14155550{i:03d}": {"name": f"Person {i}", "phone": f"+14155550{i:03d}", "normalized_phone": f"+14155550{i:03d}"}
+            for i in range(5)
+        })
+        result = google_contacts.sync_contacts(ids["staff"], ids["company"], dry_run=True)
+        job = db.session.get(GoogleContactsSyncJob, result["sync_job_id"])
+        assert len(result["preview"]["will_create"]) == 2
+        assert result["preview"]["omitted_counts"]["will_create"] == 3
+        assert job.dry_run is True
+        assert tok.contacts_synced == 99
+        assert tok.google_sync_token == "sync-old"
+        serialized = str(result) + str(job.preview_payload) + str(job.errors or [])
+        assert "secret-access" not in serialized and "secret-refresh" not in serialized

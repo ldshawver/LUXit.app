@@ -3125,6 +3125,14 @@ def gc_status():
         "oauth_expired":   token_needs_reconnect(tok),
         "last_sync_at":    tok.last_sync_at.strftime("%b %-d %H:%M") if tok.last_sync_at else None,
         "contacts_synced": tok.contacts_synced or 0,
+        "contacts_created": getattr(tok, "contacts_created", 0) or 0,
+        "contacts_updated": getattr(tok, "contacts_updated", 0) or 0,
+        "contacts_merged": getattr(tok, "contacts_merged", 0) or 0,
+        "contacts_skipped": getattr(tok, "contacts_skipped", 0) or 0,
+        "last_successful_sync_at": tok.last_successful_sync_at.strftime("%b %-d %H:%M") if getattr(tok, "last_successful_sync_at", None) else None,
+        "last_sync_duration_ms": getattr(tok, "last_sync_duration_ms", None),
+        "sync_status": getattr(tok, "last_sync_status", None),
+        "google_account_email": getattr(tok, "google_account_email", None),
         "sync_error":      getattr(tok, "sync_error", None),
         "reconnect_required": token_needs_reconnect(tok),
         "connect_url":     "/twilio/google-contacts/connect",
@@ -3141,5 +3149,7 @@ def gc_sync():
     if not company:
         return jsonify({"error": "No company found."}), 400
     from services.google_contacts import sync_contacts
-    result = sync_contacts(user.id, company.id)
+    payload = request.get_json(silent=True) or {}
+    dry_run = request.args.get("dry_run") in {"1", "true", "yes"} or bool(payload.get("dry_run"))
+    result = sync_contacts(user.id, company.id, dry_run=dry_run)
     return jsonify(result)

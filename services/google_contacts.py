@@ -9,6 +9,8 @@ and writes the Google display name into contact_name.
 import logging
 import os
 import re
+import time
+import unicodedata
 import urllib.parse
 from datetime import datetime, timedelta
 
@@ -28,27 +30,40 @@ REVOKE_URL = "https://oauth2.googleapis.com/revoke"
 # ---------------------------------------------------------------------------
 
 def normalize_phone(raw: str) -> str:
-    """Return E.164 string for US numbers, or best-effort for others.
+    """Return a canonical E.164-ish phone number where possible.
 
-    Handles all common US formats:
-      4155551212          → +14155551212
-      14155551212         → +14155551212
-      (415) 555-1212      → +14155551212
-      1-415-555-1212      → +14155551212
-      415.555.1212        → +14155551212
-      +14155551212        → +14155551212  (already E.164)
-      +447911123456       → +447911123456  (international pass-through)
+    Handles domestic +1 forms, 001 international prefixes, punctuation, spaces,
+    parentheses, hyphens, and common extension markers. Non-US international
+    numbers are preserved with their country code when enough digits exist.
     """
-    digits = re.sub(r"\D", "", raw or "")
+    value = (raw or "").strip()
+    if not value:
+        return ""
+    value = re.sub(r"(?i)(?:ext\.?|extension|x)\s*\d+\s*$", "", value).strip()
+    international_prefix = value.startswith("+")
+    digits = re.sub(r"\D", "", value)
+    if digits.startswith("001") and len(digits) > 11:
+        digits = digits[3:]
+    elif digits.startswith("00") and len(digits) > 10:
+        digits = digits[2:]
     if len(digits) == 10:
         return "+1" + digits
     if len(digits) == 11 and digits.startswith("1"):
         return "+" + digits
-    return "+" + digits if digits else (raw or "")
+    if international_prefix and 8 <= len(digits) <= 15:
+        return "+" + digits
+    if 8 <= len(digits) <= 15:
+        return "+" + digits
+    return "+" + digits if digits else value
 
 
 # Keep old name as alias for backward compatibility
 _normalize = normalize_phone
+
+
+def normalize_email(raw: str | None) -> str:
+    """Normalize email addresses for matching without exposing OAuth secrets."""
+    return unicodedata.normalize("NFKC", raw or "").strip().lower()
 
 
 def _all_forms(phone: str) -> list:
@@ -230,9 +245,9 @@ def disconnect(user_id: int):
 # Contact fetch
 # ---------------------------------------------------------------------------
 
-def _fetch_all_contacts(access_token: str) -> dict:
+def _fetch_all_contacts(access_token: str, sync_token: str | None = None) -> dict:
     """
-    Return dict: normalized_phone -> display_name
+    Return dict: normalized_phone -> Google contact data.
     Handles pagination automatically.
     """
     phone_map = {}
@@ -241,11 +256,15 @@ def _fetch_all_contacts(access_token: str) -> dict:
 
     while True:
         params = {
-            "personFields": "names,phoneNumbers",
+            "personFields": "names,phoneNumbers,emailAddresses,organizations,photos",
             "pageSize":     1000,
         }
         if page_token:
             params["pageToken"] = page_token
+        elif sync_token:
+            params["syncToken"] = sync_token
+        else:
+            params["requestSyncToken"] = "true"
 
         resp = requests.get(PEOPLE_API, headers=headers, params=params, timeout=20)
         if resp.status_code == 401:
@@ -256,22 +275,46 @@ def _fetch_all_contacts(access_token: str) -> dict:
         for person in body.get("connections", []):
             names = person.get("names", [])
             phones = person.get("phoneNumbers", [])
-            if not names or not phones:
+            emails = person.get("emailAddresses", [])
+            orgs = person.get("organizations", [])
+            photos = person.get("photos", [])
+            if not phones and not emails:
                 continue
 
-            name = (names[0].get("displayName") or
-                    f"{names[0].get('givenName','')} {names[0].get('familyName','')}".strip())
-            if not name:
-                continue
+            primary_name = names[0] if names else {}
+            name = (primary_name.get("displayName") or
+                    f"{primary_name.get('givenName','')} {primary_name.get('familyName','')}".strip())
+            data = {
+                "resource_name": person.get("resourceName"),
+                "name": name or "",
+                "first_name": primary_name.get("givenName") or "",
+                "last_name": primary_name.get("familyName") or "",
+                "email": (emails[0].get("value") if emails else "") or "",
+                "company": (orgs[0].get("name") if orgs else "") or "",
+                "avatar_url": (photos[0].get("url") if photos else "") or "",
+                "phones": [ph.get("value", "") for ph in phones if ph.get("value")],
+            }
+            if not data["first_name"] and name:
+                parts = name.split(" ", 1)
+                data["first_name"] = parts[0]
+                data["last_name"] = parts[1] if len(parts) > 1 else ""
 
+            added_phone = False
             for ph in phones:
                 raw = ph.get("value", "")
                 normalized = normalize_phone(raw)
                 if normalized and normalized not in phone_map:
-                    phone_map[normalized] = name
+                    phone_map[normalized] = {**data, "phone": raw, "normalized_phone": normalized}
+                    added_phone = True
+            if not added_phone and data.get("email"):
+                key = "email:" + normalize_email(data["email"])
+                phone_map[key] = {**data, "phone": "", "normalized_phone": ""}
 
         page_token = body.get("nextPageToken")
         if not page_token:
+            next_sync_token = body.get("nextSyncToken")
+            if next_sync_token:
+                phone_map["__meta__"] = {"next_sync_token": next_sync_token, "incremental": bool(sync_token)}
             break
 
     return phone_map
@@ -429,114 +472,390 @@ def lookup_contact_name(company_id: int, phone: str) -> tuple:
 # Sync
 # ---------------------------------------------------------------------------
 
-def sync_contacts(user_id: int, company_id: int) -> dict:
-    """
-    Fetch Google contacts and:
-      1. Update TwilioConversation.contact_name for all conversations in
-         this company where the phone number matches.
-      2. Upsert matching Contact rows so future inbound messages link by name.
+def _blank(value) -> bool:
+    return value is None or (isinstance(value, str) and not value.strip())
 
-    Returns {"synced": int, "matched": int, "error": str|None}
-    """
+
+def _tag_union(*tag_values) -> str:
+    seen = []
+    for tags in tag_values:
+        if isinstance(tags, list):
+            parts = tags
+        else:
+            parts = re.split(r"[,;]", tags or "")
+        for part in parts:
+            tag = str(part).strip()
+            if tag and tag.lower() not in {t.lower() for t in seen}:
+                seen.append(tag)
+    return ",".join(seen)
+
+
+def _google_data(norm_phone: str, value) -> dict:
+    if isinstance(value, dict):
+        data = dict(value)
+    else:
+        data = {"name": value or ""}
+    data.setdefault("phone", norm_phone)
+    data.setdefault("normalized_phone", norm_phone)
+    data.setdefault("resource_name", None)
+    data.setdefault("email", "")
+    data.setdefault("company", "")
+    data.setdefault("avatar_url", "")
+    name = (data.get("name") or "").strip()
+    data.setdefault("first_name", "")
+    data.setdefault("last_name", "")
+    if name and not data.get("first_name") and not data.get("last_name"):
+        parts = name.split(" ", 1)
+        data["first_name"] = parts[0]
+        data["last_name"] = parts[1] if len(parts) > 1 else ""
+    return data
+
+
+def _find_contact_by_google_data(company_id: int, data: dict):
     from extensions import db
-    from models import TwilioConversation, Contact
+    from models import Contact
+    resource = data.get("resource_name")
+    if resource:
+        found = Contact.query.filter_by(company_id=company_id, external_google_contact_id=resource, is_active=True).first()
+        if found:
+            return found
+    phone = data.get("normalized_phone") or normalize_phone(data.get("phone"))
+    if phone:
+        found = _find_contact_by_phone(company_id, phone)
+        if found:
+            return found
+    email = normalize_email(data.get("email"))
+    if email:
+        found = Contact.query.filter(Contact.company_id == company_id, Contact.is_active == True, db.func.lower(Contact.email) == email).first()
+        if found:
+            return found
+    return None
+
+
+
+def _contact_snapshot(contact) -> dict:
+    fields = ["id", "email", "phone", "normalized_phone", "name", "first_name", "last_name",
+              "company", "tags", "source", "source_detail", "source_added_at",
+              "external_google_contact_id", "avatar_url", "created_at", "updated_at",
+              "segment", "sms_consent_status"]
+    snap = {}
+    for field in fields:
+        if hasattr(contact, field):
+            value = getattr(contact, field)
+            snap[field] = value.isoformat() if hasattr(value, "isoformat") else value
+    return snap
+
+
+def _merge_confidence(contact, data: dict) -> dict:
+    resource_match = bool(data.get("resource_name") and getattr(contact, "external_google_contact_id", None) == data.get("resource_name"))
+    phone = data.get("normalized_phone") or normalize_phone(data.get("phone"))
+    contact_phone = getattr(contact, "normalized_phone", None) or normalize_phone(getattr(contact, "phone", None))
+    phone_match = bool(phone and contact_phone and phone == contact_phone)
+    email = normalize_email(data.get("email"))
+    contact_email = normalize_email(getattr(contact, "email", None))
+    email_match = bool(email and contact_email and email == contact_email)
+    if resource_match:
+        score, reason = 100, "google_resource_id"
+    elif phone_match and email_match:
+        score, reason = 95, "phone_email"
+    elif phone_match and getattr(contact, "normalized_phone", None):
+        score, reason = 80, "phone"
+    elif phone_match:
+        score, reason = 70, "phone_normalization"
+    elif email_match:
+        score, reason = 75, "email"
+    else:
+        score, reason = 0, "no_match"
+    return {"confidence": score, "reason": reason, "phone_match": phone_match, "email_match": email_match, "resource_match": resource_match}
+
+
+def _merge_threshold() -> int:
+    try:
+        return int(os.environ.get("GOOGLE_CONTACTS_AUTO_MERGE_THRESHOLD", "95"))
+    except ValueError:
+        return 95
+
+
+def _preview_limit() -> int:
+    try:
+        return int(os.environ.get("GOOGLE_CONTACTS_PREVIEW_LIMIT", "100"))
+    except ValueError:
+        return 100
+
+
+def _append_preview(preview: dict, section: str, item: dict, omitted: dict, limit: int):
+    bucket = preview.setdefault(section, [])
+    if len(bucket) < limit:
+        bucket.append(item)
+    else:
+        omitted[section] = omitted.get(section, 0) + 1
+
+
+def _merge_duplicate_contacts(db, survivor, duplicate, *, data: dict, user_id: int | None,
+                              sync_job_id: int | None, confidence: dict) -> tuple[bool, dict]:
+    if not survivor or not duplicate or survivor.id == duplicate.id or survivor.company_id != duplicate.company_id:
+        return False, {}
+    before_survivor = _contact_snapshot(survivor)
+    before_duplicate = _contact_snapshot(duplicate)
+    reference_mappings = []
+    # Repoint every mapped table with a contact_id column, including Twilio,
+    # SMS/MMS, campaigns, calls, CRM activities, notes, tasks, deals, feedback,
+    # attachments, AI/marketing entities, and future CRM tables.
+    for mapper in db.Model.registry.mappers:
+        model = mapper.class_
+        table_name = getattr(model, "__tablename__", None)
+        if table_name == "contact" or not hasattr(model, "contact_id"):
+            continue
+        query = model.query.filter_by(contact_id=duplicate.id)
+        if hasattr(model, "company_id"):
+            query = query.filter_by(company_id=survivor.company_id)
+        count = query.update({"contact_id": survivor.id}, synchronize_session=False)
+        if count:
+            reference_mappings.append({"table": table_name, "from_contact_id": duplicate.id, "to_contact_id": survivor.id, "rows": count})
+    survivor.tags = _tag_union(survivor.tags, duplicate.tags)
+    updated_fields, preserved_fields, skipped_fields = [], [], []
+    for field in ["email", "phone", "normalized_phone", "name", "first_name", "last_name", "company", "source", "source_detail", "source_added_at", "external_google_contact_id", "avatar_url"]:
+        source_value = getattr(duplicate, field, None) if hasattr(duplicate, field) else None
+        dest_value = getattr(survivor, field, None) if hasattr(survivor, field) else None
+        if hasattr(survivor, field) and _blank(dest_value) and not _blank(source_value):
+            setattr(survivor, field, source_value)
+            updated_fields.append(field)
+        elif not _blank(dest_value):
+            preserved_fields.append(field)
+        else:
+            skipped_fields.append(field)
+    duplicate.is_active = False
+    duplicate.tags = _tag_union(duplicate.tags, "Merged Duplicate")
+    duplicate.source_detail = (duplicate.source_detail or "")[:200]
+    after_survivor = _contact_snapshot(survivor)
+    from models import ContactMergeAudit
+    audit = ContactMergeAudit(
+        company_id=survivor.company_id,
+        source_contact_id=duplicate.id,
+        destination_contact_id=survivor.id,
+        merge_reason=confidence.get("reason"),
+        google_resource_id=data.get("resource_name"),
+        phone_match=bool(confidence.get("phone_match")),
+        email_match=bool(confidence.get("email_match")),
+        match_confidence=int(confidence.get("confidence") or 0),
+        user_id=user_id,
+        sync_job_id=sync_job_id,
+        updated_fields=updated_fields,
+        preserved_fields=preserved_fields,
+        skipped_fields=skipped_fields,
+        fields_before={"survivor": before_survivor, "duplicate": before_duplicate},
+        fields_after={"survivor": after_survivor, "duplicate": _contact_snapshot(duplicate)},
+        reference_mappings=reference_mappings,
+    )
+    db.session.add(audit)
+    return True, {"audit_id": None, "reference_mappings": reference_mappings, "updated_fields": updated_fields,
+                  "preserved_fields": preserved_fields, "skipped_fields": skipped_fields,
+                  "fields_before": audit.fields_before, "fields_after": audit.fields_after}
+
+
+def _apply_google_to_contact(contact, data: dict, *, dry_run: bool = False) -> list[str]:
+    changes = []
+    mapping = {
+        "first_name": data.get("first_name"), "last_name": data.get("last_name"),
+        "name": data.get("name"), "email": normalize_email(data.get("email")) if data.get("email") else "", "phone": data.get("normalized_phone") or data.get("phone"),
+        "normalized_phone": data.get("normalized_phone") or normalize_phone(data.get("phone")),
+        "company": data.get("company"), "avatar_url": data.get("avatar_url"),
+        "external_google_contact_id": data.get("resource_name"),
+    }
+    for field, value in mapping.items():
+        if hasattr(contact, field) and not _blank(value) and _blank(getattr(contact, field, None)):
+            if not dry_run: setattr(contact, field, value)
+            changes.append(field)
+    new_tags = _tag_union(getattr(contact, "tags", None), "Google Contact")
+    if new_tags != (contact.tags or ""):
+        if not dry_run: contact.tags = new_tags
+        changes.append("tags")
+    now = datetime.utcnow()
+    if not dry_run:
+        contact.source = "google_contacts"
+        contact.source_detail = "Google Contacts sync"
+        if not contact.source_added_at:
+            contact.source_added_at = now
+        if hasattr(contact, "updated_at"):
+            contact.updated_at = now
+        contact.is_active = True
+    return changes
+
+
+def preview_sync_contacts(user_id: int, company_id: int) -> dict:
+    return sync_contacts(user_id, company_id, dry_run=True)
+
+
+def _preview_contact(contact) -> dict | None:
+    if not contact:
+        return None
+    return {"id": contact.id, "name": _contact_display_name(contact), "email": getattr(contact, "email", None), "phone": getattr(contact, "phone", None), "tags": getattr(contact, "tags", None)}
+
+
+def _finish_sync_job(db, job, status: str, payload: dict, error: str | None = None):
+    job.status = status
+    job.completed_at = datetime.utcnow()
+    job.duration_ms = int((job.completed_at - job.started_at).total_seconds() * 1000)
+    job.contacts_retrieved = payload.get("synced", 0)
+    job.contacts_created = payload.get("created", 0)
+    job.contacts_updated = payload.get("updated", 0)
+    job.contacts_merged = payload.get("merged", 0)
+    job.contacts_skipped = payload.get("skipped", 0)
+    job.preview_payload = payload.get("preview", {})
+    if error:
+        job.errors = (job.errors or []) + [{"message": error, "at": job.completed_at.isoformat()}]
+    db.session.flush()
+
+
+def sync_contacts(user_id: int, company_id: int, dry_run: bool = False) -> dict:
+    """Fetch Google contacts and enrich/merge Audience contacts. Supports dry-run previews."""
+    from extensions import db
+    from models import TwilioConversation, Contact, GoogleContactsSyncJob
+
+    job = GoogleContactsSyncJob(company_id=company_id, user_id=user_id, dry_run=dry_run, status="running")
+    db.session.add(job)
+    db.session.commit()
+    logger.info("Google Contacts sync job %s started user=%s company=%s dry_run=%s", job.id, user_id, company_id, dry_run)
 
     tok = get_token(user_id)
     if not tok:
-        return {"synced": 0, "matched": 0, "error": "Not connected to Google."}
-
+        payload = {"sync_job_id": job.id, "synced": 0, "matched": 0, "updated": 0, "merged": 0, "created": 0, "skipped": 0, "error": "Not connected to Google.", "dry_run": dry_run}
+        _finish_sync_job(db, job, "failed", payload, payload["error"])
+        db.session.commit()
+        return payload
+    job.google_account_email = getattr(tok, "google_account_email", None)
     try:
         access_token = _refresh_if_needed(tok)
-        phone_map    = _fetch_all_contacts(access_token)
-    except Exception as exc:
-        err_msg = str(exc)
-        reconnect_required = _token_error_requires_reconnect(err_msg)
-        logger.error("Google Contacts fetch error for user %s: %s", user_id, exc)
         try:
-            tok.sync_error = err_msg
-            db.session.commit()
-        except Exception:
-            db.session.rollback()
-        return {"synced": 0, "matched": 0, "error": err_msg, "reconnect_required": reconnect_required}
+            try:
+                phone_map = _fetch_all_contacts(access_token, sync_token=getattr(tok, "google_sync_token", None))
+            except TypeError:
+                # Backward-compatible for tests/extensions monkeypatching the old one-arg fetcher.
+                phone_map = _fetch_all_contacts(access_token)
+        except requests.HTTPError as exc:
+            # Google sync tokens expire. Fall back to a full sync, preserving recoverability in job errors.
+            status = getattr(getattr(exc, "response", None), "status_code", None)
+            if status in {400, 410} and getattr(tok, "google_sync_token", None):
+                job.api_failures = (job.api_failures or []) + [{"message": str(exc), "fallback": "full_sync"}]
+                tok.google_sync_token = None
+                try:
+                    phone_map = _fetch_all_contacts(access_token, sync_token=None)
+                except TypeError:
+                    phone_map = _fetch_all_contacts(access_token)
+            else:
+                raise
+    except Exception as exc:
+        err_msg = str(exc); reconnect_required = _token_error_requires_reconnect(err_msg)
+        logger.error("Google Contacts sync job %s failed for user %s: %s", job.id, user_id, exc)
+        if reconnect_required:
+            job.oauth_failures = (job.oauth_failures or []) + [{"message": err_msg}]
+        else:
+            job.api_failures = (job.api_failures or []) + [{"message": err_msg}]
+        tok.sync_error = err_msg
+        payload = {"sync_job_id": job.id, "synced": 0, "matched": 0, "updated": 0, "merged": 0, "created": 0, "skipped": 0, "error": err_msg, "reconnect_required": reconnect_required, "dry_run": dry_run}
+        _finish_sync_job(db, job, "failed", payload, err_msg)
+        db.session.commit()
+        return payload
 
-    # Populate the local Contact cache for every Google phone number, not only
-    # numbers that already have an SMS conversation. This makes PWA contact
-    # search and future inbound-SMS name resolution work immediately after sync.
-    for norm, name in phone_map.items():
-        _upsert_contact_from_google(db, company_id, norm, name, None)
+    meta = phone_map.pop("__meta__", {}) if isinstance(phone_map, dict) else {}
+    updated_ids, created, merged, matched, skipped = set(), 0, 0, 0, 0
+    preview = {"will_create": [], "will_update": [], "will_merge": [], "will_skip": [], "possible_merge_requires_review": []}
+    preview_omitted = {}
+    preview_limit = _preview_limit()
+    samples = []
+    threshold = _merge_threshold()
 
-    convs   = TwilioConversation.query.filter_by(company_id=company_id).all()
-    matched = 0
-
-    for conv in convs:
-        norm = normalize_phone(conv.from_number)
-        name = phone_map.get(norm)
-
-        logger.debug(
-            "sync_contacts: conv_id=%s from=%s norm=%s match=%s",
-            conv.id, conv.from_number, norm, name
-        )
-
-        if name:
-            contact = _upsert_contact_from_google(db, company_id, norm, name, conv)
-            info = {"name": name, "source": "google_contacts", "contact_id": contact.id if contact else None, "normalized_phone": norm}
-            if _apply_contact_to_conversation(conv, info):
+    try:
+        for index, (norm, raw_data) in enumerate(phone_map.items(), start=1):
+            data = _google_data(norm, raw_data)
+            contact = _find_contact_by_google_data(company_id, data)
+            if contact:
                 matched += 1
+                changes = _apply_google_to_contact(contact, data, dry_run=dry_run)
+                if changes:
+                    updated_ids.add(contact.id)
+                    _append_preview(preview, "will_update", {"existing_contact": _preview_contact(contact), "incoming_google_contact": data, "fields_to_update": changes}, preview_omitted, preview_limit)
+                candidates = []
+                phone_key = data.get("normalized_phone") or (norm if not str(norm).startswith("email:") else "")
+                if phone_key:
+                    for form in _all_forms(phone_key):
+                        candidates += Contact.query.filter_by(company_id=company_id, phone=form, is_active=True).all()
+                if data.get("email"):
+                    email = normalize_email(data["email"])
+                    candidates += Contact.query.filter(Contact.company_id == company_id, Contact.is_active == True, db.func.lower(Contact.email) == email).all()
+                for dup in {c.id: c for c in candidates}.values():
+                    if dup.id == contact.id:
+                        continue
+                    confidence = _merge_confidence(dup, data)
+                    merge_item = {"source_contact": _preview_contact(dup), "destination_contact": _preview_contact(contact),
+                                  "match_reason": confidence["reason"], "confidence": confidence["confidence"],
+                                  "fields_changing": changes, "incoming_google_contact": data}
+                    if confidence["confidence"] >= threshold:
+                        _append_preview(preview, "will_merge", merge_item, preview_omitted, preview_limit)
+                        if not dry_run:
+                            did_merge, audit = _merge_duplicate_contacts(db, contact, dup, data=data, user_id=user_id, sync_job_id=job.id, confidence=confidence)
+                            if did_merge:
+                                merged += 1
+                    else:
+                        skipped += 1
+                        _append_preview(preview, "possible_merge_requires_review", {**merge_item, "requires_review": True}, preview_omitted, preview_limit)
+            else:
+                created += 1
+                _append_preview(preview, "will_create", {"contact_name": data.get("name"), "incoming_google_contact": data}, preview_omitted, preview_limit)
+                if not dry_run:
+                    contact = Contact(company_id=company_id, is_subscribed=False)
+                    db.session.add(contact); db.session.flush()
+                    _apply_google_to_contact(contact, data, dry_run=False)
+            if contact and len(samples) < 10:
+                samples.append({"contact_id": contact.id, "name": data.get("name"), "phone": data.get("normalized_phone") or norm})
+            if not dry_run and index % int(os.environ.get("GOOGLE_CONTACTS_BATCH_SIZE", "500")) == 0:
+                db.session.flush()
 
-    tok.last_sync_at    = datetime.utcnow()
-    tok.contacts_synced = len(phone_map)
-    tok.sync_error      = None
-    db.session.commit()
+        if not dry_run:
+            for conv in TwilioConversation.query.filter_by(company_id=company_id).yield_per(500):
+                norm = normalize_phone(conv.from_number)
+                raw_data = phone_map.get(norm)
+                if raw_data:
+                    data = _google_data(norm, raw_data)
+                    contact = _find_contact_by_google_data(company_id, data)
+                    info = {"name": data.get("name"), "source": "google_contacts", "contact_id": contact.id if contact else None, "normalized_phone": norm}
+                    if _apply_contact_to_conversation(conv, info):
+                        matched += 1
 
-    logger.info(
-        "Google Contacts sync: user=%s company=%s total_contacts=%d matched=%d",
-        user_id, company_id, len(phone_map), matched
-    )
-    return {"synced": len(phone_map), "matched": matched, "error": None}
-
-
-def _upsert_contact_from_google(db, company_id: int, norm_phone: str,
-                                 name: str, conv) -> None:
-    """Create or update a Contact row for a Google-synced number."""
-    from models import Contact
-
-    parts      = name.split(" ", 1)
-    first_name = parts[0]
-    last_name  = parts[1] if len(parts) > 1 else ""
-
-    # Try to find existing contact by any normalized form
-    contact = None
-    for form in _all_forms(norm_phone):
-        contact = Contact.query.filter_by(
-            company_id=company_id, phone=form
-        ).first()
-        if contact:
-            break
-
-    if contact:
-        if not contact.first_name and not contact.last_name:
-            contact.first_name = first_name
-            contact.last_name  = last_name
-        contact.name       = getattr(contact, "name", None) or name
-        contact.normalized_phone = norm_phone
-        contact.source     = contact.source or "google_contacts"
-        contact.is_active  = True
-    else:
-        contact = Contact(
-            company_id = company_id,
-            phone      = norm_phone,
-            first_name = first_name,
-            last_name  = last_name,
-            name       = name,
-            normalized_phone = norm_phone,
-            source     = "google_contacts",
-            is_active  = True,
-            is_subscribed = False,
-        )
-        db.session.add(contact)
-        db.session.flush()
-
-    # Link conversation to contact if not already linked
-    if conv and contact.id:
-        conv.contact_id = contact.id
-    return contact
+        if preview_omitted:
+            preview["omitted_counts"] = preview_omitted
+        payload = {"sync_job_id": job.id, "synced": len(phone_map), "matched": matched, "updated": len(updated_ids),
+                   "merged": merged if not dry_run else len(preview["will_merge"]), "created": created, "skipped": skipped,
+                   "error": None, "dry_run": dry_run, "samples": samples, "preview": preview,
+                   "status": "completed", "incremental": bool(meta.get("incremental")),
+                   "review_required": bool(preview["possible_merge_requires_review"] or preview_omitted.get("possible_merge_requires_review"))}
+        if dry_run:
+            job_id = job.id
+            db.session.rollback()
+            job = db.session.get(GoogleContactsSyncJob, job_id)
+            _finish_sync_job(db, job, "completed", payload)
+            db.session.commit()
+        else:
+            tok.last_sync_at = datetime.utcnow(); tok.last_successful_sync_at = tok.last_sync_at
+            tok.contacts_synced = len(phone_map); tok.contacts_created = created; tok.contacts_updated = len(updated_ids)
+            tok.contacts_merged = merged; tok.contacts_skipped = skipped
+            tok.last_sync_status = "completed"; tok.sync_error = None
+            if meta.get("next_sync_token"):
+                tok.google_sync_token = meta["next_sync_token"]
+            _finish_sync_job(db, job, "completed", payload)
+            tok.last_sync_duration_ms = job.duration_ms
+            db.session.commit()
+        logger.info("Google Contacts sync job %s completed: %s", job.id, payload)
+        return payload
+    except Exception as exc:
+        db.session.rollback()
+        # Restore the job failure record after rolling back any partial contact work.
+        job = db.session.get(GoogleContactsSyncJob, job.id) or GoogleContactsSyncJob(id=job.id, company_id=company_id, user_id=user_id, dry_run=dry_run)
+        db.session.add(job)
+        err_msg = str(exc)
+        payload = {"sync_job_id": job.id, "synced": len(phone_map), "matched": matched, "updated": len(updated_ids), "merged": merged,
+                   "created": created, "skipped": skipped, "error": err_msg, "dry_run": dry_run, "status": "failed", "preview": preview}
+        _finish_sync_job(db, job, "failed", payload, err_msg)
+        db.session.commit()
+        logger.exception("Google Contacts sync job %s failed during processing", job.id)
+        return payload
