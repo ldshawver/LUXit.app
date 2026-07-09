@@ -2,6 +2,7 @@
 
 import importlib.util
 import json
+import time
 import logging
 import os
 import re
@@ -309,6 +310,7 @@ def create_app() -> Flask:
     @app.before_request
     def assign_request_id():
         g.request_id = request.headers.get("X-Request-ID") or str(uuid4())
+        g.request_started_at = time.time()
         # Replit's proxy delivers HTTPS externally but passes HTTP internally.
         # Force WSGI to treat requests as HTTPS so Secure cookies are accepted.
         if is_replit and request.environ.get("wsgi.url_scheme") != "https":
@@ -326,6 +328,21 @@ def create_app() -> Flask:
                 payload.setdefault("request_id", request_id)
                 response.set_data(json.dumps(payload))
 
+        try:
+            if not request.path.startswith("/static"):
+                from diagnostics_service import structured_log
+                structured_log(
+                    level="error" if response.status_code >= 500 else "warn" if response.status_code >= 400 else "info",
+                    service="app",
+                    message=f"{request.method} {request.path} {response.status_code}",
+                    statusCode=response.status_code,
+                    durationMs=int((time.time() - getattr(g, "request_started_at", time.time())) * 1000),
+                    userId=getattr(getattr(__import__("flask_login"), "current_user", None), "id", None),
+                    companyId=getattr(getattr(__import__("flask_login"), "current_user", None), "default_company_id", None),
+                )
+        except Exception:
+            pass
+
         if response.mimetype == "text/html":
             response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
             response.headers["Pragma"] = "no-cache"
@@ -342,6 +359,34 @@ def create_app() -> Flask:
             pass
 
         return response
+
+
+    @app.errorhandler(Exception)
+    def handle_unhandled_exception(error):
+        from werkzeug.exceptions import HTTPException
+        if isinstance(error, HTTPException):
+            return error
+        from diagnostics_service import is_diagnostics_admin, new_correlation_id, structured_log
+        from error_logger import log_application_error
+        from flask_login import current_user
+        correlation_id = new_correlation_id()
+        structured_log(
+            level="fatal", service="app", message="Unhandled API error", error=error,
+            correlationId=correlation_id, statusCode=500,
+            durationMs=int((time.time() - getattr(g, "request_started_at", time.time())) * 1000),
+            userId=getattr(current_user, "id", None),
+            companyId=getattr(current_user, "default_company_id", None),
+        )
+        try:
+            log_application_error(type(error).__name__, str(error), endpoint=request.path, method=request.method, user_id=getattr(current_user, "id", None), severity="critical", error_stack=correlation_id)
+        except Exception:
+            pass
+        payload = {"success": False, "error": "Internal server error", "correlationId": correlation_id}
+        if is_diagnostics_admin(current_user):
+            payload.update({"route": request.path, "service": "app", "timestamp": __import__("datetime").datetime.utcnow().isoformat()})
+        if request.path.startswith("/api/") or request.accept_mimetypes.accept_json:
+            return jsonify(payload), 500
+        return f"Internal server error. Error ID: {correlation_id}", 500
 
     # --------------------------------------------------------
     # Blueprints
@@ -827,11 +872,6 @@ def create_app() -> Flask:
             logging.error(f"Automation seed failed: {e}")
             db.session.rollback()
 
-        try:
-            from error_logger import setup_error_logging_handler
-            setup_error_logging_handler()
-        except Exception as e:
-            logging.error(f"Error logging setup failed: {e}")
 
         if not app.config.get("TESTING"):
             try:

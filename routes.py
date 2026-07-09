@@ -12519,3 +12519,104 @@ def seed_help_content():
 
 print("✓ Help system & walkthrough routes loaded")
 print("✓ All route stubs loaded")
+
+# ============================================================
+# Developer Diagnostics Center (platform-admin only)
+# ============================================================
+
+def _require_diagnostics_admin_json():
+    from diagnostics_service import is_diagnostics_admin, structured_log
+    if not is_diagnostics_admin(current_user):
+        structured_log(level="warn", service="security", message="Blocked diagnostics access", userId=getattr(current_user, "id", None))
+        return False
+    return True
+
+
+def _audit_diagnostics(action, details=None):
+    try:
+        from diagnostics_service import structured_log
+        structured_log(level="info", service="security", message=f"diagnostics.{action}", userId=getattr(current_user, "id", None), metadata=details or {})
+        if MarketingAuditLog is not None:
+            db.session.add(MarketingAuditLog(company_id=getattr(current_user, "default_company_id", None), created_by_user_id=getattr(current_user, "id", None), entity_type="developer_diagnostics", action=action, details=details or {}))
+            db.session.commit()
+    except Exception:
+        db.session.rollback()
+
+
+@main_bp.route('/admin/developer-diagnostics', methods=['GET'])
+@login_required
+def developer_diagnostics_center():
+    """Admin-only Developer Diagnostics Center."""
+    if not _require_diagnostics_admin_json():
+        flash('Developer Diagnostics is restricted to system administrators.', 'error')
+        return redirect(url_for('main.dashboard'))
+    from diagnostics_service import system_health, read_logs, github_status
+    _audit_diagnostics('viewed')
+    diagnostics = {
+        'health': system_health(),
+        'recent_errors': read_logs('error', limit=50),
+        'logs': read_logs(request.args.get('service', 'error'), level=request.args.get('level') or None, search=request.args.get('q') or None, correlation_id=request.args.get('correlationId') or None, limit=200),
+        'github': github_status(),
+        'filters': request.args,
+    }
+    return render_template('developer_diagnostics.html', diagnostics=diagnostics)
+
+
+@main_bp.route('/api/admin/diagnostics/logs', methods=['GET'])
+@login_required
+def api_admin_diagnostics_logs():
+    if not _require_diagnostics_admin_json():
+        return jsonify({'success': False, 'error': 'Forbidden'}), 403
+    from diagnostics_service import read_logs
+    _audit_diagnostics('logs_searched', dict(request.args))
+    return jsonify({'success': True, 'logs': read_logs(request.args.get('service', 'error'), request.args.get('level') or None, request.args.get('q') or None, request.args.get('limit', 200, type=int), request.args.get('correlationId') or None)})
+
+
+@main_bp.route('/api/admin/diagnostics/health', methods=['GET'])
+@login_required
+def api_admin_diagnostics_health():
+    if not _require_diagnostics_admin_json():
+        return jsonify({'success': False, 'error': 'Forbidden'}), 403
+    from diagnostics_service import system_health, github_status, env_presence
+    return jsonify({'success': True, 'health': system_health(), 'github': github_status(), 'environment': env_presence()})
+
+
+@main_bp.route('/api/admin/diagnostics/export', methods=['GET'])
+@login_required
+def api_admin_diagnostics_export():
+    if not _require_diagnostics_admin_json():
+        return jsonify({'success': False, 'error': 'Forbidden'}), 403
+    from diagnostics_service import export_bundle
+    _audit_diagnostics('bundle_exported')
+    data = export_bundle()
+    return send_file(io.BytesIO(data), mimetype='application/zip', as_attachment=True, download_name=f'luxit-diagnostics-{datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")}.zip')
+
+
+@main_bp.route('/api/admin/appdr/retry-pr', methods=['POST'])
+@login_required
+def api_admin_appdr_retry_pr():
+    if not _require_diagnostics_admin_json():
+        return jsonify({'success': False, 'error': 'Forbidden'}), 403
+    from diagnostics_service import new_correlation_id, structured_log
+    correlation_id = new_correlation_id()
+    _audit_diagnostics('appdr_retry_triggered', {'correlationId': correlation_id})
+    structured_log(level='info', service='appdr', message='Retry PR Creation requested', correlationId=correlation_id, userId=getattr(current_user, 'id', None))
+    return jsonify({'success': True, 'message': 'Retry PR Creation queued or recorded.', 'correlationId': correlation_id})
+
+@main_bp.route('/admin/diagnostics', methods=['GET'])
+@login_required
+def admin_diagnostics_legacy():
+    """Legacy admin diagnostics URL kept for compatibility."""
+    if not _require_diagnostics_admin_json():
+        return 'Forbidden', 403
+    from diagnostics_service import system_health, read_logs
+    _audit_diagnostics('legacy_viewed')
+    diagnostics = {
+        'app_version': os.environ.get('APP_VERSION', 'unknown'),
+        'environment': os.environ.get('NODE_ENV') or os.environ.get('FLASK_ENV') or 'development',
+        'blueprints': sorted(current_app.blueprints.keys()),
+        'database': {'ok': True},
+        'system_health': system_health(),
+        'recent_errors': read_logs('error', limit=20),
+    }
+    return render_template('admin_diagnostics.html', diagnostics=diagnostics)
