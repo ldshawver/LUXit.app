@@ -113,6 +113,38 @@ def exchange_code(user_id: int, code: str) -> dict:
     return data
 
 
+def _token_error_requires_reconnect(message: str | None) -> bool:
+    """True when Google says the stored OAuth grant can no longer refresh.
+
+    These errors should not be auto-cleared by retrying sync because the user
+    must grant consent again to issue a new refresh token.
+    """
+    msg = (message or "").lower()
+    return any(marker in msg for marker in (
+        "invalid_grant",
+        "token has been expired or revoked",
+        "token expired",
+        "refresh token",
+        "invalid or revoked",
+        "invalid_token",
+    ))
+
+
+def _mark_reconnect_required(tok, message: str):
+    from extensions import db
+    tok.sync_error = message
+    db.session.commit()
+
+
+def token_needs_reconnect(tok) -> bool:
+    """Return true when the stored token state requires a fresh OAuth consent."""
+    if not tok:
+        return False
+    if is_token_expired(tok):
+        return True
+    return _token_error_requires_reconnect(getattr(tok, "sync_error", None))
+
+
 def _store_token(user_id: int, data: dict):
     from extensions import db
     from models import GoogleOAuthToken
@@ -143,7 +175,11 @@ def _refresh_if_needed(tok) -> str:
     }, timeout=15)
     data = resp.json()
     if "error" in data:
-        raise RuntimeError(f"Google token refresh failed: {data.get('error_description', data['error'])}")
+        detail = data.get("error_description") or data.get("error") or "refresh failed"
+        message = f"Google token refresh failed: {detail}"
+        if _token_error_requires_reconnect(f"{data.get('error')} {detail}"):
+            _mark_reconnect_required(tok, message)
+        raise RuntimeError(message)
 
     tok.access_token = data["access_token"]
     expires_in = int(data.get("expires_in", 3600))
@@ -213,7 +249,7 @@ def _fetch_all_contacts(access_token: str) -> dict:
 
         resp = requests.get(PEOPLE_API, headers=headers, params=params, timeout=20)
         if resp.status_code == 401:
-            raise RuntimeError("Google token invalid or revoked.")
+            raise RuntimeError("Google token invalid or revoked. Reconnect Google Contacts to grant consent again.")
         resp.raise_for_status()
         body = resp.json()
 
@@ -414,13 +450,14 @@ def sync_contacts(user_id: int, company_id: int) -> dict:
         phone_map    = _fetch_all_contacts(access_token)
     except Exception as exc:
         err_msg = str(exc)
+        reconnect_required = _token_error_requires_reconnect(err_msg)
         logger.error("Google Contacts fetch error for user %s: %s", user_id, exc)
         try:
             tok.sync_error = err_msg
             db.session.commit()
         except Exception:
             db.session.rollback()
-        return {"synced": 0, "matched": 0, "error": err_msg}
+        return {"synced": 0, "matched": 0, "error": err_msg, "reconnect_required": reconnect_required}
 
     # Populate the local Contact cache for every Google phone number, not only
     # numbers that already have an SMS conversation. This makes PWA contact

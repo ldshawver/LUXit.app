@@ -3020,7 +3020,7 @@ def google_contacts_sync():
 def google_contacts_status():
     """Return connection status as JSON — includes sync error and expiry state."""
     from flask_login import current_user
-    from services.google_contacts import get_token, is_token_expired
+    from services.google_contacts import get_token, token_needs_reconnect
     tok = get_token(current_user.id)
     if not tok:
         return jsonify({
@@ -3032,10 +3032,11 @@ def google_contacts_status():
         })
     return jsonify({
         "connected":       True,
-        "oauth_expired":   is_token_expired(tok),
+        "oauth_expired":   token_needs_reconnect(tok),
         "last_sync_at":    tok.last_sync_at.strftime("%b %-d %H:%M") if tok.last_sync_at else None,
         "contacts_synced": tok.contacts_synced or 0,
         "sync_error":      getattr(tok, "sync_error", None),
+        "reconnect_required": token_needs_reconnect(tok),
     })
 
 
