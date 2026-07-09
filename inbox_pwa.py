@@ -26,10 +26,10 @@ import queue as _queue_module
 import re
 import threading
 from datetime import datetime, timezone
-from urllib.parse import urlparse
+from urllib.parse import quote, urlparse
 
 from flask import (Blueprint, Response, abort, current_app, g, jsonify,
-                   render_template, request, session)
+                   render_template, request, session, stream_with_context)
 
 from extensions import db
 
@@ -522,6 +522,29 @@ def _is_archived_conversation(conv):
     return bool(tags.intersection({"archived", "resolved", "closed"}))
 
 
+def _is_twilio_protected_url(url: str) -> bool:
+    """Return True for Twilio-hosted media/recording URLs that require provider auth."""
+    if not url:
+        return False
+    parsed = urlparse(url)
+    host = (parsed.netloc or "").lower()
+    return host == "api.twilio.com" or host.endswith(".twilio.com")
+
+
+def _proxied_message_media_url(message_id: int, index: int) -> str:
+    return f"/api/inbox/messages/{message_id}/media/{index}"
+
+
+def _safe_message_media_urls(m):
+    safe = []
+    for idx, url in enumerate(m.media_urls or []):
+        if _is_twilio_protected_url(url):
+            safe.append(_proxied_message_media_url(m.id, idx))
+        else:
+            safe.append(url)
+    return safe
+
+
 def _msg_to_dict(m):
     return {
         "id":           m.id,
@@ -529,7 +552,7 @@ def _msg_to_dict(m):
         "body":         m.body or "",
         "status":       m.status or "received",
         "is_auto_reply": m.is_auto_reply,
-        "media_urls":   m.media_urls or [],
+        "media_urls":   _safe_message_media_urls(m),
         "created_at":   m.created_at.isoformat() if m.created_at else None,
         "twilio_sid":   m.twilio_sid,
     }
@@ -1636,6 +1659,55 @@ def list_messages():
         .limit(limit)
         .all())
     return jsonify({"success": True, "messages": [_msg_to_dict(m) for m in rows], "total": len(rows)})
+
+
+@inbox_pwa_bp.route("/api/inbox/messages/<int:message_id>/media/<int:media_index>")
+def api_inbox_message_media(message_id, media_index):
+    """Authenticated SMS/MMS media proxy so Twilio credentials stay server-side."""
+    user = _require_auth()
+    company = _require_company(user)
+    denied = _require_pwa_communications_access(user, company)
+    if denied:
+        return denied
+    from models import TwilioConversation, TwilioMessage
+    from services.comms_permissions import filter_conversations_for_user
+
+    msg = (TwilioMessage.query
+        .join(TwilioConversation, TwilioConversation.id == TwilioMessage.conversation_id)
+        .filter(TwilioMessage.id == message_id, TwilioMessage.company_id == company.id)
+        .first_or_404())
+    filter_conversations_for_user(
+        TwilioConversation.query.filter_by(id=msg.conversation_id, company_id=company.id), user, company.id
+    ).first_or_404()
+
+    media_urls = msg.media_urls or []
+    if media_index < 0 or media_index >= len(media_urls):
+        return jsonify({"success": False, "error": "Media attachment not found."}), 404
+    media_url = media_urls[media_index]
+    if not _is_twilio_protected_url(media_url):
+        return jsonify({"success": False, "error": "Only protected provider media is available through this proxy."}), 400
+
+    sid, token = _twilio_recording_auth(company.id)
+    if not sid or not token:
+        return jsonify({"success": False, "error": "Media playback is not configured. Ask an admin to verify Twilio credentials."}), 503
+    try:
+        import requests
+        upstream = requests.get(media_url, auth=(sid, token), timeout=20, stream=True)
+        upstream.raise_for_status()
+    except Exception:
+        logger.exception("Twilio message media proxy failed", extra={"company_id": company.id, "message_id": message_id})
+        return jsonify({"success": False, "error": "Media attachment could not be loaded. Please try again or contact support."}), 502
+
+    filename = quote((urlparse(media_url).path.rstrip('/').split('/')[-1] or f"message-{message_id}-media-{media_index}"))
+    headers = {"Content-Disposition": f"inline; filename*=UTF-8''{filename}"}
+    content_length = upstream.headers.get("Content-Length")
+    if content_length:
+        headers["Content-Length"] = content_length
+    return Response(
+        stream_with_context(upstream.iter_content(chunk_size=64 * 1024)),
+        mimetype=upstream.headers.get("Content-Type", "application/octet-stream"),
+        headers=headers,
+    )
 
 
 # ── API: single conversation + messages ───────────────────────────────────────
