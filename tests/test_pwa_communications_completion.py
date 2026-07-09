@@ -435,6 +435,44 @@ def test_push_payload_non_silent_vibration_badge_and_quiet_hours(pwa_app, monkey
         assert payloads[-1]["data"]["debug_reason"] == "quiet_hours"
 
 
+
+def test_push_subscribe_creates_device_and_debug_counts_device_subscription(pwa_app):
+    app, client, ids = pwa_app
+    login(client, ids["staff"])
+    resp = client.post("/api/pwa/push/subscribe", json={
+        "endpoint": "https://push.example/sub/device-debug",
+        "keys": {"p256dh": "p", "auth": "a"},
+        "device_key": "repair-device",
+        "device_label": "Repair Phone",
+    })
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data["success"] is True
+    assert data["active_subscriptions"] == 1
+    assert data["device_active_subscriptions"] == 1
+
+    debug = client.get("/api/pwa/push/debug", headers={"X-PWA-Device-Key": "repair-device"})
+    assert debug.status_code == 200
+    payload = debug.get_json()
+    assert payload["active_subscriptions"] == 1
+    assert payload["device_active_subscriptions"] == 1
+    assert payload["device_key"] == "repair-device"
+    assert payload["vapid_public_key_present"] in {True, False}
+    assert payload["subscriptions"][0]["device_key"] == "repair-device"
+
+    with app.app_context():
+        from models import PWADevice
+        device = PWADevice.query.filter_by(company_id=ids["company"], user_id=ids["staff"], device_key="repair-device").one()
+        assert device.push_enabled is True
+
+
+def test_push_subscribe_rejects_incomplete_browser_subscription(pwa_app):
+    app, client, ids = pwa_app
+    login(client, ids["staff"])
+    resp = client.post("/api/pwa/push/subscribe", json={"endpoint": "https://push.example/sub/missing-keys"})
+    assert resp.status_code == 400
+    assert resp.get_json()["code"] == "MISSING_SUBSCRIPTION_KEYS"
+
 def test_push_debug_uses_logged_in_pwa_user_session(pwa_app):
     app, client, ids = pwa_app
     login(client, ids["staff"])
@@ -482,7 +520,7 @@ def test_pwa_sound_forwarding_autoreply_static_requirements():
     html = open("templates/inbox_pwa/index.html", encoding="utf-8").read()
     nav = open("templates/inbox_pwa/_bottom_nav.html", encoding="utf-8").read()
     migration = open("migrations/20260705_pwa_sound_forwarding_autoreply.sql", encoding="utf-8").read()
-    assert "20260705-push-sound-forwarding-bh-autoreply" in sw
+    assert "20260709-push-subscription-repair-diagnostics" in sw
     assert "silent:  false" in sw
     assert "renotify: data.renotify !== false" in sw
     assert "[200, 100, 200]" in sw
