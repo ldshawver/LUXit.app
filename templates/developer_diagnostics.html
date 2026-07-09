@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}Developer Diagnostics{% endblock %}
+{% block content %}
+<div class="container-fluid py-4">
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <div><h1>Developer Diagnostics</h1><p class="text-muted">Admin-only safe diagnostics center. Secrets and payroll-sensitive data are redacted automatically.</p></div>
+    <a class="btn btn-primary" href="{{ url_for('main.api_admin_diagnostics_export') }}">Export ZIP</a>
+  </div>
+  <h2>System Health</h2>
+  <div class="row">{% for key, value in diagnostics.health.items() %}<div class="col-md-3 mb-2"><div class="card"><div class="card-body"><strong>{{ key }}</strong><br><code>{{ value }}</code></div></div></div>{% endfor %}</div>
+  <h2 class="mt-4">Recent Errors</h2>
+  <table class="table table-sm table-striped"><thead><tr><th>Timestamp</th><th>Level</th><th>Service</th><th>Message</th><th>Route</th><th>Tenant</th><th>User</th><th>Correlation ID</th><th>Status</th></tr></thead><tbody>
+    {% for e in diagnostics.recent_errors %}<tr><td>{{ e.timestamp }}</td><td>{{ e.level }}</td><td>{{ e.service }}</td><td>{{ e.message }}</td><td>{{ e.path }}</td><td>{{ e.tenantId }}</td><td>{{ e.userId }}</td><td><code>{{ e.correlationId }}</code></td><td>{{ e.statusCode }}</td></tr>{% else %}<tr><td colspan="9">No recent errors.</td></tr>{% endfor %}
+  </tbody></table>
+  <h2 class="mt-4">Log Viewer</h2>
+  <form class="row g-2 mb-3" method="get"><div class="col"><input class="form-control" name="service" placeholder="service" value="{{ diagnostics.filters.get('service','error') }}"></div><div class="col"><input class="form-control" name="level" placeholder="level" value="{{ diagnostics.filters.get('level','') }}"></div><div class="col"><input class="form-control" name="correlationId" placeholder="correlationId" value="{{ diagnostics.filters.get('correlationId','') }}"></div><div class="col"><input class="form-control" name="q" placeholder="search text" value="{{ diagnostics.filters.get('q','') }}"></div><div class="col-auto"><button class="btn btn-secondary">Search</button></div></form>
+  <pre class="bg-dark text-light p-3" style="max-height:420px;overflow:auto">{% for row in diagnostics.logs %}{{ row|tojson }}
+{% endfor %}</pre>
+  <h2 class="mt-4">App Dr / GitHub Diagnostics</h2>
+  <ul>{% for key, value in diagnostics.github.items() %}<li><strong>{{ key }}:</strong> {{ value }}</li>{% endfor %}</ul>
+  <button class="btn btn-outline-warning" onclick="fetch('{{ url_for('main.api_admin_appdr_retry_pr') }}',{method:'POST'}).then(r=>r.json()).then(j=>alert((j.message||'Retry recorded')+' Error ID: '+(j.correlationId||'')))">Retry PR Creation</button>
+</div>
+{% endblock %}
