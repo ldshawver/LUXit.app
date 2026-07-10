@@ -1258,3 +1258,74 @@ def test_twilio_message_media_url_is_proxied_in_conversation_payload(client, app
     payload = resp.get_json()
     assert payload["messages"][0]["media_urls"] == [f"/api/inbox/messages/{payload['messages'][0]['id']}/media/0"]
     assert "api.twilio.com" not in payload["messages"][0]["media_urls"][0]
+
+
+def test_auto_replies_editor_surfaces_canonical_after_hours_message_used_by_inbound_sms(app, client, world, monkeypatch):
+    desired = "Thanks for reaching out. Our business hours are daily from 2 PM to 2 AM. We’ll respond as soon as we’re back online."
+    updated = "Thanks for reaching out. Our business hours are daily from 2 PM to 2 AM. We’ll respond as soon as we’re back online."
+    sent = []
+    monkeypatch.setattr("twilio_sms.sendConversationSms", lambda conv_id, message, **kw: sent.append(message) or {"success": True})
+
+    with app.app_context():
+        save_settings(world["co_a"], business_hours={str(i): {"is_open": False} for i in range(7)})
+        pn = add_phone_number(world["co_a"], "+15550001000", after_hours_text=desired)
+        db.session.commit()
+        number_id = pn.id
+
+    login(client, world["alice"])
+    page = client.get(f"/twilio/comms?tab=auto&number_id={number_id}")
+    assert page.status_code == 200
+    assert desired.encode() in page.data
+    assert b"Current effective message" in page.data
+    assert b"migrated number setting" in page.data or b"number-specific AutoReplyRule" in page.data
+    assert b"Number-specific" in page.data
+
+    with app.app_context():
+        rule = AutoReplyRule.query.filter_by(company_id=world["co_a"], phone_number_id=number_id, trigger_type="after_hours").one()
+        assert rule.response == desired
+        rule_id = rule.id
+
+    resp = client.post(
+        f"/twilio/rules/{rule_id}/edit",
+        data={
+            "name": "After Hours",
+            "phone_number_id": str(number_id),
+            "return_number_id": str(number_id),
+            "trigger_type": "after_hours",
+            "keywords": "",
+            "priority": "50",
+            "response": updated,
+            "action": "reply",
+            "is_active": "1",
+        },
+        follow_redirects=True,
+    )
+    assert resp.status_code == 200
+    assert updated.encode() in resp.data
+
+    sms = client.post("/twilio/sms/inbound", data={"From": "+15551117777", "To": "+15550001000", "Body": "hello", "MessageSid": "SMAUTOUI"})
+    assert sms.status_code == 200
+    assert sent == [updated]
+
+
+def test_company_wide_after_hours_rule_is_labeled_and_used_for_selected_number(app, client, world, monkeypatch):
+    sent = []
+    monkeypatch.setattr("twilio_sms.sendConversationSms", lambda conv_id, message, **kw: sent.append(message) or {"success": True})
+    with app.app_context():
+        save_settings(world["co_a"], business_hours={str(i): {"is_open": False} for i in range(7)})
+        pn = add_phone_number(world["co_a"], "+15550001000")
+        rule = AutoReplyRule(company_id=world["co_a"], name="After Hours Company", trigger_type="after_hours", action="reply", response="Company-wide closed", is_active=True, priority=50)
+        db.session.add(rule)
+        db.session.commit()
+        number_id = pn.id
+
+    login(client, world["alice"])
+    page = client.get(f"/twilio/comms?tab=auto&number_id={number_id}")
+    assert page.status_code == 200
+    assert b"Company-wide" in page.data
+    assert b"company-wide AutoReplyRule" in page.data
+    assert b"Company-wide closed" in page.data
+
+    sms = client.post("/twilio/sms/inbound", data={"From": "+15551118888", "To": "+15550001000", "Body": "hello", "MessageSid": "SMCOMPANYWIDE"})
+    assert sms.status_code == 200
+    assert sent == ["Company-wide closed"]

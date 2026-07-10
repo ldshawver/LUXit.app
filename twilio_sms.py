@@ -787,27 +787,93 @@ def _update_contact_sms_consent(company_id, phone_number, opted_in, source):
     return contact
 
 
-def _after_hours_rule_response(company_id: int, phone_number_id: int | None = None) -> str | None:
-    from models import AutoReplyRule, TwilioPhoneNumber
+
+def _clean_after_hours_text(value) -> str | None:
+    text = (value or "").strip()
+    return text or None
+
+
+def _after_hours_legacy_candidates(company_id: int, phone_number_id: int | None = None):
+    from models import PhoneSettings, TwilioAccount, TwilioPhoneNumber
     if phone_number_id is not None:
         pn = db.session.get(TwilioPhoneNumber, phone_number_id)
-        if pn and pn.company_id == company_id and getattr(pn, "after_hours_text", None):
-            return (pn.after_hours_text or "").strip()
-    rule_query = AutoReplyRule.query.filter_by(
+        if pn and pn.company_id == company_id:
+            text = _clean_after_hours_text(getattr(pn, "after_hours_text", None))
+            if text:
+                yield "migrated number setting", text, pn
+    ps = PhoneSettings.query.filter_by(company_id=company_id).first()
+    text = _clean_after_hours_text(getattr(ps, "after_hours_sms_body", None)) if ps else None
+    if text:
+        yield "migrated phone settings", text, ps
+    ta = TwilioAccount.query.filter_by(company_id=company_id).first()
+    text = _clean_after_hours_text(getattr(ta, "after_hours_text", None)) if ta else None
+    if text:
+        yield "migrated account setting", text, ta
+    yield "fallback", REQUIRED_AFTER_HOURS_SMS_COPY, None
+
+
+def _after_hours_auto_reply_query(company_id: int, phone_number_id: int | None = None):
+    from models import AutoReplyRule
+    q = AutoReplyRule.query.filter_by(
         company_id=company_id,
         trigger_type="after_hours",
         action="reply",
         is_active=True,
     )
     if phone_number_id is not None:
-        rule_query = rule_query.filter(db.or_(
+        q = q.filter(db.or_(
             AutoReplyRule.phone_number_id == phone_number_id,
             AutoReplyRule.phone_number_id.is_(None),
         ))
     else:
-        rule_query = rule_query.filter(AutoReplyRule.phone_number_id.is_(None))
-    rule = rule_query.order_by(AutoReplyRule.phone_number_id.desc().nullslast(), AutoReplyRule.priority.desc()).first()
-    return (rule.response or "").strip() if rule and rule.response else None
+        q = q.filter(AutoReplyRule.phone_number_id.is_(None))
+    return q.order_by(AutoReplyRule.phone_number_id.desc().nullslast(), AutoReplyRule.priority.desc(), AutoReplyRule.id.asc())
+
+
+def _current_after_hours_effective_message(company_id: int, phone_number_id: int | None = None) -> dict:
+    rule = _after_hours_auto_reply_query(company_id, phone_number_id).first()
+    if rule and _clean_after_hours_text(rule.response):
+        return {
+            "message": rule.response.strip(),
+            "source": "number-specific AutoReplyRule" if rule.phone_number_id else "company-wide AutoReplyRule",
+            "row": f"auto_reply_rule.id={rule.id}",
+            "field": "response",
+            "rule": rule,
+        }
+    source, text, obj = next(_after_hours_legacy_candidates(company_id, phone_number_id))
+    table = getattr(obj, "__tablename__", None) if obj is not None else None
+    row = f"{table}.id={getattr(obj, 'id', None)}" if table and getattr(obj, "id", None) is not None else "constant.REQUIRED_AFTER_HOURS_SMS_COPY"
+    field = "after_hours_text" if table in {"twilio_phone_number", "twilio_account"} else ("after_hours_sms_body" if table == "phone_settings" else "REQUIRED_AFTER_HOURS_SMS_COPY")
+    return {"message": text, "source": source if source == "fallback" else source, "row": row, "field": field, "rule": None}
+
+
+def _ensure_visible_after_hours_rule(company_id: int, phone_number_id: int | None = None):
+    """Surface legacy after-hours copy as an editable AutoReplyRule for the UI/webhook."""
+    from models import AutoReplyRule
+    existing = _after_hours_auto_reply_query(company_id, phone_number_id).first()
+    if existing:
+        return existing
+    source, text, obj = next(_after_hours_legacy_candidates(company_id, phone_number_id))
+    if not text:
+        return None
+    rule = AutoReplyRule(
+        company_id=company_id,
+        phone_number_id=phone_number_id,
+        name="After Hours" if phone_number_id else "After Hours (Company-wide)",
+        trigger_type="after_hours",
+        keywords=[],
+        response=text,
+        action="reply",
+        priority=50,
+        is_active=True,
+    )
+    db.session.add(rule)
+    db.session.flush()
+    logger.info("Migrated visible after-hours AutoReplyRule id=%s from %s", rule.id, source)
+    return rule
+
+def _after_hours_rule_response(company_id: int, phone_number_id: int | None = None) -> str | None:
+    return _current_after_hours_effective_message(company_id, phone_number_id).get("message")
 
 
 def _send_number_configured_auto_reply(conv, ta, *, in_business=None) -> bool:
@@ -2254,9 +2320,13 @@ def comms_hub():
                 users_with_access.append({"user": u, "access": acc, "permission": perm})
     except Exception:
         pass
+    after_hours_effective = None
     rules = []
     try:
         selected_rule_number_id = selected_number.id if selected_number else None
+        _ensure_visible_after_hours_rule(company.id, selected_rule_number_id)
+        db.session.commit()
+        after_hours_effective = _current_after_hours_effective_message(company.id, selected_rule_number_id)
         rules_query = AutoReplyRule.query.filter_by(company_id=company.id)
         if selected_rule_number_id is not None:
             rules_query = rules_query.filter(db.or_(
@@ -2314,6 +2384,7 @@ def comms_hub():
         selected_number=selected_number,
         users_with_access=users_with_access,
         rules=rules,
+        after_hours_effective=after_hours_effective,
         voicemails=voicemails,
         activity=activity,
         devices=devices,
