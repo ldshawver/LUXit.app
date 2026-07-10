@@ -15,9 +15,9 @@ if user_company is None:
         db.Column('created_at', db.DateTime, default=datetime.utcnow)
     )
 
-# ============================================================
+# ======
 # UserCompanyAccess (authoritative access + role model)
-# ============================================================
+# ======
 
 class UserCompanyAccess(db.Model):
     __tablename__ = "user_company_access"
@@ -158,9 +158,9 @@ class UserCompanyAccess(db.Model):
         return bool(self.can_access_full_app)
 
 
-# ============================================================
+# ======
 # User model  ✅ EVERYTHING USER-RELATED LIVES HERE
-# ============================================================
+# ======
 
 class User(UserMixin, db.Model):
     __table_args__ = {"extend_existing": True}
@@ -505,9 +505,9 @@ class User(UserMixin, db.Model):
         return access
 
 
-# ============================================================
+# ======
 # OAuth models
-# ============================================================
+# ======
 
 class ReplitOAuth(db.Model):
     __tablename__ = "replit_oauth"
@@ -2466,7 +2466,7 @@ class FeatureToggle(db.Model):
         }
 
 
-# ============= DEFAULT FEATURE TOGGLES =============
+# ====== DEFAULT FEATURE TOGGLES ======
 DEFAULT_FEATURE_TOGGLES = [
     # AI Agent Toggles (ALL OFF by default)
     {'feature_key': 'agent_brand_strategy', 'feature_name': 'Brand Strategy Agent', 'feature_category': 'ai_agents', 'agent_type': 'brand_strategy', 'is_enabled': False, 'require_approval': True},
@@ -3554,9 +3554,9 @@ class CustomerOnboardingTask(db.Model):
     project = db.relationship("CustomerOnboardingProject", backref="tasks")
 
 
-# ============================================================
+# ======
 # Integration Layer Models
-# ============================================================
+# ======
 
 class IntegrationConnection(db.Model):
     """Platform-level or company-level integration connection record."""
@@ -3688,7 +3688,8 @@ class GoogleOAuthToken(db.Model):
     last_sync_duration_ms = db.Column(db.Integer, nullable=True)
     last_sync_status = db.Column(db.String(30), nullable=True)
     google_account_email = db.Column(db.String(255), nullable=True)
-    google_sync_token = db.Column(db.Text, nullable=True)
+    google_sync_token = db.Column(db.Text, nullable=True)  # Durable People API syncToken only; never a pageToken.
+    google_page_token = db.Column(db.Text, nullable=True)  # Legacy/transient cursor; cleared on sync and never persisted.
     sync_error     = db.Column(db.Text, nullable=True)
     created_at     = db.Column(db.DateTime, default=datetime.utcnow)
 
@@ -3711,6 +3712,10 @@ class GoogleContactsSyncJob(db.Model):
     completed_at = db.Column(db.DateTime, nullable=True)
     duration_ms = db.Column(db.Integer, nullable=True)
     contacts_retrieved = db.Column(db.Integer, default=0, nullable=False)
+    current_page_count = db.Column(db.Integer, default=0, nullable=False)
+    contacts_processed = db.Column(db.Integer, default=0, nullable=False)
+    failure_stage = db.Column(db.String(80), nullable=True)
+    sanitized_provider_error = db.Column(JSON, default=dict)
     contacts_created = db.Column(db.Integer, default=0, nullable=False)
     contacts_updated = db.Column(db.Integer, default=0, nullable=False)
     contacts_merged = db.Column(db.Integer, default=0, nullable=False)
@@ -3746,9 +3751,9 @@ class ContactMergeAudit(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
 
 
-# ============================================================
+# ======
 # API Hub — Provider Credentials & Audit Log
-# ============================================================
+# ======
 
 class ProviderCredential(db.Model):
     """
@@ -3834,9 +3839,9 @@ class ApiHubAuditLog(db.Model):
     )
 
 
-# ===========================================================================
+# ======
 # Phase A — Multi-Number VoIP Architecture
-# ===========================================================================
+# ======
 
 class TwilioPhoneNumber(db.Model):
     """One row per Twilio phone number. Single source of truth for routing.

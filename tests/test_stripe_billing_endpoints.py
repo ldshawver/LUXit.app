@@ -90,9 +90,9 @@ def _make_event(event_type, obj, event_id=None):
     }
 
 
-# =============================================================================
+# ======
 # Checkout session endpoint
-# =============================================================================
+# ======
 
 def test_create_checkout_requires_auth(client):
     resp = client.post("/api/stripe/create-checkout-session",
@@ -321,9 +321,9 @@ def test_create_checkout_happy_path(client, company_user):
     assert mk.call_args.kwargs["company_id"] == company.id
 
 
-# =============================================================================
+# ======
 # Customer Portal endpoint
-# =============================================================================
+# ======
 
 def test_create_portal_requires_auth(client):
     resp = client.post("/api/stripe/create-portal-session", json={})
@@ -360,9 +360,9 @@ def test_create_portal_happy_path(client, company_user):
     assert resp.get_json()["url"] == fake.url
 
 
-# =============================================================================
+# ======
 # Webhook lifecycle: tier mapping + period sync + grace + suspension
-# =============================================================================
+# ======
 
 def test_checkout_completed_applies_starter_tier(client, company_user):
     company, _ = company_user
@@ -467,9 +467,9 @@ def test_subscription_deleted_suspends_company(client, company_user):
     assert c.stripe_subscription_status == "canceled"
 
 
-# =============================================================================
+# ======
 # Seat enforcement
-# =============================================================================
+# ======
 
 def test_can_add_team_member_unlimited(company_user):
     company, _ = company_user
@@ -496,9 +496,9 @@ def test_can_add_team_member_limit_reached(company_user):
     assert c2.team_seats_available == 0
 
 
-# =============================================================================
+# ======
 # /ready endpoint
-# =============================================================================
+# ======
 
 def test_ready_endpoint_ok(client, monkeypatch):
     monkeypatch.setenv("OPENAI_API_KEY", "sk-test-openai")
@@ -543,9 +543,9 @@ def test_ready_endpoint_missing_secret(client, monkeypatch):
     assert any("STRIPE_WEBHOOK_SECRET" in m for m in body["missing"])
 
 
-# =============================================================================
+# ======
 # Contact-usage / metered billing
-# =============================================================================
+# ======
 
 def test_compute_contacts_overage_under_limit():
     from services.stripe_billing import compute_contacts_overage

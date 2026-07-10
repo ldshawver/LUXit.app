@@ -16,7 +16,7 @@ RED='\033[0;31m'
 NC='\033[0m'
 
 echo -e "${GREEN}🚀 LUX Marketing - Phase 2-6 Deployment${NC}"
-echo "=================================================="
+echo "======"
 echo ""
 echo -e "${YELLOW}Target:${NC} $DOMAIN ($VPS_HOST)"
 echo -e "${YELLOW}Path:${NC} $VPS_PATH"
@@ -135,9 +135,9 @@ echo -e "${YELLOW}📋 Recent application logs:${NC}"
 ssh $VPS_USER@$VPS_HOST "journalctl -u lux-marketing -n 15 --no-pager | grep -E '(INFO|ERROR|WARNING|trigger library|AI agents)'" || true
 
 echo ""
-echo -e "${GREEN}======================================"
+echo -e "${GREEN}======"
 echo "✅ DEPLOYMENT COMPLETE"
-echo "======================================${NC}"
+echo "======${NC}"
 echo ""
 echo -e "${YELLOW}Next Steps:${NC}"
 echo "1. Visit: https://$DOMAIN/health"

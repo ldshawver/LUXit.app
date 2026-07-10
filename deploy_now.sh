@@ -8,7 +8,7 @@ VPS_USER="root"
 VPS_PATH="/var/www/lux-marketing"
 
 echo "🚀 Deploying current LUX Marketing app to VPS..."
-echo "=================================================="
+echo "======"
 echo ""
 
 # Check if tar file exists
@@ -110,7 +110,7 @@ systemctl start lux-marketing
 
 echo ""
 echo "✅ Deployment Complete!"
-echo "======================"
+echo "======"
 
 echo ""
 echo "📋 Verification:"
@@ -126,7 +126,7 @@ ENDSSH
 
 echo ""
 echo "🎉 VPS Updated Successfully!"
-echo "============================"
+echo "======"
 echo ""
 echo "Your site: https://lux.lucifercruz.com"
 echo "Login: admin / LuxAdmin2024!"

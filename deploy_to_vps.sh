@@ -19,7 +19,7 @@ YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
 echo -e "${GREEN}🚀 LUX Marketing VPS Deployment Script${NC}"
-echo "=================================================="
+echo "======"
 
 echo -e "${YELLOW}📋 Deployment Configuration:${NC}"
 echo "  VPS Host: $VPS_HOST"

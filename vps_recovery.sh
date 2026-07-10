@@ -9,7 +9,7 @@ VPS_USER="root"
 APP_PATH="/var/www/lux-marketing"
 
 echo "🔧 LUX Marketing VPS Recovery"
-echo "================================"
+echo "======"
 
 echo "📋 Step 1: Checking service status..."
 ssh $VPS_USER@$VPS_HOST "systemctl status lux-marketing --no-pager -l" || true

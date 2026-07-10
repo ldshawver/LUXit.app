@@ -47,9 +47,9 @@ logger = logging.getLogger(__name__)
 integrations_bp = Blueprint("integrations", __name__)
 
 
-# ============================================================
+# ======
 # Helpers
-# ============================================================
+# ======
 
 def _company_id():
     if current_user.is_authenticated:
@@ -68,9 +68,9 @@ def _require_login():
         abort(401)
 
 
-# ============================================================
+# ======
 # Health endpoints
-# ============================================================
+# ======
 
 @integrations_bp.route("/api/integrations/health")
 @login_required
@@ -106,9 +106,9 @@ def test_integration(provider):
     return jsonify(result)
 
 
-# ============================================================
+# ======
 # Twilio endpoints
-# ============================================================
+# ======
 
 @integrations_bp.route("/api/twilio/send-sms", methods=["POST"])
 @login_required
@@ -155,9 +155,9 @@ def twilio_voice_status():
     return jsonify({"ok": True})
 
 
-# ============================================================
+# ======
 # Outlook endpoints
-# ============================================================
+# ======
 
 @integrations_bp.route("/api/outlook/send-email", methods=["POST"])
 @login_required
@@ -219,9 +219,9 @@ def outlook_create_event():
     return jsonify(result), 200 if result.get("ok") else 422
 
 
-# ============================================================
+# ======
 # Airtable endpoints
-# ============================================================
+# ======
 
 @integrations_bp.route("/api/airtable/records")
 @login_required
@@ -281,9 +281,9 @@ def airtable_delete_record(record_id):
     return jsonify(result), 200 if result.get("ok") else 422
 
 
-# ============================================================
+# ======
 # Airtable — dedicated health endpoint
-# ============================================================
+# ======
 
 @integrations_bp.route("/api/airtable/health")
 @login_required
@@ -294,9 +294,9 @@ def airtable_health():
     return jsonify(result), code
 
 
-# ============================================================
+# ======
 # Airtable — sync endpoints
-# ============================================================
+# ======
 
 @integrations_bp.route("/api/airtable/sync/lead/<int:contact_id>", methods=["POST"])
 @login_required
@@ -349,9 +349,9 @@ def airtable_sync_stats():
     return jsonify(get_sync_stats(company_id=cid))
 
 
-# ============================================================
+# ======
 # Airtable — admin UI detail page
-# ============================================================
+# ======
 
 @integrations_bp.route("/platform/integrations/airtable")
 @login_required
@@ -394,9 +394,9 @@ def airtable_admin_panel():
     )
 
 
-# ============================================================
+# ======
 # GitHub endpoints — platform admins only
-# ============================================================
+# ======
 
 @integrations_bp.route("/api/github/repos")
 @login_required
@@ -448,9 +448,9 @@ def github_latest_commit(owner, repo):
     return jsonify(get_latest_commit(owner, repo))
 
 
-# ============================================================
+# ======
 # RevenueCat webhook
-# ============================================================
+# ======
 
 @integrations_bp.route("/api/webhooks/revenuecat", methods=["POST"])
 def revenuecat_webhook():
@@ -461,9 +461,9 @@ def revenuecat_webhook():
     return jsonify(result), 200
 
 
-# ============================================================
+# ======
 # API Hub — /platform/api-hub
-# ============================================================
+# ======
 
 # Provider display metadata for the API Hub UI
 _HUB_PROVIDERS = [
@@ -1042,9 +1042,9 @@ def api_hub_import_from_env():
     })
 
 
-# ============================================================
+# ======
 # Admin UI — /platform/integrations
-# ============================================================
+# ======
 
 @integrations_bp.route("/platform/integrations")
 @integrations_bp.route("/global-admin/integrations")

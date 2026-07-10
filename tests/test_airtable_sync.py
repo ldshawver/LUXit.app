@@ -28,9 +28,9 @@ os.environ.setdefault("OPENAI_API_KEY", "test")
 os.environ.setdefault("DATA_ENCRYPTION_KEY", "g2CDXwdc6VKAElQ5QWqFBCsmXL_dQAs3e44_Gl1oJaU=")
 
 
-# ============================================================
+# ======
 # Fixtures
-# ============================================================
+# ======
 
 @pytest.fixture(scope="module")
 def app():
@@ -167,9 +167,9 @@ def _mock_airtable_error(status=500):
     return mock
 
 
-# ============================================================
+# ======
 # Health
-# ============================================================
+# ======
 
 class TestAirtableHealth:
     def test_health_endpoint_requires_login(self, client):
@@ -213,9 +213,9 @@ class TestAirtableHealth:
             assert result["tables_found"] == 1
 
 
-# ============================================================
+# ======
 # Sync enabled/disabled gate
-# ============================================================
+# ======
 
 class TestSyncGate:
     def test_sync_disabled_returns_safe_message(self, app, contact, monkeypatch):
@@ -237,9 +237,9 @@ class TestSyncGate:
             assert "configured" in result["reason"].lower()
 
 
-# ============================================================
+# ======
 # Lead sync
-# ============================================================
+# ======
 
 class TestLeadSync:
     def test_sync_lead_success(self, app, contact, monkeypatch):
@@ -343,9 +343,9 @@ class TestLeadSync:
         assert "ok" in data
 
 
-# ============================================================
+# ======
 # Onboarding sync
-# ============================================================
+# ======
 
 class TestOnboardingSync:
     def test_sync_onboarding_success(self, app, onboarding_project, monkeypatch):
@@ -390,9 +390,9 @@ class TestOnboardingSync:
         assert "ok" in data
 
 
-# ============================================================
+# ======
 # Support note sync
-# ============================================================
+# ======
 
 class TestSupportSync:
     def test_sync_support_success(self, app, feedback_ticket, monkeypatch):
@@ -436,9 +436,9 @@ class TestSupportSync:
         assert "ok" in data
 
 
-# ============================================================
+# ======
 # Retry logic
-# ============================================================
+# ======
 
 class TestRetryLogic:
     def test_retries_on_500(self, app, monkeypatch):
@@ -489,9 +489,9 @@ class TestRetryLogic:
             assert result["ok"] is False
 
 
-# ============================================================
+# ======
 # App resilience — Airtable outage does not crash app
-# ============================================================
+# ======
 
 class TestAppResilience:
     def test_health_endpoint_works_when_airtable_down(self, client, admin_user):
@@ -523,9 +523,9 @@ class TestAppResilience:
         assert "logs" in data
 
 
-# ============================================================
+# ======
 # Sync logs API
-# ============================================================
+# ======
 
 class TestSyncLogsAPI:
     def test_sync_logs_requires_login(self, client):
@@ -550,9 +550,9 @@ class TestSyncLogsAPI:
         assert isinstance(data.get("logs"), list)
 
 
-# ============================================================
+# ======
 # Admin UI
-# ============================================================
+# ======
 
 class TestAirtableAdminUI:
     def test_airtable_detail_page_loads(self, client, admin_user):

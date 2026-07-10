@@ -25,9 +25,9 @@ os.environ.setdefault("OPENAI_API_KEY", "test")
 os.environ.setdefault("DATA_ENCRYPTION_KEY", "g2CDXwdc6VKAElQ5QWqFBCsmXL_dQAs3e44_Gl1oJaU=")
 
 
-# ============================================================
+# ======
 # Fixtures
-# ============================================================
+# ======
 
 @pytest.fixture(scope="module")
 def app():
@@ -110,9 +110,9 @@ def _login(client, user):
         sess["_fresh"]   = True
 
 
-# ============================================================
+# ======
 # Health endpoint
-# ============================================================
+# ======
 
 class TestIntegrationHealth:
     def test_health_requires_login(self, client):
@@ -165,9 +165,9 @@ class TestIntegrationHealth:
         assert r.status_code == 400
 
 
-# ============================================================
+# ======
 # Twilio service unit tests
-# ============================================================
+# ======
 
 class TestTwilioService:
     def test_send_sms_blocked_do_not_text(self, app):
@@ -256,9 +256,9 @@ class TestTwilioService:
         assert "sms_opt_in" in (c.tags or "")
 
 
-# ============================================================
+# ======
 # RevenueCat service unit tests
-# ============================================================
+# ======
 
 class TestRevenueCatService:
     def test_health_missing_config(self, app, monkeypatch):
@@ -310,9 +310,9 @@ class TestRevenueCatService:
         assert ev is not None
 
 
-# ============================================================
+# ======
 # Outlook service unit tests
-# ============================================================
+# ======
 
 class TestOutlookService:
     def test_health_documents_missing_config(self, app, monkeypatch):
@@ -358,9 +358,9 @@ def test_posthog_missing_config_noops(app, monkeypatch):
     assert posthog_client.track_event("user-1", "audit_test", {"ok": True}) is None
 
 
-# ============================================================
+# ======
 # Airtable service unit tests
-# ============================================================
+# ======
 
 class TestAirtableService:
     def test_health_missing_config(self, app, monkeypatch):
@@ -398,9 +398,9 @@ class TestAirtableService:
         assert r.status_code == 200
 
 
-# ============================================================
+# ======
 # GitHub service unit tests
-# ============================================================
+# ======
 
 class TestGitHubService:
     def test_github_endpoint_requires_platform_admin(self, client, regular_user):
@@ -445,9 +445,9 @@ class TestGitHubService:
         assert r.status_code == 403
 
 
-# ============================================================
+# ======
 # Admin UI
-# ============================================================
+# ======
 
 class TestAdminUI:
     def test_platform_integrations_page_loads(self, client, admin_user):

@@ -23,9 +23,9 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 from extensions import db, csrf  # csrf used below to exempt Stripe routes
 
 
-# ============================================================
+# ======
 # Logging (FIXED PRODUCTION CONFIG)
-# ============================================================
+# ======
 
 class RequestIdFilter(logging.Filter):
     def filter(self, record: logging.LogRecord) -> bool:
@@ -74,9 +74,9 @@ def configure_logging():
 configure_logging()
 
 
-# ============================================================
+# ======
 # Database URL Resolution
-# ============================================================
+# ======
 
 _resolved_db_url_cache: str | None = None
 
@@ -212,9 +212,9 @@ def _apply_mysql_shim(url: str) -> str:
     return url
 
 
-# ============================================================
+# ======
 # Application Factory
-# ============================================================
+# ======
 
 def create_app() -> Flask:
     app = Flask(__name__)
@@ -824,6 +824,13 @@ def create_app() -> Flask:
                     ("last_sync_status", "VARCHAR(30)"),
                     ("google_account_email", "VARCHAR(255)"),
                     ("google_sync_token", "TEXT"),
+                    ("google_page_token", "TEXT"),
+                ],
+                "google_contacts_sync_job": [
+                    ("current_page_count", "INTEGER DEFAULT 0"),
+                    ("contacts_processed", "INTEGER DEFAULT 0"),
+                    ("failure_stage", "VARCHAR(80)"),
+                    ("sanitized_provider_error", "JSON"),
                 ],
                 "push_subscription": [
                     ("user_agent", "TEXT"),
@@ -889,9 +896,9 @@ def create_app() -> Flask:
     return app
 
 
-# ============================================================
+# ======
 # Gunicorn Entry
-# ============================================================
+# ======
 
 app = create_app()
 

@@ -834,7 +834,121 @@ def test_google_contacts_preview_payload_is_bounded_and_token_metadata_unchanged
         assert tok.google_sync_token == "sync-old"
         serialized = str(result) + str(job.preview_payload) + str(job.errors or [])
         assert "secret-access" not in serialized and "secret-refresh" not in serialized
+class _PeopleResp:
+    def __init__(self, status, body):
+        self.status_code = status
+        self._body = body
+        self.content = b"{}"
+    def json(self):
+        return self._body
+    def raise_for_status(self):
+        if self.status_code >= 400:
+            import requests
+            e = requests.HTTPError(f"{self.status_code} error")
+            e.response = self
+            raise e
 
+
+def _person(name, phone, resource=None):
+    return {"resourceName": resource or f"people/{phone[-4:]}", "names": [{"displayName": name}], "phoneNumbers": [{"value": phone}]}
+
+
+def test_google_contacts_people_api_multi_page_parameters_and_sync_token(monkeypatch):
+    from services import google_contacts
+    calls = []
+    pages = [
+        {"connections": [_person("One", "+14155550001")], "nextPageToken": "p2"},
+        {"connections": [_person("Two", "+14155550002")], "nextSyncToken": "sync-new"},
+    ]
+    def fake_get(url, headers=None, params=None, timeout=None):
+        calls.append(dict(params))
+        return _PeopleResp(200, pages[len(calls)-1])
+    monkeypatch.setattr(google_contacts.requests, "get", fake_get)
+    result = google_contacts._fetch_all_contacts("access")
+    assert result["__meta__"]["next_sync_token"] == "sync-new"
+    assert result["__meta__"]["pages_processed"] == 2
+    first = {k: v for k, v in calls[0].items() if k != "pageToken"}
+    second = {k: v for k, v in calls[1].items() if k != "pageToken"}
+    assert first == second
+    assert calls[1]["pageToken"] == "p2"
+    assert "syncToken" not in calls[0]
+
+
+def test_google_contacts_invalid_page_token_restarts_once_and_does_not_persist(pwa_app, monkeypatch):
+    app, _client, ids = pwa_app
+    from services import google_contacts
+    from models import GoogleOAuthToken, GoogleContactsSyncJob, Contact
+    with app.app_context():
+        tok = GoogleOAuthToken(user_id=ids["staff"], access_token="tok", refresh_token="ref", google_sync_token=None, google_page_token="legacy-page")
+        db.session.add(tok); db.session.commit()
+        monkeypatch.setattr(google_contacts, "get_token", lambda user_id: tok)
+        monkeypatch.setattr(google_contacts, "_refresh_if_needed", lambda token: "access")
+        attempts = {"n": 0}
+        def fake_fetch(access, sync_token=None):
+            attempts["n"] += 1
+            if attempts["n"] == 1:
+                raise google_contacts.GoogleContactsPaginationError("bad page", {"code": 400, "status": "INVALID_ARGUMENT", "message": "Invalid page token"})
+            return {"+14155550003": {"resource_name": "people/a", "name": "Recovered", "phone": "+14155550003", "normalized_phone": "+14155550003"}, "__meta__": {"pages_processed": 1, "contacts_processed": 1, "next_sync_token": "sync-ok"}}
+        monkeypatch.setattr(google_contacts, "_fetch_all_contacts", fake_fetch)
+        result = google_contacts.sync_contacts(ids["staff"], ids["company"])
+        job = db.session.get(GoogleContactsSyncJob, result["sync_job_id"])
+        assert attempts["n"] == 2
+        assert result["error"] is None
+        assert tok.google_page_token is None
+        assert tok.google_sync_token == "sync-ok"
+        assert job.failure_stage == "page_token"
+        assert job.sanitized_provider_error["message"] == "Invalid page token"
+        assert Contact.query.filter_by(company_id=ids["company"], normalized_phone="+14155550003").count() == 1
+
+
+def test_google_contacts_expired_sync_token_full_sync_recovery(pwa_app, monkeypatch):
+    app, _client, ids = pwa_app
+    from services import google_contacts
+    from models import GoogleOAuthToken
+    import requests
+    with app.app_context():
+        tok = GoogleOAuthToken(user_id=ids["staff"], access_token="tok", refresh_token="ref", google_sync_token="old-sync")
+        db.session.add(tok); db.session.commit()
+        monkeypatch.setattr(google_contacts, "get_token", lambda user_id: tok)
+        monkeypatch.setattr(google_contacts, "_refresh_if_needed", lambda token: "access")
+        seen = []
+        def fake_fetch(access, sync_token=None):
+            seen.append(sync_token)
+            if sync_token == "old-sync":
+                resp = _PeopleResp(400, {"error": {"code": 400, "status": "EXPIRED_SYNC_TOKEN", "message": "Sync token expired"}})
+                e = requests.HTTPError("expired"); e.response = resp; raise e
+            return {"+14155550004": {"resource_name": "people/b", "name": "Full Sync", "phone": "+14155550004", "normalized_phone": "+14155550004"}, "__meta__": {"pages_processed": 1, "contacts_processed": 1, "next_sync_token": "new-sync"}}
+        monkeypatch.setattr(google_contacts, "_fetch_all_contacts", fake_fetch)
+        result = google_contacts.sync_contacts(ids["staff"], ids["company"])
+        assert seen == ["old-sync", None]
+        assert result["error"] is None
+        assert tok.google_sync_token == "new-sync"
+
+
+def test_google_contacts_restart_idempotent_and_user_token_isolated(pwa_app, monkeypatch):
+    app, _client, ids = pwa_app
+    from services import google_contacts
+    from models import GoogleOAuthToken, Contact, User
+    with app.app_context():
+        other = User(username="other", email="other@example.com", default_company_id=ids["company"])
+        db.session.add(other); db.session.flush()
+        tok1 = GoogleOAuthToken(user_id=ids["staff"], access_token="tok1", refresh_token="ref", google_sync_token=None)
+        tok2 = GoogleOAuthToken(user_id=other.id, access_token="tok2", refresh_token="ref", google_sync_token="other-sync")
+        db.session.add_all([tok1, tok2]); db.session.commit(); other_id = other.id
+        monkeypatch.setattr(google_contacts, "_refresh_if_needed", lambda token: token.access_token)
+        monkeypatch.setattr(google_contacts, "get_token", lambda user_id: tok1 if user_id == ids["staff"] else tok2)
+        seen = []
+        def fake_fetch(access, sync_token=None):
+            seen.append((access, sync_token))
+            return {"+14155550005": {"resource_name": "people/same", "name": "Same Person", "phone": "+14155550005", "normalized_phone": "+14155550005"}, "__meta__": {"pages_processed": 1, "contacts_processed": 1, "next_sync_token": f"sync-{access}"}}
+        monkeypatch.setattr(google_contacts, "_fetch_all_contacts", fake_fetch)
+        google_contacts.sync_contacts(ids["staff"], ids["company"])
+        google_contacts.sync_contacts(ids["staff"], ids["company"])
+        google_contacts.sync_contacts(other_id, ids["company"])
+        assert Contact.query.filter_by(company_id=ids["company"], external_google_contact_id="people/same", is_active=True).count() == 1
+        assert tok1.google_sync_token == "sync-tok1"
+        assert tok2.google_sync_token == "sync-tok2"
+        assert seen[-1] == ("tok2", "other-sync")
 
 def test_push_subscribe_is_idempotent_per_endpoint_and_device(pwa_app):
     app, client, ids = pwa_app
