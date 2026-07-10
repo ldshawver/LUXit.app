@@ -11,7 +11,7 @@ VPS_PATH="/var/www/lux-marketing"
 BACKUP_PATH="/var/backups/lux-$(date +%Y%m%d_%H%M%S)"
 
 echo "🚀 Direct VPS Deployment from Current Replit"
-echo "============================================="
+echo "======"
 
 # Step 1: SSH into VPS and prepare
 echo "📋 Preparing VPS environment..."

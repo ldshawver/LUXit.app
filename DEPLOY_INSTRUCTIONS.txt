@@ -1,6 +1,6 @@
-========================================
+======
 LUX MARKETING - VPS DEPLOYMENT GUIDE
-========================================
+======
 
 COMPLETE APPLICATION DEPLOYMENT TO: lux.lucifercruz.com (194.195.92.52)
 
@@ -14,9 +14,9 @@ Files included:
 - CSS and JavaScript static assets
 - Complete dependency list (deploy_requirements.txt)
 
-========================================
+======
 DEPLOYMENT STEPS
-========================================
+======
 
 STEP 1: Download Package from Replit
 -------------------------------------
@@ -44,7 +44,7 @@ SSH into VPS:
 
 Then run these commands (COPY-PASTE ALL AT ONCE):
 
-========== BEGIN DEPLOYMENT COMMANDS ==========
+====== BEGIN DEPLOYMENT COMMANDS ======
 
 # Stop the service first
 sudo systemctl stop lux-marketing.service
@@ -74,7 +74,7 @@ sudo systemctl start lux-marketing.service
 # Verify it's running
 sudo systemctl status lux-marketing.service
 
-========== END DEPLOYMENT COMMANDS ==========
+====== END DEPLOYMENT COMMANDS ======
 
 
 STEP 4: Add Twilio Credentials (REQUIRED for SMS)
@@ -108,9 +108,9 @@ STEP 5: Verify Deployment
    ✓ Multi-Channel → Events
 
 
-========================================
+======
 NEW FEATURES INCLUDED
-========================================
+======
 ✓ SMS Marketing (Twilio integration)
 ✓ Social Media Scheduling (Facebook, Instagram, LinkedIn, Twitter)
 ✓ SEO Tools (Website analysis and optimization)
@@ -119,9 +119,9 @@ NEW FEATURES INCLUDED
 ✓ All bug fixes and improvements
 
 
-========================================
+======
 TROUBLESHOOTING
-========================================
+======
 
 If the service fails to start:
 
@@ -146,9 +146,9 @@ Test application manually:
   python main.py
 
 
-========================================
+======
 ROLLBACK (If Needed)
-========================================
+======
 
 If deployment fails, restore backup:
 
@@ -158,9 +158,9 @@ If deployment fails, restore backup:
   sudo systemctl start lux-marketing.service
 
 
-========================================
+======
 VERIFICATION CHECKLIST
-========================================
+======
 
 After deployment, verify:
 □ Service is running: systemctl status lux-marketing
@@ -174,4 +174,4 @@ After deployment, verify:
 □ No errors in logs
 
 
-========================================
+======

@@ -7307,7 +7307,7 @@ def export_content_docx():
         logger.error(f"DOCX export error: {e}")
         return jsonify({'error': f'Failed to export as DOCX: {str(e)}'}), 500
 
-# ============= WORDPRESS / WOOCOMMERCE =============
+# ====== WORDPRESS / WOOCOMMERCE ======
 @main_bp.route('/wordpress')
 @login_required
 def wordpress_integration():
@@ -7316,7 +7316,7 @@ def wordpress_integration():
     integrations = WordPressIntegration.query.filter_by(company_id=current_user.get_default_company().id).all()
     return render_template('wordpress_integration.html', integrations=integrations)
 
-# ============= KEYWORD RESEARCH =============
+# ====== KEYWORD RESEARCH ======
 @main_bp.route('/keywords')
 @login_required
 def keyword_research():
@@ -7344,7 +7344,7 @@ def create_keyword_research():
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 400
 
-# ============= CRM / DEALS =============
+# ====== CRM / DEALS ======
 @main_bp.route('/crm')
 @login_required
 def crm_dashboard():
@@ -7383,7 +7383,7 @@ def deal_detail(deal_id):
     activities = DealActivity.query.filter_by(deal_id=deal_id).order_by(DealActivity.activity_date.desc()).all()
     return render_template('deal_detail.html', deal=deal, activities=activities)
 
-# ============= LEAD SCORING =============
+# ====== LEAD SCORING ======
 @main_bp.route('/lead-scoring')
 @login_required
 def lead_scoring():
@@ -7397,7 +7397,7 @@ def lead_scoring():
     
     return render_template('lead_scoring.html', contacts_with_scores=contacts_with_scores)
 
-# ============= COMPETITOR LIST =============
+# ====== COMPETITOR LIST ======
 @main_bp.route('/competitors')
 @login_required
 def competitors_list():
@@ -7560,7 +7560,7 @@ def edit_competitor(competitor_id):
     
     return render_template('competitor_edit.html', competitor=competitor)
 
-# ============= PERSONALIZATION =============
+# ====== PERSONALIZATION ======
 @main_bp.route('/personalization')
 @login_required
 def personalization_rules():
@@ -7570,7 +7570,7 @@ def personalization_rules():
     rules = PersonalizationRule.query.filter_by(company_id=company.id).all()
     return render_template('personalization_rules.html', rules=rules)
 
-# ============= A/B TESTING ENHANCEMENTS =============
+# ====== A/B TESTING ENHANCEMENTS ======
 @main_bp.route('/multivariate-tests')
 @login_required
 def multivariate_tests():
@@ -7579,7 +7579,7 @@ def multivariate_tests():
     tests = MultivariateTest.query.all()
     return render_template('multivariate_tests.html', tests=tests)
 
-# ============= ROI TRACKING =============
+# ====== ROI TRACKING ======
 @main_bp.route('/roi-analytics')
 @login_required
 def roi_analytics():
@@ -7599,7 +7599,7 @@ def roi_analytics():
     
     return render_template('roi_analytics.html', campaigns_roi=campaigns_roi)
 
-# ============= SURVEYS & FEEDBACK =============
+# ====== SURVEYS & FEEDBACK ======
 @main_bp.route('/surveys')
 @login_required
 def surveys():
@@ -7616,7 +7616,7 @@ def surveys():
     
     return render_template('surveys.html', responses=responses, nps_score=nps_score)
 
-# ============= AGENT CONFIGURATION =============
+# ====== AGENT CONFIGURATION ======
 @main_bp.route('/agent-config')
 @login_required
 def agent_configuration():
@@ -7666,7 +7666,7 @@ def save_agent_config():
 
 print("✓ All feature routes loaded successfully")
 
-# ============= ADVANCED CONFIG =============
+# ====== ADVANCED CONFIG ======
 @main_bp.route('/advanced-config')
 @login_required
 def advanced_config():
@@ -7677,7 +7677,7 @@ def advanced_config():
     return render_template('advanced_config.html', configs=configs)
 
 
-# ============= WORDPRESS CONNECTION =============
+# ====== WORDPRESS CONNECTION ======
 @main_bp.route('/wordpress/connect', methods=['POST'])
 @login_required
 def connect_wordpress():
@@ -7762,7 +7762,7 @@ def sync_wordpress_data(wordpress_id):
 
 print("✓ WordPress connection routes loaded")
 
-# ============= COMPREHENSIVE LUX CRM =============
+# ====== COMPREHENSIVE LUX CRM ======
 @main_bp.route('/crm-unified')
 @login_required
 def lux_crm():
@@ -7868,7 +7868,7 @@ def create_deal():
         logger.error(f'Deal creation error: {e}')
         return jsonify({'success': False, 'error': str(e)}), 400
 
-# ============= AI AGENT REPORTING & MANAGEMENT =============
+# ====== AI AGENT REPORTING & MANAGEMENT ======
 @main_bp.route('/agents/reports')
 @login_required
 def agents_reports_dashboard():
@@ -8095,7 +8095,7 @@ def trigger_agent_fix():
 
 print("✓ AI Agent reporting routes loaded")
 
-# ============= USER PROFILE MANAGEMENT =============
+# ====== USER PROFILE MANAGEMENT ======
 @main_bp.route('/user/profile')
 @login_required
 def user_profile():
@@ -8197,7 +8197,7 @@ def update_user_profile_api():
 
 print("✓ User profile routes loaded")
 
-# ============= CRM HUB =============
+# ====== CRM HUB ======
 @main_bp.route('/crm-hub')
 @login_required
 def crm_hub():
@@ -8271,7 +8271,7 @@ def crm_hub():
 
 print("✓ CRM Hub route loaded")
 
-# ============= FORMINATOR NEWSLETTER IMPORT =============
+# ====== FORMINATOR NEWSLETTER IMPORT ======
 @main_bp.route('/admin/import-forminator-newsletter', methods=['GET', 'POST'])
 @login_required
 def import_forminator_newsletter():
@@ -8387,7 +8387,7 @@ def forminator_webhook():
 
 print("✓ Forminator newsletter import routes loaded")
 
-# ============= WORDPRESS USER IMPORT =============
+# ====== WORDPRESS USER IMPORT ======
 @main_bp.route('/admin/import-wordpress-users', methods=['GET', 'POST'])
 @login_required
 def import_wordpress_users():
@@ -8517,7 +8517,7 @@ def wordpress_webhook():
 
 print("✓ WordPress user import routes loaded")
 
-# ============= TEST WORDPRESS IMPORT (AUTO-DEMO) =============
+# ====== TEST WORDPRESS IMPORT (AUTO-DEMO) ======
 @main_bp.route('/admin/posthog-test', methods=['GET'])
 @login_required
 def posthog_test():
@@ -8652,7 +8652,7 @@ def view_wordpress_imports():
         ]
     }), 200
 
-# ============= PUBLIC ZAPIER WEBHOOK ENDPOINT =============
+# ====== PUBLIC ZAPIER WEBHOOK ENDPOINT ======
 @main_bp.route('/api/webhook/zapier-contact', methods=['POST'])
 @csrf.exempt
 def zapier_contact_webhook():
@@ -8936,7 +8936,7 @@ def get_contact(contact_id):
         logger.error(f'Get contact error: {str(e)}')
         return jsonify({'error': str(e)}), 500
 
-# ============= BLOG POST ROUTES =============
+# ====== BLOG POST ROUTES ======
 try:
     from models import BlogPost, ContactActivity, AnalyticsData
 except ImportError as exc:
@@ -9038,7 +9038,7 @@ def generate_blog_content():
         logger.error(f"Blog generation error: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
-# ============= CUSTOMER ENGAGEMENT TRACKING ROUTES =============
+# ====== CUSTOMER ENGAGEMENT TRACKING ROUTES ======
 @main_bp.route('/customers/<int:contact_id>')
 @login_required
 def customer_profile(contact_id):
@@ -9240,7 +9240,7 @@ def get_contact_activities_api(contact_id):
         } for a in activities]
     })
 
-# ============= ENHANCED ANALYTICS ROUTES =============
+# ====== ENHANCED ANALYTICS ROUTES ======
 @main_bp.route('/analytics/comprehensive')
 @login_required
 def analytics_comprehensive():
@@ -10095,9 +10095,9 @@ print("  - GET/POST /api/agents/<type>/tasks (manage agent tasks)")
 print("  - PATCH/DELETE /api/agents/<type>/tasks/<id> (update/delete tasks)")
 print("  - POST /api/agents/<type>/suggestions (get AI suggestions)")
 
-# =============================================================================
+# ======
 # SUBSCRIBER SYNC ROUTES
-# =============================================================================
+# ======
 try:
     from services.subscriber_sync_service import SubscriberSyncService
 except ImportError as exc:
@@ -10209,9 +10209,9 @@ print("  - POST /api/contacts/<id>/unsubscribe (unsubscribe contact)")
 print("  - POST /api/contacts/bulk-subscribe (bulk subscribe)")
 print("  - POST /api/contacts/bulk-unsubscribe (bulk unsubscribe)")
 
-# =============================================================================
+# ======
 # NEWSLETTER SEARCH & ADD SUBSCRIBER ROUTES
-# =============================================================================
+# ======
 
 @main_bp.route('/api/newsletters/search')
 @login_required
@@ -10307,9 +10307,9 @@ def add_subscriber():
 
 print("✓ Newsletter search & subscriber routes loaded")
 
-# =============================================================================
+# ======
 # APPROVAL QUEUE & FEATURE TOGGLE ROUTES
-# =============================================================================
+# ======
 
 try:
     from services.approval_service import ApprovalService, FeatureToggleService
@@ -10593,9 +10593,9 @@ def initialize_toggles():
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
-# ============================================================
+# ======
 # Missing route stubs (referenced in templates)
-# ============================================================
+# ======
 
 @main_bp.route('/automations-list')
 @login_required
@@ -12520,9 +12520,9 @@ def seed_help_content():
 print("✓ Help system & walkthrough routes loaded")
 print("✓ All route stubs loaded")
 
-# ============================================================
+# ======
 # Developer Diagnostics Center (platform-admin only)
-# ============================================================
+# ======
 
 def _require_diagnostics_admin_json():
     from diagnostics_service import is_diagnostics_admin, structured_log

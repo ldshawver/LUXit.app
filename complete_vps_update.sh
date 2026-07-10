@@ -8,7 +8,7 @@ VPS_USER="root"
 VPS_PATH="/var/www/lux-marketing"
 
 echo "🚀 Complete VPS Update - Deploy Current LUX Marketing App"
-echo "========================================================="
+echo "======"
 
 # Check if we have the current deployment package
 if [ ! -f "current-lux-complete.tar.gz" ]; then
@@ -196,7 +196,7 @@ EOF
 
 echo ""
 echo "🎉 VPS Update Complete!"
-echo "======================================"
+echo "======"
 echo ""
 echo "Your VPS now has the current version of LUX Marketing"
 echo "Visit: https://lux.lucifercruz.com"

@@ -31,9 +31,9 @@ _BASE_URL = "https://api.airtable.com/v0"
 _RETRY_DELAYS = [1, 2, 4]   # seconds between attempts
 
 
-# ============================================================
+# ======
 # Config helpers
-# ============================================================
+# ======
 
 def _token() -> str | None:
     try:
@@ -69,9 +69,9 @@ def _is_configured() -> bool:
     return bool(_token() and _base_id())
 
 
-# ============================================================
+# ======
 # Health
-# ============================================================
+# ======
 
 def health_check() -> dict:
     token = _token()
@@ -101,9 +101,9 @@ def health_check() -> dict:
         return {"status": "error", "detail": str(exc)[:200]}
 
 
-# ============================================================
+# ======
 # Low-level CRUD (with retry)
-# ============================================================
+# ======
 
 def list_records(base_id: str, table_name: str,
                  filter_formula: str | None = None,
@@ -183,9 +183,9 @@ def delete_record(base_id: str, table_name: str, record_id: str,
     return {"ok": False, "reason": result["error"]}
 
 
-# ============================================================
+# ======
 # High-level sync functions
-# ============================================================
+# ======
 
 def sync_lead_to_airtable(contact_id: int, company_id: int) -> dict:
     """
@@ -335,9 +335,9 @@ def sync_support_note_to_airtable(ticket_id: int, company_id: int) -> dict:
     )
 
 
-# ============================================================
+# ======
 # Upsert logic — create or update based on ExternalSyncRecord
-# ============================================================
+# ======
 
 def _upsert_to_airtable(local_entity_type: str, local_entity_id: str,
                          company_id: int, table: str, fields: dict,
@@ -424,9 +424,9 @@ def _write_sync_metadata_row(operation, entity_type, entity_id,
         pass  # never block
 
 
-# ============================================================
+# ======
 # Sync log queries (for admin UI)
-# ============================================================
+# ======
 
 def get_sync_logs(company_id: int | None = None,
                   entity_type: str | None = None,
@@ -474,9 +474,9 @@ def get_sync_stats(company_id: int | None = None) -> dict:
         return {"synced": 0, "failed": 0, "pending": 0, "total": 0}
 
 
-# ============================================================
+# ======
 # ExternalSyncRecord helpers
-# ============================================================
+# ======
 
 def _get_sync_row(entity_type: str, entity_id: str, company_id: int):
     try:
@@ -526,9 +526,9 @@ def _save_sync_row(local_entity_type, local_entity_id, company_id,
             pass
 
 
-# ============================================================
+# ======
 # HTTP with retry
-# ============================================================
+# ======
 
 def _request_with_retry(method: str, url: str, token: str,
                          params: dict | None = None,
@@ -585,9 +585,9 @@ def _request_with_retry(method: str, url: str, token: str,
     return {"ok": False, "error": last_error}
 
 
-# ============================================================
+# ======
 # Error / event logging
-# ============================================================
+# ======
 
 def _log_error(endpoint: str, error: str | Exception):
     msg = str(error)[:500]

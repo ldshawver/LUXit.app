@@ -626,7 +626,8 @@ def resolve_sms_sender(inbound_message) -> str:
 
 def sendConversationSms(conversation_id: int, message: str, *,
                         to_number: str = None, twilio_account=None,
-                        is_auto_reply: bool = False, rule_id: int = None) -> dict:
+                        is_auto_reply: bool = False, rule_id: int = None,
+                        persist_record: bool = True) -> dict:
     """Single entry point for all conversational SMS sends.
 
     Every outbound reply/forward/auto-reply resolves its sender from the
@@ -635,7 +636,6 @@ def sendConversationSms(conversation_id: int, message: str, *,
     fallback sender pool.
     """
     from models import TwilioMessage, TwilioConversation, TwilioPhoneNumber
-    from flask import current_app
     conv = db.session.get(TwilioConversation, conversation_id) if conversation_id else None
     if not conv:
         return {"success": False, "error": "Conversation is required for SMS send."}
@@ -670,25 +670,25 @@ def sendConversationSms(conversation_id: int, message: str, *,
             "from_": canonical_sender,
         }
 
-        if current_app.config.get("TESTING"):
-            msg = type("TwilioTestMessage", (), {"sid": f"SMTEST{int(datetime.utcnow().timestamp())}", "status": "sent"})()
-        else:
-            msg = client.messages.create(**kwargs)
+        msg = client.messages.create(**kwargs)
+        provider_status = getattr(msg, "status", None) or "sent"
 
-        record = TwilioMessage(
-            conversation_id=conversation_id,
-            company_id=ta.company_id,
-            twilio_sid=msg.sid,
-            direction="outbound",
-            from_number=canonical_sender,
-            to_number=to_number,
-            body=body,
-            status=msg.status,
-            is_auto_reply=is_auto_reply,
-            rule_id=rule_id,
-        )
-        db.session.add(record)
-        db.session.commit()
+        if persist_record:
+            record = TwilioMessage(
+                conversation_id=conversation_id,
+                company_id=ta.company_id,
+                twilio_sid=msg.sid,
+                direction="outbound",
+                from_number=canonical_sender,
+                to_number=to_number,
+                body=body,
+                status="sent",
+                is_auto_reply=is_auto_reply,
+                rule_id=rule_id,
+                raw_payload={"provider_status": provider_status},
+            )
+            db.session.add(record)
+            db.session.commit()
         logger.info("Outbound SMS sent: sid=%s to=%s", msg.sid, to_number)
         try:
             from services.posthog_client import track_event
@@ -702,12 +702,30 @@ def sendConversationSms(conversation_id: int, message: str, *,
             })
         except Exception:
             pass
-        return {"success": True, "sid": msg.sid, "status": msg.status}
+        return {"success": True, "sid": msg.sid, "status": "sent", "provider_status": provider_status}
     except Exception as exc:
         logger.error(
             "SMS send error: code=%s status=%s — %s",
             getattr(exc, "code", None), getattr(exc, "status", None), exc,
         )
+        try:
+            failed_record = TwilioMessage(
+                conversation_id=conversation_id,
+                company_id=ta.company_id,
+                twilio_sid=None,
+                direction="outbound",
+                from_number=canonical_sender if "canonical_sender" in locals() else None,
+                to_number=to_number,
+                body=body,
+                status="failed",
+                error_message=str(exc),
+                is_auto_reply=is_auto_reply,
+                rule_id=rule_id,
+            )
+            db.session.add(failed_record)
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
         try:
             from services.posthog_client import track_event
             track_event(f"company_{ta.company_id}", 'sms_failed', {
@@ -3060,9 +3078,9 @@ def google_contacts_disconnect():
     return _google_contacts_redirect()
 
 
-# ===========================================================================
+# ======
 # Phase A — Number Management Admin UI
-# ===========================================================================
+# ======
 
 @twilio_bp.route("/numbers")
 @login_required

@@ -15,9 +15,9 @@ if user_company is None:
         db.Column('created_at', db.DateTime, default=datetime.utcnow)
     )
 
-# ============================================================
+# ======
 # UserCompanyAccess (authoritative access + role model)
-# ============================================================
+# ======
 
 class UserCompanyAccess(db.Model):
     __tablename__ = "user_company_access"
@@ -158,9 +158,9 @@ class UserCompanyAccess(db.Model):
         return bool(self.can_access_full_app)
 
 
-# ============================================================
+# ======
 # User model  ✅ EVERYTHING USER-RELATED LIVES HERE
-# ============================================================
+# ======
 
 class User(UserMixin, db.Model):
     __table_args__ = {"extend_existing": True}
@@ -505,9 +505,9 @@ class User(UserMixin, db.Model):
         return access
 
 
-# ============================================================
+# ======
 # OAuth models
-# ============================================================
+# ======
 
 class ReplitOAuth(db.Model):
     __tablename__ = "replit_oauth"
@@ -2466,7 +2466,7 @@ class FeatureToggle(db.Model):
         }
 
 
-# ============= DEFAULT FEATURE TOGGLES =============
+# ====== DEFAULT FEATURE TOGGLES ======
 DEFAULT_FEATURE_TOGGLES = [
     # AI Agent Toggles (ALL OFF by default)
     {'feature_key': 'agent_brand_strategy', 'feature_name': 'Brand Strategy Agent', 'feature_category': 'ai_agents', 'agent_type': 'brand_strategy', 'is_enabled': False, 'require_approval': True},
@@ -3554,9 +3554,9 @@ class CustomerOnboardingTask(db.Model):
     project = db.relationship("CustomerOnboardingProject", backref="tasks")
 
 
-# ============================================================
+# ======
 # Integration Layer Models
-# ============================================================
+# ======
 
 class IntegrationConnection(db.Model):
     """Platform-level or company-level integration connection record."""
@@ -3751,9 +3751,9 @@ class ContactMergeAudit(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
 
 
-# ============================================================
+# ======
 # API Hub — Provider Credentials & Audit Log
-# ============================================================
+# ======
 
 class ProviderCredential(db.Model):
     """
@@ -3839,9 +3839,9 @@ class ApiHubAuditLog(db.Model):
     )
 
 
-# ===========================================================================
+# ======
 # Phase A — Multi-Number VoIP Architecture
-# ===========================================================================
+# ======
 
 class TwilioPhoneNumber(db.Model):
     """One row per Twilio phone number. Single source of truth for routing.

@@ -23,9 +23,9 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 from extensions import db, csrf  # csrf used below to exempt Stripe routes
 
 
-# ============================================================
+# ======
 # Logging (FIXED PRODUCTION CONFIG)
-# ============================================================
+# ======
 
 class RequestIdFilter(logging.Filter):
     def filter(self, record: logging.LogRecord) -> bool:
@@ -74,9 +74,9 @@ def configure_logging():
 configure_logging()
 
 
-# ============================================================
+# ======
 # Database URL Resolution
-# ============================================================
+# ======
 
 _resolved_db_url_cache: str | None = None
 
@@ -212,9 +212,9 @@ def _apply_mysql_shim(url: str) -> str:
     return url
 
 
-# ============================================================
+# ======
 # Application Factory
-# ============================================================
+# ======
 
 def create_app() -> Flask:
     app = Flask(__name__)
@@ -896,9 +896,9 @@ def create_app() -> Flask:
     return app
 
 
-# ============================================================
+# ======
 # Gunicorn Entry
-# ============================================================
+# ======
 
 app = create_app()
 

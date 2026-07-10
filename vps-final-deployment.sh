@@ -19,7 +19,7 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 echo -e "${GREEN}🚀 LUX Email Marketing Bot - Final Deployment${NC}"
-echo "=================================="
+echo "======"
 echo "Target VPS: $VPS_IP"
 echo "Domain: $DOMAIN"
 echo "App Directory: $APP_DIR"

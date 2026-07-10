@@ -457,7 +457,7 @@ def retry_queued_outbound_messages(company_id: int, limit: int = 100, dry_run: b
             db.session.commit()
             continue
         from twilio_sms import sendConversationSms
-        result = sendConversationSms(conv.id, row.body or "", twilio_account=ta, to_number=to_number)
+        result = sendConversationSms(conv.id, row.body or "", twilio_account=ta, to_number=to_number, persist_record=False)
         if not result.get("success"):
             row.status = "failed"
             row.error_message = result.get("error") or "SMS retry failed."
@@ -466,8 +466,13 @@ def retry_queued_outbound_messages(company_id: int, limit: int = 100, dry_run: b
             errors.append({"id": row.id, "error": row.error_message})
         else:
             row.status = "sent"
+            row.twilio_sid = result.get("sid")
             row.error_message = None
-            row.raw_payload = {"retried_from_queue": True, "resent_via": "sendConversationSms"}
+            row.raw_payload = {
+                "retried_from_queue": True,
+                "resent_via": "sendConversationSms",
+                "provider_status": result.get("provider_status") or result.get("status"),
+            }
             db.session.commit()
             retried += 1
     return {"success": failed == 0, "matched": len(rows), "retried": retried, "failed": failed, "errors": errors[:20]}
