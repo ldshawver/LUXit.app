@@ -132,6 +132,13 @@
 
   {% elif tab == 'auto' %}
   <div class="d-flex mb-3"><h6 class="fw-semibold">Auto Replies{% if selected_number %} — {{ selected_number.friendly_name or selected_number.phone_number }}{% endif %}</h6></div>
+  {% if after_hours_effective %}
+  <div class="alert mb-3" style="background:#101827;border:1px solid #334155;color:#e5e7eb;">
+    <div class="small text-muted text-uppercase">Current effective message</div>
+    <div class="mt-1">{{ after_hours_effective.message }}</div>
+    <div class="small mt-2">Source: <strong>{{ after_hours_effective.source }}</strong> · <code>{{ after_hours_effective.row }}.{{ after_hours_effective.field }}</code></div>
+  </div>
+  {% endif %}
   {% if selected_number %}
   <form method="POST" action="{{ url_for('twilio.create_rule') }}" class="card p-3 mb-3" style="background:#0f1117;border:1px solid #1e2535;">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -160,7 +167,7 @@
           <div class="col-md-2"><label class="form-label small text-muted">Keyword(s)</label><input class="form-control" name="keywords" value="{{ (rule.keywords or [])|join(', ') }}"></div>
           <div class="col-md-1"><label class="form-label small text-muted">Priority</label><input class="form-control" type="number" name="priority" value="{{ rule.priority or 0 }}"></div>
           <div class="col-md-2"><label class="form-label small text-muted">Reply text</label><textarea class="form-control" name="response" rows="1">{{ rule.response or '' }}</textarea></div>
-          <div class="col-md-1"><span class="badge {% if rule.phone_number_id %}bg-primary{% else %}bg-secondary{% endif %}">{% if rule.phone_number_id %}Number-specific{% else %}Global{% endif %}</span><div class="small text-muted mt-1">{{ (rule.trigger_type or 'No match type') | replace('_', ' ') | title }}</div></div>
+          <div class="col-md-1"><span class="badge {% if rule.phone_number_id %}bg-primary{% else %}bg-secondary{% endif %}">{% if rule.phone_number_id %}Number-specific{% else %}Company-wide{% endif %}</span><div class="small text-muted mt-1">{{ (rule.trigger_type or 'No match type') | replace('_', ' ') | title }}</div></div>
           <div class="col-md-1"><label class="form-check small"><input class="form-check-input" type="checkbox" name="is_active" value="1" {% if rule.is_active %}checked{% endif %}> Active</label></div>
           <div class="col-md-1 d-flex gap-1"><button class="btn btn-sm btn-primary" type="submit">Save</button><button class="btn btn-sm btn-outline-danger" type="submit" form="delete-rule-{{ rule.id }}">Delete</button></div>
         </div>
