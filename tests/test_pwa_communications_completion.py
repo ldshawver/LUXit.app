@@ -520,7 +520,7 @@ def test_pwa_sound_forwarding_autoreply_static_requirements():
     html = open("templates/inbox_pwa/index.html", encoding="utf-8").read()
     nav = open("templates/inbox_pwa/_bottom_nav.html", encoding="utf-8").read()
     migration = open("migrations/20260705_pwa_sound_forwarding_autoreply.sql", encoding="utf-8").read()
-    assert "20260709-push-subscription-repair-diagnostics" in sw
+    assert "20260710-push-receipt-ack" in sw
     assert "silent:  false" in sw
     assert "renotify: data.renotify !== false" in sw
     assert "[200, 100, 200]" in sw
@@ -834,3 +834,166 @@ def test_google_contacts_preview_payload_is_bounded_and_token_metadata_unchanged
         assert tok.google_sync_token == "sync-old"
         serialized = str(result) + str(job.preview_payload) + str(job.errors or [])
         assert "secret-access" not in serialized and "secret-refresh" not in serialized
+
+
+def test_push_subscribe_is_idempotent_per_endpoint_and_device(pwa_app):
+    app, client, ids = pwa_app
+    login(client, ids["staff"])
+    payload = {
+        "endpoint": "https://push.example/sub/idempotent",
+        "keys": {"p256dh": "first-key", "auth": "first-auth"},
+        "device_key": "same-device",
+        "device_label": "Same Device",
+    }
+    first = client.post("/api/pwa/push/subscribe", json=payload)
+    second_payload = dict(payload)
+    second_payload["keys"] = {"p256dh": "rotated-key", "auth": "rotated-auth"}
+    second = client.post("/api/pwa/push/subscribe", json=second_payload)
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert first.json["subscription_id"] == second.json["subscription_id"]
+    assert second.json["active_subscriptions"] == 1
+    assert second.json["device_active_subscriptions"] == 1
+    with app.app_context():
+        rows = PushSubscription.query.filter_by(endpoint="https://push.example/sub/idempotent", is_active=True).all()
+        assert len(rows) == 1
+        assert rows[0].user_id == ids["staff"]
+        assert rows[0].company_id == ids["company"]
+        assert rows[0].device_key == "same-device"
+        assert rows[0].p256dh == "rotated-key"
+
+
+def test_push_subscriptions_are_per_authenticated_user_not_shared_line(pwa_app, monkeypatch):
+    app, client, ids = pwa_app
+    with app.app_context():
+        other = User(username="pwa_staff_2", email="pwa_staff_2@example.com", password_hash=generate_password_hash("pw"), default_company_id=ids["company"])
+        db.session.add(other)
+        db.session.flush()
+        db.session.add(UserCompanyAccess(user_id=other.id, company_id=ids["company"], role="staff", is_default=True, can_access_mobile_inbox=True))
+        db.session.add(PhoneNumberUserPermission(company_id=ids["company"], user_id=other.id, phone_number_id=ids["line"], can_access_pwa=True, can_view_sms=True, can_view_calls=True, can_view_voicemail=True))
+        db.session.commit()
+        other_id = other.id
+
+    import inbox_pwa
+    current_user_id = {"id": ids["staff"]}
+    monkeypatch.setattr(inbox_pwa, "_current_user", lambda: db.session.get(User, current_user_id["id"]))
+    staff_resp = client.post("/api/pwa/push/subscribe", json={
+        "endpoint": "https://push.example/sub/shared-line-staff",
+        "keys": {"p256dh": "staff-key", "auth": "staff-auth"},
+        "device_key": "staff-device",
+    })
+    assert staff_resp.status_code == 200
+
+    current_user_id["id"] = other_id
+    other_resp = client.post("/api/pwa/push/subscribe", json={
+        "endpoint": "https://push.example/sub/shared-line-other",
+        "keys": {"p256dh": "other-key", "auth": "other-auth"},
+        "device_key": "other-device",
+    })
+    assert other_resp.status_code == 200
+    assert other_resp.json["success"] is True
+    assert other_resp.json["device_active_subscriptions"] == 1
+
+    with app.app_context():
+        staff_sub = PushSubscription.query.filter_by(user_id=ids["staff"], device_key="staff-device", is_active=True).one()
+        other_sub = PushSubscription.query.filter_by(user_id=other_id, device_key="other-device", is_active=True).one()
+        assert staff_sub.company_id == other_sub.company_id == ids["company"]
+        assert staff_sub.endpoint != other_sub.endpoint
+        assert PushSubscription.query.filter_by(company_id=ids["company"], is_active=True).count() == 2
+
+
+def test_push_test_separates_provider_acceptance_from_delivery_confirmation(pwa_app, monkeypatch):
+    app, client, ids = pwa_app
+    monkeypatch.setenv("VAPID_PUBLIC_KEY", "public")
+    monkeypatch.setenv("VAPID_PRIVATE_KEY", "private")
+    monkeypatch.setenv("VAPID_SUBJECT", "mailto:test@example.com")
+    login(client, ids["staff"])
+    client.post("/api/pwa/push/subscribe", json={
+        "endpoint": "https://push.example/sub/test-state",
+        "keys": {"p256dh": "key", "auth": "auth"},
+        "device_key": "test-device",
+    })
+    import inbox_pwa
+    monkeypatch.setattr(inbox_pwa, "_send_web_push_to_subscriptions", lambda subs, payload: {"sent": len(subs), "errors": []})
+
+    resp = client.post("/api/pwa/push/test")
+    assert resp.status_code == 200
+    assert resp.json["success"] is True
+    assert resp.json["backend_persisted"] is True
+    assert resp.json["provider_accepted"] is True
+    assert resp.json["service_worker_receipt_confirmed"] is False
+    assert resp.json["notification_display_confirmed"] is False
+    assert "lastPushReceivedAt" in resp.json["delivery_note"]
+
+
+def test_push_provider_expiration_deactivates_only_affected_subscription(pwa_app, monkeypatch):
+    app, client, ids = pwa_app
+    monkeypatch.setenv("VAPID_PUBLIC_KEY", "public")
+    monkeypatch.setenv("VAPID_PRIVATE_KEY", "private")
+    monkeypatch.setenv("VAPID_SUBJECT", "mailto:test@example.com")
+    with app.app_context():
+        expired = PushSubscription(user_id=ids["staff"], company_id=ids["company"], endpoint="https://push.example/sub/expired", p256dh="p", auth_key="a", is_active=True)
+        healthy = PushSubscription(user_id=ids["denied"], company_id=ids["company"], endpoint="https://push.example/sub/healthy", p256dh="p", auth_key="a", is_active=True)
+        db.session.add_all([expired, healthy])
+        db.session.commit()
+        expired_id = expired.id
+        healthy_id = healthy.id
+
+    import inbox_pwa
+    calls = []
+    def fake_webpush(subscription_info, data, vapid_private_key, vapid_claims):
+        calls.append(subscription_info["endpoint"])
+        if subscription_info["endpoint"].endswith("/expired"):
+            raise Exception("410 Gone")
+    monkeypatch.setattr("pywebpush.webpush", fake_webpush)
+
+    with app.app_context():
+        result = inbox_pwa._send_web_push_to_subscriptions(PushSubscription.query.order_by(PushSubscription.id).all(), {"title": "test"})
+        assert result["sent"] == 1
+        assert any("410" in error for error in result["errors"])
+        assert db.session.get(PushSubscription, expired_id).is_active is False
+        assert db.session.get(PushSubscription, healthy_id).is_active is True
+        assert calls == ["https://push.example/sub/expired", "https://push.example/sub/healthy"]
+
+
+def test_push_receipt_endpoint_records_redacted_service_worker_delivery_state(pwa_app):
+    app, client, ids = pwa_app
+    login(client, ids["staff"])
+    client.post("/api/pwa/push/subscribe", json={
+        "endpoint": "https://push.example/sub/receipt-device",
+        "keys": {"p256dh": "key", "auth": "auth"},
+        "device_key": "receipt-device",
+    })
+
+    receipt = client.post("/api/pwa/push/receipt", json={
+        "stage": "displayed",
+        "received_at": "2026-07-10T13:30:00.000Z",
+        "sw_version": "20260710-push-receipt-ack",
+        "event_type": "push_test",
+        "tag": "push-test",
+        "silent": False,
+        "renotify": True,
+        "vibrate": [200, 100, 200],
+        "requireInteraction": False,
+        "subscription": {
+            "endpoint": "https://push.example/sub/receipt-device",
+        },
+    })
+    assert receipt.status_code == 200
+    assert receipt.json["success"] is True
+    assert receipt.json["device_key"] == "receipt-device"
+    assert receipt.json["endpoint_redacted"].startswith("https://push.example/")
+    assert "receipt-device" in receipt.json["endpoint_redacted"]
+
+    debug = client.get("/api/pwa/push/debug", headers={"X-PWA-Device-Key": "receipt-device"})
+    assert debug.status_code == 200
+    payload = debug.get_json()
+    assert payload["latest_push_receipt"]["stage"] == "displayed"
+    assert payload["latest_push_receipt"]["sw_version"] == "20260710-push-receipt-ack"
+    assert payload["latest_push_receipt"]["silent"] is False
+    assert payload["latest_push_receipt"]["renotify"] is True
+    assert payload["latest_push_receipt"]["vibrate"] == [200, 100, 200]
+    assert payload["latest_push_receipt"]["endpoint_redacted"].startswith("https://push.example/")
+    serialized = str(payload["push_receipts"])
+    assert "key" not in serialized and "auth" not in serialized

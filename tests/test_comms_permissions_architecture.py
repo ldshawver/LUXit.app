@@ -249,7 +249,7 @@ def test_pwa_shell_and_service_worker_bump_sms_send_version():
     assert "/api/inbox/conversations/${state.activeConvId}/messages" in page
     assert "/twilio/send" not in page
     assert "Server error (${res.status}). Please try again." not in page
-    assert "20260702-pwa-sms-send-fix" in worker
+    assert "20260710-push-receipt-ack" in worker
 
 def test_pwa_notifications_and_push_subscription_are_scoped_by_number(client, comms_world):
     login(client, comms_world["staff"])
