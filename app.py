@@ -824,6 +824,13 @@ def create_app() -> Flask:
                     ("last_sync_status", "VARCHAR(30)"),
                     ("google_account_email", "VARCHAR(255)"),
                     ("google_sync_token", "TEXT"),
+                    ("google_page_token", "TEXT"),
+                ],
+                "google_contacts_sync_job": [
+                    ("current_page_count", "INTEGER DEFAULT 0"),
+                    ("contacts_processed", "INTEGER DEFAULT 0"),
+                    ("failure_stage", "VARCHAR(80)"),
+                    ("sanitized_provider_error", "JSON"),
                 ],
                 "push_subscription": [
                     ("user_agent", "TEXT"),

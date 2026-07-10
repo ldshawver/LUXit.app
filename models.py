@@ -3688,7 +3688,8 @@ class GoogleOAuthToken(db.Model):
     last_sync_duration_ms = db.Column(db.Integer, nullable=True)
     last_sync_status = db.Column(db.String(30), nullable=True)
     google_account_email = db.Column(db.String(255), nullable=True)
-    google_sync_token = db.Column(db.Text, nullable=True)
+    google_sync_token = db.Column(db.Text, nullable=True)  # Durable People API syncToken only; never a pageToken.
+    google_page_token = db.Column(db.Text, nullable=True)  # Legacy/transient cursor; cleared on sync and never persisted.
     sync_error     = db.Column(db.Text, nullable=True)
     created_at     = db.Column(db.DateTime, default=datetime.utcnow)
 
@@ -3711,6 +3712,10 @@ class GoogleContactsSyncJob(db.Model):
     completed_at = db.Column(db.DateTime, nullable=True)
     duration_ms = db.Column(db.Integer, nullable=True)
     contacts_retrieved = db.Column(db.Integer, default=0, nullable=False)
+    current_page_count = db.Column(db.Integer, default=0, nullable=False)
+    contacts_processed = db.Column(db.Integer, default=0, nullable=False)
+    failure_stage = db.Column(db.String(80), nullable=True)
+    sanitized_provider_error = db.Column(JSON, default=dict)
     contacts_created = db.Column(db.Integer, default=0, nullable=False)
     contacts_updated = db.Column(db.Integer, default=0, nullable=False)
     contacts_merged = db.Column(db.Integer, default=0, nullable=False)

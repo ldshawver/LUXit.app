@@ -25,6 +25,31 @@ AUTH_URL   = "https://accounts.google.com/o/oauth2/v2/auth"
 REVOKE_URL = "https://oauth2.googleapis.com/revoke"
 
 
+class GoogleContactsPaginationError(RuntimeError):
+    """Raised when Google rejects a People API pageToken during one sync run."""
+
+    def __init__(self, message: str, provider_error: dict | None = None):
+        super().__init__(message)
+        self.provider_error = provider_error or {"message": message}
+
+
+def _sanitize_google_error(body) -> dict:
+    if not isinstance(body, dict):
+        return {"message": str(body)[:1000]}
+    err = body.get("error") if isinstance(body.get("error"), dict) else body
+    sanitized = {k: err.get(k) for k in ("code", "message", "status") if err.get(k) is not None}
+    details = err.get("details")
+    if isinstance(details, list):
+        sanitized["details"] = details[:5]
+    return sanitized or {"message": str(body)[:1000]}
+
+
+def _google_error_status(provider_error: dict | None) -> str:
+    if not provider_error:
+        return ""
+    return str(provider_error.get("status") or provider_error.get("message") or "").upper()
+
+
 # ---------------------------------------------------------------------------
 # Phone normalization — canonical implementation used across the whole app
 # ---------------------------------------------------------------------------
@@ -248,29 +273,40 @@ def disconnect(user_id: int):
 def _fetch_all_contacts(access_token: str, sync_token: str | None = None) -> dict:
     """
     Return dict: normalized_phone -> Google contact data.
-    Handles pagination automatically.
+    pageToken is only a transient cursor for this call; only nextSyncToken is
+    returned in metadata for durable persistence after the final page.
     """
     phone_map = {}
     page_token = None
+    pages_processed = 0
+    contacts_processed = 0
     headers = {"Authorization": f"Bearer {access_token}"}
+    base_params = {
+        "personFields": "names,phoneNumbers,emailAddresses,organizations,photos",
+        "pageSize": 1000,
+        "sortOrder": "LAST_MODIFIED_DESCENDING",
+        "sources": "READ_SOURCE_TYPE_CONTACT",
+        "requestSyncToken": "true",
+    }
+    if sync_token:
+        base_params["syncToken"] = sync_token
 
     while True:
-        params = {
-            "personFields": "names,phoneNumbers,emailAddresses,organizations,photos",
-            "pageSize":     1000,
-        }
+        params = dict(base_params)
         if page_token:
             params["pageToken"] = page_token
-        elif sync_token:
-            params["syncToken"] = sync_token
-        else:
-            params["requestSyncToken"] = "true"
 
         resp = requests.get(PEOPLE_API, headers=headers, params=params, timeout=20)
         if resp.status_code == 401:
             raise RuntimeError("Google token invalid or revoked. Reconnect Google Contacts to grant consent again.")
+        if resp.status_code == 400:
+            provider_error = _sanitize_google_error(resp.json() if resp.content else {})
+            msg = _google_error_status(provider_error)
+            if page_token and "EXPIRED_SYNC_TOKEN" not in msg:
+                raise GoogleContactsPaginationError("Google People API rejected pageToken during contacts sync", provider_error)
         resp.raise_for_status()
         body = resp.json()
+        pages_processed += 1
 
         for person in body.get("connections", []):
             names = person.get("names", [])
@@ -280,6 +316,7 @@ def _fetch_all_contacts(access_token: str, sync_token: str | None = None) -> dic
             photos = person.get("photos", [])
             if not phones and not emails:
                 continue
+            contacts_processed += 1
 
             primary_name = names[0] if names else {}
             name = (primary_name.get("displayName") or
@@ -312,9 +349,11 @@ def _fetch_all_contacts(access_token: str, sync_token: str | None = None) -> dic
 
         page_token = body.get("nextPageToken")
         if not page_token:
+            meta = {"pages_processed": pages_processed, "contacts_processed": contacts_processed, "incremental": bool(sync_token)}
             next_sync_token = body.get("nextSyncToken")
             if next_sync_token:
-                phone_map["__meta__"] = {"next_sync_token": next_sync_token, "incremental": bool(sync_token)}
+                meta["next_sync_token"] = next_sync_token
+            phone_map["__meta__"] = meta
             break
 
     return phone_map
@@ -697,6 +736,12 @@ def _finish_sync_job(db, job, status: str, payload: dict, error: str | None = No
     job.completed_at = datetime.utcnow()
     job.duration_ms = int((job.completed_at - job.started_at).total_seconds() * 1000)
     job.contacts_retrieved = payload.get("synced", 0)
+    job.current_page_count = payload.get("pages_processed", getattr(job, "current_page_count", 0) or 0)
+    job.contacts_processed = payload.get("contacts_processed", payload.get("synced", 0))
+    if payload.get("failure_stage"):
+        job.failure_stage = payload.get("failure_stage")
+    if payload.get("sanitized_provider_error"):
+        job.sanitized_provider_error = payload.get("sanitized_provider_error")
     job.contacts_created = payload.get("created", 0)
     job.contacts_updated = payload.get("updated", 0)
     job.contacts_merged = payload.get("merged", 0)
@@ -724,6 +769,9 @@ def sync_contacts(user_id: int, company_id: int, dry_run: bool = False) -> dict:
         db.session.commit()
         return payload
     job.google_account_email = getattr(tok, "google_account_email", None)
+    if hasattr(tok, "google_page_token") and tok.google_page_token:
+        # Clear any legacy saved pagination cursor. pageToken must not survive a sync run.
+        tok.google_page_token = None
     try:
         access_token = _refresh_if_needed(tok)
         try:
@@ -732,11 +780,37 @@ def sync_contacts(user_id: int, company_id: int, dry_run: bool = False) -> dict:
             except TypeError:
                 # Backward-compatible for tests/extensions monkeypatching the old one-arg fetcher.
                 phone_map = _fetch_all_contacts(access_token)
+        except GoogleContactsPaginationError as exc:
+            # A pageToken is valid only inside one active paging chain. If Google
+            # rejects it, do not disconnect OAuth or delete contacts; restart once
+            # from the first page with the same durable syncToken.
+            job.failure_stage = "page_token"
+            job.sanitized_provider_error = exc.provider_error
+            job.api_failures = (job.api_failures or []) + [{"stage": "page_token", "provider_error": exc.provider_error, "fallback": "restart_without_page_token"}]
+            if hasattr(tok, "google_page_token"):
+                tok.google_page_token = None
+            try:
+                phone_map = _fetch_all_contacts(access_token, sync_token=getattr(tok, "google_sync_token", None))
+            except TypeError:
+                phone_map = _fetch_all_contacts(access_token)
         except requests.HTTPError as exc:
-            # Google sync tokens expire. Fall back to a full sync, preserving recoverability in job errors.
             status = getattr(getattr(exc, "response", None), "status_code", None)
-            if status in {400, 410} and getattr(tok, "google_sync_token", None):
-                job.api_failures = (job.api_failures or []) + [{"message": str(exc), "fallback": "full_sync"}]
+            provider_error = {}
+            try:
+                provider_error = _sanitize_google_error(exc.response.json())
+            except Exception:
+                provider_error = {"message": str(exc)}
+            if status in {400, 410} and "EXPIRED_SYNC_TOKEN" in _google_error_status(provider_error) and getattr(tok, "google_sync_token", None):
+                job.failure_stage = "sync_token"
+                job.sanitized_provider_error = provider_error
+                job.api_failures = (job.api_failures or []) + [{"stage": "sync_token", "provider_error": provider_error, "fallback": "full_sync"}]
+                tok.google_sync_token = None
+                try:
+                    phone_map = _fetch_all_contacts(access_token, sync_token=None)
+                except TypeError:
+                    phone_map = _fetch_all_contacts(access_token)
+            elif status in {400, 410} and getattr(tok, "google_sync_token", None):
+                job.api_failures = (job.api_failures or []) + [{"message": str(exc), "provider_error": provider_error, "fallback": "full_sync"}]
                 tok.google_sync_token = None
                 try:
                     phone_map = _fetch_all_contacts(access_token, sync_token=None)
@@ -758,6 +832,8 @@ def sync_contacts(user_id: int, company_id: int, dry_run: bool = False) -> dict:
         return payload
 
     meta = phone_map.pop("__meta__", {}) if isinstance(phone_map, dict) else {}
+    job.current_page_count = int(meta.get("pages_processed") or 0)
+    job.contacts_processed = int(meta.get("contacts_processed") or len(phone_map))
     updated_ids, created, merged, matched, skipped = set(), 0, 0, 0, 0
     preview = {"will_create": [], "will_update": [], "will_merge": [], "will_skip": [], "possible_merge_requires_review": []}
     preview_omitted = {}
@@ -827,6 +903,9 @@ def sync_contacts(user_id: int, company_id: int, dry_run: bool = False) -> dict:
         payload = {"sync_job_id": job.id, "synced": len(phone_map), "matched": matched, "updated": len(updated_ids),
                    "merged": merged if not dry_run else len(preview["will_merge"]), "created": created, "skipped": skipped,
                    "error": None, "dry_run": dry_run, "samples": samples, "preview": preview,
+                   "pages_processed": int(meta.get("pages_processed") or 0),
+                   "contacts_processed": int(meta.get("contacts_processed") or len(phone_map)),
+                   "new_next_sync_token_persisted": bool((not dry_run) and meta.get("next_sync_token")),
                    "status": "completed", "incremental": bool(meta.get("incremental")),
                    "review_required": bool(preview["possible_merge_requires_review"] or preview_omitted.get("possible_merge_requires_review"))}
         if dry_run:
