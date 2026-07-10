@@ -945,7 +945,7 @@
       <pre id="pushDiagnostics" style="white-space:pre-wrap;font-size:.72rem;background:#05070c;border:1px solid var(--border);border-radius:10px;padding:10px;color:var(--text);max-height:220px;overflow:auto;">Loading…</pre>
       <div style="display:flex;gap:6px;flex-wrap:wrap;">
         <button class="btn-small" onclick="refreshPushDiagnostics()">Refresh diagnostics</button>
-        <button id="repairPushBtn" class="btn-small" onclick="repairPushNotifications()" style="display:none;">Repair Push Notifications</button>
+        <button id="repairPushBtn" class="btn-small" onclick="repairPushNotifications()" style="display:none;">Repair Push Subscription</button>
       </div>
       <small id="pushRepairReason" style="color:var(--muted);"></small>
       <small style="color:var(--muted);">If this shows silent:false, remaining sound issues are OS/browser notification-channel settings.</small>
@@ -1250,11 +1250,65 @@ window.addEventListener('DOMContentLoaded', () => {
 });
 
 /* ── Service Worker ───────────────────────────────────────────── */
-function registerSW() {
-  if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register(`/static/sw.js?v=${encodeURIComponent(PWA_VERSION)}`).then(reg => {
-      reg.update().catch(() => {});
-    }).catch(e => console.warn('SW:', e));
+function pushRegistrationState() {
+  try { return JSON.parse(localStorage.getItem('luxitPushRegistrationState') || '{}'); } catch (_) { return {}; }
+}
+function setPushRegistrationState(stage, patch={}) {
+  const next = Object.assign(pushRegistrationState(), patch, {
+    lastStage: stage,
+    lastStageAt: new Date().toISOString(),
+    installedPwa: isInstalledPwa(),
+    displayMode: pwaDisplayMode(),
+  });
+  localStorage.setItem('luxitPushRegistrationState', JSON.stringify(next));
+  console.info('[push-registration]', stage, next);
+  refreshPushDiagnostics().catch(() => {});
+  return next;
+}
+function setPushRegistrationFailure(stage, error) {
+  const failure = {
+    failureStage: stage,
+    failureAt: new Date().toISOString(),
+    failureName: error?.name || 'Error',
+    failureMessage: error?.message || String(error),
+  };
+  setPushRegistrationState(stage, failure);
+}
+function setPushRegistrationSuccess(stage, patch={}) {
+  return setPushRegistrationState(stage, Object.assign({
+    lastSuccessfulRegistrationAt: new Date().toISOString(),
+    failureStage: null,
+    failureAt: null,
+    failureName: null,
+    failureMessage: null,
+  }, patch));
+}
+function pwaDisplayMode() {
+  if (window.matchMedia?.('(display-mode: standalone)').matches || window.navigator.standalone === true) return 'standalone';
+  if (window.matchMedia?.('(display-mode: fullscreen)').matches) return 'fullscreen';
+  if (window.matchMedia?.('(display-mode: minimal-ui)').matches) return 'minimal-ui';
+  return 'browser-tab';
+}
+function isInstalledPwa() { return pwaDisplayMode() !== 'browser-tab'; }
+function redactEndpoint(endpoint='') {
+  if (!endpoint) return null;
+  try { const u = new URL(endpoint); return `${u.origin}/…${u.pathname.slice(-18)}`; } catch (_) { return `…${endpoint.slice(-24)}`; }
+}
+async function registerSW() {
+  if (!('serviceWorker' in navigator)) {
+    setPushRegistrationFailure('service-worker-unsupported', new Error('This browser does not support service workers.'));
+    return null;
+  }
+  setPushRegistrationState('service-worker-registering');
+  try {
+    const reg = await navigator.serviceWorker.register(`/static/sw.js?v=${encodeURIComponent(PWA_VERSION)}`);
+    setPushRegistrationState('service-worker-registered', { serviceWorkerScope: reg.scope });
+    reg.update().then(() => setPushRegistrationState('service-worker-updated')).catch(e => setPushRegistrationFailure('service-worker-update-failed', e));
+    return reg;
+  } catch (e) {
+    console.warn('SW:', e);
+    setPushRegistrationFailure('service-worker-register-failed', e);
+    return null;
   }
 }
 
@@ -1332,30 +1386,100 @@ function checkNotifPrompt() {
   }
 }
 
-async function requestPush() {
-  let vapidPublic;
-  try {
-    vapidPublic = await currentVapidPublicKey();
-  } catch (e) {
-    toast(e.message, 'error');
-    return;
+async function persistAndVerifyPushSubscription(sub, {sendTest=false}={}) {
+  const subscription = sub.toJSON();
+  subscription.device_key = pwaDeviceKey();
+  subscription.device_label = localStorage.getItem('luxitPwaDeviceName') || `${browserLabel()} ${deviceTypeLabel()}`;
+  setPushRegistrationState('backend-save-subscription', { endpoint: redactEndpoint(subscription.endpoint) });
+  const saved = await apiFetch('/api/push/subscribe', 'POST', subscription);
+  if (!saved?.success) throw new Error(saved?.error || 'Backend did not save the subscription.');
+  setPushRegistrationState('backend-save-complete', { backendPersisted: true, subscriptionId: saved.subscription_id, endpoint: redactEndpoint(subscription.endpoint) });
+  setPushRegistrationState('backend-reread-subscriptions');
+  const verify = await apiFetch(`/api/pwa/push/debug?device_key=${encodeURIComponent(subscription.device_key)}`);
+  if (!verify?.success) throw new Error(verify?.error || 'Backend subscription verification failed.');
+  if (Number(verify.active_subscriptions || 0) < 1 || Number(verify.device_active_subscriptions || 0) < 1) {
+    throw new Error('Backend save succeeded, but verification did not find an active subscription for this device.');
   }
-  const perm = await Notification.requestPermission();
-  if (perm !== 'granted') { toast('Notification permission denied.', 'error'); return; }
-  document.getElementById('notifBanner').classList.remove('show');
+  let test = null;
+  if (sendTest) {
+    setPushRegistrationState('send-test-push');
+    test = await apiFetch('/api/push/test', 'POST', {});
+    setPushRegistrationState('test-push-provider-result', { testPush: test });
+    if (!test?.success) throw new Error(test?.error || 'Test push provider did not accept the notification.');
+  }
+  setPushRegistrationSuccess('registration-verified', {
+    backendPersisted: true,
+    providerAccepted: !!test?.provider_accepted,
+    deliveryConfirmedByServiceWorker: false,
+    serviceWorkerReceiptRequired: !!sendTest,
+    activeSubscriptions: verify.active_subscriptions || 0,
+    deviceActiveSubscriptions: verify.device_active_subscriptions || 0,
+    endpoint: redactEndpoint(subscription.endpoint),
+  });
+  return {saved, verify, test};
+}
+async function ensurePushSubscription({forceFresh=false, sendTest=false}={}) {
+  let stage = 'start';
   try {
-    const reg = await navigator.serviceWorker.ready;
-    const sub = await reg.pushManager.subscribe({
-      userVisibleOnly: true,
-      applicationServerKey: urlBase64ToUint8Array(vapidPublic),
-    });
-    const subscription = sub.toJSON();
-    subscription.device_key = pwaDeviceKey();
-    subscription.device_label = localStorage.getItem('luxitPwaDeviceName') || `${browserLabel()} ${deviceTypeLabel()}`;
-    await apiFetch('/api/push/subscribe', 'POST', subscription);
-    toast('Push notifications enabled!', 'success');
+    setPushRegistrationState('environment-detected', { notificationPermission: ('Notification' in window) ? Notification.permission : 'unsupported' });
+    if (!('Notification' in window)) throw new Error('This browser does not support Notifications.');
+    if (!('serviceWorker' in navigator)) throw new Error('This browser does not support service workers.');
+    if (!('PushManager' in window)) throw new Error('This browser does not support PushManager/Web Push.');
+    stage = 'vapid-key-loaded';
+    const vapidPublic = await currentVapidPublicKey();
+    stage = 'permission-request';
+    const perm = Notification.permission === 'granted' ? 'granted' : await Notification.requestPermission();
+    setPushRegistrationState('permission-result', { notificationPermission: perm });
+    if (perm !== 'granted') throw new Error(`Notification permission ${perm}.`);
+    document.getElementById('notifBanner')?.classList.remove('show');
+    stage = 'service-worker-ready';
+    const reg = (await registerSW()) || await navigator.serviceWorker.ready;
+    await navigator.serviceWorker.ready;
+    setPushRegistrationState('service-worker-ready', { serviceWorkerScope: reg.scope });
+    stage = 'get-subscription';
+    let sub = await reg.pushManager.getSubscription();
+    setPushRegistrationState('get-subscription-complete', { subscriptionExists: !!sub, endpoint: redactEndpoint(sub?.endpoint || '') });
+
+    if (sub) {
+      try {
+        stage = 'reuse-existing-subscription';
+        setPushRegistrationState(stage, { endpoint: redactEndpoint(sub.endpoint), forceFresh });
+        const result = await persistAndVerifyPushSubscription(sub, {sendTest});
+        await registerPwaDevice('heartbeat');
+        await refreshPushDiagnostics();
+        return result;
+      } catch (reuseError) {
+        setPushRegistrationFailure('existing-subscription-reuse-failed', reuseError);
+        if (!forceFresh) throw reuseError;
+        stage = 'replace-rejected-subscription';
+        await sub.unsubscribe();
+        await apiFetch('/api/push/unsubscribe', 'POST', { endpoint: sub.endpoint });
+        setPushRegistrationState('stale-subscription-unsubscribed', { endpoint: redactEndpoint(sub.endpoint), reason: reuseError.message });
+        sub = null;
+      }
+    }
+
+    if (!sub) {
+      stage = 'push-manager-subscribe';
+      sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlBase64ToUint8Array(vapidPublic) });
+      setPushRegistrationState('push-manager-subscribe-complete', { endpoint: redactEndpoint(sub.endpoint) });
+    }
+    const result = await persistAndVerifyPushSubscription(sub, {sendTest});
+    await registerPwaDevice('heartbeat');
+    await refreshPushDiagnostics();
+    return result;
   } catch (e) {
-    toast('Could not enable notifications: ' + e.message, 'error');
+    setPushRegistrationFailure(stage, e);
+    throw e;
+  }
+}
+
+async function requestPush() {
+  try {
+    await ensurePushSubscription();
+    toast('Push notifications enabled and verified!', 'success');
+  } catch (e) {
+    toast(`Could not enable notifications at ${pushRegistrationState().failureStage || 'unknown stage'}: ${e.name || 'Error'} ${e.message}`, 'error');
   }
 }
 
@@ -2197,6 +2321,19 @@ async function refreshPushDiagnostics() {
       vapidPublicKeyPresent: !!api.vapid_public_key_present,
       vapidMissing: api.vapid_missing || [],
       subscriptions: api.subscriptions || [],
+      browserPushRegistration: pushRegistrationState(),
+      installedPwa: isInstalledPwa(),
+      displayMode: pwaDisplayMode(),
+      currentBrowserSubscription: await (async () => {
+        try {
+          const reg = await navigator.serviceWorker?.getRegistration?.();
+          const sub = await reg?.pushManager?.getSubscription?.();
+          return sub ? { exists: true, endpoint: redactEndpoint(sub.endpoint), expirationTime: sub.expirationTime || null } : { exists: false };
+        } catch (e) { return { error: `${e.name || 'Error'}: ${e.message}` }; }
+      })(),
+      lastSuccessfulRegistrationAt: pushRegistrationState().lastSuccessfulRegistrationAt || null,
+      lastRegistrationFailureStage: pushRegistrationState().failureStage || null,
+      lastRegistrationFailure: pushRegistrationState().failureMessage || null,
       deviceInstructions: api.device_instructions,
     }, null, 2);
     updatePushRepairUi(api);
@@ -2220,7 +2357,7 @@ function updatePushRepairUi(api={}) {
   const permission = ('Notification' in window) ? Notification.permission : 'unsupported';
   const shouldRepair = permission === 'granted' && Number(api.active_subscriptions || 0) === 0;
   const iosReason = iosPushBlockReason();
-  btn.style.display = shouldRepair ? 'inline-flex' : 'none';
+  btn.style.display = (shouldRepair || iosReason) ? 'inline-flex' : 'none';
   if (reason) reason.textContent = iosReason || (shouldRepair ? 'Permission is granted, but no active backend subscription is linked to this user/device.' : '');
 }
 
@@ -2228,38 +2365,17 @@ async function repairPushNotifications() {
   const btn = document.getElementById('repairPushBtn');
   const reason = document.getElementById('pushRepairReason');
   try {
-    const vapidPublic = await currentVapidPublicKey();
-    if (!('Notification' in window)) throw new Error('This browser does not support Notifications.');
-    if (Notification.permission !== 'granted') throw new Error(`Notification permission is ${Notification.permission}; allow notifications before repair.`);
+    if (btn) { btn.disabled = true; btn.textContent = 'Repairing…'; }
     const iosReason = iosPushBlockReason();
     if (iosReason) throw new Error(iosReason);
-    if (!('serviceWorker' in navigator)) throw new Error('This browser does not support service workers.');
-    if (!('PushManager' in window)) throw new Error('This browser does not support PushManager/Web Push.');
-    if (btn) { btn.disabled = true; btn.textContent = 'Repairing…'; }
-    let reg = await navigator.serviceWorker.getRegistration();
-    if (!reg) reg = await navigator.serviceWorker.register(`/static/sw.js?v=${encodeURIComponent(PWA_VERSION)}`);
-    await reg.update().catch(() => {});
-    await navigator.serviceWorker.ready;
-    let sub = await reg.pushManager.getSubscription();
-    if (!sub) {
-      sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlBase64ToUint8Array(vapidPublic) });
-    }
-    const subscription = sub.toJSON();
-    subscription.device_key = pwaDeviceKey();
-    subscription.device_label = localStorage.getItem('luxitPwaDeviceName') || `${browserLabel()} ${deviceTypeLabel()}`;
-    const saved = await apiFetch('/api/push/subscribe', 'POST', subscription);
-    if (!saved?.success) throw new Error(saved?.error || 'Backend did not save the subscription.');
-    if (Number(saved.device_active_subscriptions || saved.active_subscriptions || 0) < 1) {
-      throw new Error('Backend accepted the subscription but diagnostics still reports zero active subscriptions for this device.');
-    }
-    await registerPwaDevice('heartbeat');
-    toast('Push notifications repaired', 'success');
-    await refreshPushDiagnostics();
+    await ensurePushSubscription({forceFresh:true, sendTest:true});
+    if (reason) reason.textContent = 'Fresh subscription saved, backend verified, and test push sent.';
+    toast('Push notifications repaired and test push sent', 'success');
   } catch (e) {
-    if (reason) reason.textContent = e.message;
+    if (reason) reason.textContent = `${pushRegistrationState().failureStage || 'repair'}: ${e.name || 'Error'} ${e.message}`;
     toast('Push repair failed: ' + e.message, 'error');
   } finally {
-    if (btn) { btn.disabled = false; btn.textContent = 'Repair Push Notifications'; }
+    if (btn) { btn.disabled = false; btn.textContent = 'Repair Push Subscription'; }
   }
 }
 function installPwaNavPerformanceHandlers() {

@@ -592,7 +592,7 @@ def pwa_index():
         os.environ.get("LUXIT_ASSET_VERSION")
         or os.environ.get("GIT_SHA")
         or os.environ.get("RENDER_GIT_COMMIT")
-        or "20260709-push-subscription-repair-diagnostics"
+        or "20260710-push-receipt-ack"
     )
     return render_template(
         "inbox_pwa/index.html",
@@ -622,7 +622,7 @@ def pwa_calls():
         os.environ.get("LUXIT_ASSET_VERSION")
         or os.environ.get("GIT_SHA")
         or os.environ.get("RENDER_GIT_COMMIT")
-        or "20260709-push-subscription-repair-diagnostics"
+        or "20260710-push-receipt-ack"
     )
     return render_template("inbox_pwa/calls.html", user=user, company=company, pwa_version=pwa_version)
 
@@ -2276,6 +2276,54 @@ def pwa_notifications_read():
     db.session.commit()
     return jsonify({"success": True, "updated": updated})
 
+
+def _redact_push_endpoint(endpoint: str) -> dict:
+    endpoint = endpoint or ""
+    if not endpoint:
+        return {"endpoint_host": "", "endpoint_tail": "", "endpoint_redacted": None}
+    try:
+        parsed = urlparse(endpoint)
+        return {
+            "endpoint_host": parsed.netloc,
+            "endpoint_tail": endpoint[-18:],
+            "endpoint_redacted": f"{parsed.scheme}://{parsed.netloc}/…{endpoint[-18:]}" if parsed.scheme and parsed.netloc else f"…{endpoint[-18:]}",
+        }
+    except Exception:
+        return {"endpoint_host": "", "endpoint_tail": endpoint[-18:], "endpoint_redacted": f"…{endpoint[-18:]}"}
+
+
+def _recent_push_receipts(company_id: int, user_id: int, device_key: str = "", limit: int = 10):
+    from models import MarketingAuditLog
+    rows = MarketingAuditLog.query.filter_by(
+        company_id=company_id,
+        created_by_user_id=user_id,
+        entity_type="pwa_push_receipt",
+    ).order_by(MarketingAuditLog.created_at.desc(), MarketingAuditLog.id.desc()).limit(50).all()
+    receipts = []
+    for row in rows:
+        details = row.details or {}
+        if device_key and details.get("device_key") and details.get("device_key") != device_key:
+            continue
+        receipts.append({
+            "stage": details.get("stage"),
+            "received_at": details.get("received_at"),
+            "server_received_at": row.created_at.isoformat() if row.created_at else None,
+            "sw_version": details.get("sw_version"),
+            "event_type": details.get("event_type"),
+            "tag": details.get("tag"),
+            "silent": details.get("silent"),
+            "renotify": details.get("renotify"),
+            "vibrate": details.get("vibrate"),
+            "requireInteraction": details.get("requireInteraction"),
+            "endpoint_host": details.get("endpoint_host"),
+            "endpoint_tail": details.get("endpoint_tail"),
+            "endpoint_redacted": details.get("endpoint_redacted"),
+            "error": details.get("error"),
+        })
+        if len(receipts) >= limit:
+            break
+    return receipts
+
 def _web_push_missing_settings():
     return [key for key in ("VAPID_PUBLIC_KEY", "VAPID_PRIVATE_KEY", "VAPID_SUBJECT") if not os.environ.get(key)]
 
@@ -2388,7 +2436,7 @@ def send_pwa_push_notification(company_id: int, *, user_ids, title: str, body: s
             "event_type": decision["event_type"], "silent": payload["silent"], "sound": payload["sound"],
             "vibrate": payload["vibrate"], "renotify": payload["renotify"], "tag": payload["tag"],
             "badgeCount": badge_count, "channel": payload["channelId"], "importance": payload["importance"],
-            "sw_version": os.environ.get("LUXIT_ASSET_VERSION") or os.environ.get("GIT_SHA") or os.environ.get("RENDER_GIT_COMMIT") or "20260709-push-subscription-repair-diagnostics",
+            "sw_version": os.environ.get("LUXIT_ASSET_VERSION") or os.environ.get("GIT_SHA") or os.environ.get("RENDER_GIT_COMMIT") or "20260710-push-receipt-ack",
             "push_provider_result": result,
         })
         total += result.get("sent", 0)
@@ -2437,7 +2485,7 @@ def pwa_push_debug():
         "vapid_configured": not missing,
         "vapid_public_key_present": bool(os.environ.get("VAPID_PUBLIC_KEY")),
         "vapid_missing": missing,
-        "service_worker_version": os.environ.get("LUXIT_ASSET_VERSION") or os.environ.get("GIT_SHA") or os.environ.get("RENDER_GIT_COMMIT") or "20260709-push-subscription-repair-diagnostics",
+        "service_worker_version": os.environ.get("LUXIT_ASSET_VERSION") or os.environ.get("GIT_SHA") or os.environ.get("RENDER_GIT_COMMIT") or "20260710-push-receipt-ack",
         "decision": decision,
         "device_instructions": [
             "Android: Chrome/LUXit PWA notification channel cannot be Silent or Low Importance.",
@@ -2445,19 +2493,79 @@ def pwa_push_debug():
             "iPhone: install to Home Screen, then enable Settings > Notifications > LUXit > Sounds.",
             "Disable Focus / Do Not Disturb during notification sound tests.",
         ],
+        "push_receipts": _recent_push_receipts(company.id, user.id, device_key),
+        "latest_push_receipt": (_recent_push_receipts(company.id, user.id, device_key, limit=1) or [None])[0],
         "subscriptions": [{
             "id": sub.id,
             "device_key": sub.device_key,
-            "endpoint_host": (sub.endpoint or "").split("/")[2] if "/" in (sub.endpoint or "") else "",
-            "endpoint_tail": (sub.endpoint or "")[-18:],
+            **_redact_push_endpoint(sub.endpoint),
             "is_active": sub.is_active,
+            "created_at": sub.created_at.isoformat() if sub.created_at else None,
             "updated_at": sub.updated_at.isoformat() if sub.updated_at else None,
+            "last_successful_registration_attempt_at": sub.updated_at.isoformat() if sub.updated_at else None,
         } for sub in subscriptions],
         "user": {"id": user.id, "email": user.email, "username": user.username},
         "company": {"id": company.id, "name": company.name},
         "mobile_inbox_access": True,
     })
 
+
+
+@inbox_pwa_bp.route("/api/pwa/push/receipt", methods=["POST"])
+def pwa_push_receipt():
+    """Service-worker acknowledgement that a push was received/displayed on-device."""
+    user = _require_auth()
+    company = _get_company(user)
+    if not company:
+        return jsonify({"success": False, "error": "No company"}), 400
+    denied = _require_mobile_inbox_api_access(user, company)
+    if denied:
+        return denied
+
+    payload = request.get_json(silent=True) or {}
+    stage = (payload.get("stage") or "received").strip()[:40]
+    subscription = payload.get("subscription") or {}
+    endpoint = subscription.get("endpoint") or payload.get("endpoint") or ""
+    redacted = _redact_push_endpoint(endpoint)
+    # Prefer the already-redacted SW summary when the full endpoint is intentionally omitted.
+    if not endpoint:
+        redacted = {
+            "endpoint_host": subscription.get("endpoint_host", ""),
+            "endpoint_tail": subscription.get("endpoint_tail", ""),
+            "endpoint_redacted": subscription.get("endpoint_redacted"),
+        }
+
+    from models import MarketingAuditLog, PushSubscription
+    device_key = (payload.get("device_key") or request.headers.get("X-PWA-Device-Key") or "").strip()
+    if endpoint:
+        sub = PushSubscription.query.filter_by(company_id=company.id, user_id=user.id, endpoint=endpoint, is_active=True).first()
+        if sub:
+            device_key = device_key or (sub.device_key or "")
+
+    details = {
+        "stage": stage,
+        "received_at": payload.get("received_at"),
+        "sw_version": payload.get("sw_version"),
+        "event_type": payload.get("event_type"),
+        "tag": payload.get("tag"),
+        "silent": payload.get("silent"),
+        "renotify": payload.get("renotify"),
+        "vibrate": payload.get("vibrate"),
+        "requireInteraction": payload.get("requireInteraction"),
+        "error": payload.get("error"),
+        "device_key": device_key,
+        **redacted,
+    }
+    db.session.add(MarketingAuditLog(
+        company_id=company.id,
+        created_by_user_id=user.id,
+        entity_type="pwa_push_receipt",
+        action=stage,
+        details=details,
+    ))
+    db.session.commit()
+    logger.info("PWA push receipt", extra={"user_id": user.id, "company_id": company.id, "stage": stage, **redacted})
+    return jsonify({"success": True, "stage": stage, "device_key": device_key, **redacted})
 
 # ── API: Push notification subscribe ─────────────────────────────────────────
 
@@ -2542,7 +2650,10 @@ def push_subscribe():
     return jsonify({
         "success": True,
         "device_key": device_key,
+        "subscription_id": sub.id,
         "endpoint_saved": True,
+        "database_record_created": True,
+        "last_successful_registration_attempt_at": sub.updated_at.isoformat() if sub.updated_at else None,
         "active_subscription": active_subscriptions > 0,
         "active_subscriptions": active_subscriptions,
         "device_active_subscription": device_active_subscriptions > 0,
@@ -2588,10 +2699,25 @@ def push_test():
     from models import PushSubscription
     subs = PushSubscription.query.filter_by(user_id=user.id, company_id=company.id, is_active=True).all()
     if not subs:
-        return jsonify({"success": False, "error": "No push subscription found. Enable notifications first."})
+        return jsonify({
+            "success": False,
+            "backend_persisted": False,
+            "provider_accepted": False,
+            "service_worker_receipt_confirmed": False,
+            "notification_display_confirmed": False,
+            "error": "No push subscription found. Enable notifications first.",
+        })
 
     if not _web_push_configured():
-        return jsonify({"success": False, "configured": False, "error": "Web push is not configured. Set VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY, and VAPID_SUBJECT."})
+        return jsonify({
+            "success": False,
+            "configured": False,
+            "backend_persisted": True,
+            "provider_accepted": False,
+            "service_worker_receipt_confirmed": False,
+            "notification_display_confirmed": False,
+            "error": "Web push is not configured. Set VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY, and VAPID_SUBJECT.",
+        })
 
     result = _send_web_push_to_subscriptions(subs, {
         "title": "LUXit Inbox",
@@ -2611,8 +2737,24 @@ def push_test():
     errors = result["errors"]
 
     if sent:
-        return jsonify({"success": True, "sent": sent})
-    return jsonify({"success": False, "error": errors[0] if errors else "Unknown error"})
+        return jsonify({
+            "success": True,
+            "sent": sent,
+            "backend_persisted": True,
+            "provider_accepted": True,
+            "service_worker_receipt_confirmed": False,
+            "notification_display_confirmed": False,
+            "delivery_note": "Push provider accepted the test notification. Confirm service-worker receipt via lastPushReceivedAt in client diagnostics.",
+        })
+    return jsonify({
+        "success": False,
+        "sent": sent,
+        "backend_persisted": True,
+        "provider_accepted": False,
+        "service_worker_receipt_confirmed": False,
+        "notification_display_confirmed": False,
+        "error": errors[0] if errors else "Unknown error",
+    })
 
 
 # ── SSE helpers ───────────────────────────────────────────────────────────────

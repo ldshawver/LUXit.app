@@ -1,5 +1,5 @@
 /* LUXit Inbox — Service Worker */
-const SW_VERSION = new URL(self.location.href).searchParams.get('v') || '20260709-push-subscription-repair-diagnostics-20260702-pwa-sms-send-fix';
+const SW_VERSION = new URL(self.location.href).searchParams.get('v') || '20260710-push-receipt-ack';
 const CACHE = `luxit-inbox-${SW_VERSION}`;
 const APP_SHELL = [
   '/app/inbox',
@@ -27,6 +27,47 @@ self.addEventListener('message', e => {
   }
   if (e.data && e.data.type === 'SKIP_WAITING') self.skipWaiting();
 });
+
+
+async function pushSubscriptionSummary() {
+  try {
+    const sub = await self.registration.pushManager.getSubscription();
+    if (!sub || !sub.endpoint) return {};
+    const url = new URL(sub.endpoint);
+    return {
+      endpoint: sub.endpoint,
+      endpoint_host: url.host,
+      endpoint_tail: sub.endpoint.slice(-18),
+      endpoint_redacted: `${url.origin}/…${sub.endpoint.slice(-18)}`,
+    };
+  } catch (e) {
+    return { subscription_error: `${e.name || 'Error'}: ${e.message || e}` };
+  }
+}
+
+async function ackPushReceipt(stage, payload, options, error) {
+  try {
+    const subscription = await pushSubscriptionSummary();
+    await fetch('/api/pwa/push/receipt', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        stage,
+        received_at: new Date().toISOString(),
+        sw_version: SW_VERSION,
+        event_type: payload.eventType || (payload.data && payload.data.event_type) || null,
+        tag: options && options.tag,
+        silent: options && options.silent === true,
+        renotify: options && options.renotify === true,
+        vibrate: options && options.vibrate,
+        requireInteraction: options && options.requireInteraction === true,
+        error: error ? `${error.name || 'Error'}: ${error.message || error}` : null,
+        subscription,
+      }),
+    });
+  } catch (_) {}
+}
 
 async function storePushDebug(payload, options) {
   const debug = {
@@ -100,13 +141,17 @@ self.addEventListener('push', e => {
   if (notificationOptions.renotify && !notificationOptions.tag) {
     notificationOptions.tag = `luxit-${Date.now()}`;
   }
-  e.waitUntil(
-    Promise.all([
-      updateBadge(),
-      storePushDebug(data, notificationOptions),
-      self.registration.showNotification(data.title, notificationOptions)
-    ])
-  );
+  e.waitUntil((async () => {
+    await ackPushReceipt('received', data, notificationOptions);
+    await Promise.all([updateBadge(), storePushDebug(data, notificationOptions)]);
+    try {
+      await self.registration.showNotification(data.title, notificationOptions);
+      await ackPushReceipt('displayed', data, notificationOptions);
+    } catch (err) {
+      await ackPushReceipt('display_failed', data, notificationOptions, err);
+      throw err;
+    }
+  })());
 });
 
 self.addEventListener('notificationclick', e => {
