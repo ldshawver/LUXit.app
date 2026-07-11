@@ -2667,6 +2667,11 @@ def push_subscribe():
 def push_unsubscribe():
     user = _require_auth()
     company = _get_company(user)
+    if not company:
+        return jsonify({"success": False, "error": "No company"}), 400
+    denied = _require_pwa_communications_access(user, company)
+    if denied:
+        return denied
     payload = request.get_json() or {}
     endpoint = payload.get("endpoint", "")
     from models import PushSubscription

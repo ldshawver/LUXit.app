@@ -945,6 +945,7 @@
       <pre id="pushDiagnostics" style="white-space:pre-wrap;font-size:.72rem;background:#05070c;border:1px solid var(--border);border-radius:10px;padding:10px;color:var(--text);max-height:220px;overflow:auto;">Loading…</pre>
       <div style="display:flex;gap:6px;flex-wrap:wrap;">
         <button class="btn-small" onclick="refreshPushDiagnostics()">Refresh diagnostics</button>
+        <button class="btn-small" onclick="clearPushDiagnosticHistory()">Clear Push Diagnostic History</button>
         <button id="repairPushBtn" class="btn-small" onclick="repairPushNotifications()" style="display:none;">Repair Push Subscription</button>
       </div>
       <small id="pushRepairReason" style="color:var(--muted);"></small>
@@ -1253,6 +1254,111 @@ window.addEventListener('DOMContentLoaded', () => {
 function pushRegistrationState() {
   try { return JSON.parse(localStorage.getItem('luxitPushRegistrationState') || '{}'); } catch (_) { return {}; }
 }
+function pushRegistrationEvents() {
+  try { return JSON.parse(localStorage.getItem('luxitPushRegistrationEvents') || '[]'); } catch (_) { return []; }
+}
+function describePushError(error) {
+  if (!error) return null;
+  return {
+    name: error.name || 'Error',
+    message: error.message || String(error),
+    code: error.code ?? null,
+    httpStatus: error.httpStatus ?? null,
+    requestId: error.requestId || null,
+    stack: error.stack ? String(error.stack).split('\n').slice(0, 4).join('\n') : null,
+  };
+}
+function sanitizePushLogValue(value) {
+  if (value == null || typeof value !== 'object') return value;
+  const allowedKeys = new Set([
+    'success', 'error', 'message', 'code', 'device_key', 'subscription_id',
+    'endpoint_saved', 'database_record_created', 'last_successful_registration_attempt_at',
+    'active_subscription', 'active_subscriptions', 'device_active_subscription',
+    'device_active_subscriptions', 'provider_accepted', 'delivery_confirmed',
+    'disabled', 'sent', 'attempted', 'failed', 'reason', 'vapid_configured',
+    'vapid_public_key_present', 'vapid_missing', 'request_id', 'requestId',
+  ]);
+  if (Array.isArray(value)) return value.slice(0, 20).map(sanitizePushLogValue);
+  return Object.fromEntries(Object.entries(value)
+    .filter(([key]) => allowedKeys.has(key))
+    .map(([key, val]) => [key, sanitizePushLogValue(val)]));
+}
+function clearPushDiagnosticHistory() {
+  localStorage.removeItem('luxitPushRegistrationEvents');
+  localStorage.removeItem('luxitPushRegistrationState');
+  localStorage.removeItem('luxitPushDiagnostics');
+  if (navigator.serviceWorker?.controller) {
+    navigator.serviceWorker.controller.postMessage({type:'CLEAR_PUSH_DIAGNOSTICS'});
+  }
+  refreshPushDiagnostics().catch(() => {});
+  toast('Push diagnostic history cleared. Push subscription was not changed.', 'success');
+}
+
+const PUSH_AUDIT_STAGES = [
+  'repair_started',
+  'service-worker-registering',
+  'service_worker_ready',
+  'get_subscription_started',
+  'get_subscription_completed',
+  'subscribe_started',
+  'subscribe_completed',
+  'subscription-obtained',
+  'backend_subscribe_started',
+  'backend_subscribe_completed',
+  'database_insert_update_confirmed',
+  'backend_verification_started',
+  'backend_verification_completed',
+  'test_push_started',
+  'test_push_completed',
+  'service_worker_receipt_observed',
+  'notification_display_observed',
+  'repair_succeeded',
+];
+function buildPushLifecycleAudit(api={}, events=pushRegistrationEvents(), state=pushRegistrationState()) {
+  const lastRepairIndex = Math.max(0, events.map(e => e.stage).lastIndexOf('repair_started'));
+  const scoped = events.slice(lastRepairIndex);
+  const observed = new Set(scoped.map(e => e.stage));
+  const existingSubscriptionReused = scoped.some(e => e.stage === 'get_subscription_completed' && e.subscriptionExists) && !observed.has('subscribe_started');
+  const expectedStages = existingSubscriptionReused
+    ? PUSH_AUDIT_STAGES.filter(stage => !['subscribe_started', 'subscribe_completed'].includes(stage))
+    : PUSH_AUDIT_STAGES;
+  const receiptStage = api.latest_push_receipt?.stage || null;
+  if (receiptStage) observed.add('service_worker_receipt_observed');
+  if (receiptStage === 'displayed') observed.add('notification_display_observed');
+  const failedEvent = [...scoped].reverse().find(e => String(e.stage || '').includes('exception') || e.stage === 'repair_failed');
+  const missingStage = expectedStages.find(stage => !observed.has(stage));
+  const lastEvent = scoped[scoped.length - 1] || null;
+  return {
+    expectedStages,
+    observedStages: [...observed],
+    lastObservedStage: lastEvent?.stage || null,
+    stoppedAt: failedEvent?.stage || state.failureStage || (observed.has('repair_succeeded') ? null : (lastEvent?.stage || missingStage || null)),
+    nextExpectedStage: observed.has('repair_succeeded') ? null : (missingStage || null),
+    errorName: failedEvent?.error?.name || state.failureName || null,
+    errorMessage: failedEvent?.error?.message || state.failureMessage || null,
+    httpStatus: failedEvent?.status || failedEvent?.error?.httpStatus || state.failureDetail?.httpStatus || null,
+    requestId: failedEvent?.requestId || failedEvent?.error?.requestId || state.failureDetail?.requestId || null,
+    backendActiveSubscriptions: api.active_subscriptions || 0,
+    backendDeviceActiveSubscriptions: api.device_active_subscriptions || 0,
+    latestPushReceiptStage: receiptStage,
+    serviceWorkerReceived: !!receiptStage,
+    notificationDisplayed: receiptStage === 'displayed',
+  };
+}
+
+function recordPushLifecycle(stage, details={}) {
+  const event = Object.assign({
+    at: new Date().toISOString(),
+    stage,
+    notificationPermission: ('Notification' in window) ? Notification.permission : 'unsupported',
+  }, details);
+  const events = pushRegistrationEvents();
+  events.push(event);
+  localStorage.setItem('luxitPushRegistrationEvents', JSON.stringify(events.slice(-80)));
+  console.info('[push-registration:lifecycle]', stage, event);
+  refreshPushDiagnostics().catch(() => {});
+  return event;
+}
 function setPushRegistrationState(stage, patch={}) {
   const next = Object.assign(pushRegistrationState(), patch, {
     lastStage: stage,
@@ -1261,6 +1367,7 @@ function setPushRegistrationState(stage, patch={}) {
     displayMode: pwaDisplayMode(),
   });
   localStorage.setItem('luxitPushRegistrationState', JSON.stringify(next));
+  recordPushLifecycle(stage, patch);
   console.info('[push-registration]', stage, next);
   refreshPushDiagnostics().catch(() => {});
   return next;
@@ -1271,7 +1378,9 @@ function setPushRegistrationFailure(stage, error) {
     failureAt: new Date().toISOString(),
     failureName: error?.name || 'Error',
     failureMessage: error?.message || String(error),
+    failureDetail: describePushError(error),
   };
+  recordPushLifecycle(`${stage}:exception`, { error: describePushError(error) });
   setPushRegistrationState(stage, failure);
 }
 function setPushRegistrationSuccess(stage, patch={}) {
@@ -1386,32 +1495,69 @@ function checkNotifPrompt() {
   }
 }
 
+async function pushApiJson(url, method='GET', body=null) {
+  recordPushLifecycle(`http:${method}:${url}:start`);
+  let res;
+  let text = '';
+  let data = null;
+  try {
+    const opts = {
+      method,
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF, 'X-PWA-Device-Key': pwaDeviceKey() },
+    };
+    if (body !== null) opts.body = JSON.stringify(body);
+    res = await fetch(url, opts);
+    text = await res.text();
+    const requestId = res.headers.get('X-Request-ID') || res.headers.get('X-Request-Id') || res.headers.get('Request-ID') || null;
+    try { data = text ? JSON.parse(text) : {}; } catch (_) { data = { success: false, error: 'Non-JSON response omitted from diagnostics.' }; }
+    const safeResponse = sanitizePushLogValue(data);
+    recordPushLifecycle(`http:${method}:${url}:complete`, { status: res.status, ok: res.ok, requestId, response: safeResponse });
+    if (res.status === 401) { location.href = '/auth/login?next=/app/inbox'; return null; }
+    if (!res.ok) {
+      const err = new Error(data?.error || data?.message || `Request failed (${res.status}).`);
+      err.httpStatus = res.status;
+      err.requestId = requestId;
+      throw err;
+    }
+    return data;
+  } catch (e) {
+    recordPushLifecycle(`http:${method}:${url}:exception`, { status: e.httpStatus || res?.status || null, requestId: e.requestId || null, error: describePushError(e), response: sanitizePushLogValue(data) });
+    throw e;
+  }
+}
 async function persistAndVerifyPushSubscription(sub, {sendTest=false}={}) {
+  recordPushLifecycle('subscription-obtained', { subscriptionExists: !!sub, endpoint: redactEndpoint(sub?.endpoint || '') });
   const subscription = sub.toJSON();
   subscription.device_key = pwaDeviceKey();
   subscription.device_label = localStorage.getItem('luxitPwaDeviceName') || `${browserLabel()} ${deviceTypeLabel()}`;
   setPushRegistrationState('backend-save-subscription', { endpoint: redactEndpoint(subscription.endpoint) });
-  const saved = await apiFetch('/api/push/subscribe', 'POST', subscription);
+  recordPushLifecycle('backend_subscribe_started', { endpoint: redactEndpoint(subscription.endpoint) });
+  const saved = await pushApiJson('/api/pwa/push/subscribe', 'POST', subscription);
+  recordPushLifecycle('backend_subscribe_completed', { subscriptionId: saved?.subscription_id, activeSubscriptions: saved?.active_subscriptions, deviceActiveSubscriptions: saved?.device_active_subscriptions });
   if (!saved?.success) throw new Error(saved?.error || 'Backend did not save the subscription.');
+  recordPushLifecycle('database_insert_update_confirmed', { subscriptionId: saved.subscription_id, activeSubscriptions: saved.active_subscriptions, deviceActiveSubscriptions: saved.device_active_subscriptions });
   setPushRegistrationState('backend-save-complete', { backendPersisted: true, subscriptionId: saved.subscription_id, endpoint: redactEndpoint(subscription.endpoint) });
   setPushRegistrationState('backend-reread-subscriptions');
+  recordPushLifecycle('backend_verification_started');
   const verify = await apiFetch(`/api/pwa/push/debug?device_key=${encodeURIComponent(subscription.device_key)}`);
+  recordPushLifecycle('backend_verification_completed', { activeSubscriptions: verify?.active_subscriptions || 0, deviceActiveSubscriptions: verify?.device_active_subscriptions || 0 });
   if (!verify?.success) throw new Error(verify?.error || 'Backend subscription verification failed.');
   if (Number(verify.active_subscriptions || 0) < 1 || Number(verify.device_active_subscriptions || 0) < 1) {
     throw new Error('Backend save succeeded, but verification did not find an active subscription for this device.');
   }
   let test = null;
-  if (sendTest) {
-    setPushRegistrationState('send-test-push');
-    test = await apiFetch('/api/push/test', 'POST', {});
-    setPushRegistrationState('test-push-provider-result', { testPush: test });
-    if (!test?.success) throw new Error(test?.error || 'Test push provider did not accept the notification.');
-  }
+  setPushRegistrationState('send-test-push', { requestedByRepair: !!sendTest });
+  recordPushLifecycle('test_push_started', { requestedByRepair: !!sendTest });
+  test = await pushApiJson('/api/pwa/push/test', 'POST', {});
+  recordPushLifecycle('test_push_completed', { providerAccepted: !!test?.provider_accepted, success: !!test?.success });
+  setPushRegistrationState('test-push-provider-result', { testPush: test });
+  if (!test?.success) throw new Error(test?.error || 'Test push provider did not accept the notification.');
   setPushRegistrationSuccess('registration-verified', {
     backendPersisted: true,
     providerAccepted: !!test?.provider_accepted,
     deliveryConfirmedByServiceWorker: false,
-    serviceWorkerReceiptRequired: !!sendTest,
+    serviceWorkerReceiptRequired: true,
     activeSubscriptions: verify.active_subscriptions || 0,
     deviceActiveSubscriptions: verify.device_active_subscriptions || 0,
     endpoint: redactEndpoint(subscription.endpoint),
@@ -1433,11 +1579,19 @@ async function ensurePushSubscription({forceFresh=false, sendTest=false}={}) {
     if (perm !== 'granted') throw new Error(`Notification permission ${perm}.`);
     document.getElementById('notifBanner')?.classList.remove('show');
     stage = 'service-worker-ready';
-    const reg = (await registerSW()) || await navigator.serviceWorker.ready;
-    await navigator.serviceWorker.ready;
+    recordPushLifecycle('navigator.serviceWorker.ready:waiting');
+    const registered = await registerSW();
+    const readyReg = await navigator.serviceWorker.ready;
+    const reg = registered || readyReg;
+    recordPushLifecycle('navigator.serviceWorker.ready:complete', { serviceWorkerScope: readyReg.scope });
+    recordPushLifecycle('service_worker_ready', { serviceWorkerScope: readyReg.scope });
     setPushRegistrationState('service-worker-ready', { serviceWorkerScope: reg.scope });
     stage = 'get-subscription';
+    recordPushLifecycle('pushManager.getSubscription:attempt');
+    recordPushLifecycle('get_subscription_started');
     let sub = await reg.pushManager.getSubscription();
+    recordPushLifecycle('pushManager.getSubscription:complete', { subscriptionExists: !!sub, endpoint: redactEndpoint(sub?.endpoint || '') });
+    recordPushLifecycle('get_subscription_completed', { subscriptionExists: !!sub, endpoint: redactEndpoint(sub?.endpoint || '') });
     setPushRegistrationState('get-subscription-complete', { subscriptionExists: !!sub, endpoint: redactEndpoint(sub?.endpoint || '') });
 
     if (sub) {
@@ -1453,7 +1607,7 @@ async function ensurePushSubscription({forceFresh=false, sendTest=false}={}) {
         if (!forceFresh) throw reuseError;
         stage = 'replace-rejected-subscription';
         await sub.unsubscribe();
-        await apiFetch('/api/push/unsubscribe', 'POST', { endpoint: sub.endpoint });
+        await pushApiJson('/api/pwa/push/unsubscribe', 'POST', { endpoint: sub.endpoint });
         setPushRegistrationState('stale-subscription-unsubscribed', { endpoint: redactEndpoint(sub.endpoint), reason: reuseError.message });
         sub = null;
       }
@@ -1461,8 +1615,17 @@ async function ensurePushSubscription({forceFresh=false, sendTest=false}={}) {
 
     if (!sub) {
       stage = 'push-manager-subscribe';
-      sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlBase64ToUint8Array(vapidPublic) });
-      setPushRegistrationState('push-manager-subscribe-complete', { endpoint: redactEndpoint(sub.endpoint) });
+      recordPushLifecycle('pushManager.subscribe:attempt');
+      recordPushLifecycle('subscribe_started');
+      try {
+        sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlBase64ToUint8Array(vapidPublic) });
+        recordPushLifecycle('pushManager.subscribe:complete', { subscriptionExists: !!sub, endpoint: redactEndpoint(sub?.endpoint || '') });
+        recordPushLifecycle('subscribe_completed', { subscriptionExists: !!sub, endpoint: redactEndpoint(sub?.endpoint || '') });
+      } catch (subscribeError) {
+        recordPushLifecycle('pushManager.subscribe:exception', { error: describePushError(subscribeError) });
+        throw subscribeError;
+      }
+      setPushRegistrationState('push-manager-subscribe-complete', { subscriptionExists: !!sub, endpoint: redactEndpoint(sub.endpoint) });
     }
     const result = await persistAndVerifyPushSubscription(sub, {sendTest});
     await registerPwaDevice('heartbeat');
@@ -2322,6 +2485,8 @@ async function refreshPushDiagnostics() {
       vapidMissing: api.vapid_missing || [],
       subscriptions: api.subscriptions || [],
       browserPushRegistration: pushRegistrationState(),
+      browserPushLifecycle: pushRegistrationEvents(),
+      browserPushAudit: buildPushLifecycleAudit(api),
       installedPwa: isInstalledPwa(),
       displayMode: pwaDisplayMode(),
       currentBrowserSubscription: await (async () => {
@@ -2364,14 +2529,17 @@ function updatePushRepairUi(api={}) {
 async function repairPushNotifications() {
   const btn = document.getElementById('repairPushBtn');
   const reason = document.getElementById('pushRepairReason');
+  recordPushLifecycle('repair_started');
   try {
     if (btn) { btn.disabled = true; btn.textContent = 'Repairing…'; }
     const iosReason = iosPushBlockReason();
     if (iosReason) throw new Error(iosReason);
     await ensurePushSubscription({forceFresh:true, sendTest:true});
+    recordPushLifecycle('repair_succeeded');
     if (reason) reason.textContent = 'Fresh subscription saved, backend verified, and test push sent.';
     toast('Push notifications repaired and test push sent', 'success');
   } catch (e) {
+    recordPushLifecycle('repair_failed', { error: describePushError(e) });
     if (reason) reason.textContent = `${pushRegistrationState().failureStage || 'repair'}: ${e.name || 'Error'} ${e.message}`;
     toast('Push repair failed: ' + e.message, 'error');
   } finally {
@@ -2395,6 +2563,9 @@ if ('serviceWorker' in navigator) navigator.serviceWorker.addEventListener('mess
     const d = JSON.parse(localStorage.getItem('luxitPushDiagnostics') || '{}');
     d.swVersion = event.data.version;
     localStorage.setItem('luxitPushDiagnostics', JSON.stringify(d));
+  } else if (event.data?.type === 'PUSH_DIAGNOSTICS_CLEARED') {
+    localStorage.removeItem('luxitPushDiagnostics');
+    refreshPushDiagnostics();
   }
 });
 
