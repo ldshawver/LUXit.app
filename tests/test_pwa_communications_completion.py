@@ -466,6 +466,36 @@ def test_push_subscribe_creates_device_and_debug_counts_device_subscription(pwa_
         assert device.push_enabled is True
 
 
+
+def test_push_unsubscribe_auth_and_permission_match_push_routes(pwa_app):
+    app, client, ids = pwa_app
+    unauth = client.post("/api/pwa/push/unsubscribe", json={"endpoint": "https://push.example/sub/auth"})
+    assert unauth.status_code == 401
+
+    with app.app_context():
+        blocked = User(username="pwa_unsub_blocked", email="pwa_unsub_blocked@example.com", password_hash=generate_password_hash("pw"), default_company_id=ids["company"])
+        db.session.add(blocked)
+        db.session.flush()
+        db.session.add(UserCompanyAccess(user_id=blocked.id, company_id=ids["company"], role="staff", is_default=True, can_access_mobile_inbox=False, pwa_access_enabled=False))
+        db.session.commit()
+        blocked_id = blocked.id
+
+    login(client, blocked_id)
+    forbidden = client.post("/api/pwa/push/unsubscribe", json={"endpoint": "https://push.example/sub/auth"})
+    assert forbidden.status_code == 403
+    assert forbidden.get_json()["error"] == "Mobile inbox access is not enabled for this account."
+
+    login(client, ids["staff"])
+    sub = client.post("/api/pwa/push/subscribe", json={
+        "endpoint": "https://push.example/sub/auth",
+        "keys": {"p256dh": "p", "auth": "a"},
+        "device_key": "auth-device",
+    })
+    assert sub.status_code == 200
+    ok = client.post("/api/pwa/push/unsubscribe", json={"endpoint": "https://push.example/sub/auth"})
+    assert ok.status_code == 200
+    assert ok.get_json()["disabled"] == 1
+
 def test_push_subscribe_rejects_incomplete_browser_subscription(pwa_app):
     app, client, ids = pwa_app
     login(client, ids["staff"])
@@ -529,6 +559,12 @@ def test_pwa_sound_forwarding_autoreply_static_requirements():
     assert "PUSH_DIAGNOSTICS" in sw and "lastNotificationSilent" in sw
     assert "Call Forwarding" in html and "Business-hours SMS auto reply" in html
     assert "Push Diagnostics" in html and "lastNotificationSilent" in html
+    assert "buildPushLifecycleAudit" in html and "browserPushAudit" in html
+    assert "database_insert_update_confirmed" in html
+    assert "Clear Push Diagnostic History" in html and "CLEAR_PUSH_DIAGNOSTICS" in sw
+    clear_history_body = html.split("function clearPushDiagnosticHistory()", 1)[1].split("function recordPushLifecycle", 1)[0]
+    assert "subscription.unsubscribe" not in clear_history_body
+    assert "/api/pwa/push/unsubscribe" not in clear_history_body
     assert "installPwaNavPerformanceHandlers" in html
     assert "pwa-tab-loading" in nav
     assert "env(safe-area-inset-bottom)" in nav

@@ -25,6 +25,13 @@ self.addEventListener('message', e => {
   if (e.data && e.data.type === 'GET_SW_VERSION') {
     e.source && e.source.postMessage({ type: 'SW_VERSION', version: SW_VERSION });
   }
+  if (e.data && e.data.type === 'CLEAR_PUSH_DIAGNOSTICS') {
+    e.waitUntil(
+      caches.delete(`luxit-push-debug-${SW_VERSION}`).then(() => {
+        e.source && e.source.postMessage({ type: 'PUSH_DIAGNOSTICS_CLEARED', version: SW_VERSION });
+      })
+    );
+  }
   if (e.data && e.data.type === 'SKIP_WAITING') self.skipWaiting();
 });
 
@@ -50,7 +57,7 @@ async function ackPushReceipt(stage, payload, options, error) {
     const subscription = await pushSubscriptionSummary();
     await fetch('/api/pwa/push/receipt', {
       method: 'POST',
-      credentials: 'include',
+      credentials: 'same-origin',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         stage,
