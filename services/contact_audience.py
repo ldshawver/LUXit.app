@@ -12,18 +12,11 @@ PHONE_SOURCE_TAG_RULES = [{"phone_number": "+19165989519", "tag": "MyOrder Custo
 SYSTEM_KEYWORDS = {"STOP", "STOPALL", "UNSUBSCRIBE", "CANCEL", "END", "QUIT", "HELP", "INFO", "START", "UNSTOP"}
 
 
+from services.phone_normalization import normalize_phone_e164
+from services.contact_intelligence import apply_source_attribution, sync_contact_points
+
 def normalize_phone(number: str | None) -> str:
-    raw = (number or "").strip()
-    digits = re.sub(r"\D", "", raw)
-    if not digits:
-        return ""
-    if raw.startswith("+") and raw[1:].isdigit():
-        return raw
-    if len(digits) == 10:
-        return f"+1{digits}"
-    if len(digits) == 11 and digits.startswith("1"):
-        return f"+{digits}"
-    return f"+{digits}" if 10 <= len(digits) <= 15 else ""
+    return normalize_phone_e164(number)
 
 
 def _split_tags(tags):
@@ -98,6 +91,10 @@ def upsert_contact_from_source(company_id: int, phone: str | None = None, email:
         contact.source_phone_number = normalize_phone(source_phone_number)
     contact.source = contact.source or source_channel
     contact.source_detail = contact.source_detail or source_context
+    source_map = {"sms": "twilio_inbound_sms", "csv_import": "csv_import", "manual": "manual_entry", "api": "api"}
+    intel_source = source_map.get((source_channel or "").lower(), source_channel or "unknown")
+    sync_contact_points(contact, phone, email, intel_source)
+    apply_source_attribution(contact, intel_source, detail=source_context, metadata={"provider": source_provider, "source_phone_number": source_phone_number})
     contact.first_seen_at = contact.first_seen_at or now
     contact.last_seen_at = now
     contact.tenant_id = contact.tenant_id or tenant_id or company_id

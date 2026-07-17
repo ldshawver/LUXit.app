@@ -4405,29 +4405,17 @@ def newsletter_subscribe():
     if not email or not validate_email(email):
         return jsonify({'success': False, 'message': 'Please enter a valid email address'}), 400
     
-    # Check if contact already exists
-    contact = Contact.query.filter_by(email=email).first()
-    
-    if contact:
-        if 'newsletter' not in (contact.tags or ''):
-            existing_tags = contact.tags.split(',') if contact.tags else []
-            if 'newsletter' not in existing_tags:
-                existing_tags.append('newsletter')
-                contact.tags = ','.join(existing_tags)
-                contact.updated_at = datetime.utcnow()
-                db.session.commit()
-                return jsonify({'success': True, 'message': 'You have been subscribed to our newsletter!'}), 200
-        return jsonify({'success': True, 'message': 'You are already subscribed to our newsletter!'}), 200
-    
-    # Create new contact
-    contact = Contact(
-        email=email,
-        source='newsletter_archive',
-        tags='newsletter',
-        is_active=True
-    )
-    
-    db.session.add(contact)
+    from services.contact_intelligence import resolve_contact
+    from services.contact_audience import add_contact_tag
+    company = Company.query.order_by(Company.id.asc()).first()
+    company_id = company.id if company else None
+    if not company_id:
+        return jsonify({'success': False, 'message': 'No company is configured for newsletter subscription'}), 500
+    contact = resolve_contact(company_id, email=email, source='website_form', detail='Newsletter archive subscription')
+    add_contact_tag(contact, 'newsletter')
+    contact.is_active = True
+    contact.email_opt_in = True
+    contact.email_consent_status = 'opted_in'
     db.session.commit()
     
     return jsonify({'success': True, 'message': 'Thank you for subscribing to our newsletter!'}), 200
@@ -10260,38 +10248,14 @@ def add_subscriber():
         if not email:
             return jsonify({'success': False, 'error': 'Email is required'}), 400
         
-        existing = Contact.query.filter_by(email=email).first()
-        if existing:
-            if 'newsletter' not in (existing.tags or ''):
-                existing_tags = existing.tags.split(',') if existing.tags else []
-                existing_tags.append('newsletter')
-                existing.tags = ','.join(existing_tags)
-                existing.subscribed_at = datetime.utcnow()
-                existing.subscription_source = 'manual'
-                if existing.segment == 'lead':
-                    existing.segment = 'newsletter'
-                db.session.commit()
-                return jsonify({
-                    'success': True,
-                    'message': f'{email} has been subscribed to the newsletter'
-                })
-            return jsonify({
-                'success': False,
-                'error': 'This email is already subscribed'
-            }), 400
-        
-        contact = Contact(
-            email=email,
-            first_name=first_name or None,
-            last_name=last_name or None,
-            segment='newsletter',
-            source='manual',
-            subscribed_at=datetime.utcnow(),
-            subscription_source='manual',
-            is_active=True,
-            tags='newsletter'
-        )
-        db.session.add(contact)
+        company_id = getattr(current_user, 'default_company_id', None)
+        from services.contact_intelligence import resolve_contact
+        from services.contact_audience import add_contact_tag
+        contact = resolve_contact(company_id, email=email, first_name=first_name or None, last_name=last_name or None, source='manual_entry', detail=f'Created manually by {getattr(current_user, "email", current_user.id)}', user_id=current_user.id)
+        add_contact_tag(contact, 'newsletter')
+        contact.segment = 'newsletter'
+        contact.email_opt_in = True
+        contact.email_consent_status = 'opted_in'
         db.session.commit()
         
         return jsonify({
@@ -10841,13 +10805,18 @@ def send_campaign(campaign_id):
 def add_contact():
     try:
         company_id = getattr(current_user, 'default_company_id', None)
-        contact = Contact(
-            email=request.form.get('email', ''),
-            first_name=request.form.get('first_name', ''),
-            last_name=request.form.get('last_name', ''),
-            company_id=company_id
+        from services.contact_intelligence import resolve_contact
+        contact = resolve_contact(
+            company_id,
+            phone=request.form.get('phone') or None,
+            email=request.form.get('email') or None,
+            first_name=request.form.get('first_name') or None,
+            last_name=request.form.get('last_name') or None,
+            business_name=request.form.get('company') or None,
+            source='manual_entry',
+            detail=f'Created manually by {getattr(current_user, "email", current_user.id)}',
+            user_id=current_user.id,
         )
-        db.session.add(contact)
         db.session.commit()
         log_activity(current_user.id, 'Added contact', f'{contact.first_name} {contact.last_name}'.strip() or contact.email, 'user-plus', company_id)
         if company_id:
@@ -10932,18 +10901,9 @@ def import_contacts():
             file = request.files.get('file')
             if file and file.filename.endswith('.csv'):
                 company_id = getattr(current_user, 'default_company_id', None)
-                stream = io.StringIO(file.stream.read().decode('utf-8'))
-                reader = csv.DictReader(stream)
-                count = 0
-                for row in reader:
-                    contact = Contact(
-                        email=row.get('Email', row.get('email', '')),
-                        first_name=row.get('First Name', row.get('first_name', '')),
-                        last_name=row.get('Last Name', row.get('last_name', '')),
-                        company_id=company_id
-                    )
-                    db.session.add(contact)
-                    count += 1
+                from services.contact_audience import import_contacts as import_contact_file
+                result = import_contact_file(company_id, file.stream.read(), file.filename, source_provider='csv_import', tenant_id=company_id)
+                count = result.get('success_count', 0)
                 db.session.commit()
                 flash(f'Successfully imported {count} contacts!', 'success')
             else:
@@ -12620,3 +12580,56 @@ def admin_diagnostics_legacy():
         'recent_errors': read_logs('error', limit=20),
     }
     return render_template('admin_diagnostics.html', diagnostics=diagnostics)
+
+
+@main_bp.route('/contacts/duplicates/review')
+@login_required
+def contact_duplicate_review():
+    company_id = getattr(current_user, 'default_company_id', None)
+    from services.contact_dedupe import find_duplicate_contacts, related_record_counts
+    groups = find_duplicate_contacts(company_id) if company_id else []
+    counts = {}
+    for group in groups:
+        for c in group.get('contacts', []):
+            counts[c.id] = related_record_counts(c.id)
+    return render_template('contact_duplicate_review.html', groups=groups, related_counts=counts)
+
+
+@main_bp.route('/contacts/duplicates/review/scan', methods=['POST'])
+@login_required
+def contact_duplicate_review_scan():
+    company_id = getattr(current_user, 'default_company_id', None)
+    from services.contact_intelligence_jobs import create_job, run_job
+    job = create_job(company_id, 'duplicate_scan', user_id=current_user.id, dry_run=True)
+    run_job(job.id)
+    flash(f'Duplicate audit completed: {job.total_found} groups found.', 'info')
+    return redirect(url_for('main.contact_duplicate_review'))
+
+
+@main_bp.route('/contacts/duplicates/review/merge', methods=['POST'])
+@login_required
+def contact_duplicate_review_merge():
+    if not getattr(current_user, 'is_admin', False):
+        flash('Admin permission required.', 'danger')
+        return redirect(url_for('main.contact_duplicate_review'))
+    company_id = getattr(current_user, 'default_company_id', None)
+    ids = [int(x) for x in (request.form.get('contact_ids') or '').split(',') if x.strip().isdigit()]
+    primary_id = int(request.form.get('primary_contact_id') or 0)
+    action = request.form.get('action')
+    try:
+        if action == 'not_duplicate' and len(ids) >= 2:
+            from models import ContactDuplicateExclusion
+            a, b = sorted(ids[:2])
+            if not ContactDuplicateExclusion.query.filter_by(company_id=company_id, contact_id_a=a, contact_id_b=b).first():
+                db.session.add(ContactDuplicateExclusion(company_id=company_id, contact_id_a=a, contact_id_b=b, reason='admin review', created_by_user_id=current_user.id))
+                db.session.commit()
+            flash('Pair marked as not duplicate.', 'success')
+        elif action == 'merge' and primary_id in ids:
+            from services.contact_dedupe import merge_contacts
+            result = merge_contacts(primary_id, [x for x in ids if x != primary_id], actor_user_id=current_user.id, company_id=company_id)
+            flash(f'Merged {len(result.get("merged_contact_ids", []))} contacts.', 'success')
+        else:
+            flash('Invalid duplicate review action.', 'warning')
+    except Exception as exc:
+        db.session.rollback(); flash(str(exc), 'danger')
+    return redirect(url_for('main.contact_duplicate_review'))

@@ -7,21 +7,15 @@ from collections import defaultdict
 from datetime import datetime
 
 from extensions import db
-from models import Contact, IntegrationAuditLog
+from models import Contact, IntegrationAuditLog, ContactDuplicateExclusion
 
 logger = logging.getLogger(__name__)
 
 
+from services.phone_normalization import normalize_phone_e164
+
 def normalize_phone(raw: str | None) -> str:
-    raw = (raw or "").strip()
-    digits = "".join(ch for ch in raw if ch.isdigit())
-    if raw.startswith("+") and raw[1:].isdigit():
-        return raw
-    if len(digits) == 10:
-        return f"+1{digits}"
-    if len(digits) == 11 and digits.startswith("1"):
-        return f"+{digits}"
-    return raw
+    return normalize_phone_e164(raw)
 
 
 def normalize_email(raw: str | None) -> str:
@@ -78,7 +72,7 @@ def _contact_keys(contact: Contact) -> set[str]:
     name = _full_name(contact)
     company = (contact.company or "").strip().lower()
     if name and company:
-        keys.add(f"company:{tenant}:name_company:{name}:{company}")
+        keys.add(f"company:{tenant}:possible_name_company:{name}:{company}")
     return keys
 
 
@@ -95,6 +89,13 @@ def find_duplicate_contacts(company_id: int | None = None) -> list[dict]:
         for key in _contact_keys(contact):
             buckets[key].append(contact)
 
+    excluded_pairs = set()
+    exq = ContactDuplicateExclusion.query
+    if company_id is not None:
+        exq = exq.filter_by(company_id=company_id)
+    for ex in exq.all():
+        excluded_pairs.add(tuple(sorted((ex.contact_id_a, ex.contact_id_b))))
+
     groups = []
     seen_sets = set()
     for key, group in buckets.items():
@@ -102,6 +103,8 @@ def find_duplicate_contacts(company_id: int | None = None) -> list[dict]:
             continue
         ids = tuple(sorted(c.id for c in group))
         if ids in seen_sets:
+            continue
+        if len(ids) == 2 and tuple(ids) in excluded_pairs:
             continue
         seen_sets.add(ids)
         groups.append({"match_key": key, "contact_ids": list(ids), "contacts": group})
@@ -158,6 +161,12 @@ def merge_contacts(primary_contact_id: int, duplicate_contact_ids: list[int], *,
         for table, count in changed.items():
             audit["references_reassigned"][table] = audit["references_reassigned"].get(table, 0) + count
         dup.is_active = False
+        dup.status = "merged"
+        dup.archived_at = datetime.utcnow()
+        dup.merged_into_contact_id = primary.id
+        dup.merged_at = datetime.utcnow()
+        dup.merged_by_user_id = actor_user_id
+        dup.duplicate_status = "merged"
 
     audit["opt_out_preservation"]["sms_opted_out_after"] = bool(primary.sms_opted_out or primary.do_not_sms or primary.sms_opt_out_at)
     audit["opt_out_preservation"]["email_unsubscribed_after"] = bool(primary.email_unsubscribed or primary.do_not_email)
@@ -260,6 +269,8 @@ def merge_duplicate_contacts(company_id: int | None = None, *, dry_run: bool = F
     merged = 0
     references = 0
     for group in groups:
+        if ":possible_name_company:" in group.get("match_key", ""):
+            continue
         contacts = sorted(group["contacts"], key=lambda c: (c.created_at or datetime.utcnow(), c.id))
         primary = contacts[0]
         duplicates = [c.id for c in contacts[1:]]
@@ -280,3 +291,22 @@ def _audit_merge(primary: Contact, audit: dict, *, actor_user_id: int | None) ->
             changes=audit,
         )
     )
+
+
+def related_record_counts(contact_id: int) -> dict[str, int]:
+    """Reflectively count every mapped FK that references Contact."""
+    counts: dict[str, int] = {}
+    for mapper in db.Model.registry.mappers:
+        cls = mapper.class_; table = mapper.local_table
+        if table.name == Contact.__tablename__:
+            continue
+        for column in table.columns:
+            for fk in column.foreign_keys:
+                if fk.column.table.name == Contact.__tablename__ and fk.column.name == "id":
+                    try:
+                        count = cls.query.filter(column == contact_id).count()
+                        if count:
+                            counts[table.name] = counts.get(table.name, 0) + count
+                    except Exception:
+                        counts[table.name] = counts.get(table.name, 0)
+    return counts

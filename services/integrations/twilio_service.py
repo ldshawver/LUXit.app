@@ -173,21 +173,18 @@ def _ensure_lead(phone: str, company_id: int | None, first_msg: str) -> bool:
     """Create contact + conversation if phone is unknown. Returns True if created."""
     try:
         from extensions import db
-        from models import TwilioConversation, Contact
+        from models import TwilioConversation
+        from services.contact_intelligence import resolve_contact
+        from services.contact_audience import add_contact_tag
         existing = TwilioConversation.query.filter_by(
             from_number=phone, company_id=company_id
         ).first()
         if existing:
             return False
-        # Create contact
-        contact = Contact(
-            phone=phone,
-            company_id=company_id,
-            tags="sms_opt_in,new_lead",
-            source="inbound_sms",
-            is_subscribed=True,
-        )
-        db.session.add(contact)
+        contact = resolve_contact(company_id, phone=phone, source="twilio_inbound_sms", detail="First inbound SMS capture")
+        add_contact_tag(contact, "sms_opt_in")
+        add_contact_tag(contact, "new_lead")
+        contact.is_subscribed = True
         db.session.flush()
         # Create conversation
         convo = TwilioConversation(
