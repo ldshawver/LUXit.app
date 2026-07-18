@@ -57,7 +57,7 @@ def manage_users():
     from services.comms_permissions import can_manage_users
     if not company or not can_manage_users(current_user, company.id):
         return make_response("Forbidden", 403)
-    users = User.query.order_by(User.created_at.desc()).all()
+    users = User.query.filter(User.active.is_(True)).order_by(User.created_at.desc()).all()
     return render_template('manage_users.html', users=users)
 
 @user_bp.route('/add-user', methods=['GET', 'POST'])

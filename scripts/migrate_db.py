@@ -79,6 +79,9 @@ MIGRATIONS = [
     ("user", "last_activity",    "DATETIME",      "DEFAULT NULL"),
     ("user", "bio",              "TEXT",          "DEFAULT NULL"),
     ("user", "preferred_hub",    "VARCHAR(20)",   "DEFAULT 'marketing'"),
+    ("user", "active",           "BOOLEAN",       "DEFAULT 1"),
+    ("user", "archived_at",      "DATETIME",      "DEFAULT NULL"),
+    ("user", "archived_by_user_id","INTEGER",     "DEFAULT NULL"),
     ("user", "created_at",       "DATETIME",      "DEFAULT (CURRENT_TIMESTAMP)"),
     ("user", "updated_at",       "DATETIME",      "DEFAULT (CURRENT_TIMESTAMP)"),
 
