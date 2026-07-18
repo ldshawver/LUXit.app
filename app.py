@@ -272,7 +272,13 @@ def create_app() -> Flask:
     @app.errorhandler(CSRFError)
     def handle_csrf_error(e):
         from flask import flash as _flash, redirect as _redirect, request as _req, url_for as _url
-        _flash("Your session expired. Please try again.", "error")
+        logging.getLogger(__name__).warning(
+            "CSRF validation failed path=%s request_id=%s reason=%s",
+            _req.path,
+            _req.headers.get("X-Request-ID"),
+            getattr(e, "description", "csrf_error"),
+        )
+        _flash("Security check failed. Please refresh the page and try again.", "error")
         referrer = _req.referrer
         if referrer:
             return _redirect(referrer)
@@ -291,21 +297,37 @@ def create_app() -> Flask:
     login_manager.login_message_category = "info"
     login_manager.session_protection = "basic"
 
-    @login_manager.user_loader
-    def load_user(user_id):
-        from models import User
-        import logging as _logging
-        _log = _logging.getLogger("auth")
-        try:
-            u = db.session.get(User, int(user_id))
-            if u is not None and not getattr(u, "active", True):
-                _log.info("USER_LOADER: id=%s is archived/inactive; refusing session", user_id)
-                return None
-            _log.info("USER_LOADER: id=%s → user=%s (authenticated=%s)", user_id, u, bool(u))
-            return u
-        except Exception as _exc:
-            _log.warning("USER_LOADER: exception for id=%s: %s", user_id, _exc)
+@login_manager.user_loader
+def load_user(user_id):
+    from models import User
+    import logging as _logging
+
+    _log = _logging.getLogger("auth")
+
+    try:
+        user = db.session.get(User, int(user_id))
+
+        if user is not None and not bool(getattr(user, "is_active", True)):
+            _log.info(
+                "USER_LOADER: id=%s is archived/inactive; refusing session",
+                user_id,
+            )
             return None
+
+        _log.info(
+            "USER_LOADER: id=%s user_found=%s",
+            user_id,
+            user is not None,
+        )
+        return user
+
+    except (TypeError, ValueError):
+        _log.warning("USER_LOADER: invalid user id=%r", user_id)
+        return None
+
+    except Exception:
+        _log.exception("USER_LOADER: failed to load user id=%r", user_id)
+        return None
 
     # --------------------------------------------------------
     # Request Lifecycle

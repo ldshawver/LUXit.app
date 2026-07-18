@@ -34,7 +34,14 @@ def user_access_for_company(user, company_id: int):
     from models import UserCompanyAccess
     if not user or not company_id or not getattr(user, "active", True):
         return None
-    return UserCompanyAccess.query.filter_by(user_id=user.id, company_id=company_id, is_active=True).first()
+    if user is None or not bool(getattr(user, "is_active", True)):
+        return None
+
+    return UserCompanyAccess.query.filter_by(
+        user_id=user.id,
+        company_id=company_id,
+        is_active=True,
+    ).first()
 
 
 def can_manage_users(user, company_id: int) -> bool:
@@ -57,6 +64,8 @@ def accessible_phone_numbers(user, company_id: int) -> list[str]:
     from models import PhoneNumberUserPermission, TwilioAccount, TwilioPhoneNumber
 
     if not user or not company_id:
+        return []
+    if not getattr(user, "is_active", True):
         return []
     acc = user_access_for_company(user, company_id)
     role = normalize_role(getattr(acc, "role", None)) if acc else "viewer"

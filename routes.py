@@ -3,10 +3,12 @@ import io
 import base64
 import logging
 import os
+import uuid
 from datetime import datetime, timedelta
 from flask import Blueprint, render_template, request, flash, redirect, url_for, jsonify, make_response, send_file, current_app, g
 from flask_login import login_required, current_user
 from sqlalchemy import or_, case, text, func
+from sqlalchemy.exc import IntegrityError
 from extensions import db, csrf
 try:
     from models import (
@@ -6603,7 +6605,7 @@ def update_user_access(user_id):
                 return jsonify({'success': False, 'error': 'Permission denied.'}), 403
 
         target = db.session.get(User, user_id)
-        if not target:
+        if not target or not getattr(target, "is_active", True):
             return jsonify({'success': False, 'error': 'User not found.'}), 404
         if not getattr(target, "active", True):
             return jsonify({'success': False, 'error': 'Archived users must be restored before access can be changed.'}), 409

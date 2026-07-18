@@ -126,9 +126,14 @@ def login():
                 logger.warning("Auth login template missing: %s", exc)
                 return render_template("login.html")
 
-        if not getattr(user, "active", True):
-            logger.warning("LOGIN FAIL: user is archived/inactive for %r", identifier)
-            flash("This account has been archived. Ask an administrator to restore access.", "error")
+        if not bool(getattr(user, "is_active", True)):
+            logger.warning(
+                "LOGIN FAIL: archived/inactive account user_id=%s",
+                getattr(user, "id", None),
+            )
+            flash(
+                "This account has been archived. Ask an administrator to restore access.",
+                "error", )
             try:
                 return render_template("auth/login.html")
             except TemplateNotFound as exc:
