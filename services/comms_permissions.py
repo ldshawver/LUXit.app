@@ -32,17 +32,22 @@ def normalize_role(role: str | None) -> str:
 
 def user_access_for_company(user, company_id: int):
     from models import UserCompanyAccess
-    if not user or not company_id:
+    if not user or not company_id or not getattr(user, "active", True):
         return None
-    if not getattr(user, "is_active", True):
+    if user is None or not bool(getattr(user, "is_active", True)):
         return None
-    return UserCompanyAccess.query.filter_by(user_id=user.id, company_id=company_id).first()
+
+    return UserCompanyAccess.query.filter_by(
+        user_id=user.id,
+        company_id=company_id,
+        is_active=True,
+    ).first()
 
 
 def can_manage_users(user, company_id: int) -> bool:
     if not user or not company_id:
         return False
-    if getattr(user, "is_admin", False):
+    if getattr(user, "is_admin", False) and getattr(user, "active", True):
         return True
     acc = user_access_for_company(user, company_id)
     return bool(acc and acc.can_manage_users())
@@ -73,7 +78,7 @@ def accessible_phone_numbers(user, company_id: int) -> list[str]:
         if ta.from_phone and ta.from_phone not in all_numbers:
             all_numbers.append(ta.from_phone)
 
-    if getattr(user, "is_admin", False) or role in {"owner", "admin"}:
+    if getattr(user, "is_admin", False) and getattr(user, "active", True) or role in {"owner", "admin"}:
         return all_numbers
 
     explicit = [

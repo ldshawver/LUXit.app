@@ -752,6 +752,57 @@ def _finish_sync_job(db, job, status: str, payload: dict, error: str | None = No
     db.session.flush()
 
 
+def _cache_google_lookup(company_id: int, user_id: int, phone_map: dict, *, dry_run: bool = False) -> dict:
+    """Persist a local, token-free Google phone/name cache for async matching."""
+    from extensions import db
+    from models import GoogleContactLookup, GoogleContactConnection
+    if dry_run or not isinstance(phone_map, dict):
+        return {"cached": 0, "ambiguous": 0}
+    connection = GoogleContactConnection.query.filter_by(company_id=company_id, user_id=user_id).first()
+    grouped = {}
+    for norm, raw in phone_map.items():
+        if str(norm).startswith("__") or str(norm).startswith("email:"):
+            continue
+        data = _google_data(norm, raw)
+        normalized = data.get("normalized_phone") or normalize_phone(data.get("phone"))
+        if not normalized:
+            continue
+        grouped.setdefault(normalized, []).append(data)
+    cached = ambiguous = 0
+    for normalized, candidates in grouped.items():
+        lookup = GoogleContactLookup.query.filter_by(company_id=company_id, user_id=user_id, normalized_phone=normalized).first()
+        if not lookup:
+            lookup = GoogleContactLookup(company_id=company_id, user_id=user_id, normalized_phone=normalized)
+            db.session.add(lookup)
+        lookup.connection_id = connection.id if connection else None
+        lookup.candidate_count = len(candidates)
+        lookup.is_ambiguous = len({c.get("resource_name") for c in candidates}) > 1
+        lookup.display_name = None if lookup.is_ambiguous else (candidates[0].get("name") or "")
+        lookup.resource_id = None if lookup.is_ambiguous else candidates[0].get("resource_name")
+        lookup.etag = None if lookup.is_ambiguous else candidates[0].get("etag")
+        lookup.candidates = [{"normalized_phone": normalized, "name": c.get("name"), "resource_id": c.get("resource_name"), "etag": c.get("etag")} for c in candidates]
+        lookup.last_seen_at = datetime.utcnow()
+        cached += 1
+        if lookup.is_ambiguous: ambiguous += 1
+    return {"cached": cached, "ambiguous": ambiguous}
+
+
+def upsert_connection_from_token(user_id: int, company_id: int):
+    """Mirror legacy GoogleOAuthToken metadata into the CRM connection table without exposing tokens."""
+    from extensions import db
+    from models import GoogleContactConnection
+    tok = get_token(user_id)
+    conn = GoogleContactConnection.query.filter_by(company_id=company_id, user_id=user_id).first()
+    if not conn:
+        conn = GoogleContactConnection(company_id=company_id, user_id=user_id)
+        db.session.add(conn)
+    conn.google_account_email = getattr(tok, "google_account_email", None) if tok else conn.google_account_email
+    conn.scopes = [SCOPES]
+    conn.sync_status = "connected" if tok else "disconnected"
+    conn.last_successful_sync_at = getattr(tok, "last_successful_sync_at", None) if tok else conn.last_successful_sync_at
+    return conn
+
+
 def sync_contacts(user_id: int, company_id: int, dry_run: bool = False) -> dict:
     """Fetch Google contacts and enrich/merge Audience contacts. Supports dry-run previews."""
     from extensions import db
@@ -832,6 +883,7 @@ def sync_contacts(user_id: int, company_id: int, dry_run: bool = False) -> dict:
         return payload
 
     meta = phone_map.pop("__meta__", {}) if isinstance(phone_map, dict) else {}
+    cache_stats = _cache_google_lookup(company_id, user_id, phone_map, dry_run=dry_run)
     job.current_page_count = int(meta.get("pages_processed") or 0)
     job.contacts_processed = int(meta.get("contacts_processed") or len(phone_map))
     updated_ids, created, merged, matched, skipped = set(), 0, 0, 0, 0
@@ -879,8 +931,9 @@ def sync_contacts(user_id: int, company_id: int, dry_run: bool = False) -> dict:
                 created += 1
                 _append_preview(preview, "will_create", {"contact_name": data.get("name"), "incoming_google_contact": data}, preview_omitted, preview_limit)
                 if not dry_run:
-                    contact = Contact(company_id=company_id, is_subscribed=False)
-                    db.session.add(contact); db.session.flush()
+                    from services.contact_intelligence import resolve_contact
+                    contact = resolve_contact(company_id, phone=data.get("normalized_phone") or data.get("phone"), email=data.get("email"), proposed_name=data.get("name"), first_name=data.get("first_name"), last_name=data.get("last_name"), business_name=data.get("company"), source="google_contacts", detail="Google Contacts sync", user_id=user_id)
+                    contact.is_subscribed = False
                     _apply_google_to_contact(contact, data, dry_run=False)
             if contact and len(samples) < 10:
                 samples.append({"contact_id": contact.id, "name": data.get("name"), "phone": data.get("normalized_phone") or norm})
@@ -907,7 +960,8 @@ def sync_contacts(user_id: int, company_id: int, dry_run: bool = False) -> dict:
                    "contacts_processed": int(meta.get("contacts_processed") or len(phone_map)),
                    "new_next_sync_token_persisted": bool((not dry_run) and meta.get("next_sync_token")),
                    "status": "completed", "incremental": bool(meta.get("incremental")),
-                   "review_required": bool(preview["possible_merge_requires_review"] or preview_omitted.get("possible_merge_requires_review"))}
+                   "review_required": bool(preview["possible_merge_requires_review"] or preview_omitted.get("possible_merge_requires_review")),
+                   "lookup_cache": cache_stats}
         if dry_run:
             job_id = job.id
             db.session.rollback()

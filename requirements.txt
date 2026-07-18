@@ -104,3 +104,4 @@ flask
 flask-sqlalchemy
 gunicorn
 psycopg2-binary
+phonenumbers==8.13.52

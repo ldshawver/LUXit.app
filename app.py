@@ -17,8 +17,8 @@ try:
 except ImportError:
     pass
 
-from flask import Flask, g, has_request_context, jsonify, redirect, request
-from flask_login import LoginManager
+from flask import Flask, g, has_request_context, jsonify, redirect, request, session
+from flask_login import LoginManager, current_user, logout_user
 from werkzeug.middleware.proxy_fix import ProxyFix
 from extensions import db, csrf  # csrf used below to exempt Stripe routes
 
@@ -297,21 +297,37 @@ def create_app() -> Flask:
     login_manager.login_message_category = "info"
     login_manager.session_protection = "basic"
 
-    @login_manager.user_loader
-    def load_user(user_id):
-        from models import User
-        import logging as _logging
-        _log = _logging.getLogger("auth")
-        try:
-            u = db.session.get(User, int(user_id))
-            if u and not getattr(u, "is_active", True):
-                _log.info("USER_LOADER: id=%s → inactive user denied", user_id)
-                return None
-            _log.info("USER_LOADER: id=%s → user=%s (authenticated=%s)", user_id, u, bool(u))
-            return u
-        except Exception as _exc:
-            _log.warning("USER_LOADER: exception for id=%s: %s", user_id, _exc)
+@login_manager.user_loader
+def load_user(user_id):
+    from models import User
+    import logging as _logging
+
+    _log = _logging.getLogger("auth")
+
+    try:
+        user = db.session.get(User, int(user_id))
+
+        if user is not None and not bool(getattr(user, "is_active", True)):
+            _log.info(
+                "USER_LOADER: id=%s is archived/inactive; refusing session",
+                user_id,
+            )
             return None
+
+        _log.info(
+            "USER_LOADER: id=%s user_found=%s",
+            user_id,
+            user is not None,
+        )
+        return user
+
+    except (TypeError, ValueError):
+        _log.warning("USER_LOADER: invalid user id=%r", user_id)
+        return None
+
+    except Exception:
+        _log.exception("USER_LOADER: failed to load user id=%r", user_id)
+        return None
 
     # --------------------------------------------------------
     # Request Lifecycle
@@ -320,6 +336,14 @@ def create_app() -> Flask:
     def assign_request_id():
         g.request_id = request.headers.get("X-Request-ID") or str(uuid4())
         g.request_started_at = time.time()
+        if current_user.is_authenticated:
+            revoked = getattr(current_user, "session_revoked_at", None)
+            session_revoked = session.get("user_session_revoked_at")
+            revoked_marker = revoked.isoformat() if revoked else None
+            if not getattr(current_user, "active", True) or (revoked_marker and session_revoked != revoked_marker):
+                logout_user()
+                session.clear()
+                return redirect("/auth/login")
         # Replit's proxy delivers HTTPS externally but passes HTTP internally.
         # Force WSGI to treat requests as HTTPS so Secure cookies are accepted.
         if is_replit and request.environ.get("wsgi.url_scheme") != "https":
