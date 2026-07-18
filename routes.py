@@ -21,7 +21,7 @@ try:
         AutomationTest, AutomationTriggerLibrary, AutomationABTest, Company, user_company,
         Deal, LeadScore, PersonalizationRule, KeywordResearch,
         Notification, InboxMessage, CampaignCost, CRMTask, Meeting, SalesStage,
-        TouchpointEvent, MarketingAuditLog, User,
+        TouchpointEvent, MarketingAuditLog, IntegrationAuditLog, User,
     )
     MODELS_AVAILABLE = True
 except ImportError as exc:
@@ -40,7 +40,7 @@ except ImportError as exc:
     Deal = LeadScore = PersonalizationRule = KeywordResearch = None
     Notification = InboxMessage = CampaignCost = None
     CRMTask = Meeting = SalesStage = TouchpointEvent = None
-    MarketingAuditLog = User = None
+    MarketingAuditLog = IntegrationAuditLog = User = None
 try:
     from email_service import EmailService
 except ImportError as exc:
@@ -2022,21 +2022,86 @@ def contacts():
     page = request.args.get('page', 1, type=int)
     search = request.args.get('search', '')
     
-    query = Contact.query.filter_by(is_active=True)
-    
+    company_id = getattr(current_user, 'default_company_id', None)
+    query = Contact.query.filter(Contact.company_id == company_id) if company_id else Contact.query.filter(Contact.id == -1)
+    show_archived = request.args.get('archived') in {'1', 'true', 'yes'}
+    if not show_archived:
+        query = query.filter(Contact.is_active.is_(True), Contact.archived_at.is_(None))
+    source = request.args.get('source')
+    if source:
+        query = query.filter(db.or_(Contact.original_source == source, Contact.latest_source == source, Contact.source == source))
+    if request.args.get('missing_name') in {'1', 'true'}:
+        query = query.filter(db.or_(Contact.name.is_(None), Contact.name == ''))
+    if request.args.get('google_status'):
+        query = query.filter(Contact.google_match_status == request.args['google_status'])
+    if request.args.get('duplicate_status'):
+        query = query.filter(Contact.duplicate_status == request.args['duplicate_status'])
+    if request.args.get('owner_user_id', type=int):
+        query = query.filter(Contact.owner_user_id == request.args.get('owner_user_id', type=int))
+    if request.args.get('stage'):
+        query = query.filter(Contact.lifecycle_stage == request.args['stage'])
+    if request.args.get('tag'):
+        query = query.filter(Contact.tags.ilike(f"%{request.args['tag']}%"))
+    if request.args.get('followup_overdue') in {'1', 'true'}:
+        query = query.filter(Contact.next_follow_up_at < datetime.utcnow())
+    if request.args.get('do_not_contact') in {'1', 'true'}:
+        query = query.filter(db.or_(Contact.do_not_contact.is_(True), Contact.do_not_sms.is_(True), Contact.do_not_email.is_(True)))
     if search:
         query = query.filter(or_(
             Contact.email.contains(search),
             Contact.first_name.contains(search),
             Contact.last_name.contains(search),
-            Contact.company.contains(search)
+            Contact.company.contains(search),
+            Contact.phone.contains(search)
         ))
-    
     contacts = query.order_by(Contact.created_at.desc()).paginate(
         page=page, per_page=20, error_out=False
     )
-    
-    return render_template('contacts.html', contacts=contacts, search=search)
+    from models import Opportunity
+    opp_values = dict(db.session.query(Opportunity.contact_id, db.func.coalesce(db.func.sum(Opportunity.estimated_value), 0)).filter(Opportunity.company_id == company_id, Opportunity.status == 'open').group_by(Opportunity.contact_id).all()) if company_id else {}
+    return render_template('contacts.html', contacts=contacts, search=search, show_archived=show_archived, opp_values=opp_values)
+
+
+def _trusted_public_company_id():
+    """Resolve public submissions without assigning arbitrary fallback companies."""
+    explicit = request.values.get("company_id") or request.headers.get("X-LUXIT-Company-ID") or os.environ.get("PUBLIC_NEWSLETTER_COMPANY_ID")
+    if explicit and str(explicit).isdigit():
+        company = Company.query.filter_by(id=int(explicit), is_active=True).first()
+        if company:
+            return company.id
+    host = (request.host or "").split(":", 1)[0].lower()
+    if host:
+        company = Company.query.filter(db.or_(db.func.lower(Company.custom_domain) == host, db.func.lower(Company.domain) == host) if hasattr(Company, "custom_domain") and hasattr(Company, "domain") else Company.id == -1).first()
+        if company:
+            return company.id
+    return None
+
+
+def _resolve_contact_from_route(company_id, *, email=None, phone=None, first_name=None, last_name=None,
+                                proposed_name=None, source='api', detail=None, segment=None, tags=None,
+                                user_id=None, metadata=None):
+    """Route-level wrapper so legacy import/webhook paths share canonical resolution."""
+    from services.contact_intelligence import resolve_contact
+    contact = resolve_contact(
+        company_id,
+        email=email,
+        phone=phone,
+        first_name=first_name or None,
+        last_name=last_name or None,
+        proposed_name=proposed_name or None,
+        source=source,
+        detail=detail,
+        user_id=user_id,
+        metadata=metadata,
+    )
+    if segment:
+        contact.segment = segment
+    if tags:
+        existing = {t.strip() for t in (contact.tags or '').split(',') if t.strip()}
+        for tag in [t.strip() for t in str(tags).split(',') if t.strip()]:
+            existing.add(tag)
+        contact.tags = ','.join(sorted(existing))
+    return contact
 
 
 def _scheduler_status():
@@ -3579,7 +3644,7 @@ def update_phone_line(number_id):
     company_id = _current_company_id()
     from models import TwilioPhoneNumber, IntegrationAuditLog
     line = TwilioPhoneNumber.query.filter_by(id=number_id, company_id=company_id).first_or_404()
-    for field in ['sms_webhook_url','voice_webhook_url','status_callback_webhook_url','timezone','sms_forward_to','call_forward_to','number_auto_reply_text','missed_call_text','voicemail_greeting_text','voicemail_greeting_audio_url']:
+    for field in ['sms_webhook_url','voice_webhook_url','status_callback_webhook_url','timezone','sms_forward_to','call_forward_to','number_auto_reply_text','missed_call_text','voicemail_greeting_text','voicemail_greeting_audio_url','after_hours_text']:
         setattr(line, field, request.form.get(field) or None)
     line.auto_reply_enabled = bool(request.form.get('auto_reply_enabled'))
     line.after_hours_sms_enabled = bool(request.form.get('after_hours_sms_enabled'))
@@ -4407,10 +4472,9 @@ def newsletter_subscribe():
     
     from services.contact_intelligence import resolve_contact
     from services.contact_audience import add_contact_tag
-    company = Company.query.order_by(Company.id.asc()).first()
-    company_id = company.id if company else None
+    company_id = _trusted_public_company_id()
     if not company_id:
-        return jsonify({'success': False, 'message': 'No company is configured for newsletter subscription'}), 500
+        return jsonify({'success': False, 'message': 'Company could not be verified for this public form'}), 400
     contact = resolve_contact(company_id, email=email, source='website_form', detail='Newsletter archive subscription')
     add_contact_tag(contact, 'newsletter')
     contact.is_active = True
@@ -8285,31 +8349,17 @@ def import_forminator_newsletter():
                 last_name = submission.get('last_name', '')
                 
                 if email:
-                    # Check if contact already exists
-                    contact = Contact.query.filter_by(email=email).first()
-                    
-                    if contact:
-                        # Update existing contact with Newsletter segment
-                        contact.segment = 'newsletter'
-                        if first_name:
-                            contact.first_name = first_name
-                        if last_name:
-                            contact.last_name = last_name
-                        contact.tags = 'newsletter_signup'
-                        contact.source = 'forminator'
-                    else:
-                        # Create new contact with Newsletter segment
-                        contact = Contact(
-                            email=email,
-                            first_name=first_name,
-                            last_name=last_name,
-                            segment='newsletter',
-                            tags='newsletter_signup',
-                            source='forminator',
-                            is_active=True
-                        )
-                        db.session.add(contact)
-                    
+                    _resolve_contact_from_route(
+                        current_user.get_default_company().id,
+                        email=email,
+                        first_name=first_name,
+                        last_name=last_name,
+                        source='website_form',
+                        detail='Forminator newsletter import form 3482',
+                        segment='newsletter',
+                        tags='newsletter_signup,forminator',
+                        user_id=current_user.id,
+                    )
                     import_count += 1
             
             db.session.commit()
@@ -8342,28 +8392,20 @@ def forminator_webhook():
         last_name = data.get('last_name') or data.get('fields', {}).get('last_name', {}).get('value', '')
         
         if email:
-            contact = Contact.query.filter_by(email=email).first()
-            
-            if contact:
-                contact.segment = 'newsletter'
-                contact.tags = 'newsletter_signup'
-                contact.source = 'forminator'
-                if first_name:
-                    contact.first_name = first_name
-                if last_name:
-                    contact.last_name = last_name
-            else:
-                contact = Contact(
-                    email=email,
-                    first_name=first_name,
-                    last_name=last_name,
-                    segment='newsletter',
-                    tags='newsletter_signup',
-                    source='forminator',
-                    is_active=True
-                )
-                db.session.add(contact)
-            
+            company_id = _trusted_public_company_id()
+            if not company_id:
+                return jsonify({'status': 'error', 'message': 'Unable to verify company for submission'}), 400
+            _resolve_contact_from_route(
+                company_id,
+                email=email,
+                first_name=first_name,
+                last_name=last_name,
+                source='website_form',
+                detail='Forminator newsletter webhook form 3482',
+                segment='newsletter',
+                tags='newsletter_signup,forminator',
+                metadata={'form_id': form_id},
+            )
             db.session.commit()
             return jsonify({'status': 'success', 'email': email}), 200
         
@@ -8422,26 +8464,17 @@ def import_wordpress_users():
                     # For now, we'll mark users with specific roles as members
                     has_membership = wp_role in ['member', 'premium', 'vip', 'administrator']
                     
-                    contact = Contact.query.filter_by(email=email).first()
-                    
-                    if contact:
-                        contact.segment = 'member' if has_membership else 'Website Users'
-                        contact.tags = f"{wp_role},wordpress_import,{username}"
-                        contact.first_name = first_name or contact.first_name
-                        contact.last_name = last_name or contact.last_name
-                        contact.source = 'wordpress'
-                    else:
-                        contact = Contact(
-                            email=email,
-                            first_name=first_name,
-                            last_name=last_name,
-                            segment='member' if has_membership else 'Website Users',
-                            tags=f"{wp_role},wordpress_import,{username}",
-                            source='wordpress',
-                            is_active=True
-                        )
-                        db.session.add(contact)
-                    
+                    _resolve_contact_from_route(
+                        current_user.get_default_company().id,
+                        email=email,
+                        first_name=first_name,
+                        last_name=last_name,
+                        source='website_form',
+                        detail=f'WordPress user import from {wordpress_url}',
+                        segment='member' if has_membership else 'Website Users',
+                        tags=f"{wp_role},wordpress_import,{username}",
+                        user_id=current_user.id,
+                    )
                     import_count += 1
             
             db.session.commit()
@@ -8470,30 +8503,21 @@ def wordpress_webhook():
         wp_role = data.get('role', 'subscriber')
         
         if email:
+            company_id = _trusted_public_company_id()
+            if not company_id:
+                return jsonify({'status': 'error', 'message': 'Unable to verify company for submission'}), 400
             has_membership = wp_role in ['member', 'premium', 'vip', 'administrator']
-            
-            contact = Contact.query.filter_by(email=email).first()
-            
-            if contact:
-                contact.segment = 'member' if has_membership else 'Website Users'
-                contact.tags = f"{wp_role},wordpress_user,{username}"
-                if first_name:
-                    contact.first_name = first_name
-                if last_name:
-                    contact.last_name = last_name
-                contact.source = 'wordpress'
-            else:
-                contact = Contact(
-                    email=email,
-                    first_name=first_name,
-                    last_name=last_name,
-                    segment='member' if has_membership else 'Website Users',
-                    tags=f"{wp_role},wordpress_user,{username}",
-                    source='wordpress',
-                    is_active=True
-                )
-                db.session.add(contact)
-            
+            _resolve_contact_from_route(
+                company_id,
+                email=email,
+                first_name=first_name,
+                last_name=last_name,
+                source='website_form',
+                detail='WordPress registration webhook',
+                segment='member' if has_membership else 'Website Users',
+                tags=f"{wp_role},wordpress_user,{username}",
+                metadata={'role': wp_role, 'username': username},
+            )
             db.session.commit()
             return jsonify({'status': 'success', 'email': email}), 200
         
@@ -8576,26 +8600,17 @@ def test_wordpress_import():
             
             has_membership = wp_role in ['member', 'premium', 'vip', 'administrator']
             
-            contact = Contact.query.filter_by(email=email).first()
-            
-            if contact:
-                contact.segment = 'member' if has_membership else 'Website Users'
-                contact.tags = f"{wp_role},wordpress_import,{username}"
-                contact.first_name = first_name or contact.first_name
-                contact.last_name = last_name or contact.last_name
-                contact.source = 'wordpress'
-            else:
-                contact = Contact(
-                    email=email,
-                    first_name=first_name,
-                    last_name=last_name,
-                    segment='member' if has_membership else 'Website Users',
-                    tags=f"{wp_role},wordpress_import,{username}",
-                    source='wordpress',
-                    is_active=True
-                )
-                db.session.add(contact)
-            
+            _resolve_contact_from_route(
+                current_user.get_default_company().id,
+                email=email,
+                first_name=first_name,
+                last_name=last_name,
+                source='website_form',
+                detail='Test WordPress import',
+                segment='member' if has_membership else 'Website Users',
+                tags=f"{wp_role},wordpress_import,{username}",
+                user_id=current_user.id,
+            )
             import_count += 1
         
         db.session.commit()
@@ -8684,6 +8699,13 @@ def zapier_contact_webhook():
         if not source:
             source = 'Zapier'
         
+        company_id = _trusted_public_company_id()
+        if not company_id:
+            return jsonify({
+                'success': False,
+                'error': 'Unable to verify company for submission'
+            }), 400
+
         # Parse name into first and last
         first_name = ''
         last_name = ''
@@ -8691,72 +8713,34 @@ def zapier_contact_webhook():
             name_parts = name.split(' ', 1)
             first_name = name_parts[0] if len(name_parts) > 0 else ''
             last_name = name_parts[1] if len(name_parts) > 1 else ''
-        
-        # Check for duplicate
-        existing_contact = Contact.query.filter_by(email=email).first()
-        
-        if existing_contact:
-            # Update existing contact
-            if first_name:
-                existing_contact.first_name = first_name
-            if last_name:
-                existing_contact.last_name = last_name
-            if phone:
-                existing_contact.phone = phone
-            
-            # Add zapier tag if not present
-            current_tags = existing_contact.tags or ''
-            if 'zapier' not in current_tags.lower():
-                existing_contact.tags = f"{current_tags},zapier".strip(',')
-            
-            # Set/update source to track where it came from
-            if not existing_contact.source:
-                existing_contact.source = source
-            
-            # Ensure Newsletter segment for signup sources
-            if 'newsletter' in source.lower() or 'signup' in source.lower():
-                existing_contact.segment = 'Newsletter'
-            elif not existing_contact.segment:
-                existing_contact.segment = 'lead'
-            
-            existing_contact.updated_at = datetime.utcnow()
-            db.session.commit()
-            
-            return jsonify({
-                'success': True,
-                'message': 'Contact updated successfully',
-                'action': 'updated',
-                'contact_id': existing_contact.id,
-                'email': existing_contact.email,
-                'segment': existing_contact.segment,
-                'source': existing_contact.source
-            }), 200
-        
-        else:
-            # Create new contact
-            new_contact = Contact()
-            new_contact.email = email
-            new_contact.first_name = first_name
-            new_contact.last_name = last_name
-            new_contact.phone = phone
-            new_contact.segment = 'Newsletter' if 'newsletter' in source.lower() or 'signup' in source.lower() else 'lead'
-            new_contact.tags = 'zapier'
-            new_contact.source = source
-            new_contact.is_active = True
-            
-            db.session.add(new_contact)
-            db.session.commit()
-            
-            return jsonify({
-                'success': True,
-                'message': 'Contact created successfully',
-                'action': 'created',
-                'contact_id': new_contact.id,
-                'email': new_contact.email,
-                'segment': new_contact.segment,
-                'source': new_contact.source
-            }), 201
-    
+
+        segment = 'Newsletter' if 'newsletter' in source.lower() or 'signup' in source.lower() else 'lead'
+        contact = _resolve_contact_from_route(
+            company_id,
+            email=email,
+            phone=phone,
+            first_name=first_name,
+            last_name=last_name,
+            proposed_name=name,
+            source='api',
+            detail=f'Zapier contact webhook: {source}',
+            segment=segment,
+            tags='zapier',
+            metadata={'source': source},
+        )
+        was_created = contact.created_at == contact.updated_at if getattr(contact, 'updated_at', None) else False
+        db.session.commit()
+
+        return jsonify({
+            'success': True,
+            'message': 'Contact resolved successfully',
+            'action': 'created_or_updated' if not was_created else 'created',
+            'contact_id': contact.id,
+            'email': contact.email,
+            'segment': contact.segment,
+            'source': contact.source or contact.latest_source
+        }), 200
+
     except Exception as e:
         logger.error(f'Deal creation error: {e}')
         return jsonify({'success': False, 'error': str(e)}), 400
@@ -10849,18 +10833,46 @@ def add_contact():
 @login_required
 def delete_contact(contact_id):
     try:
-        if Contact is not None:
-            contact = db.session.get(Contact, contact_id)
-            if contact:
-                db.session.delete(contact)
-                db.session.commit()
-                flash('Contact deleted successfully!', 'success')
-            else:
-                flash('Contact not found.', 'danger')
+        company_id = getattr(current_user, 'default_company_id', None)
+        contact = Contact.query.filter_by(id=contact_id, company_id=company_id).first()
+        if not contact:
+            flash('Contact not found.', 'danger')
+        elif Contact.query.filter_by(company_id=company_id, merged_into_contact_id=contact.id).first():
+            flash('This contact is a merge master; review merge history before archiving it.', 'warning')
+        elif getattr(contact, 'merged_into_contact_id', None) is None and getattr(contact, 'status', None) == 'merged':
+            flash('Merged contacts are retained for audit history.', 'warning')
+        else:
+            contact.archived_at = datetime.utcnow()
+            contact.status = 'archived'
+            contact.is_active = False
+            db.session.add(IntegrationAuditLog(company_id=company_id, service_slug='contacts', action='archive', user_id=current_user.id, changes={'contact_id': contact.id}))
+            db.session.commit()
+            flash('Contact archived successfully.', 'success')
     except Exception as e:
         db.session.rollback()
-        flash(f'Error deleting contact: {str(e)}', 'danger')
+        flash(f'Error archiving contact: {str(e)}', 'danger')
     return redirect(url_for('main.contacts'))
+
+
+@main_bp.route('/contacts/<int:contact_id>/restore', methods=['POST'])
+@login_required
+def restore_contact(contact_id):
+    try:
+        company_id = getattr(current_user, 'default_company_id', None)
+        contact = Contact.query.filter_by(id=contact_id, company_id=company_id).first()
+        if not contact:
+            flash('Contact not found.', 'danger')
+        else:
+            contact.archived_at = None
+            contact.status = 'active'
+            contact.is_active = True
+            db.session.add(IntegrationAuditLog(company_id=company_id, service_slug='contacts', action='restore', user_id=current_user.id, changes={'contact_id': contact.id}))
+            db.session.commit()
+            flash('Contact restored successfully.', 'success')
+    except Exception as e:
+        db.session.rollback()
+        flash(f'Error restoring contact: {str(e)}', 'danger')
+    return redirect(url_for('main.contacts', archived='1'))
 
 
 @main_bp.route('/contacts/export')

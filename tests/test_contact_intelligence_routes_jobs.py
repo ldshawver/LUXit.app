@@ -94,3 +94,37 @@ def test_google_status_and_suggestion_do_not_expose_tokens_or_overwrite_manual_n
     assert resp.status_code == 409
     db.session.refresh(contact)
     assert contact.name == "Manual Name"
+
+
+def test_public_newsletter_requires_trusted_company(client):
+    resp = client.post("/newsletter-subscribe", json={"email":"public@example.com"})
+    assert resp.status_code == 400
+    assert Contact.query.filter_by(email="public@example.com").count() == 0
+
+
+def test_public_newsletter_uses_explicit_company_and_stays_isolated(client):
+    user, company = login(client)
+    other = Company(name="Other Public Co")
+    db.session.add(other); db.session.commit()
+    resp = client.post(f"/newsletter-subscribe?company_id={company.id}", json={"email":"public@example.com"})
+    assert resp.status_code == 200
+    assert Contact.query.filter_by(company_id=company.id, email="public@example.com").count() == 1
+    assert Contact.query.filter_by(company_id=other.id, email="public@example.com").count() == 0
+
+
+def test_contact_delete_archives_and_restore_preserves_record(client):
+    _, company = login(client)
+    contact = Contact(company_id=company.id, email="archive@example.com", is_active=True, status="active")
+    db.session.add(contact); db.session.commit()
+    resp = client.post(f"/contacts/{contact.id}/delete", follow_redirects=False)
+    assert resp.status_code in {302, 303}
+    db.session.refresh(contact)
+    assert contact.is_active is False
+    assert contact.status == "archived"
+    assert contact.archived_at is not None
+    resp = client.post(f"/contacts/{contact.id}/restore", follow_redirects=False)
+    assert resp.status_code in {302, 303}
+    db.session.refresh(contact)
+    assert contact.is_active is True
+    assert contact.status == "active"
+    assert contact.archived_at is None

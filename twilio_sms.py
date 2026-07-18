@@ -1835,7 +1835,7 @@ def _inbound_call_impl():
             f"</Response>"
         )
 
-    if configured_call_forward_to and (ta.voice_forwarding_enabled or getattr(ta, "call_forwarding_enabled", False)):
+    if in_hours and configured_call_forward_to and (ta.voice_forwarding_enabled or getattr(ta, "call_forwarding_enabled", False)):
         # Explicit per-line call forwarding wins over browser ringing. This
         # applies only to voice webhooks; SMS routing never reads these fields.
         twiml = _dial_twiml(configured_call_forward_to)
