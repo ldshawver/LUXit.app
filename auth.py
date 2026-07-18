@@ -126,6 +126,15 @@ def login():
                 logger.warning("Auth login template missing: %s", exc)
                 return render_template("login.html")
 
+        if not getattr(user, "is_active", True):
+            logger.warning("LOGIN FAIL: inactive user for %r", identifier)
+            flash("This account has been deactivated. Contact an administrator for access.", "error")
+            try:
+                return render_template("auth/login.html")
+            except TemplateNotFound as exc:
+                logger.warning("Auth login template missing: %s", exc)
+                return render_template("login.html")
+
         if not user.password_hash:
             logger.warning("LOGIN FAIL: user has no password hash for %r", identifier)
             flash("This account doesn't have a password set. Use SSO or ask an admin to set a password.", "error")

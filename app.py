@@ -272,7 +272,13 @@ def create_app() -> Flask:
     @app.errorhandler(CSRFError)
     def handle_csrf_error(e):
         from flask import flash as _flash, redirect as _redirect, request as _req, url_for as _url
-        _flash("Your session expired. Please try again.", "error")
+        logging.getLogger(__name__).warning(
+            "CSRF validation failed path=%s request_id=%s reason=%s",
+            _req.path,
+            _req.headers.get("X-Request-ID"),
+            getattr(e, "description", "csrf_error"),
+        )
+        _flash("Security check failed. Please refresh the page and try again.", "error")
         referrer = _req.referrer
         if referrer:
             return _redirect(referrer)
@@ -298,6 +304,9 @@ def create_app() -> Flask:
         _log = _logging.getLogger("auth")
         try:
             u = db.session.get(User, int(user_id))
+            if u and not getattr(u, "is_active", True):
+                _log.info("USER_LOADER: id=%s → inactive user denied", user_id)
+                return None
             _log.info("USER_LOADER: id=%s → user=%s (authenticated=%s)", user_id, u, bool(u))
             return u
         except Exception as _exc:

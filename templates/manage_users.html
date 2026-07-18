@@ -92,7 +92,8 @@
                         </a>
                         {% if user.id != current_user.id %}
                         <form method="POST" action="{{ url_for('main.delete_user', user_id=user.id) }}" class="d-inline"
-                              onsubmit="return confirm('Delete {{ user.username }}? This cannot be undone.')">
+                              onsubmit="return confirm('Deactivate {{ user.username }} and revoke access?')">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                             <button type="submit" class="btn btn-outline-danger">
                                 <i data-feather="trash-2"></i>
                             </button>

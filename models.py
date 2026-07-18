@@ -174,6 +174,14 @@ class User(UserMixin, db.Model):
     email = db.Column(db.String(120), unique=True, nullable=False)
     password_hash = db.Column(db.String(256))
     is_admin = db.Column(db.Boolean, default=False)
+    active = db.Column(db.Boolean, default=True, nullable=False)
+    archived_at = db.Column(db.DateTime, nullable=True)
+    archived_by_user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True)
+
+    @property
+    def is_active(self):
+        """Flask-Login gate: archived users cannot authenticate or use remember cookies."""
+        return bool(self.active)
 
     # Replit Auth
     replit_id = db.Column(db.String(64), unique=True, nullable=True)
@@ -707,9 +715,10 @@ class Company(db.Model):
         """
         from sqlalchemy import or_
         via_access = db.session.query(UserCompanyAccess.user_id) \
-            .filter(UserCompanyAccess.company_id == self.id)
+            .join(User, User.id == UserCompanyAccess.user_id) \
+            .filter(UserCompanyAccess.company_id == self.id, User.active.is_(True))
         via_default = db.session.query(User.id) \
-            .filter(User.default_company_id == self.id)
+            .filter(User.default_company_id == self.id, User.active.is_(True))
         ids = {r[0] for r in via_access.all()} | {r[0] for r in via_default.all()}
         return len(ids)
 

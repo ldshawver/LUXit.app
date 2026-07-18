@@ -3,10 +3,12 @@ import io
 import base64
 import logging
 import os
+import uuid
 from datetime import datetime, timedelta
 from flask import Blueprint, render_template, request, flash, redirect, url_for, jsonify, make_response, send_file, current_app, g
 from flask_login import login_required, current_user
 from sqlalchemy import or_, case, text, func
+from sqlalchemy.exc import IntegrityError
 from extensions import db, csrf
 try:
     from models import (
@@ -6425,13 +6427,13 @@ def manage_users():
     try:
         company = current_user.get_default_company()
         if current_user.is_admin:
-            users = User.query.order_by(User.username).all()
+            users = User.query.filter(User.active.is_(True)).order_by(User.username).all()
         else:
             if not company or not can_manage_users(current_user, company.id):
                 flash('Access denied. You need owner or manage-users permission.', 'danger')
                 return redirect(url_for('main.dashboard'))
             user_ids = [a.user_id for a in UserCompanyAccess.query.filter_by(company_id=company.id).all()]
-            users = User.query.filter(User.id.in_(user_ids)).order_by(User.username).all()
+            users = User.query.filter(User.id.in_(user_ids), User.active.is_(True)).order_by(User.username).all()
 
         # Build per-user access map {user_id: access_row} (tenant row first)
         all_access = (UserCompanyAccess.query.filter_by(company_id=company.id).all() if company and not current_user.is_admin else UserCompanyAccess.query.all())
@@ -6486,18 +6488,132 @@ def edit_user(user_id):
 @main_bp.route('/user/delete/<int:user_id>', methods=['POST'])
 @login_required
 def delete_user(user_id):
-    """Delete a user (platform admin only)."""
-    if not current_user.is_admin:
-        flash('Access denied.', 'danger')
+    """Deactivate/archive a user from the tenant-scoped Manage Users page.
+
+    Flask-Login is the canonical authentication layer for this route.  Do not
+    add legacy ``session`` key checks here; a valid ``current_user`` accepted by
+    ``GET /user/manage-users`` must also be accepted for this destructive POST.
+    """
+    from models import User, UserCompanyAccess
+    from services.comms_permissions import can_manage_users, normalize_role
+
+    request_id = request.headers.get("X-Request-ID") or str(uuid.uuid4())
+    actor_company = current_user.get_default_company()
+    actor_role = None
+    if actor_company:
+        actor_role = current_user.get_company_role(actor_company.id)
+
+    def _audit(outcome, **extra):
+        logger.info(
+            "user_delete request_id=%s actor_authenticated=%s actor_user_id=%s "
+            "actor_role=%s actor_tenant_id=%s target_user_id=%s outcome=%s %s",
+            request_id,
+            bool(current_user.is_authenticated),
+            getattr(current_user, "id", None),
+            actor_role,
+            getattr(actor_company, "id", None),
+            user_id,
+            outcome,
+            extra,
+        )
+
+    if not actor_company and not current_user.is_admin:
+        _audit("unauthorized_no_company", authorization_result="denied")
+        flash('You do not have permission to delete users.', 'danger')
         return redirect(url_for('main.dashboard'))
-    from models import User
-    user = User.query.get_or_404(user_id)
-    if user.id == current_user.id:
-        flash('Cannot delete your own account.', 'danger')
+
+    if not current_user.is_admin and not can_manage_users(current_user, actor_company.id):
+        _audit("unauthorized", authorization_result="denied")
+        flash('You do not have permission to delete users.', 'danger')
+        return redirect(url_for('main.dashboard'))
+
+    target = db.session.get(User, user_id)
+    if not target:
+        _audit("not_found", authorization_result="allowed")
+        flash('The selected user no longer exists.', 'warning')
         return redirect(url_for('main.manage_users'))
-    db.session.delete(user)
-    db.session.commit()
-    flash(f'User {user.username} deleted.', 'success')
+    if not getattr(target, "is_active", True):
+        _audit("already_inactive", authorization_result="allowed")
+        flash('The selected user no longer exists.', 'warning')
+        return redirect(url_for('main.manage_users'))
+
+    if target.id == current_user.id:
+        _audit("self_delete_blocked", authorization_result="denied")
+        flash('You cannot delete your own account.', 'danger')
+        return redirect(url_for('main.manage_users'))
+
+    target_access = None
+    if actor_company and not current_user.is_admin:
+        target_access = UserCompanyAccess.query.filter_by(
+            user_id=target.id, company_id=actor_company.id
+        ).first()
+        if not target_access:
+            _audit("cross_tenant_blocked", authorization_result="denied")
+            flash('You do not have permission to delete users.', 'danger')
+            return make_response(redirect(url_for('main.manage_users')), 403)
+    elif actor_company:
+        target_access = UserCompanyAccess.query.filter_by(
+            user_id=target.id, company_id=actor_company.id
+        ).first()
+
+    if target.is_admin and not current_user.is_admin:
+        _audit("protected_global_admin_blocked", authorization_result="denied")
+        flash('You do not have permission to delete protected global administrators.', 'danger')
+        return redirect(url_for('main.manage_users'))
+
+    target_role = normalize_role(getattr(target_access, "role", None)) if target_access else None
+    if target_role == UserCompanyAccess.ROLE_OWNER and actor_company:
+        other_owner_count = UserCompanyAccess.query.join(
+            User, User.id == UserCompanyAccess.user_id
+        ).filter(
+            UserCompanyAccess.company_id == actor_company.id,
+            UserCompanyAccess.user_id != target.id,
+            User.active.is_(True),
+            UserCompanyAccess.role.in_([
+                UserCompanyAccess.ROLE_OWNER,
+                "superadmin",
+                "super_admin",
+                "super-admin",
+            ]),
+        ).count()
+        if other_owner_count == 0:
+            _audit("final_owner_blocked", authorization_result="denied")
+            flash('Another administrator or owner must be assigned before this account can be removed.', 'danger')
+            return redirect(url_for('main.manage_users'))
+
+    try:
+        decision = "deactivation"
+        now = datetime.utcnow()
+        if hasattr(target, "active"):
+            target.active = False
+        if hasattr(target, "archived_at"):
+            target.archived_at = now
+        if hasattr(target, "archived_by_user_id"):
+            target.archived_by_user_id = current_user.id
+        if target_access:
+            target_access.can_access_full_app = False
+            target_access.can_access_mobile_inbox = False
+            target_access.pwa_access_enabled = False
+            target_access.comms_hub_enabled = False
+            target_access.manage_users_enabled = False
+            target_access.updated_at = now
+        else:
+            target.is_admin = False
+        db.session.commit()
+        _audit("success", authorization_result="allowed", csrf_result="passed",
+               deletion_decision=decision, database_result="committed", final_status="302")
+        flash(f'User {target.username} has been deactivated.', 'success')
+    except IntegrityError as exc:
+        db.session.rollback()
+        _audit("dependency_conflict", authorization_result="allowed", csrf_result="passed",
+               deletion_decision="deactivation", database_result="rolled_back", error=exc.__class__.__name__)
+        flash('This user has related records and cannot be fully deleted. Their access was not changed; deactivate or archive related assignments first.', 'danger')
+    except Exception:
+        db.session.rollback()
+        logger.exception("user_delete unexpected failure request_id=%s", request_id)
+        _audit("server_error", authorization_result="allowed", csrf_result="passed",
+               deletion_decision="deactivation", database_result="rolled_back", final_status="302")
+        flash(f'Unable to update this user right now. Reference ID: {request_id}', 'danger')
     return redirect(url_for('main.manage_users'))
 
 @main_bp.route('/api/user/<int:user_id>/access', methods=['POST'])
@@ -6513,7 +6629,7 @@ def update_user_access(user_id):
                 return jsonify({'success': False, 'error': 'Permission denied.'}), 403
 
         target = db.session.get(User, user_id)
-        if not target:
+        if not target or not getattr(target, "is_active", True):
             return jsonify({'success': False, 'error': 'User not found.'}), 404
 
         payload = request.get_json() or {}
