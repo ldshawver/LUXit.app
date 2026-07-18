@@ -68,14 +68,8 @@ jobs:
             test -n "${DATABASE_URL:-}"
 
             echo "== Forward-only migrations =="
-            if command -v psql >/dev/null 2>&1 && [ -d migrations ]; then
-              find migrations -maxdepth 1 -type f -name "*.sql" ! -iname "*rollback*" | sort | while read -r f; do
-                echo "Running migration: $f"
-                psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f "$f"
-              done
-            else
-              echo "No migrations directory or psql unavailable; skipping SQL migrations."
-            fi
+            test -x scripts/apply_migrations.sh
+            scripts/apply_migrations.sh "$DATABASE_URL" migrations
 
             echo "== Python syntax check =="
             if [ -x ".venv/bin/python" ]; then

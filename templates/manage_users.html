@@ -6,6 +6,9 @@
 <div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
     <h1 class="h2"><i data-feather="users"></i> Manage Users</h1>
     <div>
+        <a href="{{ url_for('main.manage_users', archived='1' if not show_archived else None) }}" class="btn btn-outline-info">
+            <i data-feather="archive"></i> {{ 'Active Users' if show_archived else 'Archived Users' }}
+        </a>
         <a href="{{ url_for('main.add_user') }}" class="btn btn-primary">
             <i data-feather="user-plus"></i> Add User
         </a>
@@ -31,6 +34,13 @@
                 <th>Username</th>
                 <th>Email</th>
                 <th>Role</th>
+                {% if show_archived %}
+                <th>Company memberships</th>
+                <th>Prior role</th>
+                <th>Archived</th>
+                <th>Archived by</th>
+                <th>Restoration eligibility</th>
+                {% endif %}
                 <th class="text-center" title="Can log in and use the Mobile Inbox PWA">Mobile Inbox</th>
                 <th class="text-center" title="Can access the full LUXit dashboard">Full App</th>
                 <th>Joined</th>
@@ -66,6 +76,16 @@
                         <span class="badge bg-secondary text-muted">No company link</span>
                     {% endif %}
                 </td>
+                {% if show_archived %}
+                {% set eligible = restoration_by_user.get(user.id) %}
+                <td>{{ acc.company.name if acc and acc.company else user.archived_company_id or '—' }}</td>
+                <td>{{ acc.previous_role or acc.role if acc else '—' }}</td>
+                <td>{{ user.archived_at.strftime('%m/%d/%Y %H:%M') if user.archived_at else '—' }}</td>
+                <td>{{ user.archived_by_user_id or '—' }}</td>
+                <td>
+                    <span class="badge {{ 'bg-success' if eligible and eligible[0] else 'bg-secondary' }}">{{ eligible[1] if eligible else 'Unknown' }}</span>
+                </td>
+                {% endif %}
                 <td class="text-center">
                     <div class="form-check form-switch d-flex justify-content-center m-0">
                         <input class="form-check-input" type="checkbox" role="switch"
@@ -91,12 +111,23 @@
                             <i data-feather="edit"></i> Edit
                         </a>
                         {% if user.id != current_user.id %}
-                        <form method="POST" action="{{ url_for('main.delete_user', user_id=user.id) }}" class="d-inline"
-                              onsubmit="return confirm('Delete {{ user.username }}? This cannot be undone.')">
-                            <button type="submit" class="btn btn-outline-danger">
-                                <i data-feather="trash-2"></i>
-                            </button>
-                        </form>
+                        {% if show_archived %}
+                            <form method="POST" action="{{ url_for('main.restore_user', user_id=user.id) }}" class="d-inline"
+                                  onsubmit="return confirm('Restore {{ user.username }} for this company only?')">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+                                <button type="submit" class="btn btn-outline-success">
+                                    <i data-feather="rotate-ccw"></i>
+                                </button>
+                            </form>
+                        {% else %}
+                            <form method="POST" action="{{ url_for('main.delete_user', user_id=user.id) }}" class="d-inline"
+                                  onsubmit="return confirm('Archive {{ user.username }}? Access will be revoked but history preserved.')">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+                                <button type="submit" class="btn btn-outline-danger">
+                                    <i data-feather="archive"></i>
+                                </button>
+                            </form>
+                        {% endif %}
                         {% endif %}
                     </div>
                 </td>

@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container py-4">
+  <h1>Contact Duplicate Review</h1>
+  <p class="text-muted">Company-scoped review center. No automatic production merges are performed from scans.</p>
+  <div class="mb-3">
+    <form method="post" action="{{ url_for('main.contact_duplicate_review_scan') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button class="btn btn-primary">Audit duplicate candidates</button>
+    </form>
+  </div>
+  {% for group in groups %}
+  <div class="card mb-3">
+    <div class="card-header"><strong>{{ group.match_key }}</strong> · {{ group.contact_ids|length }} contacts</div>
+    <div class="card-body">
+      <div class="row">
+        {% for c in group.contacts %}
+        <div class="col-md-6">
+          <h5>#{{ c.id }} {{ c.name or (c.first_name ~ ' ' ~ c.last_name)|trim or 'Unnamed' }}</h5>
+          <dl class="row small">
+            <dt class="col-4">Phone</dt><dd class="col-8">{{ c.phone }} / {{ c.normalized_phone }}</dd>
+            <dt class="col-4">Email</dt><dd class="col-8">{{ c.email }}</dd>
+            <dt class="col-4">Original source</dt><dd class="col-8">{{ c.original_source or c.source }}</dd>
+            <dt class="col-4">Latest source</dt><dd class="col-8">{{ c.latest_source }}</dd>
+            <dt class="col-4">Tags</dt><dd class="col-8">{{ c.tags }}</dd>
+            <dt class="col-4">Related counts</dt><dd class="col-8"><pre>{{ related_counts.get(c.id, {}) }}</pre></dd>
+          </dl>
+        </div>
+        {% endfor %}
+      </div>
+      <form method="post" action="{{ url_for('main.contact_duplicate_review_merge') }}" class="row g-2">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="contact_ids" value="{{ group.contact_ids|join(',') }}">
+        <div class="col-md-4"><input class="form-control" name="primary_contact_id" placeholder="Master contact ID"></div>
+        <div class="col-md-4"><button class="btn btn-danger" name="action" value="merge">Merge after preview</button></div>
+        <div class="col-md-4"><button class="btn btn-secondary" name="action" value="not_duplicate">Mark not duplicate</button></div>
+      </form>
+    </div>
+  </div>
+  {% else %}
+  <div class="alert alert-success">No duplicate candidates found.</div>
+  {% endfor %}
+</div>
+{% endblock %}

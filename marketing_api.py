@@ -9,7 +9,7 @@ from __future__ import annotations
 import os
 from datetime import datetime
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, jsonify, request, current_app
 from flask_login import current_user, login_required
 from sqlalchemy import or_
 
@@ -1112,3 +1112,231 @@ def api_email_campaign_send(campaign_id):
         db.session.add(CampaignRecipient(campaign_id=c.id, contact_id=contact.id)); sent += 1
     c.status = "sent"; c.sent_at = datetime.utcnow(); db.session.commit()
     return jsonify({"success": True, "sent": sent, "skipped": skipped})
+
+# ---------------------------------------------------------------------------
+# Contact Intelligence / CRM admin APIs
+# ---------------------------------------------------------------------------
+
+def _require_contact_admin():
+    if not getattr(current_user, "is_admin", False):
+        return False
+    return True
+
+
+def _contact_job_json(job):
+    return {
+        "id": job.id, "company_id": job.company_id, "job_type": job.job_type, "status": job.status,
+        "cursor": job.cursor, "batch_size": job.batch_size, "total_found": job.total_found,
+        "processed": job.processed, "updated": job.updated, "skipped": job.skipped,
+        "ambiguous": job.ambiguous, "failed": job.failed, "dry_run": job.dry_run,
+        "sanitized_last_error": job.sanitized_last_error,
+        "started_at": job.started_at.isoformat() if job.started_at else None,
+        "completed_at": job.completed_at.isoformat() if job.completed_at else None,
+    }
+
+
+@marketing_api_bp.post("/contacts/intelligence/jobs")
+@login_required
+def api_contact_intelligence_create_job():
+    if not _require_contact_admin():
+        return _json_error("admin required", 403)
+    cid = tenant_id()
+    data = request.get_json(silent=True) or {}
+    from services.contact_intelligence_jobs import create_job
+    try:
+        job = create_job(cid, data.get("job_type"), user_id=current_user.id, batch_size=int(data.get("batch_size") or 100), dry_run=data.get("dry_run", True))
+    except Exception as exc:
+        return _json_error(str(exc), 400)
+    return jsonify({"success": True, "job": _contact_job_json(job)})
+
+
+@marketing_api_bp.post("/contacts/intelligence/jobs/<int:job_id>/run")
+@login_required
+def api_contact_intelligence_run_job(job_id):
+    if not _require_contact_admin():
+        return _json_error("admin required", 403)
+    cid = tenant_id()
+    from models import ContactIntelligenceJob
+    from services.contact_intelligence_jobs import run_job
+    job = ContactIntelligenceJob.query.filter_by(id=job_id, company_id=cid).first()
+    if not job:
+        return _json_error("job not found", 404)
+    job = run_job(job.id, max_batches=int((request.get_json(silent=True) or {}).get("max_batches") or 1))
+    return jsonify({"success": True, "job": _contact_job_json(job)})
+
+
+@marketing_api_bp.get("/contacts/intelligence/jobs/<int:job_id>")
+@login_required
+def api_contact_intelligence_job_status(job_id):
+    cid = tenant_id()
+    from models import ContactIntelligenceJob
+    job = ContactIntelligenceJob.query.filter_by(id=job_id, company_id=cid).first()
+    if not job:
+        return _json_error("job not found", 404)
+    return jsonify({"success": True, "job": _contact_job_json(job)})
+
+
+@marketing_api_bp.get("/contacts/google/status")
+@login_required
+def api_google_contacts_status():
+    cid = tenant_id()
+    from services.google_contacts import get_token, token_needs_reconnect, upsert_connection_from_token, SCOPES
+    tok = get_token(current_user.id)
+    conn = upsert_connection_from_token(current_user.id, cid) if tok else None
+    db.session.commit()
+    return jsonify({
+        "success": True, "connected": bool(tok), "scope": SCOPES,
+        "oauth_expired": bool(token_needs_reconnect(tok)) if tok else False,
+        "google_account_email": getattr(tok, "google_account_email", None) if tok else None,
+        "connection_id": conn.id if conn else None,
+        "sync_status": getattr(conn, "sync_status", "disconnected") if conn else "disconnected",
+        "last_successful_sync_at": conn.last_successful_sync_at.isoformat() if conn and conn.last_successful_sync_at else None,
+    })
+
+
+@marketing_api_bp.post("/contacts/google/disconnect")
+@login_required
+def api_google_contacts_disconnect():
+    cid = tenant_id()
+    from services.google_contacts import disconnect
+    from models import GoogleContactConnection
+    disconnect(current_user.id)
+    conn = GoogleContactConnection.query.filter_by(company_id=cid, user_id=current_user.id).first()
+    if conn:
+        conn.sync_status = "disconnected"; conn.disconnected_at = datetime.utcnow()
+    db.session.commit()
+    return jsonify({"success": True, "connected": False})
+
+
+@marketing_api_bp.post("/contacts/google/sync")
+@login_required
+def api_google_contacts_sync():
+    if not _require_contact_admin():
+        return _json_error("admin required", 403)
+    cid = tenant_id(); data = request.get_json(silent=True) or {}
+    from services.google_contacts import sync_contacts, upsert_connection_from_token
+    result = sync_contacts(current_user.id, cid, dry_run=bool(data.get("dry_run", False)))
+    conn = upsert_connection_from_token(current_user.id, cid)
+    conn.sync_status = "failed" if result.get("error") else "synced"
+    conn.last_error = result.get("error")
+    if not result.get("error"):
+        conn.last_successful_sync_at = datetime.utcnow()
+    db.session.commit()
+    result.pop("access_token", None); result.pop("refresh_token", None)
+    return jsonify({"success": not bool(result.get("error")), "result": result})
+
+
+@marketing_api_bp.post("/contacts/google/match-unnamed")
+@login_required
+def api_google_match_unnamed():
+    if not _require_contact_admin():
+        return _json_error("admin required", 403)
+    cid = tenant_id(); data = request.get_json(silent=True) or {}
+    from services.contact_intelligence_jobs import create_job, run_job
+    job = create_job(cid, "unnamed_match", user_id=current_user.id, batch_size=int(data.get("batch_size") or 100), dry_run=bool(data.get("dry_run", False)))
+    job = run_job(job.id, max_batches=int(data.get("max_batches") or 1))
+    return jsonify({"success": True, "job": _contact_job_json(job)})
+
+
+@marketing_api_bp.post("/contacts/<int:contact_id>/google/recheck")
+@login_required
+def api_google_recheck_contact(contact_id):
+    cid = tenant_id()
+    from models import Contact, GoogleContactLookup
+    from services.contact_intelligence import apply_google_name_match
+    contact = Contact.query.filter_by(id=contact_id, company_id=cid, is_active=True).first()
+    if not contact:
+        return _json_error("contact not found", 404)
+    lookups = GoogleContactLookup.query.filter_by(company_id=cid, normalized_phone=contact.normalized_phone).all() if contact.normalized_phone else []
+    candidates = []
+    for l in lookups:
+        candidates.extend(l.candidates or [{"normalized_phone": l.normalized_phone, "name": l.display_name, "resource_id": l.resource_id, "etag": l.etag}])
+    status = apply_google_name_match(contact, candidates) if candidates else "not_found"
+    db.session.commit()
+    return jsonify({"success": True, "status": status, "contact_id": contact.id})
+
+
+@marketing_api_bp.get("/contacts/google/ambiguous")
+@login_required
+def api_google_ambiguous_matches():
+    cid = tenant_id()
+    from models import GoogleContactLookup
+    rows = GoogleContactLookup.query.filter_by(company_id=cid, is_ambiguous=True).limit(200).all()
+    return jsonify({"success": True, "matches": [{"id": r.id, "normalized_phone": r.normalized_phone, "candidate_count": r.candidate_count, "candidates": r.candidates} for r in rows]})
+
+
+@marketing_api_bp.post("/contacts/<int:contact_id>/google/suggestion")
+@login_required
+def api_google_suggestion_action(contact_id):
+    cid = tenant_id(); data = request.get_json(silent=True) or {}; action = data.get("action")
+    from models import Contact
+    from services.contact_intelligence import meaningful_name
+    contact = Contact.query.filter_by(id=contact_id, company_id=cid, is_active=True).first()
+    if not contact:
+        return _json_error("contact not found", 404)
+    if action == "accept":
+        name = (data.get("name") or "").strip()
+        if not name:
+            return _json_error("name is required", 400)
+        if not meaningful_name(contact):
+            contact.name = name; contact.display_name = name; contact.name_source = "google_contacts"; contact.google_match_status = "accepted"
+        else:
+            return _json_error("reliable contact name will not be overwritten", 409)
+    elif action == "reject":
+        contact.google_match_status = "rejected"
+    else:
+        return _json_error("action must be accept or reject", 400)
+    db.session.commit()
+    return jsonify({"success": True, "contact_id": contact.id, "google_match_status": contact.google_match_status})
+
+
+@marketing_api_bp.post("/contacts/duplicates/not-duplicate")
+@login_required
+def api_contact_not_duplicate():
+    if not _require_contact_admin():
+        return _json_error("admin required", 403)
+    cid = tenant_id(); data = request.get_json(silent=True) or {}
+    a, b = sorted([int(data.get("contact_id_a") or 0), int(data.get("contact_id_b") or 0)])
+    if not a or not b or a == b:
+        return _json_error("two distinct contact ids are required", 400)
+    from models import Contact, ContactDuplicateExclusion
+    if Contact.query.filter(Contact.company_id == cid, Contact.id.in_([a,b])).count() != 2:
+        return _json_error("contacts must belong to your company", 400)
+    row = ContactDuplicateExclusion.query.filter_by(company_id=cid, contact_id_a=a, contact_id_b=b).first()
+    if not row:
+        row = ContactDuplicateExclusion(company_id=cid, contact_id_a=a, contact_id_b=b, reason=data.get("reason"), created_by_user_id=current_user.id)
+        db.session.add(row)
+    db.session.commit()
+    return jsonify({"success": True, "excluded_pair": [a, b]})
+
+
+@marketing_api_bp.get("/contacts/reports/attribution")
+@login_required
+def api_contact_attribution_report():
+    cid = tenant_id()
+    from sqlalchemy import func
+    from models import Opportunity, ContactTask
+    by_original = db.session.query(Contact.original_source, func.count(Contact.id)).filter(Contact.company_id == cid).group_by(Contact.original_source).all()
+    by_latest = db.session.query(Contact.latest_source, func.count(Contact.id)).filter(Contact.company_id == cid).group_by(Contact.latest_source).all()
+    open_pipeline = db.session.query(Opportunity.stage, Opportunity.owner_user_id, func.coalesce(func.sum(Opportunity.estimated_value), 0)).filter(Opportunity.company_id == cid, Opportunity.status == "open").group_by(Opportunity.stage, Opportunity.owner_user_id).all()
+    won_by_source = db.session.query(Contact.original_source, func.coalesce(func.sum(Opportunity.estimated_value), 0)).join(Contact, Contact.id == Opportunity.contact_id).filter(Opportunity.company_id == cid, Opportunity.status == "won").group_by(Contact.original_source).all()
+    overdue = ContactTask.query.filter(ContactTask.company_id == cid, ContactTask.status == "open", ContactTask.due_at < datetime.utcnow()).count()
+    unnamed = Contact.query.filter(Contact.company_id == cid, Contact.is_active.is_(True), (Contact.name.is_(None)) | (Contact.name == "")).count()
+    return jsonify({"success": True, "labels": {"won_value": "won opportunity value, not collected revenue"}, "contacts_by_original_source": dict(by_original), "contacts_by_latest_source": dict(by_latest), "open_pipeline_value_by_stage_owner": [{"stage": s, "owner_user_id": o, "value": float(v or 0)} for s,o,v in open_pipeline], "won_opportunity_value_by_original_source": {k or "unknown": float(v or 0) for k,v in won_by_source}, "unnamed_contacts": unnamed, "followups_overdue": overdue})
+
+@marketing_api_bp.get("/contacts/google/connect")
+@login_required
+def api_google_contacts_connect():
+    from services.google_contacts import get_auth_url, SCOPES
+    if not os.environ.get("GOOGLE_CLIENT_ID"):
+        return _json_error("GOOGLE_CLIENT_ID is not configured", 400, scope=SCOPES)
+    return jsonify({"success": True, "auth_url": get_auth_url(state=str(current_user.id)), "scope": SCOPES, "callback": "/twilio/google-contacts/callback"})
+
+
+@marketing_api_bp.get("/contacts/google/callback")
+@login_required
+def api_google_contacts_callback_compat():
+    # Preserve existing Twilio callback and expose a CRM-scoped compatibility endpoint.
+    from flask import redirect, url_for
+    qs = request.query_string.decode()
+    return redirect((url_for("twilio.google_contacts_callback") if "twilio.google_contacts_callback" in current_app.view_functions else "/twilio/google-contacts/callback") + (f"?{qs}" if qs else ""))

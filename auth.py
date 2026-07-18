@@ -126,6 +126,15 @@ def login():
                 logger.warning("Auth login template missing: %s", exc)
                 return render_template("login.html")
 
+        if not getattr(user, "active", True):
+            logger.warning("LOGIN FAIL: user is archived/inactive for %r", identifier)
+            flash("This account has been archived. Ask an administrator to restore access.", "error")
+            try:
+                return render_template("auth/login.html")
+            except TemplateNotFound as exc:
+                logger.warning("Auth login template missing: %s", exc)
+                return render_template("login.html")
+
         if not user.password_hash:
             logger.warning("LOGIN FAIL: user has no password hash for %r", identifier)
             flash("This account doesn't have a password set. Use SSO or ask an admin to set a password.", "error")
@@ -149,6 +158,8 @@ def login():
         from flask import session as _session
         _session.permanent = True
         login_user(user, remember=True)
+        revoked = getattr(user, "session_revoked_at", None)
+        _session["user_session_revoked_at"] = revoked.isoformat() if revoked else None
         logger.info("LOGIN: after login_user — session keys=%s, _user_id=%s, is_authenticated=%s, user.id=%s, is_secure=%s, scheme=%s",
                     list(_session.keys()), _session.get('_user_id'), current_user.is_authenticated, user.id,
                     request.is_secure, request.environ.get('wsgi.url_scheme'))
