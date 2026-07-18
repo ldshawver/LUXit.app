@@ -24,6 +24,7 @@ Protected routes (login_required):
   POST /twilio/hours                      — save business hours
 """
 
+import hashlib
 import json
 import logging
 import os
@@ -59,6 +60,7 @@ def _guard_sms_feature():
 
     # Twilio server-to-server webhooks — never require auth or feature flags
     _WEBHOOK_PATHS = {
+        "/twilio/sms",
         "/twilio/sms/inbound",
         "/twilio/sms/status",
         "/twilio/voice/inbound",
@@ -111,6 +113,12 @@ def _get_twilio_account_by_number(to_number: str):
 def _phone_digits(number: str) -> str:
     """Return only digits for format-insensitive Twilio number matching."""
     return re.sub(r"\D", "", number or "")
+
+
+def _safe_phone_ref(number: str) -> str:
+    """Non-reversible phone correlation value for operational logs."""
+    normalized = _normalize_e164(number)
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()[:12] if normalized else "missing"
 
 
 def _normalize_e164(number: str) -> str:
@@ -244,7 +252,7 @@ def _resolve_number(to_number: str, msg_service_sid: str = ""):
             logger.debug("_resolve_number: matched legacy from_phone ta=%s", ta.id)
             return None, ta
 
-    logger.warning("_resolve_number: no Twilio number owner found for to=%s", to_number)
+    logger.warning("_resolve_number: no Twilio number owner found to_ref=%s", _safe_phone_ref(to_number))
     return None, None
 
 
@@ -377,22 +385,22 @@ def _sanitize_body(text: str) -> str:
 def _validate_twilio_signature(ta, endpoint_path: str = "/twilio/sms/inbound") -> bool:
     """
     Validate the X-Twilio-Signature header for any Twilio webhook endpoint.
-    Always passes on Replit dev (no real Twilio traffic).
 
-    By default, a signature mismatch is logged as a WARNING but the request
-    is still processed.  Set TWILIO_STRICT_SIGNATURE=1 in the environment to
-    reject requests with bad signatures (returns False → caller aborts 403).
+    Production validation is fail-closed. Tests may explicitly disable strict
+    validation when exercising business logic without a Twilio signature.
     """
-    is_replit = bool(os.environ.get("REPL_ID") or os.environ.get("REPLIT_DEV_DOMAIN"))
-    if is_replit:
-        return True
-
-    strict = os.environ.get("TWILIO_STRICT_SIGNATURE", "").lower() in ("1", "true", "yes")
+    configured = os.environ.get("TWILIO_STRICT_SIGNATURE")
+    strict = (
+        configured.lower() not in ("0", "false", "no")
+        if configured is not None
+        else os.environ.get("FLASK_ENV") != "testing"
+    )
 
     try:
         from twilio.request_validator import RequestValidator
     except ImportError:
-        return True
+        logger.error("Twilio signature validation failed category=validator_missing")
+        return not strict
 
     try:
         from services.provider_config import get_provider_config
@@ -401,8 +409,8 @@ def _validate_twilio_signature(ta, endpoint_path: str = "/twilio/sms/inbound") -
         _platform_token = None
     token = (ta.get_auth_token() if ta else None) or _platform_token
     if not token:
-        logger.warning("Twilio signature validation skipped: no auth token configured")
-        return True
+        logger.error("Twilio signature validation failed category=auth_token_missing")
+        return not strict
 
     signature = request.headers.get("X-Twilio-Signature", "")
     if not signature:
@@ -562,14 +570,24 @@ def _get_or_create_conversation(
     if not conv:
         conv = conv_query.first()
 
-    contact = upsert_contact_from_source(
-        company_id,
-        phone=from_number,
-        source_channel="sms",
-        source_phone_number=to_number,
-        source_provider="twilio",
-        source_context="inbound_message",
-    )
+    contact = None
+    try:
+        contact = upsert_contact_from_source(
+            company_id,
+            phone=from_number,
+            tags=["MyOrder Customer"],
+            source_channel="sms",
+            source_phone_number=to_number,
+            source_provider="twilio",
+            source_context="inbound_message",
+        )
+    except Exception:
+        # CRM enrichment must not prevent the durable conversation/message.
+        db.session.rollback()
+        logger.exception(
+            "Inbound SMS downstream failure category=contact_upsert company_id=%s",
+            company_id,
+        )
 
     contact_name, contact_source = lookup_contact_name(company_id, from_number)
     if contact and not contact_name:
@@ -583,8 +601,8 @@ def _get_or_create_conversation(
     if not conv:
         norm = normalize_phone(from_number)
         logger.debug(
-            "_get_or_create_conversation: from=%s norm=%s company=%s contact_match=%s name=%s source=%s",
-            from_number, norm, company_id, contact.id if contact else None, contact_name, contact_source,
+            "_get_or_create_conversation: from_ref=%s company=%s contact_match=%s source=%s",
+            _safe_phone_ref(norm or from_number), company_id, contact.id if contact else None, contact_source,
         )
         conv = TwilioConversation(
             company_id=company_id,
@@ -1148,7 +1166,7 @@ def _capture_lead(conv, body: str, company_id: int):
     conv.contact_id   = contact.id
     conv.lead_captured = True
     db.session.commit()
-    logger.info("Lead captured from SMS: phone=%s", conv.from_number)
+    logger.info("Lead captured from SMS: phone_ref=%s company_id=%s", _safe_phone_ref(conv.from_number), company_id)
 
 
 def _seed_default_rules(company_id: int):
@@ -1229,12 +1247,20 @@ def inbound_sms():
 
     Flow:
       1. Identify TwilioAccount by To number / MessagingServiceSid
-      2. Validate Twilio signature (skipped on Replit dev)
+      2. Validate the Twilio signature against the externally visible URL
       3. Log inbound message
       4. Handle STOP / START / HELP system keywords (always, regardless of rules)
       5. Run auto-reply rule engine for all other messages
     """
     from models import TwilioConversation, TwilioMessage
+
+    correlation_id = getattr(g, "request_id", request.headers.get("X-Request-ID", "-"))
+    if not (request.mimetype or "").startswith(("application/x-www-form-urlencoded", "multipart/form-data")):
+        logger.warning(
+            "Inbound SMS rejected correlation_id=%s status=invalid_content_type category=request_format",
+            correlation_id,
+        )
+        return '<Response></Response>', 415, {"Content-Type": "text/xml"}
 
     data            = request.form
     from_number     = data.get("From", "").strip()
@@ -1244,23 +1270,45 @@ def inbound_sms():
     msg_service_sid = data.get("MessagingServiceSid", "")
     num_media       = int(data.get("NumMedia", 0))
 
+    if not twilio_sid or not from_number or not to_number:
+        logger.warning(
+            "Inbound SMS rejected correlation_id=%s sid=%s from_ref=%s to_ref=%s "
+            "status=invalid_payload category=required_field_missing",
+            correlation_id, twilio_sid or "missing", _safe_phone_ref(from_number),
+            _safe_phone_ref(to_number),
+        )
+        return '<Response></Response>', 400, {"Content-Type": "text/xml"}
+
     logger.info(
-        "Inbound SMS: from=%s to=%s sid=%s msgsvc=%s body=%.60r",
-        from_number, to_number, twilio_sid, msg_service_sid, body,
+        "Inbound SMS received correlation_id=%s sid=%s from_ref=%s to_ref=%s "
+        "status=received category=webhook",
+        correlation_id, twilio_sid, _safe_phone_ref(from_number), _safe_phone_ref(to_number),
     )
 
     # ── 1. Find TwilioPhoneNumber + TwilioAccount (Phase A multi-number) ────
     pn, ta = _resolve_number(to_number, msg_service_sid)
     if not ta:
-        logger.warning("Inbound SMS: no TwilioAccount found for to=%s", to_number)
-        return '<Response></Response>', 200, {"Content-Type": "text/xml"}
+        logger.error(
+            "Inbound SMS unresolved correlation_id=%s sid=%s from_ref=%s to_ref=%s "
+            "status=unresolved category=tenant_resolution",
+            correlation_id, twilio_sid, _safe_phone_ref(from_number), _safe_phone_ref(to_number),
+        )
+        return '<Response></Response>', 500, {"Content-Type": "text/xml"}
     ta = _effective_twilio_config(ta, pn)
     if not hasattr(g, "voice_inbound_debug"):
         g.voice_inbound_debug = {}
-    g.voice_inbound_debug.update({"company_id": getattr(ta, "company_id", None), "caller_id": getattr(ta, "from_phone", None) or to_number})
+    g.voice_inbound_debug.update({
+        "company_id": getattr(ta, "company_id", None),
+        "phone_ref": _safe_phone_ref(getattr(ta, "from_phone", None) or to_number),
+    })
 
     # ── 2. Validate Twilio signature ───────────────────────────────────────
-    if not _validate_twilio_signature(ta, "/twilio/sms/inbound"):
+    if not _validate_twilio_signature(ta, request.path):
+        logger.warning(
+            "Inbound SMS rejected correlation_id=%s sid=%s from_ref=%s to_ref=%s "
+            "status=forbidden category=signature_validation",
+            correlation_id, twilio_sid, _safe_phone_ref(from_number), _safe_phone_ref(to_number),
+        )
         abort(403)
 
     # ── 2b. Owner reply relay ──────────────────────────────────────────────
@@ -1343,6 +1391,7 @@ def inbound_sms():
         sendConversationSms(admin_conv.id, help_msg, twilio_account=ta)
         return '<Response></Response>', 200, {"Content-Type": "text/xml"}
 
+    message_persisted = False
     try:
         # ── 3a. Get or create conversation thread ──────────────────────────
         conv = _get_or_create_conversation(
@@ -1378,6 +1427,12 @@ def inbound_sms():
         conv.last_message_preview = body[:200] if body else "(media)"
         conv.message_count        = (conv.message_count or 0) + 1
         db.session.commit()
+        message_persisted = True
+        logger.info(
+            "Inbound SMS persisted correlation_id=%s sid=%s company_id=%s conversation_id=%s "
+            "status=persisted category=message",
+            correlation_id, twilio_sid, ta.company_id, conv.id,
+        )
 
         # ── 4. System-level keyword handling ──────────────────────────────
         # These always fire and return a TwiML reply immediately.
@@ -1514,11 +1569,26 @@ def inbound_sms():
                 "auto_responded":       bool(auto_reply_sent),
             })
             _fire_push_notification(ta.company_id, conv, body or "(media)", silent=alert_silent)
-        except Exception as push_exc:
-            logger.debug("Push/SSE notification skipped: %s", push_exc)
+        except Exception:
+            logger.exception(
+                "Inbound SMS downstream failure correlation_id=%s sid=%s company_id=%s "
+                "status=persisted category=push_dispatch",
+                correlation_id, twilio_sid, ta.company_id,
+            )
 
     except Exception as exc:
-        logger.exception("Error processing inbound SMS: %s", exc)
+        if not message_persisted:
+            db.session.rollback()
+            logger.exception(
+                "Inbound SMS failed correlation_id=%s sid=%s status=failed category=persistence",
+                correlation_id, twilio_sid,
+            )
+            return '<Response></Response>', 500, {"Content-Type": "text/xml"}
+        logger.exception(
+            "Inbound SMS downstream failure correlation_id=%s sid=%s company_id=%s "
+            "status=persisted category=post_persistence",
+            correlation_id, twilio_sid, ta.company_id,
+        )
 
     return '<Response></Response>', 200, {"Content-Type": "text/xml"}
 

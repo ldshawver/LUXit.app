@@ -71,6 +71,13 @@ jobs:
             test -x scripts/apply_migrations.sh
             scripts/apply_migrations.sh "$DATABASE_URL" migrations
 
+            echo "== Verify CRM schema contract =="
+            if [ -x ".venv/bin/python" ]; then
+              .venv/bin/python scripts/verify_crm_schema.py
+            else
+              python3 scripts/verify_crm_schema.py
+            fi
+
             echo "== Python syntax check =="
             if [ -x ".venv/bin/python" ]; then
               .venv/bin/python -m py_compile app.py auth.py routes.py models.py inbox_pwa.py twilio_sms.py
