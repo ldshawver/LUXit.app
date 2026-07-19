@@ -5,7 +5,7 @@ from app import create_app
 from extensions import db
 from models import (
     Company, Contact, MarketingAuditLog, SMSCampaign, SMSKeywordRule, SMSRecipient,
-    SocialPost, TwilioAccount, TwilioConversation, User, user_company,
+    SocialPost, TwilioAccount, TwilioConversation, TwilioMessage, User, user_company,
 )
 
 
@@ -51,8 +51,8 @@ def test_campaign_sms_and_social_pages_render_without_500(client, tenant_user):
 def test_sms_campaign_create_save_and_preview_excludes_unsubscribed(client, tenant_user):
     _, company = tenant_user
     db.session.add_all([
-        Contact(company_id=company.id, first_name="Opt", last_name="In", phone="+15550000001", tags="sms_consent", is_active=True, is_subscribed=True, segment="vip"),
-        Contact(company_id=company.id, first_name="Opt", last_name="Out", phone="+15550000002", tags="sms_opt_out", is_active=True, is_subscribed=False, segment="vip"),
+        Contact(company_id=company.id, first_name="Opt", last_name="In", phone="+14155550101", tags="sms_consent", is_active=True, is_subscribed=True, segment="vip"),
+        Contact(company_id=company.id, first_name="Opt", last_name="Out", phone="+14155550102", tags="sms_opt_out", is_active=True, is_subscribed=False, segment="vip"),
     ])
     db.session.commit()
 
@@ -75,7 +75,7 @@ def test_sms_send_refuses_missing_twilio_config(client, tenant_user, monkeypatch
     _, company = tenant_user
     for key in ("TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN", "TWILIO_PHONE_NUMBER", "TWILIO_FROM_NUMBER"):
         monkeypatch.delenv(key, raising=False)
-    db.session.add(Contact(company_id=company.id, phone="+15550000001", tags="sms_consent", is_active=True, is_subscribed=True, segment="vip"))
+    db.session.add(Contact(company_id=company.id, phone="+14155550101", tags="sms_consent", is_active=True, is_subscribed=True, segment="vip"))
     campaign = SMSCampaign(company_id=company.id, name="No Twilio", message="Hello Reply STOP to opt out.", segment="vip", status="draft")
     db.session.add(campaign)
     db.session.commit()
@@ -90,7 +90,7 @@ def test_sms_send_creates_recipient_records_when_configured(client, tenant_user,
     monkeypatch.setenv("TWILIO_ACCOUNT_SID", "ACtest")
     monkeypatch.setenv("TWILIO_AUTH_TOKEN", "token")
     monkeypatch.setenv("TWILIO_PHONE_NUMBER", "+15559999999")
-    db.session.add(Contact(company_id=company.id, phone="+15550000003", tags="sms_consent", is_active=True, is_subscribed=True, segment="vip"))
+    db.session.add(Contact(company_id=company.id, phone="+14155550103", tags="sms_consent", is_active=True, is_subscribed=True, segment="vip"))
     campaign = SMSCampaign(company_id=company.id, name="Configured", message="Hello Reply STOP to opt out.", segment="vip", status="draft")
     db.session.add(campaign)
     db.session.commit()
@@ -182,7 +182,7 @@ def test_inbound_stop_marks_contact_and_blocks_future_preview(client, tenant_use
 def test_keyword_rule_triggers_reply_tags_contact_and_audits(client, tenant_user):
     _, company = tenant_user
     _twilio_account(company)
-    contact = Contact(company_id=company.id, phone="+15550000010", tags="sms_consent", is_active=True, is_subscribed=True, segment="vip")
+    contact = Contact(company_id=company.id, phone="+14155550110", normalized_phone="+14155550110", tags="sms_consent", is_active=True, is_subscribed=True, segment="vip")
     rule = SMSKeywordRule(
         company_id=company.id,
         keyword="VIP",
@@ -281,6 +281,56 @@ def _twilio_signature(path, data, token="token"):
     return RequestValidator(token).compute_signature(f"https://luxit.app{path}", data)
 
 
+def test_inbound_sms_is_idempotent_creates_tagged_contact_and_survives_push_failure(
+    client, tenant_user, monkeypatch
+):
+    _, company = tenant_user
+    _twilio_account(company)
+    monkeypatch.setattr("inbox_pwa._fire_push_notification", lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("provider unavailable")))
+    payload = {
+        "From": "+14155550123",
+        "To": "+15559999999",
+        "Body": "controlled test payload",
+        "MessageSid": "SMIDEMPOTENT",
+    }
+
+    first = client.post("/twilio/sms/inbound", data=payload)
+    duplicate = client.post("/twilio/sms/inbound", data=payload)
+
+    assert first.status_code == duplicate.status_code == 200
+    assert TwilioMessage.query.filter_by(twilio_sid="SMIDEMPOTENT").count() == 1
+    message = TwilioMessage.query.filter_by(twilio_sid="SMIDEMPOTENT").one()
+    assert message.company_id == company.id
+    contact = Contact.query.filter_by(company_id=company.id, normalized_phone="+14155550123").one()
+    assert "MyOrder Customer" in (contact.tags or "")
+    assert message.conversation.contact_id == contact.id
+
+
+def test_inbound_sms_reuses_existing_normalized_contact(client, tenant_user):
+    _, company = tenant_user
+    _twilio_account(company)
+    existing = Contact(
+        company_id=company.id,
+        phone="(415) 555-0124",
+        normalized_phone="+14155550124",
+        is_active=True,
+    )
+    db.session.add(existing)
+    db.session.commit()
+
+    response = client.post("/twilio/sms/inbound", data={
+        "From": "+1 415-555-0124",
+        "To": "+15559999999",
+        "Body": "existing contact",
+        "MessageSid": "SMEXISTINGNORMALIZED",
+    })
+
+    assert response.status_code == 200
+    assert Contact.query.filter_by(company_id=company.id).count() == 1
+    message = TwilioMessage.query.filter_by(twilio_sid="SMEXISTINGNORMALIZED").one()
+    assert message.conversation.contact_id == existing.id
+
+
 def test_twilio_signature_validation_for_inbound_and_status(client, tenant_user, monkeypatch):
     _, company = tenant_user
     _twilio_account(company)
@@ -315,7 +365,7 @@ def test_sms_campaign_send_is_idempotent_and_batches(client, tenant_user, monkey
     monkeypatch.setenv("TWILIO_AUTH_TOKEN", "token")
     monkeypatch.setenv("TWILIO_PHONE_NUMBER", "+15559999999")
     contacts = [
-        Contact(company_id=company.id, phone=f"+15550010{i:03d}", tags="sms_consent", is_active=True, is_subscribed=True, segment="vip")
+        Contact(company_id=company.id, phone=f"+14155552{i:03d}", tags="sms_consent", is_active=True, is_subscribed=True, segment="vip")
         for i in range(3)
     ]
     campaign = SMSCampaign(company_id=company.id, name="Batch", message="Batch Reply STOP to opt out.", segment="vip", status="draft")

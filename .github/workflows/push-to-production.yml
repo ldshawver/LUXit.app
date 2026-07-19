@@ -72,7 +72,18 @@ jobs:
             scripts/apply_migrations.sh "$DATABASE_URL" migrations
 
             echo "== Verify required production schema =="
-            psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f scripts/verify_production_schema.sql
+            test -f scripts/verify_production_schema.sql
+            psql "$DATABASE_URL" \
+              -v ON_ERROR_STOP=1 \
+              -f scripts/verify_production_schema.sql
+
+            echo "== Verify CRM schema contract =="
+            test -f scripts/verify_crm_schema.py
+            if [ -x ".venv/bin/python" ]; then
+              .venv/bin/python scripts/verify_crm_schema.py
+            else
+              python3 scripts/verify_crm_schema.py
+            fi
 
             echo "== Python syntax check =="
             if [ -x ".venv/bin/python" ]; then
