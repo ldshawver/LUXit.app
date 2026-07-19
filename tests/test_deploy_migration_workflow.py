@@ -58,3 +58,31 @@ def test_user_archive_migration_is_forward_safe_and_before_restart():
     ]
     for fragment in required:
         assert fragment in sql
+
+
+def test_crm_repair_migration_is_idempotent_backfills_and_preserves_records():
+    sql = Path("migrations/20260719_crm_contact_management_repair.sql").read_text(encoding="utf-8")
+    assert sql.count("ADD COLUMN IF NOT EXISTS") >= 20
+    assert "DROP TABLE" not in sql.upper()
+    assert "TRUNCATE" not in sql.upper()
+    assert "DELETE FROM" not in sql.upper()
+    assert 'UPDATE "user" SET active = TRUE WHERE active IS NULL' in sql
+    assert "UPDATE contact SET tenant_id = company_id" in sql
+    assert "UPDATE contact SET status = CASE" in sql
+    for table in ("contact_phone_number", "contact_email_address", "contact_source_event", "opportunity"):
+        assert f"CREATE TABLE IF NOT EXISTS {table}" in sql
+    assert "CREATE INDEX IF NOT EXISTS ix_contact_company_normalized_phone" in sql
+
+
+def test_deploy_verifies_crm_schema_after_migrations_and_before_restart():
+    workflow = Path(".github/workflows/push-to-production.yml").read_text(encoding="utf-8")
+    migration_pos = workflow.index('scripts/apply_migrations.sh "$DATABASE_URL" migrations')
+    verification_pos = workflow.index("scripts/verify_crm_schema.py")
+    restart_pos = workflow.index('echo "== Restart live service =="')
+    assert migration_pos < verification_pos < restart_pos
+
+    verifier = Path("scripts/verify_crm_schema.py").read_text(encoding="utf-8")
+    for required in ("user", "contact", "contact_phone_number", "contact_source_event", "opportunity", "twilio_message"):
+        assert f'"{required}"' in verifier
+    assert "backfill:user.active" in verifier
+    assert "backfill:contact.do_not_contact" in verifier

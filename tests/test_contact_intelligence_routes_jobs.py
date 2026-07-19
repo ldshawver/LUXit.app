@@ -128,3 +128,26 @@ def test_contact_delete_archives_and_restore_preserves_record(client):
     assert contact.is_active is True
     assert contact.status == "active"
     assert contact.archived_at is None
+
+
+def test_contacts_page_is_tenant_scoped_and_optional_crm_values_are_safe(client):
+    _, company = login(client)
+    other = Company(name="Other Contacts Co")
+    db.session.add(other); db.session.flush()
+    visible = Contact(
+        company_id=company.id, email="visible@example.com", is_active=True,
+        owner_user_id=None, lifecycle_stage=None, google_match_status=None,
+    )
+    archived = Contact(company_id=company.id, email="archived@example.com", is_active=False, status="archived")
+    foreign = Contact(company_id=other.id, email="foreign@example.com", is_active=True)
+    db.session.add_all([visible, archived, foreign]); db.session.commit()
+
+    response = client.get("/contacts")
+    assert response.status_code == 200
+    assert b"visible@example.com" in response.data
+    assert b"archived@example.com" not in response.data
+    assert b"foreign@example.com" not in response.data
+
+    archived_response = client.get("/contacts?archived=1")
+    assert archived_response.status_code == 200
+    assert b"archived@example.com" in archived_response.data

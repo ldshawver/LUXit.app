@@ -93,6 +93,9 @@ def upsert_contact_from_source(company_id: int, phone: str | None = None, email:
     contact.source_detail = contact.source_detail or source_context
     source_map = {"sms": "twilio_inbound_sms", "csv_import": "csv_import", "manual": "manual_entry", "api": "api"}
     intel_source = source_map.get((source_channel or "").lower(), source_channel or "unknown")
+    # Contact points and source events require a real contact_id. Flush a newly
+    # created contact before those child records are constructed.
+    db.session.flush()
     sync_contact_points(contact, phone, email, intel_source)
     apply_source_attribution(contact, intel_source, detail=source_context, metadata={"provider": source_provider, "source_phone_number": source_phone_number})
     contact.first_seen_at = contact.first_seen_at or now
