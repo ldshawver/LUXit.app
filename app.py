@@ -226,7 +226,7 @@ def create_app() -> Flask:
 
     if not session_secret:
         session_secret = uuid4().hex
-        logging.warning("SESSION_SECRET not set — using generated key.")
+        logging.warning("SESSION_SECRET is missing. Set it in your environment to start the app. Using generated key for this process.")
 
     app.secret_key = session_secret
 
@@ -297,37 +297,41 @@ def create_app() -> Flask:
     login_manager.login_message_category = "info"
     login_manager.session_protection = "basic"
 
-@login_manager.user_loader
-def load_user(user_id):
-    from models import User
-    import logging as _logging
+    @login_manager.user_loader
+    def load_user(user_id):
+        from models import User
+        import logging as _logging
 
-    _log = _logging.getLogger("auth")
+        _log = _logging.getLogger("auth")
 
-    try:
-        user = db.session.get(User, int(user_id))
+        try:
+            user = db.session.get(User, int(user_id))
 
-        if user is not None and not bool(getattr(user, "is_active", True)):
+            if user is not None and not bool(getattr(user, "is_active", True)):
+                _log.info(
+                    "USER_LOADER: id=%s is archived/inactive; refusing session",
+                    user_id,
+                )
+                return None
+
             _log.info(
-                "USER_LOADER: id=%s is archived/inactive; refusing session",
+                "USER_LOADER: id=%s user_found=%s",
                 user_id,
+                user is not None,
             )
+            return user
+
+        except (TypeError, ValueError):
+            _log.warning("USER_LOADER: invalid user id=%r", user_id)
             return None
 
-        _log.info(
-            "USER_LOADER: id=%s user_found=%s",
-            user_id,
-            user is not None,
-        )
-        return user
-
-    except (TypeError, ValueError):
-        _log.warning("USER_LOADER: invalid user id=%r", user_id)
-        return None
-
-    except Exception:
-        _log.exception("USER_LOADER: failed to load user id=%r", user_id)
-        return None
+        except Exception:
+            try:
+                db.session.rollback()
+            except Exception:
+                pass
+            _log.exception("USER_LOADER: failed to load user id=%r", user_id)
+            return None
 
     # --------------------------------------------------------
     # Request Lifecycle

@@ -2021,29 +2021,33 @@ def switch_company(company_id):
 @login_required
 def contacts():
     """Contact management page"""
-    page = request.args.get('page', 1, type=int)
-    search = request.args.get('search', '')
+    page = max(1, min(request.args.get('page', 1, type=int) or 1, 10000))
+    search = request.args.get('search', '').strip()[:200]
     
     company_id = getattr(current_user, 'default_company_id', None)
     query = Contact.query.filter(Contact.company_id == company_id) if company_id else Contact.query.filter(Contact.id == -1)
     show_archived = request.args.get('archived') in {'1', 'true', 'yes'}
     if not show_archived:
         query = query.filter(Contact.is_active.is_(True), Contact.archived_at.is_(None))
-    source = request.args.get('source')
+    source = request.args.get('source', '')[:80]
     if source:
         query = query.filter(db.or_(Contact.original_source == source, Contact.latest_source == source, Contact.source == source))
     if request.args.get('missing_name') in {'1', 'true'}:
         query = query.filter(db.or_(Contact.name.is_(None), Contact.name == ''))
-    if request.args.get('google_status'):
-        query = query.filter(Contact.google_match_status == request.args['google_status'])
-    if request.args.get('duplicate_status'):
-        query = query.filter(Contact.duplicate_status == request.args['duplicate_status'])
+    google_status = request.args.get('google_status', '')[:50]
+    if google_status:
+        query = query.filter(Contact.google_match_status == google_status)
+    duplicate_status = request.args.get('duplicate_status', '')[:50]
+    if duplicate_status:
+        query = query.filter(Contact.duplicate_status == duplicate_status)
     if request.args.get('owner_user_id', type=int):
         query = query.filter(Contact.owner_user_id == request.args.get('owner_user_id', type=int))
-    if request.args.get('stage'):
-        query = query.filter(Contact.lifecycle_stage == request.args['stage'])
-    if request.args.get('tag'):
-        query = query.filter(Contact.tags.ilike(f"%{request.args['tag']}%"))
+    stage = request.args.get('stage', '')[:80]
+    if stage:
+        query = query.filter(Contact.lifecycle_stage == stage)
+    tag = request.args.get('tag', '')[:100]
+    if tag:
+        query = query.filter(Contact.tags.ilike(f"%{tag}%"))
     if request.args.get('followup_overdue') in {'1', 'true'}:
         query = query.filter(Contact.next_follow_up_at < datetime.utcnow())
     if request.args.get('do_not_contact') in {'1', 'true'}:
@@ -2056,12 +2060,18 @@ def contacts():
             Contact.company.contains(search),
             Contact.phone.contains(search)
         ))
-    contacts = query.order_by(Contact.created_at.desc()).paginate(
-        page=page, per_page=20, error_out=False
-    )
-    from models import Opportunity
-    opp_values = dict(db.session.query(Opportunity.contact_id, db.func.coalesce(db.func.sum(Opportunity.estimated_value), 0)).filter(Opportunity.company_id == company_id, Opportunity.status == 'open').group_by(Opportunity.contact_id).all()) if company_id else {}
-    return render_template('contacts.html', contacts=contacts, search=search, show_archived=show_archived, opp_values=opp_values)
+    try:
+        contacts = query.order_by(Contact.created_at.desc()).paginate(
+            page=page, per_page=20, error_out=False
+        )
+        from models import Opportunity
+        opp_values = dict(db.session.query(Opportunity.contact_id, db.func.coalesce(db.func.sum(Opportunity.estimated_value), 0)).filter(Opportunity.company_id == company_id, Opportunity.status == 'open').group_by(Opportunity.contact_id).all()) if company_id else {}
+        return render_template('contacts.html', contacts=contacts, search=search, show_archived=show_archived, opp_values=opp_values)
+    except Exception:
+        request_id = getattr(g, "request_id", None) or request.headers.get("X-Request-ID") or "unavailable"
+        db.session.rollback()
+        logger.exception("GET /contacts failed request_id=%s company_id=%s", request_id, company_id)
+        return render_template("safe_error.html", request_id=request_id, message="Audience could not be loaded. Please try again or contact support with the request ID."), 500
 
 
 def _trusted_public_company_id():
