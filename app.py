@@ -226,7 +226,7 @@ def create_app() -> Flask:
 
     if not session_secret:
         session_secret = uuid4().hex
-        logging.warning("SESSION_SECRET not set — using generated key.")
+        logging.warning("SESSION_SECRET is missing. Set it in your environment to start the app. Using generated key for this process.")
 
     app.secret_key = session_secret
 
@@ -326,6 +326,10 @@ def create_app() -> Flask:
             return None
 
         except Exception:
+            try:
+                db.session.rollback()
+            except Exception:
+                pass
             _log.exception("USER_LOADER: failed to load user id=%r", user_id)
             return None
 

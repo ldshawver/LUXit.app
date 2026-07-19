@@ -60,8 +60,93 @@ def test_user_archive_migration_is_forward_safe_and_before_restart():
         assert fragment in sql
 
 
+def test_production_deploy_targets_canonical_service_port_healthz_and_current_logs():
+    workflow = Path(".github/workflows/push-to-production.yml").read_text(
+        encoding="utf-8"
+    )
+    assert 'SERVICE="lux-email-bot.service"' in workflow
+    assert 'PORT="8001"' in workflow
+    assert 'http://127.0.0.1:${PORT}/healthz' in workflow
+    assert 'https://luxit.app/healthz' in workflow
+    assert 'restart_since="$(date --utc +%Y-%m-%dT%H:%M:%SZ)"' in workflow
+    assert 'journalctl -u "$SERVICE" --since "$restart_since"' in workflow
+    assert "verify_production_schema.sql" in workflow
+    assert "scripts/verify_crm_schema.py" in workflow
+
+    migration_pos = workflow.index("scripts/apply_migrations.sh")
+    production_verification_pos = workflow.index(
+        "verify_production_schema.sql"
+    )
+    crm_verification_pos = workflow.index(
+        "scripts/verify_crm_schema.py"
+    )
+    restart_pos = workflow.index('systemctl restart "$SERVICE"')
+
+    assert (
+        migration_pos
+        < production_verification_pos
+        < crm_verification_pos
+        < restart_pos
+    )
+    assert "systemctl restart luxit.service" not in workflow
+
+
+def test_deploy_script_documents_legacy_duplicate_and_uses_ledger():
+    deploy = Path("deploy.sh").read_text(encoding="utf-8")
+    assert 'SERVICE="lux-email-bot.service"' in deploy
+    assert 'BIND="127.0.0.1:8001"' in deploy
+    assert "luxit.service/8000 is legacy" in deploy
+    assert "scripts/apply_migrations.sh" in deploy
+    assert "http://$BIND/healthz" in deploy
+    assert "verify_production_schema.sql" in deploy
+
+    notes = Path("docs/production_deployment_notes.md").read_text(
+        encoding="utf-8"
+    )
+    assert "SECRET_KEY" in notes and "remember cookies" in notes
+    assert "lux-email-bot.service" in notes
+    assert "luxit.service" in notes
+
+
+def test_user_archive_migration_discovered_by_runner_ordering():
+    from scripts.apply_migrations import discover_migrations
+
+    names = [
+        path.name
+        for path in discover_migrations(Path("migrations"))
+    ]
+    assert "20260718_user_archive_restore.sql" in names
+    assert "20260718_audience_schema_repair.sql" in names
+    assert names == sorted(names)
+
+
+def test_schema_verification_covers_audience_and_user_archive():
+    sql = Path("scripts/verify_production_schema.sql").read_text(
+        encoding="utf-8"
+    )
+    for required in (
+        "contact_phone_number",
+        "contact_email_address",
+        "contact_source_event",
+        "google_contact_connection",
+        "opportunity",
+        "contact_task",
+        "segment_member",
+        "display_name",
+        "updated_at",
+        "session_revoked_at",
+        "previous_role",
+    ):
+        assert required in sql
+
+    assert "RAISE EXCEPTION" in sql
+
+
 def test_crm_repair_migration_is_idempotent_backfills_and_preserves_records():
-    sql = Path("migrations/20260719_crm_contact_management_repair.sql").read_text(encoding="utf-8")
+    sql = Path(
+        "migrations/20260719_crm_contact_management_repair.sql"
+    ).read_text(encoding="utf-8")
+
     assert sql.count("ADD COLUMN IF NOT EXISTS") >= 20
     assert "DROP TABLE" not in sql.upper()
     assert "TRUNCATE" not in sql.upper()
@@ -69,20 +154,58 @@ def test_crm_repair_migration_is_idempotent_backfills_and_preserves_records():
     assert 'UPDATE "user" SET active = TRUE WHERE active IS NULL' in sql
     assert "UPDATE contact SET tenant_id = company_id" in sql
     assert "UPDATE contact SET status = CASE" in sql
-    for table in ("contact_phone_number", "contact_email_address", "contact_source_event", "opportunity"):
+
+    for table in (
+        "contact_phone_number",
+        "contact_email_address",
+        "contact_source_event",
+        "opportunity",
+    ):
         assert f"CREATE TABLE IF NOT EXISTS {table}" in sql
-    assert "CREATE INDEX IF NOT EXISTS ix_contact_company_normalized_phone" in sql
+
+    assert (
+        "CREATE INDEX IF NOT EXISTS "
+        "ix_contact_company_normalized_phone"
+    ) in sql
 
 
 def test_deploy_verifies_crm_schema_after_migrations_and_before_restart():
-    workflow = Path(".github/workflows/push-to-production.yml").read_text(encoding="utf-8")
-    migration_pos = workflow.index('scripts/apply_migrations.sh "$DATABASE_URL" migrations')
-    verification_pos = workflow.index("scripts/verify_crm_schema.py")
-    restart_pos = workflow.index('echo "== Restart live service =="')
-    assert migration_pos < verification_pos < restart_pos
+    workflow = Path(".github/workflows/push-to-production.yml").read_text(
+        encoding="utf-8"
+    )
 
-    verifier = Path("scripts/verify_crm_schema.py").read_text(encoding="utf-8")
-    for required in ("user", "contact", "contact_phone_number", "contact_source_event", "opportunity", "twilio_message"):
+    migration_pos = workflow.index(
+        'scripts/apply_migrations.sh "$DATABASE_URL" migrations'
+    )
+    production_verification_pos = workflow.index(
+        "verify_production_schema.sql"
+    )
+    crm_verification_pos = workflow.index(
+        "scripts/verify_crm_schema.py"
+    )
+    restart_pos = workflow.index(
+        'echo "== Restart live service =="'
+    )
+
+    assert (
+        migration_pos
+        < production_verification_pos
+        < crm_verification_pos
+        < restart_pos
+    )
+
+    verifier = Path("scripts/verify_crm_schema.py").read_text(
+        encoding="utf-8"
+    )
+    for required in (
+        "user",
+        "contact",
+        "contact_phone_number",
+        "contact_source_event",
+        "opportunity",
+        "twilio_message",
+    ):
         assert f'"{required}"' in verifier
+
     assert "backfill:user.active" in verifier
     assert "backfill:contact.do_not_contact" in verifier

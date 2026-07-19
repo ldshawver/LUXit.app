@@ -71,7 +71,14 @@ jobs:
             test -x scripts/apply_migrations.sh
             scripts/apply_migrations.sh "$DATABASE_URL" migrations
 
+            echo "== Verify required production schema =="
+            test -f scripts/verify_production_schema.sql
+            psql "$DATABASE_URL" \
+              -v ON_ERROR_STOP=1 \
+              -f scripts/verify_production_schema.sql
+
             echo "== Verify CRM schema contract =="
+            test -f scripts/verify_crm_schema.py
             if [ -x ".venv/bin/python" ]; then
               .venv/bin/python scripts/verify_crm_schema.py
             else
@@ -88,12 +95,13 @@ jobs:
             echo "== Restart live service =="
             systemctl daemon-reload
             systemctl reset-failed "$SERVICE" || true
+            restart_since="$(date --utc +%Y-%m-%dT%H:%M:%SZ)"
             systemctl restart "$SERVICE"
 
             echo "== Wait for local app readiness =="
             ready="false"
             for i in $(seq 1 30); do
-              if curl -fsS "http://127.0.0.1:${PORT}/auth/login" >/dev/null; then
+              if curl -fsS "http://127.0.0.1:${PORT}/healthz" >/dev/null; then
                 ready="true"
                 break
               fi
@@ -112,11 +120,11 @@ jobs:
             systemctl status "$SERVICE" --no-pager -l
 
             echo "== Public smoke test =="
-            curl -fsS "https://luxit.app/auth/login" >/dev/null
+            curl -fsS "https://luxit.app/healthz" >/dev/null
 
             echo "== Scan recent logs for deploy-breaking errors =="
             recent_logs="$(mktemp)"
-            journalctl -u "$SERVICE" -n 240 --no-pager > "$recent_logs" || true
+            journalctl -u "$SERVICE" --since "$restart_since" --no-pager > "$recent_logs" || true
             if grep -E 'UndefinedColumn|ProgrammingError|BuildError|InFailedSqlTransaction|Traceback' "$recent_logs"; then
               echo "Recent service logs contain deploy-breaking errors" >&2
               cat "$recent_logs" >&2
