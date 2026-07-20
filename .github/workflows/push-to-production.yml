@@ -105,6 +105,8 @@ jobs:
 
             migration_python="$(command -v python3)"
             echo "Migration Python: $migration_python"
+            python3 -m pip show psycopg2 >/dev/null
+            .venv/bin/python -m pip show psycopg2 >/dev/null
 
             case "$migration_python" in
               "$APP_DIR"/.venv/bin/*)
@@ -115,8 +117,6 @@ jobs:
                 ;;
             esac
 
-            python3 -c 'import psycopg2'
-            .venv/bin/python -c 'import psycopg2'
 
             echo "== Create production database backup =="
             mkdir -p "$BACKUP_DIR"
