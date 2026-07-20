@@ -96,6 +96,7 @@ def upsert_contact_from_source(company_id: int, phone: str | None = None, email:
     # Contact points and source events require a real contact_id. Flush a newly
     # created contact before those child records are constructed.
     db.session.flush()
+
     sync_contact_points(contact, phone, email, intel_source)
     apply_source_attribution(contact, intel_source, detail=source_context, metadata={"provider": source_provider, "source_phone_number": source_phone_number})
     contact.first_seen_at = contact.first_seen_at or now

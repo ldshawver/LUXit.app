@@ -2023,6 +2023,7 @@ def contacts():
     """Contact management page"""
     page = max(1, min(request.args.get('page', 1, type=int) or 1, 10000))
     search = request.args.get('search', '').strip()[:200]
+
     
     company_id = getattr(current_user, 'default_company_id', None)
     query = Contact.query.filter(Contact.company_id == company_id) if company_id else Contact.query.filter(Contact.id == -1)
@@ -2030,6 +2031,7 @@ def contacts():
     if not show_archived:
         query = query.filter(Contact.is_active.is_(True), Contact.archived_at.is_(None))
     source = request.args.get('source', '')[:80]
+
     if source:
         query = query.filter(db.or_(Contact.original_source == source, Contact.latest_source == source, Contact.source == source))
     if request.args.get('missing_name') in {'1', 'true'}:
@@ -2057,6 +2059,7 @@ def contacts():
     tag = request.args.get('tag', '')[:100]
     if tag:
         query = query.filter(Contact.tags.ilike(f"%{tag}%"))
+
     if request.args.get('followup_overdue') in {'1', 'true'}:
         query = query.filter(Contact.next_follow_up_at < datetime.utcnow())
     if request.args.get('do_not_contact') in {'1', 'true'}:
@@ -2115,6 +2118,7 @@ def _resolve_contact_from_route(company_id, *, email=None, phone=None, first_nam
         user_id=user_id,
         metadata=metadata,
     )
+
     if segment:
         contact.segment = segment
     if tags:

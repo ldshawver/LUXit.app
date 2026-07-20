@@ -236,6 +236,7 @@ def test_live_gate_workflow_and_comms_pwa_routes(client_ctx):
     assert 'sorted(migrations, key=lambda p: p.name)' in migration_script
     assert '"psql", args.database_url, "-v", "ON_ERROR_STOP=1", *flags, "-f", str(path)' in migration_script
 
+
     # Admin route health for live-gate routes requested by review.
     for path in ("/twilio/comms", "/app/inbox"):
         resp = client.get(path, headers={"User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) Mobile"})

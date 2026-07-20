@@ -1093,6 +1093,166 @@ class ContactDuplicateExclusion(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
 
 
+class ContactPhoneNumber(db.Model):
+    __tablename__ = "contact_phone_number"
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=False, index=True)
+    contact_id = db.Column(db.Integer, db.ForeignKey("contact.id"), nullable=False, index=True)
+    original_value = db.Column(db.String(80), nullable=True)
+    normalized_value = db.Column(db.String(32), nullable=True, index=True)
+    extension = db.Column(db.String(30), nullable=True)
+    phone_type = db.Column(db.String(40), default="mobile", nullable=True)
+    is_primary = db.Column(db.Boolean, default=False, nullable=False)
+    verification_status = db.Column(db.String(40), default="unverified", nullable=False)
+    source = db.Column(db.String(80), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    contact = db.relationship("Contact", backref=db.backref("phone_numbers", lazy="dynamic"))
+
+
+class ContactEmailAddress(db.Model):
+    __tablename__ = "contact_email_address"
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=False, index=True)
+    contact_id = db.Column(db.Integer, db.ForeignKey("contact.id"), nullable=False, index=True)
+    original_value = db.Column(db.String(255), nullable=True)
+    normalized_value = db.Column(db.String(255), nullable=True, index=True)
+    email_type = db.Column(db.String(40), default="work", nullable=True)
+    is_primary = db.Column(db.Boolean, default=False, nullable=False)
+    verification_status = db.Column(db.String(40), default="unverified", nullable=False)
+    source = db.Column(db.String(80), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    contact = db.relationship("Contact", backref=db.backref("email_addresses", lazy="dynamic"))
+
+
+class ContactSourceEvent(db.Model):
+    __tablename__ = "contact_source_event"
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=False, index=True)
+    contact_id = db.Column(db.Integer, db.ForeignKey("contact.id"), nullable=False, index=True)
+    source = db.Column(db.String(80), nullable=False, index=True)
+    source_detail = db.Column(db.String(255), nullable=True)
+    campaign = db.Column(db.String(255), nullable=True)
+    source_url = db.Column(db.String(500), nullable=True)
+    referrer = db.Column(db.String(500), nullable=True)
+    event_type = db.Column(db.String(80), default="touch", nullable=False)
+    event_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False, index=True)
+    event_metadata = db.Column("metadata", JSON, default=dict)
+    created_by_user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True)
+    contact = db.relationship("Contact", backref=db.backref("source_events", lazy="dynamic"))
+
+
+class GoogleContactConnection(db.Model):
+    __tablename__ = "google_contact_connection"
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=False, index=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, index=True)
+    google_account_email = db.Column(db.String(255), nullable=True)
+    encrypted_refresh_token_ref = db.Column(db.Text, nullable=True)
+    scopes = db.Column(JSON, default=list)
+    sync_status = db.Column(db.String(50), default="disconnected", nullable=False)
+    last_successful_sync_at = db.Column(db.DateTime, nullable=True)
+    last_failure_at = db.Column(db.DateTime, nullable=True)
+    last_error = db.Column(db.Text, nullable=True)
+    disconnected_at = db.Column(db.DateTime, nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class Opportunity(db.Model):
+    __tablename__ = "opportunity"
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=False, index=True)
+    contact_id = db.Column(db.Integer, db.ForeignKey("contact.id"), nullable=False, index=True)
+    owner_user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True, index=True)
+    name = db.Column(db.String(255), nullable=False)
+    pipeline = db.Column(db.String(80), default="sales", nullable=False)
+    stage = db.Column(db.String(80), default="new_lead", nullable=False, index=True)
+    estimated_value = db.Column(db.Numeric(12, 2), nullable=True)
+    probability = db.Column(db.Integer, default=0, nullable=False)
+    expected_close_date = db.Column(db.Date, nullable=True)
+    status = db.Column(db.String(40), default="open", nullable=False, index=True)
+    won_lost_reason = db.Column(db.String(255), nullable=True)
+    next_action = db.Column(db.String(255), nullable=True)
+    follow_up_at = db.Column(db.DateTime, nullable=True, index=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    contact = db.relationship("Contact", backref=db.backref("opportunities", lazy="dynamic"))
+
+
+class ContactTask(db.Model):
+    __tablename__ = "contact_task"
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=False, index=True)
+    contact_id = db.Column(db.Integer, db.ForeignKey("contact.id"), nullable=False, index=True)
+    assigned_user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True, index=True)
+    title = db.Column(db.String(255), nullable=False)
+    due_at = db.Column(db.DateTime, nullable=True, index=True)
+    priority = db.Column(db.String(30), default="normal", nullable=False)
+    status = db.Column(db.String(40), default="open", nullable=False, index=True)
+    reminder_at = db.Column(db.DateTime, nullable=True)
+    completed_at = db.Column(db.DateTime, nullable=True)
+    completed_by_user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    contact = db.relationship("Contact", backref=db.backref("contact_tasks", lazy="dynamic"))
+
+
+class ContactIntelligenceJob(db.Model):
+    __tablename__ = "contact_intelligence_job"
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=False, index=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True, index=True)
+    job_type = db.Column(db.String(80), nullable=False, index=True)
+    status = db.Column(db.String(40), default="queued", nullable=False, index=True)
+    cursor = db.Column(db.String(255), nullable=True)
+    batch_size = db.Column(db.Integer, default=100, nullable=False)
+    total_found = db.Column(db.Integer, default=0, nullable=False)
+    processed = db.Column(db.Integer, default=0, nullable=False)
+    updated = db.Column(db.Integer, default=0, nullable=False)
+    skipped = db.Column(db.Integer, default=0, nullable=False)
+    ambiguous = db.Column(db.Integer, default=0, nullable=False)
+    failed = db.Column(db.Integer, default=0, nullable=False)
+    dry_run = db.Column(db.Boolean, default=True, nullable=False)
+    checkpoint = db.Column(JSON, default=dict)
+    failures = db.Column(JSON, default=list)
+    sanitized_last_error = db.Column(db.Text, nullable=True)
+    started_at = db.Column(db.DateTime, nullable=True)
+    completed_at = db.Column(db.DateTime, nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class GoogleContactLookup(db.Model):
+    __tablename__ = "google_contact_lookup"
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=False, index=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, index=True)
+    connection_id = db.Column(db.Integer, db.ForeignKey("google_contact_connection.id"), nullable=True, index=True)
+    normalized_phone = db.Column(db.String(32), nullable=False, index=True)
+    display_name = db.Column(db.String(255), nullable=True)
+    resource_id = db.Column(db.String(255), nullable=True, index=True)
+    etag = db.Column(db.String(255), nullable=True)
+    is_ambiguous = db.Column(db.Boolean, default=False, nullable=False)
+    candidate_count = db.Column(db.Integer, default=1, nullable=False)
+    candidates = db.Column(JSON, default=list)
+    last_seen_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class ContactDuplicateExclusion(db.Model):
+    __tablename__ = "contact_duplicate_exclusion"
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=False, index=True)
+    contact_id_a = db.Column(db.Integer, db.ForeignKey("contact.id"), nullable=False, index=True)
+    contact_id_b = db.Column(db.Integer, db.ForeignKey("contact.id"), nullable=False, index=True)
+    reason = db.Column(db.String(255), nullable=True)
+    created_by_user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+
 class ContactImportBatch(db.Model):
     __tablename__ = "contact_import_batch"
 
