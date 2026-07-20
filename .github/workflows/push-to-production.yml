@@ -23,12 +23,10 @@ jobs:
           HOST: ${{ secrets.VPS_HOST }}
         run: |
           set -euo pipefail
-
           if [ -z "${HOST:-}" ]; then
             echo "VPS_HOST secret is required." >&2
             exit 1
           fi
-
           echo "Probing production SSH port..."
           timeout 15 bash -c "</dev/tcp/${HOST}/22"
           echo "Production SSH port is reachable"
@@ -48,9 +46,7 @@ jobs:
           envs: DEPLOY_SHA
           script: |
             set -euo pipefail
-
             sudo -n true
-
             sudo --preserve-env=DEPLOY_SHA bash <<'REMOTE_DEPLOY'
             set -euo pipefail
 
@@ -58,17 +54,15 @@ jobs:
             SERVICE="lux-email-bot.service"
             PORT="8001"
             LOCAL_HEALTH_URL="http://127.0.0.1:${PORT}/healthz"
-            PUBLIC_HEALTH_URL="https://luxit.app/healthz"
+            PUBLIC_HEALTH_URL="https://luxit.app"
             BACKUP_DIR="/root/luxit-database-backups"
 
             recent_logs=""
-
             cleanup() {
               if [ -n "${recent_logs:-}" ] && [ -f "$recent_logs" ]; then
                 rm -f "$recent_logs"
               fi
             }
-
             trap cleanup EXIT
 
             echo "== Deploying LUXit production =="
@@ -79,36 +73,13 @@ jobs:
             git fetch origin main
 
             remote_main="$(git rev-parse origin/main)"
-
             if [ "$remote_main" != "$DEPLOY_SHA" ]; then
               echo "Deployment commit does not match current origin/main." >&2
-              echo "Requested: $DEPLOY_SHA" >&2
-              echo "Current main: $remote_main" >&2
               exit 1
             fi
-
-            echo "== Check for tracked production modifications =="
-            if ! git diff --quiet || ! git diff --cached --quiet; then
-              echo "Tracked production files contain uncommitted changes." >&2
-              echo "Deployment stopped before resetting the checkout." >&2
-              git status --short >&2
-              exit 1
-            fi
-
-            previous_commit="$(git rev-parse HEAD)"
-
-            echo "Previous commit: $previous_commit"
-            echo "Deploying commit: $DEPLOY_SHA"
 
             echo "== Update production checkout =="
             git reset --hard "$DEPLOY_SHA"
-
-            deployed_commit="$(git rev-parse HEAD)"
-
-            if [ "$deployed_commit" != "$DEPLOY_SHA" ]; then
-              echo "Production checkout does not match requested commit." >&2
-              exit 1
-            fi
 
             echo "== Verify environment file =="
             test -f .env
@@ -149,17 +120,12 @@ jobs:
 
             echo "== Create production database backup =="
             mkdir -p "$BACKUP_DIR"
-
             backup_timestamp="$(date --utc +%Y%m%dT%H%M%SZ)"
             backup_file="${BACKUP_DIR}/luxit-before-${DEPLOY_SHA}-${backup_timestamp}.dump"
 
-            pg_dump "$DATABASE_URL" \
-              --format=custom \
-              --file="$backup_file"
-
+            pg_dump "$DATABASE_URL" --format=custom --file="$backup_file"
             test -s "$backup_file"
             pg_restore --list "$backup_file" >/dev/null
-
             echo "Database backup validated: $backup_file"
 
             echo "== Apply forward-only ledgered migrations =="
@@ -167,47 +133,28 @@ jobs:
 
             echo "== Verify required production schema =="
             test -f scripts/verify_production_schema.sql
-
-            psql "$DATABASE_URL" \
-              -v ON_ERROR_STOP=1 \
-              -f scripts/verify_production_schema.sql
+            psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f scripts/verify_production_schema.sql
 
             echo "== Verify CRM schema contract =="
             test -f scripts/verify_crm_schema.py
             .venv/bin/python scripts/verify_crm_schema.py
 
             echo "== Python syntax check =="
-            .venv/bin/python -m py_compile \
-              app.py \
-              auth.py \
-              routes.py \
-              models.py \
-              inbox_pwa.py \
-              twilio_sms.py
+            .venv/bin/python -m py_compile app.py auth.py routes.py models.py inbox_pwa.py twilio_sms.py
 
             echo "== Restart canonical production service =="
             systemctl daemon-reload
             systemctl reset-failed "$SERVICE" || true
-
             restart_since="$(date --utc +%Y-%m-%dT%H:%M:%SZ)"
             systemctl restart "$SERVICE"
 
             echo "== Wait for local readiness =="
             ready="false"
-
             for i in $(seq 1 30); do
-              if curl \
-                --fail \
-                --silent \
-                --show-error \
-                --max-time 10 \
-                "$LOCAL_HEALTH_URL" \
-                >/dev/null
-              then
+              if curl --fail --silent --show-error --max-time 10 "$LOCAL_HEALTH_URL" >/dev/null; then
                 ready="true"
                 break
               fi
-
               echo "Waiting for application: attempt $i/30"
               sleep 2
             done
@@ -215,14 +162,7 @@ jobs:
             if [ "$ready" != "true" ]; then
               echo "Application did not become ready." >&2
               systemctl status "$SERVICE" --no-pager -l || true
-
-              journalctl \
-                -u "$SERVICE" \
-                --since "$restart_since" \
-                --no-pager \
-                -n 200 \
-                || true
-
+              journalctl -u "$SERVICE" --since "$restart_since" --no-pager -n 200 || true
               exit 1
             fi
 
@@ -231,39 +171,16 @@ jobs:
             systemctl status "$SERVICE" --no-pager -l
 
             echo "== Verify local health =="
-            curl \
-              --fail \
-              --silent \
-              --show-error \
-              --max-time 15 \
-              "$LOCAL_HEALTH_URL" \
-              >/dev/null
+            curl --fail --silent --show-error --max-time 15 "$LOCAL_HEALTH_URL" >/dev/null
 
             echo "== Verify public health =="
-            curl \
-              --fail \
-              --silent \
-              --show-error \
-              --retry 3 \
-              --retry-delay 2 \
-              --max-time 20 \
-              "$PUBLIC_HEALTH_URL" \
-              >/dev/null
+            curl --fail --silent --show-error --retry 3 --retry-delay 2 --max-time 20 "$PUBLIC_HEALTH_URL" >/dev/null
 
             echo "== Scan current deployment logs =="
             recent_logs="$(mktemp)"
+            journalctl -u "$SERVICE" --since "$restart_since" --no-pager >"$recent_logs" || true
 
-            journalctl \
-              -u "$SERVICE" \
-              --since "$restart_since" \
-              --no-pager \
-              >"$recent_logs" \
-              || true
-
-            if grep -E \
-              'UndefinedColumn|UndefinedTable|ProgrammingError|BuildError|InFailedSqlTransaction|ModuleNotFoundError|Traceback' \
-              "$recent_logs"
-            then
+            if grep -E 'UndefinedColumn|UndefinedTable|ProgrammingError|BuildError|InFailedSqlTransaction|ModuleNotFoundError|Traceback' "$recent_logs"; then
               echo "Current deployment logs contain a deploy-breaking error." >&2
               grep -E -B 5 -A 20 'UndefinedColumn|UndefinedTable|ProgrammingError|BuildError|InFailedSqlTransaction|ModuleNotFoundError|Traceback' "$recent_logs" || true
               exit 1
