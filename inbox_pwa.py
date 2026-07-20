@@ -479,9 +479,11 @@ def retry_queued_outbound_messages(company_id: int, limit: int = 100, dry_run: b
 
 
 def _conv_to_dict(conv, brief=True):
+    from models import Contact
     tags = _safe_conversation_tags(conv.tags)
     contact_source = getattr(conv, "contact_source", None)
     display_name = _refresh_conversation_contact_name(conv)
+    contact = db.session.get(Contact, conv.contact_id) if conv.contact_id else None
     d = {
         "id":                  conv.id,
         "from_number":         conv.from_number,
@@ -489,6 +491,8 @@ def _conv_to_dict(conv, brief=True):
         "display_name":        display_name,
         "contact_id":          conv.contact_id,
         "contact_source":      contact_source,
+        "identity_status":     getattr(contact, "identity_status", None),
+        "google_match_status": getattr(contact, "google_match_status", None),
         "is_read":             conv.is_read,
         "is_opted_out":        conv.is_opted_out,
         "is_archived":         "archived" in tags,

@@ -30,6 +30,19 @@
             </div>
         </form>
     </div>
+    <div class="col-md-6">
+        <form method="GET" class="d-flex gap-2">
+            <select class="form-select" name="identity_filter" aria-label="Identity status filter">
+                <option value="">All identity states</option>
+                <option value="google_matched">Google matched</option>
+                <option value="ambiguous">Ambiguous Google match</option>
+                <option value="pending_identity">Pending identity</option>
+                <option value="confirmed">Customer confirmed</option>
+                <option value="unknown_legacy">Legacy source unknown</option>
+            </select>
+            <button class="btn btn-outline-secondary" type="submit">Filter</button>
+        </form>
+    </div>
 </div>
 
 <!-- Contacts Table -->
@@ -45,6 +58,7 @@
                         <th>Phone</th>
                         <th>Email</th>
                         <th>Original source</th>
+                        <th>Acquired</th>
                         <th>Latest source</th>
                         <th>Tags</th>
                         <th>Owner</th>
@@ -55,6 +69,7 @@
                         <th>Open opp value</th>
                         <th>Duplicate</th>
                         <th>Google</th>
+                        <th>Identity</th>
                         <th>Actions</th>
                     </tr>
                 </thead>
@@ -62,12 +77,13 @@
                     {% for contact in contacts.items %}
                     <tr>
                         <td>
-                            <strong>{{ contact.full_name }}</strong>
+                            <strong>{{ contact.full_name if contact.full_name and contact.full_name != contact.email else 'Pending identity' }}</strong>
                         </td>
                         <td>{{ contact.business_name or contact.company or '-' }}</td>
                         <td>{{ contact.normalized_phone or contact.phone or '-' }}</td>
                         <td>{{ contact.primary_email or contact.email or '-' }}</td>
                         <td>{{ contact.original_source or contact.source or '-' }}</td>
+                        <td>{{ (contact.first_touch_at or contact.created_at).strftime('%Y-%m-%d') if (contact.first_touch_at or contact.created_at) else '-' }}</td>
                         <td>{{ contact.latest_source or '-' }}</td>
                         <td>
                             {% if contact.tags %}
@@ -86,6 +102,7 @@
                         <td>{{ '%.2f'|format(opp_values.get(contact.id, 0) or 0) }}</td>
                         <td>{{ contact.duplicate_status or '-' }}</td>
                         <td>{{ contact.google_match_status or '-' }}</td>
+                        <td>{{ contact.identity_status or 'pending_identity' }}</td>
                         <td>
                             <button type="button" class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#editContactModal" 
                                 onclick="editContact({{ contact.id }}, '{{ contact.first_name|e }}', '{{ contact.last_name|e }}', '{{ contact.email|e }}', '{{ contact.company|default('', true)|e }}', '{{ contact.phone|default('', true)|e }}', '{{ contact.tags|default('', true)|e }}', '{{ contact.segment|default('', true)|e }}')">

@@ -51,6 +51,8 @@ class PhoneLineService:
     @staticmethod
     def campaign_sender_options(company_id: int):
         from models import TwilioPhoneNumber
+        # Options are DB-backed tenant authorization records. Never inject a
+        # frontend-only number or a global environment fallback here.
         if not company_id:
             return []
         return (TwilioPhoneNumber.query

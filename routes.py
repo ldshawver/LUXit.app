@@ -3,10 +3,12 @@ import io
 import base64
 import logging
 import os
+import uuid
 from datetime import datetime, timedelta
 from flask import Blueprint, render_template, request, flash, redirect, url_for, jsonify, make_response, send_file, current_app, g
 from flask_login import login_required, current_user
 from sqlalchemy import or_, case, text, func
+from sqlalchemy.exc import IntegrityError
 from extensions import db, csrf
 try:
     from models import (
@@ -2019,29 +2021,45 @@ def switch_company(company_id):
 @login_required
 def contacts():
     """Contact management page"""
-    page = request.args.get('page', 1, type=int)
-    search = request.args.get('search', '')
+    page = max(1, min(request.args.get('page', 1, type=int) or 1, 10000))
+    search = request.args.get('search', '').strip()[:200]
+
     
     company_id = getattr(current_user, 'default_company_id', None)
     query = Contact.query.filter(Contact.company_id == company_id) if company_id else Contact.query.filter(Contact.id == -1)
     show_archived = request.args.get('archived') in {'1', 'true', 'yes'}
     if not show_archived:
         query = query.filter(Contact.is_active.is_(True), Contact.archived_at.is_(None))
-    source = request.args.get('source')
+    source = request.args.get('source', '')[:80]
+
     if source:
         query = query.filter(db.or_(Contact.original_source == source, Contact.latest_source == source, Contact.source == source))
     if request.args.get('missing_name') in {'1', 'true'}:
         query = query.filter(db.or_(Contact.name.is_(None), Contact.name == ''))
-    if request.args.get('google_status'):
-        query = query.filter(Contact.google_match_status == request.args['google_status'])
-    if request.args.get('duplicate_status'):
-        query = query.filter(Contact.duplicate_status == request.args['duplicate_status'])
+    google_status = request.args.get('google_status', '')[:50]
+    if google_status:
+        query = query.filter(Contact.google_match_status == google_status)
+    identity_filter = request.args.get('identity_filter', '')[:50]
+    if identity_filter == 'google_matched':
+        query = query.filter(Contact.google_match_status == 'matched')
+    elif identity_filter == 'ambiguous':
+        query = query.filter(Contact.google_match_status == 'ambiguous')
+    elif identity_filter in {'pending_identity', 'confirmed'}:
+        query = query.filter(Contact.identity_status == identity_filter)
+    elif identity_filter == 'unknown_legacy':
+        query = query.filter(Contact.original_source.in_(['unknown_legacy', 'legacy_import']))
+    duplicate_status = request.args.get('duplicate_status', '')[:50]
+    if duplicate_status:
+        query = query.filter(Contact.duplicate_status == duplicate_status)
     if request.args.get('owner_user_id', type=int):
         query = query.filter(Contact.owner_user_id == request.args.get('owner_user_id', type=int))
-    if request.args.get('stage'):
-        query = query.filter(Contact.lifecycle_stage == request.args['stage'])
-    if request.args.get('tag'):
-        query = query.filter(Contact.tags.ilike(f"%{request.args['tag']}%"))
+    stage = request.args.get('stage', '')[:80]
+    if stage:
+        query = query.filter(Contact.lifecycle_stage == stage)
+    tag = request.args.get('tag', '')[:100]
+    if tag:
+        query = query.filter(Contact.tags.ilike(f"%{tag}%"))
+
     if request.args.get('followup_overdue') in {'1', 'true'}:
         query = query.filter(Contact.next_follow_up_at < datetime.utcnow())
     if request.args.get('do_not_contact') in {'1', 'true'}:
@@ -2054,12 +2072,18 @@ def contacts():
             Contact.company.contains(search),
             Contact.phone.contains(search)
         ))
-    contacts = query.order_by(Contact.created_at.desc()).paginate(
-        page=page, per_page=20, error_out=False
-    )
-    from models import Opportunity
-    opp_values = dict(db.session.query(Opportunity.contact_id, db.func.coalesce(db.func.sum(Opportunity.estimated_value), 0)).filter(Opportunity.company_id == company_id, Opportunity.status == 'open').group_by(Opportunity.contact_id).all()) if company_id else {}
-    return render_template('contacts.html', contacts=contacts, search=search, show_archived=show_archived, opp_values=opp_values)
+    try:
+        contacts = query.order_by(Contact.created_at.desc()).paginate(
+            page=page, per_page=20, error_out=False
+        )
+        from models import Opportunity
+        opp_values = dict(db.session.query(Opportunity.contact_id, db.func.coalesce(db.func.sum(Opportunity.estimated_value), 0)).filter(Opportunity.company_id == company_id, Opportunity.status == 'open').group_by(Opportunity.contact_id).all()) if company_id else {}
+        return render_template('contacts.html', contacts=contacts, search=search, show_archived=show_archived, opp_values=opp_values)
+    except Exception:
+        request_id = getattr(g, "request_id", None) or request.headers.get("X-Request-ID") or "unavailable"
+        db.session.rollback()
+        logger.exception("GET /contacts failed request_id=%s company_id=%s", request_id, company_id)
+        return render_template("safe_error.html", request_id=request_id, message="Audience could not be loaded. Please try again or contact support with the request ID."), 500
 
 
 def _trusted_public_company_id():
@@ -2094,6 +2118,7 @@ def _resolve_contact_from_route(company_id, *, email=None, phone=None, first_nam
         user_id=user_id,
         metadata=metadata,
     )
+
     if segment:
         contact.segment = segment
     if tags:
@@ -6474,27 +6499,37 @@ def manage_users():
     """Manage users page — owner/admin/manage-users scoped by tenant."""
     from models import User, UserCompanyAccess
     from services.comms_permissions import can_manage_users
+    from services.user_lifecycle import restoration_eligible
     try:
         company = current_user.get_default_company()
+        show_archived = request.args.get('archived') in {'1', 'true', 'yes'}
         if current_user.is_admin:
-            users = User.query.order_by(User.username).all()
+            q = User.query
+            users = q.filter(User.active.is_(False) if show_archived else User.active.is_(True)).order_by(User.username).all()
         else:
             if not company or not can_manage_users(current_user, company.id):
                 flash('Access denied. You need owner or manage-users permission.', 'danger')
                 return redirect(url_for('main.dashboard'))
-            user_ids = [a.user_id for a in UserCompanyAccess.query.filter_by(company_id=company.id).all()]
-            users = User.query.filter(User.id.in_(user_ids)).order_by(User.username).all()
+            access_ids = [a.user_id for a in UserCompanyAccess.query.filter_by(company_id=company.id, is_active=not show_archived).all()]
+            direct_ids = [u.id for u in User.query.filter_by(default_company_id=company.id, active=not show_archived).all()]
+            users = User.query.filter(User.id.in_(set(access_ids) | set(direct_ids))).order_by(User.username).all()
 
         # Build per-user access map {user_id: access_row} (tenant row first)
         all_access = (UserCompanyAccess.query.filter_by(company_id=company.id).all() if company and not current_user.is_admin else UserCompanyAccess.query.all())
         access_by_user = {}
         for acc in all_access:
             access_by_user.setdefault(acc.user_id, acc)
+        restoration_by_user = {}
+        if company:
+            for user in users:
+                restoration_by_user[user.id] = restoration_eligible(user, company.id)
 
         return render_template(
             'manage_users.html',
             users=users,
             access_by_user=access_by_user,
+            show_archived=show_archived,
+            restoration_by_user=restoration_by_user,
         )
     except Exception as e:
         logger.error("manage_users error: %s", e)
@@ -6538,19 +6573,47 @@ def edit_user(user_id):
 @main_bp.route('/user/delete/<int:user_id>', methods=['POST'])
 @login_required
 def delete_user(user_id):
-    """Delete a user (platform admin only)."""
-    if not current_user.is_admin:
+    """Archive a tenant user without deleting historical attribution."""
+    from models import User
+    from services.comms_permissions import can_manage_users
+    from services.user_lifecycle import archive_user_for_company
+    company = current_user.get_default_company()
+    if not current_user.is_admin and (not company or not can_manage_users(current_user, company.id)):
         flash('Access denied.', 'danger')
         return redirect(url_for('main.dashboard'))
-    from models import User
     user = User.query.get_or_404(user_id)
-    if user.id == current_user.id:
-        flash('Cannot delete your own account.', 'danger')
-        return redirect(url_for('main.manage_users'))
-    db.session.delete(user)
-    db.session.commit()
-    flash(f'User {user.username} deleted.', 'success')
+    try:
+        with db.session.begin_nested():
+            archive_user_for_company(user, company.id, current_user)
+        db.session.commit()
+        flash(f'User {user.username} archived.', 'success')
+    except Exception as exc:
+        db.session.rollback()
+        flash(str(exc), 'danger')
     return redirect(url_for('main.manage_users'))
+
+
+@main_bp.route('/user/restore/<int:user_id>', methods=['POST'])
+@login_required
+def restore_user(user_id):
+    """Restore a user only for the current tenant after validation."""
+    from models import User
+    from services.comms_permissions import can_manage_users
+    from services.user_lifecycle import restore_user_for_company
+    company = current_user.get_default_company()
+    if not current_user.is_admin and (not company or not can_manage_users(current_user, company.id)):
+        flash('Access denied.', 'danger')
+        return redirect(url_for('main.dashboard'))
+    user = User.query.get_or_404(user_id)
+    try:
+        with db.session.begin_nested():
+            restore_user_for_company(user, company.id, current_user)
+        db.session.commit()
+        flash(f'User {user.username} restored.', 'success')
+    except Exception as exc:
+        db.session.rollback()
+        flash(str(exc), 'danger')
+    return redirect(url_for('main.manage_users', archived='1'))
 
 @main_bp.route('/api/user/<int:user_id>/access', methods=['POST'])
 @login_required
@@ -6565,14 +6628,16 @@ def update_user_access(user_id):
                 return jsonify({'success': False, 'error': 'Permission denied.'}), 403
 
         target = db.session.get(User, user_id)
-        if not target:
+        if not target or not getattr(target, "is_active", True):
             return jsonify({'success': False, 'error': 'User not found.'}), 404
+        if not getattr(target, "active", True):
+            return jsonify({'success': False, 'error': 'Archived users must be restored before access can be changed.'}), 409
 
         payload = request.get_json() or {}
 
         if not company:
             return jsonify({'success': False, 'error': 'No company context.'}), 400
-        acc = UserCompanyAccess.query.filter_by(user_id=target.id, company_id=company.id).first()
+        acc = UserCompanyAccess.query.filter_by(user_id=target.id, company_id=company.id, is_active=True).first()
         if not acc:
             if not current_user.is_admin:
                 return jsonify({'success': False, 'error': 'Target user is not in this tenant.'}), 403

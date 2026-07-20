@@ -15,7 +15,7 @@
     <style>
       :root {
         {% if current_user is defined and current_user.is_authenticated %}
-          {% set brand = current_user.get_default_company() %}
+          {% set brand = current_company %}
           --lux-primary: {{ brand.primary_color if brand and brand.primary_color else '#bc00ed' }};
           --lux-secondary: {{ brand.secondary_color if brand and brand.secondary_color else '#00ffb4' }};
           --lux-accent: {{ brand.accent_color if brand and brand.accent_color else '#e4055c' }};

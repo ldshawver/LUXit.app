@@ -1248,6 +1248,15 @@ wheels = [
 ]
 
 [[package]]
+name = "phonenumbers"
+version = "9.0.34"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/86/c3/e154829a50679c38ae28ec9c4f151f2c425db5e70fd445266e76f6d6cd65/phonenumbers-9.0.34.tar.gz", hash = "sha256:00751c75d1166485ca80ce02ec15b6a61a2628e9b313381579330bc70c934075", size = 2306776, upload-time = "2026-07-03T06:30:37.358Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/16/0a/3a7980f3b071dde9a297d85cf6b18ba4bc2e5024e1c453b3da8a1dc14268/phonenumbers-9.0.34-py2.py3-none-any.whl", hash = "sha256:1221bf8e65bd2c02770226488af806d4636814bc997104d3a1f7de6ed6410bd2", size = 2595344, upload-time = "2026-07-03T06:30:33.913Z" },
+]
+
+[[package]]
 name = "pillow"
 version = "12.0.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1674,6 +1683,7 @@ dependencies = [
     { name = "msal" },
     { name = "openai" },
     { name = "openpyxl" },
+    { name = "phonenumbers" },
     { name = "psycopg2-binary" },
     { name = "pyjwt" },
     { name = "pytest" },
@@ -1709,6 +1719,7 @@ requires-dist = [
     { name = "msal", specifier = ">=1.33.0" },
     { name = "openai", specifier = ">=1.98.0" },
     { name = "openpyxl", specifier = ">=3.1.5" },
+    { name = "phonenumbers", specifier = ">=9.0.10" },
     { name = "psycopg2-binary", specifier = ">=2.9.10" },
     { name = "pyjwt", specifier = ">=2.9.0" },
     { name = "pytest", specifier = ">=8.0.0" },

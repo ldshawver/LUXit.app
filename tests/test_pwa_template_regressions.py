@@ -73,3 +73,23 @@ def test_frontend_does_not_hard_code_twilio_credentials():
     forbidden = ["TWILIO_AUTH_TOKEN", "auth_token", "Account SID", "ACtest", "api.twilio.com/2010"]
     for value in forbidden:
         assert value not in html
+
+
+def test_pwa_reconciles_granted_notification_permission_with_backend_subscription():
+    html = (ROOT / "templates" / "inbox_pwa" / "index.html").read_text()
+
+    assert "registerSW().then(() => reconcileGrantedPushPermission())" in html
+    assert "async function reconcileGrantedPushPermission()" in html
+    assert "!browserSubscription || !matchingBackendSubscription" in html
+    assert "subscription.endpoint_tail === endpointTail" in html
+    assert "await ensurePushSubscription({sendTest:false})" in html
+
+
+def test_automatic_push_reconciliation_does_not_send_a_test_alert():
+    html = (ROOT / "templates" / "inbox_pwa" / "index.html").read_text()
+
+    start = html.index("async function persistAndVerifyPushSubscription")
+    end = html.index("let pushReconciliationPromise", start)
+    persistence_body = html[start:end]
+    assert "if (sendTest)" in persistence_body
+    assert "pushApiJson('/api/pwa/push/test'" in persistence_body

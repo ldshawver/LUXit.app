@@ -1233,7 +1233,7 @@ window.addEventListener('DOMContentLoaded', () => {
   registerPwaDevice('register');
   setInterval(() => registerPwaDevice('heartbeat'), 60000);
   connectSSE();
-  registerSW();
+  registerSW().then(() => reconcileGrantedPushPermission()).catch(() => {});
   checkNotifPrompt();
   setupKeyboardResize();
   const params = new URLSearchParams(location.search);
@@ -1547,15 +1547,17 @@ async function persistAndVerifyPushSubscription(sub, {sendTest=false}={}) {
     throw new Error('Backend save succeeded, but verification did not find an active subscription for this device.');
   }
   let test = null;
-  setPushRegistrationState('send-test-push', { requestedByRepair: !!sendTest });
-  recordPushLifecycle('test_push_started', { requestedByRepair: !!sendTest });
-  test = await pushApiJson('/api/pwa/push/test', 'POST', {});
-  recordPushLifecycle('test_push_completed', { providerAccepted: !!test?.provider_accepted, success: !!test?.success });
-  setPushRegistrationState('test-push-provider-result', { testPush: test });
-  if (!test?.success) throw new Error(test?.error || 'Test push provider did not accept the notification.');
+  if (sendTest) {
+    setPushRegistrationState('send-test-push', { requestedByRepair: true });
+    recordPushLifecycle('test_push_started', { requestedByRepair: true });
+    test = await pushApiJson('/api/pwa/push/test', 'POST', {});
+    recordPushLifecycle('test_push_completed', { providerAccepted: !!test?.provider_accepted, success: !!test?.success });
+    setPushRegistrationState('test-push-provider-result', { testPush: test });
+    if (!test?.success) throw new Error(test?.error || 'Test push provider did not accept the notification.');
+  }
   setPushRegistrationSuccess('registration-verified', {
     backendPersisted: true,
-    providerAccepted: !!test?.provider_accepted,
+    providerAccepted: sendTest ? !!test?.provider_accepted : null,
     deliveryConfirmedByServiceWorker: false,
     serviceWorkerReceiptRequired: true,
     activeSubscriptions: verify.active_subscriptions || 0,
@@ -1563,6 +1565,45 @@ async function persistAndVerifyPushSubscription(sub, {sendTest=false}={}) {
     endpoint: redactEndpoint(subscription.endpoint),
   });
   return {saved, verify, test};
+}
+
+let pushReconciliationPromise = null;
+async function reconcileGrantedPushPermission() {
+  if (pushReconciliationPromise) return pushReconciliationPromise;
+  if (!('Notification' in window) || Notification.permission !== 'granted') return null;
+  if (!('serviceWorker' in navigator) || !('PushManager' in window)) return null;
+
+  pushReconciliationPromise = (async () => {
+    try {
+      const reg = await navigator.serviceWorker.ready;
+      const browserSubscription = await reg.pushManager.getSubscription();
+      const backend = await apiFetch(`/api/pwa/push/debug?device_key=${encodeURIComponent(pwaDeviceKey())}`);
+      const endpointTail = browserSubscription?.endpoint?.slice(-18) || '';
+      const matchingBackendSubscription = (backend?.subscriptions || []).some(subscription =>
+        subscription.device_key === pwaDeviceKey() &&
+        subscription.is_active === true &&
+        subscription.endpoint_tail === endpointTail
+      );
+      // Browser permission alone does not deliver alerts. Repair either half of
+      // the browser/backend pairing whenever an already-authorized PWA opens.
+      if (!browserSubscription || !matchingBackendSubscription) {
+        setPushRegistrationState('automatic-subscription-reconciliation', {
+          subscriptionExists: !!browserSubscription,
+          backendDeviceActive: !!backend?.device_active_subscription,
+          backendEndpointMatches: matchingBackendSubscription,
+        });
+        await ensurePushSubscription({sendTest:false});
+      }
+      return true;
+    } catch (error) {
+      setPushRegistrationFailure('automatic-subscription-reconciliation', error);
+      console.warn('Automatic push subscription reconciliation failed:', error);
+      return false;
+    } finally {
+      pushReconciliationPromise = null;
+    }
+  })();
+  return pushReconciliationPromise;
 }
 async function ensurePushSubscription({forceFresh=false, sendTest=false}={}) {
   let stage = 'start';

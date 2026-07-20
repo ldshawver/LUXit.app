@@ -55,6 +55,10 @@ class UserCompanyAccess(db.Model):
     updated_at = db.Column(
         db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
     )
+    is_active = db.Column(db.Boolean, default=True, nullable=False)
+    archived_at = db.Column(db.DateTime, nullable=True)
+    archived_by_user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True)
+    previous_role = db.Column(db.String(20), nullable=True)
 
     __table_args__ = (
         db.UniqueConstraint("user_id", "company_id", name="uq_user_company_access"),
@@ -92,7 +96,7 @@ class UserCompanyAccess(db.Model):
         ROLE_INBOX_ONLY: 0,
     }
 
-    user = db.relationship("User", backref=db.backref("company_access", lazy="dynamic"))
+    user = db.relationship("User", foreign_keys=[user_id], backref=db.backref("company_access", lazy="dynamic"))
     company = db.relationship(
         "Company", backref=db.backref("user_access", lazy="dynamic")
     )
@@ -174,6 +178,14 @@ class User(UserMixin, db.Model):
     email = db.Column(db.String(120), unique=True, nullable=False)
     password_hash = db.Column(db.String(256))
     is_admin = db.Column(db.Boolean, default=False)
+    active = db.Column(db.Boolean, default=True, nullable=False)
+    archived_at = db.Column(db.DateTime, nullable=True)
+    archived_by_user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True)
+
+    @property
+    def is_active(self):
+        """Flask-Login gate: archived users cannot authenticate or use remember cookies."""
+        return bool(self.active)
 
     # Replit Auth
     replit_id = db.Column(db.String(64), unique=True, nullable=True)
@@ -217,6 +229,11 @@ class User(UserMixin, db.Model):
     updated_at = db.Column(
         db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
     )
+    active = db.Column(db.Boolean, default=True, nullable=False)
+    archived_at = db.Column(db.DateTime, nullable=True)
+    archived_by_user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True)
+    archived_company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=True)
+    session_revoked_at = db.Column(db.DateTime, nullable=True)
 
     # -------------------------
     # Relationships
@@ -245,6 +262,11 @@ class User(UserMixin, db.Model):
     # -------------------------
     def __repr__(self):
         return f"<User {self.username}>"
+
+    @property
+    def is_active(self):
+        """Flask-Login active flag: archived users cannot keep using sessions."""
+        return bool(self.active)
 
     def set_password(self, password: str):
         """Set password_hash for legacy tests and admin-created users."""
@@ -433,6 +455,7 @@ class User(UserMixin, db.Model):
                 .join(UserCompanyAccess, UserCompanyAccess.company_id == Company.id)
                 .filter(
                     UserCompanyAccess.user_id == self.id,
+                    UserCompanyAccess.is_active == True,
                     Company.is_active == True,
                 )
                 .all()
@@ -473,7 +496,7 @@ class User(UserMixin, db.Model):
     
     def get_company_access(self, company_id):
         return UserCompanyAccess.query.filter_by(
-            user_id=self.id, company_id=company_id
+            user_id=self.id, company_id=company_id, is_active=True
         ).first()
 
     def get_company_role(self, company_id):
@@ -657,6 +680,7 @@ class Company(db.Model):
     industry = db.Column(db.String(100))
     description = db.Column(Text)
     require_approved_pwa_devices = db.Column(db.Boolean, default=False, nullable=False)
+    sync_confirmed_contacts_to_google = db.Column(db.Boolean, default=False, nullable=False)
 
     # ── SaaS / Billing Integration ───────────────────────────────────────────
     stripe_customer_id         = db.Column(db.String(100))
@@ -707,9 +731,10 @@ class Company(db.Model):
         """
         from sqlalchemy import or_
         via_access = db.session.query(UserCompanyAccess.user_id) \
-            .filter(UserCompanyAccess.company_id == self.id)
+            .join(User, User.id == UserCompanyAccess.user_id) \
+            .filter(UserCompanyAccess.company_id == self.id, User.active.is_(True))
         via_default = db.session.query(User.id) \
-            .filter(User.default_company_id == self.id)
+            .filter(User.default_company_id == self.id, User.active.is_(True))
         ids = {r[0] for r in via_access.all()} | {r[0] for r in via_default.all()}
         return len(ids)
 
@@ -880,6 +905,14 @@ class Contact(db.Model):
     google_sync_status = db.Column(db.String(50), nullable=True)
     google_sync_error = db.Column(db.Text, nullable=True)
     google_name_last_checked_at = db.Column(db.DateTime, nullable=True)
+    identity_status = db.Column(db.String(32), default="pending_identity", nullable=False, index=True)
+    pending_first_name = db.Column(db.String(120), nullable=True)
+    pending_last_name = db.Column(db.String(120), nullable=True)
+    pending_email = db.Column(db.String(255), nullable=True)
+    identity_requested_at = db.Column(db.DateTime, nullable=True)
+    identity_request_count = db.Column(db.Integer, default=0, nullable=False)
+    identity_confirmed_at = db.Column(db.DateTime, nullable=True)
+    identity_confirmation_sid = db.Column(db.String(64), nullable=True)
     duplicate_status = db.Column(db.String(50), default="unknown", nullable=True, index=True)
     possible_duplicate_of_id = db.Column(db.Integer, db.ForeignKey("contact.id"), nullable=True, index=True)
     duplicate_confidence = db.Column(db.Integer, nullable=True)
@@ -898,6 +931,166 @@ class Contact(db.Model):
     do_not_contact = db.Column(db.Boolean, default=False, nullable=False)
     email_consent_status = db.Column(db.String(30), default="unknown", nullable=True)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class ContactPhoneNumber(db.Model):
+    __tablename__ = "contact_phone_number"
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=False, index=True)
+    contact_id = db.Column(db.Integer, db.ForeignKey("contact.id"), nullable=False, index=True)
+    original_value = db.Column(db.String(80), nullable=True)
+    normalized_value = db.Column(db.String(32), nullable=True, index=True)
+    extension = db.Column(db.String(30), nullable=True)
+    phone_type = db.Column(db.String(40), default="mobile", nullable=True)
+    is_primary = db.Column(db.Boolean, default=False, nullable=False)
+    verification_status = db.Column(db.String(40), default="unverified", nullable=False)
+    source = db.Column(db.String(80), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    contact = db.relationship("Contact", backref=db.backref("phone_numbers", lazy="dynamic"))
+
+
+class ContactEmailAddress(db.Model):
+    __tablename__ = "contact_email_address"
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=False, index=True)
+    contact_id = db.Column(db.Integer, db.ForeignKey("contact.id"), nullable=False, index=True)
+    original_value = db.Column(db.String(255), nullable=True)
+    normalized_value = db.Column(db.String(255), nullable=True, index=True)
+    email_type = db.Column(db.String(40), default="work", nullable=True)
+    is_primary = db.Column(db.Boolean, default=False, nullable=False)
+    verification_status = db.Column(db.String(40), default="unverified", nullable=False)
+    source = db.Column(db.String(80), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    contact = db.relationship("Contact", backref=db.backref("email_addresses", lazy="dynamic"))
+
+
+class ContactSourceEvent(db.Model):
+    __tablename__ = "contact_source_event"
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=False, index=True)
+    contact_id = db.Column(db.Integer, db.ForeignKey("contact.id"), nullable=False, index=True)
+    source = db.Column(db.String(80), nullable=False, index=True)
+    source_detail = db.Column(db.String(255), nullable=True)
+    campaign = db.Column(db.String(255), nullable=True)
+    source_url = db.Column(db.String(500), nullable=True)
+    referrer = db.Column(db.String(500), nullable=True)
+    event_type = db.Column(db.String(80), default="touch", nullable=False)
+    event_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False, index=True)
+    event_metadata = db.Column("metadata", JSON, default=dict)
+    created_by_user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True)
+    contact = db.relationship("Contact", backref=db.backref("source_events", lazy="dynamic"))
+
+
+class GoogleContactConnection(db.Model):
+    __tablename__ = "google_contact_connection"
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=False, index=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, index=True)
+    google_account_email = db.Column(db.String(255), nullable=True)
+    encrypted_refresh_token_ref = db.Column(db.Text, nullable=True)
+    scopes = db.Column(JSON, default=list)
+    sync_status = db.Column(db.String(50), default="disconnected", nullable=False)
+    last_successful_sync_at = db.Column(db.DateTime, nullable=True)
+    last_failure_at = db.Column(db.DateTime, nullable=True)
+    last_error = db.Column(db.Text, nullable=True)
+    disconnected_at = db.Column(db.DateTime, nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class Opportunity(db.Model):
+    __tablename__ = "opportunity"
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=False, index=True)
+    contact_id = db.Column(db.Integer, db.ForeignKey("contact.id"), nullable=False, index=True)
+    owner_user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True, index=True)
+    name = db.Column(db.String(255), nullable=False)
+    pipeline = db.Column(db.String(80), default="sales", nullable=False)
+    stage = db.Column(db.String(80), default="new_lead", nullable=False, index=True)
+    estimated_value = db.Column(db.Numeric(12, 2), nullable=True)
+    probability = db.Column(db.Integer, default=0, nullable=False)
+    expected_close_date = db.Column(db.Date, nullable=True)
+    status = db.Column(db.String(40), default="open", nullable=False, index=True)
+    won_lost_reason = db.Column(db.String(255), nullable=True)
+    next_action = db.Column(db.String(255), nullable=True)
+    follow_up_at = db.Column(db.DateTime, nullable=True, index=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    contact = db.relationship("Contact", backref=db.backref("opportunities", lazy="dynamic"))
+
+
+class ContactTask(db.Model):
+    __tablename__ = "contact_task"
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=False, index=True)
+    contact_id = db.Column(db.Integer, db.ForeignKey("contact.id"), nullable=False, index=True)
+    assigned_user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True, index=True)
+    title = db.Column(db.String(255), nullable=False)
+    due_at = db.Column(db.DateTime, nullable=True, index=True)
+    priority = db.Column(db.String(30), default="normal", nullable=False)
+    status = db.Column(db.String(40), default="open", nullable=False, index=True)
+    reminder_at = db.Column(db.DateTime, nullable=True)
+    completed_at = db.Column(db.DateTime, nullable=True)
+    completed_by_user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    contact = db.relationship("Contact", backref=db.backref("contact_tasks", lazy="dynamic"))
+
+
+class ContactIntelligenceJob(db.Model):
+    __tablename__ = "contact_intelligence_job"
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=False, index=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True, index=True)
+    job_type = db.Column(db.String(80), nullable=False, index=True)
+    status = db.Column(db.String(40), default="queued", nullable=False, index=True)
+    cursor = db.Column(db.String(255), nullable=True)
+    batch_size = db.Column(db.Integer, default=100, nullable=False)
+    total_found = db.Column(db.Integer, default=0, nullable=False)
+    processed = db.Column(db.Integer, default=0, nullable=False)
+    updated = db.Column(db.Integer, default=0, nullable=False)
+    skipped = db.Column(db.Integer, default=0, nullable=False)
+    ambiguous = db.Column(db.Integer, default=0, nullable=False)
+    failed = db.Column(db.Integer, default=0, nullable=False)
+    dry_run = db.Column(db.Boolean, default=True, nullable=False)
+    checkpoint = db.Column(JSON, default=dict)
+    failures = db.Column(JSON, default=list)
+    sanitized_last_error = db.Column(db.Text, nullable=True)
+    started_at = db.Column(db.DateTime, nullable=True)
+    completed_at = db.Column(db.DateTime, nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class GoogleContactLookup(db.Model):
+    __tablename__ = "google_contact_lookup"
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=False, index=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, index=True)
+    connection_id = db.Column(db.Integer, db.ForeignKey("google_contact_connection.id"), nullable=True, index=True)
+    normalized_phone = db.Column(db.String(32), nullable=False, index=True)
+    display_name = db.Column(db.String(255), nullable=True)
+    resource_id = db.Column(db.String(255), nullable=True, index=True)
+    etag = db.Column(db.String(255), nullable=True)
+    is_ambiguous = db.Column(db.Boolean, default=False, nullable=False)
+    candidate_count = db.Column(db.Integer, default=1, nullable=False)
+    candidates = db.Column(JSON, default=list)
+    last_seen_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class ContactDuplicateExclusion(db.Model):
+    __tablename__ = "contact_duplicate_exclusion"
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=False, index=True)
+    contact_id_a = db.Column(db.Integer, db.ForeignKey("contact.id"), nullable=False, index=True)
+    contact_id_b = db.Column(db.Integer, db.ForeignKey("contact.id"), nullable=False, index=True)
+    reason = db.Column(db.String(255), nullable=True)
+    created_by_user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
 
 
 class ContactPhoneNumber(db.Model):
@@ -1286,6 +1479,15 @@ class SMSCampaign(db.Model):
     status = db.Column(db.String(50), default="draft")
     audience_filter = db.Column(JSON, default=dict)
     estimated_recipient_count = db.Column(db.Integer, default=0)
+    selected_tag_ids = db.Column(JSON, default=list)
+    scheduled_preview_count = db.Column(db.Integer)
+    scheduled_unique_phone_count = db.Column(db.Integer)
+    scheduled_eligible_recipient_count = db.Column(db.Integer)
+    execution_recipient_count = db.Column(db.Integer)
+    execution_count_delta = db.Column(db.Integer)
+    scheduled_timezone = db.Column(db.String(80), default="UTC")
+    scheduled_by_user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True)
+    recipient_resolution = db.Column(JSON, default=dict)
     test_sent_at = db.Column(db.DateTime)
     scheduled_at = db.Column(db.DateTime)
     sent_at = db.Column(db.DateTime)

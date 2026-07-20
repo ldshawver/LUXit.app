@@ -324,6 +324,37 @@ class SMSService:
             }
     
     @classmethod
+    def execute_scheduled_campaign(cls, campaign_id):
+        """Worker entry point; all tenant context comes from the campaign row."""
+        from extensions import db
+        from models import SMSCampaign
+        from services.contact_audience import resolve_sms_campaign_recipients
+        from services.phone_line_service import PhoneLineService
+
+        campaign = db.session.get(SMSCampaign, campaign_id)
+        if not campaign or campaign.status != "scheduled":
+            return {"success": False, "error": "Scheduled campaign not found or not scheduled"}
+        sender = PhoneLineService.resolve_campaign_sender(
+            campaign.company_id, campaign.from_phone_number_id, user=None
+        )
+        if not sender.get("success"):
+            campaign.status = "failed"
+            db.session.commit()
+            return sender
+        result = resolve_sms_campaign_recipients(campaign, materialize=True)
+        counts = result["counts"]
+        campaign.recipient_resolution = counts
+        campaign.execution_recipient_count = counts["eligible_recipients"]
+        campaign.execution_count_delta = counts["eligible_recipients"] - (campaign.scheduled_eligible_recipient_count or 0)
+        if not counts["eligible_recipients"]:
+            campaign.status = "failed"
+            db.session.commit()
+            return {"success": False, "error": counts["explanation"], "counts": counts, "sent": 0}
+        campaign.status = "draft"  # allow the guarded canonical sender to transition it
+        db.session.commit()
+        return cls.send_campaign(campaign.id)
+
+    @classmethod
     def send_campaign(cls, campaign_id, transition=True):
         """Send SMS campaign to all pending recipients."""
         from extensions import db

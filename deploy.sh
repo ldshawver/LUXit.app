@@ -8,7 +8,7 @@ set -euo pipefail
 APP_DIR="${APP_DIR:-$(pwd)}"
 VENV="$APP_DIR/.venv"
 GUNICORN="$VENV/bin/gunicorn"
-SERVICE="luxit"
+SERVICE="lux-email-bot.service"
 SITE="https://luxit.app"
 BRANCH="${1:-main}"
 BIND="127.0.0.1:8001"
@@ -101,18 +101,22 @@ else
   warn ".env not found — app will likely fail to start"
 fi
 
-# ── 5. Kill stale Gunicorn on 8000 (if any) ───────────────────────────────────
-pkill -f "gunicorn.*127\.0\.0\.1:8000" 2>/dev/null \
-  && warn "Killed stale gunicorn on port 8000" || true
+# ── 5. Legacy duplicate service note ─────────────────────────────────────────
+warn "lux-email-bot.service on 127.0.0.1:8001 is canonical; luxit.service/8000 is legacy. Stop the duplicate only after confirming canonical health."
 
 # ── 6. Database migration + tenant sync ──────────────────────────────────────
 echo ""
 echo "── 5. Database migration + tenant sync ──"
-if "$VENV/bin/python3" "$APP_DIR/scripts/migrate_db.py"; then
-  ok "migrate_db.py complete"
-else
-  fail "migrate_db.py failed"
+if [ -z "${DATABASE_URL:-}" ]; then
+  fail "DATABASE_URL is required for ledgered PostgreSQL migrations"
 fi
+if "$APP_DIR/scripts/apply_migrations.sh" "$DATABASE_URL" "$APP_DIR/migrations"; then
+  ok "ledgered SQL migrations complete"
+else
+  fail "ledgered SQL migrations failed"
+fi
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f "$APP_DIR/scripts/verify_production_schema.sql" >/dev/null
+ok "required Audience/CRM schema verified"
 
 if "$VENV/bin/python3" "$APP_DIR/scripts/create_company.py"; then
   ok "create_company.py complete"
@@ -122,7 +126,7 @@ fi
 
 # ── 7. Restart service ────────────────────────────────────────────────────────
 echo ""
-echo "── 6. Restart luxit service ──"
+echo "── 6. Restart canonical lux-email-bot service ──"
 systemctl daemon-reload
 systemctl restart "$SERVICE"
 sleep 3
@@ -138,11 +142,11 @@ fi
 echo ""
 echo "── 7. Health check ──"
 sleep 2
-HTTP=$(curl -s -o /dev/null -w '%{http_code}' -L --max-time 15 "$SITE/" 2>/dev/null || echo "000")
+HTTP=$(curl -s -o /dev/null -w '%{http_code}' -L --max-time 15 "http://$BIND/healthz" 2>/dev/null || echo "000")
 if [[ "$HTTP" =~ ^(200|301|302)$ ]]; then
-  ok "GET $SITE/ → HTTP $HTTP"
+  ok "GET http://$BIND/healthz → HTTP $HTTP"
 else
-  warn "GET $SITE/ → HTTP $HTTP — check Nginx and service logs"
+  warn "GET http://$BIND/healthz → HTTP $HTTP — check service logs"
 fi
 
 # ── Summary ───────────────────────────────────────────────────────────────────

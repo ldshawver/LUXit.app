@@ -93,6 +93,10 @@ def upsert_contact_from_source(company_id: int, phone: str | None = None, email:
     contact.source_detail = contact.source_detail or source_context
     source_map = {"sms": "twilio_inbound_sms", "csv_import": "csv_import", "manual": "manual_entry", "api": "api"}
     intel_source = source_map.get((source_channel or "").lower(), source_channel or "unknown")
+    # Contact points and source events require a real contact_id. Flush a newly
+    # created contact before those child records are constructed.
+    db.session.flush()
+
     sync_contact_points(contact, phone, email, intel_source)
     apply_source_attribution(contact, intel_source, detail=source_context, metadata={"provider": source_provider, "source_phone_number": source_phone_number})
     contact.first_seen_at = contact.first_seen_at or now
@@ -111,65 +115,139 @@ def upsert_contact_from_source(company_id: int, phone: str | None = None, email:
     return contact
 
 
-def _valid_sms(contact):
-    return bool(normalize_phone(contact.normalized_phone or contact.phone)) and not (contact.sms_opted_out or contact.do_not_sms or contact.sms_opt_out_at)
+def _normalized_label(value):
+    """Normalize human-entered tag labels only while resolving their tenant tag ID."""
+    return " ".join(str(value or "").split()).casefold()
 
 
-def _condition(contact, c):
-    field=(c.get('field') or c.get('property') or '').lower(); op=(c.get('operator') or 'is').lower(); val=c.get('value')
-    tags=[t.lower() for t in _split_tags(contact.tags)]
-    actual = {
-      'tag': tags, 'source_phone_number': normalize_phone(contact.source_phone_number), 'source_channel': contact.source_channel,
-      'customer_type': contact.segment, 'customer_status': contact.segment, 'sms_opt_in': contact.sms_marketing_opt_in,
-      'sms_not_opted_out': not (contact.sms_opted_out or contact.do_not_sms or contact.sms_opt_out_at), 'email_opt_in': getattr(contact,'email_opt_in', False) or (not contact.email_unsubscribed and contact.is_subscribed),
-      'imported_list': contact.imported_list, 'company': contact.company_id,
-    }.get(field)
-    if field == 'tag': ok = str(val).lower() in actual
-    elif field == 'source_phone_number': ok = actual == normalize_phone(val)
-    else: ok = str(actual).lower() == str(val).lower()
-    return (not ok) if op in ('is_not','not','!=') else ok
+def _contact_tag_keys(contact):
+    return {_normalized_label(tag) for tag in _split_tags(contact.tags)}
+
+
+def canonical_tag_ids(company_id: int, *, tag_ids=None, tag_names=None, create_missing=False):
+    """Resolve tag/segment labels to tenant-owned IDs; foreign IDs are rejected."""
+    ids = {int(value) for value in (tag_ids or []) if str(value).isdigit()}
+    segments = Segment.query.filter(Segment.company_id == company_id)
+    if ids:
+        owned = {row.id for row in segments.filter(Segment.id.in_(ids)).all()}
+        if owned != ids:
+            raise ValueError("One or more selected tag IDs are not available for this company.")
+    else:
+        owned = set()
+    wanted = {_normalized_label(value) for value in (tag_names or []) if _normalized_label(value)}
+    if wanted:
+        matches = [row for row in segments.all() if _normalized_label(row.name) in wanted]
+        found = {_normalized_label(row.name) for row in matches}
+        missing = wanted - found
+        if missing and create_missing:
+            # One-time canonicalization for legacy campaigns/contacts that only
+            # stored tag text. All newly persisted audience filters use IDs.
+            for key in sorted(missing):
+                row = Segment(company_id=company_id, name=" ".join(key.split()), segment_type="contact_tag")
+                db.session.add(row); db.session.flush(); matches.append(row)
+        elif missing:
+            raise ValueError("One or more audience tags do not have a canonical tag ID for this company.")
+        owned.update(row.id for row in matches)
+    return sorted(owned)
+
+
+def _campaign_tag_ids(campaign):
+    audience = campaign.audience_filter or {}
+    raw_ids = audience.get("selected_tag_ids") or audience.get("tag_ids") or []
+    names = []
+    if not raw_ids and campaign.segment:
+        names = _split_tags(campaign.segment)
+    return canonical_tag_ids(campaign.company_id, tag_ids=raw_ids, tag_names=names)
 
 
 def resolve_segment_contacts(company_id: int, segment=None, audience_filter: dict | None = None):
-    q = Contact.query.filter_by(company_id=company_id, is_active=True)
+    """Tenant-scoped tag resolution through canonical Segment IDs.
+
+    SegmentMember is authoritative when memberships exist. Legacy contact tag text is
+    matched to the *name belonging to the selected tenant Segment ID*, never directly
+    to an untrusted campaign label.
+    """
     filters = audience_filter or {}
-    if segment:
-        seg = Segment.query.filter_by(company_id=company_id, name=segment).first()
-        if seg:
-            ids=[m.contact_id for m in SegmentMember.query.filter_by(segment_id=seg.id, is_excluded=False).all()]
-            q=q.filter(Contact.id.in_(ids or [-1]))
-            filters = filters or {'conditions': seg.conditions or [], 'match_mode': seg.match_mode or 'all'}
-        else:
-            q=q.filter(or_(Contact.segment == segment, Contact.tags.ilike(f"%{segment}%")))
-    contacts=q.all()
-    conds=filters.get('conditions') or filters.get('include') or []
-    excludes=filters.get('exclude') or filters.get('exclude_conditions') or []
-    mode=(filters.get('match_mode') or 'all').lower()
-    if conds:
-        contacts=[c for c in contacts if (any(_condition(c,x) for x in conds) if mode in ('any','or') else all(_condition(c,x) for x in conds))]
-    if excludes:
-        contacts=[c for c in contacts if not any(_condition(c,x) for x in excludes)]
-    return contacts
+    ids = canonical_tag_ids(
+        company_id,
+        tag_ids=filters.get("selected_tag_ids") or filters.get("tag_ids") or [],
+        tag_names=_split_tags(segment) if segment and not (filters.get("selected_tag_ids") or filters.get("tag_ids")) else [],
+        create_missing=True,
+    ) if (segment or filters.get("selected_tag_ids") or filters.get("tag_ids")) else []
+    contacts = Contact.query.filter(Contact.company_id == company_id).all()
+    if not ids:
+        return contacts
+    segments = Segment.query.filter(Segment.company_id == company_id, Segment.id.in_(ids)).all()
+    names = {_normalized_label(row.name) for row in segments}
+    member_ids = {row.contact_id for row in SegmentMember.query.filter(
+        SegmentMember.segment_id.in_(ids), SegmentMember.is_excluded.is_(False)
+    ).all()}
+    return [contact for contact in contacts if contact.id in member_ids or bool(_contact_tag_keys(contact) & names)]
+
+
+def resolve_sms_campaign_recipients(campaign, *, materialize=False):
+    """Canonical recipient resolver for preview, sending, scheduling, jobs and reports."""
+    matched = resolve_segment_contacts(campaign.company_id, campaign.segment, campaign.audience_filter or {})
+    counts = {
+        "matching_contacts": len(matched), "contacts_with_phone": 0,
+        "unique_phone_numbers": 0, "eligible_recipients": 0,
+        "missing_phone_numbers": 0, "invalid_phone_numbers": 0,
+        "duplicate_phone_numbers": 0, "opted_out_contacts": 0,
+        "missing_sms_consent": 0, "archived_or_suppressed": 0,
+    }
+    valid_seen = set()
+    eligible_seen = set()
+    recipients = []
+    for contact in matched:
+        raw_phone = contact.normalized_phone or contact.phone
+        if not str(raw_phone or "").strip():
+            counts["missing_phone_numbers"] += 1
+            continue
+        counts["contacts_with_phone"] += 1
+        phone = normalize_phone(raw_phone)
+        if not phone:
+            counts["invalid_phone_numbers"] += 1
+            continue
+        if phone in valid_seen:
+            counts["duplicate_phone_numbers"] += 1
+        valid_seen.add(phone)
+        tags = _contact_tag_keys(contact)
+        opted_out = bool(contact.sms_opted_out or contact.do_not_sms or contact.sms_opt_out_at or "sms_opt_out" in tags or "no_sms" in tags)
+        suppressed = bool(not contact.is_active or contact.archived_at or contact.do_not_market or contact.do_not_contact or contact.status in {"archived", "suppressed", "merged"} or "blocked" in tags)
+        consent = bool(contact.sms_marketing_opt_in and contact.sms_consent_status in {"opted_in", "subscribed"})
+        if opted_out:
+            counts["opted_out_contacts"] += 1
+        if not consent:
+            counts["missing_sms_consent"] += 1
+        if suppressed:
+            counts["archived_or_suppressed"] += 1
+        if opted_out or suppressed or not consent or phone in eligible_seen:
+            continue
+        eligible_seen.add(phone)
+        recipients.append((contact, phone))
+    counts["unique_phone_numbers"] = len(valid_seen)
+    counts["eligible_recipients"] = len(recipients)
+    # Backward-compatible keys for existing API consumers.
+    counts.update(total_matched=counts["matching_contacts"], duplicates_removed=counts["duplicate_phone_numbers"],
+                  invalid_numbers_removed=counts["invalid_phone_numbers"], opt_outs_removed=counts["opted_out_contacts"],
+                  final_recipients=counts["eligible_recipients"])
+    counts["explanation"] = (
+        f'{counts["matching_contacts"]} tagged contact(s): {counts["missing_phone_numbers"]} missing phone, '
+        f'{counts["invalid_phone_numbers"]} invalid, {counts["duplicate_phone_numbers"]} duplicate, '
+        f'{counts["opted_out_contacts"]} opted out, {counts["missing_sms_consent"]} missing consent, '
+        f'{counts["archived_or_suppressed"]} archived/suppressed; exactly {counts["eligible_recipients"]} SMS message(s) will be attempted.'
+    )
+    if materialize:
+        SMSRecipient.query.filter_by(company_id=campaign.company_id, campaign_id=campaign.id).delete(synchronize_session=False)
+        for contact, phone in recipients:
+            db.session.add(SMSRecipient(company_id=campaign.company_id, campaign_id=campaign.id,
+                                        contact_id=contact.id, phone_number=phone, status="pending"))
+        campaign.estimated_recipient_count = counts["eligible_recipients"]
+    return {"counts": counts, "recipients": recipients}
 
 
 def build_sms_recipient_snapshot(campaign):
-    matched=resolve_segment_contacts(campaign.company_id, campaign.segment, campaign.audience_filter or {})
-    seen=set(); counts={"total_matched":len(matched),"duplicates_removed":0,"invalid_numbers_removed":0,"opt_outs_removed":0,"final_recipients":0}; final=[]
-    for c in matched:
-        phone=normalize_phone(c.normalized_phone or c.phone)
-        if not phone: counts['invalid_numbers_removed']+=1; continue
-        lowered = [t.lower() for t in _split_tags(c.tags)]
-        if c.sms_opted_out or c.do_not_sms or c.sms_opt_out_at or 'sms_opt_out' in lowered or 'blocked' in lowered or 'no_sms' in lowered:
-            counts['opt_outs_removed']+=1; continue
-        if phone in seen: counts['duplicates_removed']+=1; continue
-        seen.add(phone); final.append((c,phone))
-    SMSRecipient.query.filter_by(company_id=campaign.company_id, campaign_id=campaign.id).delete()
-    for c, phone in final:
-        db.session.add(SMSRecipient(company_id=campaign.company_id, campaign_id=campaign.id, contact_id=c.id, phone_number=phone, status='queued'))
-    counts['final_recipients']=len(final); campaign.estimated_recipient_count=len(final)
-    if not final:
-        counts['explanation'] = 'No recipients found because all matched contacts are missing SMS numbers or are opted out.' if matched else 'No recipients found because the selected audience did not match any contacts.'
-    return counts
+    return resolve_sms_campaign_recipients(campaign, materialize=True)["counts"]
 
 HEADER_ALIASES={
  'first_name':['first name','firstname'], 'last_name':['last name','lastname'], 'full_name':['name','full name'], 'company':['company','company name'],

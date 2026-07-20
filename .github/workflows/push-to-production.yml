@@ -8,7 +8,7 @@ on:
 
 concurrency:
   group: push-production
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   deploy-production:
@@ -23,100 +23,283 @@ jobs:
           HOST: ${{ secrets.VPS_HOST }}
         run: |
           set -euo pipefail
+
           if [ -z "${HOST:-}" ]; then
-            echo "VPS_HOST secret is required for the public LUXit VPS host." >&2
+            echo "VPS_HOST secret is required." >&2
             exit 1
           fi
-          echo "Probing SSH on public LUXit VPS ${HOST}:22..."
+
+          echo "Probing production SSH port..."
           timeout 15 bash -c "</dev/tcp/${HOST}/22"
-          echo "Public LUXit VPS SSH port reachable"
+          echo "Production SSH port is reachable"
 
       - name: Deploy to Production VPS
         uses: appleboy/ssh-action@v1.0.3
+        env:
+          DEPLOY_SHA: ${{ github.sha }}
         with:
           host: ${{ secrets.VPS_HOST }}
           username: serveradmin
           key: ${{ secrets.VPS_PRIVATE_KEY }}
           port: 22
           timeout: 60s
-          command_timeout: 10m
+          command_timeout: 15m
           script_stop: true
+          envs: DEPLOY_SHA
           script: |
-            sudo -n true
-            sudo bash <<'REMOTE_DEPLOY'
             set -euo pipefail
+
+            sudo -n true
+
+            sudo --preserve-env=DEPLOY_SHA bash <<'REMOTE_DEPLOY'
+            set -euo pipefail
+
             APP_DIR="/root/lux-email-bot"
             SERVICE="lux-email-bot.service"
             PORT="8001"
+            LOCAL_HEALTH_URL="http://127.0.0.1:${PORT}/healthz"
+            PUBLIC_HEALTH_URL="https://luxit.app/healthz"
+            BACKUP_DIR="/root/luxit-database-backups"
 
-            echo "== Deploying LUXit live app =="
+            recent_logs=""
+
+            cleanup() {
+              if [ -n "${recent_logs:-}" ] && [ -f "$recent_logs" ]; then
+                rm -f "$recent_logs"
+              fi
+            }
+
+            trap cleanup EXIT
+
+            echo "== Deploying LUXit production =="
             cd "$APP_DIR"
 
-            echo "== Git update =="
+            echo "== Verify requested deployment commit =="
+            test -n "${DEPLOY_SHA:-}"
             git fetch origin main
-            git reset --hard origin/main
 
-            echo "== Verify env file =="
+            remote_main="$(git rev-parse origin/main)"
+
+            if [ "$remote_main" != "$DEPLOY_SHA" ]; then
+              echo "Deployment commit does not match current origin/main." >&2
+              echo "Requested: $DEPLOY_SHA" >&2
+              echo "Current main: $remote_main" >&2
+              exit 1
+            fi
+
+            echo "== Check for tracked production modifications =="
+            if ! git diff --quiet || ! git diff --cached --quiet; then
+              echo "Tracked production files contain uncommitted changes." >&2
+              echo "Deployment stopped before resetting the checkout." >&2
+              git status --short >&2
+              exit 1
+            fi
+
+            previous_commit="$(git rev-parse HEAD)"
+
+            echo "Previous commit: $previous_commit"
+            echo "Deploying commit: $DEPLOY_SHA"
+
+            echo "== Update production checkout =="
+            git reset --hard "$DEPLOY_SHA"
+
+            deployed_commit="$(git rev-parse HEAD)"
+
+            if [ "$deployed_commit" != "$DEPLOY_SHA" ]; then
+              echo "Production checkout does not match requested commit." >&2
+              exit 1
+            fi
+
+            echo "== Verify environment file =="
             test -f .env
 
-            echo "== Load env =="
+            echo "== Load production environment =="
             set -a
             source .env
             set +a
 
-            echo "== Verify required env =="
+            echo "== Verify required environment =="
             test -n "${DATABASE_URL:-}"
 
-            echo "== Forward-only migrations =="
+            echo "== Verify required executables =="
+            command -v psql >/dev/null
+            command -v pg_dump >/dev/null
+            command -v pg_restore >/dev/null
+            command -v curl >/dev/null
+            test -x .venv/bin/python
             test -x scripts/apply_migrations.sh
+
+            echo "== Select project virtual environment =="
+            export PATH="$APP_DIR/.venv/bin:$PATH"
+
+            migration_python="$(command -v python3)"
+            echo "Migration Python: $migration_python"
+
+            case "$migration_python" in
+              "$APP_DIR"/.venv/bin/*)
+                ;;
+              *)
+                echo "Migration runner did not select the project virtual environment." >&2
+                exit 1
+                ;;
+            esac
+
+            python3 -c 'import psycopg2'
+            .venv/bin/python -c 'import psycopg2'
+
+            echo "== Create production database backup =="
+            mkdir -p "$BACKUP_DIR"
+
+            backup_timestamp="$(date --utc +%Y%m%dT%H%M%SZ)"
+            backup_file="${BACKUP_DIR}/luxit-before-${DEPLOY_SHA}-${backup_timestamp}.dump"
+
+            pg_dump "$DATABASE_URL" \
+              --format=custom \
+              --file="$backup_file"
+
+            test -s "$backup_file"
+            pg_restore --list "$backup_file" >/dev/null
+
+            echo "Database backup validated: $backup_file"
+
+            echo "== Apply forward-only ledgered migrations =="
             scripts/apply_migrations.sh "$DATABASE_URL" migrations
 
-            echo "== Python syntax check =="
-            if [ -x ".venv/bin/python" ]; then
-              .venv/bin/python -m py_compile app.py auth.py routes.py models.py inbox_pwa.py twilio_sms.py
-            else
-              python3 -m py_compile app.py auth.py routes.py models.py inbox_pwa.py twilio_sms.py
-            fi
+            echo "== Verify required production schema =="
+            test -f scripts/verify_production_schema.sql
 
-            echo "== Restart live service =="
+            psql "$DATABASE_URL" \
+              -v ON_ERROR_STOP=1 \
+              -f scripts/verify_production_schema.sql
+
+            echo "== Verify CRM schema contract =="
+            test -f scripts/verify_crm_schema.py
+            .venv/bin/python scripts/verify_crm_schema.py
+
+            echo "== Python syntax check =="
+            .venv/bin/python -m py_compile \
+              app.py \
+              auth.py \
+              routes.py \
+              models.py \
+              inbox_pwa.py \
+              twilio_sms.py
+
+            echo "== Restart canonical production service =="
             systemctl daemon-reload
             systemctl reset-failed "$SERVICE" || true
+
+            restart_since="$(date --utc +%Y-%m-%dT%H:%M:%SZ)"
             systemctl restart "$SERVICE"
 
-            echo "== Wait for local app readiness =="
+            echo "== Wait for local readiness =="
             ready="false"
+
             for i in $(seq 1 30); do
-              if curl -fsS "http://127.0.0.1:${PORT}/auth/login" >/dev/null; then
+              if curl \
+                --fail \
+                --silent \
+                --show-error \
+                --max-time 10 \
+                "$LOCAL_HEALTH_URL" \
+                >/dev/null
+              then
                 ready="true"
                 break
               fi
-              echo "Waiting for app... attempt $i/30"
+
+              echo "Waiting for application: attempt $i/30"
               sleep 2
             done
 
             if [ "$ready" != "true" ]; then
-              echo "App did not become ready"
+              echo "Application did not become ready." >&2
               systemctl status "$SERVICE" --no-pager -l || true
-              journalctl -u "$SERVICE" -n 160 --no-pager || true
+
+              journalctl \
+                -u "$SERVICE" \
+                --since "$restart_since" \
+                --no-pager \
+                -n 200 \
+                || true
+
               exit 1
             fi
 
-            echo "== Service status =="
+            echo "== Verify production service =="
+            systemctl is-active --quiet "$SERVICE"
             systemctl status "$SERVICE" --no-pager -l
 
-            echo "== Public smoke test =="
-            curl -fsS "https://luxit.app/auth/login" >/dev/null
+            echo "== Verify local health =="
+            curl \
+              --fail \
+              --silent \
+              --show-error \
+              --max-time 15 \
+              "$LOCAL_HEALTH_URL" \
+              >/dev/null
 
-            echo "== Scan recent logs for deploy-breaking errors =="
+            echo "== Verify public health =="
+            curl \
+              --fail \
+              --silent \
+              --show-error \
+              --retry 3 \
+              --retry-delay 2 \
+              --max-time 20 \
+              "$PUBLIC_HEALTH_URL" \
+              >/dev/null
+
+            echo "== Scan current deployment logs =="
             recent_logs="$(mktemp)"
-            journalctl -u "$SERVICE" -n 240 --no-pager > "$recent_logs" || true
-            if grep -E 'UndefinedColumn|ProgrammingError|BuildError|InFailedSqlTransaction|Traceback' "$recent_logs"; then
-              echo "Recent service logs contain deploy-breaking errors" >&2
-              cat "$recent_logs" >&2
+
+            journalctl \
+              -u "$SERVICE" \
+              --since "$restart_since" \
+              --no-pager \
+              >"$recent_logs" \
+              || true
+
+            if grep -E \
+              'UndefinedColumn|UndefinedTable|ProgrammingError|BuildError|InFailedSqlTransaction|ModuleNotFoundError|Traceback' \
+              "$recent_logs"
+            then
+              echo "Current deployment logs contain a deploy-breaking error." >&2
+
+              grep -E \
+                -B 5 \
+                -A 20 \
+                'UndefinedColumn|UndefinedTable|ProgrammingError|BuildError|InFailedSqlTransaction|ModuleNotFoundError|Traceback' \
+                "$recent_logs" \
+                >&2 \
+                || true
+
               exit 1
             fi
 
-            echo "== Recent service logs =="
-            cat "$recent_logs"
-            rm -f "$recent_logs"
+            echo "== Final deployment verification =="
+            test "$(git rev-parse HEAD)" = "$DEPLOY_SHA"
+            systemctl is-active --quiet "$SERVICE"
+
+            curl \
+              --fail \
+              --silent \
+              --show-error \
+              --max-time 15 \
+              "$LOCAL_HEALTH_URL" \
+              >/dev/null
+
+            curl \
+              --fail \
+              --silent \
+              --show-error \
+              --max-time 20 \
+              "$PUBLIC_HEALTH_URL" \
+              >/dev/null
+
+            echo "Production deployment completed successfully."
+            echo "Commit: $DEPLOY_SHA"
+            echo "Service: $SERVICE"
+            echo "Port: $PORT"
+            echo "Backup: $backup_file"
             REMOTE_DEPLOY

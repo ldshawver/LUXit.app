@@ -230,10 +230,12 @@ def test_live_gate_workflow_and_comms_pwa_routes(client_ctx):
     app, client, c1, _, user, line1, _ = client_ctx
     # Production deploy workflow must run migrations/*.sql through psql.
     workflow = open(".github/workflows/push-to-production.yml", encoding="utf-8").read()
-    migration_script = open("scripts/apply_migrations.sh", encoding="utf-8").read()
+    migration_script = open("scripts/apply_migrations.py", encoding="utf-8").read()
     assert 'scripts/apply_migrations.sh "$DATABASE_URL" migrations' in workflow
-    assert 'find "$MIGRATIONS_DIR" -maxdepth 1 -type f -name "*.sql" ! -iname "*rollback*" | sort' in migration_script
-    assert 'psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f "$f"' in migration_script
+    assert 'child.suffix != ".sql"' in migration_script
+    assert 'sorted(migrations, key=lambda p: p.name)' in migration_script
+    assert '"psql", args.database_url, "-v", "ON_ERROR_STOP=1", *flags, "-f", str(path)' in migration_script
+
 
     # Admin route health for live-gate routes requested by review.
     for path in ("/twilio/comms", "/app/inbox"):

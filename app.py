@@ -17,8 +17,8 @@ try:
 except ImportError:
     pass
 
-from flask import Flask, g, has_request_context, jsonify, redirect, request
-from flask_login import LoginManager
+from flask import Flask, g, has_request_context, jsonify, redirect, request, session
+from flask_login import LoginManager, current_user, logout_user
 from werkzeug.middleware.proxy_fix import ProxyFix
 from extensions import db, csrf  # csrf used below to exempt Stripe routes
 
@@ -226,7 +226,7 @@ def create_app() -> Flask:
 
     if not session_secret:
         session_secret = uuid4().hex
-        logging.warning("SESSION_SECRET not set — using generated key.")
+        logging.warning("SESSION_SECRET is missing. Set it in your environment to start the app. Using generated key for this process.")
 
     app.secret_key = session_secret
 
@@ -272,7 +272,13 @@ def create_app() -> Flask:
     @app.errorhandler(CSRFError)
     def handle_csrf_error(e):
         from flask import flash as _flash, redirect as _redirect, request as _req, url_for as _url
-        _flash("Your session expired. Please try again.", "error")
+        logging.getLogger(__name__).warning(
+            "CSRF validation failed path=%s request_id=%s reason=%s",
+            _req.path,
+            _req.headers.get("X-Request-ID"),
+            getattr(e, "description", "csrf_error"),
+        )
+        _flash("Security check failed. Please refresh the page and try again.", "error")
         referrer = _req.referrer
         if referrer:
             return _redirect(referrer)
@@ -295,13 +301,36 @@ def create_app() -> Flask:
     def load_user(user_id):
         from models import User
         import logging as _logging
+
         _log = _logging.getLogger("auth")
+
         try:
-            u = db.session.get(User, int(user_id))
-            _log.info("USER_LOADER: id=%s → user=%s (authenticated=%s)", user_id, u, bool(u))
-            return u
-        except Exception as _exc:
-            _log.warning("USER_LOADER: exception for id=%s: %s", user_id, _exc)
+            user = db.session.get(User, int(user_id))
+
+            if user is not None and not bool(getattr(user, "is_active", True)):
+                _log.info(
+                    "USER_LOADER: id=%s is archived/inactive; refusing session",
+                    user_id,
+                )
+                return None
+
+            _log.info(
+                "USER_LOADER: id=%s user_found=%s",
+                user_id,
+                user is not None,
+            )
+            return user
+
+        except (TypeError, ValueError):
+            _log.warning("USER_LOADER: invalid user id=%r", user_id)
+            return None
+
+        except Exception:
+            try:
+                db.session.rollback()
+            except Exception:
+                pass
+            _log.exception("USER_LOADER: failed to load user id=%r", user_id)
             return None
 
     # --------------------------------------------------------
@@ -311,6 +340,14 @@ def create_app() -> Flask:
     def assign_request_id():
         g.request_id = request.headers.get("X-Request-ID") or str(uuid4())
         g.request_started_at = time.time()
+        if current_user.is_authenticated:
+            revoked = getattr(current_user, "session_revoked_at", None)
+            session_revoked = session.get("user_session_revoked_at")
+            revoked_marker = revoked.isoformat() if revoked else None
+            if not getattr(current_user, "active", True) or (revoked_marker and session_revoked != revoked_marker):
+                logout_user()
+                session.clear()
+                return redirect("/auth/login")
         # Replit's proxy delivers HTTPS externally but passes HTTP internally.
         # Force WSGI to treat requests as HTTPS so Secure cookies are accepted.
         if is_replit and request.environ.get("wsgi.url_scheme") != "https":
