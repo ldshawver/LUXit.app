@@ -680,6 +680,7 @@ class Company(db.Model):
     industry = db.Column(db.String(100))
     description = db.Column(Text)
     require_approved_pwa_devices = db.Column(db.Boolean, default=False, nullable=False)
+    sync_confirmed_contacts_to_google = db.Column(db.Boolean, default=False, nullable=False)
 
     # ── SaaS / Billing Integration ───────────────────────────────────────────
     stripe_customer_id         = db.Column(db.String(100))
@@ -904,6 +905,14 @@ class Contact(db.Model):
     google_sync_status = db.Column(db.String(50), nullable=True)
     google_sync_error = db.Column(db.Text, nullable=True)
     google_name_last_checked_at = db.Column(db.DateTime, nullable=True)
+    identity_status = db.Column(db.String(32), default="pending_identity", nullable=False, index=True)
+    pending_first_name = db.Column(db.String(120), nullable=True)
+    pending_last_name = db.Column(db.String(120), nullable=True)
+    pending_email = db.Column(db.String(255), nullable=True)
+    identity_requested_at = db.Column(db.DateTime, nullable=True)
+    identity_request_count = db.Column(db.Integer, default=0, nullable=False)
+    identity_confirmed_at = db.Column(db.DateTime, nullable=True)
+    identity_confirmation_sid = db.Column(db.String(64), nullable=True)
     duplicate_status = db.Column(db.String(50), default="unknown", nullable=True, index=True)
     possible_duplicate_of_id = db.Column(db.Integer, db.ForeignKey("contact.id"), nullable=True, index=True)
     duplicate_confidence = db.Column(db.Integer, nullable=True)
