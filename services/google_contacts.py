@@ -54,32 +54,10 @@ def _google_error_status(provider_error: dict | None) -> str:
 # Phone normalization — canonical implementation used across the whole app
 # ---------------------------------------------------------------------------
 
-def normalize_phone(raw: str) -> str:
-    """Return a canonical E.164-ish phone number where possible.
-
-    Handles domestic +1 forms, 001 international prefixes, punctuation, spaces,
-    parentheses, hyphens, and common extension markers. Non-US international
-    numbers are preserved with their country code when enough digits exist.
-    """
-    value = (raw or "").strip()
-    if not value:
-        return ""
-    value = re.sub(r"(?i)(?:ext\.?|extension|x)\s*\d+\s*$", "", value).strip()
-    international_prefix = value.startswith("+")
-    digits = re.sub(r"\D", "", value)
-    if digits.startswith("001") and len(digits) > 11:
-        digits = digits[3:]
-    elif digits.startswith("00") and len(digits) > 10:
-        digits = digits[2:]
-    if len(digits) == 10:
-        return "+1" + digits
-    if len(digits) == 11 and digits.startswith("1"):
-        return "+" + digits
-    if international_prefix and 8 <= len(digits) <= 15:
-        return "+" + digits
-    if 8 <= len(digits) <= 15:
-        return "+" + digits
-    return "+" + digits if digits else value
+def normalize_phone(raw: str | None) -> str:
+    """Compatibility wrapper around the application's sole E.164 parser."""
+    from services.phone_normalization import normalize_phone_e164
+    return normalize_phone_e164(raw)
 
 
 # Keep old name as alias for backward compatibility
@@ -282,7 +260,7 @@ def _fetch_all_contacts(access_token: str, sync_token: str | None = None) -> dic
     contacts_processed = 0
     headers = {"Authorization": f"Bearer {access_token}"}
     base_params = {
-        "personFields": "names,phoneNumbers,emailAddresses,organizations,photos",
+        "personFields": "names,phoneNumbers,emailAddresses,organizations,metadata,photos",
         "pageSize": 1000,
         "sortOrder": "LAST_MODIFIED_DESCENDING",
         "sources": "READ_SOURCE_TYPE_CONTACT",
@@ -323,6 +301,7 @@ def _fetch_all_contacts(access_token: str, sync_token: str | None = None) -> dic
                     f"{primary_name.get('givenName','')} {primary_name.get('familyName','')}".strip())
             data = {
                 "resource_name": person.get("resourceName"),
+                "etag": person.get("etag"),
                 "name": name or "",
                 "first_name": primary_name.get("givenName") or "",
                 "last_name": primary_name.get("familyName") or "",
@@ -340,8 +319,11 @@ def _fetch_all_contacts(access_token: str, sync_token: str | None = None) -> dic
             for ph in phones:
                 raw = ph.get("value", "")
                 normalized = normalize_phone(raw)
-                if normalized and normalized not in phone_map:
-                    phone_map[normalized] = {**data, "phone": raw, "normalized_phone": normalized}
+                if normalized:
+                    key = normalized
+                    if key in phone_map and phone_map[key].get("resource_name") != data.get("resource_name"):
+                        key = f"{normalized}|{data.get('resource_name') or contacts_processed}"
+                    phone_map[key] = {**data, "phone": raw, "normalized_phone": normalized}
                     added_phone = True
             if not added_phone and data.get("email"):
                 key = "email:" + normalize_email(data["email"])
@@ -892,10 +874,27 @@ def sync_contacts(user_id: int, company_id: int, dry_run: bool = False) -> dict:
     preview_limit = _preview_limit()
     samples = []
     threshold = _merge_threshold()
+    resources_by_phone = {}
+    for key, raw in phone_map.items():
+        item = _google_data(key, raw)
+        phone = item.get("normalized_phone")
+        if phone:
+            resources_by_phone.setdefault(phone, set()).add(item.get("resource_name") or key)
+    ambiguous_phones = {phone for phone, resources in resources_by_phone.items() if len(resources) > 1}
 
     try:
         for index, (norm, raw_data) in enumerate(phone_map.items(), start=1):
             data = _google_data(norm, raw_data)
+            if data.get("normalized_phone") in ambiguous_phones:
+                contact = _find_contact_by_phone(company_id, data["normalized_phone"])
+                if contact and not dry_run:
+                    contact.google_match_status = "ambiguous"
+                    contact.identity_status = "ambiguous"
+                skipped += 1
+                _append_preview(preview, "possible_merge_requires_review", {
+                    "requires_review": True, "reason": "duplicate_google_phone",
+                }, preview_omitted, preview_limit)
+                continue
             contact = _find_contact_by_google_data(company_id, data)
             if contact:
                 matched += 1

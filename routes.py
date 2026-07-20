@@ -2037,6 +2037,15 @@ def contacts():
     google_status = request.args.get('google_status', '')[:50]
     if google_status:
         query = query.filter(Contact.google_match_status == google_status)
+    identity_filter = request.args.get('identity_filter', '')[:50]
+    if identity_filter == 'google_matched':
+        query = query.filter(Contact.google_match_status == 'matched')
+    elif identity_filter == 'ambiguous':
+        query = query.filter(Contact.google_match_status == 'ambiguous')
+    elif identity_filter in {'pending_identity', 'confirmed'}:
+        query = query.filter(Contact.identity_status == identity_filter)
+    elif identity_filter == 'unknown_legacy':
+        query = query.filter(Contact.original_source.in_(['unknown_legacy', 'legacy_import']))
     duplicate_status = request.args.get('duplicate_status', '')[:50]
     if duplicate_status:
         query = query.filter(Contact.duplicate_status == duplicate_status)

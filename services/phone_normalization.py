@@ -4,12 +4,8 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-try:
-    import phonenumbers
-    from phonenumbers import PhoneNumberFormat
-except Exception:  # pragma: no cover
-    phonenumbers = None
-    PhoneNumberFormat = None
+import phonenumbers
+from phonenumbers import PhoneNumberFormat
 
 _EXTENSION_RE = re.compile(r"(?:ext\.?|extension|x|#)\s*([0-9]{1,10})\s*$", re.I)
 
@@ -38,17 +34,15 @@ def normalize_phone(value: str | None, default_country: str = "US") -> PhoneNorm
     base, ext = split_extension(original)
     if not base:
         return PhoneNormalizationResult(original, None, ext, False, country, "blank")
-    if phonenumbers is None:
-        digits = re.sub(r"\D", "", base)
-        if len(digits) == 10 and country in {"US", "CA"}:
-            return PhoneNormalizationResult(original, f"+1{digits}", ext, True, country)
-        if len(digits) == 11 and digits.startswith("1"):
-            return PhoneNormalizationResult(original, f"+{digits}", ext, True, country)
-        if base.startswith("+") and 8 <= len(digits) <= 15:
-            return PhoneNormalizationResult(original, f"+{digits}", ext, True, country)
-        return PhoneNormalizationResult(original, None, ext, False, country, "invalid")
     try:
         parsed = phonenumbers.parse(base, None if base.startswith("+") else country)
+        # Legacy imports sometimes omit the international ``+``. Only retry
+        # clearly non-NANP long digit strings, and still require libphonenumber
+        # to prove that the resulting number is possible and valid.
+        digits = re.sub(r"\D", "", base)
+        if not phonenumbers.is_valid_number(parsed) and not base.startswith("+") and len(digits) > 11:
+            international_digits = digits[3:] if digits.startswith("001") else digits.removeprefix("00")
+            parsed = phonenumbers.parse("+" + international_digits, None)
         if not phonenumbers.is_valid_number(parsed):
             return PhoneNormalizationResult(original, None, ext, False, country, "invalid")
         return PhoneNormalizationResult(original, phonenumbers.format_number(parsed, PhoneNumberFormat.E164), ext, True, country)
@@ -63,7 +57,7 @@ def normalize_phone_e164(value: str | None, default_country: str = "US") -> str:
 
 def format_phone_display(value: str | None, default_country: str = "US") -> str:
     result = normalize_phone(value, default_country)
-    if not result.normalized or phonenumbers is None:
+    if not result.normalized:
         return (value or "").strip()
     parsed = phonenumbers.parse(result.normalized, None)
     rendered = phonenumbers.format_number(parsed, PhoneNumberFormat.NATIONAL if result.normalized.startswith("+1") else PhoneNumberFormat.INTERNATIONAL)

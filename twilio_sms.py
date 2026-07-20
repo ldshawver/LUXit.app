@@ -1473,6 +1473,42 @@ def inbound_sms():
             logger.info("HELP/INFO received: company_id=%s phone_last4=%s", ta.company_id, from_number[-4:])
             return _twiml_message(_HELP_REPLY)
 
+        # Identity collection happens only after the inbound message has been
+        # durably committed and compliance keywords have taken precedence.
+        identity_reply_sent = False
+        try:
+            from models import Contact
+            from services.contact_identity import (
+                IDENTITY_PROMPT, apply_cached_google_match,
+                process_identity_message, should_request_identity,
+            )
+            contact = db.session.get(Contact, conv.contact_id) if conv.contact_id else None
+            if contact:
+                match_status = apply_cached_google_match(contact)
+                outcome = process_identity_message(contact, conv, body, twilio_sid)
+                reply = outcome.get("reply")
+                if not reply and outcome.get("missing") and contact.identity_requested_at:
+                    reply = "Please include " + " and ".join(outcome["missing"]) + "."
+                if not reply and match_status != "matched" and should_request_identity(contact):
+                    contact.identity_status = "pending_identity"
+                    contact.identity_requested_at = datetime.utcnow()
+                    contact.identity_request_count = (contact.identity_request_count or 0) + 1
+                    reply = IDENTITY_PROMPT
+                db.session.commit()
+                if reply:
+                    result = sendConversationSms(conv.id, reply, twilio_account=ta, is_auto_reply=True)
+                    identity_reply_sent = bool(result.get("success"))
+                    if identity_reply_sent:
+                        msg_record.auto_responded = True
+                        db.session.commit()
+        except Exception:
+            db.session.rollback()
+            logger.exception(
+                "Inbound SMS downstream failure correlation_id=%s sid=%s company_id=%s "
+                "status=persisted category=identity_enrichment",
+                correlation_id, twilio_sid, ta.company_id,
+            )
+
         # ── 5. SMS forwarding — always runs before auto-reply so exceptions
         #       in rule processing can never suppress the forward ────────────
         if ta.sms_forward_to and ta.sms_forwarding_enabled:
@@ -1507,7 +1543,7 @@ def inbound_sms():
             )
             attribute_inbound_reply(ta.company_id, from_number, body, conv.id)
             campaign_reply = process_keyword_rules(ta.company_id, body, conv, ta)
-            if campaign_reply:
+            if campaign_reply and not identity_reply_sent:
                 sendConversationSms(conv.id, campaign_reply, twilio_account=ta, is_auto_reply=True)
         except Exception as campaign_rule_exc:
             logger.exception("Error in campaign SMS keyword engine: %s", campaign_rule_exc)
@@ -1519,7 +1555,7 @@ def inbound_sms():
             _capture_lead(conv, body, ta.company_id)
 
             # Run rules only if not opted out
-            if not conv.is_opted_out and getattr(ta, "auto_reply_enabled", True):
+            if not identity_reply_sent and not conv.is_opted_out and getattr(ta, "auto_reply_enabled", True):
                 auto_reply_sent = _apply_auto_reply_rules(conv, body, ta)
         except Exception as rule_exc:
             logger.exception("Error in auto-reply rule engine: %s", rule_exc)
