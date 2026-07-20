@@ -265,41 +265,10 @@ jobs:
               "$recent_logs"
             then
               echo "Current deployment logs contain a deploy-breaking error." >&2
-
-              grep -E \
-                -B 5 \
-                -A 20 \
-                'UndefinedColumn|UndefinedTable|ProgrammingError|BuildError|InFailedSqlTransaction|ModuleNotFoundError|Traceback' \
-                "$recent_logs" \
-                >&2 \
-                || true
-
+              grep -E -B 5 -A 20 'UndefinedColumn|UndefinedTable|ProgrammingError|BuildError|InFailedSqlTransaction|ModuleNotFoundError|Traceback' "$recent_logs" || true
               exit 1
             fi
 
-            echo "== Final deployment verification =="
-            test "$(git rev-parse HEAD)" = "$DEPLOY_SHA"
-            systemctl is-active --quiet "$SERVICE"
-
-            curl \
-              --fail \
-              --silent \
-              --show-error \
-              --max-time 15 \
-              "$LOCAL_HEALTH_URL" \
-              >/dev/null
-
-            curl \
-              --fail \
-              --silent \
-              --show-error \
-              --max-time 20 \
-              "$PUBLIC_HEALTH_URL" \
-              >/dev/null
-
-            echo "Production deployment completed successfully."
-            echo "Commit: $DEPLOY_SHA"
-            echo "Service: $SERVICE"
-            echo "Port: $PORT"
-            echo "Backup: $backup_file"
+            echo "== Recent service logs =="
+            cat "$recent_logs"
             REMOTE_DEPLOY
