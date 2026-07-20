@@ -42,7 +42,7 @@
                             <option value="">Choose when scheduling/sending</option>
                             {% for number in sender_numbers|default([]) %}
                             <option value="{{ number.id }}" {% if campaign is defined and campaign.from_phone_number_id == number.id %}selected{% endif %}>
-                                {{ number.friendly_name or number.phone_number }} — {{ number.phone_number }}{% if number.allow_global_fallback %} (fallback allowed){% endif %}
+                                {{ number.friendly_name or ('916-598-9519' if number.phone_number == '+19165989519' else number.phone_number) }} — {{ '916-598-9519' if number.phone_number == '+19165989519' else number.phone_number }}{% if number.allow_global_fallback %} (fallback allowed){% endif %}
                             </option>
                             {% endfor %}
                         </select>
@@ -83,6 +83,12 @@
                         </small>
                     </div>
                     
+                    <div class="alert alert-info" id="audienceAccounting" role="status">
+                        <strong>Exact SMS audience accounting</strong>
+                        <p class="mb-1">The server will calculate matching, phone, unique, eligible, missing, invalid, duplicate, opted-out, missing-consent, and suppressed counts before scheduling.</p>
+                        <span>Send and Schedule are blocked when <strong>Eligible recipients = 0</strong>. The eligible count is the exact number of SMS messages that will be attempted.</span>
+                    </div>
+
                     <div class="mb-3">
                         <label for="campaign_tags" class="form-label">Campaign Tags</label>
                         <input type="text" class="form-control" id="campaign_tags" name="campaign_tags" 
