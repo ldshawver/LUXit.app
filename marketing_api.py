@@ -182,6 +182,18 @@ def api_duplicate_campaign(campaign_id):
     return jsonify({"success": True, "campaign": {"id": dup.id}})
 
 
+@marketing_api_bp.get("/sms-senders")
+@login_required
+def api_sms_senders():
+    from services.phone_line_service import PhoneLineService
+    from services.phone_normalization import format_phone_display
+    lines = PhoneLineService.campaign_sender_options(tenant_id())
+    return jsonify({"success": True, "senders": [
+        {"id": line.id, "phone_number": line.phone_number, "display": (f"{line.phone_number[2:5]}-{line.phone_number[5:8]}-{line.phone_number[8:]}" if line.phone_number.startswith("+1") and len(line.phone_number) == 12 else format_phone_display(line.phone_number)),
+         "friendly_name": line.friendly_name} for line in lines
+    ]})
+
+
 @marketing_api_bp.get("/sms-campaigns")
 @login_required
 def api_sms_list():
@@ -197,7 +209,24 @@ def api_sms_create():
     cid = tenant_id()
     if not cid:
         return _json_error("tenant/company is required")
-    c = SMSCampaign(company_id=cid, created_by_user_id=current_user.id, name=data.get("name") or "Untitled SMS Campaign", objective=data.get("objective"), message=_append_stop_language(data.get("message") or ""), segment=data.get("segment"), status=data.get("status") or "draft")
+    sender_id = data.get("from_phone_number_id")
+    if sender_id:
+        from services.phone_line_service import PhoneLineService
+        sender = PhoneLineService.resolve_campaign_sender(cid, int(sender_id), user=current_user)
+        if not sender.get("success"):
+            return _json_error(sender["error"], 403)
+    else:
+        sender = {"phone_number": None, "from_phone": None}
+    from services.contact_audience import canonical_tag_ids
+    try:
+        tag_ids = canonical_tag_ids(cid, tag_ids=data.get("selected_tag_ids") or [], tag_names=[data.get("segment")] if data.get("segment") else [])
+    except ValueError as exc:
+        return _json_error(str(exc), 400)
+    c = SMSCampaign(company_id=cid, created_by_user_id=current_user.id,
+                    from_phone_number_id=getattr(sender.get("phone_number"), "id", None), from_phone_number=sender.get("from_phone"),
+                    name=data.get("name") or "Untitled SMS Campaign", objective=data.get("objective"),
+                    message=_append_stop_language(data.get("message") or ""), segment=data.get("segment"),
+                    selected_tag_ids=tag_ids, audience_filter={"selected_tag_ids": tag_ids}, status=data.get("status") or "draft")
     db.session.add(c)
     db.session.commit()
     return jsonify({"success": True, "campaign": _serialize_sms(c)}), 201
@@ -230,33 +259,19 @@ def api_sms_update(cid):
 @login_required
 def api_sms_preview(cid):
     c = SMSCampaign.query.filter_by(id=cid, company_id=tenant_id()).first_or_404()
-    from services.contact_audience import resolve_segment_contacts, normalize_phone
-    contacts = resolve_segment_contacts(c.company_id, c.segment, c.audience_filter or {})
-    seen = set()
-    eligible = []
-    counts = {"total_matched": len(contacts), "duplicates_removed": 0, "invalid_numbers_removed": 0, "opt_outs_removed": 0, "final_recipients": 0}
-    for x in contacts:
-        phone = normalize_phone(x.normalized_phone or x.phone)
-        if not phone:
-            counts["invalid_numbers_removed"] += 1; continue
-        if x.sms_opted_out or x.do_not_sms or x.sms_opt_out_at or not _contact_has_sms_consent(x):
-            counts["opt_outs_removed"] += 1; continue
-        if phone in seen:
-            counts["duplicates_removed"] += 1; continue
-        seen.add(phone); eligible.append((x, phone))
-    counts["final_recipients"] = len(eligible)
-    if not eligible:
-        counts["explanation"] = "No recipients found because all matched contacts are missing SMS numbers or are opted out." if contacts else "No recipients found because the selected audience did not match any contacts."
-    return jsonify({"success": True, **counts, "recipients_selected": len(eligible), "excluded": len(contacts) - len(eligible), "recipients": [{"id": x.id, "phone": phone, "name": f"{x.first_name or ''} {x.last_name or ''}".strip()} for x, phone in eligible[:25]]})
+    from services.contact_audience import resolve_sms_campaign_recipients
+    result = resolve_sms_campaign_recipients(c)
+    counts = result["counts"]
+    return jsonify({"success": True, **counts, "recipients_selected": counts["eligible_recipients"],
+                    "excluded": counts["matching_contacts"] - counts["eligible_recipients"],
+                    "recipients": [{"id": contact.id, "phone": phone} for contact, phone in result["recipients"][:25]]})
 
 
 def _materialize_recipients(c: SMSCampaign):
-    from services.contact_audience import build_sms_recipient_snapshot, resolve_segment_contacts
-    if c.recipients.count() > 0:
-        return resolve_segment_contacts(c.company_id, c.segment, c.audience_filter or {})
-    counts = build_sms_recipient_snapshot(c)
-    c.audience_filter = dict(c.audience_filter or {}, recipient_counts=counts)
-    return resolve_segment_contacts(c.company_id, c.segment, c.audience_filter or {})
+    from services.contact_audience import resolve_sms_campaign_recipients
+    result = resolve_sms_campaign_recipients(c, materialize=True)
+    c.recipient_resolution = result["counts"]
+    return result
 
 
 @marketing_api_bp.post("/sms-campaigns/<int:cid>/schedule")
@@ -269,9 +284,24 @@ def api_sms_schedule(cid):
     if not c.segment:
         return _json_error("no audience selected")
     when = data.get("scheduled_at")
+    from services.phone_line_service import PhoneLineService
+    sender_id = data.get("from_phone_number_id") or c.from_phone_number_id
+    sender = PhoneLineService.resolve_campaign_sender(c.company_id, int(sender_id) if sender_id else None, user=current_user)
+    if not sender.get("success"):
+        return _json_error(sender["error"], 403)
+    c.from_phone_number_id = sender["phone_number"].id
+    c.from_phone_number = sender["from_phone"]
     c.scheduled_at = datetime.fromisoformat(when) if when else datetime.utcnow()
+    c.scheduled_timezone = data.get("timezone") or "UTC"
+    c.scheduled_by_user_id = current_user.id
+    result = _materialize_recipients(c)
+    counts = result["counts"]
+    if not counts["eligible_recipients"]:
+        return _json_error(counts["explanation"], 400, counts=counts)
+    c.scheduled_preview_count = counts["matching_contacts"]
+    c.scheduled_unique_phone_count = counts["unique_phone_numbers"]
+    c.scheduled_eligible_recipient_count = counts["eligible_recipients"]
     c.status = "scheduled"
-    _materialize_recipients(c)
     db.session.commit()
     return jsonify({"success": True, "campaign": _serialize_sms(c)})
 
@@ -286,6 +316,13 @@ def api_sms_send(cid):
         .first_or_404()
     )
     data = request.get_json(silent=True) or {}
+    from services.phone_line_service import PhoneLineService
+    sender_id = data.get("from_phone_number_id") or c.from_phone_number_id
+    sender = PhoneLineService.resolve_campaign_sender(c.company_id, int(sender_id) if sender_id else None, user=current_user)
+    if not sender.get("success"):
+        return _json_error(sender["error"], 403)
+    c.from_phone_number_id = sender["phone_number"].id
+    c.from_phone_number = sender["from_phone"]
     ready, missing, twilio_account = _twilio_ready(c.company_id)
     if not ready:
         return _json_error("TWILIO/sender configuration missing", 409, missing=missing)
@@ -418,7 +455,10 @@ def api_sms_cancel(cid):
 @login_required
 def api_sms_analytics(cid):
     c = SMSCampaign.query.filter_by(id=cid, company_id=tenant_id()).first_or_404()
-    return jsonify({"success": True, "analytics": _serialize_sms(c)["metrics"]})
+    from services.contact_audience import resolve_sms_campaign_recipients
+    analytics = _serialize_sms(c)["metrics"]
+    analytics["audience"] = resolve_sms_campaign_recipients(c)["counts"]
+    return jsonify({"success": True, "analytics": analytics})
 
 
 def _contact_duplicate_json(contact: Contact):

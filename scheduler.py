@@ -153,3 +153,9 @@ def shutdown_scheduler():
     if scheduler:
         scheduler.shutdown()
         scheduler = None
+
+def run_scheduled_sms_campaign(campaign_id, app):
+    """Execute SMS without relying on an interactive user's tenant session."""
+    with app.app_context():
+        from services.sms_service import SMSService
+        return SMSService.execute_scheduled_campaign(campaign_id)
