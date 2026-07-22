@@ -105,8 +105,7 @@ jobs:
 
             migration_python="$(command -v python3)"
             echo "Migration Python: $migration_python"
-            python3 -m pip show psycopg2 >/dev/null
-            .venv/bin/python -m pip show psycopg2 >/dev/null
+            "$migration_python" -c 'import psycopg2'
 
             case "$migration_python" in
               "$APP_DIR"/.venv/bin/*)
