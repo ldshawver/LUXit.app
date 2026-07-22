@@ -1,0 +1,24 @@
+[Unit]
+Description=LUXit durable notification scheduler
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=luxit
+Group=luxit
+WorkingDirectory=/opt/luxit/app
+EnvironmentFile=/etc/luxit/luxit.env
+ExecStart=/opt/luxit/app/.venv/bin/python scripts/run_durable_scheduler.py
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+KillSignal=SIGTERM
+NoNewPrivileges=true
+PrivateTmp=true
+
+# Install and start exactly one instance of this unit. The application records
+# unique worker heartbeats and warns if multiple active identities are seen.
+
+[Install]
+WantedBy=multi-user.target

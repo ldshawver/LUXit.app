@@ -1434,6 +1434,22 @@ def inbound_sms():
             correlation_id, twilio_sid, ta.company_id, conv.id,
         )
 
+        # This optional integration is invoked only after signature validation
+        # and durable acceptance. Its own durable state isolates Twilio from
+        # Tuya network availability and MessageSid retries.
+        try:
+            from services.tuya_notification import accept_inbound
+            accept_inbound(
+                ta.company_id, twilio_sid, _normalize_e164(to_number),
+                customer_phone=from_number,
+            )
+        except Exception:
+            db.session.rollback()
+            logger.exception(
+                "Tuya notification acceptance failed sid=%s company_id=%s; inbound remains persisted",
+                twilio_sid, ta.company_id,
+            )
+
         # ── 4. System-level keyword handling ──────────────────────────────
         # These always fire and return a TwiML reply immediately.
         kw = _normalized_keyword(body)
@@ -2369,7 +2385,7 @@ def comms_hub():
         return redirect(url_for("main.dashboard"))
 
     ta           = _get_twilio_account(company.id)
-    tab          = request.args.get("tab", "overview")
+    tab          = getattr(g, "comms_forced_tab", None) or request.args.get("tab", "overview")
     if tab == "sms":
         tab = "inbox"
     if tab == "logs":
@@ -2430,6 +2446,47 @@ def comms_hub():
         pass
 
     is_admin = getattr(current_user, "is_admin", False) or getattr(current_user, "is_platform_admin", False)
+    from services.comms_permissions import can_manage_users
+    can_admin_tuya = can_manage_users(current_user, company.id)
+    tuya = None
+    tuya_events = None
+    tuya_page = 1
+    tuya_pages = 0
+    if tab == "tuya_notifications":
+        if not can_admin_tuya:
+            abort(403)
+        from models import TuyaNotificationActivation, TuyaNotificationEvent
+        from services.tuya_notification import (
+            as_utc, company_owns_integration, masked_configuration, worker_health,
+        )
+        cfg = masked_configuration()
+        owner = company_owns_integration(company.id)
+        activation = TuyaNotificationActivation.query.filter_by(company_id=company.id).first()
+        event_filter = request.args.get("event_filter", "all")
+        events_query = TuyaNotificationEvent.query.filter_by(company_id=company.id)
+        if event_filter == "successful":
+            events_query = events_query.filter_by(result="succeeded")
+        elif event_filter == "failed":
+            events_query = events_query.filter_by(result="failed")
+        elif event_filter == "active":
+            events_query = events_query.filter_by(requested_state=True, result="succeeded")
+        elif event_filter == "manual_tests":
+            events_query = events_query.filter_by(trigger_source="manual_test")
+        tuya_page = max(1, request.args.get("page", 1, type=int))
+        per_page = 25
+        total = events_query.count()
+        tuya_pages = (total + per_page - 1) // per_page
+        tuya_events = events_query.order_by(TuyaNotificationEvent.received_at.desc()).offset(
+            (tuya_page - 1) * per_page).limit(per_page).all()
+        tuya = {
+            "config": cfg, "owns_integration": owner, "worker": worker_health(),
+            "activation": activation, "event_filter": event_filter,
+            "device_state": "unknown",
+            "remaining_seconds": max(
+                0,
+                int((as_utc(activation.off_deadline) - datetime.now(timezone.utc)).total_seconds()),
+            ) if activation and activation.off_deadline else None,
+        }
     users_with_access = []
     try:
         from models import PhoneNumberUserPermission
@@ -2504,6 +2561,11 @@ def comms_hub():
         gc_last_sync=gc_last_sync,
         gc_contacts=gc_contacts,
         is_admin=is_admin,
+        can_admin_tuya=can_admin_tuya,
+        tuya=tuya,
+        tuya_events=tuya_events,
+        tuya_page=tuya_page,
+        tuya_pages=tuya_pages,
         phone_numbers=phone_numbers,
         selected_number=selected_number,
         users_with_access=users_with_access,
@@ -2514,6 +2576,55 @@ def comms_hub():
         devices=devices,
         dedupe_preview=dedupe_preview,
     )
+
+
+@twilio_bp.route("/comms/tuya-notifications")
+@login_required
+def comms_tuya_notifications():
+    """Stable URL for the Tuya tab inside the canonical Communications Hub."""
+    g.comms_forced_tab = "tuya_notifications"
+    return comms_hub()
+
+
+def _tuya_admin_company():
+    from services.comms_permissions import can_manage_users
+    from services.tuya_notification import company_owns_integration
+    company = _get_company()
+    if not company:
+        abort(404)
+    if not can_manage_users(current_user, company.id):
+        abort(403)
+    if not company_owns_integration(company.id):
+        abort(404)
+    return company
+
+
+@twilio_bp.route("/comms/tuya-notifications/test", methods=["POST"])
+@login_required
+def comms_tuya_test():
+    company = _tuya_admin_company()
+    from services.tuya_notification import configured, queue_manual_test, worker_health
+    if not configured():
+        flash("Tuya configuration is incomplete.", "error")
+    elif worker_health()["status"] != "healthy":
+        flash("The scheduler worker is not healthy.", "error")
+    elif queue_manual_test(company.id, current_user.id):
+        flash("The 60-second notification test was queued.", "success")
+    else:
+        flash("The request could not be queued. No credentials were changed.", "error")
+    return redirect(url_for("twilio.comms_tuya_notifications"))
+
+
+@twilio_bp.route("/comms/tuya-notifications/off", methods=["POST"])
+@login_required
+def comms_tuya_off():
+    company = _tuya_admin_company()
+    from services.tuya_notification import queue_manual_off
+    if queue_manual_off(company.id, current_user.id):
+        flash("An immediate OFF request was queued.", "success")
+    else:
+        flash("The request could not be queued. No credentials were changed.", "error")
+    return redirect(url_for("twilio.comms_tuya_notifications"))
 
 
 

@@ -85,8 +85,9 @@ def schedule_campaign(campaign, app=None):
     except Exception as e:
         logging.error(f"Error scheduling campaign {campaign.id}: {str(e)}")
 
-def run_weekly_contact_dedupe(app):
+def run_weekly_contact_dedupe():
     """Merge duplicate contacts weekly inside the Flask app context."""
+    from app import app
     with app.app_context():
         from services.contact_dedupe import merge_duplicate_contacts
         return merge_duplicate_contacts()
@@ -123,11 +124,21 @@ def init_scheduler(app):
     scheduler.add_job(
         func=run_weekly_contact_dedupe,
         trigger=CronTrigger(day_of_week="sun", hour=3, minute=0, timezone="UTC"),
-        args=[app],
         id="weekly_contact_dedupe",
         name="Weekly contact duplicate merge",
         replace_existing=True,
         misfire_grace_time=3600,
+    )
+
+    scheduler.add_job(
+        func=run_tuya_reconciliation,
+        trigger="interval",
+        seconds=1,
+        id="tuya_notification_reconciliation",
+        name="Tuya notification relay reconciliation",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
     )
 
     # Start scheduler
@@ -146,6 +157,27 @@ def init_scheduler(app):
     
     logging.info("Email scheduler initialized")
     return scheduler
+
+
+def run_tuya_reconciliation():
+    from app import app
+    with app.app_context():
+        from services.tuya_notification import reconcile
+        reconcile()
+
+
+def run_tuya_on(activation_id):
+    from app import app
+    with app.app_context():
+        from services.tuya_notification import run_on
+        return run_on(activation_id)
+
+
+def run_tuya_off(activation_id):
+    from app import app
+    with app.app_context():
+        from services.tuya_notification import run_off_check
+        return run_off_check(activation_id)
 
 def shutdown_scheduler():
     """Shutdown the scheduler"""
