@@ -107,14 +107,10 @@ jobs:
             echo "Migration Python: $migration_python"
             "$migration_python" -c 'import psycopg2'
 
-            case "$migration_python" in
-              "$APP_DIR"/.venv/bin/*)
-                ;;
-              *)
-                echo "Migration runner did not select the project virtual environment." >&2
-                exit 1
-                ;;
-            esac
+            if [[ "$migration_python" != "$APP_DIR"/.venv/bin/* ]]; then
+            echo "Migration runner did not select the project virtual environment." >&2
+            exit 1
+            fi
 
 
             echo "== Create production database backup =="
