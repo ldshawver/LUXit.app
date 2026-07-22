@@ -46,11 +46,13 @@
       ('voicemail','mic', 'Voicemail', 0),
       ('pwa', 'smartphone', 'PWA Phone App', 0),
       ('devices', 'monitor', 'Devices', 0),
+      ('tuya_notifications', 'bell', 'Tuya Notifications', 0),
       ('calls', 'phone', 'Call Logs', missed_calls_count),
       ('inbox', 'message-square', 'SMS Conversations', unread_count),
       ('integrations', 'link', 'Integrations', 0),
       ('reports', 'bar-chart-2', 'Reports / Activity', 0),
     ] %}
+    {% if t_id != 'tuya_notifications' or can_admin_tuya %}
     <a href="?tab={{ t_id }}{% if selected_number %}&number_id={{ selected_number.id }}{% endif %}"
        style="display:inline-flex;align-items:center;gap:5px;padding:.55rem .85rem;font-size:.84rem;
               color:{% if tab == t_id %}#7c3aed{% else %}#9ca3af{% endif %};
@@ -60,6 +62,7 @@
       {{ t_label }}
       {% if t_badge > 0 %}<span class="badge ms-1" style="background:#7c3aed;font-size:.6rem;padding:2px 5px;">{{ t_badge }}</span>{% endif %}
     </a>
+    {% endif %}
     {% endfor %}
   </div>
 
@@ -223,6 +226,90 @@
     </table>
   </div>
 
+
+  {% elif tab == 'tuya_notifications' %}
+  {% set cfg = tuya.config %}
+  {% set activation = tuya.activation %}
+  <div class="alert alert-info py-2">
+    <strong>Tuya Notifications</strong> controls the single SMS-triggered notification relay. It is separate from the PWA browser devices on the Devices tab.
+  </div>
+  {% if not tuya.owns_integration %}
+  <div class="alert alert-warning">This company does not own the configured receiving number and cannot view or operate this integration.</div>
+  {% else %}
+  <div class="row g-3 mb-3">
+    <div class="col-lg-7">
+      <div class="card h-100 p-3" style="background:#0f1117;border:1px solid #1e2535;">
+        <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap">
+          <div><h5 class="mb-1">Integration status</h5><div class="text-muted small">Application intent, command confirmation, and physical state are shown separately.</div></div>
+          <span class="badge {% if cfg.enabled %}bg-success{% else %}bg-secondary{% endif %}">{{ 'Enabled' if cfg.enabled else 'Disabled' }}</span>
+        </div>
+        <div class="row g-2 mt-2 small">
+          <div class="col-sm-6"><span class="text-muted">Configuration</span><div>{{ 'Complete' if cfg.complete else 'Incomplete' }}</div></div>
+          <div class="col-sm-6"><span class="text-muted">Worker</span><div class="text-capitalize">{{ tuya.worker.status }}{% if tuya.worker.multiple %} <span class="text-danger">(multiple workers detected)</span>{% endif %}<div class="text-muted">Last heartbeat: {{ tuya.worker.last_seen_at or 'Never observed' }}</div></div></div>
+          <div class="col-sm-6"><span class="text-muted">Receiving number</span><div>(916) 598-9519</div></div>
+          <div class="col-sm-6"><span class="text-muted">Trigger rule</span><div>Inbound SMS received by this number</div></div>
+          <div class="col-sm-6"><span class="text-muted">Pulse duration</span><div>{{ cfg.duration }} seconds</div></div>
+          <div class="col-sm-6"><span class="text-muted">Desired state</span><div>{{ 'ON' if activation and activation.desired_state and not activation.off_requested else 'OFF' }}</div></div>
+          <div class="col-sm-6"><span class="text-muted">Last command result</span><div>{{ (activation.last_operation ~ ' — ' ~ activation.last_operation_status) if activation and activation.last_operation else 'Never attempted' }}</div></div>
+          <div class="col-sm-6"><span class="text-muted">Actual device state</span><div class="text-capitalize">{{ tuya.device_state }} <span class="text-muted">(cached only)</span></div></div>
+          <div class="col-sm-6"><span class="text-muted">Last successful activation</span><div>{{ activation.last_on_at if activation and activation.last_on_at else 'Never' }}</div></div>
+          <div class="col-sm-6"><span class="text-muted">Last successful OFF</span><div>{{ activation.last_off_at if activation and activation.last_off_at else 'Never' }}</div></div>
+          <div class="col-sm-6"><span class="text-muted">Last reconciliation</span><div>{{ activation.last_reconciled_at if activation and activation.last_reconciled_at else 'Never' }}</div></div>
+          <div class="col-sm-6"><span class="text-muted">Retry count</span><div>{{ activation.retry_count if activation else 0 }}</div></div>
+          <div class="col-12"><span class="text-muted">Last sanitized error</span><div class="text-danger text-break">{{ activation.last_error if activation and activation.last_error else 'None' }}</div></div>
+        </div>
+      </div>
+    </div>
+    <div class="col-lg-5">
+      <div class="card h-100 p-3" style="background:#0f1117;border:1px solid #1e2535;">
+        <h5>Configuration summary</h5>
+        <dl class="row small mb-0">
+          <dt class="col-6 text-muted">Destination</dt><dd class="col-6">(916) 598-9519</dd>
+          <dt class="col-6 text-muted">Region/base URL</dt><dd class="col-6 text-break">{{ cfg.base_url }}</dd>
+          <dt class="col-6 text-muted">Device label</dt><dd class="col-6">{{ cfg.device_label }}</dd>
+          <dt class="col-6 text-muted">Device identifier</dt><dd class="col-6">{{ cfg.device_id }}</dd>
+          <dt class="col-6 text-muted">Access ID</dt><dd class="col-6">{{ cfg.access_id }}</dd>
+          <dt class="col-6 text-muted">Access Secret</dt><dd class="col-6">{{ cfg.secret_status }}</dd>
+          <dt class="col-6 text-muted">Switch code</dt><dd class="col-6">{{ cfg.switch_code }}</dd>
+          <dt class="col-6 text-muted">HTTP timeout</dt><dd class="col-6">{{ cfg.timeout }} seconds</dd>
+          <dt class="col-6 text-muted">Maximum retries</dt><dd class="col-6">{{ cfg.max_retries }}</dd>
+          <dt class="col-6 text-muted">Reconciliation</dt><dd class="col-6">Every {{ cfg.reconciliation_interval }} second</dd>
+        </dl>
+        <div class="alert alert-secondary small mt-3 mb-0">Enable/disable and credentials are read-only because they are managed securely by the deployment environment.</div>
+      </div>
+    </div>
+  </div>
+
+  {% if activation and activation.desired_state %}
+  <div class="alert {% if activation.off_requested %}alert-warning{% else %}alert-success{% endif %} d-flex justify-content-between align-items-center gap-3 flex-wrap">
+    <div><strong>{{ 'Safety OFF pending' if activation.off_requested else 'Relay notification active' }}</strong><br><span class="small">Turns off at: {{ activation.off_deadline }}. Time remaining: approximately {{ tuya.remaining_seconds }} seconds. The server deadline is authoritative.</span></div>
+    <form method="POST" action="{{ url_for('twilio.comms_tuya_off') }}" onsubmit="return confirm('Request an immediate safety OFF?');">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="btn btn-danger" type="submit">Turn Off Now</button>
+    </form>
+  </div>
+  {% endif %}
+
+  <div class="card p-3 mb-3" style="background:#0f1117;border:1px solid #1e2535;">
+    <h5>Controlled test</h5>
+    <p class="text-muted small">Queues the same durable 60-second path as a qualifying inbound SMS. It never calls Tuya from this browser request.</p>
+    <form method="POST" action="{{ url_for('twilio.comms_tuya_test') }}" onsubmit="return confirm('Queue one 60-second Tuya notification test?');">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button class="btn btn-primary" type="submit" {% if not cfg.complete or not cfg.enabled or tuya.worker.status != 'healthy' %}disabled{% endif %}>Test 60-Second Notification</button>
+    </form>
+  </div>
+
+  {% if not cfg.complete %}
+  <div class="alert alert-warning"><h6>Setup required</h6><ol class="mb-0 small"><li>Rotate the previously exposed Tuya Access Secret.</li><li>Re-pair/reset the device to replace the exposed local key.</li><li>Configure the Tuya variables securely on the server.</li><li>Apply the migration.</li><li>Start exactly one durable scheduler worker.</li><li>Verify worker health.</li><li>Enable the integration.</li><li>Run a controlled test.</li></ol></div>
+  {% endif %}
+
+  <div class="card p-3" style="background:#0f1117;border:1px solid #1e2535;">
+    <div class="d-flex justify-content-between gap-2 flex-wrap"><h5>Recent event history</h5><div class="btn-group btn-group-sm">{% for key,label in [('all','All'),('successful','Successful'),('failed','Failed'),('active','Active'),('manual_tests','Manual tests')] %}<a class="btn {% if tuya.event_filter == key %}btn-primary{% else %}btn-outline-secondary{% endif %}" href="?tab=tuya_notifications&event_filter={{ key }}">{{ label }}</a>{% endfor %}</div></div>
+    <div class="table-responsive"><table class="table table-dark table-sm align-middle small"><thead><tr><th>Date/time</th><th>Source</th><th>Message</th><th>Customer</th><th>Requested</th><th>Result</th><th>OFF deadline</th><th>Attempts</th><th>Error</th><th>User</th></tr></thead><tbody>
+      {% for event in tuya_events %}<tr><td>{{ event.received_at }}</td><td>{{ event.trigger_source.replace('_',' ')|title }}</td><td>{{ event.message_sid[:12] }}…</td><td>{{ event.customer_phone_masked or '—' }}</td><td>{{ 'ON' if event.requested_state else 'OFF' }}</td><td>{{ event.result }}</td><td>{{ event.off_deadline or '—' }}</td><td>{{ event.attempts }}</td><td class="text-break">{{ event.sanitized_error or '—' }}</td><td>{{ event.initiated_by_user_id or '—' }}</td></tr>{% else %}<tr><td colspan="10" class="text-muted p-4">No Tuya notification events for this company.</td></tr>{% endfor %}
+    </tbody></table></div>
+    {% if tuya_pages > 1 %}<nav><ul class="pagination pagination-sm mb-0">{% for p in range(1, tuya_pages + 1) %}<li class="page-item {% if p == tuya_page %}active{% endif %}"><a class="page-link" href="?tab=tuya_notifications&page={{ p }}&event_filter={{ tuya.event_filter }}">{{ p }}</a></li>{% endfor %}</ul></nav>{% endif %}
+  </div>
+  {% endif %}
 
   {% elif tab == 'integrations' %}
   <div class="card p-4" style="background:#0f1117;border:1px solid #1e2535;"><h6>Integrations</h6><p class="text-muted">Twilio webhooks, Google Contacts, SMS delivery callbacks, and provider health remain connected here.</p><a href="{{ url_for('twilio.google_contacts_connect') }}" class="btn btn-sm btn-outline-secondary">Google Contacts</a><a href="{{ url_for('twilio.comms_settings') }}" class="btn btn-sm btn-outline-secondary ms-2">Twilio Webhooks</a></div>

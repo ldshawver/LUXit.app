@@ -34,6 +34,8 @@ git pull origin main
 
 # 5. Run database migrations (safe — skips existing columns/tables)
 .venv/bin/python3 scripts/migrate_db.py
+# PostgreSQL deployments must also run the ledgered forward-only SQL migrations.
+.venv/bin/python3 scripts/apply_migrations.py "$DATABASE_URL" migrations
 
 # 6. Restart the service
 systemctl restart lux-email-bot
@@ -47,7 +49,7 @@ journalctl -u lux-email-bot -f
 
 ### Quick one-liner:
 ```bash
-cd /root/lux-email-bot && git pull && .venv/bin/pip install -r requirements.txt -q && .venv/bin/python3 scripts/migrate_db.py && systemctl restart lux-email-bot && journalctl -u lux-email-bot -f
+cd /root/lux-email-bot && git pull && .venv/bin/pip install -r requirements.txt -q && .venv/bin/python3 scripts/migrate_db.py && .venv/bin/python3 scripts/apply_migrations.py "$DATABASE_URL" migrations && systemctl restart lux-email-bot && journalctl -u lux-email-bot -f
 ```
 
 ### Using the deploy script:
