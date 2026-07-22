@@ -917,7 +917,11 @@ def create_app() -> Flask:
             db.session.rollback()
 
 
-        if not app.config.get("TESTING"):
+        if (
+            not app.config.get("TESTING")
+            and os.environ.get("DISABLE_AGENT_SCHEDULER", "").lower()
+            not in {"1", "true", "yes"}
+        ):
             try:
                 from agent_scheduler import (
                     initialize_agent_scheduler,
