@@ -28,7 +28,11 @@ WHERE lower(regexp_replace(c.tags, '\\s+', ' ', 'g')) LIKE '%myorder customer%'
 
 UPDATE sms_campaign campaign
 SET selected_tag_ids = json_build_array(segment.id),
-    audience_filter = COALESCE(campaign.audience_filter, '{}'::json) || json_build_object('selected_tag_ids', json_build_array(segment.id))
+audience_filter = COALESCE(campaign.audience_filter, '{}'::jsonb)
+    || jsonb_build_object(
+        'selected_tag_ids',
+        jsonb_build_array(segment.id)
+    )
 FROM segment
 WHERE campaign.company_id = segment.company_id
   AND lower(regexp_replace(trim(campaign.segment), '\\s+', ' ', 'g')) = 'myorder customer'
