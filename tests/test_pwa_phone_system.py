@@ -1183,6 +1183,26 @@ def test_pwa_device_approval_disabled_allows_registered_device(client, app, worl
     assert ok.status_code == 200
 
 
+def test_comms_device_controls_are_tenant_scoped_and_disable_subscriptions(client, app, world):
+    from models import PushSubscription
+    with app.app_context():
+        db.session.get(User, world["alice"]).is_admin = True
+        own = PWADevice(company_id=world["co_a"], user_id=world["alice"], device_key="own-device", device_name="Own", approved_status="approved", lifecycle_status="active", push_enabled=True)
+        foreign = PWADevice(company_id=world["co_b"], user_id=world["bob"], device_key="foreign-device", device_name="Foreign", approved_status="approved", lifecycle_status="active", push_enabled=True)
+        db.session.add_all([own, foreign]); db.session.flush()
+        db.session.add(PushSubscription(company_id=world["co_a"], user_id=world["alice"], device_key="own-device", endpoint="https://push.test/own", p256dh="p", auth_key="a", is_active=True))
+        db.session.commit(); own_id, foreign_id = own.id, foreign.id
+    login(client, world["alice"])
+    assert client.post(f"/twilio/comms/devices/{foreign_id}", data={"action": "disable"}).status_code == 404
+    disabled = client.post(f"/twilio/comms/devices/{own_id}", data={"action": "disable"})
+    assert disabled.status_code == 302
+    with app.app_context():
+        own = db.session.get(PWADevice, own_id)
+        assert own.lifecycle_status == "disabled"
+        assert own.push_enabled is False
+        assert PushSubscription.query.filter_by(device_key="own-device", is_active=True).count() == 0
+
+
 def test_resolve_sms_sender_and_send_sms_use_inbound_to_number_not_messaging_service(app, world, monkeypatch):
     import twilio_sms
     monkeypatch.setattr("services.license_service.has_feature", lambda *a, **k: True)

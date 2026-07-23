@@ -2340,19 +2340,40 @@ def comms_device_action(device_id):
         device.approved_status = "approved"
         device.approved_at = now
         device.approved_by_user_id = current_user.id
+        device.lifecycle_status = "active" if device.push_enabled else "pending"
         flash("Device approved.", "success")
-    elif action in {"revoke", "block"}:
+    elif action in {"revoke", "block", "disable"}:
         device.approved_status = "revoked"
         device.revoked_at = now
         device.revoked_by_user_id = current_user.id
         device.push_enabled = False
-        flash("Device revoked.", "success")
+        device.lifecycle_status = "disabled"
+        device.disabled_at = now
+        from models import PushSubscription
+        PushSubscription.query.filter_by(company_id=company.id, user_id=device.user_id, device_key=device.device_key).update({"is_active": False, "updated_at": now})
+        flash("Device disabled.", "success")
     elif action == "rename":
         device.device_name = (request.form.get("device_name") or device.device_name or "PWA Device")[:120]
         flash("Device renamed.", "success")
+    elif action == "remove":
+        from models import PushSubscription
+        PushSubscription.query.filter_by(company_id=company.id, user_id=device.user_id, device_key=device.device_key).delete(synchronize_session=False)
+        db.session.delete(device)
+        flash("Device removed.", "success")
+    elif action == "test":
+        if device.lifecycle_status != "active" or not device.push_enabled:
+            flash("Only active devices can receive a test notification.", "warning")
+            return redirect(url_for("twilio.comms_hub", tab="devices"))
+        from inbox_pwa import send_pwa_push_notification
+        result = send_pwa_push_notification(
+            company.id, user_ids=[device.user_id], device_key=device.device_key,
+            title="LUXit Communications", body="Test notification delivered through the production push service.",
+            link="/app/inbox", tag="device-test", event_type="push_test",
+        )
+        flash("Test notification sent." if result.get("sent") else "Test notification was not accepted by the push provider.", "success" if result.get("sent") else "warning")
     else:
         abort(400)
-    db.session.add(MarketingAuditLog(company_id=company.id, created_by_user_id=current_user.id, entity_type="pwa_device", entity_id=device.id, action=f"pwa_device_{action}", details={"device_key": device.device_key, "user_id": device.user_id}))
+    db.session.add(MarketingAuditLog(company_id=company.id, created_by_user_id=current_user.id, entity_type="pwa_device", entity_id=device.id, action=f"pwa_device_{action}", details={"user_id": device.user_id}))
     db.session.commit()
     return redirect(url_for("twilio.comms_hub", tab="devices"))
 

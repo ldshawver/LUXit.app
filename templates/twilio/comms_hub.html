@@ -196,8 +196,11 @@
       <h6 class="fw-semibold mb-1">PWA / Work-Phone Devices</h6>
       <div class="text-muted small">Approved devices can access PWA communications. Revoked devices are blocked.</div>
     </div>
+    <button id="register-device-btn" class="btn btn-primary ms-auto" type="button" onclick="registerThisDevice()">
+      <i data-feather="bell" style="width:14px;height:14px;"></i> Register This Device
+    </button>
     {% if is_admin %}
-    <form method="POST" action="{{ url_for('twilio.comms_device_settings') }}" class="ms-auto card p-2" style="background:#0f1117;border:1px solid #1e2535;">
+    <form method="POST" action="{{ url_for('twilio.comms_device_settings') }}" class="card p-2" style="background:#0f1117;border:1px solid #1e2535;">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <label class="form-check form-switch small mb-0">
         <input class="form-check-input" type="checkbox" name="require_approved_pwa_devices" value="1" {% if company.require_approved_pwa_devices %}checked{% endif %} onchange="this.form.submit()">
@@ -206,23 +209,29 @@
     </form>
     {% endif %}
   </div>
+  <div id="device-registration-result" class="alert py-2" role="status" style="display:none;"></div>
+  <div id="current-device-diagnostics" class="card p-3 mb-3" style="background:#0f1117;border:1px solid #1e2535;display:none;">
+    <strong class="small">Current-device diagnostics</strong>
+    <div id="current-device-diagnostics-body" class="small text-muted mt-1"></div>
+  </div>
   <div class="card" style="background:#0f1117;border:1px solid #1e2535;overflow-x:auto;">
     <table class="table table-dark table-sm align-middle mb-0">
-      <thead><tr><th>Device</th><th>User</th><th>Type</th><th>Push active</th><th>Approved status</th><th>Last seen</th><th>Last IP</th><th>Actions</th></tr></thead>
+      <thead><tr><th>Device</th><th>User</th><th>Type</th><th>Status</th><th>Approval</th><th>Last seen</th><th>Actions</th></tr></thead>
       <tbody>{% for d in devices %}<tr>
         <td><strong>{{ d.device_name or 'PWA Device' }}</strong><div class="small text-muted">{{ d.browser or 'Unknown browser' }}</div></td>
         <td>{{ d.user.email if d.user else d.user_id }}</td>
         <td>{{ d.device_type or 'unknown' }}<div class="small text-muted">{{ 'Installed PWA' if d.pwa_installed else 'Browser' }}</div></td>
-        <td><span class="badge {% if d.push_enabled %}bg-success{% else %}bg-secondary{% endif %}">{{ 'Active' if d.push_enabled else 'Inactive' }}</span></td>
+        <td><span class="badge {% if d.lifecycle_status == 'active' %}bg-success{% elif d.lifecycle_status == 'pending' %}bg-warning text-dark{% elif d.lifecycle_status == 'expired' %}bg-danger{% else %}bg-secondary{% endif %}">{{ (d.lifecycle_status or 'pending')|title }}</span></td>
         <td><span class="badge {% if d.approved_status == 'approved' %}bg-success{% elif d.approved_status == 'revoked' %}bg-danger{% else %}bg-warning text-dark{% endif %}">{{ d.approved_status or 'pending' }}</span></td>
         <td>{{ d.last_seen_at.strftime('%b %-d %H:%M') if d.last_seen_at else 'Never' }}</td>
-        <td>{{ d.last_ip or '—' }}</td>
         <td>{% if is_admin %}<div class="d-flex gap-1 flex-wrap">
           <form method="POST" action="{{ url_for('twilio.comms_device_action', device_id=d.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="approve"><button class="btn btn-sm btn-outline-success">Approve</button></form>
-          <form method="POST" action="{{ url_for('twilio.comms_device_action', device_id=d.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="revoke"><button class="btn btn-sm btn-outline-danger">Revoke</button></form>
+          <form method="POST" action="{{ url_for('twilio.comms_device_action', device_id=d.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="disable"><button class="btn btn-sm btn-outline-warning">Disable</button></form>
+          <form method="POST" action="{{ url_for('twilio.comms_device_action', device_id=d.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="test"><button class="btn btn-sm btn-outline-info">Send Test Notification</button></form>
           <form method="POST" action="{{ url_for('twilio.comms_device_action', device_id=d.id) }}" class="d-flex gap-1"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="rename"><input class="form-control form-control-sm" name="device_name" value="{{ d.device_name or '' }}" style="width:130px;background:#0b0d14;color:#fff;border-color:#1e2535;"><button class="btn btn-sm btn-outline-secondary">Rename</button></form>
+          <form method="POST" action="{{ url_for('twilio.comms_device_action', device_id=d.id) }}" onsubmit="return confirm('Remove this device and its push subscription?')"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="remove"><button class="btn btn-sm btn-outline-danger">Remove</button></form>
         </div>{% else %}<span class="text-muted small">Admin only</span>{% endif %}</td>
-      </tr>{% else %}<tr><td colspan="8" class="text-muted p-4">No devices registered yet. Devices appear here after a user logs into the installed PWA.</td></tr>{% endfor %}</tbody>
+      </tr>{% else %}<tr><td colspan="7" class="text-muted p-4">No devices registered yet. Select Register This Device to save this browser's genuine push subscription.</td></tr>{% endfor %}</tbody>
     </table>
   </div>
 
@@ -672,6 +681,86 @@
 <script>
 feather.replace();
 const CSRF = document.querySelector('meta[name="csrf-token"]')?.content || '{{ csrf_token() }}';
+
+function commsDeviceKey() {
+  let key = localStorage.getItem('luxit_pwa_device_key');
+  if (!key) {
+    key = (crypto.randomUUID ? crypto.randomUUID() : `browser-${Date.now()}-${Math.random().toString(16).slice(2)}`);
+    localStorage.setItem('luxit_pwa_device_key', key);
+  }
+  return key;
+}
+
+function vapidKeyBytes(value) {
+  const padded = value + '='.repeat((4 - value.length % 4) % 4);
+  const raw = atob(padded.replace(/-/g, '+').replace(/_/g, '/'));
+  return Uint8Array.from([...raw].map(char => char.charCodeAt(0)));
+}
+
+async function deviceApi(path, options = {}) {
+  const response = await fetch(path, {
+    credentials: 'same-origin',
+    ...options,
+    headers: {'X-CSRFToken': CSRF, 'X-PWA-Device-Key': commsDeviceKey(), ...(options.headers || {})},
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.error || `Request failed (${response.status})`);
+  return data;
+}
+
+async function refreshCurrentDeviceDiagnostics() {
+  const box = document.getElementById('current-device-diagnostics');
+  const body = document.getElementById('current-device-diagnostics-body');
+  if (!box || !body) return;
+  try {
+    const data = await deviceApi('/api/pwa/push/debug');
+    const current = data.current_device || {};
+    box.style.display = 'block';
+    body.textContent = `Permission: ${Notification.permission}; service worker: ${'serviceWorker' in navigator ? 'supported' : 'unsupported'}; browser subscription: ${current.active_subscription ? 'persisted' : 'not persisted'}; push server: ${data.vapid_configured ? 'configured' : 'not configured'}. No endpoint, key, cookie, or token is displayed.`;
+  } catch (error) {
+    box.style.display = 'block';
+    body.textContent = `Diagnostics unavailable: ${error.message}`;
+  }
+}
+
+async function registerThisDevice() {
+  const button = document.getElementById('register-device-btn');
+  const result = document.getElementById('device-registration-result');
+  button.disabled = true;
+  result.style.display = 'block';
+  result.className = 'alert alert-info py-2';
+  result.textContent = 'Requesting this browser’s notification permission…';
+  try {
+    if (!window.isSecureContext || !('serviceWorker' in navigator) || !('PushManager' in window)) {
+      throw new Error('Web Push requires a secure, supported browser.');
+    }
+    const permission = await Notification.requestPermission();
+    if (permission !== 'granted') throw new Error(`Notification permission is ${permission}.`);
+    const keyData = await deviceApi('/api/pwa/push/public-key');
+    if (!keyData.configured || !keyData.publicKey) throw new Error('Web Push is not configured on the server.');
+    const registration = await navigator.serviceWorker.register('/static/sw.js');
+    await navigator.serviceWorker.ready;
+    let subscription = await registration.pushManager.getSubscription();
+    if (!subscription) {
+      subscription = await registration.pushManager.subscribe({userVisibleOnly: true, applicationServerKey: vapidKeyBytes(keyData.publicKey)});
+    }
+    const payload = subscription.toJSON();
+    payload.device_key = commsDeviceKey();
+    payload.device_label = `${navigator.platform || 'Browser'} · ${new Date().toLocaleDateString()}`;
+    await deviceApi('/api/pwa/push/subscribe', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload)});
+    result.className = 'alert alert-success py-2';
+    result.textContent = 'This browser’s genuine push subscription was registered.';
+    await refreshCurrentDeviceDiagnostics();
+    setTimeout(() => location.reload(), 900);
+  } catch (error) {
+    result.className = 'alert alert-danger py-2';
+    result.textContent = error.message;
+  } finally {
+    button.disabled = false;
+  }
+}
+
+{% if tab == 'devices' %}refreshCurrentDeviceDiagnostics();{% endif %}
 
 async function gcSync() {
   const btn     = document.getElementById('gc-sync-btn');

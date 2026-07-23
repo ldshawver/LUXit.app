@@ -709,6 +709,7 @@ def _device_to_dict(device):
         "last_login_at": device.last_login_at.isoformat() if getattr(device, "last_login_at", None) else None,
         "last_ip": getattr(device, "last_ip", None),
         "approved_status": getattr(device, "approved_status", "pending") or "pending",
+        "status": getattr(device, "lifecycle_status", "pending") or "pending",
         "is_approved": getattr(device, "approved_status", "pending") == "approved",
         "is_revoked": getattr(device, "approved_status", "pending") == "revoked",
         "push_enabled": bool(device.push_enabled),
@@ -746,6 +747,12 @@ def _upsert_pwa_device(user, company, payload):
     device.last_login_at = now if payload.get("login", True) else getattr(device, "last_login_at", None)
     device.last_ip = (request.headers.get("X-Forwarded-For", request.remote_addr or "").split(",")[0].strip())[:64]
     device.push_enabled = bool(payload.get("push_enabled", device.push_enabled))
+    if device.push_enabled and getattr(device, "approved_status", "pending") == "approved":
+        device.lifecycle_status = "active"
+        device.disabled_at = None
+        device.expired_at = None
+    elif getattr(device, "approved_status", "pending") == "pending":
+        device.lifecycle_status = "pending"
     device.pwa_installed = bool(payload.get("pwa_installed", device.pwa_installed))
     device.wifi_only = bool(payload.get("wifi_only", device.wifi_only))
     device.cellular_callback_enabled = bool(payload.get("cellular_callback_enabled", device.cellular_callback_enabled))
@@ -2373,10 +2380,19 @@ def _send_web_push_to_subscriptions(subscriptions, payload: dict):
             if "410" in msg or "404" in msg:
                 sub.is_active = False
                 sub.updated_at = datetime.utcnow()
+                if getattr(sub, "device_key", None):
+                    from models import PWADevice
+                    device = PWADevice.query.filter_by(
+                        company_id=sub.company_id, user_id=sub.user_id, device_key=sub.device_key
+                    ).first()
+                    if device:
+                        device.push_enabled = False
+                        device.lifecycle_status = "expired"
+                        device.expired_at = datetime.utcnow()
     db.session.commit()
     return {"sent": sent, "errors": errors}
 
-def send_pwa_push_notification(company_id: int, *, user_ids, title: str, body: str, link: str = "/app/inbox", tag: str = "luxit-inbox", event_type: str = "notification", phone_number_id=None, silent: bool = False, in_business_hours=True):
+def send_pwa_push_notification(company_id: int, *, user_ids, title: str, body: str, link: str = "/app/inbox", tag: str = "luxit-inbox", event_type: str = "notification", phone_number_id=None, silent: bool = False, in_business_hours=True, device_key: str | None = None):
     """Internal tenant-scoped push helper for notifications already permission-filtered by caller."""
     from models import PushSubscription, User
     ids = [int(uid) for uid in (user_ids or [])]
@@ -2393,11 +2409,14 @@ def send_pwa_push_notification(company_id: int, *, user_ids, title: str, body: s
         debug.append(decision)
         if not decision.get("send"):
             continue
-        subs = PushSubscription.query.filter_by(
+        subs_query = PushSubscription.query.filter_by(
             company_id=company_id,
             user_id=user.id,
             is_active=True,
-        ).all()
+        )
+        if device_key:
+            subs_query = subs_query.filter_by(device_key=device_key)
+        subs = subs_query.all()
         decision["active_subscriptions"] = len(subs)
         try:
             from models import Company
@@ -2478,12 +2497,22 @@ def pwa_push_debug():
     device_active_subscriptions = active_query.filter_by(device_key=device_key).count() if device_key else 0
     subscriptions = active_query.order_by(PushSubscription.updated_at.desc(), PushSubscription.id.desc()).limit(10).all()
     missing = _web_push_missing_settings()
+    receipts = _recent_push_receipts(company.id, user.id, device_key)
+    safe_receipts = [
+        {key: value for key, value in receipt.items() if key not in {"endpoint_host", "endpoint_tail", "endpoint_redacted"}}
+        for receipt in receipts
+    ]
     return jsonify({
         "success": True,
         "notification_permission": "client-reported",
         "active_subscription": active_subscriptions > 0,
         "active_subscriptions": active_subscriptions,
         "device_key": device_key,
+        "current_device": {
+            "identified": bool(device_key),
+            "active_subscription": device_active_subscriptions > 0,
+            "active_subscription_count": device_active_subscriptions,
+        },
         "device_active_subscription": device_active_subscriptions > 0,
         "device_active_subscriptions": device_active_subscriptions,
         "vapid_configured": not missing,
@@ -2497,19 +2526,18 @@ def pwa_push_debug():
             "iPhone: install to Home Screen, then enable Settings > Notifications > LUXit > Sounds.",
             "Disable Focus / Do Not Disturb during notification sound tests.",
         ],
-        "push_receipts": _recent_push_receipts(company.id, user.id, device_key),
-        "latest_push_receipt": (_recent_push_receipts(company.id, user.id, device_key, limit=1) or [None])[0],
+        "push_receipts": safe_receipts,
+        "latest_push_receipt": safe_receipts[0] if safe_receipts else None,
         "subscriptions": [{
             "id": sub.id,
             "device_key": sub.device_key,
-            **_redact_push_endpoint(sub.endpoint),
             "is_active": sub.is_active,
             "created_at": sub.created_at.isoformat() if sub.created_at else None,
             "updated_at": sub.updated_at.isoformat() if sub.updated_at else None,
             "last_successful_registration_attempt_at": sub.updated_at.isoformat() if sub.updated_at else None,
         } for sub in subscriptions],
-        "user": {"id": user.id, "email": user.email, "username": user.username},
-        "company": {"id": company.id, "name": company.name},
+        "user": {"id": user.id},
+        "company": {"id": company.id},
         "mobile_inbox_access": True,
     })
 
@@ -2598,7 +2626,11 @@ def push_subscribe():
         return jsonify({"success": False, "error": "subscription keys p256dh and auth are required", "code": "MISSING_SUBSCRIPTION_KEYS"}), 400
 
     from models import PushSubscription
+    # An endpoint is globally unique, but it must never be silently reassigned
+    # across authenticated tenant/user boundaries.
     sub = PushSubscription.query.filter_by(endpoint=endpoint).first()
+    if sub and (sub.company_id != company.id or sub.user_id != user.id):
+        return jsonify({"success": False, "error": "Subscription belongs to another account.", "code": "SUBSCRIPTION_SCOPE_CONFLICT"}), 409
     if not sub:
         sub = PushSubscription(
             user_id=user.id,
@@ -2636,9 +2668,18 @@ def push_subscribe():
                 last_seen_at=datetime.utcnow(),
             )
             db.session.add(device)
+            if not getattr(company, "require_approved_pwa_devices", False):
+                device.approved_status = "approved"
+                device.approved_at = datetime.utcnow()
         else:
             device.push_enabled = True
             device.last_seen_at = datetime.utcnow()
+        if getattr(device, "approved_status", "pending") == "approved":
+            device.lifecycle_status = "active"
+        else:
+            device.lifecycle_status = "pending"
+        device.disabled_at = None
+        device.expired_at = None
     db.session.commit()
     active_query = PushSubscription.query.filter_by(user_id=user.id, company_id=company.id, is_active=True)
     active_subscriptions = active_query.count()

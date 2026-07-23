@@ -1014,6 +1014,56 @@ def test_push_subscribe_is_idempotent_per_endpoint_and_device(pwa_app):
         assert rows[0].p256dh == "rotated-key"
 
 
+def test_push_subscribe_and_debug_accept_flask_login_session(pwa_app):
+    """Communications Hub fetches must use the canonical Flask-Login session."""
+    _app, client, ids = pwa_app
+    login(client, ids["staff"])
+    subscribed = client.post("/api/pwa/push/subscribe", json={
+        "endpoint": "https://push.example/sub/browser-session",
+        "keys": {"p256dh": "browser-key", "auth": "browser-auth"},
+        "device_key": "browser-session-device",
+    })
+    assert subscribed.status_code == 200
+    debug = client.get("/api/pwa/push/debug", headers={"X-PWA-Device-Key": "browser-session-device"})
+    assert debug.status_code == 200
+    assert debug.json["current_device"] == {
+        "identified": True,
+        "active_subscription": True,
+        "active_subscription_count": 1,
+    }
+    serialized = str(debug.json)
+    assert "browser-key" not in serialized
+    assert "browser-auth" not in serialized
+    assert "https://push.example/sub/browser-session" not in serialized
+
+
+def test_push_endpoint_cannot_be_reassigned_across_tenants(pwa_app, monkeypatch):
+    app, client, ids = pwa_app
+    with app.app_context():
+        other_company = Company(name="Other Push Tenant", is_active=True)
+        db.session.add(other_company); db.session.flush()
+        other = User(username="other_push", email="other_push@example.com", password_hash=generate_password_hash("pw"), default_company_id=other_company.id)
+        db.session.add(other); db.session.flush()
+        db.session.add(UserCompanyAccess(user_id=other.id, company_id=other_company.id, role="admin", is_default=True, can_access_mobile_inbox=True))
+        db.session.commit(); other_id = other.id
+    endpoint = "https://push.example/sub/tenant-bound"
+    import inbox_pwa
+    from services import license_service
+    monkeypatch.setattr(license_service, "license_status_details", lambda *_args, **_kwargs: {"allowed": True, "warning": None, "status": "active"})
+    current_user_id = {"id": ids["staff"]}
+    monkeypatch.setattr(inbox_pwa, "_current_user", lambda: db.session.get(User, current_user_id["id"]))
+    login(client, ids["staff"])
+    assert client.post("/api/pwa/push/subscribe", json={"endpoint": endpoint, "keys": {"p256dh": "one", "auth": "one"}, "device_key": "tenant-one"}).status_code == 200
+    current_user_id["id"] = other_id
+    conflict = client.post("/api/pwa/push/subscribe", json={"endpoint": endpoint, "keys": {"p256dh": "two", "auth": "two"}, "device_key": "tenant-two"})
+    assert conflict.status_code == 409
+    assert conflict.json["code"] == "SUBSCRIPTION_SCOPE_CONFLICT"
+    with app.app_context():
+        row = PushSubscription.query.filter_by(endpoint=endpoint).one()
+        assert row.company_id == ids["company"]
+        assert row.user_id == ids["staff"]
+
+
 def test_push_subscriptions_are_per_authenticated_user_not_shared_line(pwa_app, monkeypatch):
     app, client, ids = pwa_app
     with app.app_context():
@@ -1144,6 +1194,6 @@ def test_push_receipt_endpoint_records_redacted_service_worker_delivery_state(pw
     assert payload["latest_push_receipt"]["silent"] is False
     assert payload["latest_push_receipt"]["renotify"] is True
     assert payload["latest_push_receipt"]["vibrate"] == [200, 100, 200]
-    assert payload["latest_push_receipt"]["endpoint_redacted"].startswith("https://push.example/")
+    assert "endpoint_redacted" not in payload["latest_push_receipt"]
     serialized = str(payload["push_receipts"])
     assert "key" not in serialized and "auth" not in serialized
