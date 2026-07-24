@@ -887,10 +887,12 @@ def _suppression_badges(c):
 
 
 def _contact_json(c, membership=None):
+    from services.contact_resolver import resolve_contact_identity
+    resolved = resolve_contact_identity(c.company_id, contact_id=c.id, allow_enrichment=True)
     data = {"id": c.id, "email": c.email, "phone": c.phone, "first_name": c.first_name, "last_name": c.last_name,
             "do_not_market": c.do_not_market, "do_not_email": c.do_not_email, "do_not_sms": c.do_not_sms,
             "email_unsubscribed": c.email_unsubscribed or not c.is_subscribed, "sms_opted_out": c.sms_opted_out or bool(c.sms_opt_out_at),
-            "suppression_badges": _suppression_badges(c)}
+            "suppression_badges": _suppression_badges(c), **resolved.as_dict()}
     if membership:
         data["membership"] = {"source": membership.source, "added_by_user_id": membership.added_by_user_id,
             "added_at": membership.added_at.isoformat() if membership.added_at else None,

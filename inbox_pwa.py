@@ -88,20 +88,16 @@ def _name_is_phone_number(value, phone_number=None):
 
 def _lookup_contact_display(company_id, phone_number, current_name=None):
     """Resolve display metadata for a phone number from CRM/Google cache."""
-    current = (current_name or "").strip()
-    if not phone_number:
-        return {"name": current, "source": None, "contact_id": None}
-    if current and not _name_is_phone_number(current, phone_number):
-        return {"name": current, "source": None, "contact_id": None}
     try:
-        from services.google_contacts import lookup_contact_for_phone
-        info = lookup_contact_for_phone(company_id, phone_number)
-        name = (info.get("name") or "").strip()
-        if name and not _name_is_phone_number(name, phone_number):
-            return info
+        from services.contact_resolver import resolve_contact_identity
+        resolved = resolve_contact_identity(company_id, phone=phone_number, allow_enrichment=True)
+        return {"name": resolved.safe_display_name, "source": resolved.name_source,
+                "contact_id": resolved.canonical_contact_id, "masked_phone": resolved.masked_phone,
+                "verification_level": resolved.verification_level, "identity_status": resolved.identity_status,
+                "conflict_state": resolved.conflict_state}
     except Exception:
         logger.exception("Contact display-name lookup failed", extra={"company_id": company_id})
-    return {"name": current or phone_number, "source": None, "contact_id": None}
+    return {"name": "Name needed", "source": None, "contact_id": None, "masked_phone": None}
 
 
 def _refresh_conversation_contact_name(conv):

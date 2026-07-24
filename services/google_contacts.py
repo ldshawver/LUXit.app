@@ -346,11 +346,9 @@ def _fetch_all_contacts(access_token: str, sync_token: str | None = None) -> dic
 def _contact_display_name(contact) -> str | None:
     if not contact:
         return None
-    return (
-        (getattr(contact, "name", None) or "").strip()
-        or f"{contact.first_name or ''} {contact.last_name or ''}".strip()
-        or None
-    )
+    from services.contact_resolver import safe_name
+    phone = getattr(contact, "normalized_phone", None) or getattr(contact, "phone", None)
+    return safe_name(getattr(contact, "display_name", None), phone) or safe_name(getattr(contact, "name", None), phone) or safe_name(f"{contact.first_name or ''} {contact.last_name or ''}", phone)
 
 
 def _find_contact_by_phone(company_id: int, phone: str):
@@ -374,15 +372,17 @@ def _find_contact_by_phone(company_id: int, phone: str):
 
 def lookup_contact_for_phone(company_id: int, phone: str) -> dict:
     """Return matched contact metadata for a phone number using normalized matching."""
-    contact = _find_contact_by_phone(company_id, phone)
-    if not contact:
-        return {"name": None, "source": None, "contact_id": None, "normalized_phone": normalize_phone(phone)}
-    name = _contact_display_name(contact)
+    from services.contact_resolver import resolve_contact_identity
+    resolved = resolve_contact_identity(company_id, phone=phone, allow_enrichment=True)
     return {
-        "name": name,
-        "source": getattr(contact, "source", None) or "crm",
-        "contact_id": contact.id,
-        "normalized_phone": getattr(contact, "normalized_phone", None) or normalize_phone(phone),
+        "name": None if resolved.safe_display_name == "Name needed" else resolved.safe_display_name,
+        "source": resolved.name_source,
+        "contact_id": resolved.canonical_contact_id,
+        "normalized_phone": normalize_phone(phone),
+        "masked_phone": resolved.masked_phone,
+        "verification_level": resolved.verification_level,
+        "identity_status": resolved.identity_status,
+        "conflict_state": resolved.conflict_state,
     }
 
 
@@ -968,6 +968,16 @@ def sync_contacts(user_id: int, company_id: int, dry_run: bool = False) -> dict:
             _finish_sync_job(db, job, "completed", payload)
             db.session.commit()
         else:
+            from services.contact_resolver import resolve_contact_identity
+            resolution_updated = resolution_conflicts = still_needing_names = 0
+            for pending_contact in Contact.query.filter_by(company_id=company_id, is_active=True).yield_per(200):
+                before = _contact_display_name(pending_contact)
+                resolved = resolve_contact_identity(company_id, contact_id=pending_contact.id, allow_enrichment=True)
+                if resolved.conflict_state != "none": resolution_conflicts += 1
+                elif resolved.safe_display_name == "Name needed": still_needing_names += 1
+                elif not before: resolution_updated += 1
+            payload.update(resolution_updated=resolution_updated, conflicted=resolution_conflicts,
+                           still_needing_names=still_needing_names)
             tok.last_sync_at = datetime.utcnow(); tok.last_successful_sync_at = tok.last_sync_at
             tok.contacts_synced = len(phone_map); tok.contacts_created = created; tok.contacts_updated = len(updated_ids)
             tok.contacts_merged = merged; tok.contacts_skipped = skipped
