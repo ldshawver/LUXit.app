@@ -49,6 +49,7 @@
       ('tuya_notifications', 'bell', 'Tuya Notifications', 0),
       ('calls', 'phone', 'Call Logs', missed_calls_count),
       ('inbox', 'message-square', 'SMS Conversations', unread_count),
+      ('identity_review', 'user-check', 'Identity Review', approval_contacts|length),
       ('integrations', 'link', 'Integrations', 0),
       ('reports', 'bar-chart-2', 'Reports / Activity', 0),
     ] %}
@@ -369,6 +370,8 @@
       <span style="color:#4ade80;font-weight:600;">●</span>
       <span class="text-muted">Google Contacts &mdash; {{ gc_contacts }} contacts
         {% if gc_last_sync %}&middot; Last sync {{ gc_last_sync }}{% endif %}
+        &middot; {{ gc_status }}
+        {% if gc_last_error %}&middot; Last error: {{ gc_last_error|truncate(80) }}{% endif %}
       </span>
       <div class="ms-auto d-flex gap-2 align-items-center">
         <button id="gc-sync-btn" class="btn btn-outline-secondary" style="font-size:.75rem;padding:2px 8px;" onclick="gcSync()">
@@ -427,8 +430,8 @@
       <div class="flex-grow-1 min-w-0">
         <div class="d-flex justify-content-between align-items-baseline">
           <span style="font-size:.9rem;">
-            {{ conv.contact_name or conv.from_number }}
-            {% if conv.contact_name %}<small class="text-muted ms-1">{{ conv.from_number }}</small>{% endif %}
+            {% set resolved = conversation_resolutions.get(conv.id) %}{{ resolved.safe_display_name if resolved else 'Name needed' }}
+            {% if resolved and resolved.masked_phone %}<small class="text-muted ms-1">{{ resolved.masked_phone }}</small>{% endif %}
           </span>
           <small class="text-muted flex-shrink-0">
             {{ conv.last_message_at.strftime('%b %-d') if conv.last_message_at else '' }}
@@ -541,6 +544,14 @@
   </div>
 
   <!-- ═══════════ CONTACTS TAB ═══════════ -->
+  {% elif tab == 'identity_review' %}
+  <div class="card table-responsive" style="background:#0f1117;border:1px solid #1e2535;">
+    <table class="table table-dark mb-0"><thead><tr><th>Name</th><th>Phone</th><th>Status</th><th>Source</th><th></th></tr></thead><tbody>
+    {% for contact in approval_contacts %}<tr><td>{{ contact.display_name or contact.name or 'Name needed' }}</td><td>{{ (contact.normalized_phone or contact.phone or '')[-4:] | default('') }}</td><td>{{ contact.identity_conflict_status }}</td><td>{{ contact.name_source or contact.source_provider or '-' }}</td><td class="text-end"><form method="POST" action="{{ url_for('twilio.comms_identity_review', contact_id=contact.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="btn btn-sm btn-success" name="action" value="approve">Approve</button> <button class="btn btn-sm btn-outline-danger" name="action" value="reject">Reject</button></form></td></tr>
+    {% else %}<tr><td colspan="5" class="text-center text-muted py-4">No identity conflicts require review.</td></tr>{% endfor %}
+    </tbody></table>
+  </div>
+
   {% elif tab == 'contacts' %}
   <div class="d-flex align-items-center gap-3 mb-3">
     <div>
@@ -567,13 +578,13 @@
       <div style="width:40px;height:40px;border-radius:50%;background:rgba(124,58,237,.15);flex-shrink:0;
                   display:flex;align-items:center;justify-content:center;border:1px solid rgba(124,58,237,.3);">
         <span style="font-size:.85rem;font-weight:600;color:#a78bfa;">
-          {{ (conv.contact_name or conv.from_number or '?')[0].upper() }}
+          {% set resolved = conversation_resolutions.get(conv.id) %}{{ (resolved.safe_display_name if resolved else 'N')[0].upper() }}
         </span>
       </div>
       <div class="flex-grow-1 min-w-0">
         <div style="font-size:.88rem;font-weight:500;">
-          {{ conv.contact_name or conv.from_number }}
-          {% if conv.contact_name %}<small class="text-muted ms-1">{{ conv.from_number }}</small>{% endif %}
+          {{ resolved.safe_display_name if resolved else 'Name needed' }}
+          {% if resolved and resolved.masked_phone %}<small class="text-muted ms-1">{{ resolved.masked_phone }}</small>{% endif %}
         </div>
         <div class="text-muted" style="font-size:.76rem;">
           {% if conv.last_message_at %}Last message {{ conv.last_message_at.strftime('%b %-d') }}{% endif %}

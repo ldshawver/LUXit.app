@@ -2078,7 +2078,10 @@ def contacts():
         )
         from models import Opportunity
         opp_values = dict(db.session.query(Opportunity.contact_id, db.func.coalesce(db.func.sum(Opportunity.estimated_value), 0)).filter(Opportunity.company_id == company_id, Opportunity.status == 'open').group_by(Opportunity.contact_id).all()) if company_id else {}
-        return render_template('contacts.html', contacts=contacts, search=search, show_archived=show_archived, opp_values=opp_values)
+        from services.contact_resolver import resolve_contact_identity
+        contact_resolutions = {c.id: resolve_contact_identity(company_id, contact_id=c.id, allow_enrichment=True) for c in contacts.items}
+        db.session.commit()
+        return render_template('contacts.html', contacts=contacts, search=search, show_archived=show_archived, opp_values=opp_values, contact_resolutions=contact_resolutions)
     except Exception:
         request_id = getattr(g, "request_id", None) or request.headers.get("X-Request-ID") or "unavailable"
         db.session.rollback()
@@ -10976,15 +10979,16 @@ def import_contacts():
     if request.method == 'POST':
         try:
             file = request.files.get('file')
-            if file and file.filename.endswith('.csv'):
+            if file and file.filename.lower().endswith(('.csv', '.vcf', '.vcard')):
                 company_id = getattr(current_user, 'default_company_id', None)
                 from services.contact_audience import import_contacts as import_contact_file
-                result = import_contact_file(company_id, file.stream.read(), file.filename, source_provider='csv_import', tenant_id=company_id)
+                is_ios = file.filename.lower().endswith(('.vcf', '.vcard')) or request.form.get('source_provider') == 'ios_contacts'
+                result = import_contact_file(company_id, file.stream.read(), file.filename, source_provider='ios_contacts' if is_ios else 'csv_import', tenant_id=company_id)
                 count = result.get('success_count', 0)
                 db.session.commit()
                 flash(f'Successfully imported {count} contacts!', 'success')
             else:
-                flash('Please upload a valid CSV file.', 'danger')
+                flash('Please upload a valid CSV or exported iPhone/iCloud vCard file.', 'danger')
         except Exception as e:
             db.session.rollback()
             flash(f'Error importing contacts: {str(e)}', 'danger')

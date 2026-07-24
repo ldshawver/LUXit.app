@@ -13,7 +13,7 @@ from services.phone_normalization import normalize_phone
 
 CONTROLLED_SOURCES = {
     "twilio_inbound_sms", "twilio_inbound_call", "twilio_outbound_sms", "twilio_outbound_call",
-    "myorder_customer", "website_form", "manual_entry", "csv_import", "google_contacts", "api",
+    "myorder_customer", "website_form", "manual_entry", "csv_import", "ios_import", "google_contacts", "inbound_sms", "api",
     "referral", "campaign", "contract", "invoice", "unknown", "legacy",
 }
 PLACEHOLDER_NAMES = {"unknown", "caller", "new contact", "new caller", "no name", "n/a", "na"}
@@ -25,11 +25,9 @@ def normalize_email(value: str | None) -> str:
 
 
 def meaningful_name(contact: Contact | None = None, name: str | None = None) -> bool:
-    raw = (name if name is not None else (getattr(contact, "name", None) or getattr(contact, "display_name", None) or "")).strip()
-    if not raw or raw.lower() in PLACEHOLDER_NAMES:
-        return False
-    digits = re.sub(r"\D", "", raw)
-    return len(digits) < 7
+    from services.contact_resolver import safe_name
+    raw = name if name is not None else (getattr(contact, "display_name", None) or getattr(contact, "name", None))
+    return bool(safe_name(raw, getattr(contact, "normalized_phone", None) or getattr(contact, "phone", None)))
 
 
 def apply_source_attribution(contact: Contact, source: str, *, detail: str | None = None, campaign: str | None = None,
@@ -56,6 +54,13 @@ def apply_source_attribution(contact: Contact, source: str, *, detail: str | Non
     contact.source_detail = contact.source_detail or detail
     contact.source_added_at = contact.source_added_at or now
     contact.source_added_by_user_id = contact.source_added_by_user_id or user_id
+    if source == "ios_import":
+        existing = ContactSourceEvent.query.filter_by(
+            company_id=contact.company_id, contact_id=contact.id, source=source,
+            source_detail=detail, event_type=event_type,
+        ).first()
+        if existing:
+            return existing
     evt = ContactSourceEvent(company_id=contact.company_id, contact_id=contact.id, source=source, source_detail=detail,
                              campaign=campaign, source_url=url, referrer=referrer, event_type=event_type,
                              event_at=now, event_metadata=metadata or {}, created_by_user_id=user_id)

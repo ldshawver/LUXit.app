@@ -91,7 +91,7 @@ def upsert_contact_from_source(company_id: int, phone: str | None = None, email:
         contact.source_phone_number = normalize_phone(source_phone_number)
     contact.source = contact.source or source_channel
     contact.source_detail = contact.source_detail or source_context
-    source_map = {"sms": "twilio_inbound_sms", "csv_import": "csv_import", "manual": "manual_entry", "api": "api"}
+    source_map = {"sms": "inbound_sms", "inbound_sms": "inbound_sms", "csv_import": "csv_import", "ios_import": "ios_import", "manual": "manual_entry", "api": "api"}
     intel_source = source_map.get((source_channel or "").lower(), source_channel or "unknown")
     # Contact points and source events require a real contact_id. Flush a newly
     # created contact before those child records are constructed.
@@ -273,7 +273,10 @@ def valid_email(email):
 
 def preview_contact_import(file_bytes: bytes, filename: str):
     name=(filename or '').lower()
-    if name.endswith('.xlsx'):
+    if name.endswith(('.vcf', '.vcard')):
+        rows=_parse_vcards(file_bytes); headers=['Full Name','First Name','Last Name','Email','Phone']
+        sample=rows[:5]
+    elif name.endswith('.xlsx'):
         from openpyxl import load_workbook
         wb=load_workbook(io.BytesIO(file_bytes), read_only=True, data_only=True); ws=wb.active
         rows=list(ws.iter_rows(values_only=True)); headers=[str(x or '').strip() for x in (rows[0] if rows else [])]
@@ -285,13 +288,33 @@ def preview_contact_import(file_bytes: bytes, filename: str):
     return {'headers': headers, 'detected_mapping': detect_contact_mapping(headers), 'sample_rows': sample}
 
 
+def _parse_vcards(file_bytes: bytes) -> list[dict]:
+    """Small, dependency-free vCard 3/4 reader for exported iPhone/iCloud contacts."""
+    text=file_bytes.decode('utf-8-sig', errors='replace').replace('\r\n','\n')
+    text=re.sub(r'\n[ \t]', '', text)
+    rows=[]
+    for block in re.findall(r'BEGIN:VCARD\n(.*?)\nEND:VCARD', text, re.I|re.S):
+        values={}
+        for line in block.splitlines():
+            key, sep, value=line.partition(':')
+            if not sep: continue
+            base=key.split(';',1)[0].upper(); value=value.replace('\\,', ',').replace('\\n', ' ').strip()
+            if base in {'FN','EMAIL','TEL','N'} and base not in values: values[base]=value
+        n=(values.get('N') or '').split(';'); first=(n[1] if len(n)>1 else '').strip(); last=(n[0] if n else '').strip()
+        rows.append({'Full Name': values.get('FN') or f'{first} {last}'.strip(), 'First Name': first,
+                     'Last Name': last, 'Email': values.get('EMAIL',''), 'Phone': values.get('TEL','')})
+    return rows
+
+
 def import_contacts(company_id:int, file_bytes:bytes, filename:str, *, mapping=None, source_provider='generic_csv', imported_list=None, apply_tags=None, sms_subscribed=False, email_subscribed=False, tenant_id=None):
     from models import ContactImportBatch, Segment, SegmentMember
     preview=preview_contact_import(file_bytes, filename); mapping=mapping or preview['detected_mapping']
     batch=ContactImportBatch(company_id=company_id, tenant_id=tenant_id or company_id, source_provider=source_provider, filename=filename, imported_list=imported_list, applied_tags=apply_tags or [], field_mapping=mapping)
     db.session.add(batch); db.session.flush()
     name=(filename or '').lower(); rows=[]
-    if name.endswith('.xlsx'):
+    if name.endswith(('.vcf', '.vcard')):
+        rows=_parse_vcards(file_bytes)
+    elif name.endswith('.xlsx'):
         from openpyxl import load_workbook
         ws=load_workbook(io.BytesIO(file_bytes), read_only=True, data_only=True).active
         vals=list(ws.iter_rows(values_only=True)); headers=[str(x or '').strip() for x in vals[0]] if vals else []
@@ -311,7 +334,11 @@ def import_contacts(company_id:int, file_bytes:bytes, filename:str, *, mapping=N
         if not phone and not email:
             errors.append({'row':idx,'error':'missing valid phone or email'}); continue
         try:
-            contact=upsert_contact_from_source(company_id, phone or None, email or None, tenant_id=tenant_id or company_id, first_name=get('first_name'), last_name=get('last_name'), full_name=get('full_name'), company=get('company'), tags=_split_tags(get('tags')) + _split_tags(apply_tags), source_channel='csv_import', source_provider=source_provider, source_context='campaign_import', sms_opt_in=_parse_bool(get('sms_opt_in')) or bool(sms_subscribed), email_opt_in=_parse_bool(get('email_opt_in')) or bool(email_subscribed))
+            ios_source = source_provider in {'ios_contacts','icloud_import'}
+            contact=upsert_contact_from_source(company_id, phone or None, email or None, tenant_id=tenant_id or company_id, first_name=get('first_name'), last_name=get('last_name'), full_name=get('full_name'), company=get('company'), tags=_split_tags(get('tags')) + _split_tags(apply_tags), source_channel='ios_import' if ios_source else 'csv_import', source_provider=source_provider, source_context='iphone_icloud_import' if ios_source else 'campaign_import', sms_opt_in=_parse_bool(get('sms_opt_in')) or bool(sms_subscribed), email_opt_in=_parse_bool(get('email_opt_in')) or bool(email_subscribed))
+            if ios_source:
+                from services.contact_resolver import resolve_contact_identity
+                resolve_contact_identity(company_id, contact_id=contact.id, allow_enrichment=True)
             contact.imported_batch_id=batch.id; contact.imported_list=imported_list or contact.imported_list
             if segment and not SegmentMember.query.filter_by(segment_id=segment.id, contact_id=contact.id).first():
                 db.session.add(SegmentMember(segment_id=segment.id, contact_id=contact.id, source='import'))

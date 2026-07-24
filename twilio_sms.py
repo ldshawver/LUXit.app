@@ -575,8 +575,7 @@ def _get_or_create_conversation(
         contact = upsert_contact_from_source(
             company_id,
             phone=from_number,
-            tags=["MyOrder Customer"],
-            source_channel="sms",
+            source_channel="inbound_sms",
             source_phone_number=to_number,
             source_provider="twilio",
             source_context="inbound_message",
@@ -1252,7 +1251,7 @@ def inbound_sms():
       4. Handle STOP / START / HELP system keywords (always, regardless of rules)
       5. Run auto-reply rule engine for all other messages
     """
-    from models import TwilioConversation, TwilioMessage
+    from models import Contact, TwilioConversation, TwilioMessage
 
     correlation_id = getattr(g, "request_id", request.headers.get("X-Request-ID", "-"))
     if not (request.mimetype or "").startswith(("application/x-www-form-urlencoded", "multipart/form-data")):
@@ -1310,6 +1309,12 @@ def inbound_sms():
             correlation_id, twilio_sid, _safe_phone_ref(from_number), _safe_phone_ref(to_number),
         )
         abort(403)
+
+    # Provider idempotency precedes contact creation, enrichment, tagging, and
+    # response reservation. The unique TwilioMessage SID remains the
+    # concurrency backstop for simultaneous retries.
+    if twilio_sid and TwilioMessage.query.filter_by(twilio_sid=twilio_sid).first():
+        return '<Response></Response>', 200, {"Content-Type": "text/xml"}
 
     # ── 2b. Owner reply relay ──────────────────────────────────────────────
     # All messages FROM the forwarding number are relay commands — never
@@ -1468,7 +1473,10 @@ def inbound_sms():
             logger.info("Opt-out keyword received: company_id=%s phone_last4=%s", ta.company_id, from_number[-4:])
             return _twiml_message(_STOP_REPLY)
 
-        if kw in _START_KEYWORDS:
+        active_identity_confirmation = bool(
+            conv.contact_id and getattr(db.session.get(Contact, conv.contact_id), "identity_status", None) == "awaiting_confirmation"
+        )
+        if kw in _START_KEYWORDS and not (kw == "yes" and active_identity_confirmation):
             conv.is_opted_out  = False
             conv.sms_opt_in_at = datetime.utcnow()
             conv.sms_opt_out_at = None
@@ -1503,13 +1511,14 @@ def inbound_sms():
                 match_status = apply_cached_google_match(contact)
                 outcome = process_identity_message(contact, conv, body, twilio_sid)
                 reply = outcome.get("reply")
-                if not reply and outcome.get("missing") and contact.identity_requested_at:
-                    reply = "Please include " + " and ".join(outcome["missing"]) + "."
                 if not reply and match_status != "matched" and should_request_identity(contact):
                     contact.identity_status = "pending_identity"
-                    contact.identity_requested_at = datetime.utcnow()
+                    contact.identity_requested_at = contact.identity_fields_requested_at = datetime.utcnow()
                     contact.identity_request_count = (contact.identity_request_count or 0) + 1
-                    reply = IDENTITY_PROMPT
+                    missing = outcome.get("missing") or ["first and last name", "valid email address"]
+                    contact.identity_requested_fields = missing
+                    contact.identity_last_request_sid = twilio_sid
+                    reply = "Please reply with " + " and ".join(missing) + "."
                 db.session.commit()
                 if reply:
                     result = sendConversationSms(conv.id, reply, twilio_account=ta, is_auto_reply=True)
@@ -2398,7 +2407,7 @@ def comms_device_settings():
 def comms_hub():
     """Communications Hub — tabbed wrapper for SMS, Calls, Voicemail, Contacts, etc."""
     from flask_login import current_user
-    from models import TwilioConversation, TwilioCallLog, TwilioPhoneNumber, UserCompanyAccess, User, AutoReplyRule, VoiceVoicemailMessage, MarketingAuditLog
+    from models import Contact, TwilioConversation, TwilioCallLog, TwilioPhoneNumber, UserCompanyAccess, User, AutoReplyRule, VoiceVoicemailMessage, MarketingAuditLog
 
     company = _get_company()
     if not company:
@@ -2434,6 +2443,15 @@ def comms_hub():
             )
         )
     conversations = q.order_by(TwilioConversation.last_message_at.desc()).limit(100).all()
+    from services.contact_resolver import resolve_contact_identity
+    conversation_resolutions = {}
+    for conv in conversations:
+        resolved = resolve_contact_identity(company.id, phone=conv.from_number, contact_id=conv.contact_id, allow_enrichment=True)
+        conversation_resolutions[conv.id] = resolved
+        if resolved.canonical_contact_id and not conv.contact_id:
+            conv.contact_id = resolved.canonical_contact_id
+        if resolved.safe_display_name != "Name needed":
+            conv.contact_name = resolved.safe_display_name
     unread_count  = TwilioConversation.query.filter_by(company_id=company.id, is_read=False).count()
 
     # ── Call log data ─────────────────────────────────────────────────────
@@ -2449,6 +2467,12 @@ def comms_hub():
         missed_calls_count = TwilioCallLog.query.filter_by(
             company_id=company.id, status="no-answer"
         ).count()
+        for call in calls:
+            lookup_phone = call.from_number if call.direction == "inbound" else call.to_number
+            resolved = resolve_contact_identity(company.id, phone=lookup_phone, contact_id=getattr(call, "contact_id", None), allow_enrichment=True)
+            if resolved.safe_display_name != "Name needed":
+                call.caller_name = resolved.safe_display_name
+        db.session.commit()
     except Exception:
         pass
 
@@ -2456,6 +2480,8 @@ def comms_hub():
     gc_connected = False
     gc_last_sync = None
     gc_contacts  = 0
+    gc_status = "disconnected"
+    gc_last_error = None
     try:
         from services.google_contacts import get_token
         tok = get_token(current_user.id)
@@ -2463,6 +2489,8 @@ def comms_hub():
             gc_connected = True
             gc_contacts  = tok.contacts_synced or 0
             gc_last_sync = tok.last_sync_at.strftime("%-d %b %H:%M") if tok.last_sync_at else None
+            gc_status = getattr(tok, "last_sync_status", None) or "connected"
+            gc_last_error = getattr(tok, "sync_error", None)
     except Exception:
         pass
 
@@ -2567,11 +2595,18 @@ def comms_hub():
         except Exception as exc:
             logger.warning("Could not preview contact dedupe: %s", exc)
 
+    approval_contacts = []
+    if tab == "identity_review":
+        approval_contacts = Contact.query.filter(
+            Contact.company_id == company.id, Contact.is_active.is_(True),
+            db.or_(Contact.identity_conflict_status != "none", Contact.approval_status == "review_required"),
+        ).order_by(Contact.created_at.asc()).limit(200).all()
     return render_template(
         "twilio/comms_hub.html",
         tab=tab,
         company=company,
         conversations=conversations,
+        conversation_resolutions=conversation_resolutions,
         unread_count=unread_count,
         ta=ta,
         status_filter=status_filter,
@@ -2581,6 +2616,8 @@ def comms_hub():
         gc_connected=gc_connected,
         gc_last_sync=gc_last_sync,
         gc_contacts=gc_contacts,
+        gc_status=gc_status,
+        gc_last_error=gc_last_error,
         is_admin=is_admin,
         can_admin_tuya=can_admin_tuya,
         tuya=tuya,
@@ -2596,7 +2633,37 @@ def comms_hub():
         activity=activity,
         devices=devices,
         dedupe_preview=dedupe_preview,
+        approval_contacts=approval_contacts,
     )
+
+
+@twilio_bp.route("/comms/contacts/<int:contact_id>/identity-review", methods=["POST"])
+@login_required
+def comms_identity_review(contact_id):
+    from models import Contact, MarketingAuditLog
+    from services.comms_permissions import can_manage_users
+    from services.contact_audience import add_contact_tag
+    company = _get_company()
+    if not company: abort(404)
+    if not can_manage_users(current_user, company.id): abort(403)
+    contact = Contact.query.filter_by(id=contact_id, company_id=company.id, is_active=True).first_or_404()
+    action = request.form.get("action")
+    if action not in {"approve", "reject"}: abort(400)
+    now = datetime.utcnow()
+    if action == "approve":
+        contact.approval_status, contact.approved_at = "approved", contact.approved_at or now
+        contact.approved_by_user_id, contact.approval_source = current_user.id, "communications_hub"
+        contact.approval_rejected_at, contact.identity_conflict_status = None, "none"
+        if contact.identity_status == "awaiting_confirmation" and contact.pending_first_name and contact.pending_last_name and contact.pending_email:
+            contact.identity_status = "confirmed"
+        add_contact_tag(contact, "Approved Contact")
+    else:
+        contact.approval_status, contact.approval_rejected_at = "rejected", now
+    db.session.add(MarketingAuditLog(company_id=company.id, created_by_user_id=current_user.id,
+        entity_type="contact", entity_id=contact.id, action=f"identity_{action}", details={"conflict_status": contact.identity_conflict_status}))
+    db.session.commit()
+    flash(f"Identity {action}d.", "success")
+    return redirect(url_for("twilio.comms_hub", tab="identity_review"))
 
 
 @twilio_bp.route("/comms/tuya-notifications")
@@ -2812,11 +2879,14 @@ def conversation(conv_id):
         db.session.commit()
 
     messages = conv.messages.order_by(db.text("twilio_message.created_at")).all()
+    from services.contact_resolver import resolve_contact_identity
+    contact_resolution = resolve_contact_identity(company.id, phone=conv.from_number, contact_id=conv.contact_id, allow_enrichment=True)
     return render_template(
         "twilio/conversation.html",
         conv=conv,
         messages=messages,
         ta=ta,
+        contact_resolution=contact_resolution,
     )
 
 
