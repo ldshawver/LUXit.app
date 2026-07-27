@@ -917,16 +917,24 @@
       <div class="settings-toggle-label">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 6l11 7L23 6"/><rect x="1" y="4" width="22" height="16" rx="2"/></svg>
         <div>
-          <span>Wi-Fi Calling</span>
-          <small>Calls through this LUX PWA over Wi-Fi or cellular data; this does not change your carrier Wi-Fi Calling setting.</small>
-        </div>
-      </div>
-      <label class="pwa-toggle">
-        <input type="checkbox" id="toggleWifiCalling" onchange="if(this.checked) location.href='/app/dial-pad';">
-        <span class="pwa-toggle-track"></span>
-      </label>
-    </div>
+<div>
+  <span id="wifiCallingLabel">VoIP / Wi-Fi Calling</span>
+  <small id="wifiCallingDescription">
+    Calls use the LUXit PWA over Wi-Fi or cellular data. This does not enable
+    or change your mobile carrier's Wi-Fi Calling feature.
+  </small>
+</div>
 
+<label class="pwa-toggle">
+  <input
+    type="checkbox"
+    id="toggleWifiCalling"
+    aria-labelledby="wifiCallingLabel"
+    aria-describedby="wifiCallingDescription"
+    onchange="if (this.checked) location.href='/app/dial-pad';"
+  >
+  <span class="pwa-toggle-track"></span>
+</label>
 
 
     <!-- Call forwarding / business-hours auto reply / push diagnostics -->

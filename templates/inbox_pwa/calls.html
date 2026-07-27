@@ -6,13 +6,24 @@
   <title>LUXit Calls</title>
   <script src="https://sdk.twilio.com/js/voice/releases/2.12.3/twilio.min.js" defer></script>
   <style>
-    :root{--color-primary:#2563eb;--color-secondary:#06b6d4;--color-accent:#ec4899;--color-background:#000;--color-surface:#0b0d14;--color-text:#f1f5f9;--color-muted-text:#94a3b8;--color-icon:#93c5fd;--color-button:#2563eb;--color-button-text:#fff;--color-border:#1e2535;--pwa-bg:var(--color-background);--pwa-surface:var(--color-surface,#111827);--pwa-card-bg:var(--pwa-surface);--pwa-surface-2:#0f172a;--pwa-border:var(--color-border,#273044);--pwa-text:var(--color-text,#f8fafc);--pwa-muted:var(--color-muted-text,#94a3b8);--pwa-primary:var(--color-primary);--pwa-primary-contrast:#fff;--pwa-accent:var(--color-accent,#ec4899);--pwa-primary-soft:color-mix(in srgb,var(--pwa-primary) 22%,transparent);--pwa-success:#22c55e;--pwa-danger:#ef4444;--pwa-warning:#f59e0b;--pwa-card-radius:20px;--pwa-shadow:0 18px 50px rgba(0,0,0,.25)}*{box-sizing:border-box}html[data-palette="ocean"]{--color-primary:#0891b2;--color-secondary:#38bdf8;--color-accent:#22d3ee;--color-background:#042f3a;--color-surface:#083b4a;--color-text:#ecfeff;--color-muted-text:#a5f3fc;--color-icon:#67e8f9;--color-button:#0891b2;--color-button-text:#fff;--color-border:#155e75}html[data-palette="forest"]{--color-primary:#16a34a;--color-secondary:#34d399;--color-accent:#84cc16;--color-background:#041f12;--color-surface:#0b2f1a;--color-text:#f0fdf4;--color-muted-text:#bbf7d0;--color-icon:#86efac;--color-button:#16a34a;--color-button-text:#fff;--color-border:#166534}html[data-palette="sunset"]{--color-primary:#ea580c;--color-secondary:#f59e0b;--color-accent:#f43f5e;--color-background:#2a0d05;--color-surface:#431407;--color-text:#fff7ed;--color-muted-text:#fed7aa;--color-icon:#fdba74;--color-button:#ea580c;--color-button-text:#fff;--color-border:#9a3412}html[data-palette="slate"]{--color-primary:#2563eb;--color-secondary:#38bdf8;--color-accent:#14b8a6;--color-background:#020617;--color-surface:#0f172a;--color-text:#f8fafc;--color-muted-text:#cbd5e1;--color-icon:#93c5fd;--color-button:#2563eb;--color-button-text:#fff;--color-border:#334155}html[data-palette="rose"]{--color-primary:#e11d48;--color-secondary:#fb7185;--color-accent:#f97316;--color-background:#2a0612;--color-surface:#4a0f1f;--color-text:#fff1f2;--color-muted-text:#fecdd3;--color-icon:#fda4af;--color-button:#e11d48;--color-button-text:#fff;--color-border:#9f1239}body{margin:0;background:linear-gradient(180deg,var(--pwa-surface),var(--pwa-bg));color:var(--pwa-text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;min-height:100vh}.shell{max-width:560px;margin:0 auto;min-height:100vh;padding:18px max(18px,env(safe-area-inset-left)) calc(112px + env(safe-area-inset-bottom)) max(18px,env(safe-area-inset-right))}.top{display:flex;align-items:center;justify-content:space-between;margin:0 -4px 14px;padding:max(4px,env(safe-area-inset-top)) max(4px,env(safe-area-inset-right)) 0 max(4px,env(safe-area-inset-left))}.top h1{font-size:1.5rem;margin:0}.icon{min-width:44px;min-height:44px;width:44px;height:44px;border-radius:13px;border:1px solid var(--pwa-border);background:var(--pwa-surface-2);color:var(--pwa-text);display:grid;place-items:center;text-decoration:none}.voice-state{font-size:.76rem;color:var(--pwa-muted);text-align:center;margin-top:-7px;margin-bottom:10px}.tabs{display:flex;gap:8px;overflow:auto;padding:8px 0 12px}.tab{border:1px solid var(--pwa-border);background:var(--pwa-surface-2);color:var(--pwa-muted);border-radius:999px;padding:8px 12px;white-space:nowrap}.tab.active{background:var(--pwa-primary-soft);color:var(--pwa-text);border-color:var(--pwa-primary)}.card,.pwa-card{background:color-mix(in srgb,var(--pwa-card-bg) 92%,transparent);border:1px solid var(--pwa-border);border-radius:var(--pwa-card-radius);padding:14px;margin:10px 0;box-shadow:var(--pwa-shadow)}.row{display:flex;gap:12px;align-items:flex-start}.avatar{width:42px;height:42px;border-radius:15px;background:var(--pwa-primary-soft);display:grid;place-items:center;font-size:1.1rem}.meta{flex:1;min-width:0}.name{font-weight:700}.num,.small{color:var(--pwa-muted);font-size:.84rem}.badge{font-size:.72rem;border-radius:999px;padding:3px 8px;background:var(--pwa-primary-soft);color:var(--pwa-text)}.badge.missed,.badge.declined{background:color-mix(in srgb,var(--pwa-danger) 22%,transparent);color:color-mix(in srgb,var(--pwa-danger) 25%,var(--pwa-primary-contrast))}.badge.voicemail{background:color-mix(in srgb,var(--pwa-warning) 22%,transparent);color:color-mix(in srgb,var(--pwa-warning) 35%,var(--pwa-primary-contrast))}.badge.forwarded{background:var(--pwa-primary-soft);color:var(--pwa-text)}.actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}.btn{border:1px solid var(--pwa-border);border-radius:11px;background:var(--pwa-surface-2);color:var(--pwa-text);padding:8px 10px;text-decoration:none;font-size:.82rem}.btn.primary{background:var(--pwa-primary);border-color:var(--pwa-primary);color:var(--pwa-primary-contrast)}.btn.warn{background:color-mix(in srgb,var(--pwa-warning) 28%,var(--pwa-surface-2))}.voicemail-player{width:100%;margin-top:8px;accent-color:var(--pwa-primary)}.transcript{margin-top:9px;color:var(--pwa-text);font-size:.86rem;line-height:1.35;background:var(--pwa-surface-2);border-radius:12px;padding:9px}.incoming{position:fixed;inset:auto 12px 86px;max-width:520px;margin:auto;background:var(--pwa-surface);border:1px solid var(--pwa-border);border-radius:24px;padding:18px;box-shadow:0 24px 80px rgba(0,0,0,.55);display:none;z-index:20}.incoming.show{display:block}.call-controls{display:flex;justify-content:space-around;margin-top:18px}.round{width:58px;height:58px;border-radius:999px;border:0;color:var(--pwa-primary-contrast);font-size:1.1rem}.accept{background:var(--pwa-success)}.decline{background:var(--pwa-danger)}.vm,.mute{background:var(--pwa-primary)}.settings{display:none}.settings.show{display:block}.field{margin:12px 0}.field label{display:block;color:var(--pwa-text);font-size:.85rem;margin-bottom:5px}.field input,.field textarea,.field select{width:100%;background:var(--pwa-surface-2);border:1px solid var(--pwa-border);color:var(--pwa-text);border-radius:11px;padding:10px}.grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}.empty{text-align:center;color:var(--pwa-muted);padding:45px 20px}.error{color:color-mix(in srgb,var(--pwa-danger) 30%,var(--pwa-primary-contrast))}.ok{color:color-mix(in srgb,var(--pwa-success) 30%,var(--pwa-primary-contrast))}
+    :root{--color-primary:#2563eb;--color-secondary:#06b6d4;--color-accent:#ec4899;--color-background:#000;--color-surface:#0b0d14;--color-text:#f1f5f9;--color-muted-text:#94a3b8;--color-icon:#93c5fd;--color-button:#2563eb;--color-button-text:#fff;--color-border:#1e2535;--pwa-bg:var(--color-background);--pwa-surface:var(--color-surface,#111827);--pwa-card-bg:var(--pwa-surface);--pwa-surface-2:#0f172a;--pwa-border:var(--color-border,#273044);--pwa-text:var(--color-text,#f8fafc);--pwa-muted:var(--color-muted-text,#94a3b8);--pwa-primary:var(--color-primary);--pwa-primary-contrast:#fff;--pwa-accent:var(--color-accent,#ec4899);--pwa-primary-soft:color-mix(in srgb,var(--pwa-primary) 22%,transparent);--pwa-success:#22c55e;--pwa-danger:#ef4444;--pwa-warning:#f59e0b;--pwa-card-radius:20px;--pwa-shadow:0 18px 50px rgba(0,0,0,.25)}*{box-sizing:border-box}html[data-palette="ocean"]{--color-primary:#0891b2;--color-secondary:#38bdf8;--color-accent:#22d3ee;--color-background:#042f3a;--color-surface:#083b4a;--color-text:#ecfeff;--color-muted-text:#a5f3fc;--color-icon:#67e8f9;--color-button:#0891b2;--color-button-text:#fff;--color-border:#155e75}html[data-palette="forest"]{--color-primary:#16a34a;--color-secondary:#34d399;--color-accent:#84cc16;--color-background:#041f12;--color-surface:#0b2f1a;--color-text:#f0fdf4;--color-muted-text:#bbf7d0;--color-icon:#86efac;--color-button:#16a34a;--color-button-text:#fff;--color-border:#166534}html[data-palette="sunset"]{--color-primary:#ea580c;--color-secondary:#f59e0b;--color-accent:#f43f5e;--color-background:#2a0d05;--color-surface:#431407;--color-text:#fff7ed;--color-muted-text:#fed7aa;--color-icon:#fdba74;--color-button:#ea580c;--color-button-text:#fff;--color-border:#9a3412}html[data-palette="slate"]{--color-primary:#2563eb;--color-secondary:#38bdf8;--color-accent:#14b8a6;--color-background:#020617;--color-surface:#0f172a;--color-text:#f8fafc;--color-muted-text:#cbd5e1;--color-icon:#93c5fd;--color-button:#2563eb;--color-button-text:#fff;--color-border:#334155}html[data-palette="rose"]{--color-primary:#e11d48;--color-secondary:#fb7185;--color-accent:#f97316;--color-background:#2a0612;--color-surface:#4a0f1f;--color-text:#fff1f2;--color-muted-text:#fecdd3;--color-icon:#fda4af;--color-button:#e11d48;--color-button-text:#fff;--color-border:#9f1239}body{margin:0;background:linear-gradient(180deg,var(--pwa-surface),var(--pwa-bg));color:var(--pwa-text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;min-height:100vh}.shell{max-width:560px;margin:0 auto;min-height:100vh;padding:18px max(18px,env(safe-area-inset-left)) calc(112px + env(safe-area-inset-bottom)) max(18px,env(safe-area-inset-right))}.top{display:flex;align-items:center;justify-content:space-between;margin:0 -4px 14px;padding:max(4px,env(safe-area-inset-top)) max(4px,env(safe-area-inset-right)) 0 max(4px,env(safe-area-inset-left))}.top h1{font-size:1.5rem;margin:0}.icon{min-width:44px;min-height:44px;width:44px;height:44px;border-radius:13px;border:1px solid var(--pwa-border);background:var(--pwa-surface-2);color:var(--pwa-text);display:grid;place-items:center;text-decoration:none}.voice-state{font-size:.76rem;color:var(--pwa-muted);text-align:center;margin-top:-7px;margin-bottom:10px}.tabs{display:flex;gap:8px;overflow:auto;padding:8px 0 12px}.tab{border:1px solid var(--pwa-border);background:var(--pwa-surface-2);color:var(--pwa-muted);border-radius:999px;padding:8px 12px;white-space:nowrap}.tab.active{background:var(--pwa-primary-soft);color:var(--pwa-text);border-color:var(--pwa-primary)}.card,.pwa-card{background:color-mix(in srgb,var(--pwa-card-bg) 92%,transparent);border:1px solid var(--pwa-border);border-radius:var(--pwa-card-radius);padding:14px;margin:10px 0;box-shadow:var(--pwa-shadow)}.row{display:flex;gap:12px;align-items:flex-start}.avatar{width:42px;height:42px;border-radius:15px;background:var(--pwa-primary-soft);display:grid;place-items:center;font-size:1.1rem}.meta{flex:1;min-width:0}.name{font-weight:700}.num,.small{color:var(--pwa-muted);font-size:.84rem}.badge{font-size:.72rem;border-radius:999px;padding:3px 8px;background:var(--pwa-primary-soft);color:var(--pwa-text)}.badge.missed,.badge.declined{background:color-mix(in srgb,var(--pwa-danger) 22%,transparent);color:color-mix(in srgb,var(--pwa-danger) 25%,var(--pwa-primary-contrast))}.badge.voicemail{background:color-mix(in srgb,var(--pwa-warning) 22%,transparent);color:color-mix(in srgb,var(--pwa-warning) 35%,var(--pwa-primary-contrast))}.badge.forwarded{background:var(--pwa-primary-soft);color:var(--pwa-text)}.actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}.btn{border:1px solid var(--pwa-border);border-radius:11px;background:var(--pwa-surface-2);color:var(--pwa-text);padding:8px 10px;text-decoration:none;font-size:.82rem}.btn.primary{background:var(--pwa-primary);border-color:var(--pwa-primary);color:var(--pwa-primary-contrast)}.btn.warn{background:color-mix(in srgb,var(--pwa-warning) 28%,var(--pwa-surface-2))}.btn:disabled,.icon:disabled{opacity:.55;cursor:not-allowed}.btn:focus-visible,.icon:focus-visible,.tab:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:3px solid var(--pwa-accent);outline-offset:2px}.voicemail-player{width:100%;margin-top:8px;accent-color:var(--pwa-primary)}.transcript{margin-top:9px;color:var(--pwa-text);font-size:.86rem;line-height:1.35;background:var(--pwa-surface-2);border-radius:12px;padding:9px}.incoming{position:fixed;inset:auto 12px 86px;max-width:520px;margin:auto;background:var(--pwa-surface);border:1px solid var(--pwa-border);border-radius:24px;padding:18px;box-shadow:0 24px 80px rgba(0,0,0,.55);display:none;z-index:20}.incoming.show{display:block}.call-controls{display:flex;justify-content:space-around;margin-top:18px}.round{width:58px;height:58px;border-radius:999px;border:0;color:var(--pwa-primary-contrast);font-size:1.1rem}.accept{background:var(--pwa-success)}.decline{background:var(--pwa-danger)}.vm,.mute{background:var(--pwa-primary)}.settings{display:none}.settings.show{display:block}.field{margin:12px 0}.field label{display:block;color:var(--pwa-text);font-size:.85rem;margin-bottom:5px}.field input,.field textarea,.field select{width:100%;background:var(--pwa-surface-2);border:1px solid var(--pwa-border);color:var(--pwa-text);border-radius:11px;padding:10px}.grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}.empty{text-align:center;color:var(--pwa-muted);padding:45px 20px}.error{color:color-mix(in srgb,var(--pwa-danger) 30%,var(--pwa-primary-contrast))}.ok{color:color-mix(in srgb,var(--pwa-success) 30%,var(--pwa-primary-contrast))}
   </style>
 </head>
 <body>
 <div class="shell">
   <div class="top"><a class="icon" href="/app/inbox" aria-label="Back to Conversations"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg></a><h1 id="pageTitle">Recents</h1><button class="icon" onclick="toggleSettings()" aria-label="Phone settings"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06A2 2 0 1 1 7.04 4.3l.06.06A1.65 1.65 0 0 0 8.92 4a1.65 1.65 0 0 0 1-1.51V2a2 2 0 1 1 4 0v.09A1.65 1.65 0 0 0 15 3.6a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9c.36.37.56.87.56 1.39V10H21a2 2 0 1 1 0 4h-.09c-.52 0-1.02.2-1.39.56z"/></svg></button></div>
-  <div id="voiceState" class="voice-state">Initializing browser phone…</div>
+  <div id="voiceState" class="voice-state">Offline — enable Wi-Fi Calling to register this browser.</div>
+  <section class="card" id="wifiCallingPanel">
+    <h2 style="margin:0 0 6px">Wi-Fi Calling</h2>
+    <p class="small">Calls use the LUXit PWA over Wi-Fi or cellular data. This does not change your phone carrier's Wi-Fi Calling setting.</p>
+    <button class="btn primary" id="enableVoice" onclick="enableWifiCalling()">Enable Wi-Fi Calling</button>
+    <a class="btn" href="/app/inbox?settings=devices">Device &amp; notification diagnostics</a>
+    <div class="field"><label>Company caller ID</label><select id="callerId" aria-label="Company-owned caller ID"></select></div>
+    <div class="field"><label>Contact or phone number</label><input id="dialNumber" inputmode="tel" autocomplete="tel" placeholder="Enter a phone number"></div>
+    <div class="grid" id="dialPad">{% for digit in ['1','2','3','4','5','6','7','8','9','*','0','#'] %}<button class="btn" type="button" onclick="dialNumber.value+='{{ digit }}'">{{ digit }}</button>{% endfor %}</div>
+    <div class="actions"><button class="btn primary" onclick="placeWifiCall()">Call</button><button class="btn" onclick="toggleMute()">Mute</button><button class="btn warn" onclick="endCall()">Hang Up</button></div>
+    <div class="small" id="micStatus">Microphone permission is requested only when you enable calling or place/answer a call.</div>
+  </section>
   <div id="settings" class="settings card">
     <h2 style="margin-top:0">Phone Settings</h2>
     <div class="grid"><div class="field"><label>During hours route</label><select id="during_hours_route"><option value="ring_pwa">Ring PWA</option><option value="forward">Forward</option><option value="voicemail">Voicemail</option></select></div><div class="field"><label>After hours route</label><select id="after_hours_route"><option value="voicemail">Voicemail</option><option value="forward">Forward</option><option value="ring_pwa">Ring PWA</option></select></div></div>
@@ -27,21 +38,534 @@
 <div id="incoming" class="incoming"><div class="small" id="incomingMode">Incoming call</div><h2 id="incomingName">Unknown caller</h2><div class="num" id="incomingNumber"></div><div class="call-controls"><button class="round accept" onclick="acceptIncoming()" aria-label="Accept call"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6A19.79 19.79 0 0 1 2.12 4.18 2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72"/></svg></button><button class="round mute" onclick="toggleMute()" aria-label="Mute call"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg></button><button class="round vm" onclick="sendIncomingToVoicemail()" aria-label="Send to voicemail"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="5.5" cy="12.5" r="3.5"/><circle cx="18.5" cy="12.5" r="3.5"/><path d="M5.5 16h13"/></svg></button><button class="round decline" onclick="declineIncoming()" aria-label="Decline call"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div></div>
 {% include "inbox_pwa/_bottom_nav.html" %}
 <script>
-const __p=new URLSearchParams(location.search);function applyPalette(name){const p=name||localStorage.getItem('luxitPwaPalette')||'lux';document.documentElement.dataset.palette=p==='lux'?'':p;localStorage.setItem('luxitPwaPalette',p)}applyPalette('{{ user.pwa_palette_id or "lux" }}');let active=(location.pathname.includes('/voicemail')?'voicemail':(__p.get('tab')||'all')), voiceDevice=null, pendingCall=null, activeCall=null, pendingCallLogId=null, muted=false;
-const qs=(id)=>document.getElementById(id);function state(msg,cls=''){voiceState.textContent=msg;voiceState.className='voice-state '+cls}function fmtDur(s){s=Number(s||0);return s?`${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`:'—'}function icon(c){const base='width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"';if(c.status==='missed'||c.status==='no-answer'||c.status==='declined')return`<svg ${base}><path d="M22 2 11 13"/><path d="M22 2h-7"/><path d="M22 2v7"/><path d="M5 12a7 7 0 0 0 7 7"/></svg>`;if(c.status==='voicemail')return`<svg ${base}><circle cx="5.5" cy="12.5" r="3.5"/><circle cx="18.5" cy="12.5" r="3.5"/><path d="M5.5 16h13"/></svg>`;if(c.status==='forwarded'||c.forwarded_to_number)return`<svg ${base}><polyline points="15 17 20 12 15 7"/><path d="M4 18v-2a4 4 0 0 1 4-4h12"/></svg>`;return c.direction==='outbound'?`<svg ${base}><path d="M7 17 17 7"/><path d="M7 7h10v10"/></svg>`:`<svg ${base}><path d="M17 7 7 17"/><path d="M17 17H7V7"/></svg>`}
-function callIdFromInvite(call){try{return call?.customParameters?.get('call_log_id')||call?.parameters?.call_log_id||pendingCallLogId}catch(e){return pendingCallLogId}}
-function playVoicemail(id){let audio=qs(`vm-${id}`);if(audio){audio.paused?audio.play():audio.pause()}}
-function render(calls){pageTitle.textContent=active==='voicemail'?'Voicemail':'Recents';list.innerHTML=calls.length?'':'<div class="empty pwa-card">No calls yet.</div>';calls.forEach(c=>{let b=(c.status||'').replace('no-answer','missed');let el=document.createElement('div');el.className='card pwa-card';el.innerHTML=`<div class="row"><div class="avatar">${icon(c)}</div><div class="meta"><div class="name">${c.caller_name||c.from_number||'Unknown'}</div><div class="num">${c.from_number||''} → ${c.to_number||''}</div><div class="small">${new Date(c.created_at).toLocaleString()} · ${fmtDur(c.duration_seconds)} ${c.forwarded_to_number?'· fwd '+c.forwarded_to_number:''}${c.answered_by_user_id?' · answered by user '+c.answered_by_user_id:''}</div></div><span class="badge ${b}">${b||'ringing'}</span></div>${c.transcription_text?`<div class="transcript">${c.transcription_text.slice(0,180)}</div>`:''}<div class="actions"><a class="btn primary" href="tel:${c.callback_target||c.from_number||''}">Callback</a><a class="btn" href="sms:${c.callback_target||c.from_number||''}">Text</a>${c.voicemail_exists?`<button class="btn primary" onclick="playVoicemail(${c.id})" aria-label="Play Voicemail">Play Voicemail</button><button class="btn" onclick="alert(c.transcription_text||'No transcript yet')">Transcript</button><a class="btn" href="/api/calls/${c.id}/voicemail/audio" download>Download</a><audio id="vm-${c.id}" class="voicemail-player" preload="none" controls src="/api/calls/${c.id}/voicemail/audio"></audio>`:''}${c.recording_url&&!c.voicemail_exists?`<a class="btn" href="${c.recording_url}" target="_blank">Call Recording</a>`:''}<button class="btn" onclick="markRead(${c.id},${c.is_read?'false':'true'})">${c.is_read?'Mark unread':'Mark read'}</button><button class="btn" onclick="archiveCall(${c.id})">Archive</button></div>`;list.appendChild(el)})}
-async function load(){let r=await fetch('/api/calls/recent?tab='+active);render((await r.json()).calls||[])}async function markRead(id,read){await fetch(`/api/calls/${id}/${read?'mark-read':'mark-unread'}`,{method:'POST'});load()}tabs.onclick=e=>{if(e.target.dataset.tab){document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));e.target.classList.add('active');active=e.target.dataset.tab;load()}};async function archiveCall(id){await fetch(`/api/calls/${id}/archive`,{method:'POST'});load()}function toggleSettings(){settings.classList.toggle('show')}
-function previewGreeting(){alert((qs('greeting_text')?.value)||'Standard voicemail greeting preview')}async function saveGreeting(){let nums=await(await fetch('/api/phone/numbers')).json();let n=(nums.numbers||[])[0];if(!n||!n.id){alert('Select a phone number in Settings before saving a greeting.');return}let body={name:qs('greeting_name').value||'Voicemail greeting',greeting_type:qs('greeting_type').value,text_body:qs('greeting_text').value,is_active:true};await fetch(`/api/phone/numbers/${n.id}/greetings`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});alert('Greeting saved')}async function loadSettings(){let s=(await(await fetch('/api/phone/settings')).json()).settings||{};Object.keys(s).forEach(k=>{let el=qs(k);if(!el)return;if(el.type==='checkbox')el.checked=!!s[k];else el.value=s[k]||''})}async function saveSettings(){let data={};document.querySelectorAll('#settings input,#settings textarea,#settings select').forEach(el=>data[el.id]=el.type==='checkbox'?el.checked:el.value);await fetch('/api/phone/settings',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});alert('Saved')}
-function showIncoming(d,call=null){pendingCall=call||pendingCall;pendingCallLogId=d.call_id||callIdFromInvite(call);incomingMode.textContent=call?'Incoming browser call':'Incoming call';incomingName.textContent=d.caller_name||d.from_number||'Unknown caller';incomingNumber.textContent=d.from_number||'';incoming.classList.add('show');load()}function hideIncoming(){incoming.classList.remove('show')}async function markCall(action){let id=callIdFromInvite(pendingCall||activeCall);if(id)await fetch(`/api/calls/${id}/${action}`,{method:'POST'}).catch(()=>{});load()}
-async function acceptIncoming(){try{if(pendingCall){activeCall=pendingCall;await pendingCall.accept();pendingCall=null;await markCall('accept');state('Call connected','ok')}hideIncoming()}catch(e){state('Could not answer: '+e.message,'error')}}async function declineIncoming(){try{if(pendingCall){pendingCall.reject();await markCall('decline')}else await markCall('decline')}finally{pendingCall=null;hideIncoming();state('Call declined')}}async function sendIncomingToVoicemail(){try{if(pendingCall)pendingCall.reject();await markCall('voicemail')}finally{pendingCall=null;hideIncoming();state('Sent to voicemail')}}async function endCall(){if(activeCall){activeCall.disconnect();await markCall('end');activeCall=null;state('Call ended')}}function toggleMute(){muted=!muted;if(activeCall&&activeCall.mute)activeCall.mute(muted);state(muted?'Muted':'Unmuted')}
-function voiceSdkCtor(){return window.Twilio?.Device||window.Twilio?.Voice?.Device||null}
-function voiceError(code,msg,detail){console.error('Browser voice setup failed',code,detail||msg);try{fetch('/api/phone/voice-client-error',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({code,message:msg,detail:detail?.message||String(detail||'')})})}catch(e){}state(msg,'error')}
-async function ensureMicReady(){if(!navigator.mediaDevices?.getUserMedia)throw Object.assign(new Error('WebRTC microphone capture is not supported in this browser.'),{voiceCode:'WEBRTC_UNSUPPORTED'});try{let stream=await navigator.mediaDevices.getUserMedia({audio:true});stream.getTracks().forEach(t=>t.stop())}catch(e){throw Object.assign(e,{voiceCode:e.name==='NotAllowedError'||e.name==='SecurityError'?'MICROPHONE_BLOCKED':'MICROPHONE_FAILED'})}}
-async function readVoiceToken(){let key=localStorage.getItem('luxitPwaDeviceKey')||'';let url='/api/phone/voice-token'+(key?'?device_key='+encodeURIComponent(key):'');let res=await fetch(url,{credentials:'same-origin',headers:{'Accept':'application/json','X-PWA-Device-Key':key}});let ct=res.headers.get('content-type')||'';if(!ct.includes('application/json'))throw Object.assign(new Error(`Voice token endpoint returned ${res.status} ${ct||'non-JSON response'}.`),{voiceCode:'TOKEN_ENDPOINT_FAILED'});let body=await res.json();if(!res.ok||!body.success){let err=new Error(body.error||`Voice token endpoint failed (${res.status}).`);err.voiceCode=body.code||'TOKEN_ENDPOINT_FAILED';throw err}return body}
-async function initVoice(){try{let Device=voiceSdkCtor();if(!Device){voiceError('SDK_MISSING','Calling SDK failed to load. Refresh the page or check your network connection.');return}if(location.protocol!=='https:'&&!['localhost','127.0.0.1'].includes(location.hostname)){voiceError('HTTPS_REQUIRED','Browser calling requires HTTPS.');return}let body=await readVoiceToken();if(!body.calling_number){voiceError('NO_ASSIGNED_NUMBER','No calling number assigned');return}await ensureMicReady();if(voiceDevice?.unregister)try{voiceDevice.unregister()}catch(e){}voiceDevice=new Device(body.token,{logLevel:1,codecPreferences:['opus','pcmu']});voiceDevice.on('registered',()=>state(`Browser phone registered for ${body.calling_number}`,'ok'));voiceDevice.on('unregistered',()=>state('Browser phone unregistered'));voiceDevice.on('error',e=>voiceError('TWILIO_REGISTRATION_FAILED','Twilio registration failed: '+(e.message||'Unknown error'),e));voiceDevice.on('incoming',call=>{let params=call.customParameters;showIncoming({call_id:params?.get('call_log_id'),from_number:params?.get('from_number'),caller_name:params?.get('caller_name')},call)});voiceDevice.on('tokenWillExpire',async()=>{try{let fresh=await readVoiceToken();await voiceDevice.updateToken(fresh.token)}catch(e){voiceError(e.voiceCode||'TOKEN_ENDPOINT_FAILED','Could not refresh voice token: '+e.message,e)}});state('Registering browser phone…');await voiceDevice.register()}catch(e){let code=e.voiceCode||'TWILIO_REGISTRATION_FAILED';let messages={SDK_MISSING:'Calling SDK failed to load. Refresh the page or check your network connection.',TOKEN_ENDPOINT_FAILED:'Could not reach the voice token endpoint. Please sign in again or contact support.',MICROPHONE_BLOCKED:'Microphone permission is blocked. Allow microphone access to use browser calling.',MICROPHONE_FAILED:'Microphone is unavailable. Check your browser audio settings.',WEBRTC_UNSUPPORTED:'WebRTC calling is not supported in this browser.',NO_ASSIGNED_NUMBER:'No calling number assigned',TWILIO_REGISTRATION_FAILED:'Twilio registration failed: '+e.message};voiceError(code,messages[code]||('Voice setup failed: '+e.message),e)}}window.addEventListener('beforeunload',()=>{try{voiceDevice?.unregister()}catch(e){}});
-try{let es=new EventSource('/api/inbox/stream');es.onmessage=e=>{let d=JSON.parse(e.data);if(d.type==='incoming_call')showIncoming(d)}}catch(e){}window.addEventListener('load',()=>setTimeout(initVoice,200));document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active',t.dataset.tab===active));load();loadSettings();if(location.pathname.endsWith('/settings'))settings.classList.add('show');if(location.pathname.includes('/voicemail'))active='voicemail';
+'use strict';
+
+const __p = new URLSearchParams(window.location.search);
+const qs = (id) => document.getElementById(id);
+const activeFromPath = window.location.pathname.includes('/voicemail') ? 'voicemail' : null;
+let active = activeFromPath || __p.get('tab') || 'all';
+
+const els = {
+  pageTitle: qs('pageTitle'),
+  voiceState: qs('voiceState'),
+  enableVoice: qs('enableVoice'),
+  wifiCallingPanel: qs('wifiCallingPanel'),
+  callerId: qs('callerId'),
+  dialNumber: qs('dialNumber'),
+  micStatus: qs('micStatus'),
+  settings: qs('settings'),
+  tabs: qs('tabs'),
+  list: qs('list'),
+  incoming: qs('incoming'),
+  incomingMode: qs('incomingMode'),
+  incomingName: qs('incomingName'),
+  incomingNumber: qs('incomingNumber')
+};
+
+const voice = {
+  device: null,
+  registered: false,
+  initPromise: null,
+  pendingCall: null,
+  activeCall: null,
+  pendingCallLogId: null,
+  muted: false,
+  eventSource: null,
+  lastIncomingKey: null,
+  actionPending: false
+};
+
+function applyPalette(name) {
+  const palette = name || localStorage.getItem('luxitPwaPalette') || 'lux';
+  document.documentElement.dataset.palette = palette === 'lux' ? '' : palette;
+  localStorage.setItem('luxitPwaPalette', palette);
+}
+applyPalette('{{ user.pwa_palette_id or "lux" }}');
+
+function state(message, className = '') {
+  els.voiceState.textContent = message;
+  els.voiceState.className = `voice-state ${className}`.trim();
+}
+
+function setEnableState({disabled = false, label = null} = {}) {
+  els.enableVoice.disabled = disabled;
+  if (label) els.enableVoice.textContent = label;
+}
+
+function fmtDur(seconds) {
+  const value = Number(seconds || 0);
+  return value ? `${Math.floor(value / 60)}:${String(value % 60).padStart(2, '0')}` : '—';
+}
+
+function callIcon(call) {
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('width', '18');
+  svg.setAttribute('height', '18');
+  svg.setAttribute('viewBox', '0 0 24 24');
+  svg.setAttribute('fill', 'none');
+  svg.setAttribute('stroke', 'currentColor');
+  svg.setAttribute('stroke-width', '2');
+  svg.setAttribute('stroke-linecap', 'round');
+  svg.setAttribute('stroke-linejoin', 'round');
+
+  const add = (tag, attrs) => {
+    const node = document.createElementNS('http://www.w3.org/2000/svg', tag);
+    Object.entries(attrs).forEach(([key, value]) => node.setAttribute(key, value));
+    svg.appendChild(node);
+  };
+
+  if (['missed', 'no-answer', 'declined'].includes(call.status)) {
+    add('path', {d: 'M22 2 11 13'}); add('path', {d: 'M22 2h-7'}); add('path', {d: 'M22 2v7'}); add('path', {d: 'M5 12a7 7 0 0 0 7 7'});
+  } else if (call.status === 'voicemail') {
+    add('circle', {cx: '5.5', cy: '12.5', r: '3.5'}); add('circle', {cx: '18.5', cy: '12.5', r: '3.5'}); add('path', {d: 'M5.5 16h13'});
+  } else if (call.status === 'forwarded' || call.forwarded_to_number) {
+    add('polyline', {points: '15 17 20 12 15 7'}); add('path', {d: 'M4 18v-2a4 4 0 0 1 4-4h12'});
+  } else if (call.direction === 'outbound') {
+    add('path', {d: 'M7 17 17 7'}); add('path', {d: 'M7 7h10v10'});
+  } else {
+    add('path', {d: 'M17 7 7 17'}); add('path', {d: 'M17 17H7V7'});
+  }
+  return svg;
+}
+
+function safeExternalUrl(value) {
+  if (!value) return null;
+  try {
+    const url = new URL(value, window.location.origin);
+    if (url.origin === window.location.origin || url.protocol === 'https:') return url.href;
+  } catch (_) {}
+  return null;
+}
+
+function csrfToken() {
+  const meta = document.querySelector('meta[name="csrf-token"]');
+  if (meta?.content) return meta.content;
+  const input = document.querySelector('input[name="csrf_token"]');
+  return input?.value || '';
+}
+
+async function apiFetch(url, options = {}) {
+  const headers = new Headers(options.headers || {});
+  headers.set('Accept', 'application/json');
+  const token = csrfToken();
+  if (token && !['GET', 'HEAD'].includes((options.method || 'GET').toUpperCase())) headers.set('X-CSRFToken', token);
+
+  const response = await fetch(url, {...options, credentials: 'same-origin', headers});
+  const type = response.headers.get('content-type') || '';
+  let body = null;
+  if (type.includes('application/json')) body = await response.json();
+  if (!response.ok) {
+    const error = new Error(body?.error || body?.message || `Request failed (${response.status}).`);
+    error.status = response.status;
+    error.code = body?.code || (response.status === 401 ? 'SESSION_EXPIRED' : 'REQUEST_FAILED');
+    throw error;
+  }
+  return body;
+}
+
+function button(label, className, handler) {
+  const el = document.createElement('button');
+  el.type = 'button';
+  el.className = className;
+  el.textContent = label;
+  el.addEventListener('click', handler);
+  return el;
+}
+
+function link(label, className, href, attrs = {}) {
+  const el = document.createElement('a');
+  el.className = className;
+  el.textContent = label;
+  el.href = href;
+  Object.entries(attrs).forEach(([key, value]) => el.setAttribute(key, value));
+  return el;
+}
+
+function render(calls) {
+  els.pageTitle.textContent = active === 'voicemail' ? 'Voicemail' : 'Recents';
+  els.list.replaceChildren();
+  if (!calls.length) {
+    const empty = document.createElement('div');
+    empty.className = 'empty pwa-card';
+    empty.textContent = 'No calls yet.';
+    els.list.appendChild(empty);
+    return;
+  }
+
+  calls.forEach((call) => {
+    const status = String(call.status || 'ringing').replace('no-answer', 'missed');
+    const card = document.createElement('div');
+    card.className = 'card pwa-card';
+
+    const row = document.createElement('div'); row.className = 'row';
+    const avatar = document.createElement('div'); avatar.className = 'avatar'; avatar.appendChild(callIcon(call));
+    const meta = document.createElement('div'); meta.className = 'meta';
+    const name = document.createElement('div'); name.className = 'name'; name.textContent = call.caller_name || call.from_number || 'Unknown';
+    const number = document.createElement('div'); number.className = 'num'; number.textContent = `${call.from_number || ''} → ${call.to_number || ''}`;
+    const detail = document.createElement('div'); detail.className = 'small';
+    const created = call.created_at ? new Date(call.created_at) : null;
+    const createdText = created && !Number.isNaN(created.getTime()) ? created.toLocaleString() : 'Unknown time';
+    detail.textContent = `${createdText} · ${fmtDur(call.duration_seconds)}${call.forwarded_to_number ? ` · forwarded to ${call.forwarded_to_number}` : ''}`;
+    meta.append(name, number, detail);
+    const badge = document.createElement('span'); badge.className = `badge ${status}`; badge.textContent = status;
+    row.append(avatar, meta, badge); card.appendChild(row);
+
+    if (call.transcription_text) {
+      const transcript = document.createElement('div'); transcript.className = 'transcript'; transcript.textContent = String(call.transcription_text).slice(0, 180); card.appendChild(transcript);
+    }
+
+    const actions = document.createElement('div'); actions.className = 'actions';
+    const callbackTarget = call.callback_target || call.from_number || '';
+    if (callbackTarget) {
+      actions.appendChild(button('Call with LUXit', 'btn primary', () => {
+        els.dialNumber.value = callbackTarget;
+        placeWifiCall();
+      }));
+      actions.appendChild(link('Text from device', 'btn', `sms:${encodeURIComponent(callbackTarget)}`));
+    }
+
+    if (call.voicemail_exists) {
+      const audioId = `vm-${call.id}`;
+      actions.appendChild(button('Play Voicemail', 'btn primary', () => playVoicemail(call.id)));
+      actions.appendChild(button('Transcript', 'btn', () => window.alert(call.transcription_text || 'No transcript yet')));
+      actions.appendChild(link('Download', 'btn', `/api/calls/${encodeURIComponent(call.id)}/voicemail/audio`, {download: ''}));
+      const audio = document.createElement('audio'); audio.id = audioId; audio.className = 'voicemail-player'; audio.preload = 'none'; audio.controls = true; audio.src = `/api/calls/${encodeURIComponent(call.id)}/voicemail/audio`; actions.appendChild(audio);
+    } else if (call.recording_url) {
+      const recording = safeExternalUrl(call.recording_url);
+      if (recording) actions.appendChild(link('Call Recording', 'btn', recording, {target: '_blank', rel: 'noopener noreferrer'}));
+    }
+
+    actions.appendChild(button(call.is_read ? 'Mark unread' : 'Mark read', 'btn', () => markRead(call.id, !call.is_read)));
+    actions.appendChild(button('Archive', 'btn', () => archiveCall(call.id)));
+    card.appendChild(actions);
+    els.list.appendChild(card);
+  });
+}
+
+async function load() {
+  els.list.innerHTML = '<div class="empty pwa-card">Loading calls…</div>';
+  try {
+    const body = await apiFetch(`/api/calls/recent?tab=${encodeURIComponent(active)}`);
+    render(body?.calls || []);
+  } catch (error) {
+    els.list.replaceChildren();
+    const box = document.createElement('div'); box.className = 'empty pwa-card error'; box.textContent = `Could not load calls: ${error.message}`;
+    els.list.appendChild(box);
+  }
+}
+
+async function markRead(id, read) {
+  try { await apiFetch(`/api/calls/${encodeURIComponent(id)}/${read ? 'mark-read' : 'mark-unread'}`, {method: 'POST'}); await load(); }
+  catch (error) { state(`Could not update call: ${error.message}`, 'error'); }
+}
+
+async function archiveCall(id) {
+  try { await apiFetch(`/api/calls/${encodeURIComponent(id)}/archive`, {method: 'POST'}); await load(); }
+  catch (error) { state(`Could not archive call: ${error.message}`, 'error'); }
+}
+
+function playVoicemail(id) {
+  const audio = qs(`vm-${id}`);
+  if (audio) audio.paused ? audio.play().catch(() => {}) : audio.pause();
+}
+
+function toggleSettings() { els.settings.classList.toggle('show'); }
+
+async function loadSettings() {
+  try {
+    const body = await apiFetch('/api/phone/settings');
+    const settings = body?.settings || {};
+    Object.keys(settings).forEach((key) => {
+      const el = qs(key); if (!el) return;
+      if (el.type === 'checkbox') el.checked = Boolean(settings[key]);
+      else el.value = settings[key] ?? '';
+    });
+  } catch (error) { state(`Could not load phone settings: ${error.message}`, 'error'); }
+}
+
+async function saveSettings() {
+  const data = {};
+  document.querySelectorAll('#settings input,#settings textarea,#settings select').forEach((el) => {
+    data[el.id] = el.type === 'checkbox' ? el.checked : el.value;
+  });
+  try { await apiFetch('/api/phone/settings', {method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(data)}); state('Phone settings saved.', 'ok'); }
+  catch (error) { state(`Could not save settings: ${error.message}`, 'error'); }
+}
+
+function previewGreeting() {
+  const text = qs('greeting_text')?.value?.trim();
+  state(text ? 'Greeting text is ready to save. Audio preview requires a configured preview endpoint.' : 'Enter greeting text first.', text ? '' : 'error');
+}
+
+async function saveGreeting() {
+  const numberId = els.callerId.value;
+  if (!numberId) { state('Select an authorized phone number before saving a greeting.', 'error'); return; }
+  const body = {name: qs('greeting_name').value || 'Voicemail greeting', greeting_type: qs('greeting_type').value, text_body: qs('greeting_text').value, is_active: true};
+  try { await apiFetch(`/api/phone/numbers/${encodeURIComponent(numberId)}/greetings`, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)}); state('Greeting saved.', 'ok'); }
+  catch (error) { state(`Could not save greeting: ${error.message}`, 'error'); }
+}
+
+function callIdFromInvite(call) {
+  try { return call?.customParameters?.get('call_log_id') || call?.parameters?.call_log_id || voice.pendingCallLogId; }
+  catch (_) { return voice.pendingCallLogId; }
+}
+
+function incomingKey(data, call) { return data.call_id || callIdFromInvite(call) || data.call_sid || `${data.from_number || ''}:${data.to_number || ''}`; }
+
+function showIncoming(data, call = null) {
+  const key = incomingKey(data, call);
+  if (key && voice.lastIncomingKey === key && !call) return;
+  voice.lastIncomingKey = key;
+  if (call) voice.pendingCall = call;
+  voice.pendingCallLogId = data.call_id || callIdFromInvite(call);
+  els.incomingMode.textContent = call ? 'Incoming browser call' : 'Incoming call notification';
+  els.incomingName.textContent = data.caller_name || data.from_number || 'Unknown caller';
+  els.incomingNumber.textContent = data.from_number || '';
+  els.incoming.classList.add('show');
+  els.incoming.setAttribute('aria-hidden', 'false');
+  load();
+}
+
+function hideIncoming() { els.incoming.classList.remove('show'); els.incoming.setAttribute('aria-hidden', 'true'); }
+
+async function markCall(action, callRef = null) {
+  const id = callIdFromInvite(callRef || voice.pendingCall || voice.activeCall);
+  if (!id) return;
+  await apiFetch(`/api/calls/${encodeURIComponent(id)}/${encodeURIComponent(action)}`, {method: 'POST'});
+}
+
+function resetCallState(message = 'Ready', className = 'ok') {
+  voice.pendingCall = null; voice.activeCall = null; voice.pendingCallLogId = null; voice.muted = false; voice.actionPending = false; hideIncoming(); state(message, className); load();
+}
+
+function bindCallEvents(call) {
+  if (!call?.on) return;
+  call.on('accept', () => state('Call connected', 'ok'));
+  call.on('disconnect', () => resetCallState('Call ended'));
+  call.on('cancel', () => resetCallState('Caller canceled'));
+  call.on('reject', () => resetCallState('Call declined'));
+  call.on('error', (error) => { voiceError('CALL_FAILED', `Call error: ${error.message || 'Unknown error'}`, error); resetCallState('Call failed', 'error'); });
+}
+
+async function acceptIncoming() {
+  if (voice.actionPending) return;
+  const call = voice.pendingCall;
+  if (!call) { state('This notification is not an active browser call.', 'error'); return; }
+  voice.actionPending = true;
+  try {
+    await ensureMicReady();
+    call.accept();
+    voice.activeCall = call;
+    voice.pendingCall = null;
+    await markCall('accept', call);
+    hideIncoming();
+    state('Call connected', 'ok');
+  } catch (error) { voiceError(error.voiceCode || 'CALL_FAILED', `Could not answer: ${error.message}`, error); }
+  finally { voice.actionPending = false; }
+}
+
+async function declineIncoming() {
+  if (voice.actionPending) return;
+  const call = voice.pendingCall;
+  voice.actionPending = true;
+  try { if (call?.reject) call.reject(); await markCall('decline', call); resetCallState('Call declined'); }
+  catch (error) { voiceError('CALL_FAILED', `Could not decline call: ${error.message}`, error); }
+}
+
+async function sendIncomingToVoicemail() {
+  if (voice.actionPending) return;
+  const call = voice.pendingCall;
+  voice.actionPending = true;
+  try { if (call?.reject) call.reject(); await markCall('voicemail', call); resetCallState('Sent to voicemail'); }
+  catch (error) { voiceError('CALL_FAILED', `Could not send to voicemail: ${error.message}`, error); }
+}
+
+async function endCall() {
+  const call = voice.activeCall || voice.pendingCall;
+  if (!call) { state('No active call.'); return; }
+  try { if (voice.activeCall?.disconnect) voice.activeCall.disconnect(); else if (voice.pendingCall?.reject) voice.pendingCall.reject(); await markCall('end', call); resetCallState('Call ended'); }
+  catch (error) { voiceError('CALL_FAILED', `Could not end call: ${error.message}`, error); }
+}
+
+function toggleMute() {
+  if (!voice.activeCall?.mute) { state('No connected call to mute.', 'error'); return; }
+  voice.muted = !voice.muted;
+  voice.activeCall.mute(voice.muted);
+  state(voice.muted ? 'Call muted' : 'Call unmuted', 'ok');
+}
+
+function voiceSdkCtor() { return window.Twilio?.Device || window.Twilio?.Voice?.Device || null; }
+
+async function loadCallerIds() {
+  const previous = els.callerId.value;
+  els.callerId.replaceChildren();
+  try {
+    const data = await apiFetch('/api/phone/numbers');
+    const numbers = (data?.numbers || []).filter((number) => number.is_active !== false && number.browser_calling_enabled !== false);
+    numbers.forEach((number) => {
+      const option = document.createElement('option'); option.value = String(number.id); option.textContent = `${number.friendly_name || number.phone_number} — ${number.phone_number}`; els.callerId.appendChild(option);
+    });
+    if (!numbers.length) {
+      const option = document.createElement('option'); option.value = ''; option.textContent = 'No authorized voice line'; els.callerId.appendChild(option); setEnableState({disabled: true, label: 'No Voice Line Available'});
+    } else {
+      if (numbers.some((number) => String(number.id) === previous)) els.callerId.value = previous;
+      setEnableState({disabled: false, label: voice.registered ? 'Wi-Fi Calling Enabled' : 'Enable Wi-Fi Calling'});
+    }
+  } catch (error) { const option = document.createElement('option'); option.value = ''; option.textContent = 'Unable to load voice lines'; els.callerId.appendChild(option); setEnableState({disabled: true}); state(`Offline — ${error.message}`, 'error'); }
+}
+
+async function ensureMicReady() {
+  if (!navigator.mediaDevices?.getUserMedia) throw Object.assign(new Error('WebRTC microphone capture is not supported in this browser.'), {voiceCode: 'WEBRTC_UNSUPPORTED'});
+  try { const stream = await navigator.mediaDevices.getUserMedia({audio: true}); stream.getTracks().forEach((track) => track.stop()); }
+  catch (error) { throw Object.assign(error, {voiceCode: ['NotAllowedError', 'SecurityError'].includes(error.name) ? 'MICROPHONE_BLOCKED' : 'MICROPHONE_FAILED'}); }
+}
+
+async function readVoiceToken() {
+  const key = localStorage.getItem('luxitPwaDeviceKey') || '';
+  const url = `/api/phone/voice-token${key ? `?device_key=${encodeURIComponent(key)}` : ''}`;
+  const response = await fetch(url, {credentials: 'same-origin', headers: {'Accept': 'application/json', 'X-PWA-Device-Key': key}});
+  const type = response.headers.get('content-type') || '';
+  if (!type.includes('application/json')) throw Object.assign(new Error(`Voice token endpoint returned ${response.status} ${type || 'non-JSON response'}.`), {voiceCode: 'TOKEN_ENDPOINT_FAILED'});
+  const body = await response.json();
+  if (!response.ok || !body.success) {
+    const error = new Error(body.error || `Voice token endpoint failed (${response.status}).`);
+    error.voiceCode = body.code || (response.status === 401 ? 'SESSION_EXPIRED' : 'TOKEN_ENDPOINT_FAILED');
+    throw error;
+  }
+  return body;
+}
+
+function voiceError(code, message, detail) {
+  console.error('Browser voice setup failed', code, detail?.message || message);
+  const safeMessage = String(message || '').slice(0, 500);
+  apiFetch('/api/phone/voice-client-error', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({code: String(code || 'UNKNOWN').slice(0, 80), message: safeMessage, detail: String(detail?.message || '').slice(0, 500)})}).catch(() => {});
+  state(safeMessage, 'error');
+}
+
+async function initVoice() {
+  if (voice.registered && voice.device) return voice.device;
+  if (voice.initPromise) return voice.initPromise;
+  voice.initPromise = (async () => {
+    try {
+      const Device = voiceSdkCtor();
+      if (!Device) throw Object.assign(new Error('Calling SDK failed to load. Refresh the page or check your network connection.'), {voiceCode: 'SDK_MISSING'});
+      if (location.protocol !== 'https:' && !['localhost', '127.0.0.1'].includes(location.hostname)) throw Object.assign(new Error('Browser calling requires HTTPS.'), {voiceCode: 'HTTPS_REQUIRED'});
+      if (!els.callerId.value) throw Object.assign(new Error('No authorized calling number is available.'), {voiceCode: 'NO_ASSIGNED_NUMBER'});
+
+      setEnableState({disabled: true, label: 'Requesting Permission…'});
+      state('Requesting microphone permission…');
+      await ensureMicReady();
+      els.micStatus.textContent = 'Microphone permission granted.';
+
+      state('Requesting secure voice token…');
+      const body = await readVoiceToken();
+      if (!body.calling_number) throw Object.assign(new Error('No calling number assigned.'), {voiceCode: 'NO_ASSIGNED_NUMBER'});
+
+      if (voice.device?.unregister) { try { voice.device.unregister(); } catch (_) {} }
+      voice.device = new Device(body.token, {logLevel: 1, codecPreferences: ['opus', 'pcmu']});
+      voice.device.on('registered', () => { voice.registered = true; setEnableState({disabled: true, label: 'Wi-Fi Calling Enabled'}); state(`Browser phone registered for ${body.calling_number}`, 'ok'); });
+      voice.device.on('unregistered', () => { voice.registered = false; setEnableState({disabled: false, label: 'Enable Wi-Fi Calling'}); state('Browser phone unregistered'); });
+      voice.device.on('error', (error) => voiceError('TWILIO_REGISTRATION_FAILED', `Twilio registration failed: ${error.message || 'Unknown error'}`, error));
+      voice.device.on('incoming', (call) => {
+        const params = call.customParameters;
+        bindCallEvents(call);
+        showIncoming({call_id: params?.get('call_log_id'), call_sid: params?.get('call_sid'), from_number: params?.get('from_number'), caller_name: params?.get('caller_name')}, call);
+      });
+      voice.device.on('tokenWillExpire', async () => { try { const fresh = await readVoiceToken(); await voice.device.updateToken(fresh.token); } catch (error) { voiceError(error.voiceCode || 'TOKEN_ENDPOINT_FAILED', `Could not refresh voice token: ${error.message}`, error); } });
+
+      state('Registering browser phone…');
+      await voice.device.register();
+      return voice.device;
+    } catch (error) {
+      const code = error.voiceCode || 'TWILIO_REGISTRATION_FAILED';
+      const messages = {
+        SDK_MISSING: 'Calling SDK failed to load. Refresh the page or check your network connection.',
+        HTTPS_REQUIRED: 'Browser calling requires HTTPS.',
+        SESSION_EXPIRED: 'Your session expired. Sign in again.',
+        DEVICE_KEY_REQUIRED: 'Register this device before enabling Wi-Fi Calling.',
+        DEVICE_NOT_FOUND: 'This browser is not registered as an approved device.',
+        DEVICE_NOT_APPROVED: 'This device is awaiting administrator approval.',
+        DEVICE_DISABLED: 'This device has been disabled.',
+        DEVICE_USER_MISMATCH: 'This device belongs to a different user.',
+        DEVICE_TENANT_MISMATCH: 'This device belongs to a different company.',
+        TOKEN_ENDPOINT_FAILED: 'Could not reach the voice token endpoint. Please sign in again or contact support.',
+        MICROPHONE_BLOCKED: 'Microphone permission is blocked. Allow microphone access to use browser calling.',
+        MICROPHONE_FAILED: 'Microphone is unavailable. Check your browser audio settings.',
+        WEBRTC_UNSUPPORTED: 'WebRTC calling is not supported in this browser.',
+        NO_ASSIGNED_NUMBER: 'No authorized calling number is assigned.',
+        TWILIO_REGISTRATION_FAILED: `Twilio registration failed: ${error.message}`
+      };
+      els.micStatus.textContent = ['MICROPHONE_BLOCKED', 'MICROPHONE_FAILED'].includes(code) ? 'Permission Required — allow microphone access in browser settings.' : 'Microphone permission is requested only when you enable calling or place/answer a call.';
+      setEnableState({disabled: false, label: 'Enable Wi-Fi Calling'});
+      voiceError(code, messages[code] || `Voice setup failed: ${error.message}`, error);
+      throw error;
+    } finally { voice.initPromise = null; }
+  })();
+  return voice.initPromise;
+}
+
+async function enableWifiCalling() { try { await initVoice(); } catch (_) {} }
+
+async function placeWifiCall() {
+  const destination = els.dialNumber.value.trim();
+  if (!destination) { state('Enter a phone number.', 'error'); return; }
+  if (!els.callerId.value) { state('Select an authorized company caller ID.', 'error'); return; }
+  if (voice.activeCall) { state('A call is already active.', 'error'); return; }
+  try {
+    const device = await initVoice();
+    state(`Connecting to ${destination}…`);
+    const call = await device.connect({params: {To: destination, phone_number_id: els.callerId.value}});
+    voice.activeCall = call;
+    voice.muted = false;
+    bindCallEvents(call);
+  } catch (error) { voiceError(error.voiceCode || 'CALL_FAILED', `Call failed: ${error.message}`, error); }
+}
+
+function connectInboxStream() {
+  if (!window.EventSource) return;
+  voice.eventSource = new EventSource('/api/inbox/stream');
+  voice.eventSource.onmessage = (event) => {
+    try { const data = JSON.parse(event.data); if (data.type === 'incoming_call') showIncoming(data); }
+    catch (error) { console.warn('Invalid inbox stream event', error); }
+  };
+  voice.eventSource.onerror = () => { if (!voice.registered) state('Notification stream reconnecting…'); };
+}
+
+function cleanupVoice() {
+  try { voice.eventSource?.close(); } catch (_) {}
+  try { voice.device?.unregister(); } catch (_) {}
+}
+
+els.tabs.addEventListener('click', (event) => {
+  const tab = event.target.closest('[data-tab]');
+  if (!tab) return;
+  document.querySelectorAll('.tab').forEach((item) => { item.classList.toggle('active', item === tab); item.setAttribute('aria-selected', item === tab ? 'true' : 'false'); });
+  active = tab.dataset.tab;
+  load();
+});
+
+document.querySelectorAll('.tab').forEach((tab) => {
+  const selected = tab.dataset.tab === active;
+  tab.classList.toggle('active', selected);
+  tab.setAttribute('role', 'tab');
+  tab.setAttribute('aria-selected', selected ? 'true' : 'false');
+});
+els.tabs.setAttribute('role', 'tablist');
+els.voiceState.setAttribute('aria-live', 'polite');
+els.incoming.setAttribute('role', 'dialog');
+els.incoming.setAttribute('aria-modal', 'true');
+els.incoming.setAttribute('aria-hidden', 'true');
+
+window.addEventListener('load', () => {
+  loadCallerIds();
+  if (__p.get('setup') === '1') state('Permission Required — press Enable Wi-Fi Calling.');
+});
+window.addEventListener('pagehide', cleanupVoice);
+
+connectInboxStream();
+load();
+loadSettings();
+if (window.location.pathname.endsWith('/settings')) els.settings.classList.add('show');
 </script>
 </body>
 </html>

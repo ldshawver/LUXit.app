@@ -39,18 +39,23 @@ logger = logging.getLogger(__name__)
 inbox_pwa_bp = Blueprint("inbox_pwa", __name__)
 
 
-@inbox_pwa_bp.route("/sw.js")
-def pwa_service_worker():
-    """Serve the worker at the origin root so it can control ``/app``.
+@inbox_pwa.route("/sw.js")
+def service_worker():
+    """Serve the worker at the origin root so it can control ``/app/*``.
 
-    A worker served from ``/static/sw.js`` is scoped to ``/static`` unless a
-    reverse proxy adds Service-Worker-Allowed.  Serving this stable entrypoint
-    from the application avoids relying on proxy-specific headers and lets a
-    newly installed worker replace obsolete PWA workers safely.
+    A worker served from ``/static/sw.js`` is normally scoped to ``/static``.
+    Serving the worker through this stable root-level application endpoint
+    allows it to control the PWA routes without relying on reverse-proxy-
+    specific routing behavior and lets updated workers replace obsolete
+    installations safely.
     """
-    response = send_from_directory(current_app.static_folder, "sw.js")
+    response = current_app.send_static_file("sw.js")
     response.headers["Service-Worker-Allowed"] = "/"
-    response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    response.headers["Cache-Control"] = (
+        "no-cache, no-store, must-revalidate"
+    )
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
     return response
 
 
@@ -2562,6 +2567,9 @@ def pwa_push_debug():
             "id": sub.id,
             "device_key": sub.device_key,
             "is_active": sub.is_active,
+            # A short suffix lets the browser reconcile its own subscription
+            # without returning the complete capability URL.
+            "endpoint_tail": (sub.endpoint or "")[-18:],
             "created_at": sub.created_at.isoformat() if sub.created_at else None,
             "updated_at": sub.updated_at.isoformat() if sub.updated_at else None,
             "last_successful_registration_attempt_at": sub.updated_at.isoformat() if sub.updated_at else None,

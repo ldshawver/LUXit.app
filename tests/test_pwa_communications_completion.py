@@ -1014,6 +1014,25 @@ def test_push_subscribe_is_idempotent_per_endpoint_and_device(pwa_app):
         assert rows[0].p256dh == "rotated-key"
 
 
+def test_root_scoped_service_worker_and_wifi_calling_controls(pwa_app):
+    _app, client, ids = pwa_app
+    login(client, ids["staff"])
+    worker = client.get("/sw.js")
+    assert worker.status_code == 200
+    assert worker.headers["Service-Worker-Allowed"] == "/"
+    assert "no-store" in worker.headers["Cache-Control"]
+
+    inbox = client.get("/app/inbox").get_data(as_text=True)
+    calls = client.get("/app/calls").get_data(as_text=True)
+    assert "/sw.js?v=" in inbox
+    assert "Browser-based — coming soon" not in inbox
+    assert "Enable Wi-Fi Calling" in calls
+    assert 'id="dialPad"' in calls
+    assert 'id="callerId"' in calls
+    assert "placeWifiCall" in calls
+    assert "carrier's Wi-Fi Calling setting" in calls
+
+
 def test_push_subscribe_and_debug_accept_flask_login_session(pwa_app):
     """Communications Hub fetches must use the canonical Flask-Login session."""
     _app, client, ids = pwa_app
