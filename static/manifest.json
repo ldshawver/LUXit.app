@@ -3,6 +3,7 @@
   "short_name": "LUXit",
   "description": "LUXit SMS Inbox — manage customer conversations on the go",
   "start_url": "/app/inbox",
+  "scope": "/app/",
   "display": "standalone",
   "background_color": "#000000",
   "theme_color": "#7c3aed",
