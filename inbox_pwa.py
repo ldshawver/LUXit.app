@@ -29,13 +29,29 @@ from datetime import datetime, timezone
 from urllib.parse import quote, urlparse
 
 from flask import (Blueprint, Response, abort, current_app, g, jsonify,
-                   render_template, request, session, stream_with_context)
+                   render_template, request, send_from_directory, session,
+                   stream_with_context)
 
 from extensions import db
 
 logger = logging.getLogger(__name__)
 
 inbox_pwa_bp = Blueprint("inbox_pwa", __name__)
+
+
+@inbox_pwa_bp.route("/sw.js")
+def pwa_service_worker():
+    """Serve the worker at the origin root so it can control ``/app``.
+
+    A worker served from ``/static/sw.js`` is scoped to ``/static`` unless a
+    reverse proxy adds Service-Worker-Allowed.  Serving this stable entrypoint
+    from the application avoids relying on proxy-specific headers and lets a
+    newly installed worker replace obsolete PWA workers safely.
+    """
+    response = send_from_directory(current_app.static_folder, "sw.js")
+    response.headers["Service-Worker-Allowed"] = "/"
+    response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    return response
 
 
 @inbox_pwa_bp.before_request
@@ -102,7 +118,14 @@ def _lookup_contact_display(company_id, phone_number, current_name=None):
 
 def _refresh_conversation_contact_name(conv):
     info = _lookup_contact_display(conv.company_id, conv.from_number, conv.contact_name)
-    resolved = info.get("name") or conv.from_number
+    # A persisted operator/contact name is canonical display data.  Do not
+    # replace it with the resolver's "Name needed" placeholder when no richer
+    # CRM identity exists (which also made list results order-dependent in
+    # tests and caused a visible name to disappear after a refresh).
+    resolved_name = info.get("name")
+    if resolved_name == "Name needed" and conv.contact_name and not _name_is_phone_number(conv.contact_name, conv.from_number):
+        resolved_name = conv.contact_name
+    resolved = resolved_name or conv.contact_name or conv.from_number
     changed = False
     if info.get("contact_id") and conv.contact_id != info["contact_id"]:
         conv.contact_id = info["contact_id"]
@@ -1493,8 +1516,18 @@ def api_phone_voice_token():
     try:
         from twilio.jwt.access_token import AccessToken
         from twilio.jwt.access_token.grants import VoiceGrant
+        from models import PWADevice
         from services.phone_identity import pwa_voice_identity
-        identity = pwa_voice_identity(company.id)
+        device_key = (request.args.get("device_key") or request.headers.get("X-PWA-Device-Key") or "").strip()
+        device = None
+        if device_key:
+            device = PWADevice.query.filter_by(
+                company_id=company.id, user_id=user.id, device_key=device_key,
+                approved_status="approved", lifecycle_status="active",
+            ).first()
+            if not device:
+                return jsonify({"success": False, "code": "DEVICE_NOT_REGISTERED", "error": "Register and approve this device before enabling Wi-Fi Calling."}), 403
+        identity = pwa_voice_identity(company.id, user.id, device_key) if device else pwa_voice_identity(company.id)
         token = AccessToken(account_sid, api_key, api_secret, identity=identity)
         token.add_grant(VoiceGrant(
             incoming_allow=True,
@@ -1508,6 +1541,7 @@ def api_phone_voice_token():
             "company_id": company.id,
             "calling_number": allowed_numbers[0],
             "permitted_numbers": allowed_numbers,
+            "device_key": device_key or None,
         })
     except Exception as exc:
         logger.exception("Unable to issue Twilio Voice token", extra={"user_id": user.id, "company_id": company.id})

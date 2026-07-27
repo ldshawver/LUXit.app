@@ -1933,9 +1933,10 @@ def _inbound_call_impl():
     else:
         route = number_route or settings_route
     configured_call_forward_to = getattr(ta, "call_forwarding_number", None) or getattr(ta, "call_forward_to", None)
+    settings_forward_to = ((settings.forward_number if in_hours else settings.after_hours_forward_number) if settings else None)
     forward_to = (
-        (configured_call_forward_to if pn else None)
-        or ((settings.forward_number if in_hours else settings.after_hours_forward_number) if settings else None)
+        (configured_call_forward_to if pn else settings_forward_to)
+        or settings_forward_to
         or configured_call_forward_to
     )
     fallback_to = ((settings.fallback_forward_number if in_hours else settings.after_hours_fallback_forward_number) if settings else None)
@@ -1966,10 +1967,10 @@ def _inbound_call_impl():
             f"</Response>"
         )
 
-    if in_hours and configured_call_forward_to and (ta.voice_forwarding_enabled or getattr(ta, "call_forwarding_enabled", False)):
+    if route == "forward" and forward_to and (settings_forward_to or ta.voice_forwarding_enabled or getattr(ta, "call_forwarding_enabled", False)):
         # Explicit per-line call forwarding wins over browser ringing. This
         # applies only to voice webhooks; SMS routing never reads these fields.
-        twiml = _dial_twiml(configured_call_forward_to)
+        twiml = _dial_twiml(forward_to, fallback_to)
     elif in_hours and (route in (None, "ring_pwa")):
         if log:
             log.status = "ringing"
@@ -1996,20 +1997,39 @@ def _inbound_call_impl():
         except Exception as exc:
             logger.debug("PWA incoming call event failed: %s", exc)
         caller_id = ta.from_phone or to_number
-        client_identity = _pwa_voice_identity(ta.company_id)
+        client_identities = []
+        try:
+            from models import PWADevice
+            from services.phone_identity import pwa_voice_identity
+            for device in PWADevice.query.filter_by(
+                company_id=ta.company_id,
+                approved_status="approved",
+                lifecycle_status="active",
+            ).all():
+                if device.phone_number_id and pn and device.phone_number_id != pn.id:
+                    continue
+                client_identities.append(pwa_voice_identity(ta.company_id, device.user_id, device.device_key))
+        except Exception:
+            logger.exception("Unable to resolve eligible PWA voice devices", extra={"company_id": ta.company_id})
+        if not client_identities:
+            client_identities = [_pwa_voice_identity(ta.company_id)]
         safe_from = html.escape(from_number or "", quote=True)
         safe_caller = html.escape(caller_name or from_number or "", quote=True)
         safe_caller_id = html.escape(caller_id or "", quote=True)
-        twiml = (
-            '<?xml version="1.0" encoding="UTF-8"?>\n'
-            '<Response>\n'
-            f'  <Dial callerId="{safe_caller_id}" timeout="{timeout}" action="/twilio/voice/no-answer?to={html.escape(to_number or "", quote=True)}" method="POST"{record_attr}>\n'
+        clients_twiml = "".join(
             '    <Client>\n'
-            f'      <Identity>{client_identity}</Identity>\n'
+            f'      <Identity>{identity}</Identity>\n'
             f'      <Parameter name="call_log_id" value="{log.id if log else ""}"/>\n'
             f'      <Parameter name="from_number" value="{safe_from}"/>\n'
             f'      <Parameter name="caller_name" value="{safe_caller}"/>\n'
             '    </Client>\n'
+            for identity in client_identities
+        )
+        twiml = (
+            '<?xml version="1.0" encoding="UTF-8"?>\n'
+            '<Response>\n'
+            f'  <Dial callerId="{safe_caller_id}" timeout="{timeout}" action="/twilio/voice/no-answer?to={html.escape(to_number or "", quote=True)}" method="POST"{record_attr}>\n'
+            f'{clients_twiml}'
             '  </Dial>\n'
             '</Response>'
         )
