@@ -38,6 +38,15 @@ logger = logging.getLogger(__name__)
 inbox_pwa_bp = Blueprint("inbox_pwa", __name__)
 
 
+@inbox_pwa_bp.route("/sw.js")
+def pwa_service_worker():
+    """Serve the worker at the origin root so it can control `/app/*`."""
+    response = current_app.send_static_file("sw.js")
+    response.headers["Service-Worker-Allowed"] = "/"
+    response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    return response
+
+
 @inbox_pwa_bp.before_request
 def _phone_pwa_license_gate():
     """Server-side feature gate for the licensed Phone/PWA Communications module."""
@@ -2528,6 +2537,9 @@ def pwa_push_debug():
             "id": sub.id,
             "device_key": sub.device_key,
             "is_active": sub.is_active,
+            # A short suffix lets the browser reconcile its own subscription
+            # without returning the complete capability URL.
+            "endpoint_tail": (sub.endpoint or "")[-18:],
             "created_at": sub.created_at.isoformat() if sub.created_at else None,
             "updated_at": sub.updated_at.isoformat() if sub.updated_at else None,
             "last_successful_registration_attempt_at": sub.updated_at.isoformat() if sub.updated_at else None,

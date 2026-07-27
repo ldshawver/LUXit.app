@@ -913,16 +913,16 @@
         <span class="pwa-toggle-track"></span>
       </label>
     </div>
-    <div class="settings-toggle-row" style="opacity:.5;pointer-events:none;">
+    <div class="settings-toggle-row">
       <div class="settings-toggle-label">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 6l11 7L23 6"/><rect x="1" y="4" width="22" height="16" rx="2"/></svg>
         <div>
           <span>VoIP / Wi-Fi calling</span>
-          <small>Browser-based — coming soon</small>
+          <small>Calls use this PWA's internet connection, not the carrier Wi-Fi Calling setting.</small>
         </div>
       </div>
       <label class="pwa-toggle">
-        <input type="checkbox" disabled>
+        <input type="checkbox" id="toggleWifiCalling" onchange="location.href=this.checked?'/app/calls?setup=1':'/app/inbox'">
         <span class="pwa-toggle-track"></span>
       </label>
     </div>
@@ -1410,7 +1410,7 @@ async function registerSW() {
   }
   setPushRegistrationState('service-worker-registering');
   try {
-    const reg = await navigator.serviceWorker.register(`/static/sw.js?v=${encodeURIComponent(PWA_VERSION)}`);
+    const reg = await navigator.serviceWorker.register(`/sw.js?v=${encodeURIComponent(PWA_VERSION)}`, {scope: '/'});
     setPushRegistrationState('service-worker-registered', { serviceWorkerScope: reg.scope });
     reg.update().then(() => setPushRegistrationState('service-worker-updated')).catch(e => setPushRegistrationFailure('service-worker-update-failed', e));
     return reg;
