@@ -17,7 +17,7 @@ def _identity_secret() -> str:
     )
 
 
-def pwa_voice_identity(company_id: int) -> str:
+def pwa_voice_identity(company_id: int, user_id: int | None = None, device_key: str | None = None) -> str:
     """Return a stable, tenant-scoped Twilio Client identity.
 
     Twilio Voice identities are visible to the browser, so the company id alone
@@ -25,6 +25,9 @@ def pwa_voice_identity(company_id: int) -> str:
     guessing another tenant's registered Client identity while staying under
     Twilio's identity length limits.
     """
-    raw = str(int(company_id)).encode("utf-8")
+    scope = f"{int(company_id)}:{int(user_id)}:{device_key}" if user_id is not None and device_key else str(int(company_id))
+    raw = scope.encode("utf-8")
     digest = hmac.new(_identity_secret().encode("utf-8"), raw, hashlib.sha256).hexdigest()[:16]
+    if user_id is not None and device_key:
+        return f"luxit_c{int(company_id)}_u{int(user_id)}_{digest}"
     return f"luxit_c{int(company_id)}_{digest}"
