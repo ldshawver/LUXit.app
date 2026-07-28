@@ -84,7 +84,11 @@ def sync_contact_points(contact: Contact, phone: str | None, email: str | None, 
         contact.primary_email = contact.primary_email or email.strip()
         contact.email = contact.email or email.strip()
         contact.normalized_email = contact.normalized_email or norm_email
-        exists = ContactEmailAddress.query.filter_by(company_id=contact.company_id, contact_id=contact.id, normalized_value=norm_email).first()
+        exists = ContactEmailAddress.query.filter(
+            ContactEmailAddress.company_id == contact.company_id,
+            ContactEmailAddress.contact_id == contact.id,
+            func.lower(func.trim(ContactEmailAddress.normalized_value)) == norm_email,
+        ).first()
         if not exists:
             db.session.add(ContactEmailAddress(company_id=contact.company_id, contact_id=contact.id, original_value=email.strip(), normalized_value=norm_email, is_primary=not bool(contact.email_addresses.count()), source=source))
 
@@ -100,7 +104,10 @@ def resolve_contact(company_id: int, *, phone: str | None = None, email: str | N
     if phone_result.normalized:
         contact = q.filter(Contact.normalized_phone == phone_result.normalized).first()
     if not contact and norm_email:
-        contact = q.filter(or_(Contact.normalized_email == norm_email, func.lower(Contact.email) == norm_email)).first()
+        contact = q.filter(or_(
+            func.lower(func.trim(Contact.normalized_email)) == norm_email,
+            func.lower(func.trim(Contact.email)) == norm_email,
+        )).first()
     if not contact:
         contact = Contact(company_id=company_id, tenant_id=tenant_id or company_id, is_active=True, status="active", created_at=datetime.utcnow(), created_by_user_id=user_id)
         db.session.add(contact); db.session.flush()

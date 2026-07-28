@@ -1386,6 +1386,28 @@ class SMSRecipient(db.Model):
     contact = db.relationship("Contact", backref="sms_recipients")
 
 
+class SMSRecipientDeliveryAttempt(db.Model):
+    """Immutable preservation of each campaign provider send attempt."""
+    __tablename__ = "sms_recipient_delivery_attempt"
+
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=True, index=True)
+    campaign_id = db.Column(db.Integer, db.ForeignKey("sms_campaign.id"), nullable=True, index=True)
+    contact_id = db.Column(db.Integer, db.ForeignKey("contact.id"), nullable=True, index=True)
+    source_recipient_id = db.Column(db.Integer, nullable=True, index=True)
+    provider_message_sid = db.Column(db.String(255), nullable=False, unique=True)
+    status = db.Column(db.String(50), nullable=True)
+    sent_at = db.Column(db.DateTime, nullable=True)
+    delivered_at = db.Column(db.DateTime, nullable=True)
+    replied_at = db.Column(db.DateTime, nullable=True)
+    opted_out_at = db.Column(db.DateTime, nullable=True)
+    error_code = db.Column(db.String(50), nullable=True)
+    provider_error_code = db.Column(db.String(50), nullable=True)
+    error_message = db.Column(db.Text, nullable=True)
+    provider_response = db.Column(JSON, default=dict, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+
 class SMSTemplate(db.Model):
     __tablename__ = "sms_template"
 
@@ -3477,8 +3499,63 @@ class TwilioMessage(db.Model):
     error_code      = db.Column(db.String(20))
     error_message   = db.Column(db.Text)
     raw_payload     = db.Column(JSON)
+    # A SID is reserved before side effects.  Only ``completed`` deliveries
+    # participate in the fast duplicate path; ``failed`` deliveries are safe
+    # to retry while the unique SID remains the concurrency backstop.
+    processing_status = db.Column(db.String(20), nullable=False, default="completed", server_default="completed", index=True)
+    processing_attempts = db.Column(db.Integer, nullable=False, default=0, server_default="0")
+    processing_error_code = db.Column(db.String(80), nullable=True)
+    processing_started_at = db.Column(db.DateTime, nullable=True)
+    processed_at = db.Column(db.DateTime, nullable=True)
+    response_body = db.Column(db.Text, nullable=True)
     created_at      = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at      = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class SMSOutboundIntent(db.Model):
+    """Durable, deterministic outbound effect created by inbound processing."""
+    __tablename__ = "sms_outbound_intent"
+
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=False, index=True)
+    inbound_message_id = db.Column(db.Integer, db.ForeignKey("twilio_message.id"), nullable=False, index=True)
+    conversation_id = db.Column(db.Integer, db.ForeignKey("twilio_conversation.id"), nullable=False, index=True)
+    idempotency_key = db.Column(db.String(64), nullable=False, unique=True)
+    effect_type = db.Column(db.String(50), nullable=False)
+    to_number = db.Column(db.String(20), nullable=True)
+    body = db.Column(db.Text, nullable=False)
+    is_auto_reply = db.Column(db.Boolean, default=False, nullable=False)
+    rule_id = db.Column(db.Integer, db.ForeignKey("auto_reply_rule.id"), nullable=True)
+    status = db.Column(db.String(30), nullable=False, default="pending", server_default="pending", index=True)
+    provider_sid = db.Column(db.String(100), nullable=True, unique=True)
+    attempt_count = db.Column(db.Integer, nullable=False, default=0, server_default="0")
+    last_error_code = db.Column(db.String(80), nullable=True)
+    last_error_message = db.Column(db.Text, nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    delivered_at = db.Column(db.DateTime, nullable=True)
+
+
+class SMSOutboundAttempt(db.Model):
+    """One provider-call attempt; ambiguous calls are never blindly repeated."""
+    __tablename__ = "sms_outbound_attempt"
+
+    id = db.Column(db.Integer, primary_key=True)
+    intent_id = db.Column(db.Integer, db.ForeignKey("sms_outbound_intent.id"), nullable=False, index=True)
+    attempt_number = db.Column(db.Integer, nullable=False)
+    attempt_key = db.Column(db.String(80), nullable=False, unique=True)
+    status = db.Column(db.String(30), nullable=False)
+    provider_sid = db.Column(db.String(100), nullable=True, unique=True)
+    provider_status = db.Column(db.String(50), nullable=True)
+    error_code = db.Column(db.String(80), nullable=True)
+    error_message = db.Column(db.Text, nullable=True)
+    provider_response = db.Column(JSON, default=dict, nullable=False)
+    started_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    finished_at = db.Column(db.DateTime, nullable=True)
+
+    __table_args__ = (
+        db.UniqueConstraint("intent_id", "attempt_number", name="uq_sms_outbound_attempt_number"),
+    )
 
 
 class TuyaNotificationActivation(db.Model):

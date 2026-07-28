@@ -18,6 +18,7 @@ from models import (
     Campaign, Company, Contact, SMSCampaign, SMSRecipient,
     MarketingAuditLog, SMSAutoReplyRule, SMSKeywordRule, SocialPost, TwilioAccount, user_company,
 )
+from services.contact_consent import has_explicit_email_opt_out
 
 marketing_api_bp = Blueprint("marketing_api", __name__, url_prefix="/api/marketing")
 
@@ -909,7 +910,7 @@ def marketing_skip_reason(contact, channel):
         return "do_not_market"
     if channel == "email":
         if contact.do_not_email: return "do_not_email"
-        if contact.email_unsubscribed or not contact.is_subscribed: return "email_unsubscribed"
+        if has_explicit_email_opt_out(contact): return "email_unsubscribed"
         if not contact.email: return "missing_email"
     if channel == "sms":
         if contact.do_not_sms: return "do_not_sms"

@@ -42,6 +42,7 @@ from flask import (
 )
 from flask_login import current_user, login_required
 from werkzeug.exceptions import HTTPException
+from sqlalchemy import text
 
 from extensions import db, csrf
 
@@ -549,11 +550,13 @@ def _can_send_call_auto_sms(company_id: int, to_number: str, *, cooldown_hours: 
 
 
 def _get_or_create_conversation(
-    company_id: int, from_number: str, to_number: str, phone_number_id: int = None
+    company_id: int, from_number: str, to_number: str, phone_number_id: int = None,
+    *, create_contact: bool = True,
 ):
     from models import TwilioConversation
     from services.contact_audience import upsert_contact_from_source
-    from services.google_contacts import normalize_phone, _all_forms, lookup_contact_name
+    from services.google_contacts import normalize_phone, _all_forms
+    from services.contact_resolver import resolve_contact_identity
 
     forms = _all_forms(from_number)
     to_forms = [value for value in {_normalize_e164(to_number), to_number} if value]
@@ -571,7 +574,8 @@ def _get_or_create_conversation(
         conv = conv_query.first()
 
     contact = None
-    try:
+    contact_name = contact_source = None
+    if create_contact:
         contact = upsert_contact_from_source(
             company_id,
             phone=from_number,
@@ -580,22 +584,17 @@ def _get_or_create_conversation(
             source_provider="twilio",
             source_context="inbound_message",
         )
-    except Exception:
-        # CRM enrichment must not prevent the durable conversation/message.
-        db.session.rollback()
-        logger.exception(
-            "Inbound SMS downstream failure category=contact_upsert company_id=%s",
+        resolved = resolve_contact_identity(
             company_id,
+            phone=from_number,
+            contact_id=contact.id,
+            allow_enrichment=True,
         )
-
-    contact_name, contact_source = lookup_contact_name(company_id, from_number)
-    if contact and not contact_name:
         contact_name = (
-            getattr(contact, "name", None)
-            or f"{getattr(contact, 'first_name', '') or ''} {getattr(contact, 'last_name', '') or ''}".strip()
-            or None
+            None if resolved.safe_display_name == "Name needed"
+            else resolved.safe_display_name
         )
-        contact_source = contact.source or "crm"
+        contact_source = resolved.name_source
 
     if not conv:
         norm = normalize_phone(from_number)
@@ -621,6 +620,11 @@ def _get_or_create_conversation(
         if contact_name and conv.contact_name != contact_name:
             conv.contact_name = contact_name
             conv.contact_source = contact_source
+        elif not contact_name and conv.contact_source not in {
+            "customer_confirmed", "pwa_verified", "manual", "google_contacts",
+        }:
+            conv.contact_name = None
+            conv.contact_source = None
         normalized_to = _normalize_e164(to_number) or to_number
         if normalized_to and conv.to_number != normalized_to:
             conv.to_number = normalized_to
@@ -644,7 +648,10 @@ def resolve_sms_sender(inbound_message) -> str:
 def sendConversationSms(conversation_id: int, message: str, *,
                         to_number: str = None, twilio_account=None,
                         is_auto_reply: bool = False, rule_id: int = None,
-                        persist_record: bool = True) -> dict:
+                        persist_record: bool = True,
+                        effect_type: str | None = None,
+                        idempotency_key: str | None = None,
+                        bypass_outbox: bool = False) -> dict:
     """Single entry point for all conversational SMS sends.
 
     Every outbound reply/forward/auto-reply resolves its sender from the
@@ -656,6 +663,27 @@ def sendConversationSms(conversation_id: int, message: str, *,
     conv = db.session.get(TwilioConversation, conversation_id) if conversation_id else None
     if not conv:
         return {"success": False, "error": "Conversation is required for SMS send."}
+    if (
+        not bypass_outbox
+        and has_request_context()
+        and getattr(g, "sms_outbox_inbound_message_id", None)
+    ):
+        from services.sms_outbox import enqueue_sms_intent
+        intent = enqueue_sms_intent(
+            inbound_message_id=g.sms_outbox_inbound_message_id,
+            company_id=conv.company_id,
+            conversation_id=conv.id,
+            effect_type=effect_type or (
+                f"rule_reply:{rule_id}" if rule_id else
+                ("auto_reply" if is_auto_reply else "conversation_reply")
+            ),
+            to_number=to_number,
+            body=_sanitize_body(message),
+            is_auto_reply=is_auto_reply,
+            rule_id=rule_id,
+            idempotency_key=idempotency_key,
+        )
+        return {"success": True, "queued": True, "intent_id": intent.id, "status": intent.status}
     ta = twilio_account or _get_twilio_account(conv.company_id)
     if not ta:
         return {"success": False, "error": "Twilio account is not configured for this conversation."}
@@ -719,30 +747,34 @@ def sendConversationSms(conversation_id: int, message: str, *,
             })
         except Exception:
             pass
-        return {"success": True, "sid": msg.sid, "status": "sent", "provider_status": provider_status}
+        return {
+            "success": True, "sid": msg.sid, "status": "sent",
+            "provider_status": provider_status, "from_number": canonical_sender,
+        }
     except Exception as exc:
         logger.error(
             "SMS send error: code=%s status=%s — %s",
             getattr(exc, "code", None), getattr(exc, "status", None), exc,
         )
-        try:
-            failed_record = TwilioMessage(
-                conversation_id=conversation_id,
-                company_id=ta.company_id,
-                twilio_sid=None,
-                direction="outbound",
-                from_number=canonical_sender if "canonical_sender" in locals() else None,
-                to_number=to_number,
-                body=body,
-                status="failed",
-                error_message=str(exc),
-                is_auto_reply=is_auto_reply,
-                rule_id=rule_id,
-            )
-            db.session.add(failed_record)
-            db.session.commit()
-        except Exception:
-            db.session.rollback()
+        if persist_record:
+            try:
+                failed_record = TwilioMessage(
+                    conversation_id=conversation_id,
+                    company_id=ta.company_id,
+                    twilio_sid=None,
+                    direction="outbound",
+                    from_number=canonical_sender if "canonical_sender" in locals() else None,
+                    to_number=to_number,
+                    body=body,
+                    status="failed",
+                    error_message=str(exc),
+                    is_auto_reply=is_auto_reply,
+                    rule_id=rule_id,
+                )
+                db.session.add(failed_record)
+                db.session.commit()
+            except Exception:
+                db.session.rollback()
         try:
             from services.posthog_client import track_event
             track_event(f"company_{ta.company_id}", 'sms_failed', {
@@ -755,7 +787,17 @@ def sendConversationSms(conversation_id: int, message: str, *,
         except Exception:
             pass
         from services.twilio_error_handler import twilio_friendly_error
-        return {"success": False, "error": twilio_friendly_error(exc)}
+        http_status = getattr(exc, "status", None)
+        delivery_class = (
+            "retryable" if http_status == 429 or (http_status and http_status >= 500)
+            else ("terminal" if http_status and 400 <= http_status < 500 else "ambiguous")
+        )
+        return {
+            "success": False,
+            "error": twilio_friendly_error(exc),
+            "error_code": str(getattr(exc, "code", None) or type(exc).__name__),
+            "delivery_class": delivery_class,
+        }
 
 
 def _match_keywords(body: str, keywords: list, match_type: str) -> bool:
@@ -1145,7 +1187,6 @@ def _capture_lead(conv, body: str, company_id: int):
     contact = upsert_contact_from_source(
         company_id,
         phone=conv.from_number,
-        full_name=conv.contact_name,
         tags=["new-lead"],
         source_channel="sms",
         source_phone_number=inbound_to,
@@ -1236,6 +1277,53 @@ def _seed_default_hours(company_id: int):
 # Public webhook endpoints
 # ---------------------------------------------------------------------------
 
+def _lock_inbound_sid(company_id: int, message_sid: str) -> None:
+    """Serialize SID reservation before any contact or message side effect."""
+    if db.session.get_bind().dialect.name != "postgresql":
+        return
+    digest = hashlib.sha256(f"inbound:{company_id}:{message_sid}".encode()).digest()[:8]
+    key = int.from_bytes(digest, byteorder="big", signed=True)
+    db.session.execute(text("SELECT pg_advisory_xact_lock(:key)"), {"key": key})
+
+
+def _set_inbound_processing_state(message_id: int, status: str, error_code: str | None = None):
+    from models import TwilioMessage
+    row = db.session.get(TwilioMessage, message_id)
+    if not row:
+        return None
+    row.processing_status = status
+    row.processing_error_code = error_code
+    if status == "completed":
+        row.processed_at = datetime.utcnow()
+    return row
+
+
+def _deliver_and_finalize_inbound(message_id: int, twilio_account) -> tuple[bool, str]:
+    """Commit intents, deliver them without locks, then finalize the inbound SID."""
+    from models import TwilioMessage
+    from services.sms_outbox import deliver_inbound_intents
+
+    row = _set_inbound_processing_state(message_id, "outbound_pending")
+    db.session.commit()
+    delivery = deliver_inbound_intents(message_id, twilio_account=twilio_account)
+    row = db.session.get(TwilioMessage, message_id)
+    if delivery["all_delivered"]:
+        row.processing_status = "completed"
+        row.processing_error_code = None
+        row.processed_at = datetime.utcnow()
+        success, status = True, "completed"
+    elif delivery["has_retryable"]:
+        row.processing_status = "failed_retryable"
+        row.processing_error_code = "outbound_delivery_retryable"
+        success, status = False, "failed_retryable"
+    else:
+        row.processing_status = "failed_terminal"
+        row.processing_error_code = "outbound_delivery_unresolved"
+        success, status = False, "failed_terminal"
+    db.session.commit()
+    return success, status
+
+
 @twilio_bp.route("/sms", methods=["POST"])
 @twilio_bp.route("/sms/inbound", methods=["POST"])
 @csrf.exempt
@@ -1310,11 +1398,38 @@ def inbound_sms():
         )
         abort(403)
 
-    # Provider idempotency precedes contact creation, enrichment, tagging, and
-    # response reservation. The unique TwilioMessage SID remains the
-    # concurrency backstop for simultaneous retries.
-    if twilio_sid and TwilioMessage.query.filter_by(twilio_sid=twilio_sid).first():
+    # Serialize and classify the SID before contact creation, enrichment,
+    # tagging, or response generation. Failed reservations are retryable.
+    _lock_inbound_sid(ta.company_id, twilio_sid)
+    existing_message = (
+        TwilioMessage.query.filter_by(twilio_sid=twilio_sid)
+        .with_for_update()
+        .populate_existing()
+        .first()
+    )
+    if existing_message and existing_message.processing_status == "completed":
+        response_body = existing_message.response_body
+        db.session.rollback()
+        return response_body or '<Response></Response>', 200, {"Content-Type": "text/xml"}
+    if existing_message and existing_message.processing_status in {
+        "outbound_pending", "failed_retryable",
+    }:
+        existing_id = existing_message.id
+        db.session.commit()
+        delivered, status = _deliver_and_finalize_inbound(existing_id, ta)
+        return '<Response></Response>', (200 if delivered or status == "failed_terminal" else 500), {"Content-Type": "text/xml"}
+    if existing_message and existing_message.processing_status == "failed_terminal":
+        db.session.rollback()
         return '<Response></Response>', 200, {"Content-Type": "text/xml"}
+    if existing_message and existing_message.processing_status == "processing":
+        started = existing_message.processing_started_at or existing_message.created_at
+        if started and started > datetime.utcnow() - timedelta(minutes=5):
+            db.session.rollback()
+            return '<Response></Response>', 500, {"Content-Type": "text/xml"}
+        existing_message.processing_status = "failed"
+        existing_message.processing_error_code = "stale_processing_reservation"
+        db.session.commit()
+        _lock_inbound_sid(ta.company_id, twilio_sid)
 
     # ── 2b. Owner reply relay ──────────────────────────────────────────────
     # All messages FROM the forwarding number are relay commands — never
@@ -1326,6 +1441,37 @@ def inbound_sms():
     #   r <message>                    → send to most-recent customer
     if ta.sms_forward_to and from_number == ta.sms_forward_to:
         company_name = ta.company.name if ta.company else "LUXit"
+        admin_conv = _get_or_create_conversation(
+            ta.company_id, ta.sms_forward_to, to_number,
+            getattr(pn, "id", None), create_contact=False,
+        )
+        relay_receipt = existing_message or TwilioMessage(
+            conversation_id=admin_conv.id,
+            company_id=ta.company_id,
+            twilio_sid=twilio_sid,
+            direction="inbound",
+            from_number=from_number,
+            to_number=to_number,
+            body=body,
+            status="received",
+            raw_payload=dict(data),
+            processing_status="processing",
+            processing_attempts=1,
+            processing_started_at=datetime.utcnow(),
+        )
+        if not existing_message:
+            db.session.add(relay_receipt)
+        else:
+            relay_receipt.processing_status = "processing"
+            relay_receipt.processing_attempts = (relay_receipt.processing_attempts or 0) + 1
+        db.session.commit()
+        g.sms_outbox_inbound_message_id = relay_receipt.id
+
+        def _owner_outbox_response():
+            delivered, status = _deliver_and_finalize_inbound(relay_receipt.id, ta)
+            return '<Response></Response>', (
+                200 if delivered or status == "failed_terminal" else 500
+            ), {"Content-Type": "text/xml"}
 
         # reply +1XXX message  OR  r +1XXX message
         relay_match = re.match(
@@ -1336,20 +1482,19 @@ def inbound_sms():
             if not target_number.startswith("+"):
                 target_number = "+" + target_number
             relay_body = relay_match.group(2).strip()
-            admin_conv = _get_or_create_conversation(ta.company_id, ta.sms_forward_to, to_number, getattr(pn, "id", None))
             if not relay_body:
                 logger.warning("Owner relay: empty message body to %s — ignored", target_number)
-                sendConversationSms(admin_conv.id, f"[{company_name}] Reply not sent — message was empty.", twilio_account=ta)
-                return '<Response></Response>', 200, {"Content-Type": "text/xml"}
+                sendConversationSms(admin_conv.id, f"[{company_name}] Reply not sent — message was empty.", twilio_account=ta, effect_type="owner_relay_validation")
+                return _owner_outbox_response()
             target_conv = _get_or_create_conversation(ta.company_id, target_number, to_number)
-            result = sendConversationSms(target_conv.id, relay_body, twilio_account=ta, to_number=target_number)
+            result = sendConversationSms(target_conv.id, relay_body, twilio_account=ta, to_number=target_number, effect_type="owner_relay")
             logger.info(
                 "Owner relay: %s → %s (success=%s err=%s)",
                 from_number, target_number, result.get("success"), result.get("error")
             )
             if not result.get("success"):
-                sendConversationSms(admin_conv.id, f"[{company_name}] Failed to send to {target_number}: {result.get('error')}", twilio_account=ta)
-            return '<Response></Response>', 200, {"Content-Type": "text/xml"}
+                sendConversationSms(admin_conv.id, f"[{company_name}] Failed to send to {target_number}: {result.get('error')}", twilio_account=ta, effect_type="owner_relay_failure")
+            return _owner_outbox_response()
 
         # r <message> — reply to the most recent customer conversation
         r_match = re.match(r'^r\s+(.+)$', body.strip(), re.IGNORECASE | re.DOTALL)
@@ -1365,19 +1510,17 @@ def inbound_sms():
                 .first()
             )
             if last_conv:
-                result = sendConversationSms(last_conv.id, relay_body, twilio_account=ta)
+                result = sendConversationSms(last_conv.id, relay_body, twilio_account=ta, effect_type="owner_recent_relay")
                 logger.info(
                     "Owner 'r' relay → %s (success=%s err=%s)",
                     last_conv.from_number, result.get("success"), result.get("error"),
                 )
                 if not result.get("success"):
-                    admin_conv = _get_or_create_conversation(ta.company_id, ta.sms_forward_to, to_number, getattr(pn, "id", None))
-                    sendConversationSms(admin_conv.id, f"[{company_name}] Failed to reply to {last_conv.from_number}: {result.get('error')}", twilio_account=ta)
+                    sendConversationSms(admin_conv.id, f"[{company_name}] Failed to reply to {last_conv.from_number}: {result.get('error')}", twilio_account=ta, effect_type="owner_recent_relay_failure")
             else:
                 logger.warning("Owner 'r' relay: no recent conversation found")
-                admin_conv = _get_or_create_conversation(ta.company_id, ta.sms_forward_to, to_number, getattr(pn, "id", None))
-                sendConversationSms(admin_conv.id, f"[{company_name}] No recent customer conversation found to reply to.", twilio_account=ta)
-            return '<Response></Response>', 200, {"Content-Type": "text/xml"}
+                sendConversationSms(admin_conv.id, f"[{company_name}] No recent customer conversation found to reply to.", twilio_account=ta, effect_type="owner_recent_relay_missing")
+            return _owner_outbox_response()
 
         # Unrecognised command — send help back to admin
         logger.info(
@@ -1392,68 +1535,67 @@ def inbound_sms():
             f"r +1XXXXXXXXXX your message\n"
             f"  → Shorthand reply to specific customer"
         )
-        admin_conv = _get_or_create_conversation(ta.company_id, ta.sms_forward_to, to_number, getattr(pn, "id", None))
-        sendConversationSms(admin_conv.id, help_msg, twilio_account=ta)
-        return '<Response></Response>', 200, {"Content-Type": "text/xml"}
+        sendConversationSms(admin_conv.id, help_msg, twilio_account=ta, effect_type="owner_relay_help")
+        return _owner_outbox_response()
 
     message_persisted = False
+    msg_record_id = None
     try:
-        # ── 3a. Get or create conversation thread ──────────────────────────
-        conv = _get_or_create_conversation(
-            ta.company_id, from_number, to_number, getattr(pn, "id", None)
-        )
-
-        # Idempotency: skip if already processed
-        if twilio_sid and TwilioMessage.query.filter_by(twilio_sid=twilio_sid).first():
-            return '<Response></Response>', 200, {"Content-Type": "text/xml"}
-
         # Collect media URLs
         media_urls = [data.get(f"MediaUrl{i}") for i in range(num_media)
                       if data.get(f"MediaUrl{i}")]
 
-        # ── 3b. Save the inbound message ───────────────────────────────────
-        msg_record = TwilioMessage(
-            conversation_id=conv.id,
-            company_id=ta.company_id,
-            twilio_sid=twilio_sid,
-            direction="inbound",
-            from_number=from_number,
-            to_number=to_number,
-            body=body,
-            status="received",
-            media_urls=media_urls or None,
-            raw_payload=dict(data),
-        )
-        db.session.add(msg_record)
-
-        # Update conversation metadata
-        conv.is_read              = False
-        conv.last_message_at      = datetime.utcnow()
-        conv.last_message_preview = body[:200] if body else "(media)"
-        conv.message_count        = (conv.message_count or 0) + 1
+        if existing_message:
+            if existing_message.company_id != ta.company_id:
+                raise ValueError("MessageSid belongs to another tenant")
+            conv = db.session.get(TwilioConversation, existing_message.conversation_id)
+            msg_record = existing_message
+            msg_record.processing_status = "processing"
+            msg_record.processing_error_code = None
+            msg_record.processing_started_at = datetime.utcnow()
+            msg_record.processing_attempts = (msg_record.processing_attempts or 0) + 1
+        else:
+            # Reserve the SID with a conversation shell; contact creation and
+            # all identity/tag mutations happen after this durable reservation.
+            conv = _get_or_create_conversation(
+                ta.company_id, from_number, to_number, getattr(pn, "id", None),
+                create_contact=False,
+            )
+            msg_record = TwilioMessage(
+                conversation_id=conv.id,
+                company_id=ta.company_id,
+                twilio_sid=twilio_sid,
+                direction="inbound",
+                from_number=from_number,
+                to_number=to_number,
+                body=body,
+                status="received",
+                media_urls=media_urls or None,
+                raw_payload=dict(data),
+                processing_status="processing",
+                processing_attempts=1,
+                processing_started_at=datetime.utcnow(),
+            )
+            db.session.add(msg_record)
+            conv.is_read = False
+            conv.last_message_at = datetime.utcnow()
+            conv.last_message_preview = body[:200] if body else "(media)"
+            conv.message_count = (conv.message_count or 0) + 1
         db.session.commit()
         message_persisted = True
+        msg_record_id = msg_record.id
+        g.sms_outbox_inbound_message_id = msg_record_id
+
+        # Contact/source/tag work starts only after a unique SID reservation.
+        conv = _get_or_create_conversation(
+            ta.company_id, from_number, to_number, getattr(pn, "id", None),
+            create_contact=True,
+        )
         logger.info(
             "Inbound SMS persisted correlation_id=%s sid=%s company_id=%s conversation_id=%s "
             "status=persisted category=message",
             correlation_id, twilio_sid, ta.company_id, conv.id,
         )
-
-        # This optional integration is invoked only after signature validation
-        # and durable acceptance. Its own durable state isolates Twilio from
-        # Tuya network availability and MessageSid retries.
-        try:
-            from services.tuya_notification import accept_inbound
-            accept_inbound(
-                ta.company_id, twilio_sid, _normalize_e164(to_number),
-                customer_phone=from_number,
-            )
-        except Exception:
-            db.session.rollback()
-            logger.exception(
-                "Tuya notification acceptance failed sid=%s company_id=%s; inbound remains persisted",
-                twilio_sid, ta.company_id,
-            )
 
         # ── 4. System-level keyword handling ──────────────────────────────
         # These always fire and return a TwiML reply immediately.
@@ -1469,9 +1611,12 @@ def inbound_sms():
                 mark_opt_out(ta.company_id, from_number, conv)
             except Exception as opt_exc:
                 logger.warning("Campaign opt-out sync failed: %s", opt_exc)
+            reply_tuple = _twiml_message(_STOP_REPLY)
+            completed = _set_inbound_processing_state(msg_record_id, "completed")
+            completed.response_body = reply_tuple[0]
             db.session.commit()
             logger.info("Opt-out keyword received: company_id=%s phone_last4=%s", ta.company_id, from_number[-4:])
-            return _twiml_message(_STOP_REPLY)
+            return reply_tuple
 
         active_identity_confirmation = bool(
             conv.contact_id and getattr(db.session.get(Contact, conv.contact_id), "identity_status", None) == "awaiting_confirmation"
@@ -1487,15 +1632,21 @@ def inbound_sms():
                 mark_opt_in(ta.company_id, from_number, conv)
             except Exception as opt_exc:
                 logger.warning("Campaign opt-in sync failed: %s", opt_exc)
+            reply_tuple = _twiml_message(_START_REPLY)
+            completed = _set_inbound_processing_state(msg_record_id, "completed")
+            completed.response_body = reply_tuple[0]
             db.session.commit()
             logger.info("Opt-in keyword received: company_id=%s phone_last4=%s", ta.company_id, from_number[-4:])
-            return _twiml_message(_START_REPLY)
+            return reply_tuple
 
         if kw in {"help", "info"}:
             _write_sms_compliance_audit(ta.company_id, "help", from_number, kw, conv.contact_id, conv.id)
+            reply_tuple = _twiml_message(_HELP_REPLY)
+            completed = _set_inbound_processing_state(msg_record_id, "completed")
+            completed.response_body = reply_tuple[0]
             db.session.commit()
             logger.info("HELP/INFO received: company_id=%s phone_last4=%s", ta.company_id, from_number[-4:])
-            return _twiml_message(_HELP_REPLY)
+            return reply_tuple
 
         # Identity collection happens only after the inbound message has been
         # durably committed and compliance keywords have taken precedence.
@@ -1503,7 +1654,7 @@ def inbound_sms():
         try:
             from models import Contact
             from services.contact_identity import (
-                IDENTITY_PROMPT, apply_cached_google_match,
+                apply_cached_google_match, begin_identity_collection,
                 process_identity_message, should_request_identity,
             )
             contact = db.session.get(Contact, conv.contact_id) if conv.contact_id else None
@@ -1512,27 +1663,26 @@ def inbound_sms():
                 outcome = process_identity_message(contact, conv, body, twilio_sid)
                 reply = outcome.get("reply")
                 if not reply and match_status != "matched" and should_request_identity(contact):
-                    contact.identity_status = "pending_identity"
-                    contact.identity_requested_at = contact.identity_fields_requested_at = datetime.utcnow()
-                    contact.identity_request_count = (contact.identity_request_count or 0) + 1
-                    missing = outcome.get("missing") or ["first and last name", "valid email address"]
-                    contact.identity_requested_fields = missing
-                    contact.identity_last_request_sid = twilio_sid
-                    reply = "Please reply with " + " and ".join(missing) + "."
+                    reply = begin_identity_collection(contact, twilio_sid)
                 db.session.commit()
                 if reply:
-                    result = sendConversationSms(conv.id, reply, twilio_account=ta, is_auto_reply=True)
+                    result = sendConversationSms(conv.id, reply, twilio_account=ta, is_auto_reply=True, effect_type="identity_reply")
                     identity_reply_sent = bool(result.get("success"))
                     if identity_reply_sent:
                         msg_record.auto_responded = True
                         db.session.commit()
         except Exception:
             db.session.rollback()
+            _set_inbound_processing_state(
+                msg_record_id, "failed", "identity_processing_failed"
+            )
+            db.session.commit()
             logger.exception(
                 "Inbound SMS downstream failure correlation_id=%s sid=%s company_id=%s "
-                "status=persisted category=identity_enrichment",
+                "status=retryable category=identity_enrichment",
                 correlation_id, twilio_sid, ta.company_id,
             )
+            return '<Response></Response>', 500, {"Content-Type": "text/xml"}
 
         # ── 5. SMS forwarding — always runs before auto-reply so exceptions
         #       in rule processing can never suppress the forward ────────────
@@ -1552,7 +1702,7 @@ def inbound_sms():
                     f"Reply using:\n"
                     f"reply {from_number} your message"
                 )
-                sendConversationSms(conv.id, fwd_body, twilio_account=ta, to_number=ta.sms_forward_to)
+                sendConversationSms(conv.id, fwd_body, twilio_account=ta, to_number=ta.sms_forward_to, effect_type="inbound_forward")
                 logger.info(
                     "SMS forwarded: customer=%s → admin=%s company=%s",
                     from_number, ta.sms_forward_to, company_name,
@@ -1569,7 +1719,7 @@ def inbound_sms():
             attribute_inbound_reply(ta.company_id, from_number, body, conv.id)
             campaign_reply = process_keyword_rules(ta.company_id, body, conv, ta)
             if campaign_reply and not identity_reply_sent:
-                sendConversationSms(conv.id, campaign_reply, twilio_account=ta, is_auto_reply=True)
+                sendConversationSms(conv.id, campaign_reply, twilio_account=ta, is_auto_reply=True, effect_type="campaign_reply")
         except Exception as campaign_rule_exc:
             logger.exception("Error in campaign SMS keyword engine: %s", campaign_rule_exc)
 
@@ -1591,7 +1741,31 @@ def inbound_sms():
         # Clear first-contact flag after first processed message
         if conv.is_first_contact:
             conv.is_first_contact = False
-            db.session.commit()
+        db.session.commit()
+        delivered, delivery_status = _deliver_and_finalize_inbound(msg_record_id, ta)
+        if not delivered:
+            logger.warning(
+                "Inbound outbound effects unresolved sid=%s status=%s",
+                twilio_sid, delivery_status,
+            )
+            if delivery_status == "failed_retryable":
+                return '<Response></Response>', 500, {"Content-Type": "text/xml"}
+            return '<Response></Response>', 200, {"Content-Type": "text/xml"}
+
+        # Optional external integration is invoked only after the core inbound
+        # transaction is complete. Its unique event SID makes retries harmless.
+        try:
+            from services.tuya_notification import accept_inbound
+            accept_inbound(
+                ta.company_id, twilio_sid, _normalize_e164(to_number),
+                customer_phone=from_number,
+            )
+        except Exception:
+            db.session.rollback()
+            logger.exception(
+                "Tuya notification acceptance failed sid=%s company_id=%s",
+                twilio_sid, ta.company_id,
+            )
 
         # PostHog — sms_received (safe metadata only, no message body)
         try:
@@ -1647,9 +1821,16 @@ def inbound_sms():
             return '<Response></Response>', 500, {"Content-Type": "text/xml"}
         logger.exception(
             "Inbound SMS downstream failure correlation_id=%s sid=%s company_id=%s "
-            "status=persisted category=post_persistence",
+            "status=retryable category=post_persistence",
             correlation_id, twilio_sid, ta.company_id,
         )
+        db.session.rollback()
+        if msg_record_id:
+            _set_inbound_processing_state(
+                msg_record_id, "failed", "post_persistence_failure"
+            )
+            db.session.commit()
+        return '<Response></Response>', 500, {"Content-Type": "text/xml"}
 
     return '<Response></Response>', 200, {"Content-Type": "text/xml"}
 
