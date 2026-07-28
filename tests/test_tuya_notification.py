@@ -1,4 +1,5 @@
 import hashlib
+import json
 import threading
 import time
 import pytest
@@ -44,30 +45,35 @@ class RaisingSession:
 
 def config(secret="test-secret"):
     return TuyaConfig(
-        "https://openapi.tuyaus.com", "test-id", secret, "test-device", "switch_1", 3
+        "https://openapi.tuyaus.com",
+        "test-id",
+        secret,
+        "test-device-123",
+        "switch_1",
+        3,
     )
 
 
 def test_signature_fixed_vector_and_exact_body_hash():
-    body = b'{"commands":[{"code":"switch_1","value":true}]}'
+    body = b'{"properties":{"switch_1":true}}'
     signature = sign_request(
         "test-secret",
         "test-id",
         "1720000000123",
         "POST",
-        "/v1.0/iot-03/devices/test-device/commands",
+        "/v2.0/cloud/thing/test-device-123/shadow/properties/issue",
         body,
         "test-token",
     )
     assert (
-        signature == "0CF9B6B20839CDAE54DDB3100BB7F1B9A444BBAC2B02044D7D837D0A2EAF9B7D"
+        signature == "CFA80A34A25A5EB2974242D680EE58B9073ED9CD303C22D3998EB05180A8CDEB"
     )
     changed = sign_request(
         "test-secret",
         "test-id",
         "1720000000123",
         "POST",
-        "/v1.0/iot-03/devices/test-device/commands",
+        "/v2.0/cloud/thing/test-device-123/shadow/properties/issue",
         body + b" ",
         "test-token",
     )
@@ -100,8 +106,17 @@ def test_token_cache_refresh_and_exact_transmitted_json():
     client.set_switch(True)
     client.set_switch(False)
     assert len([c for c in session.calls if "/token?" in c[1]]) == 1
-    on_body = session.calls[1][2]["data"]
-    assert on_body == b'{"commands":[{"code":"switch_1","value":true}]}'
+    expected_url = (
+        "https://openapi.tuyaus.com/v2.0/cloud/thing/test-device-123/"
+        "shadow/properties/issue"
+    )
+    for call, expected_value in zip(session.calls[1:3], (True, False)):
+        method, url, request = call
+        assert method == "POST"
+        assert url == expected_url
+        assert json.loads(request["data"]) == {
+            "properties": {"switch_1": expected_value}
+        }
     now[0] = 1091.0
     assert client.get_token() == "token-two"
 

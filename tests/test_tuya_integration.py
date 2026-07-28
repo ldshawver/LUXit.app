@@ -1,3 +1,4 @@
+import json
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -17,7 +18,7 @@ from models import (
     User,
     UserCompanyAccess,
 )
-from services.tuya_client import TuyaError
+from services.tuya_client import TuyaClient, TuyaConfig, TuyaError
 import services.tuya_notification as notification
 
 DESTINATION = "+19165989519"
@@ -30,7 +31,7 @@ def app(monkeypatch):
         "TUYA_NOTIFICATION_ENABLED": "true",
         "TUYA_ACCESS_ID": "test-access-id",
         "TUYA_ACCESS_SECRET": "test-access-secret",
-        "TUYA_NOTIFICATION_DEVICE_ID": "test-device-id",
+        "TUYA_NOTIFICATION_DEVICE_ID": "test-device-123",
         "TUYA_NOTIFICATION_PHONE": DESTINATION,
         "TUYA_NOTIFICATION_DURATION_SECONDS": "60",
         "TWILIO_STRICT_SIGNATURE": "true",
@@ -258,6 +259,78 @@ def test_duplicate_and_new_message_deadlines(world, monkeypatch):
         TuyaNotificationEvent.query.filter_by(company_id=world["company_a"]).count()
         == 2
     )
+
+
+def test_reconciliation_sends_on_then_off_after_one_minute(world, monkeypatch):
+    start = datetime(2026, 1, 1, tzinfo=timezone.utc)
+
+    class Response:
+        def __init__(self, payload):
+            self.payload = payload
+
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return self.payload
+
+    class Session:
+        def __init__(self):
+            self.calls = []
+            self.responses = iter(
+                [
+                    Response(
+                        {
+                            "success": True,
+                            "result": {
+                                "access_token": "test-token",
+                                "expire_time": 100,
+                            },
+                        }
+                    ),
+                    Response({"success": True, "result": True}),
+                    Response({"success": True, "result": True}),
+                ]
+            )
+
+        def request(self, method, url, **kwargs):
+            self.calls.append((method, url, kwargs))
+            return next(self.responses)
+
+    session = Session()
+    client = TuyaClient(
+        TuyaConfig(
+            "https://openapi.tuyaus.com",
+            "test-access-id",
+            "test-access-secret",
+            "test-device-123",
+            "switch_1",
+            3,
+        ),
+        session=session,
+        clock=lambda: start.timestamp(),
+    )
+    monkeypatch.setattr(notification, "get_client", lambda **kwargs: client)
+
+    assert notification.queue_pulse(
+        world["company_a"], "SM_ONE_MINUTE_PULSE", "inbound_sms", now=start
+    )
+    notification.reconcile(start)
+    notification.reconcile(start + timedelta(seconds=60))
+
+    expected_url = (
+        "https://openapi.tuyaus.com/v2.0/cloud/thing/test-device-123/"
+        "shadow/properties/issue"
+    )
+    post_calls = [call for call in session.calls if call[0] == "POST"]
+    assert len(post_calls) == 2
+    for call, expected_value in zip(post_calls, (True, False)):
+        method, url, request = call
+        assert method == "POST"
+        assert url == expected_url
+        assert json.loads(request["data"]) == {
+            "properties": {"switch_1": expected_value}
+        }
 
 
 def test_old_and_final_off_and_expired_on_are_safe(world, monkeypatch):

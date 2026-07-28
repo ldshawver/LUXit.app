@@ -115,10 +115,12 @@ class TuyaClient:
 
     def set_switch(self, value: bool) -> None:
         body = json.dumps(
-            {"commands": [{"code": self.config.switch_code, "value": bool(value)}]},
+            {"properties": {self.config.switch_code: bool(value)}},
             separators=(",", ":"),
         ).encode("utf-8")
-        path = f"/v1.0/iot-03/devices/{self.config.device_id}/commands"
+        path = (
+            f"/v2.0/cloud/thing/{self.config.device_id}/shadow/properties/issue"
+        )
         payload = self._request("POST", path, body=body, token=self.get_token())
         if payload.get("result") is not True:
             raise TuyaError("Tuya command response malformed")
