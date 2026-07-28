@@ -29,8 +29,8 @@ from datetime import datetime, timezone
 from urllib.parse import quote, urlparse
 
 from flask import (Blueprint, Response, abort, current_app, g, jsonify,
-                   render_template, request, send_from_directory, session,
-                   stream_with_context)
+                   redirect, render_template, request, send_from_directory,
+                   session, stream_with_context)
 
 from extensions import db
 
@@ -39,7 +39,7 @@ logger = logging.getLogger(__name__)
 inbox_pwa_bp = Blueprint("inbox_pwa", __name__)
 
 
-@inbox_pwa.route("/sw.js")
+@inbox_pwa_bp.route("/sw.js")
 def service_worker():
     """Serve the worker at the origin root so it can control ``/app/*``.
 
@@ -57,6 +57,20 @@ def service_worker():
     response.headers["Pragma"] = "no-cache"
     response.headers["Expires"] = "0"
     return response
+
+
+@inbox_pwa_bp.route("/manifest.json")
+def pwa_manifest():
+    """Serve the canonical PWA manifest from the origin root."""
+    response = current_app.send_static_file("manifest.json")
+    response.headers["Cache-Control"] = "no-cache"
+    return response
+
+
+@inbox_pwa_bp.route("/app/")
+def pwa_root():
+    """Send the canonical PWA entry point to the authenticated inbox shell."""
+    return redirect("/app/inbox", code=302)
 
 
 @inbox_pwa_bp.before_request
