@@ -497,7 +497,7 @@ def create_app() -> Flask:
     csrf.exempt(stripe_webhook_bp)
     print("✓ SaaS Command Center routes loaded: /saas, /api/stripe/webhook (CSRF-exempt)")
 
-    @app.get("/login")
+    @app.route("/login", methods=["GET", "POST"])
     def login_alias():
         """Public login alias used by deploy smoke tests and legacy links."""
         return auth_login()
