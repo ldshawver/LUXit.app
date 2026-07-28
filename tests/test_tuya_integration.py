@@ -1,5 +1,7 @@
 import json
+import socket
 from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
 
 import pytest
 from twilio.request_validator import RequestValidator
@@ -12,6 +14,8 @@ from models import (
     TuyaNotificationActivation,
     TuyaNotificationEvent,
     TuyaNotificationWorkerHeartbeat,
+    SMSOutboundAttempt,
+    SMSOutboundIntent,
     TwilioAccount,
     TwilioMessage,
     TwilioPhoneNumber,
@@ -23,6 +27,34 @@ import services.tuya_notification as notification
 
 DESTINATION = "+19165989519"
 OTHER_DESTINATION = "+15550001111"
+
+
+@pytest.fixture(autouse=True)
+def prevent_provider_network(monkeypatch):
+    import twilio_sms
+
+    sent = []
+
+    def unexpected_network(*args, **kwargs):
+        raise AssertionError("Unexpected provider network access attempted")
+
+    class FakeMessages:
+        def create(self, **kwargs):
+            sent.append(kwargs)
+            return SimpleNamespace(
+                sid=f"SM_TEST_OUTBOUND_{len(sent)}",
+                status="queued",
+            )
+
+    monkeypatch.setattr(
+        twilio_sms,
+        "_build_client",
+        lambda account: SimpleNamespace(messages=FakeMessages()),
+    )
+    monkeypatch.setattr(socket, "getaddrinfo", unexpected_network)
+    monkeypatch.setattr(socket, "create_connection", unexpected_network)
+    monkeypatch.setattr(socket.socket, "connect", unexpected_network)
+    return sent
 
 
 @pytest.fixture
@@ -186,7 +218,9 @@ def signed_post(client, payload, *, valid=True):
     )
 
 
-def test_signed_inbound_matches_to_and_persists_one_event(client, world):
+def test_signed_inbound_matches_to_and_persists_one_event(
+    client, world, prevent_provider_network
+):
     response = signed_post(
         client, inbound_payload("SM_TUYA_1", from_number=DESTINATION)
     )
@@ -205,6 +239,22 @@ def test_signed_inbound_matches_to_and_persists_one_event(client, world):
         .one()
         .desired_state
     )
+    intent = SMSOutboundIntent.query.filter_by(
+        inbound_message_id=TwilioMessage.query.filter_by(
+            twilio_sid="SM_TUYA_1", direction="inbound"
+        ).one().id,
+        effect_type="identity_reply",
+    ).one()
+    attempt = SMSOutboundAttempt.query.filter_by(intent_id=intent.id).one()
+    assert intent.status == "delivered"
+    assert attempt.provider_status == "queued"
+    assert len(prevent_provider_network) == 1
+    assert intent.body
+    assert prevent_provider_network[0] == {
+        "body": intent.body,
+        "to": DESTINATION,
+        "from_": DESTINATION,
+    }
 
 
 def test_invalid_signature_and_other_destination_do_not_trigger(client, world):

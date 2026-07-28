@@ -4,8 +4,9 @@ import pytest
 from app import create_app
 from extensions import db
 from models import (
-    Company, Contact, MarketingAuditLog, SMSCampaign, SMSKeywordRule, SMSRecipient,
-    SocialPost, TwilioAccount, TwilioConversation, TwilioMessage, User, user_company,
+    Company, Contact, ContactEmailAddress, ContactSourceEvent, MarketingAuditLog,
+    SMSCampaign, SMSKeywordRule, SMSRecipient, SocialPost, TwilioAccount,
+    TwilioConversation, TwilioMessage, User, user_company,
 )
 
 
@@ -313,6 +314,12 @@ def test_inbound_sms_reuses_existing_normalized_contact(client, tenant_user):
         company_id=company.id,
         phone="(415) 555-0124",
         normalized_phone="+14155550124",
+        first_name="Actual",
+        last_name="Customer",
+        name="Actual Customer",
+        display_name="Actual Customer",
+        identity_status="confirmed",
+        name_verification_level="verified",
         is_active=True,
     )
     db.session.add(existing)
@@ -329,6 +336,101 @@ def test_inbound_sms_reuses_existing_normalized_contact(client, tenant_user):
     assert Contact.query.filter_by(company_id=company.id).count() == 1
     message = TwilioMessage.query.filter_by(twilio_sid="SMEXISTINGNORMALIZED").one()
     assert message.conversation.contact_id == existing.id
+    db.session.refresh(existing)
+    assert (existing.first_name, existing.last_name, existing.name, existing.display_name) == (
+        "Actual", "Customer", "Actual Customer", "Actual Customer"
+    )
+
+
+def test_duplicate_normal_inbound_is_persisted_once_and_never_used_as_name(client, tenant_user, monkeypatch):
+    _, company = tenant_user
+    _twilio_account(company)
+    monkeypatch.setattr("twilio_sms.sendConversationSms", lambda *args, **kwargs: {"success": True, "sid": "SM-reply"})
+    monkeypatch.setattr("inbox_pwa._fire_push_notification", lambda *args, **kwargs: None)
+    payload = {
+        "From": "+14155550127",
+        "To": "+15559999999",
+        "Body": "Please send appointment details",
+        "MessageSid": "SMNORMALIDEMPOTENT",
+    }
+
+    first = client.post("/twilio/sms/inbound", data=payload)
+    duplicate = client.post("/twilio/sms/inbound", data=payload)
+
+    assert first.status_code == duplicate.status_code == 200
+    assert TwilioMessage.query.filter_by(twilio_sid="SMNORMALIDEMPOTENT").count() == 1
+    contact = Contact.query.filter_by(company_id=company.id, normalized_phone="+14155550127").one()
+    assert contact.first_name is None and contact.last_name is None
+    assert contact.name is None and contact.display_name is None
+    assert contact.pending_first_name is None and contact.pending_last_name is None
+    assert contact.identity_status == "awaiting_name"
+
+
+def test_normal_yes_does_not_enter_identity_confirmation_or_change_name(client, tenant_user):
+    _, company = tenant_user
+    _twilio_account(company)
+    contact = Contact(
+        company_id=company.id,
+        phone="+14155550125",
+        normalized_phone="+14155550125",
+        first_name="Actual",
+        last_name="Customer",
+        name="Actual Customer",
+        display_name="Actual Customer",
+        identity_status="confirmed",
+        name_verification_level="verified",
+        is_active=True,
+    )
+    db.session.add(contact); db.session.commit()
+
+    response = client.post("/twilio/sms/inbound", data={
+        "From": contact.phone,
+        "To": "+15559999999",
+        "Body": "YES",
+        "MessageSid": "SMNORMALYES",
+    })
+
+    assert response.status_code == 200
+    assert TwilioMessage.query.filter_by(twilio_sid="SMNORMALYES", body="YES").count() == 1
+    db.session.refresh(contact)
+    assert (contact.first_name, contact.last_name, contact.name, contact.display_name) == (
+        "Actual", "Customer", "Actual Customer", "Actual Customer"
+    )
+
+
+def test_pending_yes_confirms_once_through_webhook(client, tenant_user, monkeypatch):
+    _, company = tenant_user
+    _twilio_account(company)
+    monkeypatch.setattr("twilio_sms.sendConversationSms", lambda *args, **kwargs: {"success": True, "sid": "SM-reply"})
+    contact = Contact(
+        company_id=company.id,
+        phone="+14155550126",
+        normalized_phone="+14155550126",
+        identity_status="awaiting_confirmation",
+        pending_first_name="Luke",
+        pending_last_name="Shawver",
+        pending_email="luke@adiken.com",
+        is_active=True,
+    )
+    db.session.add(contact); db.session.commit()
+    payload = {
+        "From": contact.phone,
+        "To": "+15559999999",
+        "Body": "YES",
+        "MessageSid": "SMLUKEYES",
+    }
+
+    first = client.post("/twilio/sms/inbound", data=payload)
+    duplicate = client.post("/twilio/sms/inbound", data=payload)
+
+    assert first.status_code == duplicate.status_code == 200
+    assert TwilioMessage.query.filter_by(twilio_sid="SMLUKEYES").count() == 1
+    db.session.refresh(contact)
+    assert contact.identity_status == "confirmed"
+    assert contact.display_name == "Luke Shawver"
+    assert Contact.query.filter_by(company_id=company.id, is_active=True).count() == 1
+    assert ContactEmailAddress.query.filter_by(contact_id=contact.id, normalized_value="luke@adiken.com").count() == 1
+    assert ContactSourceEvent.query.filter_by(contact_id=contact.id, event_type="identity_confirmed").count() == 1
 
 
 def test_twilio_signature_validation_for_inbound_and_status(client, tenant_user, monkeypatch):

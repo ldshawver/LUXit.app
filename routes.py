@@ -10,6 +10,7 @@ from flask_login import login_required, current_user
 from sqlalchemy import or_, case, text, func
 from sqlalchemy.exc import IntegrityError
 from extensions import db, csrf
+from services.contact_consent import has_explicit_email_opt_out
 try:
     from models import (
         Contact, Campaign, EmailTemplate, CampaignRecipient, EmailTracking,
@@ -2337,8 +2338,8 @@ def _segment_detail_metrics(segment):
     active_members = [m for m in memberships if not m.removed_at and not m.is_excluded]
     excluded_members = [m for m in memberships if m.is_excluded]
     contacts = [m.contact for m in active_members if m.contact and m.contact.company_id == segment.company_id]
-    suppressed = [c for c in contacts if c.do_not_market or c.do_not_email or c.do_not_sms or c.email_unsubscribed or c.sms_opted_out or c.sms_opt_out_at or not c.is_subscribed]
-    email_eligible = [c for c in contacts if c.email and not c.do_not_market and not c.do_not_email and not c.email_unsubscribed and c.is_subscribed]
+    suppressed = [c for c in contacts if c.do_not_market or has_explicit_email_opt_out(c) or c.do_not_sms or c.sms_opted_out or c.sms_opt_out_at]
+    email_eligible = [c for c in contacts if c.email and not c.do_not_market and not has_explicit_email_opt_out(c)]
     sms_eligible = [c for c in contacts if c.phone and not c.do_not_market and not c.do_not_sms and not c.sms_opted_out and not c.sms_opt_out_at]
     return {
         "total_contacts": len(contacts),
@@ -2346,7 +2347,7 @@ def _segment_detail_metrics(segment):
         "suppressed_contacts": len(suppressed),
         "email_eligible": len(email_eligible),
         "sms_eligible": len(sms_eligible),
-        "email_unsubscribed": sum(1 for c in contacts if c.email_unsubscribed or not c.is_subscribed),
+        "email_unsubscribed": sum(1 for c in contacts if has_explicit_email_opt_out(c)),
         "sms_opted_out": sum(1 for c in contacts if c.sms_opted_out or c.sms_opt_out_at),
         "last_refreshed": segment.updated_at,
         "added_today": sum(1 for m in memberships if m.added_at and m.added_at.date() == today),
