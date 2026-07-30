@@ -114,13 +114,18 @@ class TuyaClient:
             return self._token
 
     def set_switch(self, value: bool) -> None:
+        # The v2.0 cloud/thing/shadow/properties/issue endpoint is not a
+        # supported control path for this device's category (cz / basic
+        # switch-plug); it returns "device offline" for a device the
+        # /v1.0/devices status endpoint reports as online, and its
+        # response shape doesn't match this method's success check.
+        # /v1.0/iot-03/devices/{id}/commands is the correct endpoint for
+        # this device category and returns {"success": true, "result": true}.
         body = json.dumps(
-            {"properties": {self.config.switch_code: bool(value)}},
+            {"commands": [{"code": self.config.switch_code, "value": bool(value)}]},
             separators=(",", ":"),
         ).encode("utf-8")
-        path = (
-            f"/v2.0/cloud/thing/{self.config.device_id}/shadow/properties/issue"
-        )
+        path = f"/v1.0/iot-03/devices/{self.config.device_id}/commands"
         payload = self._request("POST", path, body=body, token=self.get_token())
         if payload.get("result") is not True:
             raise TuyaError("Tuya command response malformed")

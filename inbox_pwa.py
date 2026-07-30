@@ -29,17 +29,17 @@ from datetime import datetime, timezone
 from urllib.parse import quote, urlparse
 
 from flask import (Blueprint, Response, abort, current_app, g, jsonify,
-                   render_template, request, send_from_directory, session,
-                   stream_with_context)
+                   redirect, render_template, request, send_from_directory,
+                   session, stream_with_context)
 
-from extensions import db
+from extensions import csrf, db
 
 logger = logging.getLogger(__name__)
 
 inbox_pwa_bp = Blueprint("inbox_pwa", __name__)
 
 
-@inbox_pwa.route("/sw.js")
+@inbox_pwa_bp.route("/sw.js")
 def service_worker():
     """Serve the worker at the origin root so it can control ``/app/*``.
 
@@ -57,6 +57,20 @@ def service_worker():
     response.headers["Pragma"] = "no-cache"
     response.headers["Expires"] = "0"
     return response
+
+
+@inbox_pwa_bp.route("/manifest.json")
+def pwa_manifest():
+    """Serve the canonical PWA manifest from the origin root."""
+    response = current_app.send_static_file("manifest.json")
+    response.headers["Cache-Control"] = "no-cache"
+    return response
+
+
+@inbox_pwa_bp.route("/app/")
+def pwa_root():
+    """Send the canonical PWA entry point to the authenticated inbox shell."""
+    return redirect("/app/inbox", code=302)
 
 
 @inbox_pwa_bp.before_request
@@ -2582,6 +2596,10 @@ def pwa_push_debug():
 
 
 @inbox_pwa_bp.route("/api/pwa/push/receipt", methods=["POST"])
+@csrf.exempt
+# The service worker sends this from a background push event with no page
+# context, so it has no CSRF token to attach. Session cookie + _require_auth()
+# below is the actual authentication for this route.
 def pwa_push_receipt():
     """Service-worker acknowledgement that a push was received/displayed on-device."""
     user = _require_auth()

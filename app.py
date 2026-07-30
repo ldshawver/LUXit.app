@@ -482,22 +482,22 @@ def create_app() -> Flask:
     try:
         from inbox_pwa import inbox_pwa_bp
         app.register_blueprint(inbox_pwa_bp)
-        # The PWA inbox API endpoints are all session-authenticated via
-        # _require_auth().  The service worker caches the page HTML, which
-        # means the CSRF token baked into the page can expire before the
-        # cached copy is refreshed.  Session auth is sufficient here.
-        csrf.exempt(inbox_pwa_bp)
-        print("✓ PWA Inbox loaded: /app/inbox (CSRF-exempt, session-auth)")
+        # Session-authenticated like the rest of the app; CSRF stays enabled
+        # (WTF_CSRF_TIME_LIMIT=None above means the page-rendered token never
+        # expires). The one route a service worker calls without page context
+        # (/api/pwa/push/receipt) is exempted individually in inbox_pwa.py.
+        print("✓ PWA Inbox loaded: /app/inbox (session-auth, CSRF-protected)")
     except Exception as exc:
-        app.logger.warning("Failed to register inbox_pwa blueprint: %s", exc)
-    # Stripe webhook deliveries from Stripe's edge servers will never carry
-    # a CSRF token; the billing endpoints accept JSON from a Fetch call that
-    # likewise does not include the form CSRF cookie. Both routes have their
-    # own auth/signature/allowlist controls, so we exempt the whole blueprint.
-    csrf.exempt(stripe_webhook_bp)
-    print("✓ SaaS Command Center routes loaded: /saas, /api/stripe/webhook (CSRF-exempt)")
+        app.logger.warning("Failed to register inbox_pwa blueprint: %s", exc, exc_info=True)
+    # Stripe webhook deliveries from Stripe's edge servers never carry a
+    # session cookie/CSRF token; only that single endpoint is exempted
+    # (see @csrf.exempt on stripe_webhook in saas_mgmt.py) and it verifies
+    # the Stripe-Signature header instead. The checkout/portal/usage routes
+    # in this blueprint are session-authenticated Fetch calls from logged-in
+    # admins and stay CSRF-protected.
+    print("✓ SaaS Command Center routes loaded: /saas, /api/stripe/webhook (webhook CSRF-exempt; billing endpoints CSRF-protected)")
 
-    @app.get("/login")
+    @app.route("/login", methods=["GET", "POST"])
     def login_alias():
         """Public login alias used by deploy smoke tests and legacy links."""
         return auth_login()

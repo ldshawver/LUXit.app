@@ -369,8 +369,7 @@ def test_reconciliation_sends_on_then_off_after_one_minute(world, monkeypatch):
     notification.reconcile(start + timedelta(seconds=60))
 
     expected_url = (
-        "https://openapi.tuyaus.com/v2.0/cloud/thing/test-device-123/"
-        "shadow/properties/issue"
+        "https://openapi.tuyaus.com/v1.0/iot-03/devices/test-device-123/commands"
     )
     post_calls = [call for call in session.calls if call[0] == "POST"]
     assert len(post_calls) == 2
@@ -379,7 +378,7 @@ def test_reconciliation_sends_on_then_off_after_one_minute(world, monkeypatch):
         assert method == "POST"
         assert url == expected_url
         assert json.loads(request["data"]) == {
-            "properties": {"switch_1": expected_value}
+            "commands": [{"code": "switch_1", "value": expected_value}]
         }
 
 

@@ -107,15 +107,14 @@ def test_token_cache_refresh_and_exact_transmitted_json():
     client.set_switch(False)
     assert len([c for c in session.calls if "/token?" in c[1]]) == 1
     expected_url = (
-        "https://openapi.tuyaus.com/v2.0/cloud/thing/test-device-123/"
-        "shadow/properties/issue"
+        "https://openapi.tuyaus.com/v1.0/iot-03/devices/test-device-123/commands"
     )
     for call, expected_value in zip(session.calls[1:3], (True, False)):
         method, url, request = call
         assert method == "POST"
         assert url == expected_url
         assert json.loads(request["data"]) == {
-            "properties": {"switch_1": expected_value}
+            "commands": [{"code": "switch_1", "value": expected_value}]
         }
     now[0] = 1091.0
     assert client.get_token() == "token-two"
