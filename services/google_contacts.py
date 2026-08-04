@@ -619,13 +619,20 @@ def _merge_duplicate_contacts(db, survivor, duplicate, *, data: dict, user_id: i
     before_survivor = _contact_snapshot(survivor)
     before_duplicate = _contact_snapshot(duplicate)
     reference_mappings = []
+    from services.contact_dedupe import _merge_segment_memberships
+    membership_audit = {"references_reassigned": {}}
+    _merge_segment_memberships(survivor, duplicate, membership_audit)
+    if membership_audit["references_reassigned"].get("segment_member"):
+        reference_mappings.append({"table": "segment_member", "from_contact_id": duplicate.id,
+                                   "to_contact_id": survivor.id,
+                                   "rows": membership_audit["references_reassigned"]["segment_member"]})
     # Repoint every mapped table with a contact_id column, including Twilio,
     # SMS/MMS, campaigns, calls, CRM activities, notes, tasks, deals, feedback,
     # attachments, AI/marketing entities, and future CRM tables.
     for mapper in db.Model.registry.mappers:
         model = mapper.class_
         table_name = getattr(model, "__tablename__", None)
-        if table_name == "contact" or not hasattr(model, "contact_id"):
+        if table_name in {"contact", "segment_member"} or not hasattr(model, "contact_id"):
             continue
         query = model.query.filter_by(contact_id=duplicate.id)
         if hasattr(model, "company_id"):
@@ -634,6 +641,9 @@ def _merge_duplicate_contacts(db, survivor, duplicate, *, data: dict, user_id: i
         if count:
             reference_mappings.append({"table": table_name, "from_contact_id": duplicate.id, "to_contact_id": survivor.id, "rows": count})
     survivor.tags = _tag_union(survivor.tags, duplicate.tags)
+    from services.crm_automation import synchronize_contact_tags
+    synchronize_contact_tags(survivor, source="google_contact_merge",
+                             event_key_prefix=f"google-merge:{survivor.id}:{duplicate.id}")
     updated_fields, preserved_fields, skipped_fields = [], [], []
     for field in ["email", "phone", "normalized_phone", "name", "first_name", "last_name", "company", "source", "source_detail", "source_added_at", "external_google_contact_id", "avatar_url"]:
         source_value = getattr(duplicate, field, None) if hasattr(duplicate, field) else None

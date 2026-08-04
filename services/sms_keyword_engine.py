@@ -199,7 +199,12 @@ def _matches(rule: SMSKeywordRule, body: str) -> bool:
 def _apply_contact_actions(contact: Contact, rule: SMSKeywordRule) -> None:
     tags = _tags_list(contact.tags)
     if rule.tag_to_add and rule.tag_to_add not in tags:
-        tags.append(rule.tag_to_add)
+        from services.contact_audience import add_contact_tag
+        add_contact_tag(
+            contact, rule.tag_to_add, source="sms_keyword_campaign",
+            event_key=f"sms-keyword-rule:{rule.id}:contact:{contact.id}",
+        )
+        tags = _tags_list(contact.tags)
     if rule.segment_to_add:
         contact.segment = rule.segment_to_add
     _save_tags(contact, tags)

@@ -1439,6 +1439,40 @@ def inbound_sms():
             correlation_id, twilio_sid, ta.company_id, conv.id,
         )
 
+        # CRM classification is isolated from auto-reply and compliance
+        # processing.  The persisted SID is the event idempotency key, and the
+        # count spans every conversation attached to the canonical contact.
+        try:
+            from models import TwilioConversation
+            from services.crm_automation import (
+                FIRST_INBOUND_TRIGGER, dispatch_event, ensure_my_order_automation,
+            )
+            first_inbound_message_id = (
+                db.session.query(db.func.min(TwilioMessage.id))
+                .join(TwilioConversation, TwilioConversation.id == TwilioMessage.conversation_id)
+                .filter(
+                    TwilioMessage.company_id == ta.company_id,
+                    TwilioMessage.direction == "inbound",
+                    TwilioConversation.contact_id == conv.contact_id,
+                )
+                .scalar()
+            )
+            is_first_inbound = bool(conv.contact_id and first_inbound_message_id == msg_record.id)
+            ensure_my_order_automation(ta.company_id, create_missing=True)
+            dispatch_event(
+                ta.company_id, conv.contact_id, FIRST_INBOUND_TRIGGER,
+                f"twilio:{twilio_sid}", direction="inbound", channel="sms",
+                first_inbound_sms=is_first_inbound, message_sid=twilio_sid,
+                conversation_id=conv.id,
+            )
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+            logger.exception(
+                "CRM first-inbound automation failed sid=%s company_id=%s; auto-reply processing continues",
+                twilio_sid, ta.company_id,
+            )
+
         # This optional integration is invoked only after signature validation
         # and durable acceptance. Its own durable state isolates Twilio from
         # Tuya network availability and MessageSid retries.

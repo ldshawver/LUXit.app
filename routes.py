@@ -2125,10 +2125,9 @@ def _resolve_contact_from_route(company_id, *, email=None, phone=None, first_nam
     if segment:
         contact.segment = segment
     if tags:
-        existing = {t.strip() for t in (contact.tags or '').split(',') if t.strip()}
+        from services.contact_audience import add_contact_tag
         for tag in [t.strip() for t in str(tags).split(',') if t.strip()]:
-            existing.add(tag)
-        contact.tags = ','.join(sorted(existing))
+            add_contact_tag(contact, tag, source=source)
     return contact
 
 
@@ -2451,6 +2450,9 @@ def create_segment():
         segment.match_mode = request.form.get("match_mode", "all")
         segment.triggers = json.loads(request.form.get("triggers") or "[]")
         segment.actions = json.loads(request.form.get("actions") or "[]")
+        if segment.segment_type == "automation_rule":
+            from services.crm_automation import validate_definition
+            validate_definition(segment.triggers, segment.conditions, segment.actions, segment.match_mode)
         segment.is_dynamic = is_dynamic
         
         db.session.add(segment)
@@ -9083,7 +9085,8 @@ def generate_blog_content():
 @login_required
 def customer_profile(contact_id):
     """View and edit customer profile with engagement tracking"""
-    contact = Contact.query.get_or_404(contact_id)
+    company_id = getattr(current_user, "default_company_id", None)
+    contact = Contact.query.filter_by(id=contact_id, company_id=company_id).first_or_404()
     activities = ContactActivity.query.filter_by(contact_id=contact_id).order_by(ContactActivity.created_at.desc()).limit(50).all()
     
     stats = {
@@ -9147,6 +9150,11 @@ def update_contact_profile(contact_id):
             contact.segment = form.get('segment').strip() or contact.segment
         if form.get('tags') is not None:
             contact.tags = form.get('tags').strip() or None
+            from services.crm_automation import synchronize_contact_tags
+            from hashlib import sha256
+            tag_state = sha256((contact.tags or "").encode("utf-8")).hexdigest()
+            synchronize_contact_tags(contact, source="manual_profile",
+                                     event_key_prefix=f"profile:{contact.id}:{tag_state}")
         if form.get('notes') is not None:
             contact.notes = form.get('notes').strip() or None
         
