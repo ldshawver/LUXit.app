@@ -8,7 +8,7 @@ from sqlalchemy import or_, func
 from extensions import db
 from models import Contact, Segment, SegmentMember, SMSRecipient
 
-PHONE_SOURCE_TAG_RULES = [{"phone_number": "+19165989519", "tag": "MyOrder Customer"}]
+PHONE_SOURCE_TAG_RULES = [{"phone_number": "+19165989519", "tag": "My Order Customer"}]
 SYSTEM_KEYWORDS = {"STOP", "STOPALL", "UNSUBSCRIBE", "CANCEL", "END", "QUIT", "HELP", "INFO", "START", "UNSTOP"}
 
 
@@ -34,11 +34,17 @@ def _split_tags(tags):
     return out
 
 
-def add_contact_tag(contact: Contact, tag: str):
+def add_contact_tag(contact: Contact, tag: str, *, source="contact_audience", event_key=None):
+    from services.crm_automation import MY_ORDER_CUSTOMER_NAME, is_my_order_customer_label
+    if contact.id and is_my_order_customer_label(tag):
+        from services.crm_automation import assign_contact_tag
+        return assign_contact_tag(contact, MY_ORDER_CUSTOMER_NAME, source=source, event_key=event_key)
     tags = _split_tags(contact.tags)
     if tag and tag.lower() not in [t.lower() for t in tags]:
         tags.append(tag)
         contact.tags = ", ".join(tags)
+        return True
+    return False
 
 
 def source_tag_rules(config: dict | None = None):
@@ -112,6 +118,8 @@ def upsert_contact_from_source(company_id: int, phone: str | None = None, email:
         contact.email_opt_in = False
     apply_source_tags(contact, source_phone_number)
     db.session.flush()
+    from services.crm_automation import synchronize_contact_tags
+    synchronize_contact_tags(contact, source=source_channel or "unknown")
     return contact
 
 

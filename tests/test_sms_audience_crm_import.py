@@ -52,7 +52,7 @@ def test_sms_source_phone_and_myorder_tag_for_inbound_sources(app, tenant_user):
 
     assert contact.normalized_phone == "+15550001000"
     assert contact.source_phone_number == "+19165989519"
-    assert "MyOrder Customer" in (contact.tags or "")
+    assert "My Order Customer" in (contact.tags or "")
 
 
 def test_segment_by_source_phone_and_tag_returns_tenant_contacts(app, tenant_user):

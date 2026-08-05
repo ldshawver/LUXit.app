@@ -227,6 +227,7 @@ def merge_contacts(
     for dup in duplicates:
         audit["merged_contact_ids"].append(dup.id)
         _merge_contact_data(primary, dup, audit)
+        _merge_segment_memberships(primary, dup, audit)
         changed = _repoint_contact_references(dup.id, primary.id)
         for table, count in changed.items():
             audit["references_reassigned"][table] = audit["references_reassigned"].get(table, 0) + count
@@ -240,6 +241,11 @@ def merge_contacts(
 
     audit["opt_out_preservation"]["sms_opted_out_after"] = bool(primary.sms_opted_out or primary.do_not_sms or primary.sms_opt_out_at)
     audit["opt_out_preservation"]["email_unsubscribed_after"] = bool(primary.email_unsubscribed or primary.do_not_email)
+    from services.crm_automation import synchronize_contact_tags
+    synchronize_contact_tags(
+        primary, source="contact_merge",
+        event_key_prefix=f"merge:{primary.id}:{'-'.join(str(v) for v in sorted(duplicate_contact_ids))}",
+    )
     _audit_merge(primary, audit, actor_user_id=actor_user_id)
 
     if dry_run:
@@ -699,6 +705,31 @@ def _repoint_contact_references(old_id: int, new_id: int) -> dict[str, int]:
         if primary and primary.possible_duplicate_of_id == old_id:
             primary.possible_duplicate_of_id = None
     return updated
+
+
+def _merge_segment_memberships(primary: Contact, duplicate: Contact, audit: dict) -> None:
+    """Repoint memberships without violating the canonical pair uniqueness."""
+    existing = {row.segment_id: row for row in SegmentMember.query.filter_by(contact_id=primary.id).all()}
+    moved = 0
+    consolidated = 0
+    for duplicate_row in SegmentMember.query.filter_by(contact_id=duplicate.id).all():
+        primary_row = existing.get(duplicate_row.segment_id)
+        if primary_row:
+            if not duplicate_row.removed_at and not duplicate_row.is_excluded:
+                primary_row.removed_at = None
+                primary_row.removed_by_user_id = None
+                primary_row.is_excluded = False
+                primary_row.exclusion_reason = None
+            db.session.delete(duplicate_row)
+            consolidated += 1
+        else:
+            duplicate_row.contact_id = primary.id
+            existing[duplicate_row.segment_id] = duplicate_row
+            moved += 1
+    if moved or consolidated:
+        audit["references_reassigned"]["segment_member"] = (
+            audit["references_reassigned"].get("segment_member", 0) + moved + consolidated
+        )
 
 
 def merge_duplicate_contacts(company_id: int | None = None, *, dry_run: bool = False, actor_user_id: int | None = None) -> dict[str, int]:

@@ -1464,6 +1464,29 @@ class Segment(db.Model):
     members = db.relationship("SegmentMember", backref="segment", lazy="dynamic", cascade="all, delete-orphan")
 
 
+class CRMAutomationExecution(db.Model):
+    """Durable idempotency/audit row for a CRM automation rule action."""
+    __tablename__ = "crm_automation_execution"
+
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=False, index=True)
+    rule_id = db.Column(db.Integer, db.ForeignKey("segment.id"), nullable=False, index=True)
+    contact_id = db.Column(db.Integer, db.ForeignKey("contact.id"), nullable=False, index=True)
+    event_key = db.Column(db.String(255), nullable=False)
+    action_index = db.Column(db.Integer, nullable=False, default=0)
+    trigger_name = db.Column(db.String(100), nullable=False)
+    status = db.Column(db.String(30), nullable=False, default="completed")
+    details = db.Column(db.JSON, default=dict, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        db.UniqueConstraint(
+            "company_id", "rule_id", "event_key", "action_index",
+            name="uq_crm_automation_execution_event_action",
+        ),
+    )
+
+
 class SegmentMember(db.Model):
     __tablename__ = "segment_member"
 

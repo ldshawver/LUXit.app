@@ -992,6 +992,9 @@ def api_segment_create_root():
     s = Segment(company_id=cid, name=data.get("name") or "Untitled Segment")
     for f in SEGMENT_FIELDS:
         if f in data: setattr(s, f, data[f])
+    if s.segment_type == "automation_rule":
+        from services.crm_automation import validate_definition
+        validate_definition(s.triggers or [], s.conditions or {}, s.actions or [], s.match_mode)
     db.session.add(s); db.session.flush(); _audit(cid, "segment_created", "segment", s.id, _segment_json(s)); db.session.commit()
     return jsonify({"success": True, "segment": _segment_json(s)}), 201
 
@@ -1012,6 +1015,9 @@ def api_segment_patch_root(sid):
     data = request.get_json(silent=True) or {}; was_active = s.is_active
     for f in SEGMENT_FIELDS:
         if f in data: setattr(s, f, data[f])
+    if s.segment_type == "automation_rule":
+        from services.crm_automation import validate_definition
+        validate_definition(s.triggers or [], s.conditions or {}, s.actions or [], s.match_mode)
     action = "segment_updated"
     if "is_active" in data and bool(data["is_active"]) != bool(was_active):
         action = "segment_activated" if data["is_active"] else "segment_deactivated"

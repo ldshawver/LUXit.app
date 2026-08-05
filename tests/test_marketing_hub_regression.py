@@ -303,7 +303,7 @@ def test_inbound_sms_is_idempotent_creates_tagged_contact_and_survives_push_fail
     message = TwilioMessage.query.filter_by(twilio_sid="SMIDEMPOTENT").one()
     assert message.company_id == company.id
     contact = Contact.query.filter_by(company_id=company.id, normalized_phone="+14155550123").one()
-    assert "MyOrder Customer" in (contact.tags or "")
+    assert "My Order Customer" in (contact.tags or "")
     assert message.conversation.contact_id == contact.id
 
 
