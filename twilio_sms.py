@@ -1789,18 +1789,21 @@ def inbound_sms():
         if conv.is_first_contact:
             conv.is_first_contact = False
         db.session.commit()
-        delivered, delivery_status = _deliver_and_finalize_inbound(msg_record_id, ta)
-        if not delivered:
-            logger.warning(
-                "Inbound outbound effects unresolved sid=%s status=%s",
-                twilio_sid, delivery_status,
-            )
-            if delivery_status == "failed_retryable":
-                return '<Response></Response>', 500, {"Content-Type": "text/xml"}
-            return '<Response></Response>', 200, {"Content-Type": "text/xml"}
 
-        # Optional external integration is invoked only after the core inbound
-        # transaction is complete. Its unique event SID makes retries harmless.
+        # ── 7. Inbound-awareness side effects ────────────────────────────
+        # Runs exactly once, immediately after the inbound message above is
+        # durably persisted and committed -- independent of whether the
+        # optional outbound auto-reply below succeeds, fails, or needs a
+        # retry. A failed or delayed auto-reply must never suppress
+        # awareness of an inbound message that was already accepted.
+        #
+        # This only runs on the first-time processing pass for a given
+        # MessageSid: the retry short-circuits near the top of this function
+        # (existing_message.processing_status in {"completed",
+        # "outbound_pending", "failed_retryable", "failed_terminal"}) return
+        # before reaching this point, so a Twilio webhook retry of the same
+        # SID cannot re-fire it. Its unique event/message SID also makes each
+        # sub-call individually idempotent if it ever were re-invoked.
         try:
             from services.tuya_notification import accept_inbound
             accept_inbound(
@@ -1857,6 +1860,17 @@ def inbound_sms():
                 "status=persisted category=push_dispatch",
                 correlation_id, twilio_sid, ta.company_id,
             )
+
+        # ── 8. Deliver any queued outbound auto-reply/identity/campaign SMS ─
+        delivered, delivery_status = _deliver_and_finalize_inbound(msg_record_id, ta)
+        if not delivered:
+            logger.warning(
+                "Inbound outbound effects unresolved sid=%s status=%s",
+                twilio_sid, delivery_status,
+            )
+            if delivery_status == "failed_retryable":
+                return '<Response></Response>', 500, {"Content-Type": "text/xml"}
+            return '<Response></Response>', 200, {"Content-Type": "text/xml"}
 
     except Exception as exc:
         if not message_persisted:
