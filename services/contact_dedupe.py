@@ -81,7 +81,7 @@ _VERIFICATION_RANK = {
 }
 _IDENTITY_RANK = {
     None: 0, "pending_identity": 0, "awaiting_name": 1, "awaiting_email": 1,
-    "awaiting_confirmation": 2, "confirmed": 4,
+    "awaiting_confirmation": 2, "minimum_established": 3, "confirmed": 4,
 }
 _CONSENT_DENIALS = {"opted_out", "unsubscribed", "denied", "suppressed", "revoked"}
 _CONSENT_GRANTS = {"opted_in", "subscribed", "granted", "confirmed"}

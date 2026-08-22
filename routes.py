@@ -180,7 +180,7 @@ def inject_company_context():
             current_company = None
 
         try:
-            from models import UserQuickLink, ActivityLog, Contact, Campaign, SMSCampaign, Notification, InboxMessage
+            from models import UserQuickLink, ActivityLog, Contact, Campaign, SMSCampaign, Notification, InboxMessage, NOTIFICATION_COMMUNICATIONS_EVENT_TYPES
             user_quick_links = UserQuickLink.query.filter_by(user_id=current_user.id).order_by(UserQuickLink.position).all()
             recent_activities = ActivityLog.query.filter_by(user_id=current_user.id).order_by(ActivityLog.created_at.desc()).limit(5).all()
 
@@ -188,7 +188,11 @@ def inject_company_context():
             usage_contacts = Contact.query.filter_by(company_id=company_id).count() if company_id else 0
             usage_emails = Campaign.query.filter_by(company_id=company_id, status='sent').count() if company_id else 0
             usage_sms = SMSCampaign.query.filter_by(company_id=company_id, status='sent').count() if company_id else 0
-            unread_notifications = Notification.query.filter_by(user_id=current_user.id, is_read=False).count()
+            # Ordinary inbound SMS/call/voicemail notifications belong to the PWA's
+            # own notification state, not the main dashboard's notification bell.
+            unread_notifications = Notification.query.filter_by(user_id=current_user.id, is_read=False).filter(
+                Notification.event_type.notin_(NOTIFICATION_COMMUNICATIONS_EVENT_TYPES)
+            ).count()
             unread_inbox = InboxMessage.query.filter_by(user_id=current_user.id, is_read=False).count()
         except Exception:
             user_quick_links = []
@@ -8961,14 +8965,15 @@ def get_deal_json(deal_id):
 def get_contact(contact_id):
     """Get contact details via API"""
     try:
-        contact = db.session.get(Contact, contact_id)
+        company_id = getattr(current_user, 'default_company_id', None)
+        contact = Contact.query.filter_by(id=contact_id, company_id=company_id).first()
         if not contact:
             return jsonify({'error': 'Contact not found'}), 404
         return jsonify({
             'id': contact.id,
             'first_name': contact.first_name or '',
             'last_name': contact.last_name or '',
-            'full_name': contact.full_name,
+            'full_name': f"{contact.first_name or ''} {contact.last_name or ''}".strip(),
             'email': contact.email or '',
             'phone': contact.phone or '',
             'company': contact.company or '',
@@ -9120,45 +9125,45 @@ def customer_profile(contact_id):
 @login_required
 def update_contact_profile(contact_id):
     """Update contact profile via API"""
-    contact = Contact.query.get_or_404(contact_id)
-    
+    company_id = getattr(current_user, 'default_company_id', None)
+    contact = Contact.query.filter_by(id=contact_id, company_id=company_id).first()
+    if not contact:
+        return jsonify({'success': False, 'error': 'Contact not found'}), 404
+
     try:
         form = request.form
-        
-        if form.get('first_name') is not None:
-            contact.first_name = form.get('first_name').strip() or contact.first_name
-        if form.get('last_name') is not None:
-            contact.last_name = form.get('last_name').strip() or contact.last_name
-        if form.get('email') is not None:
-            email = form.get('email').strip()
-            if email:
-                contact.email = email
-        if form.get('phone') is not None:
-            contact.phone = form.get('phone').strip() or None
-        if form.get('company') is not None:
-            contact.company = form.get('company').strip() or None
-        if form.get('website') is not None:
-            contact.website = form.get('website').strip() or None
-        if form.get('address') is not None:
-            contact.address = form.get('address').strip() or None
-        if form.get('city') is not None:
-            contact.city = form.get('city').strip() or None
-        if form.get('state') is not None:
-            contact.state = form.get('state').strip() or None
-        if form.get('zip_code') is not None:
-            contact.zip_code = form.get('zip_code').strip() or None
+
+        # Core identity fields (name/phone/email/company/tags) go through the
+        # canonical, tenant-scoped update service shared with the PWA, so
+        # normalization, conflict detection, and identity-trust promotion are
+        # consistent no matter which surface made the edit.
+        identity_fields = {
+            key: form.get(key) for key in ('first_name', 'last_name', 'phone', 'email', 'company', 'tags')
+            if form.get(key) is not None
+        }
+        if identity_fields:
+            from services.contact_profile import update_contact_fields, ContactConflictError
+            try:
+                update_contact_fields(
+                    contact, company_id=company_id, fields=identity_fields,
+                    source="manual", actor_user_id=current_user.id,
+                )
+            except ContactConflictError as exc:
+                db.session.rollback()
+                return jsonify({'success': False, 'error': 'contact_identity_conflict',
+                                 'field': exc.field, 'message': exc.message}), 409
+            except ValueError as exc:
+                db.session.rollback()
+                return jsonify({'success': False, 'error': 'invalid_input', 'message': str(exc)}), 400
+
+        # website/address/city/state/zip_code/notes have no backing Contact
+        # columns (pre-existing; assignments to them are silently discarded)
+        # and segment/lead_score are CRM-only fields with no identity/conflict
+        # implications, so they stay on the desktop route rather than moving
+        # into the shared identity service.
         if form.get('segment') is not None:
             contact.segment = form.get('segment').strip() or contact.segment
-        if form.get('tags') is not None:
-            contact.tags = form.get('tags').strip() or None
-            from services.crm_automation import synchronize_contact_tags
-            from hashlib import sha256
-            tag_state = sha256((contact.tags or "").encode("utf-8")).hexdigest()
-            synchronize_contact_tags(contact, source="manual_profile",
-                                     event_key_prefix=f"profile:{contact.id}:{tag_state}")
-        if form.get('notes') is not None:
-            contact.notes = form.get('notes').strip() or None
-        
+
         lead_score_str = form.get('lead_score', '').strip()
         if lead_score_str:
             try:
@@ -11618,26 +11623,34 @@ def add_user():
 @main_bp.route('/notifications')
 @login_required
 def notifications_page():
-    from models import Notification
+    from models import Notification, NOTIFICATION_COMMUNICATIONS_EVENT_TYPES
     page = request.args.get('page', 1, type=int)
     filter_type = request.args.get('filter', 'all')
-    query = Notification.query.filter_by(user_id=current_user.id).order_by(Notification.created_at.desc())
+    # The main dashboard notification center excludes ordinary SMS/call/voicemail
+    # notifications -- those live in the PWA's own notification state.
+    query = Notification.query.filter_by(user_id=current_user.id).filter(
+        Notification.event_type.notin_(NOTIFICATION_COMMUNICATIONS_EVENT_TYPES)
+    ).order_by(Notification.created_at.desc())
     if filter_type == 'unread':
         query = query.filter_by(is_read=False)
     elif filter_type in ('system', 'campaign', 'automation', 'contact', 'team'):
         query = query.filter_by(category=filter_type)
     notifications = query.paginate(page=page, per_page=30, error_out=False)
-    unread_count = Notification.query.filter_by(user_id=current_user.id, is_read=False).count()
+    unread_count = Notification.query.filter_by(user_id=current_user.id, is_read=False).filter(
+        Notification.event_type.notin_(NOTIFICATION_COMMUNICATIONS_EVENT_TYPES)
+    ).count()
     return render_template('notifications.html', notifications=notifications, unread_count=unread_count, filter_type=filter_type)
 
 
 @main_bp.route('/notifications/mark-read', methods=['POST'])
 @login_required
 def mark_notification_read():
-    from models import Notification
+    from models import Notification, NOTIFICATION_COMMUNICATIONS_EVENT_TYPES
     notif_id = request.form.get('notification_id')
     if notif_id == 'all':
-        Notification.query.filter_by(user_id=current_user.id, is_read=False).update({'is_read': True})
+        Notification.query.filter_by(user_id=current_user.id, is_read=False).filter(
+            Notification.event_type.notin_(NOTIFICATION_COMMUNICATIONS_EVENT_TYPES)
+        ).update({'is_read': True}, synchronize_session=False)
     else:
         notif = Notification.query.filter_by(id=notif_id, user_id=current_user.id).first()
         if notif:
@@ -11649,10 +11662,12 @@ def mark_notification_read():
 @main_bp.route('/notifications/delete', methods=['POST'])
 @login_required
 def delete_notification():
-    from models import Notification
+    from models import Notification, NOTIFICATION_COMMUNICATIONS_EVENT_TYPES
     notif_id = request.form.get('notification_id')
     if notif_id == 'all':
-        Notification.query.filter_by(user_id=current_user.id).delete()
+        Notification.query.filter_by(user_id=current_user.id).filter(
+            Notification.event_type.notin_(NOTIFICATION_COMMUNICATIONS_EVENT_TYPES)
+        ).delete(synchronize_session=False)
     else:
         notif = Notification.query.filter_by(id=notif_id, user_id=current_user.id).first()
         if notif:

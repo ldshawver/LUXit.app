@@ -1801,15 +1801,12 @@ def get_conversation(conv_id):
     contact_data = None
     if conv.contact_id:
         from models import Contact
-        c = db.session.get(Contact, conv.contact_id)
+        from services.contact_profile import serialize_contact
+        c = Contact.query.filter_by(id=conv.contact_id, company_id=company.id).first()
         if c:
-            contact_data = {
-                "id":    c.id,
-                "name":  f"{c.first_name or ''} {c.last_name or ''}".strip(),
-                "email": c.email,
-                "phone": c.phone,
-                "tags":  c.tags,
-            }
+            contact_data = serialize_contact(c)
+            # Back-compat key for the read-only contact panel view.
+            contact_data["name"] = contact_data["full_name"]
 
     return jsonify({
         "conversation": _conv_to_dict(conv, brief=False),
@@ -2070,6 +2067,52 @@ def rename_contact(conv_id):
         conv.contact_name = name
         db.session.commit()
     return jsonify({"success": True, "contact_name": conv.contact_name})
+
+
+# ── API: edit contact (canonical identity fields) ───────────────────────────────
+
+@inbox_pwa_bp.route("/api/inbox/conversations/<int:conv_id>/contact", methods=["PATCH"])
+def update_conversation_contact(conv_id):
+    user    = _require_auth()
+    company = _get_company(user)
+    from models import Contact, TwilioConversation
+    from services.comms_permissions import filter_conversations_for_user
+    from services.contact_profile import ContactConflictError, serialize_contact, update_contact_fields
+    conv = filter_conversations_for_user(
+        TwilioConversation.query.filter_by(id=conv_id, company_id=company.id), user, company.id
+    ).first_or_404()
+    if not conv.contact_id:
+        return jsonify({"success": False, "error": "no_contact", "message": "This conversation has no linked contact yet."}), 404
+    contact = Contact.query.filter_by(id=conv.contact_id, company_id=company.id).first()
+    if not contact:
+        return jsonify({"success": False, "error": "no_contact"}), 404
+
+    payload = request.get_json() or {}
+    fields = {
+        key: payload.get(key) for key in ("first_name", "last_name", "phone", "email", "company", "tags")
+        if key in payload
+    }
+    if not fields:
+        return jsonify({"success": False, "error": "invalid_input", "message": "No editable fields were submitted."}), 400
+
+    try:
+        update_contact_fields(contact, company_id=company.id, fields=fields, source="pwa_verified", actor_user_id=user.id)
+    except ContactConflictError as exc:
+        db.session.rollback()
+        return jsonify({"success": False, "error": "contact_identity_conflict", "field": exc.field, "message": exc.message}), 409
+    except ValueError as exc:
+        db.session.rollback()
+        return jsonify({"success": False, "error": "invalid_input", "message": str(exc)}), 400
+
+    # Keep the conversation's own display name in sync so the inbox list and
+    # conversation title reflect the edit immediately, without waiting for
+    # another inbound SMS to re-resolve it.
+    display = f"{contact.first_name or ''} {contact.last_name or ''}".strip()
+    if display:
+        conv.contact_name = display
+    db.session.commit()
+
+    return jsonify({"success": True, "contact": serialize_contact(contact), "contact_name": conv.contact_name})
 
 
 # ── API: unread count only ────────────────────────────────────────────────────
@@ -2470,7 +2513,11 @@ def send_pwa_push_notification(company_id: int, *, user_ids, title: str, body: s
         try:
             from models import Company
             company = db.session.get(Company, company_id)
-            badge_count = _pwa_badge_counts_for(user, company)["count"] if company else None
+            # The OS/app-icon badge must represent only unread inbound SMS visible
+            # to this user in the active company -- not missed calls, voicemails,
+            # or generic Notification rows (those have their own in-app indicators
+            # via the smsUnread/missedCalls/voicemails/notifications breakdown).
+            badge_count = _pwa_badge_counts_for(user, company)["smsUnread"] if company else None
         except Exception:
             badge_count = None
         payload = {

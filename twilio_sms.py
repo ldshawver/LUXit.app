@@ -1753,6 +1753,7 @@ def inbound_sms():
                 logger.warning("SMS forward failed: %s", fwd_exc)
 
         # ── 5b. Campaign keyword/auto-reply engine ────────────────────────
+        campaign_reply_sent = False
         try:
             from services.sms_keyword_engine import (
                 attribute_inbound_reply,
@@ -1761,7 +1762,8 @@ def inbound_sms():
             attribute_inbound_reply(ta.company_id, from_number, body, conv.id)
             campaign_reply = process_keyword_rules(ta.company_id, body, conv, ta)
             if campaign_reply and not identity_reply_sent:
-                sendConversationSms(conv.id, campaign_reply, twilio_account=ta, is_auto_reply=True, effect_type="campaign_reply")
+                result = sendConversationSms(conv.id, campaign_reply, twilio_account=ta, is_auto_reply=True, effect_type="campaign_reply")
+                campaign_reply_sent = bool(result.get("success"))
         except Exception as campaign_rule_exc:
             logger.exception("Error in campaign SMS keyword engine: %s", campaign_rule_exc)
 
@@ -1771,8 +1773,11 @@ def inbound_sms():
             # Auto-capture/update CRM contact for every non-system inbound SMS.
             _capture_lead(conv, body, ta.company_id)
 
-            # Run rules only if not opted out
-            if not identity_reply_sent and not conv.is_opted_out and getattr(ta, "auto_reply_enabled", True):
+            # Run rules only if no higher-precedence reply (identity collection or
+            # the campaign/keyword engine) has already answered this message, and
+            # not opted out. This keeps one inbound SMS from generating two
+            # independent auto-replies.
+            if not identity_reply_sent and not campaign_reply_sent and not conv.is_opted_out and getattr(ta, "auto_reply_enabled", True):
                 auto_reply_sent = _apply_auto_reply_rules(conv, body, ta)
         except Exception as rule_exc:
             logger.exception("Error in auto-reply rule engine: %s", rule_exc)

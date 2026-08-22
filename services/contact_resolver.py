@@ -12,9 +12,15 @@ from models import Contact, ContactEmailAddress, ContactPhoneNumber, GoogleConta
 from services.phone_normalization import normalize_phone_e164
 
 PLACEHOLDERS = {"pending identity", "unknown", "unknown contact", "n/a", "na", "none", "caller", "new contact", "new caller", "name needed"}
-SOURCE_RANK = {"customer_confirmed": 600, "pwa_verified": 600, "manual": 500, "user": 500,
-               "google_contacts": 400, "google": 400, "ios_contacts": 300, "icloud_import": 300,
-               "trusted_import": 200, "canonical": 100}
+SOURCE_RANK = {"customer_confirmed": 700, "pwa_verified": 700,
+               "canonical": 600, "manual": 600, "user": 600,
+               "google_contacts": 500, "google": 500,
+               "ios_contacts": 400, "icloud_import": 400,
+               "trusted_import": 300}
+# Identity states in which stored name data must never be treated as trustworthy,
+# regardless of source ranking (e.g. a name flagged ambiguous by conflicting
+# Google/iOS evidence, or a contact that explicitly declined confirmation).
+UNSAFE_IDENTITY_STATES = {"declined", "ambiguous"}
 IDENTITY_KEYWORDS = {
     "yes", "y", "confirm", "confirmed", "no", "n", "incorrect", "change",
     "stop", "start", "help",
@@ -165,14 +171,23 @@ class ContactResolution:
 
 
 def _trusted_name_provenance(contact: Contact) -> bool:
+    if contact.identity_status in UNSAFE_IDENTITY_STATES:
+        return False
     provenance = contact.name_provenance if isinstance(contact.name_provenance, dict) else {}
     provenance_source = str(provenance.get("source") or "").casefold()
-    return (
-        contact.identity_status == "confirmed"
-        and contact.name_verification_level in TRUSTED_VERIFICATION_LEVELS
+    if (
+        contact.name_verification_level in TRUSTED_VERIFICATION_LEVELS
         and contact.name_source in TRUSTED_NAME_SOURCES
         and provenance_source in TRUSTED_NAME_PROVENANCE_SOURCES
-    )
+    ):
+        return True
+    # Canonical first-party contact data: contact.first_name/last_name are only ever
+    # written by trusted paths (contact creation/import, the SMS-confirmed flow, or
+    # this resolver's own Google/iOS promotion below) -- unconfirmed SMS replies are
+    # staged in pending_first_name/pending_last_name and never reach here. So an
+    # existing first_name with a non-unsafe identity_status is inherently trustworthy
+    # even before it has been explicitly "confirmed" or matched against Google/iOS.
+    return bool(contact.first_name)
 
 
 def _contact_name(contact: Contact) -> str | None:
@@ -604,6 +619,13 @@ def resolve_contact_identity(company_id: int, *, phone=None, email=None, contact
         if contact.identity_status == "pending_identity":
             contact.identity_status = "confirmed"
         current, source = best[1], best[2]
+    elif current and contact.identity_status == "pending_identity" and (contact.normalized_phone or contact.phone):
+        # A trusted first-party (canonical) name is already on file alongside a phone
+        # number, with no stronger/conflicting evidence to promote over it. That is
+        # enough to skip SMS identity collection, but it is not the same guarantee as
+        # a completed SMS confirmation or Google/iOS match, so it gets its own status
+        # rather than being folded into "confirmed".
+        contact.identity_status = "minimum_established"
     return ContactResolution(contact.id, contact.first_name, contact.last_name, current or "Name needed", mask_phone(contact.normalized_phone or contact.phone), source if current else None, contact.name_verification_level or "unverified", contact.identity_status, contact.identity_conflict_status or "none")
 
 

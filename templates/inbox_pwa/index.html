@@ -357,6 +357,20 @@
       resize: vertical; min-height: 80px; margin-top: 6px; font-family: inherit; outline: none;
     }
     .notes-area:focus { border-color: var(--brand); }
+    .cp-edit-label {
+      display: block; font-size: .72rem; color: var(--muted); margin-top: 8px;
+    }
+    .cp-edit-label:first-child { margin-top: 0; }
+    .cp-edit-input {
+      display: block; width: 100%; margin-top: 3px; background: var(--color-input-bg);
+      border: 1px solid var(--border); color: var(--text); border-radius: 8px;
+      padding: 7px 8px; font-size: .82rem; font-family: inherit; outline: none;
+    }
+    .cp-edit-input:focus { border-color: var(--brand); }
+    .cp-edit-error {
+      margin-top: 8px; padding: 6px 8px; border-radius: 8px; font-size: .76rem;
+      background: rgba(239,68,68,.1); border: 1px solid rgba(239,68,68,.3); color: var(--red);
+    }
     .btn-small {
       font-size: .75rem; padding: 5px 12px; border-radius: 8px;
       background: color-mix(in srgb,var(--pwa-primary) 20%,transparent); border: 1px solid color-mix(in srgb,var(--pwa-primary) 30%,transparent);
@@ -1258,6 +1272,20 @@ window.addEventListener('DOMContentLoaded', () => {
   setInterval(loadBadgeCounts, 120000);
 });
 
+// Reconcile the app badge/conversation list on foreground/resume -- mobile
+// PWAs commonly suspend timers and SSE while backgrounded, so returning to
+// the foreground needs its own reconciliation rather than relying on the
+// 120s interval or an SSE event that may not have been delivered.
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') {
+    loadBadgeCounts();
+    loadConversations();
+  }
+});
+window.addEventListener('pageshow', () => {
+  loadBadgeCounts();
+});
+
 /* ── Service Worker ───────────────────────────────────────────── */
 function pushRegistrationState() {
   try { return JSON.parse(localStorage.getItem('luxitPushRegistrationState') || '{}'); } catch (_) { return {}; }
@@ -1994,6 +2022,8 @@ function setupKeyboardResize() {
 /* ── Open conversation ────────────────────────────────────────── */
 async function openConversation(convId) {
   state.activeConvId = convId;
+  state.contactEditMode = false;
+  state.contactEditSaving = false;
   document.querySelectorAll('.conv-item').forEach(el => el.classList.remove('active'));
   const ci = document.getElementById('ci-' + convId);
   if (ci) { ci.classList.add('active'); ci.classList.remove('unread'); ci.querySelector('.conv-dot')?.remove(); }
@@ -2021,6 +2051,10 @@ async function openConversation(convId) {
   renderMessages(data.messages);
   renderContactPanel(c, data.contact);
   startMsgPolling(convId);
+  // Opening a conversation marks it read server-side (see get_conversation),
+  // which changes the canonical unread-SMS count -- reconcile the app badge
+  // immediately rather than waiting for the next SSE event or 120s poll.
+  loadBadgeCounts();
   // Input should always be ready when a non-opted-out conversation opens
   if (!c.is_opted_out) {
     setTimeout(() => {
@@ -2146,19 +2180,47 @@ function useChip(text) {
 
 /* ── Contact panel ────────────────────────────────────────────── */
 function renderContactPanel(c, contact) {
+  state.activeConvSummary = c;
+  state.activeContact = contact;
   const el   = document.getElementById('cpContent');
   const tags = (c.tags||[]).filter(t=>t!=='archived').map(t=>`<span class="cp-tag">${esc(t)}</span>`).join('');
+  const editMode = !!(state.contactEditMode && contact);
   el.innerHTML = `
     <div class="cp-section">
       <div class="cp-label">Phone</div>
       <div class="cp-value">${esc(c.from_number)}</div>
     </div>
-    ${contact ? `
-    <div class="cp-section">
-      <div class="cp-label">CRM Contact</div>
-      <div class="cp-value"><a href="/contacts/${contact.id}" style="color:var(--cyan);text-decoration:none;">${esc(contact.name||'View')}</a></div>
-      ${contact.email ? `<div class="cp-value" style="margin-top:3px;">${esc(contact.email)}</div>` : ''}
+    ${contact ? (editMode ? `
+    <div class="cp-section" id="cpEditSection">
+      <div class="cp-label">CRM Contact
+        <span style="float:right;">
+          <button class="btn-small" onclick="saveContactEdit()">Save</button>
+          <button class="btn-small" style="margin-left:4px;" onclick="cancelContactEdit()">Cancel</button>
+        </span>
+      </div>
+      <label class="cp-edit-label" for="cpFirstName">First name</label>
+      <input class="cp-edit-input" id="cpFirstName" value="${esc(contact.first_name||'')}">
+      <label class="cp-edit-label" for="cpLastName">Last name</label>
+      <input class="cp-edit-input" id="cpLastName" value="${esc(contact.last_name||'')}">
+      <label class="cp-edit-label" for="cpPhone">Phone</label>
+      <input class="cp-edit-input" id="cpPhone" value="${esc(contact.phone||'')}">
+      <label class="cp-edit-label" for="cpEmail">Email</label>
+      <input class="cp-edit-input" id="cpEmail" value="${esc(contact.email||'')}">
+      <label class="cp-edit-label" for="cpCompany">Company</label>
+      <input class="cp-edit-input" id="cpCompany" value="${esc(contact.company||'')}">
+      <label class="cp-edit-label" for="cpTags">Tags <span style="font-weight:400;">(comma-separated)</span></label>
+      <input class="cp-edit-input" id="cpTags" value="${esc(contact.tags||'')}">
+      <div class="cp-edit-error" id="cpEditError" style="display:none;"></div>
     </div>` : `
+    <div class="cp-section">
+      <div class="cp-label">CRM Contact
+        <button class="btn-small" style="float:right;" onclick="enterContactEdit()">Edit</button>
+      </div>
+      <div class="cp-value"><a href="/contacts/${contact.id}" style="color:var(--cyan);text-decoration:none;">${esc(contact.name||'View')}</a></div>
+      ${contact.phone ? `<div class="cp-value" style="margin-top:3px;">${esc(contact.phone)}</div>` : ''}
+      ${contact.email ? `<div class="cp-value" style="margin-top:3px;">${esc(contact.email)}</div>` : ''}
+      ${contact.company ? `<div class="cp-value" style="margin-top:3px;">${esc(contact.company)}</div>` : ''}
+    </div>`) : `
     <div class="cp-section">
       <div class="cp-label">CRM Contact</div>
       <div class="cp-value" style="color:var(--muted);">Unknown</div>
@@ -2179,6 +2241,63 @@ function renderContactPanel(c, contact) {
 function toggleContactPanel() {
   const p = document.getElementById('contactPanel');
   p.style.display = p.style.display === 'flex' ? 'none' : 'flex';
+}
+
+/* ── Contact panel: edit CRM identity fields ─────────────────────── */
+function enterContactEdit() {
+  if (!state.activeContact) return;
+  state.contactEditMode = true;
+  renderContactPanel(state.activeConvSummary, state.activeContact);
+  document.getElementById('cpFirstName')?.focus();
+}
+
+function cancelContactEdit() {
+  state.contactEditMode = false;
+  renderContactPanel(state.activeConvSummary, state.activeContact);
+}
+
+async function saveContactEdit() {
+  if (!state.activeConvId || state.contactEditSaving) return;
+  const fields = {
+    first_name: document.getElementById('cpFirstName').value,
+    last_name:  document.getElementById('cpLastName').value,
+    phone:      document.getElementById('cpPhone').value,
+    email:      document.getElementById('cpEmail').value,
+    company:    document.getElementById('cpCompany').value,
+    tags:       document.getElementById('cpTags').value,
+  };
+
+  state.contactEditSaving = true;
+  const fieldIds = ['cpFirstName', 'cpLastName', 'cpPhone', 'cpEmail', 'cpCompany', 'cpTags'];
+  fieldIds.forEach(id => { const elm = document.getElementById(id); if (elm) elm.disabled = true; });
+  document.querySelectorAll('#cpEditSection .btn-small').forEach(b => b.disabled = true);
+  const errEl = document.getElementById('cpEditError');
+  if (errEl) errEl.style.display = 'none';
+
+  let data;
+  try {
+    data = await apiFetch(`/api/inbox/conversations/${state.activeConvId}/contact`, 'PATCH', fields);
+  } finally {
+    state.contactEditSaving = false;
+  }
+
+  if (data && data.success) {
+    state.contactEditMode = false;
+    renderContactPanel(state.activeConvSummary, data.contact);
+    if (data.contact_name) document.getElementById('threadName').textContent = data.contact_name;
+    toast('Contact updated.', 'success');
+    loadConversations();
+    return;
+  }
+
+  // Save failed (validation or identity conflict) — leave the form in edit
+  // mode with the user's typed values intact rather than discarding them.
+  fieldIds.forEach(id => { const elm = document.getElementById(id); if (elm) elm.disabled = false; });
+  document.querySelectorAll('#cpEditSection .btn-small').forEach(b => b.disabled = false);
+  if (errEl) {
+    errEl.style.display = '';
+    errEl.textContent = (data && (data.message || data.error)) || 'Could not save changes. Please try again.';
+  }
 }
 
 /* ── Twilio click-to-call ─────────────────────────────────────── */
@@ -2701,7 +2820,10 @@ async function loadBadgeCounts() {
     const vmBadge = document.getElementById('vmBadge');
     if (mcBadge) { mcBadge.textContent = mc; mcBadge.style.display = mc > 0 ? 'flex' : 'none'; }
     if (vmBadge) { vmBadge.textContent = vm; vmBadge.style.display = vm > 0 ? 'flex' : 'none'; }
-    await updateAppBadge(data.count || 0);
+    // The OS app-icon badge is unread inbound SMS only -- not the combined
+    // total (which also includes missed calls, voicemails, and generic
+    // notifications, each already shown via their own in-app indicators).
+    await updateAppBadge(data.smsUnread || 0);
   } catch (e) {}
 }
 

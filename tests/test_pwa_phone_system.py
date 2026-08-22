@@ -1123,6 +1123,38 @@ def test_cross_midnight_business_hours_two_pm_to_two_am(app, world):
             assert twilio_sms._is_business_hours(world["co_a"], at_time=at_utc.replace(tzinfo=timezone.utc), phone_config=pn) is expected
 
 
+def test_sms_keyword_engine_delegates_to_tz_aware_business_hours(app, world):
+    """Regression test for the after-hours-during-business-hours bug.
+
+    services.sms_keyword_engine used to have its own naive-UTC, no-wraparound
+    _is_business_hours() (hardcoded 9-5 Mon-Fri) that disagreed with the
+    correct twilio_sms._is_business_hours() used elsewhere, so campaign/
+    keyword after-hours replies could fire during real business hours. It now
+    delegates to the same tz-aware implementation; this proves that holds for
+    the same midnight-crossing 2 PM-2 AM America/New_York schedule used above.
+    """
+    from services import sms_keyword_engine
+    with app.app_context():
+        pn = TwilioPhoneNumber(
+            company_id=world["co_a"],
+            phone_number="+15550003334",
+            timezone="America/New_York",
+            business_hours={str(i): {"is_open": True, "open": "14:00", "close": "02:00"} for i in range(7)},
+        )
+        db.session.add(pn); db.session.commit()
+        cases = [
+            (datetime(2026, 6, 22, 15, 0), False),  # 11 AM ET -- must NOT look like business hours
+            (datetime(2026, 6, 22, 18, 0), True),   # 2 PM ET -- opening minute
+            (datetime(2026, 6, 23, 3, 0), True),    # 11 PM ET
+            (datetime(2026, 6, 23, 5, 59), True),   # 1:59 AM ET -- still open (crossed midnight)
+            (datetime(2026, 6, 23, 6, 0), False),   # 2 AM ET -- closing minute
+        ]
+        for at_utc, expected in cases:
+            assert sms_keyword_engine._is_business_hours(
+                world["co_a"], phone_config=pn, at=at_utc.replace(tzinfo=timezone.utc)
+            ) is expected
+
+
 def test_number_after_hours_copy_alias_persists_and_reloads(client, app, world):
     login(client, world["alice"])
     required = "Thanks for reaching out. Our business hours are daily from 2 PM to 2 AM. We’ll respond as soon as we’re back online."

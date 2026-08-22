@@ -1,7 +1,7 @@
 """Inbound SMS campaign attribution, compliance, and keyword automation."""
 from __future__ import annotations
 
-from datetime import datetime, time
+from datetime import datetime
 
 from extensions import db
 from models import (
@@ -9,17 +9,22 @@ from models import (
     SMSKeywordRule, SMSRecipient, TwilioConversation, User,
 )
 
-BUSINESS_START = time(9, 0)
-BUSINESS_END = time(17, 0)
-
-
 def _now():
     return datetime.utcnow()
 
 
-def _is_business_hours(at: datetime | None = None) -> bool:
-    at = at or _now()
-    return at.weekday() < 5 and BUSINESS_START <= at.time() <= BUSINESS_END
+def _is_business_hours(company_id: int, phone_config=None, at: datetime | None = None) -> bool:
+    """Business-hours check for campaign/keyword after-hours replies.
+
+    This used to be a separate, independently-broken implementation (naive UTC,
+    hardcoded 9-5 Mon-Fri, no midnight-wraparound support) that could report
+    "after hours" during a tenant's real business hours. It now delegates to
+    twilio_sms._is_business_hours, the single timezone-aware implementation
+    that correctly handles per-phone-number hours and midnight-crossing
+    schedules, so the two auto-reply engines can no longer disagree.
+    """
+    from twilio_sms import _is_business_hours as _tz_aware_is_business_hours
+    return _tz_aware_is_business_hours(company_id, at_time=at, phone_config=phone_config)
 
 
 def _tags_list(value):
@@ -150,7 +155,7 @@ def process_keyword_rules(company_id: int, body: str, conversation: TwilioConver
         if not _matches(rule, body):
             continue
         reply = rule.reply_message or "Thanks — we received your message."
-        if not _is_business_hours() and rule.after_hours_message:
+        if not _is_business_hours(company_id, twilio_account) and rule.after_hours_message:
             reply = rule.after_hours_message
         if contact:
             _apply_contact_actions(contact, rule)
@@ -173,7 +178,7 @@ def process_keyword_rules(company_id: int, body: str, conversation: TwilioConver
     auto = _auto_reply(company_id, campaign_id)
     if auto:
         reply = auto.reply_message or "Thanks for texting us. A team member will follow up soon."
-        if not _is_business_hours() and auto.after_hours_message:
+        if not _is_business_hours(company_id, twilio_account) and auto.after_hours_message:
             reply = auto.after_hours_message
         _audit(company_id, auto.created_by_user_id, "sms_auto_reply_triggered", "sms_auto_reply_rule", auto.id, {
             "campaign_id": campaign_id,

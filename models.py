@@ -2939,6 +2939,18 @@ class Notification(db.Model):
     phone_number = db.relationship("TwilioPhoneNumber", backref="notifications")
 
 
+# Notification.event_type values that originate from ordinary PWA communications
+# traffic (inbound SMS, calls, voicemail) rather than administrative/system events.
+# These rows exist so the PWA can show notification history, but per the PWA/main-app
+# separation requirement they must not count toward or appear in the main LUX
+# dashboard's notification bell -- that stays reserved for administrative alerts,
+# tasks, approval events, integration problems, and other non-SMS/call warnings.
+NOTIFICATION_COMMUNICATIONS_EVENT_TYPES = frozenset({
+    "incoming_sms", "incoming_call", "missed_call", "voicemail",
+    "unread_message_reminder", "push_test",
+})
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Feedback / Bug Reporting
 # ─────────────────────────────────────────────────────────────────────────────

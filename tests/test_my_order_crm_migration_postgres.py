@@ -14,6 +14,27 @@ import pytest
 MIGRATION = Path(__file__).resolve().parents[1] / "migrations/20260804_my_order_crm_automation.sql"
 
 
+@pytest.fixture
+def pg_app():
+    """Full application against real PostgreSQL, for dispatch-level (not raw-SQL) concurrency checks."""
+    url = os.environ.get("TEST_POSTGRES_URL")
+    if not url:
+        pytest.skip("TEST_POSTGRES_URL is required for PostgreSQL migration tests")
+    os.environ["TEST_DATABASE_URL"] = url
+    from app import create_app
+    from extensions import db as _db
+
+    app = create_app()
+    app.config.update(TESTING=True, WTF_CSRF_ENABLED=False)
+    with app.app_context():
+        assert _db.engine.url.get_backend_name() == "postgresql"
+        _db.drop_all()
+        _db.create_all()
+        yield app
+        _db.session.remove()
+        _db.drop_all()
+
+
 def _postgres_url() -> str:
     url = os.environ.get("TEST_POSTGRES_URL")
     if not url:
@@ -184,3 +205,111 @@ def test_postgres_concurrent_execution_creates_one_audit_row():
             conn.close()
     finally:
         _drop_schema(schema)
+
+
+def test_postgres_concurrent_first_inbound_events_tag_contact_exactly_once(pg_app):
+    """Two concurrent inbound_sms.first_for_contact events for the same contact/event_key
+    must add the tag exactly once and cascade to exactly one segment membership, relying
+    on real PostgreSQL unique-constraint concurrency (not app-level locking)."""
+    from extensions import db
+    from models import Company, Contact, CRMAutomationExecution, SegmentMember
+    from services.crm_automation import FIRST_INBOUND_TRIGGER, dispatch_event, ensure_my_order_automation
+
+    with pg_app.app_context():
+        company = Company(name="Concurrent First Inbound")
+        db.session.add(company)
+        db.session.flush()
+        contact = Contact(company_id=company.id, is_active=True)
+        db.session.add(contact)
+        db.session.flush()
+        records = ensure_my_order_automation(company.id)
+        db.session.commit()
+        company_id, contact_id = company.id, contact.id
+        rule1_id, segment_id = records["rules"][0].id, records["segment"].id
+
+    barrier = threading.Barrier(2)
+    outcomes: list[str] = []
+
+    def fire_once():
+        with pg_app.app_context():
+            barrier.wait()
+            try:
+                dispatch_event(
+                    company_id, contact_id, FIRST_INBOUND_TRIGGER, "same-first-event",
+                    direction="inbound", channel="sms", first_inbound_sms=True,
+                    message_sid="SM-CONCURRENT-FIRST",
+                )
+                db.session.commit()
+                outcomes.append("ran")
+            except Exception:
+                db.session.rollback()
+                outcomes.append("errored")
+            finally:
+                db.session.remove()
+
+    workers = [threading.Thread(target=fire_once) for _ in range(2)]
+    for worker in workers:
+        worker.start()
+    for worker in workers:
+        worker.join(timeout=10)
+
+    assert outcomes == ["ran", "ran"]
+    with pg_app.app_context():
+        assert CRMAutomationExecution.query.filter_by(
+            company_id=company_id, rule_id=rule1_id, event_key="same-first-event", action_index=0,
+        ).count() == 1
+        contact = db.session.get(Contact, contact_id)
+        assert sum(1 for t in (contact.tags or "").split(",") if t.strip() == "My Order Customer") == 1
+        assert SegmentMember.query.filter_by(segment_id=segment_id, contact_id=contact_id).count() == 1
+
+
+def test_postgres_concurrent_tag_added_events_create_one_segment_membership(pg_app):
+    """Two concurrent tag_added events for the same contact/tag must create exactly one
+    segment membership under real PostgreSQL concurrency."""
+    from extensions import db
+    from models import Company, Contact, CRMAutomationExecution, SegmentMember
+    from services.crm_automation import TAG_ADDED_TRIGGER, dispatch_event, ensure_my_order_automation
+
+    with pg_app.app_context():
+        company = Company(name="Concurrent Tag Added")
+        db.session.add(company)
+        db.session.flush()
+        contact = Contact(company_id=company.id, is_active=True, tags="My Order Customer")
+        db.session.add(contact)
+        db.session.flush()
+        records = ensure_my_order_automation(company.id)
+        db.session.commit()
+        company_id, contact_id = company.id, contact.id
+        tag_id, rule2_id, segment_id = records["tag"].id, records["rules"][1].id, records["segment"].id
+
+    barrier = threading.Barrier(2)
+    outcomes: list[str] = []
+
+    def fire_once():
+        with pg_app.app_context():
+            barrier.wait()
+            try:
+                dispatch_event(
+                    company_id, contact_id, TAG_ADDED_TRIGGER, "same-tag-added-event",
+                    tag_id=tag_id, tag_name="My Order Customer",
+                )
+                db.session.commit()
+                outcomes.append("ran")
+            except Exception:
+                db.session.rollback()
+                outcomes.append("errored")
+            finally:
+                db.session.remove()
+
+    workers = [threading.Thread(target=fire_once) for _ in range(2)]
+    for worker in workers:
+        worker.start()
+    for worker in workers:
+        worker.join(timeout=10)
+
+    assert outcomes == ["ran", "ran"]
+    with pg_app.app_context():
+        assert CRMAutomationExecution.query.filter_by(
+            company_id=company_id, rule_id=rule2_id, event_key="same-tag-added-event", action_index=0,
+        ).count() == 1
+        assert SegmentMember.query.filter_by(segment_id=segment_id, contact_id=contact_id).count() == 1

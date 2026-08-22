@@ -23,8 +23,10 @@ from services.contact_resolver import (
 from services.phone_normalization import normalize_phone_e164
 
 IDENTITY_PROMPT = (
-    "Thanks for contacting us. To help us identify your conversation, please "
-    "reply with your legal name only."
+    "Welcome to MyOrder.fun! To ensure your new customer onboarding is "
+    "successful, please reply with your first and last name, and a good "
+    "email. We will save your contact info and once confirmed we will be "
+    "happy to help you place your order."
 )
 _YES = {"yes", "y", "confirm", "confirmed"}
 _NO = {"no", "n", "incorrect", "change"}
@@ -57,7 +59,7 @@ def extract_identity(body: str) -> tuple[str | None, str | None, str | None, lis
     first, last = name if name else (None, None)
     missing = []
     if not first:
-        missing.append("legal name")
+        missing.append("first and last name")
     if not email:
         missing.append("valid email address")
     return first, last, email, missing
@@ -85,10 +87,13 @@ def _identity_missing(contact: Contact) -> list[str]:
     return missing
 
 
+_UNSAFE_IDENTITY_STATES = {"declined", "ambiguous"}
+
+
 def _trusted_stored_name(contact: Contact) -> tuple[str, str] | None:
     """Return a stored person name only when its provenance is trustworthy."""
     trusted = (
-        contact.identity_status == "confirmed"
+        contact.identity_status not in _UNSAFE_IDENTITY_STATES
         and contact.name_verification_level in {"verified", "trusted"}
         and contact.name_source in _TRUSTED_NAME_SOURCES
         and (contact.name_provenance or {}).get("source") in {
@@ -221,7 +226,7 @@ def confirm_pending_identity(contact: Contact, conversation, message_sid: str) -
                 pending_state_id=snapshot.identity_last_request_sid or snapshot.id,
             )
         return {
-            "reply": "I could not find an active identity confirmation. Please reply with your legal name.",
+            "reply": "I could not find an active identity confirmation. Please reply with your first and last name.",
             "review": True,
             "reason": "identity_confirm_missing_pending_state",
         }
@@ -253,7 +258,7 @@ def confirm_pending_identity(contact: Contact, conversation, message_sid: str) -
                 pending_state_id=contact.identity_last_request_sid or contact.id,
             )
         return {
-            "reply": "I could not find an active identity confirmation. Please reply with your legal name.",
+            "reply": "I could not find an active identity confirmation. Please reply with your first and last name.",
             "review": True,
             "reason": "identity_confirm_missing_pending_state",
         }
@@ -272,7 +277,7 @@ def confirm_pending_identity(contact: Contact, conversation, message_sid: str) -
             pending_state_id=pending_state_id,
         )
         return {
-            "reply": "That identity confirmation is no longer valid. Please reply with your legal name.",
+            "reply": "That identity confirmation is no longer valid. Please reply with your first and last name.",
             "review": True,
             "reason": "identity_confirm_missing_pending_state",
         }
@@ -421,7 +426,7 @@ def process_identity_message(contact: Contact, conversation, body: str, message_
             return confirm_pending_identity(contact, conversation, message_sid)
         if keyword in _NO:
             _reset_unsafe_confirmation(contact)
-            return {"reply": "No problem. Please reply with your first and last name (or legal mononym)."}
+            return {"reply": "No problem. Please reply with your first and last name (or just your first name)."}
         return {"reply": "Please reply YES to confirm or NO to correct your contact information."}
 
     if contact.identity_status == "awaiting_name":
@@ -453,7 +458,7 @@ def process_identity_message(contact: Contact, conversation, body: str, message_
             contact.pending_first_name = contact.pending_last_name = None
             contact.identity_status = "awaiting_name"
             contact.identity_requested_fields = ["first_name", "last_name", "email"]
-            return {"reply": "Please reply with your legal name."}
+            return {"reply": "Please reply with your first and last name."}
         email = _valid_email((body or "").strip())
         if not email:
             return {"reply": "Please reply with a valid email address."}
@@ -472,7 +477,7 @@ def process_identity_message(contact: Contact, conversation, body: str, message_
         }
         return {"reply": f"Is this correct? {contact.pending_first_name} {contact.pending_last_name}, {contact.pending_email}. Reply YES to confirm or NO if incorrect."}
 
-    if contact.identity_status in {"confirmed"} or contact.google_match_status == "matched":
+    if contact.identity_status in {"confirmed", "minimum_established"} or contact.google_match_status == "matched":
         return {"reply": None}
     _identity_log(
         contact=contact,
@@ -490,7 +495,10 @@ def should_request_identity(contact: Contact, now: datetime | None = None) -> bo
     limit = int(os.getenv("IDENTITY_REQUEST_ATTEMPT_LIMIT", "3"))
     last_request = getattr(contact, "identity_fields_requested_at", None) or contact.identity_requested_at
     return (
-        contact.identity_status not in {"confirmed", "awaiting_name", "awaiting_email", "awaiting_confirmation", "declined"}
+        contact.identity_status not in {
+            "confirmed", "minimum_established",
+            "awaiting_name", "awaiting_email", "awaiting_confirmation", "declined",
+        }
         and contact.google_match_status != "matched"
         and (contact.identity_request_count or 0) < limit
         and (not last_request or last_request <= now - cooldown)

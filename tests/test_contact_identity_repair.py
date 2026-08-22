@@ -156,6 +156,41 @@ def test_google_and_ios_names_resolve_without_overwriting_confirmed(repair_app):
         assert resolve_contact_identity(company.id, contact_id=confirmed.id, allow_enrichment=True).safe_display_name == "Customer Name"
 
 
+def test_canonical_contact_with_first_name_and_phone_skips_identity_collection(repair_app):
+    """Regression test: a known/canonical contact with only first_name+phone
+    (no last name, no email, never Google/iOS-matched or SMS-confirmed) must
+    not be asked for email or a confirmation, and must not sit in
+    pending_identity forever. It reaches the new 'minimum_established' status
+    instead of being folded into 'confirmed'.
+    """
+    with repair_app.app_context():
+        company = Company(name="Tenant"); db.session.add(company); db.session.flush()
+        contact = make_contact(company, first_name="Luke", phone="+12025550199")
+        assert contact.identity_status == "pending_identity"
+        resolution = resolve_contact_identity(company.id, contact_id=contact.id, allow_enrichment=True)
+        assert resolution.safe_display_name == "Luke"
+        assert contact.identity_status == "minimum_established"
+        assert not should_request_identity(contact)
+        assert contact.last_name is None
+        assert contact.email is None
+
+
+def test_canonical_name_outranks_conflicting_google_match(repair_app):
+    """Canonical/first-party contact data must take precedence over a Google
+    Contacts match, not be silently overwritten by it (SOURCE_RANK ordering).
+    """
+    with repair_app.app_context():
+        company = Company(name="Tenant"); db.session.add(company); db.session.flush()
+        user = User(username="identity-canonical", email="identity-canonical@example.com", default_company_id=company.id)
+        db.session.add(user); db.session.flush()
+        contact = make_contact(company, first_name="Luke", last_name="Shawver", phone="+12025550198")
+        db.session.add(GoogleContactLookup(company_id=company.id, user_id=user.id, normalized_phone=contact.normalized_phone, display_name="Someone Else", resource_id="p/canon-1"))
+        db.session.flush()
+        resolution = resolve_contact_identity(company.id, contact_id=contact.id, allow_enrichment=True)
+        assert resolution.safe_display_name == "Luke Shawver"
+        assert contact.first_name == "Luke" and contact.last_name == "Shawver"
+
+
 def test_conflicts_cross_tenant_placeholders_and_cooldown(repair_app):
     with repair_app.app_context():
         a=Company(name="A"); b=Company(name="B"); db.session.add_all([a,b]); db.session.flush()
