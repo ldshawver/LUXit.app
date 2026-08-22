@@ -2136,7 +2136,7 @@ def unread_count():
 
 def _pwa_badge_counts_for(user, company):
     """Tenant- and user-scoped communication badge counts for installed PWAs."""
-    from models import Notification, TwilioCallLog, TwilioConversation, VoiceVoicemailMessage
+    from models import Notification, NOTIFICATION_COMMUNICATIONS_EVENT_TYPES, TwilioCallLog, TwilioConversation, VoiceVoicemailMessage
     from services.comms_permissions import filter_calls_for_user, filter_conversations_for_user
 
     sms_unread = filter_conversations_for_user(
@@ -2165,10 +2165,15 @@ def _pwa_badge_counts_for(user, company):
         pass
     voicemails = voicemails.count()
 
+    # Communications-sourced Notification rows (incoming_sms, missed_call, voicemail, ...)
+    # are already reflected in smsUnread/missedCalls/voicemails above; counting them
+    # again here would double the badge for every unread SMS/call/voicemail.
     notifications = Notification.query.filter_by(
         user_id=user.id,
         company_id=company.id,
         is_read=False,
+    ).filter(
+        Notification.event_type.notin_(NOTIFICATION_COMMUNICATIONS_EVENT_TYPES)
     ).count()
 
     total = len(sms_unread) + missed_calls + voicemails + notifications
