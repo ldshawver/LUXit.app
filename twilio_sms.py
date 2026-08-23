@@ -852,17 +852,17 @@ def _write_sms_compliance_audit(company_id, action, phone_number, keyword, conta
         logger.exception("Failed to write SMS compliance audit log")
 
 def _update_contact_sms_consent(company_id, phone_number, opted_in, source):
-    from models import Contact
-    from services.google_contacts import _all_forms
-    contact = None
-    for form in _all_forms(phone_number):
-        contact = Contact.query.filter_by(company_id=company_id, phone=form, is_active=True).first()
-        if contact:
-            break
+    # Resolve through the single canonical, tenant-scoped, normalized_phone-based
+    # lookup (services.sms_keyword_engine.find_contact) instead of guessing raw
+    # Contact.phone string forms -- see that function's docstring for why the
+    # old approach could silently miss an existing contact.
+    from services.sms_keyword_engine import find_contact
+    contact = find_contact(company_id, phone_number)
     if contact:
         now = datetime.utcnow()
         contact.sms_marketing_opt_in = bool(opted_in)
         contact.sms_consent_status = "opted_in" if opted_in else "opted_out"
+        contact.sms_opted_out = not bool(opted_in)
         if opted_in:
             contact.sms_marketing_opt_in_at = now
             contact.sms_marketing_opt_in_source = source

@@ -163,7 +163,7 @@ def test_twilio_delivery_webhook_updates_sms_campaign_recipient(client, tenant_u
 def test_inbound_stop_marks_contact_and_blocks_future_preview(client, tenant_user):
     _, company = tenant_user
     _twilio_account(company)
-    contact = Contact(company_id=company.id, phone="+15550000009", tags="sms_consent", is_active=True, is_subscribed=True, segment="vip")
+    contact = Contact(company_id=company.id, phone="+14155550109", normalized_phone="+14155550109", tags="sms_consent", is_active=True, is_subscribed=True, segment="vip")
     campaign = SMSCampaign(company_id=company.id, name="STOP Test", message="Offer Reply STOP to opt out.", segment="vip", status="sent")
     db.session.add_all([contact, campaign])
     db.session.flush()
@@ -208,7 +208,7 @@ def test_keyword_rule_triggers_reply_tags_contact_and_audits(client, tenant_user
 def test_inbound_reply_attaches_to_latest_campaign_recipient(client, tenant_user):
     _, company = tenant_user
     _twilio_account(company)
-    contact = Contact(company_id=company.id, phone="+15550000011", tags="sms_consent", is_active=True, is_subscribed=True, segment="vip")
+    contact = Contact(company_id=company.id, phone="+14155550111", normalized_phone="+14155550111", tags="sms_consent", is_active=True, is_subscribed=True, segment="vip")
     campaign = SMSCampaign(company_id=company.id, name="Reply Test", message="Reply BOOK", segment="vip", status="sent")
     db.session.add_all([contact, campaign])
     db.session.flush()
@@ -495,7 +495,7 @@ def test_sms_campaign_send_is_idempotent_and_batches(client, tenant_user, monkey
 def test_stop_start_help_compliance_keywords(client, tenant_user):
     _, company = tenant_user
     _twilio_account(company)
-    contact = Contact(company_id=company.id, phone="+15550000041", tags="sms_consent", is_active=True, is_subscribed=True, segment="vip")
+    contact = Contact(company_id=company.id, phone="+14155550141", normalized_phone="+14155550141", tags="sms_consent", is_active=True, is_subscribed=True, segment="vip")
     db.session.add(contact)
     db.session.commit()
 

@@ -21,14 +21,16 @@ def app_ctx():
         db.session.flush()
         contact_a = Contact(
             company_id=company_a.id,
-            phone="+15551234567",
+            phone="+12025550101",
+            normalized_phone="+12025550101",
             sms_marketing_opt_in=True,
             sms_consent_status="opted_in",
             sms_marketing_opt_in_at=datetime.utcnow(),
         )
         contact_b = Contact(
             company_id=company_b.id,
-            phone="+15551234567",
+            phone="+12025550101",
+            normalized_phone="+12025550101",
             sms_marketing_opt_in=True,
             sms_consent_status="opted_in",
             sms_marketing_opt_in_at=datetime.utcnow(),
@@ -46,8 +48,8 @@ def test_stop_variants_opt_out_only_current_tenant(app_ctx, keyword):
     normalized = twilio_sms._normalized_keyword(keyword)
     assert normalized in twilio_sms._STOP_KEYWORDS
 
-    changed = twilio_sms._update_contact_sms_consent(company_a.id, "+15551234567", False, f"keyword:{normalized}")
-    twilio_sms._write_sms_compliance_audit(company_a.id, "opt_out", "+15551234567", normalized, changed.id, 123)
+    changed = twilio_sms._update_contact_sms_consent(company_a.id, "+12025550101", False, f"keyword:{normalized}")
+    twilio_sms._write_sms_compliance_audit(company_a.id, "opt_out", "+12025550101", normalized, changed.id, 123)
     db.session.commit()
 
     db.session.refresh(contact_a)
@@ -72,8 +74,8 @@ def test_start_variants_restore_opt_in_only_current_tenant(app_ctx, keyword):
 
     normalized = twilio_sms._normalized_keyword(keyword)
     assert normalized in twilio_sms._START_KEYWORDS
-    changed = twilio_sms._update_contact_sms_consent(company_a.id, "+15551234567", True, f"keyword:{normalized}")
-    twilio_sms._write_sms_compliance_audit(company_a.id, "opt_in", "+15551234567", normalized, changed.id, 123)
+    changed = twilio_sms._update_contact_sms_consent(company_a.id, "+12025550101", True, f"keyword:{normalized}")
+    twilio_sms._write_sms_compliance_audit(company_a.id, "opt_in", "+12025550101", normalized, changed.id, 123)
     db.session.commit()
 
     db.session.refresh(contact_a)
@@ -90,7 +92,7 @@ def test_help_info_audits_without_changing_consent(app_ctx, keyword):
     before = (contact_a.sms_marketing_opt_in, contact_a.sms_consent_status, contact_a.sms_opt_out_at)
     normalized = twilio_sms._normalized_keyword(keyword)
     assert normalized in {"help", "info"}
-    twilio_sms._write_sms_compliance_audit(company_a.id, "help", "+15551234567", normalized, contact_a.id, 456)
+    twilio_sms._write_sms_compliance_audit(company_a.id, "help", "+12025550101", normalized, contact_a.id, 456)
     db.session.commit()
     db.session.refresh(contact_a)
     after = (contact_a.sms_marketing_opt_in, contact_a.sms_consent_status, contact_a.sms_opt_out_at)
@@ -100,7 +102,7 @@ def test_help_info_audits_without_changing_consent(app_ctx, keyword):
 
 def test_future_campaign_excludes_contact_after_stop(app_ctx):
     _, company_a, _, contact_a, _ = app_ctx
-    twilio_sms._update_contact_sms_consent(company_a.id, "+15551234567", False, "keyword:stop")
+    twilio_sms._update_contact_sms_consent(company_a.id, "+12025550101", False, "keyword:stop")
     campaign = SMSService.create_campaign("After STOP", "Do not send", company_id=company_a.id)
     db.session.flush()
     SMSService.add_recipients(campaign.id, [contact_a.id])

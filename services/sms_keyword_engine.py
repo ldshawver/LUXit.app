@@ -44,9 +44,37 @@ def _save_tags(contact: Contact, tags: list[str]) -> None:
 
 
 def find_contact(company_id: int, phone: str) -> Contact | None:
+    """Canonical tenant-scoped Contact lookup for an inbound SMS phone number.
+
+    Resolves via ``Contact.normalized_phone`` -- the single E.164 value every
+    contact reachable through the inbound-SMS pipeline already has, via
+    services.phone_normalization.normalize_phone_e164 -- instead of guessing
+    raw string forms against ``Contact.phone``. Contact.phone is a free-text
+    display field (editable via the PWA) and can drift out of the exact
+    format Twilio sends, which previously caused this lookup to silently miss
+    an existing contact.
+
+    Tenant-scoped, never creates or merges a contact. When more than one
+    active contact shares a normalized phone within the tenant (a duplicate
+    that hasn't been merged), the lowest id is picked deterministically.
+    """
     if not company_id or not phone:
         return None
-    return Contact.query.filter_by(company_id=company_id, phone=phone).first()
+    from services.phone_normalization import normalize_phone_e164
+    normalized = normalize_phone_e164(phone)
+    if not normalized:
+        return None
+    return (
+        Contact.query
+        .filter(
+            Contact.company_id == company_id,
+            Contact.normalized_phone == normalized,
+            Contact.is_active.is_(True),
+            Contact.merged_into_contact_id.is_(None),
+        )
+        .order_by(Contact.id.asc())
+        .first()
+    )
 
 
 def mark_opt_out(company_id: int, phone: str, conversation: TwilioConversation | None = None) -> None:
