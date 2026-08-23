@@ -4,10 +4,11 @@ import pytest
 from app import create_app
 from extensions import db
 from models import (
-    Company, Contact, ContactEmailAddress, ContactSourceEvent, MarketingAuditLog,
+    Company, Contact, ContactEmailAddress, ContactSourceEvent, IntegrationAuditLog, MarketingAuditLog,
     SMSCampaign, SMSKeywordRule, SMSRecipient, SocialPost, TwilioAccount,
     TwilioConversation, TwilioMessage, User, user_company,
 )
+from services.sms_service import SMSService
 
 
 @pytest.fixture
@@ -178,6 +179,64 @@ def test_inbound_stop_marks_contact_and_blocks_future_preview(client, tenant_use
 
     preview = client.post(f"/api/marketing/sms-campaigns/{campaign.id}/preview").get_json()
     assert preview["recipients_selected"] == 0
+
+
+def test_inbound_stop_resolves_via_normalized_phone_when_contact_phone_is_formatted(client, tenant_user):
+    """Direct reproduction of the release blocker through the real inbound
+    webhook: Contact.phone is a human-formatted display string that does not
+    match the E.164 value Twilio sends in `From`. Resolution must go through
+    normalized_phone, not a string match against Contact.phone.
+    """
+    _, company = tenant_user
+    _twilio_account(company)
+    contact = Contact(company_id=company.id, phone="(202) 555-0101", normalized_phone="+12025550101", tags="sms_consent", is_active=True, is_subscribed=True, segment="vip")
+    campaign = SMSCampaign(company_id=company.id, name="STOP Formatted Test", message="Offer Reply STOP to opt out.", segment="vip", status="sent")
+    db.session.add_all([contact, campaign])
+    db.session.flush()
+    db.session.add(SMSRecipient(company_id=company.id, campaign_id=campaign.id, contact_id=contact.id, status="sent"))
+    db.session.commit()
+
+    response = client.post("/twilio/sms/inbound", data={"From": "+12025550101", "To": "+15559999999", "Body": "STOP", "MessageSid": "SMSTOPFORMATTED"})
+    assert response.status_code == 200
+    db.session.refresh(contact)
+    assert contact.is_subscribed is False
+    assert contact.sms_consent_status == "opted_out"
+    assert "sms_opt_out" in (contact.tags or "")
+    assert contact.phone == "(202) 555-0101"  # display field is untouched
+
+    conversation = TwilioConversation.query.filter_by(company_id=company.id, contact_id=contact.id).first()
+    assert conversation is not None and conversation.is_opted_out is True
+
+    preview = client.post(f"/api/marketing/sms-campaigns/{campaign.id}/preview").get_json()
+    assert preview["recipients_selected"] == 0
+
+    # Prove exclusion at the canonical server-side materialization resolver
+    # (the same SMSService.add_recipients used by campaign creation/send),
+    # not just the preview endpoint's display filter.
+    second_campaign = SMSCampaign(company_id=company.id, name="STOP Formatted Test 2", message="Book now.", segment="vip", status="draft")
+    db.session.add(second_campaign)
+    db.session.flush()
+    SMSService.add_recipients(second_campaign.id, [contact.id])
+    assert SMSRecipient.query.filter_by(campaign_id=second_campaign.id).count() == 0
+
+
+def test_duplicate_stop_message_sid_is_processed_once(client, tenant_user):
+    _, company = tenant_user
+    _twilio_account(company)
+    contact = Contact(company_id=company.id, phone="(415) 555-0199", normalized_phone="+14155550199", tags="sms_consent", is_active=True, is_subscribed=True, segment="vip")
+    db.session.add(contact)
+    db.session.commit()
+    payload = {"From": "+14155550199", "To": "+15559999999", "Body": "STOP", "MessageSid": "SMDUPSTOP"}
+
+    first = client.post("/twilio/sms/inbound", data=payload)
+    duplicate = client.post("/twilio/sms/inbound", data=payload)
+
+    assert first.status_code == duplicate.status_code == 200
+    assert TwilioMessage.query.filter_by(twilio_sid="SMDUPSTOP").count() == 1
+    assert IntegrationAuditLog.query.filter_by(company_id=company.id, service_slug="sms_compliance", action="opt_out").count() == 1
+    db.session.refresh(contact)
+    assert contact.sms_consent_status == "opted_out"
+    assert contact.is_subscribed is False
 
 
 def test_keyword_rule_triggers_reply_tags_contact_and_audits(client, tenant_user):

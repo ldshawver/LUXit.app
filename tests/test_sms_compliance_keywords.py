@@ -107,3 +107,73 @@ def test_future_campaign_excludes_contact_after_stop(app_ctx):
     db.session.flush()
     SMSService.add_recipients(campaign.id, [contact_a.id])
     assert SMSRecipient.query.filter_by(campaign_id=campaign.id).count() == 0
+
+
+def test_stop_resolves_when_contact_phone_is_formatted_and_differs_from_inbound_string(app_ctx):
+    """Reproduces the release blocker directly: Contact.phone stored in a
+    human-formatted representation that does not string-match the E.164
+    value Twilio sends in `From`. The canonical lookup must match on
+    normalized_phone, not on Contact.phone.
+    """
+    app, company_a, company_b, _, _ = app_ctx
+    formatted_contact = Contact(
+        company_id=company_a.id,
+        phone="(415) 555-0109",
+        normalized_phone="+14155550109",
+        sms_marketing_opt_in=True,
+        sms_consent_status="opted_in",
+        sms_marketing_opt_in_at=datetime.utcnow(),
+    )
+    same_number_other_tenant = Contact(
+        company_id=company_b.id,
+        phone="(415) 555-0109",
+        normalized_phone="+14155550109",
+        sms_marketing_opt_in=True,
+        sms_consent_status="opted_in",
+        sms_marketing_opt_in_at=datetime.utcnow(),
+    )
+    db.session.add_all([formatted_contact, same_number_other_tenant])
+    db.session.commit()
+
+    changed = twilio_sms._update_contact_sms_consent(company_a.id, "+14155550109", False, "keyword:stop")
+    db.session.commit()
+
+    assert changed is not None
+    assert changed.id == formatted_contact.id
+
+    db.session.refresh(formatted_contact)
+    db.session.refresh(same_number_other_tenant)
+    assert formatted_contact.sms_marketing_opt_in is False
+    assert formatted_contact.sms_consent_status == "opted_out"
+    assert formatted_contact.sms_opted_out is True
+    assert formatted_contact.phone == "(415) 555-0109"  # display field untouched
+    # Cross-tenant contact sharing the same number is not affected.
+    assert same_number_other_tenant.sms_marketing_opt_in is True
+    assert same_number_other_tenant.sms_consent_status == "opted_in"
+
+    campaign = SMSService.create_campaign("After STOP formatted", "Do not send", company_id=company_a.id)
+    db.session.flush()
+    SMSService.add_recipients(campaign.id, [formatted_contact.id])
+    assert SMSRecipient.query.filter_by(campaign_id=campaign.id).count() == 0
+
+
+def test_repeated_stop_consent_update_converges_to_same_opted_out_state(app_ctx):
+    """Calling the consent update twice (e.g. a keyword rule re-evaluated, or
+    a retried delivery) must resolve to the same contact and leave it
+    opted-out both times -- it must never flip back, error, or resolve to a
+    different contact on the second call. True webhook-level dedup (one
+    MessageSid processed once) is a separate, pre-existing guarantee proven
+    in test_marketing_hub_regression.py::test_duplicate_stop_message_sid_is_processed_once.
+    """
+    _, company_a, _, contact_a, _ = app_ctx
+    first = twilio_sms._update_contact_sms_consent(company_a.id, "+12025550101", False, "keyword:stop")
+    db.session.commit()
+    second = twilio_sms._update_contact_sms_consent(company_a.id, "+12025550101", False, "keyword:stop")
+    db.session.commit()
+
+    assert first.id == second.id == contact_a.id
+    db.session.refresh(contact_a)
+    assert contact_a.sms_marketing_opt_in is False
+    assert contact_a.sms_consent_status == "opted_out"
+    assert contact_a.sms_opted_out is True
+    assert contact_a.sms_opt_out_at is not None
