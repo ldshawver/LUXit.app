@@ -166,6 +166,10 @@ def test_outbound_sms_body_excludes_notification_debug_text(client, comms_world,
 
     import twilio.rest
     monkeypatch.setattr(twilio.rest, "Client", FakeClient)
+    # LUXIT_TWILIO_MODE defaults to "disabled" outside Production (see
+    # services/twilio_gate.py); this test wants its FakeClient to actually
+    # be reached, so opt into "live" -- FakeClient never touches the network.
+    monkeypatch.setenv("LUXIT_TWILIO_MODE", "live")
     notification_debug_text = "Notifications (sounds and alerts) are still not pushing through"
 
     login(client, comms_world["admin"])
@@ -192,6 +196,10 @@ def test_pwa_sms_send_uses_canonical_endpoint_and_appends_message(client, comms_
 
     import twilio.rest
     monkeypatch.setattr(twilio.rest, "Client", FakeClient)
+    # LUXIT_TWILIO_MODE defaults to "disabled" outside Production (see
+    # services/twilio_gate.py); this test wants its FakeClient to actually
+    # be reached, so opt into "live" -- FakeClient never touches the network.
+    monkeypatch.setenv("LUXIT_TWILIO_MODE", "live")
 
     login(client, comms_world["staff"])
     resp = client.post(
@@ -575,6 +583,10 @@ def test_pwa_sms_success_stores_sid_and_dispatched_status(client, comms_world, m
 
     import twilio.rest
     monkeypatch.setattr(twilio.rest, "Client", FakeClient)
+    # LUXIT_TWILIO_MODE defaults to "disabled" outside Production (see
+    # services/twilio_gate.py); this test wants its FakeClient to actually
+    # be reached, so opt into "live" -- FakeClient never touches the network.
+    monkeypatch.setenv("LUXIT_TWILIO_MODE", "live")
 
     login(client, comms_world["staff"])
     resp = client.post(
@@ -604,6 +616,10 @@ def test_pwa_sms_failure_persists_failed_row_and_useful_502(client, comms_world,
 
     import twilio.rest
     monkeypatch.setattr(twilio.rest, "Client", FakeClient)
+    # LUXIT_TWILIO_MODE defaults to "disabled" outside Production (see
+    # services/twilio_gate.py); this test wants its FakeClient to actually
+    # be reached, so opt into "live" -- FakeClient never touches the network.
+    monkeypatch.setenv("LUXIT_TWILIO_MODE", "live")
 
     login(client, comms_world["staff"])
     resp = client.post(
@@ -636,6 +652,10 @@ def test_retry_queued_outbound_messages_dispatches_legacy_stuck_rows(client, com
 
     import twilio.rest
     monkeypatch.setattr(twilio.rest, "Client", FakeClient)
+    # LUXIT_TWILIO_MODE defaults to "disabled" outside Production (see
+    # services/twilio_gate.py); this test wants its FakeClient to actually
+    # be reached, so opt into "live" -- FakeClient never touches the network.
+    monkeypatch.setenv("LUXIT_TWILIO_MODE", "live")
 
     with client.application.app_context():
         stuck = TwilioMessage(
@@ -675,6 +695,10 @@ def test_retry_queued_outbound_messages_marks_provider_failure(client, comms_wor
 
     import twilio.rest
     monkeypatch.setattr(twilio.rest, "Client", FakeClient)
+    # LUXIT_TWILIO_MODE defaults to "disabled" outside Production (see
+    # services/twilio_gate.py); this test wants its FakeClient to actually
+    # be reached, so opt into "live" -- FakeClient never touches the network.
+    monkeypatch.setenv("LUXIT_TWILIO_MODE", "live")
 
     with client.application.app_context():
         stuck = TwilioMessage(

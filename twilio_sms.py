@@ -318,10 +318,18 @@ def _seed_phone_numbers_from_accounts():
 
 
 def _build_client(ta):
-    """Create a Twilio REST client from a TwilioAccount record."""
+    """Create a Twilio REST client from a TwilioAccount record.
+
+    Routed through services.twilio_gate so LUXIT_TWILIO_MODE=disabled
+    blocks the send at this single shared boundary rather than needing a
+    check at every caller.
+    """
     try:
-        from twilio.rest import Client
-        return Client(ta.get_account_sid(), ta.get_auth_token())
+        from services.twilio_gate import get_twilio_client
+        return get_twilio_client(
+            ta.get_account_sid(), ta.get_auth_token(),
+            boundary="twilio_sms._build_client",
+        )
     except Exception as exc:
         logger.error("Twilio client error: %s", exc)
         return None
@@ -3295,8 +3303,8 @@ def _auto_configure_twilio_webhook(ta):
         status_url   = f"{base}/twilio/sms/status"
         sms_fallback = ta.sms_fallback_url or f"{base}/twilio/fallback"
 
-        from twilio.rest import Client
-        client = Client(sid, token)
+        from services.twilio_gate import get_twilio_client
+        client = get_twilio_client(sid, token, boundary="twilio_sms._auto_configure_twilio_webhook")
         client.messaging.v1.services(ta.messaging_service_sid).update(
             inbound_request_url=inbound_url,
             inbound_method="POST",

@@ -144,7 +144,10 @@ class SMSService:
         
         if account_sid and auth_token and cls._twilio_phone:
             try:
-                cls._twilio_client = Client(account_sid, auth_token)
+                from services.twilio_gate import get_twilio_client
+                cls._twilio_client = get_twilio_client(
+                    account_sid, auth_token, boundary="services.sms_service.SMSService._ensure_twilio",
+                )
                 cls._twilio_enabled = True
                 logger.info("Twilio SMS client initialized successfully")
             except Exception as e:
@@ -171,8 +174,11 @@ class SMSService:
             auth_token = ta.get_auth_token()
             if not account_sid or not auth_token:
                 return None
+            from services.twilio_gate import get_twilio_client
             return {
-                'client': Client(account_sid, auth_token),
+                'client': get_twilio_client(
+                    account_sid, auth_token, boundary="services.sms_service.SMSService._tenant_twilio_config",
+                ),
                 'messaging_service_sid': ta.messaging_service_sid,
                 'from_phone': ta.from_phone,
             }

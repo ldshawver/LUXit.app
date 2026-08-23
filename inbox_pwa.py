@@ -3115,11 +3115,11 @@ def place_outbound_call(conv_id):
         return jsonify({"success": False, "error": "No outbound phone number configured in Twilio settings."}), 400
 
     try:
-        from twilio.rest import Client
+        from services.twilio_gate import get_twilio_client
         from flask import url_for
         sid = ta.get_account_sid() if hasattr(ta, "get_account_sid") else ta._account_sid
         tok = ta.get_auth_token()  if hasattr(ta, "get_auth_token")  else ta._auth_token
-        client = Client(sid, tok)
+        client = get_twilio_client(sid, tok, boundary="inbox_pwa.place_outbound_call")
 
         payload     = request.get_json() or {}
         from models import TwilioPhoneNumber
@@ -3200,11 +3200,11 @@ def dial_number():
         to_number = ("+1" + digits) if len(digits) == 10 else ("+" + digits)
 
     try:
-        from twilio.rest import Client
+        from services.twilio_gate import get_twilio_client
         from flask import url_for as _url_for
         sid    = ta.get_account_sid() if hasattr(ta, "get_account_sid") else ta._account_sid
         tok    = ta.get_auth_token()  if hasattr(ta, "get_auth_token")  else ta._auth_token
-        client = Client(sid, tok)
+        client = get_twilio_client(sid, tok, boundary="inbox_pwa.dial_number")
 
         from models import TwilioPhoneNumber
         from services.comms_permissions import accessible_phone_numbers

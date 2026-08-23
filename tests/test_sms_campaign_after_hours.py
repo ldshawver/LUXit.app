@@ -287,7 +287,16 @@ def test_bulk_sms_prefers_tenant_twilio_config(app_client, monkeypatch):
         ta.set_auth_token("token")
         db.session.add(ta)
         db.session.commit()
-        monkeypatch.setattr("services.sms_service.Client", FakeClient)
+        # services.sms_service now constructs its Twilio client through the
+        # centralized services.twilio_gate.get_twilio_client() boundary,
+        # which does its own local `from twilio.rest import Client` --
+        # patch that name directly rather than services.sms_service.Client
+        # (no longer referenced), and opt into "live" mode so the gate
+        # actually reaches it (LUXIT_TWILIO_MODE defaults to "disabled"
+        # outside Production). FakeClient never touches the network.
+        import twilio.rest
+        monkeypatch.setattr(twilio.rest, "Client", FakeClient)
+        monkeypatch.setenv("LUXIT_TWILIO_MODE", "live")
         result = SMSService.send_sms("+15550000123", "Tenant send", company_id=company.id)
         assert result["success"] is True
         assert created["messaging_service_sid"] == "MG_TENANT"

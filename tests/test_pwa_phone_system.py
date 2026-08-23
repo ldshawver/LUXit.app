@@ -949,6 +949,67 @@ def test_badge_count_still_correct_after_awareness_reordering(app, client, world
     assert data["count"] == 1  # not 2 -- proves the two fixes compose without double-counting
 
 
+def test_disabled_twilio_mode_blocks_send_but_inbound_processing_still_works(app, client, world, monkeypatch):
+    """Twilio safety gate, A+B+C: with LUXIT_TWILIO_MODE=disabled, the
+    outbound auto-reply send is blocked at the centralized gate (A), the
+    inbound webhook still returns successfully and persists the message
+    (B), and the notification-delivery-coupling fix still makes the agent
+    aware of the message even though the send was blocked (C)."""
+    from models import Notification
+
+    monkeypatch.setenv("LUXIT_TWILIO_MODE", "disabled")
+    calls = track_awareness_calls(monkeypatch)
+    disable_identity_collection(monkeypatch)
+
+    with app.app_context():
+        save_settings(world["co_a"], business_hours={str(i): {"is_open": False} for i in range(7)})
+        add_phone_number(world["co_a"], "+15550001000", after_hours_text="Company A after-hours SMS")
+        db.session.add(AutoReplyRule(company_id=world["co_a"], name="A after hours", trigger_type="after_hours", action="reply", response="fallback A", is_active=True))
+        db.session.commit()
+
+    resp = client.post("/twilio/sms/inbound", data={"From": "+15551110106", "To": "+15550001000", "Body": "hello", "MessageSid": "SMGATE1"})
+    assert resp.status_code == 200  # the blocked send classifies as terminal (400-499), not retryable
+
+    assert len(calls["push"]) == 1
+    assert len(calls["sse"]) == 1
+
+    with app.app_context():
+        msg = TwilioMessage.query.filter_by(twilio_sid="SMGATE1").first()
+        assert msg is not None, "inbound message must persist while sends are disabled"
+        assert msg.processing_status == "failed_terminal"
+        conv = db.session.get(TwilioConversation, msg.conversation_id)
+        assert conv.is_read is False
+
+        outbound = TwilioMessage.query.filter_by(conversation_id=conv.id, direction="outbound").all()
+        assert outbound == [], "no outbound TwilioMessage record should exist -- the send never reached Twilio"
+
+        assert Notification.query.filter_by(company_id=world["co_a"], event_type="incoming_sms").count() == 1
+
+
+def test_stop_start_help_unaffected_by_disabled_twilio_mode(app, client, world, monkeypatch):
+    """Twilio safety gate, F: STOP/START/HELP use a synchronous TwiML reply
+    that never touches the Twilio REST client, so they must behave
+    identically whether LUXIT_TWILIO_MODE is disabled or live."""
+    monkeypatch.setenv("LUXIT_TWILIO_MODE", "disabled")
+    disable_identity_collection(monkeypatch)
+    with app.app_context():
+        save_settings(world["co_a"], business_hours={str(i): {"is_open": True, "open": "00:00", "close": "23:59"} for i in range(7)})
+        add_phone_number(world["co_a"], "+15550001000")
+        db.session.commit()
+
+    stop_resp = client.post("/twilio/sms/inbound", data={"From": "+15551110107", "To": "+15550001000", "Body": "STOP", "MessageSid": "SMSTOPGATE"})
+    assert stop_resp.status_code == 200
+    assert b"unsubscribed" in stop_resp.data.lower()
+
+    start_resp = client.post("/twilio/sms/inbound", data={"From": "+15551110107", "To": "+15550001000", "Body": "START", "MessageSid": "SMSTARTGATE"})
+    assert start_resp.status_code == 200
+    assert b"subscribed" in start_resp.data.lower()
+
+    help_resp = client.post("/twilio/sms/inbound", data={"From": "+15551110107", "To": "+15550001000", "Body": "HELP", "MessageSid": "SMHELPGATE"})
+    assert help_resp.status_code == 200
+    assert b"stop to opt out" in help_resp.data.lower()
+
+
 def test_inbound_voice_voicemail_greeting_is_selected_by_to_number_company(app, client, world):
     with app.app_context():
         save_settings(world["co_a"], business_hours={str(i): {"is_open": False} for i in range(7)}, after_hours_route="voicemail")

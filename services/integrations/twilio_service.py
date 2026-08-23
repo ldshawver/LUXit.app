@@ -104,9 +104,9 @@ def send_sms(to_number: str, body: str, company_id: int | None = None,
         return {"ok": False, "reason": "Twilio credentials not configured"}
 
     try:
-        from twilio.rest import Client
+        from services.twilio_gate import get_twilio_client
         body = _sanitize_body(body)
-        client = Client(sid, token)
+        client = get_twilio_client(sid, token, boundary="services.integrations.twilio_service.send_sms")
         msg = client.messages.create(body=body, from_=from_phone, to=to_number)
         _log_event(company_id, "sms_sent", {"to": to_number, "sid": msg.sid})
         return {"ok": True, "sid": msg.sid}
