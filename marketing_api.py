@@ -920,36 +920,13 @@ def marketing_skip_reason(contact, channel):
     return None
 
 
-def _matching_dynamic_contacts(segment):
-    q = _audience_query(segment.company_id, segment.name if segment.segment_type == "legacy_tag" else None)
-    conditions = segment.conditions or []
-    if isinstance(conditions, dict): conditions = [conditions]
-    for cond in conditions:
-        field, value = cond.get("field"), cond.get("value")
-        if field == "tag": q = q.filter(Contact.tags.ilike(f"%{value}%"))
-        elif field == "segment": q = q.filter(Contact.segment == value)
-        elif field == "source": q = q.filter(Contact.source == value)
-        elif field == "email_opt_in": q = q.filter(Contact.is_subscribed.is_(bool(value)))
-        elif field == "sms_opt_in": q = q.filter(Contact.sms_marketing_opt_in.is_(bool(value)))
-    return q.all()
-
-
-def refresh_dynamic_segment(segment):
-    if not segment.is_dynamic:
-        return 0
-    excluded = {m.contact_id for m in segment.members.filter_by(is_excluded=True).all()}
-    existing = {m.contact_id: m for m in segment.members.all()}
-    matched = 0
-    for contact in _matching_dynamic_contacts(segment):
-        if contact.id in excluded:
-            continue
-        matched += 1
-        member = existing.get(contact.id)
-        if member:
-            member.removed_at = None; member.removed_by_user_id = None; member.source = member.source or "dynamic_rule"
-        else:
-            db.session.add(SegmentMember(segment_id=segment.id, contact_id=contact.id, source="dynamic_rule"))
-    return matched
+# NOTE: the previous _matching_dynamic_contacts()/refresh_dynamic_segment()
+# pair lived here. It expected conditions as [{"field": ..., "value": ...}],
+# but production segments store {"tag": [...]}; the shape mismatch meant
+# every condition silently applied zero filters, matching every contact in
+# the company. It also ran on every GET request. Replaced by the canonical
+# services/segment_engine.py (validate_conditions / evaluate / refresh),
+# which fails closed on unrecognized shapes and is never invoked by a GET.
 
 
 
@@ -995,6 +972,9 @@ def api_segment_create_root():
     if s.segment_type == "automation_rule":
         from services.crm_automation import validate_definition
         validate_definition(s.triggers or [], s.conditions or {}, s.actions or [], s.match_mode)
+    elif s.is_dynamic:
+        from services.segment_engine import validate_conditions
+        validate_conditions(s.conditions, s.match_mode)
     db.session.add(s); db.session.flush(); _audit(cid, "segment_created", "segment", s.id, _segment_json(s)); db.session.commit()
     return jsonify({"success": True, "segment": _segment_json(s)}), 201
 
@@ -1002,9 +982,52 @@ def api_segment_create_root():
 @segment_api_bp.get("/segments/<int:sid>")
 @login_required
 def api_segment_get_root(sid):
+    """Read-only. Does NOT refresh membership -- GET must never mutate.
+    Use POST /segments/<id>/refresh to recompute membership."""
     s = _segment_or_404(sid)
-    refresh_dynamic_segment(s); db.session.commit()
     return jsonify({"success": True, "segment": _segment_json(s)})
+
+
+@segment_api_bp.get("/segments/<int:sid>/preview")
+@login_required
+def api_segment_preview_root(sid):
+    """Read-only: computes what a refresh WOULD do, without mutating anything."""
+    from services.segment_engine import compute_membership_delta
+    s = _segment_or_404(sid)
+    result = compute_membership_delta(s)
+    if result.error:
+        return jsonify({"success": False, "error": result.error}), 422
+    return jsonify({
+        "success": True, "skipped": result.skipped_reason,
+        "current_members": len(result.current_member_ids),
+        "desired_members": len(result.desired_member_ids),
+        "additions": len(result.additions), "removals": len(result.removals),
+    })
+
+
+@segment_api_bp.post("/segments/<int:sid>/refresh")
+@login_required
+def api_segment_refresh_root(sid):
+    """The one mutating endpoint for dynamic-segment membership recomputation."""
+    from services.segment_engine import refresh as engine_refresh
+    s = _segment_or_404(sid); err = _require_edit(s.company_id)
+    if err: return err
+    result = engine_refresh(s, actor_user_id=getattr(current_user, "id", None))
+    if result.error:
+        db.session.rollback()
+        return jsonify({"success": False, "error": result.error}), 422
+    if result.skipped_reason:
+        return jsonify({"success": True, "skipped": result.skipped_reason, "segment": _segment_json(s)})
+    _audit(s.company_id, "segment_refreshed", "segment", s.id, {
+        "additions": len(result.additions), "removals": len(result.removals),
+        "total": len(result.desired_member_ids),
+    })
+    db.session.commit()
+    return jsonify({
+        "success": True, "segment": _segment_json(s),
+        "additions": len(result.additions), "removals": len(result.removals),
+        "total_members": len(result.desired_member_ids),
+    })
 
 
 @segment_api_bp.patch("/segments/<int:sid>")
@@ -1018,6 +1041,9 @@ def api_segment_patch_root(sid):
     if s.segment_type == "automation_rule":
         from services.crm_automation import validate_definition
         validate_definition(s.triggers or [], s.conditions or {}, s.actions or [], s.match_mode)
+    elif "conditions" in data or "match_mode" in data:
+        from services.segment_engine import validate_conditions
+        validate_conditions(s.conditions, s.match_mode)
     action = "segment_updated"
     if "is_active" in data and bool(data["is_active"]) != bool(was_active):
         action = "segment_activated" if data["is_active"] else "segment_deactivated"
@@ -1050,7 +1076,9 @@ def api_segment_delete_root(sid):
 @segment_api_bp.get("/segments/<int:sid>/contacts")
 @login_required
 def api_segment_contacts_root(sid):
-    s = _segment_or_404(sid); refresh_dynamic_segment(s); db.session.commit()
+    """Read-only. Does NOT refresh membership -- GET must never mutate.
+    Use POST /segments/<id>/refresh to recompute membership first."""
+    s = _segment_or_404(sid)
     q = SegmentMember.query.filter_by(segment_id=s.id, removed_at=None)
     if request.args.get("include_excluded") != "true": q = q.filter_by(is_excluded=False)
     term = (request.args.get("q") or "").strip()

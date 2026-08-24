@@ -2301,35 +2301,34 @@ def billing_cancel():
 @main_bp.route('/segments/<int:segment_id>/refresh', methods=['POST'])
 @login_required
 def refresh_segment(segment_id):
-    """Refresh/recompile a segment to update its members"""
+    """Refresh a dynamic segment's membership via the canonical segment engine.
+
+    Delta-based and atomic: computes desired membership first, and only
+    commits additions/removals if that computation succeeds. Never deletes
+    existing membership before evaluation -- see services/segment_engine.py.
+    """
+    from services.segment_engine import refresh as engine_refresh
+
     segment = Segment.query.filter_by(id=segment_id, company_id=getattr(current_user, "default_company_id", None)).first_or_404()
-    
+
     try:
-        SegmentMember.query.filter_by(segment_id=segment_id, is_excluded=False).delete()
-        
-        contacts = Contact.query.filter_by(company_id=segment.company_id).all()
-        matched = 0
-        
-        for contact in contacts:
-            if segment.segment_type == 'newsletter' and 'newsletter' in (contact.tags or ''):
-                member = SegmentMember(segment_id=segment_id, contact_id=contact.id, source="dynamic_rule")
-                db.session.add(member)
-                matched += 1
-            elif segment.segment_type == 'all':
-                member = SegmentMember(segment_id=segment_id, contact_id=contact.id, source="dynamic_rule")
-                db.session.add(member)
-                matched += 1
-        
-        segment.member_count = matched
-        segment.last_updated = datetime.utcnow()
-        db.session.commit()
-        
-        flash(f'Segment refreshed! {matched} contacts matched.', 'success')
+        result = engine_refresh(segment, actor_user_id=current_user.id)
+        if result.error:
+            db.session.rollback()
+            flash(f'Segment not refreshed -- invalid condition: {result.error}', 'error')
+        elif result.skipped_reason:
+            flash(f'Segment not refreshed: {result.skipped_reason}', 'info')
+        else:
+            db.session.commit()
+            flash(
+                f'Segment refreshed! +{len(result.additions)} / -{len(result.removals)} '
+                f'({len(result.desired_member_ids)} total members).', 'success',
+            )
     except Exception as e:
         logger.error(f"Error refreshing segment: {e}")
         db.session.rollback()
         flash('Error refreshing segment', 'error')
-    
+
     return redirect(url_for('main.segments'))
 
 
@@ -2458,15 +2457,23 @@ def create_segment():
         if segment.segment_type == "automation_rule":
             from services.crm_automation import validate_definition
             validate_definition(segment.triggers, segment.conditions, segment.actions, segment.match_mode)
+        elif segment_type in ("custom", "behavioral", "newsletter") and is_dynamic:
+            from services.segment_engine import validate_conditions
+            validate_conditions(segment.conditions, segment.match_mode)
         segment.is_dynamic = is_dynamic
-        
+
         db.session.add(segment)
         db.session.commit()
-        
+
         flash('Segment created successfully!', 'success')
         return redirect(url_for('main.segments'))
-        
+
     except Exception as e:
+        from services.crm_automation import AutomationContractError
+        from services.segment_engine import SegmentConditionError
+        if isinstance(e, (AutomationContractError, SegmentConditionError)):
+            flash(f'Segment not created -- invalid condition: {e}', 'error')
+            return redirect(url_for('main.segments'))
         logger.error(f"Error creating segment: {e}")
         flash('Error creating segment', 'error')
         return redirect(url_for('main.segments'))
