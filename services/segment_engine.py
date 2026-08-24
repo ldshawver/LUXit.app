@@ -61,7 +61,7 @@ from typing import Any
 
 from extensions import db
 from models import Contact, Segment, SegmentMember
-from services.crm_automation import normalize_label, split_tags
+from services.crm_automation import MY_ORDER_CUSTOMER_ALIASES, normalize_label, split_tags
 
 SCHEMA_VERSION = 1
 
@@ -214,28 +214,45 @@ def _effective_conditions(segment: Segment) -> dict:
 # Evaluator
 # ---------------------------------------------------------------------------
 
+def _tag_key(label: Any) -> str:
+    """Canonicalize a tag label for equality/membership comparisons.
+
+    My Order Customer's known historical spelling variants (My Order
+    Customer / MyOrder Customer / My Order / MyOrder) are folded to one
+    canonical key via MY_ORDER_CUSTOMER_ALIASES -- the same registry
+    services/crm_automation.py uses to canonicalize tags on write (see
+    assign_contact_tag) and to name-match the CRM segment/tag rows. This
+    is the single source of truth: a condition written against the
+    canonical "My Order Customer" name transparently matches contacts
+    still carrying any historical variant, and any tag/value NOT in that
+    registry is normalized (case/whitespace only) exactly as before.
+    """
+    normalized = normalize_label(label)
+    return "my order customer" if normalized in MY_ORDER_CUSTOMER_ALIASES else normalized
+
+
 def _eval_rule(contact: Contact, rule: dict) -> bool:
     field_name, op, value = rule["field"], rule["op"], rule.get("value")
 
     if field_name == "tag":
-        tags = {normalize_label(t) for t in split_tags(contact.tags)}
+        tags = {_tag_key(t) for t in split_tags(contact.tags)}
         if op == "exists":
             return bool(tags)
         if op == "not_exists":
             return not tags
         if op == "equals":
-            return normalize_label(value) in tags
+            return _tag_key(value) in tags
         if op == "not_equals":
-            return normalize_label(value) not in tags
+            return _tag_key(value) not in tags
         if op == "in":
-            return bool(tags & {normalize_label(v) for v in value})
+            return bool(tags & {_tag_key(v) for v in value})
         if op == "not_in":
-            return not (tags & {normalize_label(v) for v in value})
+            return not (tags & {_tag_key(v) for v in value})
         if op == "contains":
-            needle = normalize_label(value)
+            needle = _tag_key(value)
             return any(needle in t for t in tags)
         if op == "not_contains":
-            needle = normalize_label(value)
+            needle = _tag_key(value)
             return not any(needle in t for t in tags)
         raise SegmentConditionError(f"unsupported op {op!r} for field 'tag'")
 

@@ -146,6 +146,53 @@ class TestEvaluate:
                                  conditions={"tag": [tag_value]}, match_mode="any")
         assert evaluate(segment, contact) is True
 
+    @pytest.mark.parametrize("tag_value", ["My Order Customer", "MyOrder Customer", "My Order", "MyOrder",
+                                            "  myorder   customer  ", "MYORDER"])
+    def test_my_order_alias_variants_all_match_segment_10_actual_condition(self, pg_app, tag_value):
+        """Segment #10's real stored condition names only the canonical spelling
+        ({"tag": ["My Order Customer"]}), but production contacts carry a mix of
+        historical alias spellings. The evaluator must expand through the shared
+        MY_ORDER_CUSTOMER_ALIASES registry (services/crm_automation.py) so every
+        alias-tagged contact still qualifies for the narrowly-worded condition --
+        without hardcoding the alias list a second time in this module."""
+        from extensions import db
+        from models import Company, Contact, Segment
+        from services.segment_engine import evaluate
+        company = _make_company(db, Company)
+        contact = _make_contact(db, Contact, company.id, tags=tag_value)
+        segment = _make_segment(db, Segment, company.id,
+                                 conditions={"tag": ["My Order Customer"]}, match_mode="any")
+        assert evaluate(segment, contact) is True
+
+    def test_unrelated_tag_does_not_qualify_for_my_order_customer(self, pg_app):
+        from extensions import db
+        from models import Company, Contact, Segment
+        from services.segment_engine import evaluate
+        company = _make_company(db, Company)
+        contact = _make_contact(db, Contact, company.id, tags="VIP, Newsletter")
+        segment = _make_segment(db, Segment, company.id,
+                                 conditions={"tag": ["My Order Customer"]}, match_mode="any")
+        assert evaluate(segment, contact) is False
+
+    def test_duplicate_alias_tags_on_one_contact_produce_single_membership(self, pg_app):
+        """A contact carrying more than one alias spelling at once (e.g. from a
+        messy import) must still produce exactly one SegmentMember row, never
+        one per matching tag."""
+        from extensions import db
+        from models import Company, Contact, Segment, SegmentMember
+        from services.segment_engine import refresh
+        company = _make_company(db, Company)
+        contact = _make_contact(db, Contact, company.id, tags="MyOrder Customer, My Order, MyOrder")
+        segment = _make_segment(db, Segment, company.id,
+                                 conditions={"tag": ["My Order Customer"]}, match_mode="any")
+        db.session.commit()
+
+        result = refresh(segment)
+        db.session.commit()
+
+        assert result.additions == {contact.id}
+        assert SegmentMember.query.filter_by(segment_id=segment.id, contact_id=contact.id).count() == 1
+
     def test_multiple_tag_values_any_match(self, pg_app):
         from extensions import db
         from models import Company, Contact, Segment
@@ -437,3 +484,67 @@ class TestRefresh:
         result = refresh(segment)
 
         assert len(result.desired_member_ids) == 2
+
+
+class TestSegment10RealWorldScenario:
+    """End-to-end reproduction of Production Segment #10 ("My Order Customer"):
+    stored condition {"tag": ["My Order Customer"]}, match_mode=any, populated
+    from a mixed-tenant population carrying every historical spelling plus
+    contacts that must be excluded on other grounds."""
+
+    def test_full_alias_population_refresh_matches_expected_set_only(self, pg_app):
+        from extensions import db
+        from models import Company, Contact, Segment, SegmentMember
+        from services.segment_engine import refresh
+        company = _make_company(db, Company)
+        other_company = _make_company(db, Company, "Other")
+
+        canonical = _make_contact(db, Contact, company.id, tags="My Order Customer")
+        variant_a = _make_contact(db, Contact, company.id, tags="MyOrder Customer")
+        variant_b = _make_contact(db, Contact, company.id, tags="My Order")
+        variant_c = _make_contact(db, Contact, company.id, tags="MyOrder")
+        unrelated = _make_contact(db, Contact, company.id, tags="VIP")
+        inactive = _make_contact(db, Contact, company.id, tags="My Order Customer", is_active=False)
+        merged = _make_contact(db, Contact, company.id, tags="My Order Customer",
+                                merged_into_contact_id=canonical.id)
+        wrong_tenant = _make_contact(db, Contact, other_company.id, tags="My Order Customer")
+
+        segment = _make_segment(db, Segment, company.id, name="My Order Customer",
+                                 conditions={"tag": ["My Order Customer"]}, match_mode="any")
+        db.session.commit()
+
+        result = refresh(segment)
+        db.session.commit()
+
+        expected = {canonical.id, variant_a.id, variant_b.id, variant_c.id}
+        assert result.desired_member_ids == expected
+        assert unrelated.id not in result.desired_member_ids
+        assert inactive.id not in result.desired_member_ids
+        assert merged.id not in result.desired_member_ids
+        assert wrong_tenant.id not in result.desired_member_ids
+
+        members = {m.contact_id for m in SegmentMember.query.filter_by(segment_id=segment.id).all()
+                   if not m.removed_at}
+        assert members == expected
+
+        second = refresh(segment)
+        assert second.additions == set() and second.removals == set()
+
+    def test_opted_out_contact_remains_segment_member_but_is_suppressed_at_send_time(self, pg_app):
+        """Segment membership is an eligibility concept; SMS suppression is a
+        send-time concern (see services/segment_engine.py module docstring and
+        the campaign recipient resolver). An opted-out contact must remain a
+        member so headcount/reporting stay accurate, while the send path is
+        responsible for excluding them."""
+        from extensions import db
+        from models import Company, Contact, Segment
+        from services.segment_engine import refresh
+        company = _make_company(db, Company)
+        opted_out = _make_contact(db, Contact, company.id, tags="My Order Customer", sms_opted_out=True)
+        segment = _make_segment(db, Segment, company.id,
+                                 conditions={"tag": ["My Order Customer"]}, match_mode="any")
+        db.session.commit()
+
+        result = refresh(segment)
+
+        assert opted_out.id in result.desired_member_ids

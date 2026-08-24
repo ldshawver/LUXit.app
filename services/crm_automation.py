@@ -12,7 +12,7 @@ from extensions import db
 from models import Contact, CRMAutomationExecution, Segment, SegmentMember
 
 MY_ORDER_CUSTOMER_NAME = "My Order Customer"
-MY_ORDER_CUSTOMER_ALIASES = {"my order customer", "myorder customer", "my order"}
+MY_ORDER_CUSTOMER_ALIASES = {"my order customer", "myorder customer", "my order", "myorder"}
 FIRST_INBOUND_TRIGGER = "inbound_sms.first_for_contact"
 TAG_ADDED_TRIGGER = "tag_added"
 SUPPORTED_TRIGGERS = {FIRST_INBOUND_TRIGGER, TAG_ADDED_TRIGGER}
