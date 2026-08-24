@@ -135,7 +135,7 @@ class TestEvaluate:
                                  conditions={"tag": ["my order customer"]}, match_mode="any")
         assert evaluate(segment, contact) is True
 
-    @pytest.mark.parametrize("tag_value", ["MyOrder", "My Order", "MyOrder Customer", "My Order Customer"])
+    @pytest.mark.parametrize("tag_value", ["My Order", "MyOrder Customer", "My Order Customer"])
     def test_my_order_variants_each_match_their_own_condition(self, pg_app, tag_value):
         from extensions import db
         from models import Company, Contact, Segment
@@ -146,8 +146,8 @@ class TestEvaluate:
                                  conditions={"tag": [tag_value]}, match_mode="any")
         assert evaluate(segment, contact) is True
 
-    @pytest.mark.parametrize("tag_value", ["My Order Customer", "MyOrder Customer", "My Order", "MyOrder",
-                                            "  myorder   customer  ", "MYORDER"])
+    @pytest.mark.parametrize("tag_value", ["My Order Customer", "MyOrder Customer", "My Order",
+                                            "  myorder   customer  "])
     def test_my_order_alias_variants_all_match_segment_10_actual_condition(self, pg_app, tag_value):
         """Segment #10's real stored condition names only the canonical spelling
         ({"tag": ["My Order Customer"]}), but production contacts carry a mix of
@@ -164,12 +164,18 @@ class TestEvaluate:
                                  conditions={"tag": ["My Order Customer"]}, match_mode="any")
         assert evaluate(segment, contact) is True
 
-    def test_unrelated_tag_does_not_qualify_for_my_order_customer(self, pg_app):
+    @pytest.mark.parametrize("tag_value", ["VIP, Newsletter", "MyOrder", "MYORDER"])
+    def test_unrelated_tag_does_not_qualify_for_my_order_customer(self, pg_app, tag_value):
+        """Bare "MyOrder"/"myorder" (no "Customer"/"Order" qualifier) is
+        deliberately excluded from MY_ORDER_CUSTOMER_ALIASES -- see
+        tests/test_my_order_crm_automation.py::test_bare_myorder_is_not_a_customer_tag_alias,
+        a considered product decision from the original CRM automation feature
+        (commit 5c78657), not something this engine should silently widen."""
         from extensions import db
         from models import Company, Contact, Segment
         from services.segment_engine import evaluate
         company = _make_company(db, Company)
-        contact = _make_contact(db, Contact, company.id, tags="VIP, Newsletter")
+        contact = _make_contact(db, Contact, company.id, tags=tag_value)
         segment = _make_segment(db, Segment, company.id,
                                  conditions={"tag": ["My Order Customer"]}, match_mode="any")
         assert evaluate(segment, contact) is False
@@ -182,7 +188,7 @@ class TestEvaluate:
         from models import Company, Contact, Segment, SegmentMember
         from services.segment_engine import refresh
         company = _make_company(db, Company)
-        contact = _make_contact(db, Contact, company.id, tags="MyOrder Customer, My Order, MyOrder")
+        contact = _make_contact(db, Contact, company.id, tags="MyOrder Customer, My Order")
         segment = _make_segment(db, Segment, company.id,
                                  conditions={"tag": ["My Order Customer"]}, match_mode="any")
         db.session.commit()
@@ -502,7 +508,7 @@ class TestSegment10RealWorldScenario:
         canonical = _make_contact(db, Contact, company.id, tags="My Order Customer")
         variant_a = _make_contact(db, Contact, company.id, tags="MyOrder Customer")
         variant_b = _make_contact(db, Contact, company.id, tags="My Order")
-        variant_c = _make_contact(db, Contact, company.id, tags="MyOrder")
+        bare_myorder = _make_contact(db, Contact, company.id, tags="MyOrder")
         unrelated = _make_contact(db, Contact, company.id, tags="VIP")
         inactive = _make_contact(db, Contact, company.id, tags="My Order Customer", is_active=False)
         merged = _make_contact(db, Contact, company.id, tags="My Order Customer",
@@ -516,8 +522,11 @@ class TestSegment10RealWorldScenario:
         result = refresh(segment)
         db.session.commit()
 
-        expected = {canonical.id, variant_a.id, variant_b.id, variant_c.id}
+        expected = {canonical.id, variant_a.id, variant_b.id}
         assert result.desired_member_ids == expected
+        # Bare "MyOrder" (no "Customer"/"Order" qualifier) is deliberately NOT
+        # an alias -- see test_bare_myorder_is_not_a_customer_tag_alias.
+        assert bare_myorder.id not in result.desired_member_ids
         assert unrelated.id not in result.desired_member_ids
         assert inactive.id not in result.desired_member_ids
         assert merged.id not in result.desired_member_ids

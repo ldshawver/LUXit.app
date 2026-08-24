@@ -218,14 +218,22 @@ def _tag_key(label: Any) -> str:
     """Canonicalize a tag label for equality/membership comparisons.
 
     My Order Customer's known historical spelling variants (My Order
-    Customer / MyOrder Customer / My Order / MyOrder) are folded to one
-    canonical key via MY_ORDER_CUSTOMER_ALIASES -- the same registry
+    Customer / MyOrder Customer / My Order) are folded to one canonical
+    key via MY_ORDER_CUSTOMER_ALIASES -- the same registry
     services/crm_automation.py uses to canonicalize tags on write (see
     assign_contact_tag) and to name-match the CRM segment/tag rows. This
     is the single source of truth: a condition written against the
     canonical "My Order Customer" name transparently matches contacts
     still carrying any historical variant, and any tag/value NOT in that
     registry is normalized (case/whitespace only) exactly as before.
+
+    Bare "MyOrder"/"myorder" (no "Customer"/"Order" qualifier) is
+    deliberately NOT in the registry -- see
+    tests/test_my_order_crm_automation.py::test_bare_myorder_is_not_a_customer_tag_alias,
+    added with the original CRM automation feature (commit 5c78657) as a
+    considered product decision, not an oversight. Production data has zero
+    contacts with that bare tag, so this alone accounts for none of Segment
+    #10's expected membership.
     """
     normalized = normalize_label(label)
     return "my order customer" if normalized in MY_ORDER_CUSTOMER_ALIASES else normalized

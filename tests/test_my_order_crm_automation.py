@@ -173,6 +173,26 @@ def test_bare_myorder_is_not_a_customer_tag_alias(crm_app):
     assert SegmentMember.query.count() == 0
 
 
+def test_bare_myorder_named_segment_does_not_collide_with_canonical_resolution(crm_app):
+    """Production carries a real, separate custom segment literally named
+    "MyOrder" (bare) alongside the canonical "My Order Customer" segment.
+    If bare "myorder" were ever added to MY_ORDER_CUSTOMER_ALIASES,
+    is_my_order_customer_label("MyOrder") would start returning True, and
+    _canonical_candidates(role="segment") would then match BOTH segments --
+    turning every _resolve_canonical()/ensure_my_order_automation() call for
+    that tenant into a DuplicateCanonicalRecord error. This must never
+    happen: bare "MyOrder" stays out of the alias registry precisely so an
+    unrelated, differently-scoped segment sharing that bare name can coexist."""
+    _, company, _ = crm_app
+    records = _records(company)
+    bystander = Segment(company_id=company.id, name="MyOrder", segment_type="custom",
+                         is_dynamic=True, match_mode="all", conditions={"tag": "My Order Customer"})
+    db.session.add(bystander)
+    db.session.flush()
+    result = _records(company)
+    assert result["segment"].id == records["segment"].id
+
+
 def test_existing_and_multiple_executions_keep_one_membership(crm_app):
     _, company, _ = crm_app
     records = _records(company)
