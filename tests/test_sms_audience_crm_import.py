@@ -3,7 +3,7 @@ import pytest
 
 from app import create_app
 from extensions import db
-from models import Company, Contact, SegmentMember, SMSCampaign, SMSRecipient, User, user_company
+from models import Company, Contact, Segment, SegmentMember, SMSCampaign, SMSRecipient, User, user_company
 from services.contact_audience import (
     build_sms_recipient_snapshot,
     import_contacts,
@@ -71,6 +71,11 @@ def test_segment_by_source_phone_and_tag_returns_tenant_contacts(app, tenant_use
 
 def test_campaign_snapshot_dedupes_and_excludes_optouts(app, tenant_user):
     _, company = tenant_user
+    # services/contact_audience.py::resolve_segment_contacts no longer
+    # auto-creates a Segment for an unmatched campaign-text tag (fail-closed
+    # fix for the Segment #9/#10 audience-resolution ambiguity) -- a real
+    # "vip" Segment must exist for the legacy `segment="vip"` text to resolve.
+    db.session.add(Segment(company_id=company.id, name="vip", segment_type="custom"))
     c1 = Contact(company_id=company.id, phone="+15550001000", normalized_phone="+15550001000", tags="vip,sms_consent", is_active=True, is_subscribed=True, segment="vip")
     c2 = Contact(company_id=company.id, phone="(555) 000-1000", normalized_phone="+15550001000", tags="vip,sms_consent", is_active=True, is_subscribed=True, segment="vip")
     c3 = Contact(company_id=company.id, phone="+19165989519", tags="vip,sms_opt_out", is_active=True, is_subscribed=True, segment="vip")

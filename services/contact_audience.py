@@ -5,11 +5,48 @@ import csv, io, re
 from datetime import datetime
 from email.utils import parseaddr
 from sqlalchemy import or_, func
+from sqlalchemy.exc import IntegrityError
 from extensions import db
 from models import Contact, Segment, SegmentMember, SMSRecipient
 
 PHONE_SOURCE_TAG_RULES = [{"phone_number": "+19165989519", "tag": "My Order Customer"}]
 SYSTEM_KEYWORDS = {"STOP", "STOPALL", "UNSUBSCRIBE", "CANCEL", "END", "QUIT", "HELP", "INFO", "START", "UNSTOP"}
+
+# segment_type values that are CRM-automation internals (e.g. Segment #9, the
+# "My Order Customer" contact_tag anchor used by services/crm_automation.py to
+# track tag state) rather than a selectable marketing audience. A campaign
+# must never resolve one of these merely because its display name collides
+# with a real marketing segment's name (e.g. Segment #9 vs Segment #10, both
+# literally named "My Order Customer") -- mirrors the role scoping
+# services/crm_automation.py::_canonical_candidates() already applies.
+MARKETING_SEGMENT_EXCLUDED_TYPES = {"contact_tag", "automation_rule"}
+
+
+class AmbiguousAudienceSegment(ValueError):
+    """Raised when a campaign audience name matches more than one eligible
+    marketing segment for the company -- callers must fail closed rather than
+    silently union or arbitrarily pick one."""
+
+
+def _marketing_segments_query(company_id: int):
+    return Segment.query.filter(
+        Segment.company_id == company_id,
+        Segment.segment_type.notin_(MARKETING_SEGMENT_EXCLUDED_TYPES),
+    )
+
+
+def _expand_alias_names(names: set[str]) -> set[str]:
+    """Fold any name matching the canonical My Order Customer alias registry
+    to the full alias set, so the raw-tag-text fallback in
+    resolve_segment_contacts stays consistent with
+    services/segment_engine.py's alias-aware evaluator instead of only
+    matching one literal spelling."""
+    from services.crm_automation import MY_ORDER_CUSTOMER_ALIASES, is_my_order_customer_label
+    expanded = set(names)
+    for name in names:
+        if is_my_order_customer_label(name):
+            expanded |= MY_ORDER_CUSTOMER_ALIASES
+    return expanded
 
 
 from services.phone_normalization import normalize_phone_e164
@@ -133,9 +170,13 @@ def _contact_tag_keys(contact):
 
 
 def canonical_tag_ids(company_id: int, *, tag_ids=None, tag_names=None, create_missing=False):
-    """Resolve tag/segment labels to tenant-owned IDs; foreign IDs are rejected."""
+    """Resolve tag/segment labels to tenant-owned, marketing-eligible Segment
+    IDs; foreign IDs -- and IDs/names belonging to a CRM-automation-internal
+    segment_type (see MARKETING_SEGMENT_EXCLUDED_TYPES) -- are rejected. A
+    name matching more than one eligible segment fails closed
+    (AmbiguousAudienceSegment) instead of silently unioning candidates."""
     ids = {int(value) for value in (tag_ids or []) if str(value).isdigit()}
-    segments = Segment.query.filter(Segment.company_id == company_id)
+    segments = _marketing_segments_query(company_id)
     if ids:
         owned = {row.id for row in segments.filter(Segment.id.in_(ids)).all()}
         if owned != ids:
@@ -144,15 +185,42 @@ def canonical_tag_ids(company_id: int, *, tag_ids=None, tag_names=None, create_m
         owned = set()
     wanted = {_normalized_label(value) for value in (tag_names or []) if _normalized_label(value)}
     if wanted:
-        matches = [row for row in segments.all() if _normalized_label(row.name) in wanted]
+        by_name: dict[str, list[Segment]] = {}
+        for row in segments.all():
+            by_name.setdefault(_normalized_label(row.name), []).append(row)
+        ambiguous = {key: rows for key, rows in by_name.items() if key in wanted and len(rows) > 1}
+        if ambiguous:
+            raise AmbiguousAudienceSegment(
+                "Audience name(s) match more than one marketing segment for this company "
+                f"({ {key: [r.id for r in rows] for key, rows in ambiguous.items()} }); "
+                "select the segment by ID instead."
+            )
+        matches = [rows[0] for key, rows in by_name.items() if key in wanted]
         found = {_normalized_label(row.name) for row in matches}
         missing = wanted - found
         if missing and create_missing:
             # One-time canonicalization for legacy campaigns/contacts that only
             # stored tag text. All newly persisted audience filters use IDs.
+            # Reserved alias names are never auto-created here -- they belong
+            # to services/crm_automation.py::ensure_my_order_automation's
+            # canonical contact_tag anchor (Segment #9), not to an ad-hoc
+            # campaign-text segment.
+            from services.crm_automation import MY_ORDER_CUSTOMER_ALIASES
+            blocked = missing & MY_ORDER_CUSTOMER_ALIASES
+            if blocked:
+                raise ValueError(
+                    f"Audience name(s) {sorted(blocked)} are managed by the canonical My Order "
+                    "Customer segment; select it by ID instead of creating a new one."
+                )
             for key in sorted(missing):
                 row = Segment(company_id=company_id, name=" ".join(key.split()), segment_type="contact_tag")
-                db.session.add(row); db.session.flush(); matches.append(row)
+                try:
+                    with db.session.begin_nested():
+                        db.session.add(row)
+                        db.session.flush()
+                except IntegrityError:
+                    raise ValueError(f"Could not create audience segment {key!r}: name conflict.") from None
+                matches.append(row)
         elif missing:
             raise ValueError("One or more audience tags do not have a canonical tag ID for this company.")
         owned.update(row.id for row in matches)
@@ -169,24 +237,35 @@ def _campaign_tag_ids(campaign):
 
 
 def resolve_segment_contacts(company_id: int, segment=None, audience_filter: dict | None = None):
-    """Tenant-scoped tag resolution through canonical Segment IDs.
+    """Tenant-scoped tag resolution through canonical, marketing-eligible
+    Segment IDs -- the single resolver shared by preview, send, scheduling,
+    jobs and reports (via resolve_sms_campaign_recipients below).
 
-    SegmentMember is authoritative when memberships exist. Legacy contact tag text is
-    matched to the *name belonging to the selected tenant Segment ID*, never directly
-    to an untrusted campaign label.
+    SegmentMember is authoritative when memberships exist. Legacy contact tag
+    text is matched to the *name belonging to the selected tenant Segment
+    ID*, never directly to an untrusted campaign label, and is alias-expanded
+    to stay consistent with services/segment_engine.py's canonical evaluator.
+
+    A CRM-automation-internal segment (segment_type in
+    MARKETING_SEGMENT_EXCLUDED_TYPES, e.g. Segment #9's "My Order Customer"
+    contact_tag anchor) is never eligible here, even if its display name
+    collides with a real marketing segment's name -- see
+    MARKETING_SEGMENT_EXCLUDED_TYPES. An unmatched or ambiguous audience name
+    fails closed (ValueError/AmbiguousAudienceSegment); this resolver never
+    silently creates a Segment as a side effect of preview or send.
     """
     filters = audience_filter or {}
     ids = canonical_tag_ids(
         company_id,
         tag_ids=filters.get("selected_tag_ids") or filters.get("tag_ids") or [],
         tag_names=_split_tags(segment) if segment and not (filters.get("selected_tag_ids") or filters.get("tag_ids")) else [],
-        create_missing=True,
+        create_missing=False,
     ) if (segment or filters.get("selected_tag_ids") or filters.get("tag_ids")) else []
     contacts = Contact.query.filter(Contact.company_id == company_id).all()
     if not ids:
         return contacts
-    segments = Segment.query.filter(Segment.company_id == company_id, Segment.id.in_(ids)).all()
-    names = {_normalized_label(row.name) for row in segments}
+    segments = _marketing_segments_query(company_id).filter(Segment.id.in_(ids)).all()
+    names = _expand_alias_names({_normalized_label(row.name) for row in segments})
     member_ids = {row.contact_id for row in SegmentMember.query.filter(
         SegmentMember.segment_id.in_(ids), SegmentMember.is_excluded.is_(False)
     ).all()}
