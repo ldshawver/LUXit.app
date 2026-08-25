@@ -4,6 +4,7 @@ from __future__ import annotations
 import re
 import unicodedata
 from dataclasses import dataclass
+from datetime import datetime
 from enum import Enum
 from sqlalchemy import func, or_
 
@@ -548,6 +549,167 @@ def resolve_confirmation_identity(
         (),
         0,
     )
+
+
+class ContactCreationOutcome(str, Enum):
+    """Why resolve_or_create_contact() returned the Contact it did."""
+    RESOLVED_PROVIDER_ID = "RESOLVED_PROVIDER_ID"
+    RESOLVED_PHONE_AND_EMAIL = "RESOLVED_PHONE_AND_EMAIL"
+    RESOLVED_PHONE = "RESOLVED_PHONE"
+    RESOLVED_EMAIL = "RESOLVED_EMAIL"
+    CREATED = "CREATED"
+    AMBIGUOUS_CREATED = "AMBIGUOUS_CREATED"
+
+
+@dataclass(frozen=True)
+class ContactCreationResolution:
+    contact: Contact
+    outcome: ContactCreationOutcome
+    created: bool
+    candidate_ids: tuple[int, ...]
+
+
+def resolve_or_create_contact(
+    company_id: int,
+    *,
+    phone: str | None = None,
+    email: str | None = None,
+    provider_id: str | None = None,
+    tenant_id: int | None = None,
+    user_id: int | None = None,
+) -> ContactCreationResolution:
+    """The one canonical, tenant-scoped find-or-create for every Contact
+    ingestion path (inbound SMS, CSV/iCloud import, manual entry, newsletter
+    forms, Zapier, Google Contacts sync).
+
+    Reuses the same evidence discovery/locking the SMS identity-confirmation
+    flow already relies on (discover_confirmation_candidate_ids +
+    load_confirmation_evidence + _contact_identity_values), so creation-time
+    matching and post-creation identity confirmation always agree on what
+    counts as the same person -- including a person's identifiers that moved
+    onto a merge survivor as secondary ContactPhoneNumber/ContactEmailAddress
+    rows, not just its primary Contact.phone/email columns.
+
+    Never merges two established contacts and never silently picks one
+    candidate among several with is_(True)/.first(): an ambiguous or
+    conflicting match creates a new row flagged duplicate_status="ambiguous"
+    (with possible_duplicate_of_id pointing at the lowest conflicting
+    candidate id) for the existing duplicate-review queue/UI filter, instead
+    of guessing.
+
+    Concurrency: serialized per (company_id, normalized identifier) via the
+    same pg_advisory_xact_lock helper the identity-confirmation flow uses
+    (services.contact_identity._advisory_identity_locks) -- a no-op under
+    SQLite, so tests are unaffected -- so two simultaneous callers resolving
+    the same brand-new identity cannot both fall through to create.
+    """
+    from services.contact_identity import _advisory_identity_locks
+    from services.contact_intelligence import normalize_email as _normalize_email
+
+    normalized_phone = normalize_phone_e164(phone)
+    normalized_email = _normalize_email(email)
+    if normalized_email and is_placeholder_or_shared_email(normalized_email):
+        # A shared/role inbox (info@, support@...) identifies an organization,
+        # not a person -- never resolve an existing contact from it alone.
+        normalized_email = None
+    provider_id = (provider_id or "").strip() or None
+
+    lock_values = tuple(v for v in (normalized_phone, normalized_email, provider_id) if v)
+    _advisory_identity_locks(company_id, lock_values)
+
+    if provider_id:
+        provider_match = (
+            Contact.query.filter(
+                Contact.company_id == company_id,
+                Contact.is_active.is_(True),
+                Contact.merged_into_contact_id.is_(None),
+                Contact.external_google_contact_id == provider_id,
+            )
+            .order_by(Contact.id.asc())
+            .with_for_update()
+            .first()
+        )
+        if provider_match:
+            return ContactCreationResolution(
+                provider_match, ContactCreationOutcome.RESOLVED_PROVIDER_ID, False, (provider_match.id,),
+            )
+
+    candidate_ids = discover_confirmation_candidate_ids(
+        company_id, normalized_phone=normalized_phone, normalized_email=normalized_email,
+    )
+    evidence = load_confirmation_evidence(company_id, candidate_ids, lock=True)
+    contacts = [
+        row for row in evidence.contacts
+        if row.company_id == company_id and row.is_active and row.merged_into_contact_id is None
+    ]
+    phone_by_contact: dict[int, list] = {}
+    email_by_contact: dict[int, list] = {}
+    for row in evidence.phone_points:
+        phone_by_contact.setdefault(row.contact_id, []).append(row)
+    for row in evidence.email_points:
+        email_by_contact.setdefault(row.contact_id, []).append(row)
+
+    phone_matches, email_matches = [], []
+    for candidate in contacts:
+        phones, emails, _, _ = _contact_identity_values(
+            candidate, phone_by_contact.get(candidate.id, ()), email_by_contact.get(candidate.id, ()),
+        )
+        if normalized_phone and normalized_phone in phones:
+            phone_matches.append(candidate)
+        if normalized_email and normalized_email in emails:
+            email_matches.append(candidate)
+    phone_ids = {c.id for c in phone_matches}
+    email_ids = {c.id for c in email_matches}
+
+    def _create(ambiguous_candidate_ids=()):
+        contact = Contact(
+            company_id=company_id, tenant_id=tenant_id or company_id,
+            is_active=True, created_at=datetime.utcnow(), created_by_user_id=user_id,
+        )
+        if ambiguous_candidate_ids:
+            contact.duplicate_status = "ambiguous"
+            contact.possible_duplicate_of_id = min(ambiguous_candidate_ids)
+        db.session.add(contact)
+        db.session.flush()
+        return contact
+
+    def _finalize(contact, outcome, created, candidate_ids):
+        # Blank-fill only -- an already-linked provider id on an existing
+        # contact is never overwritten, matching every other field-merge rule
+        # in this codebase (upsert_contact_from_source, resolve_contact,
+        # _merge_contact_data all only fill blanks, never replace populated
+        # values).
+        if provider_id and not contact.external_google_contact_id:
+            contact.external_google_contact_id = provider_id
+        return ContactCreationResolution(contact, outcome, created, candidate_ids)
+
+    if not phone_ids and not email_ids:
+        return _finalize(_create(), ContactCreationOutcome.CREATED, True, ())
+
+    if phone_ids and email_ids:
+        if phone_ids == email_ids and len(phone_ids) == 1:
+            return _finalize(
+                phone_matches[0], ContactCreationOutcome.RESOLVED_PHONE_AND_EMAIL, False, tuple(phone_ids),
+            )
+        conflict_ids = tuple(sorted(phone_ids | email_ids))
+        return _finalize(
+            _create(conflict_ids), ContactCreationOutcome.AMBIGUOUS_CREATED, True, conflict_ids,
+        )
+
+    if phone_ids:
+        if len(phone_ids) == 1:
+            return _finalize(
+                phone_matches[0], ContactCreationOutcome.RESOLVED_PHONE, False, tuple(phone_ids),
+            )
+        ids = tuple(sorted(phone_ids))
+        return _finalize(_create(ids), ContactCreationOutcome.AMBIGUOUS_CREATED, True, ids)
+
+    if len(email_ids) == 1:
+        return _finalize(
+            email_matches[0], ContactCreationOutcome.RESOLVED_EMAIL, False, tuple(email_ids),
+        )
+    ids = tuple(sorted(email_ids))
+    return _finalize(_create(ids), ContactCreationOutcome.AMBIGUOUS_CREATED, True, ids)
 
 
 def resolve_contact_identity(company_id: int, *, phone=None, email=None, contact_id=None, allow_enrichment=False) -> ContactResolution:

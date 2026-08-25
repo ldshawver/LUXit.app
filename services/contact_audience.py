@@ -4,7 +4,6 @@ from __future__ import annotations
 import csv, io, re
 from datetime import datetime
 from email.utils import parseaddr
-from sqlalchemy import or_, func
 from sqlalchemy.exc import IntegrityError
 from extensions import db
 from models import Contact, Segment, SegmentMember, SMSRecipient
@@ -102,15 +101,9 @@ def upsert_contact_from_source(company_id: int, phone: str | None = None, email:
                                email_opt_in=None, preserve_opt_out=True) -> Contact:
     now = datetime.utcnow()
     norm = normalize_phone(phone)
-    q = Contact.query.filter(Contact.company_id == company_id, Contact.is_active.is_(True))
-    contact = None
-    if norm:
-        contact = q.filter(or_(Contact.normalized_phone == norm, Contact.phone == norm, Contact.phone == phone)).first()
-    if not contact and email:
-        contact = q.filter(func.lower(Contact.email) == email.strip().lower()).first()
-    if not contact:
-        contact = Contact(company_id=company_id, tenant_id=tenant_id or company_id, is_active=True, is_subscribed=True, created_at=now)
-        db.session.add(contact)
+    from services.contact_resolver import resolve_or_create_contact
+    resolution = resolve_or_create_contact(company_id, phone=phone, email=email, tenant_id=tenant_id)
+    contact = resolution.contact
     if not contact.phone and norm:
         contact.phone = norm
     if norm and not contact.normalized_phone:

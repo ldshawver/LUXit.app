@@ -937,13 +937,33 @@ def sync_contacts(user_id: int, company_id: int, dry_run: bool = False) -> dict:
                         skipped += 1
                         _append_preview(preview, "possible_merge_requires_review", {**merge_item, "requires_review": True}, preview_omitted, preview_limit)
             else:
-                created += 1
-                _append_preview(preview, "will_create", {"contact_name": data.get("name"), "incoming_google_contact": data}, preview_omitted, preview_limit)
                 if not dry_run:
+                    # _find_contact_by_google_data() found no match on resource_name,
+                    # phone, or a bare Contact.email lookup -- but that does not yet
+                    # prove this is a new person. resolve_contact() now runs the full
+                    # canonical resolver (services/contact_resolver.py), which also
+                    # checks ContactPhoneNumber/ContactEmailAddress rows a merge may
+                    # have moved onto a survivor, and provider_id, before creating.
+                    # This is what stops a later phone-less Google resource for an
+                    # already-known person from spawning a second Contact.
                     from services.contact_intelligence import resolve_contact
-                    contact = resolve_contact(company_id, phone=data.get("normalized_phone") or data.get("phone"), email=data.get("email"), proposed_name=data.get("name"), first_name=data.get("first_name"), last_name=data.get("last_name"), business_name=data.get("company"), source="google_contacts", detail="Google Contacts sync", user_id=user_id)
-                    contact.is_subscribed = False
+                    contact = resolve_contact(company_id, phone=data.get("normalized_phone") or data.get("phone"), email=data.get("email"), provider_id=data.get("resource_name"), proposed_name=data.get("name"), first_name=data.get("first_name"), last_name=data.get("last_name"), business_name=data.get("company"), source="google_contacts", detail="Google Contacts sync", user_id=user_id)
+                    if getattr(contact, "_resolver_created", True):
+                        created += 1
+                        contact.is_subscribed = False
+                        _append_preview(preview, "will_create", {"contact_name": data.get("name"), "incoming_google_contact": data}, preview_omitted, preview_limit)
+                    else:
+                        # The canonical resolver found an existing person (e.g. by a
+                        # secondary phone/email a prior merge moved onto them) that
+                        # _find_contact_by_google_data()'s narrower check missed.
+                        # Enrich them like any other match -- never touch
+                        # is_subscribed/consent on a contact we did not just create.
+                        matched += 1
+                        updated_ids.add(contact.id)
                     _apply_google_to_contact(contact, data, dry_run=False)
+                else:
+                    created += 1
+                    _append_preview(preview, "will_create", {"contact_name": data.get("name"), "incoming_google_contact": data}, preview_omitted, preview_limit)
             if contact and len(samples) < 10:
                 samples.append({"contact_id": contact.id, "name": data.get("name"), "phone": data.get("normalized_phone") or norm})
             if not dry_run and index % int(os.environ.get("GOOGLE_CONTACTS_BATCH_SIZE", "500")) == 0:

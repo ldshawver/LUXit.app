@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 from email.utils import parseaddr
 import re
 
-from sqlalchemy import or_, func
+from sqlalchemy import func
 
 from extensions import db
 from models import Contact, ContactEmailAddress, ContactPhoneNumber, ContactSourceEvent, ContactTask, Opportunity
@@ -96,21 +96,21 @@ def sync_contact_points(contact: Contact, phone: str | None, email: str | None, 
 def resolve_contact(company_id: int, *, phone: str | None = None, email: str | None = None, proposed_name: str | None = None,
                     first_name: str | None = None, last_name: str | None = None, business_name: str | None = None,
                     source: str = "unknown", detail: str | None = None, tenant_id: int | None = None,
-                    user_id: int | None = None, metadata: dict | None = None) -> Contact:
-    phone_result = normalize_phone(phone)
-    norm_email = normalize_email(email)
-    q = Contact.query.filter(Contact.company_id == company_id, Contact.is_active.is_(True))
-    contact = None
-    if phone_result.normalized:
-        contact = q.filter(Contact.normalized_phone == phone_result.normalized).first()
-    if not contact and norm_email:
-        contact = q.filter(or_(
-            func.lower(func.trim(Contact.normalized_email)) == norm_email,
-            func.lower(func.trim(Contact.email)) == norm_email,
-        )).first()
-    if not contact:
-        contact = Contact(company_id=company_id, tenant_id=tenant_id or company_id, is_active=True, status="active", created_at=datetime.utcnow(), created_by_user_id=user_id)
-        db.session.add(contact); db.session.flush()
+                    user_id: int | None = None, metadata: dict | None = None, provider_id: str | None = None) -> Contact:
+    from services.contact_resolver import resolve_or_create_contact
+    resolution = resolve_or_create_contact(
+        company_id, phone=phone, email=email, provider_id=provider_id, tenant_id=tenant_id, user_id=user_id,
+    )
+    contact = resolution.contact
+    # Transient (non-persisted) marker so callers that need to know whether a
+    # new row was actually created -- vs. an existing contact being resolved
+    # and enriched -- don't have to re-derive it (e.g. so a caller never
+    # weakens an *existing* contact's subscription/consent flags under the
+    # assumption it just made a fresh row).
+    contact._resolver_created = resolution.created
+    contact._resolver_outcome = resolution.outcome
+    if resolution.created:
+        contact.status = contact.status or "active"
     if proposed_name and not meaningful_name(contact):
         contact.name = proposed_name.strip(); contact.display_name = proposed_name.strip(); contact.name_source = "user"
     if first_name and not contact.first_name: contact.first_name = first_name.strip()
