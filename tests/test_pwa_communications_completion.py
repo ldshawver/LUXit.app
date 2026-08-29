@@ -1,5 +1,6 @@
 import base64
 import os
+import re
 
 import pytest
 from werkzeug.security import generate_password_hash
@@ -282,7 +283,16 @@ def test_pwa_calls_visual_nav_sdk_and_voicemail_static_requirements():
     assert "SDK_MISSING" in calls and "TOKEN_ENDPOINT_FAILED" in calls and "NO_ASSIGNED_NUMBER" in calls
     assert "favoritesScreen" in index and "saveFavorite" in index and "removeFavorite" in index and "moveFavorite" in index
     assert "setPalette('slate')" in index and "setPalette('rose')" in index
-    assert "mark-unread" in calls and "/api/calls/${id}/${read?'mark-read':'mark-unread'}" in calls
+    # Semantic check (not an exact-literal match): the call-read toggle must hit
+    # /api/calls/<id>/mark-read|mark-unread with the id URL-encoded and both
+    # branches of the read/unread ternary represented, regardless of incidental
+    # whitespace or safety wrappers (e.g. encodeURIComponent) around `id`.
+    mark_toggle = re.search(
+        r"/api/calls/\$\{[^}]*\bid\b[^}]*\}/\$\{[^}]*\bread\b[^}]*\?[^}]*'mark-read'[^}]*:[^}]*'mark-unread'[^}]*\}",
+        calls,
+    )
+    assert mark_toggle, "expected a call mark-read/mark-unread toggle hitting /api/calls/<id>/mark-read|mark-unread"
+    assert "encodeURIComponent(id)" in mark_toggle.group(0), "call id must be URL-encoded in the mark-read/mark-unread toggle"
 
 
 def test_unread_reminders_obey_business_hours_and_stop_conditions(pwa_app, monkeypatch):
