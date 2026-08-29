@@ -78,7 +78,7 @@ def _phone_pwa_license_gate():
     """Server-side feature gate for the licensed Phone/PWA Communications module."""
     path = request.path or ""
     gated = (
-        path in {"/app/inbox", "/app/calls", "/app/calls/settings", "/app/new-text", "/app/dial-pad", "/app/recents", "/app/settings", "/app/favorites", "/app/contacts", "/app/voicemail", "/app/greetings"}
+        path in {"/app/inbox", "/app/calls", "/app/calls/settings", "/app/new-text", "/app/phone", "/app/dial-pad", "/app/recents", "/app/settings", "/app/favorites", "/app/contacts", "/app/voicemail", "/app/greetings"}
         or path.startswith("/api/inbox/")
         or path.startswith("/api/calls/")
         or path.startswith("/api/phone/")
@@ -609,7 +609,6 @@ def _msg_to_dict(m):
 
 @inbox_pwa_bp.route("/app/inbox")
 @inbox_pwa_bp.route("/app/new-text")
-@inbox_pwa_bp.route("/app/dial-pad")
 @inbox_pwa_bp.route("/app/settings")
 @inbox_pwa_bp.route("/app/favorites")
 @inbox_pwa_bp.route("/app/contacts")
@@ -646,6 +645,8 @@ def pwa_index():
     )
 
 
+@inbox_pwa_bp.route("/app/phone")
+@inbox_pwa_bp.route("/app/dial-pad")
 @inbox_pwa_bp.route("/app/calls")
 @inbox_pwa_bp.route("/app/calls/settings")
 @inbox_pwa_bp.route("/app/recents")
@@ -666,7 +667,16 @@ def pwa_calls():
         or os.environ.get("RENDER_GIT_COMMIT")
         or "20260710-push-receipt-ack"
     )
-    return render_template("inbox_pwa/calls.html", user=user, company=company, pwa_version=pwa_version)
+    # /app/phone and /app/dial-pad render the dedicated dialer view of this one
+    # canonical template; the Clock-icon routes render the Recent Calls view.
+    dialer_mode = (request.path or "").rstrip("/") in ("/app/phone", "/app/dial-pad")
+    return render_template(
+        "inbox_pwa/calls.html",
+        user=user,
+        company=company,
+        pwa_version=pwa_version,
+        dialer_mode=dialer_mode,
+    )
 
 
 def _call_to_dict(call):
@@ -1547,10 +1557,11 @@ def api_phone_voice_token():
             if not device:
                 return jsonify({"success": False, "code": "DEVICE_NOT_REGISTERED", "error": "Register and approve this device before enabling Wi-Fi Calling."}), 403
         identity = pwa_voice_identity(company.id, user.id, device_key) if device else pwa_voice_identity(company.id)
+        twiml_app_sid = os.environ.get("TWILIO_TWIML_APP_SID")
         token = AccessToken(account_sid, api_key, api_secret, identity=identity)
         token.add_grant(VoiceGrant(
             incoming_allow=True,
-            outgoing_application_sid=os.environ.get("TWILIO_TWIML_APP_SID"),
+            outgoing_application_sid=twiml_app_sid,
         ))
         return jsonify({
             "success": True,
@@ -1561,6 +1572,11 @@ def api_phone_voice_token():
             "calling_number": allowed_numbers[0],
             "permitted_numbers": allowed_numbers,
             "device_key": device_key or None,
+            # Browser-originated outbound calls need a Twilio TwiML App bound to
+            # the VoiceGrant. When it is absent the SDK still registers for
+            # inbound, but device.connect() would be torn down immediately by
+            # Twilio — so tell the client to disable the Call button instead.
+            "outbound_enabled": bool(twiml_app_sid),
         })
     except Exception as exc:
         logger.exception("Unable to issue Twilio Voice token", extra={"user_id": user.id, "company_id": company.id})
