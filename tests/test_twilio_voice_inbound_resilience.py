@@ -129,6 +129,93 @@ def test_voice_inbound_exception_rolls_back_and_returns_safe_twiml(voice_app, mo
     assert log_exception.called
 
 
+def _post_no_answer(client, to_number, call_sid, dial_status="no-answer"):
+    # Twilio invokes the <Dial> action URL as its own fresh request — no prior
+    # voice_inbound call has populated flask.g in this request context.
+    return client.post(
+        f"/twilio/voice/no-answer?to={to_number}",
+        data={
+            "To": to_number,
+            "From": "+14155551212",
+            "CallSid": call_sid,
+            "DialCallStatus": dial_status,
+        },
+    )
+
+
+def _seed_call_log(app, company_id, phone_number_id, call_sid):
+    with app.app_context():
+        db.session.add(TwilioCallLog(
+            company_id=company_id,
+            phone_number_id=phone_number_id,
+            twilio_sid=call_sid,
+            direction="inbound",
+            from_number="+14155551212",
+            to_number="+19165989519",
+            status="ringing",
+        ))
+        db.session.commit()
+
+
+def test_voice_no_answer_unanswered_call_reaches_voicemail(voice_app, monkeypatch):
+    # Regression: voice_no_answer touched flask.g.voice_inbound_debug without
+    # initialising it, so every Dial action callback 500'd and the caller was
+    # dropped instead of reaching voicemail.
+    app, client, company, forward_line, _ = voice_app
+    import twilio_sms
+    monkeypatch.setattr(twilio_sms, "_is_business_hours", lambda *a, **kw: True)
+    _seed_call_log(app, company.id, forward_line.id, "TEST_NO_ANSWER_VM_001")
+
+    resp = _post_no_answer(client, "+19165989519", "TEST_NO_ANSWER_VM_001")
+    body = resp.get_data(as_text=True)
+
+    assert resp.status_code == 200
+    assert resp.content_type.startswith("text/xml")
+    assert "<Record" in body
+    assert "/twilio/voice/recording" in body
+    assert "Please leave a message" in body
+    assert "InFailedSqlTransaction" not in body
+    with app.app_context():
+        log = TwilioCallLog.query.filter_by(twilio_sid="TEST_NO_ANSWER_VM_001").one()
+        assert log.status == "no-answer"
+
+
+def test_voice_no_answer_repeated_callbacks_are_idempotent(voice_app, monkeypatch):
+    # Twilio can retry the action callback; it must stay 200 with no duplicate
+    # side effects on the call log.
+    app, client, company, forward_line, _ = voice_app
+    import twilio_sms
+    monkeypatch.setattr(twilio_sms, "_is_business_hours", lambda *a, **kw: True)
+    _seed_call_log(app, company.id, forward_line.id, "TEST_NO_ANSWER_VM_002")
+
+    first = _post_no_answer(client, "+19165989519", "TEST_NO_ANSWER_VM_002")
+    second = _post_no_answer(client, "+19165989519", "TEST_NO_ANSWER_VM_002")
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert "<Record" in second.get_data(as_text=True)
+    with app.app_context():
+        logs = TwilioCallLog.query.filter_by(twilio_sid="TEST_NO_ANSWER_VM_002").all()
+        assert len(logs) == 1
+        assert logs[0].status == "no-answer"
+
+
+def test_answered_ring_pwa_inbound_still_wires_no_answer_action(voice_app, monkeypatch):
+    # The answered-call path is unchanged: ring_pwa inbound still returns the
+    # Client dial and still points its action at the (now working) callback.
+    _, client, _, _, pwa_line = voice_app
+    import twilio_sms
+    monkeypatch.setattr(twilio_sms, "_is_business_hours", lambda *a, **kw: True)
+
+    resp = _post_voice(client, "+18302591310", "TEST_RING_PWA_ACTION_001")
+    body = resp.get_data(as_text=True)
+
+    assert resp.status_code == 200
+    assert "<Client>" in body
+    assert "<Identity>" in body
+    assert "/twilio/voice/no-answer" in body
+
+
 def test_voice_schema_migration_covers_notification_and_call_log_fields():
     sql = open("migrations/20260620_voice_notification_calllog_compat.sql", encoding="utf-8").read().lower()
     for phrase in [

@@ -2327,6 +2327,8 @@ def voice_no_answer():
 
     pn, ta = _resolve_number(to_number)
     ta = _effective_twilio_config(ta, pn)
+    if not hasattr(g, "voice_inbound_debug"):
+        g.voice_inbound_debug = {}
     g.voice_inbound_debug.update({"company_id": getattr(ta, "company_id", None), "caller_id": getattr(ta, "from_phone", None) or to_number}) if ta else None
 
     logger.info("Voice no-answer: sid=%s dial_status=%s", call_sid, dial_status)
