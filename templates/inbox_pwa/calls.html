@@ -429,159 +429,150 @@ const voice = {
 };
 
 /* ── Single-active-voice-client coordination ──────────────────────────────
-   Guarantees that only ONE browser context (per same-origin user/device)
-   owns the Twilio Voice registration at a time. Opening /app/phone and
-   /app/dial-pad, or a second tab of either, must NOT mint a second
-   registration token or construct a second Twilio.Device.
+   ONE authority for Twilio Voice ownership: an exclusive same-origin
+   Web Lock (VOICE_LOCK_NAME). A browsing context owns Voice for exactly as
+   long as its Web Lock callback is executing (its holding promise pending).
+   `coord.isOwner` is set true ONLY inside that callback and false the moment
+   the lock is released — so at most one context origin-wide is ever owner.
 
-   Bus:      BroadcastChannel, with a localStorage `storage`-event fallback.
-   Election: Web Locks API where available (race-free leader election),
-             a deterministic tab-id tiebreak otherwise.
-   Liveness: the owner re-stamps a heartbeat lease every HEARTBEAT_MS; a live
-             dialer tab reclaims ownership once the lease is older than
-             LEASE_STALE_MS, so a crashed owner never locks calling out.
-             pagehide/beforeunload are best-effort only — the lease is the
-             real safety net. */
+   The lock is OS-managed: it is unaffected by background timer throttling,
+   it is released automatically when the context disappears (crash / close /
+   discard), and a queued request is granted FIFO only after the current
+   holder's promise resolves — there is never an overlap window.
+
+   BroadcastChannel + localStorage carry STATUS only (owner registration
+   state for passive UI, "Use Calling Here" transfer requests, diagnostics).
+   They can describe ownership; they can never grant it. There is no
+   heartbeat, no lease, no elapsed-time staleness check, no claim/vote and no
+   non-blocking availability probe — a losing tab QUEUES. If exclusive locking
+   is unavailable we FAIL CLOSED — Voice is simply not enabled (coord.supported).
+
+   Browser support (Web Locks API): Chrome/Edge 69+, Firefox 96+,
+   Safari 15.4+. Older browsers get "Wi-Fi Calling cannot be safely
+   enabled in this browser." rather than a race-prone fallback. */
 const VOICE_BUS_KEY   = 'luxit-voice-coord-v1';
-const VOICE_LEASE_KEY = 'luxit-voice-owner-v1';
 const VOICE_LOCK_NAME = 'luxit-voice-owner-v1';
-const HEARTBEAT_MS    = 3000;
-const LEASE_STALE_MS  = 9000;
-const RELEASE_WAIT_MS = 3500;
-const CLAIM_SETTLE_MS = 250;
+const VOICE_STATUS_KEY = 'luxit-voice-status-v1';   // localStorage status mirror (UI only)
+const TAKEOVER_TIMEOUT_MS = 6000;                   // give up *asking*; never steals
 const TAB_ID = (self.crypto?.randomUUID?.() || `tab-${Date.now()}-${Math.random().toString(16).slice(2)}`);
 
 const coord = {
-  role: 'passive',              // 'owner' | 'passive'
-  lockRelease: null,
-  acquiring: null,              // in-flight acquireVoiceOwnership() promise (single-flight)
-  claimVotes: null,
-  awaitingRelease: false,
-  lastOwnerBeat: 0,
-  ownerRegistered: false,
+  supported: !!(navigator.locks && navigator.locks.request),
+  isOwner: false,               // true ONLY while our exclusive lock callback runs
+  lockHeld: false,
+  releaseLock: null,            // resolves the holding promise → releases the Web Lock
+  lockAbort: null,              // AbortController for a still-queued lock request
+  ownershipPromise: null,       // resolves(true) when we become owner, resolve(false) if we abandon the queue
+  wantsOwnership: false,        // user chose "Use Calling Here" on this tab
+  ownerRegistered: false,       // last-known registration state of the current owner (passive UI)
   useHereBtn: null,
-  _rendered: null               // last renderVoiceRole() signature (dirty-check)
+  _rendered: null
 };
 
 const voiceBus = ('BroadcastChannel' in self) ? new BroadcastChannel(VOICE_BUS_KEY) : null;
 
 function coordPost(type, extra) {
-  const msg = Object.assign({type, tabId: TAB_ID, ts: Date.now()}, extra || {});
+  const msg = Object.assign({ type, tabId: TAB_ID, ts: Date.now() }, extra || {});
   try { voiceBus ? voiceBus.postMessage(msg) : localStorage.setItem(VOICE_BUS_KEY, JSON.stringify(msg)); } catch (_) {}
-}
-function readLease()   { try { return JSON.parse(localStorage.getItem(VOICE_LEASE_KEY) || 'null'); } catch (_) { return null; } }
-function leaseFresh(l) { return !!l && typeof l.ts === 'number' && (Date.now() - l.ts) < LEASE_STALE_MS; }
-function stampLease()  { try { localStorage.setItem(VOICE_LEASE_KEY, JSON.stringify({tabId: TAB_ID, ts: Date.now()})); } catch (_) {} }
-function dropLeaseIfMine() { const l = readLease(); if (l && l.tabId === TAB_ID) { try { localStorage.removeItem(VOICE_LEASE_KEY); } catch (_) {} } }
-
-async function acquireVoiceOwnership(reason) {
-  if (coord.role === 'owner') return true;
-  if (coord.acquiring) return coord.acquiring;            // single-flight: never race ourselves
-  coord.acquiring = _acquireVoiceOwnership(reason).finally(() => { coord.acquiring = null; });
-  return coord.acquiring;
+  if (type === 'owner-changed') { try { localStorage.setItem(VOICE_STATUS_KEY, JSON.stringify(msg)); } catch (_) {} }
 }
 
-async function _acquireVoiceOwnership(reason) {
-  if (coord.role === 'owner') return true;
-  const forcing = (reason === 'takeover' || reason === 'stale');
-  const held = readLease();
-  if (!forcing && leaseFresh(held) && held.tabId !== TAB_ID) { becomePassiveOwner(); return false; }
+/* Queue for the exclusive lock. Resolves the outcome of THIS attempt:
+   true once our callback runs (we are owner), false if we abandon the queue.
+   Idempotent — repeated calls return the same in-flight promise. */
+function acquireVoiceOwnership() {
+  if (coord.isOwner) return Promise.resolve(true);
+  if (!coord.supported) { renderVoiceRole(); return Promise.resolve(false); }
+  if (coord.ownershipPromise) return coord.ownershipPromise;
 
-  if (navigator.locks?.request) {
-    // Resolve as soon as we know whether we hold the lock; the request callback
-    // keeps running in the background, holding the lock until coord.lockRelease().
-    const won = await new Promise((resolve) => {
-      try {
-        navigator.locks.request(VOICE_LOCK_NAME, {ifAvailable: true}, (lock) => {
-          if (!lock) { resolve(false); return; }
-          resolve(true);
-          return new Promise((release) => { coord.lockRelease = release; });
-        }).catch(() => resolve(false));
-      } catch (_) { resolve(false); }
-    });
-    if (!won) { becomePassiveOwner(); return false; }
-  } else {
-    coord.claimVotes = [TAB_ID];
-    coordPost('claim');
-    await new Promise((r) => setTimeout(r, CLAIM_SETTLE_MS));
-    const winner = coord.claimVotes.slice().sort()[0];
-    coord.claimVotes = null;
-    if (winner !== TAB_ID && !forcing) { becomePassiveOwner(); return false; }
-  }
-  becomeVoiceOwner();
-  return true;
+  const ac = new AbortController();
+  coord.lockAbort = ac;
+  let settle;
+  coord.ownershipPromise = new Promise((res) => { settle = res; });
+
+  navigator.locks.request(VOICE_LOCK_NAME, { signal: ac.signal }, () => {
+    // We now EXCLUSIVELY hold the lock. This is the only place isOwner goes true.
+    coord.lockAbort = null;
+    coord.lockHeld = true;
+    coord.isOwner = true;
+    settle(true);
+    renderVoiceRole();
+    coordPost('owner-changed', { registered: voice.registered });
+    if (coord.wantsOwnership) { coord.wantsOwnership = false; enableWifiCalling(); }
+    // Hold the lock for the entire ownership lifetime.
+    return new Promise((release) => { coord.releaseLock = release; });
+  }).catch(() => {
+    // AbortError (we cancelled the queued request) or a real failure → not owner.
+    // Fail closed: isOwner stays false; we never register without the lock.
+    coord.lockAbort = null;
+    coord.lockHeld = false;
+    settle(false);
+    renderVoiceRole();
+  });
+
+  return coord.ownershipPromise;
 }
 
-function becomeVoiceOwner() {
-  coord.role = 'owner';
-  stampLease();
-  coordPost('owner-announce');
-  renderVoiceRole();
-}
-function becomePassiveOwner() {
-  const wasOwner = coord.role === 'owner';
-  coord.role = 'passive';
-  if (coord.lockRelease) { try { coord.lockRelease(); } catch (_) {} coord.lockRelease = null; }
-  dropLeaseIfMine();
-  if (wasOwner) { coordPost('unregistered'); teardownDevice(); }
-  voice.initPromise = null;
+/* Give up Voice ownership: release the held lock, or cancel a queued request. */
+function releaseVoiceOwnership() {
+  coord.isOwner = false;
+  coord.ownerRegistered = false;
+  coord.ownershipPromise = null;
+  if (coord.lockAbort) { try { coord.lockAbort.abort(); } catch (_) {} coord.lockAbort = null; }
+  if (coord.releaseLock) { const r = coord.releaseLock; coord.releaseLock = null; coord.lockHeld = false; try { r(); } catch (_) {} }
   renderVoiceRole();
 }
 
 function handleCoordMessage(msg) {
   if (!msg || !msg.type || msg.tabId === TAB_ID) return;
   switch (msg.type) {
-    case 'claim':
-      if (coord.claimVotes && !coord.claimVotes.includes(msg.tabId)) coord.claimVotes.push(msg.tabId);
-      if (coord.role === 'owner') coordPost('owner-announce');
+    case 'owner-query':
+      // A tab is asking who owns Voice; only the real lock holder answers.
+      if (coord.isOwner) coordPost('owner-changed', { registered: voice.registered });
       break;
-    case 'owner-announce':
-    case 'heartbeat':
-      if (coord.role === 'owner') {
-        if (String(msg.tabId) < String(TAB_ID)) becomePassiveOwner();   // split-brain: lowest tab id keeps ownership
-        else coordPost('owner-announce');
-      } else {
-        coord.lastOwnerBeat = Date.now();
-        if (typeof msg.registered === 'boolean') coord.ownerRegistered = msg.registered;
-        renderVoiceRole();
-      }
-      break;
-    case 'registered':
-    case 'unregistered':
-      if (coord.role !== 'owner') { coord.ownerRegistered = (msg.type === 'registered'); coord.lastOwnerBeat = Date.now(); renderVoiceRole(); }
+    case 'owner-changed':
+      // STATUS ONLY — never touches isOwner / the lock.
+      if (!coord.isOwner) { coord.ownerRegistered = !!msg.registered; renderVoiceRole(); }
       break;
     case 'request-ownership':
-      if (coord.role === 'owner') { coordPost('unregistered'); teardownDevice(); becomePassiveOwner(); coordPost('ownership-released', {to: msg.tabId}); }
-      break;
-    case 'ownership-released':
-      if (msg.to === TAB_ID && coord.awaitingRelease) { coord.awaitingRelease = false; completeTakeover(); }
+      // "Use Calling Here" from another tab. Only the current owner acts:
+      // tear the Device down, then release the lock so the requester's
+      // queued request is granted next (browser FIFO — no overlap).
+      if (coord.isOwner) {
+        coordPost('owner-changed', { registered: false });
+        teardownDevice();
+        releaseVoiceOwnership();
+      }
       break;
   }
 }
 voiceBus?.addEventListener('message', (e) => handleCoordMessage(e.data));
 window.addEventListener('storage', (e) => {
+  // localStorage-only status fallback for browsers without BroadcastChannel.
+  // Delivers STATUS ('owner-changed') and transfer requests — never ownership.
   if (e.key === VOICE_BUS_KEY && e.newValue) { try { handleCoordMessage(JSON.parse(e.newValue)); } catch (_) {} }
-  else if (e.key === VOICE_LEASE_KEY && coord.role !== 'owner') { coord.lastOwnerBeat = Date.now(); renderVoiceRole(); }
+  else if (e.key === VOICE_STATUS_KEY && e.newValue && !coord.isOwner) {
+    try { const m = JSON.parse(e.newValue); coord.ownerRegistered = !!m.registered; renderVoiceRole(); } catch (_) {}
+  }
 });
 
-setInterval(() => {
-  if (coord.role === 'owner') { stampLease(); coordPost('heartbeat', {registered: voice.registered}); return; }
-  if (!DIALER_MODE) return;
-  const l = readLease();
-  if (!leaseFresh(l) && (Date.now() - coord.lastOwnerBeat) > LEASE_STALE_MS) acquireVoiceOwnership('stale');
-}, HEARTBEAT_MS);
-
+/* "Use Calling Here" — ask the current owner to hand off. Never steals:
+   we simply queue for the lock and request the owner release; our queued
+   callback fires only after the owner's promise resolves. */
 async function requestCallingHere() {
-  if (coord.role === 'owner') return;
-  if (!leaseFresh(readLease())) { await completeTakeover(); return; }
-  coord.awaitingRelease = true;
+  if (coord.isOwner) return;
+  if (!coord.supported) { renderVoiceRole(); return; }
+  coord.wantsOwnership = true;
+  acquireVoiceOwnership();                       // ensure we're in the lock queue
   coordPost('request-ownership');
   state('Moving Wi-Fi Calling to this window…');
-  setTimeout(() => { if (coord.awaitingRelease) { coord.awaitingRelease = false; completeTakeover(); } }, RELEASE_WAIT_MS);
-}
-async function completeTakeover() {
-  await acquireVoiceOwnership('takeover');
-  if (coord.role === 'owner') { renderVoiceRole(); enableWifiCalling(); }
+  setTimeout(() => {
+    if (!coord.isOwner && coord.wantsOwnership) {
+      coord.wantsOwnership = false;
+      renderVoiceRole();
+      state('Could not move Wi-Fi Calling here — the other window may be on a call. Try again.', 'error');
+    }
+  }, TAKEOVER_TIMEOUT_MS);
 }
 
 function ensureUseHereButton(show) {
@@ -602,21 +593,30 @@ function ensureUseHereButton(show) {
 
 function renderVoiceRole() {
   if (!DIALER_MODE) return;
-  const sig = `${coord.role}:${voice.registered}:${coord.ownerRegistered}:${!!voice.activeCall}`;
-  if (sig === coord._rendered) return;                    // quiet: nothing user-visible changed
+  const sig = `${coord.supported}:${coord.isOwner}:${voice.registered}:${coord.ownerRegistered}:${!!voice.activeCall}`;
+  if (sig === coord._rendered) return;
   coord._rendered = sig;
-  if (coord.role === 'owner') {
+
+  if (!coord.supported) {
+    ensureUseHereButton(false);
+    delete els.enableVoice.dataset.passive;
+    setEnableState({ disabled: true, label: 'Wi-Fi Calling unavailable' });
+    if (!voice.activeCall) { setPhase('idle'); state('Wi-Fi Calling cannot be safely enabled in this browser.', 'error'); }
+    return;
+  }
+  if (coord.isOwner) {
     ensureUseHereButton(false);
     delete els.enableVoice.dataset.passive;
     if (!voice.registered && !voice.activeCall) {
-      setEnableState({disabled: false, label: 'Enable Wi-Fi Calling'});
+      setEnableState({ disabled: false, label: 'Enable Wi-Fi Calling' });
       if (document.body.dataset.phase === 'idle') state('Ready to enable Wi-Fi Calling.');
     }
     return;
   }
+  // passive — another context holds the exclusive lock
   ensureUseHereButton(true);
   els.enableVoice.dataset.passive = '1';
-  setEnableState({disabled: true, label: 'Active in another window'});
+  setEnableState({ disabled: true, label: 'Active in another window' });
   if (!voice.activeCall) {
     setPhase('idle');
     state(coord.ownerRegistered
@@ -631,6 +631,7 @@ function teardownDevice() {
   voice.device = null;
   voice.registered = false;
   voice.deviceState = 'none';
+  voice.initPromise = null;
   if (dev) {
     try { dev.removeAllListeners?.(); } catch (_) {}
     try { dev.disconnectAll?.(); } catch (_) {}
@@ -1032,7 +1033,7 @@ async function loadCallerIds() {
       setEnableState({disabled: true, label: 'No Voice Line Available'});
     } else {
       if (numbers.some((n) => String(n.id) === previous)) els.callerId.value = previous;
-      if (coord.role === 'owner' || !DIALER_MODE) setEnableState({disabled: false, label: voice.registered ? 'Wi-Fi Calling Enabled' : 'Enable Wi-Fi Calling'});
+      if (!DIALER_MODE || coord.isOwner) setEnableState({disabled: false, label: voice.registered ? 'Wi-Fi Calling Enabled' : 'Enable Wi-Fi Calling'});
       else renderVoiceRole();
     }
   } catch (error) {
@@ -1074,9 +1075,20 @@ function voiceError(code, message, detail) {
 
 async function initVoice() {
   if (voice.registered && voice.device && voice.deviceState === 'registered') return voice.device;
-  if (voice.initPromise) return voice.initPromise;
-  if (coord.role !== 'owner') await acquireVoiceOwnership('init');
-  if (coord.role !== 'owner') {
+  if (voice.initPromise) return voice.initPromise;                 // single-flight within the owner
+  if (!coord.supported) {
+    const err = Object.assign(new Error('Wi-Fi Calling cannot be safely enabled in this browser.'), {voiceCode: 'VOICE_UNSUPPORTED'});
+    voiceError('VOICE_UNSUPPORTED', err.message, err);
+    throw err;
+  }
+  // Ordering invariant: exclusive lock → coord.isOwner → token → new Device → register.
+  // If we are not already the lock holder, wait BRIEFLY for the queued request
+  // to be granted (a free lock grants within a microtask). We NEVER steal — if
+  // another context holds it, this resolves false and we refuse.
+  if (!coord.isOwner) {
+    await Promise.race([acquireVoiceOwnership(), new Promise((r) => setTimeout(() => r(false), 400))]);
+  }
+  if (!coord.isOwner) {
     const blocked = Object.assign(new Error('Wi-Fi Calling is active in another LUXit window.'), {voiceCode: 'VOICE_ACTIVE_ELSEWHERE'});
     voiceError('VOICE_ACTIVE_ELSEWHERE', blocked.message, blocked);
     throw blocked;
@@ -1105,13 +1117,13 @@ async function initVoice() {
       voice.device.on('registered', () => {
         voice.registered = true;
         voice.deviceState = 'registered';
-        coordPost('registered');
+        coordPost('owner-changed', {registered: true});
         setEnableState({disabled: true, label: 'Wi-Fi Calling Enabled'});
         setPhase('ready');
         state(`Ready — ${body.calling_number}`, 'ok');
         if (els.btnSpeaker && voice.device?.audio?.isOutputSelectionSupported) els.btnSpeaker.hidden = false;
       });
-      voice.device.on('unregistered', () => { voice.registered = false; voice.deviceState = 'none'; coordPost('unregistered'); setEnableState({disabled: false, label: 'Enable Wi-Fi Calling'}); setPhase('idle'); state('Browser phone unregistered'); });
+      voice.device.on('unregistered', () => { voice.registered = false; voice.deviceState = 'none'; if (coord.isOwner) coordPost('owner-changed', {registered: false}); setEnableState({disabled: false, label: 'Enable Wi-Fi Calling'}); setPhase('idle'); state('Browser phone unregistered'); });
       voice.device.on('error', (error) => voiceError('TWILIO_REGISTRATION_FAILED', `Twilio registration failed: ${error.message || 'Unknown error'}`, error));
       voice.device.on('incoming', (call) => {
         const params = call.customParameters;
@@ -1128,6 +1140,7 @@ async function initVoice() {
       const code = error.voiceCode || 'TWILIO_REGISTRATION_FAILED';
       const messages = {
         VOICE_ACTIVE_ELSEWHERE: 'Wi-Fi Calling is active in another LUXit window. Choose “Use Calling Here” to move it.',
+        VOICE_UNSUPPORTED: 'Wi-Fi Calling cannot be safely enabled in this browser.',
         SDK_MISSING: 'Calling SDK failed to load. Refresh the page or check your network connection.',
         HTTPS_REQUIRED: 'Browser calling requires HTTPS.',
         SESSION_EXPIRED: 'Your session expired. Sign in again.',
@@ -1160,8 +1173,11 @@ async function placeWifiCall() {
   if (!destination) { state('Enter a phone number.', 'error'); return; }
   if (!els.callerId.value) { state('Select an authorized company caller ID.', 'error'); return; }
   if (voice.activeCall) { state('A call is already active.', 'error'); return; }
-  if (coord.role !== 'owner') { await acquireVoiceOwnership('init'); }
-  if (coord.role !== 'owner') { renderVoiceRole(); state('Wi-Fi Calling is active in another LUXit window — choose “Use Calling Here” first.', 'error'); return; }
+  if (!coord.supported) { renderVoiceRole(); return; }
+  if (!coord.isOwner) {
+    await Promise.race([acquireVoiceOwnership(), new Promise((r) => setTimeout(() => r(false), 400))]);
+  }
+  if (!coord.isOwner) { renderVoiceRole(); state('Wi-Fi Calling is active in another LUXit window — choose “Use Calling Here” first.', 'error'); return; }
   try {
     const device = await initVoice();
     if (voice.outboundEnabled === false) {
@@ -1189,10 +1205,12 @@ function connectInboxStream() {
 
 function cleanupVoice() {
   try { voice.eventSource?.close(); } catch (_) {}
-  if (coord.role === 'owner') coordPost('unregistered');
+  if (coord.isOwner) coordPost('owner-changed', {registered: false, gone: true});
   teardownDevice();
-  becomePassiveOwner();
+  releaseVoiceOwnership();           // release the held lock / cancel the queued request
   stopTimer();
+  // The browser also auto-releases the Web Lock when this context is destroyed,
+  // so a crash / discard / hard-close recovers without this handler running.
 }
 
 /* ── Wiring ──────────────────────────────────────────────────────────── */
@@ -1256,8 +1274,8 @@ window.addEventListener('load', () => {
   if (__p.get('setup') === '1') state('Permission required — press Enable Wi-Fi Calling.');
 });
 window.addEventListener('pagehide', cleanupVoice);
-window.addEventListener('beforeunload', cleanupVoice);   // best-effort; the heartbeat lease is the real crash-safety net
-if (DIALER_MODE) acquireVoiceOwnership('load');
+window.addEventListener('beforeunload', cleanupVoice);   // best-effort; the browser auto-releases the Web Lock on context loss regardless
+if (DIALER_MODE) { acquireVoiceOwnership(); coordPost('owner-query'); }
 
 if (DIALER_MODE) {
   document.body.dataset.mode = 'dialer';
