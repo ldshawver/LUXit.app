@@ -101,7 +101,9 @@ def test_dialer_preserves_mute_hangup_callerid_and_wifi_registration():
     assert 'id="micStatus"' in html
     # single Twilio Device — still guarded, still one constructor call
     assert html.count("new Device(") == 1
-    assert "if (voice.registered && voice.device) return voice.device;" in html
+    # single-Device guard, strengthened by the single-active-voice-client repair
+    # (see tests/test_pwa_voice_single_active_client.py)
+    assert "if (voice.registered && voice.device && voice.deviceState === 'registered') return voice.device;" in html
 
 
 def test_dialer_uses_theme_tokens_not_a_hardcoded_accent():

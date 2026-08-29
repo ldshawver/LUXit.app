@@ -413,6 +413,7 @@ const els = {
 const voice = {
   device: null,
   registered: false,
+  deviceState: 'none',          // 'none' | 'registering' | 'registered'
   initPromise: null,
   pendingCall: null,
   activeCall: null,
@@ -426,6 +427,217 @@ const voice = {
   timer: null,
   startedAt: 0
 };
+
+/* ── Single-active-voice-client coordination ──────────────────────────────
+   Guarantees that only ONE browser context (per same-origin user/device)
+   owns the Twilio Voice registration at a time. Opening /app/phone and
+   /app/dial-pad, or a second tab of either, must NOT mint a second
+   registration token or construct a second Twilio.Device.
+
+   Bus:      BroadcastChannel, with a localStorage `storage`-event fallback.
+   Election: Web Locks API where available (race-free leader election),
+             a deterministic tab-id tiebreak otherwise.
+   Liveness: the owner re-stamps a heartbeat lease every HEARTBEAT_MS; a live
+             dialer tab reclaims ownership once the lease is older than
+             LEASE_STALE_MS, so a crashed owner never locks calling out.
+             pagehide/beforeunload are best-effort only — the lease is the
+             real safety net. */
+const VOICE_BUS_KEY   = 'luxit-voice-coord-v1';
+const VOICE_LEASE_KEY = 'luxit-voice-owner-v1';
+const VOICE_LOCK_NAME = 'luxit-voice-owner-v1';
+const HEARTBEAT_MS    = 3000;
+const LEASE_STALE_MS  = 9000;
+const RELEASE_WAIT_MS = 3500;
+const CLAIM_SETTLE_MS = 250;
+const TAB_ID = (self.crypto?.randomUUID?.() || `tab-${Date.now()}-${Math.random().toString(16).slice(2)}`);
+
+const coord = {
+  role: 'passive',              // 'owner' | 'passive'
+  lockRelease: null,
+  acquiring: null,              // in-flight acquireVoiceOwnership() promise (single-flight)
+  claimVotes: null,
+  awaitingRelease: false,
+  lastOwnerBeat: 0,
+  ownerRegistered: false,
+  useHereBtn: null,
+  _rendered: null               // last renderVoiceRole() signature (dirty-check)
+};
+
+const voiceBus = ('BroadcastChannel' in self) ? new BroadcastChannel(VOICE_BUS_KEY) : null;
+
+function coordPost(type, extra) {
+  const msg = Object.assign({type, tabId: TAB_ID, ts: Date.now()}, extra || {});
+  try { voiceBus ? voiceBus.postMessage(msg) : localStorage.setItem(VOICE_BUS_KEY, JSON.stringify(msg)); } catch (_) {}
+}
+function readLease()   { try { return JSON.parse(localStorage.getItem(VOICE_LEASE_KEY) || 'null'); } catch (_) { return null; } }
+function leaseFresh(l) { return !!l && typeof l.ts === 'number' && (Date.now() - l.ts) < LEASE_STALE_MS; }
+function stampLease()  { try { localStorage.setItem(VOICE_LEASE_KEY, JSON.stringify({tabId: TAB_ID, ts: Date.now()})); } catch (_) {} }
+function dropLeaseIfMine() { const l = readLease(); if (l && l.tabId === TAB_ID) { try { localStorage.removeItem(VOICE_LEASE_KEY); } catch (_) {} } }
+
+async function acquireVoiceOwnership(reason) {
+  if (coord.role === 'owner') return true;
+  if (coord.acquiring) return coord.acquiring;            // single-flight: never race ourselves
+  coord.acquiring = _acquireVoiceOwnership(reason).finally(() => { coord.acquiring = null; });
+  return coord.acquiring;
+}
+
+async function _acquireVoiceOwnership(reason) {
+  if (coord.role === 'owner') return true;
+  const forcing = (reason === 'takeover' || reason === 'stale');
+  const held = readLease();
+  if (!forcing && leaseFresh(held) && held.tabId !== TAB_ID) { becomePassiveOwner(); return false; }
+
+  if (navigator.locks?.request) {
+    // Resolve as soon as we know whether we hold the lock; the request callback
+    // keeps running in the background, holding the lock until coord.lockRelease().
+    const won = await new Promise((resolve) => {
+      try {
+        navigator.locks.request(VOICE_LOCK_NAME, {ifAvailable: true}, (lock) => {
+          if (!lock) { resolve(false); return; }
+          resolve(true);
+          return new Promise((release) => { coord.lockRelease = release; });
+        }).catch(() => resolve(false));
+      } catch (_) { resolve(false); }
+    });
+    if (!won) { becomePassiveOwner(); return false; }
+  } else {
+    coord.claimVotes = [TAB_ID];
+    coordPost('claim');
+    await new Promise((r) => setTimeout(r, CLAIM_SETTLE_MS));
+    const winner = coord.claimVotes.slice().sort()[0];
+    coord.claimVotes = null;
+    if (winner !== TAB_ID && !forcing) { becomePassiveOwner(); return false; }
+  }
+  becomeVoiceOwner();
+  return true;
+}
+
+function becomeVoiceOwner() {
+  coord.role = 'owner';
+  stampLease();
+  coordPost('owner-announce');
+  renderVoiceRole();
+}
+function becomePassiveOwner() {
+  const wasOwner = coord.role === 'owner';
+  coord.role = 'passive';
+  if (coord.lockRelease) { try { coord.lockRelease(); } catch (_) {} coord.lockRelease = null; }
+  dropLeaseIfMine();
+  if (wasOwner) { coordPost('unregistered'); teardownDevice(); }
+  voice.initPromise = null;
+  renderVoiceRole();
+}
+
+function handleCoordMessage(msg) {
+  if (!msg || !msg.type || msg.tabId === TAB_ID) return;
+  switch (msg.type) {
+    case 'claim':
+      if (coord.claimVotes && !coord.claimVotes.includes(msg.tabId)) coord.claimVotes.push(msg.tabId);
+      if (coord.role === 'owner') coordPost('owner-announce');
+      break;
+    case 'owner-announce':
+    case 'heartbeat':
+      if (coord.role === 'owner') {
+        if (String(msg.tabId) < String(TAB_ID)) becomePassiveOwner();   // split-brain: lowest tab id keeps ownership
+        else coordPost('owner-announce');
+      } else {
+        coord.lastOwnerBeat = Date.now();
+        if (typeof msg.registered === 'boolean') coord.ownerRegistered = msg.registered;
+        renderVoiceRole();
+      }
+      break;
+    case 'registered':
+    case 'unregistered':
+      if (coord.role !== 'owner') { coord.ownerRegistered = (msg.type === 'registered'); coord.lastOwnerBeat = Date.now(); renderVoiceRole(); }
+      break;
+    case 'request-ownership':
+      if (coord.role === 'owner') { coordPost('unregistered'); teardownDevice(); becomePassiveOwner(); coordPost('ownership-released', {to: msg.tabId}); }
+      break;
+    case 'ownership-released':
+      if (msg.to === TAB_ID && coord.awaitingRelease) { coord.awaitingRelease = false; completeTakeover(); }
+      break;
+  }
+}
+voiceBus?.addEventListener('message', (e) => handleCoordMessage(e.data));
+window.addEventListener('storage', (e) => {
+  if (e.key === VOICE_BUS_KEY && e.newValue) { try { handleCoordMessage(JSON.parse(e.newValue)); } catch (_) {} }
+  else if (e.key === VOICE_LEASE_KEY && coord.role !== 'owner') { coord.lastOwnerBeat = Date.now(); renderVoiceRole(); }
+});
+
+setInterval(() => {
+  if (coord.role === 'owner') { stampLease(); coordPost('heartbeat', {registered: voice.registered}); return; }
+  if (!DIALER_MODE) return;
+  const l = readLease();
+  if (!leaseFresh(l) && (Date.now() - coord.lastOwnerBeat) > LEASE_STALE_MS) acquireVoiceOwnership('stale');
+}, HEARTBEAT_MS);
+
+async function requestCallingHere() {
+  if (coord.role === 'owner') return;
+  if (!leaseFresh(readLease())) { await completeTakeover(); return; }
+  coord.awaitingRelease = true;
+  coordPost('request-ownership');
+  state('Moving Wi-Fi Calling to this window…');
+  setTimeout(() => { if (coord.awaitingRelease) { coord.awaitingRelease = false; completeTakeover(); } }, RELEASE_WAIT_MS);
+}
+async function completeTakeover() {
+  await acquireVoiceOwnership('takeover');
+  if (coord.role === 'owner') { renderVoiceRole(); enableWifiCalling(); }
+}
+
+function ensureUseHereButton(show) {
+  if (show && !coord.useHereBtn) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'wifi-btn';
+    btn.id = 'useCallingHere';
+    btn.textContent = 'Use Calling Here';
+    btn.addEventListener('click', requestCallingHere);
+    els.enableVoice.insertAdjacentElement('afterend', btn);
+    coord.useHereBtn = btn;
+  } else if (!show && coord.useHereBtn) {
+    coord.useHereBtn.remove();
+    coord.useHereBtn = null;
+  }
+}
+
+function renderVoiceRole() {
+  if (!DIALER_MODE) return;
+  const sig = `${coord.role}:${voice.registered}:${coord.ownerRegistered}:${!!voice.activeCall}`;
+  if (sig === coord._rendered) return;                    // quiet: nothing user-visible changed
+  coord._rendered = sig;
+  if (coord.role === 'owner') {
+    ensureUseHereButton(false);
+    delete els.enableVoice.dataset.passive;
+    if (!voice.registered && !voice.activeCall) {
+      setEnableState({disabled: false, label: 'Enable Wi-Fi Calling'});
+      if (document.body.dataset.phase === 'idle') state('Ready to enable Wi-Fi Calling.');
+    }
+    return;
+  }
+  ensureUseHereButton(true);
+  els.enableVoice.dataset.passive = '1';
+  setEnableState({disabled: true, label: 'Active in another window'});
+  if (!voice.activeCall) {
+    setPhase('idle');
+    state(coord.ownerRegistered
+      ? 'Wi-Fi Calling is active in another LUXit window.'
+      : 'Another LUXit window controls Wi-Fi Calling.', '');
+  }
+}
+
+/* Fully retire a Twilio.Device: listeners, in-flight media, registration. */
+function teardownDevice() {
+  const dev = voice.device;
+  voice.device = null;
+  voice.registered = false;
+  voice.deviceState = 'none';
+  if (dev) {
+    try { dev.removeAllListeners?.(); } catch (_) {}
+    try { dev.disconnectAll?.(); } catch (_) {}
+    try { dev.unregister?.(); } catch (_) {}
+    try { dev.destroy?.(); } catch (_) {}
+  }
+}
 
 function applyPalette(name) {
   const palette = name || localStorage.getItem('luxitPwaPalette') || 'lux';
@@ -820,7 +1032,8 @@ async function loadCallerIds() {
       setEnableState({disabled: true, label: 'No Voice Line Available'});
     } else {
       if (numbers.some((n) => String(n.id) === previous)) els.callerId.value = previous;
-      setEnableState({disabled: false, label: voice.registered ? 'Wi-Fi Calling Enabled' : 'Enable Wi-Fi Calling'});
+      if (coord.role === 'owner' || !DIALER_MODE) setEnableState({disabled: false, label: voice.registered ? 'Wi-Fi Calling Enabled' : 'Enable Wi-Fi Calling'});
+      else renderVoiceRole();
     }
   } catch (error) {
     const option = document.createElement('option'); option.value = ''; option.textContent = 'Unable to load voice lines';
@@ -860,8 +1073,14 @@ function voiceError(code, message, detail) {
 }
 
 async function initVoice() {
-  if (voice.registered && voice.device) return voice.device;
+  if (voice.registered && voice.device && voice.deviceState === 'registered') return voice.device;
   if (voice.initPromise) return voice.initPromise;
+  if (coord.role !== 'owner') await acquireVoiceOwnership('init');
+  if (coord.role !== 'owner') {
+    const blocked = Object.assign(new Error('Wi-Fi Calling is active in another LUXit window.'), {voiceCode: 'VOICE_ACTIVE_ELSEWHERE'});
+    voiceError('VOICE_ACTIVE_ELSEWHERE', blocked.message, blocked);
+    throw blocked;
+  }
   voice.initPromise = (async () => {
     try {
       const Device = voiceSdkCtor();
@@ -880,16 +1099,19 @@ async function initVoice() {
       if (!body.calling_number) throw Object.assign(new Error('No calling number assigned.'), {voiceCode: 'NO_ASSIGNED_NUMBER'});
       voice.outboundEnabled = body.outbound_enabled;
 
-      if (voice.device?.unregister) { try { voice.device.unregister(); } catch (_) {} }
+      teardownDevice();                       // retire any prior Device (listeners, media, registration) before building one
+      voice.deviceState = 'registering';
       voice.device = new Device(body.token, {logLevel: 1, codecPreferences: ['opus', 'pcmu']});
       voice.device.on('registered', () => {
         voice.registered = true;
+        voice.deviceState = 'registered';
+        coordPost('registered');
         setEnableState({disabled: true, label: 'Wi-Fi Calling Enabled'});
         setPhase('ready');
         state(`Ready — ${body.calling_number}`, 'ok');
         if (els.btnSpeaker && voice.device?.audio?.isOutputSelectionSupported) els.btnSpeaker.hidden = false;
       });
-      voice.device.on('unregistered', () => { voice.registered = false; setEnableState({disabled: false, label: 'Enable Wi-Fi Calling'}); setPhase('idle'); state('Browser phone unregistered'); });
+      voice.device.on('unregistered', () => { voice.registered = false; voice.deviceState = 'none'; coordPost('unregistered'); setEnableState({disabled: false, label: 'Enable Wi-Fi Calling'}); setPhase('idle'); state('Browser phone unregistered'); });
       voice.device.on('error', (error) => voiceError('TWILIO_REGISTRATION_FAILED', `Twilio registration failed: ${error.message || 'Unknown error'}`, error));
       voice.device.on('incoming', (call) => {
         const params = call.customParameters;
@@ -902,8 +1124,10 @@ async function initVoice() {
       await voice.device.register();
       return voice.device;
     } catch (error) {
+      voice.deviceState = 'none';
       const code = error.voiceCode || 'TWILIO_REGISTRATION_FAILED';
       const messages = {
+        VOICE_ACTIVE_ELSEWHERE: 'Wi-Fi Calling is active in another LUXit window. Choose “Use Calling Here” to move it.',
         SDK_MISSING: 'Calling SDK failed to load. Refresh the page or check your network connection.',
         HTTPS_REQUIRED: 'Browser calling requires HTTPS.',
         SESSION_EXPIRED: 'Your session expired. Sign in again.',
@@ -936,6 +1160,8 @@ async function placeWifiCall() {
   if (!destination) { state('Enter a phone number.', 'error'); return; }
   if (!els.callerId.value) { state('Select an authorized company caller ID.', 'error'); return; }
   if (voice.activeCall) { state('A call is already active.', 'error'); return; }
+  if (coord.role !== 'owner') { await acquireVoiceOwnership('init'); }
+  if (coord.role !== 'owner') { renderVoiceRole(); state('Wi-Fi Calling is active in another LUXit window — choose “Use Calling Here” first.', 'error'); return; }
   try {
     const device = await initVoice();
     if (voice.outboundEnabled === false) {
@@ -963,7 +1189,9 @@ function connectInboxStream() {
 
 function cleanupVoice() {
   try { voice.eventSource?.close(); } catch (_) {}
-  try { voice.device?.unregister(); } catch (_) {}
+  if (coord.role === 'owner') coordPost('unregistered');
+  teardownDevice();
+  becomePassiveOwner();
   stopTimer();
 }
 
@@ -1028,6 +1256,8 @@ window.addEventListener('load', () => {
   if (__p.get('setup') === '1') state('Permission required — press Enable Wi-Fi Calling.');
 });
 window.addEventListener('pagehide', cleanupVoice);
+window.addEventListener('beforeunload', cleanupVoice);   // best-effort; the heartbeat lease is the real crash-safety net
+if (DIALER_MODE) acquireVoiceOwnership('load');
 
 if (DIALER_MODE) {
   document.body.dataset.mode = 'dialer';
