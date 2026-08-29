@@ -3,27 +3,347 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="csrf-token" content="{{ csrf_token() }}">
+  <meta name="theme-color" content="#0b0d14">
   <title>LUXit Calls</title>
   <script src="/static/vendor/twilio-voice-sdk/2.18.3/twilio.min.js" defer></script>
   <style>
-    :root{--color-primary:#2563eb;--color-secondary:#06b6d4;--color-accent:#ec4899;--color-background:#000;--color-surface:#0b0d14;--color-text:#f1f5f9;--color-muted-text:#94a3b8;--color-icon:#93c5fd;--color-button:#2563eb;--color-button-text:#fff;--color-border:#1e2535;--pwa-bg:var(--color-background);--pwa-surface:var(--color-surface,#111827);--pwa-card-bg:var(--pwa-surface);--pwa-surface-2:#0f172a;--pwa-border:var(--color-border,#273044);--pwa-text:var(--color-text,#f8fafc);--pwa-muted:var(--color-muted-text,#94a3b8);--pwa-primary:var(--color-primary);--pwa-primary-contrast:#fff;--pwa-accent:var(--color-accent,#ec4899);--pwa-primary-soft:color-mix(in srgb,var(--pwa-primary) 22%,transparent);--pwa-success:#22c55e;--pwa-danger:#ef4444;--pwa-warning:#f59e0b;--pwa-card-radius:20px;--pwa-shadow:0 18px 50px rgba(0,0,0,.25)}*{box-sizing:border-box}html[data-palette="ocean"]{--color-primary:#0891b2;--color-secondary:#38bdf8;--color-accent:#22d3ee;--color-background:#042f3a;--color-surface:#083b4a;--color-text:#ecfeff;--color-muted-text:#a5f3fc;--color-icon:#67e8f9;--color-button:#0891b2;--color-button-text:#fff;--color-border:#155e75}html[data-palette="forest"]{--color-primary:#16a34a;--color-secondary:#34d399;--color-accent:#84cc16;--color-background:#041f12;--color-surface:#0b2f1a;--color-text:#f0fdf4;--color-muted-text:#bbf7d0;--color-icon:#86efac;--color-button:#16a34a;--color-button-text:#fff;--color-border:#166534}html[data-palette="sunset"]{--color-primary:#ea580c;--color-secondary:#f59e0b;--color-accent:#f43f5e;--color-background:#2a0d05;--color-surface:#431407;--color-text:#fff7ed;--color-muted-text:#fed7aa;--color-icon:#fdba74;--color-button:#ea580c;--color-button-text:#fff;--color-border:#9a3412}html[data-palette="slate"]{--color-primary:#2563eb;--color-secondary:#38bdf8;--color-accent:#14b8a6;--color-background:#020617;--color-surface:#0f172a;--color-text:#f8fafc;--color-muted-text:#cbd5e1;--color-icon:#93c5fd;--color-button:#2563eb;--color-button-text:#fff;--color-border:#334155}html[data-palette="rose"]{--color-primary:#e11d48;--color-secondary:#fb7185;--color-accent:#f97316;--color-background:#2a0612;--color-surface:#4a0f1f;--color-text:#fff1f2;--color-muted-text:#fecdd3;--color-icon:#fda4af;--color-button:#e11d48;--color-button-text:#fff;--color-border:#9f1239}body{margin:0;background:linear-gradient(180deg,var(--pwa-surface),var(--pwa-bg));color:var(--pwa-text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;min-height:100vh}.shell{max-width:560px;margin:0 auto;min-height:100vh;padding:18px max(18px,env(safe-area-inset-left)) calc(112px + env(safe-area-inset-bottom)) max(18px,env(safe-area-inset-right))}.top{display:flex;align-items:center;justify-content:space-between;margin:0 -4px 14px;padding:max(4px,env(safe-area-inset-top)) max(4px,env(safe-area-inset-right)) 0 max(4px,env(safe-area-inset-left))}.top h1{font-size:1.5rem;margin:0}.icon{min-width:44px;min-height:44px;width:44px;height:44px;border-radius:13px;border:1px solid var(--pwa-border);background:var(--pwa-surface-2);color:var(--pwa-text);display:grid;place-items:center;text-decoration:none}.voice-state{font-size:.76rem;color:var(--pwa-muted);text-align:center;margin-top:-7px;margin-bottom:10px}.tabs{display:flex;gap:8px;overflow:auto;padding:8px 0 12px}.tab{border:1px solid var(--pwa-border);background:var(--pwa-surface-2);color:var(--pwa-muted);border-radius:999px;padding:8px 12px;white-space:nowrap}.tab.active{background:var(--pwa-primary-soft);color:var(--pwa-text);border-color:var(--pwa-primary)}.card,.pwa-card{background:color-mix(in srgb,var(--pwa-card-bg) 92%,transparent);border:1px solid var(--pwa-border);border-radius:var(--pwa-card-radius);padding:14px;margin:10px 0;box-shadow:var(--pwa-shadow)}.row{display:flex;gap:12px;align-items:flex-start}.avatar{width:42px;height:42px;border-radius:15px;background:var(--pwa-primary-soft);display:grid;place-items:center;font-size:1.1rem}.meta{flex:1;min-width:0}.name{font-weight:700}.num,.small{color:var(--pwa-muted);font-size:.84rem}.badge{font-size:.72rem;border-radius:999px;padding:3px 8px;background:var(--pwa-primary-soft);color:var(--pwa-text)}.badge.missed,.badge.declined{background:color-mix(in srgb,var(--pwa-danger) 22%,transparent);color:color-mix(in srgb,var(--pwa-danger) 25%,var(--pwa-primary-contrast))}.badge.voicemail{background:color-mix(in srgb,var(--pwa-warning) 22%,transparent);color:color-mix(in srgb,var(--pwa-warning) 35%,var(--pwa-primary-contrast))}.badge.forwarded{background:var(--pwa-primary-soft);color:var(--pwa-text)}.actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}.btn{border:1px solid var(--pwa-border);border-radius:11px;background:var(--pwa-surface-2);color:var(--pwa-text);padding:8px 10px;text-decoration:none;font-size:.82rem}.btn.primary{background:var(--pwa-primary);border-color:var(--pwa-primary);color:var(--pwa-primary-contrast)}.btn.warn{background:color-mix(in srgb,var(--pwa-warning) 28%,var(--pwa-surface-2))}.btn:disabled,.icon:disabled{opacity:.55;cursor:not-allowed}.btn:focus-visible,.icon:focus-visible,.tab:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:3px solid var(--pwa-accent);outline-offset:2px}.voicemail-player{width:100%;margin-top:8px;accent-color:var(--pwa-primary)}.transcript{margin-top:9px;color:var(--pwa-text);font-size:.86rem;line-height:1.35;background:var(--pwa-surface-2);border-radius:12px;padding:9px}.incoming{position:fixed;inset:auto 12px 86px;max-width:520px;margin:auto;background:var(--pwa-surface);border:1px solid var(--pwa-border);border-radius:24px;padding:18px;box-shadow:0 24px 80px rgba(0,0,0,.55);display:none;z-index:20}.incoming.show{display:block}.call-controls{display:flex;justify-content:space-around;margin-top:18px}.round{width:58px;height:58px;border-radius:999px;border:0;color:var(--pwa-primary-contrast);font-size:1.1rem}.accept{background:var(--pwa-success)}.decline{background:var(--pwa-danger)}.vm,.mute{background:var(--pwa-primary)}.settings{display:none}.settings.show{display:block}.field{margin:12px 0}.field label{display:block;color:var(--pwa-text);font-size:.85rem;margin-bottom:5px}.field input,.field textarea,.field select{width:100%;background:var(--pwa-surface-2);border:1px solid var(--pwa-border);color:var(--pwa-text);border-radius:11px;padding:10px}.grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}.empty{text-align:center;color:var(--pwa-muted);padding:45px 20px}.error{color:color-mix(in srgb,var(--pwa-danger) 30%,var(--pwa-primary-contrast))}.ok{color:color-mix(in srgb,var(--pwa-success) 30%,var(--pwa-primary-contrast))}
+    /* ── Canonical PWA theme tokens (shared with inbox_pwa/index.html) ──────
+       The color-picker sets <html data-palette="…">; every accent below is a
+       token so changing the palette re-themes the dialer with no code change. */
+    :root{
+      --color-primary:#2563eb;--color-secondary:#06b6d4;--color-accent:#ec4899;
+      --color-background:#000;--color-surface:#0b0d14;--color-text:#f1f5f9;
+      --color-muted-text:#94a3b8;--color-icon:#93c5fd;--color-button:#2563eb;
+      --color-button-text:#fff;--color-border:#1e2535;
+      --pwa-bg:var(--color-background);--pwa-surface:var(--color-surface,#111827);
+      --pwa-card-bg:var(--pwa-surface);--pwa-surface-2:#0f172a;
+      --pwa-border:var(--color-border,#273044);--pwa-text:var(--color-text,#f8fafc);
+      --pwa-muted:var(--color-muted-text,#94a3b8);--pwa-primary:var(--color-primary);
+      --pwa-primary-contrast:#fff;--pwa-accent:var(--color-accent,#ec4899);
+      --pwa-primary-soft:color-mix(in srgb,var(--pwa-primary) 22%,transparent);
+      --pwa-primary-hover:color-mix(in srgb,var(--pwa-primary) 84%,#000);
+      --pwa-success:#22c55e;--pwa-danger:#ef4444;--pwa-warning:#f59e0b;
+      --pwa-card-radius:20px;--pwa-shadow:0 18px 50px rgba(0,0,0,.25);
+    }
+    html[data-palette="ocean"]{--color-primary:#0891b2;--color-secondary:#38bdf8;--color-accent:#22d3ee;--color-background:#042f3a;--color-surface:#083b4a;--color-text:#ecfeff;--color-muted-text:#a5f3fc;--color-icon:#67e8f9;--color-button:#0891b2;--color-button-text:#fff;--color-border:#155e75}
+    html[data-palette="forest"]{--color-primary:#16a34a;--color-secondary:#34d399;--color-accent:#84cc16;--color-background:#041f12;--color-surface:#0b2f1a;--color-text:#f0fdf4;--color-muted-text:#bbf7d0;--color-icon:#86efac;--color-button:#16a34a;--color-button-text:#fff;--color-border:#166534}
+    html[data-palette="sunset"]{--color-primary:#ea580c;--color-secondary:#f59e0b;--color-accent:#f43f5e;--color-background:#2a0d05;--color-surface:#431407;--color-text:#fff7ed;--color-muted-text:#fed7aa;--color-icon:#fdba74;--color-button:#ea580c;--color-button-text:#fff;--color-border:#9a3412}
+    html[data-palette="slate"]{--color-primary:#2563eb;--color-secondary:#38bdf8;--color-accent:#14b8a6;--color-background:#020617;--color-surface:#0f172a;--color-text:#f8fafc;--color-muted-text:#cbd5e1;--color-icon:#93c5fd;--color-button:#2563eb;--color-button-text:#fff;--color-border:#334155}
+    html[data-palette="rose"]{--color-primary:#e11d48;--color-secondary:#fb7185;--color-accent:#f97316;--color-background:#2a0612;--color-surface:#4a0f1f;--color-text:#fff1f2;--color-muted-text:#fecdd3;--color-icon:#fda4af;--color-button:#e11d48;--color-button-text:#fff;--color-border:#9f1239}
+
+    *{box-sizing:border-box}
+    html,body{margin:0}
+    body{
+      background:linear-gradient(180deg,var(--pwa-surface),var(--pwa-bg));
+      color:var(--pwa-text);min-height:100vh;
+      font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+      -webkit-tap-highlight-color:transparent;
+    }
+    [hidden]{display:none!important}
+
+    /* phone-like column: full width on a phone, constrained on desktop */
+    .shell{
+      max-width:440px;margin:0 auto;min-height:100vh;
+      display:flex;flex-direction:column;
+      padding:max(10px,env(safe-area-inset-top)) max(16px,env(safe-area-inset-right))
+              calc(84px + env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left));
+    }
+
+    .top{display:flex;align-items:center;gap:8px;margin-bottom:6px;min-height:44px}
+    .top h1{font-size:1.35rem;margin:0;flex:1;text-align:center;font-weight:600}
+    .icon{
+      min-width:44px;min-height:44px;width:44px;height:44px;border-radius:14px;
+      border:1px solid var(--pwa-border);background:var(--pwa-surface-2);
+      color:var(--pwa-text);display:grid;place-items:center;text-decoration:none;flex:none;
+    }
+    .icon:active{background:var(--pwa-primary-soft)}
+
+    .voice-state{
+      font-size:.8rem;color:var(--pwa-muted);text-align:center;
+      padding:6px 10px;min-height:20px;
+    }
+    .voice-state.ok{color:color-mix(in srgb,var(--pwa-success) 65%,var(--pwa-text))}
+    .voice-state.error{color:color-mix(in srgb,var(--pwa-danger) 60%,var(--pwa-text))}
+    body[data-phase="connected"] .voice-state,
+    body[data-phase="muted"] .voice-state{color:color-mix(in srgb,var(--pwa-success) 70%,var(--pwa-text))}
+
+    /* ── Dialer ─────────────────────────────────────────────────────────── */
+    .dialer{display:flex;flex-direction:column;flex:1;min-height:0}
+    .dialer[data-view="compact"] .dialer__pad,
+    .dialer[data-view="compact"] .dialer__display,
+    .dialer[data-view="compact"] .callrow,
+    .dialer[data-view="compact"] .incall{display:none}
+    .dialer[data-view="compact"]{flex:none}
+
+    .dialer__display{
+      display:flex;flex-direction:column;align-items:center;justify-content:center;
+      gap:4px;padding:14px 8px 8px;min-height:74px;
+    }
+    .dialer__number{
+      font-size:clamp(1.8rem,8vw,2.4rem);font-weight:300;letter-spacing:1px;
+      color:var(--pwa-text);text-align:center;line-height:1.15;
+      font-variant-numeric:tabular-nums;
+      max-width:100%;overflow-wrap:anywhere;word-break:break-word;
+    }
+    .dialer__number:empty::before{content:"Enter a number";color:var(--pwa-muted);font-size:1rem}
+    .dialer__hint{font-size:.78rem;color:var(--pwa-primary);min-height:16px;text-align:center}
+    .dialer__timer{font-size:.9rem;color:var(--pwa-muted);font-variant-numeric:tabular-nums}
+
+    .dialer__pad{
+      display:grid;grid-template-columns:repeat(3,1fr);
+      gap:clamp(10px,3.5vw,18px);
+      justify-items:center;align-content:center;
+      padding:8px 4px;flex:1;min-height:0;
+    }
+    .key{
+      appearance:none;-webkit-appearance:none;
+      width:100%;max-width:74px;aspect-ratio:1/1;
+      min-width:56px;min-height:56px;
+      border-radius:50%;cursor:pointer;user-select:none;touch-action:manipulation;
+      display:flex;flex-direction:column;align-items:center;justify-content:center;line-height:1;
+      color:var(--pwa-text);
+      background:color-mix(in srgb,var(--pwa-card-bg) 70%,var(--pwa-primary) 12%);
+      border:1px solid color-mix(in srgb,var(--pwa-primary) 26%,var(--pwa-border));
+      box-shadow:inset 0 1px 0 color-mix(in srgb,var(--pwa-primary-contrast) 8%,transparent),0 6px 16px rgba(0,0,0,.22);
+      transition:background .1s,border-color .1s,transform .06s,box-shadow .1s;
+    }
+    .key:hover,.key:focus-visible{
+      background:color-mix(in srgb,var(--pwa-primary) 18%,var(--pwa-card-bg));
+      border-color:color-mix(in srgb,var(--pwa-primary) 55%,var(--pwa-border));
+      outline:none;
+    }
+    .key:focus-visible{outline:3px solid var(--pwa-accent);outline-offset:2px}
+    .key.is-down,.key:active{
+      background:color-mix(in srgb,var(--pwa-primary) 34%,var(--pwa-card-bg));
+      border-color:var(--pwa-primary);transform:scale(.95);
+      box-shadow:inset 0 2px 8px rgba(0,0,0,.3);
+    }
+    .key__num{font-size:clamp(1.4rem,6vw,1.7rem);font-weight:400}
+    .key__sub{
+      font-size:.55rem;letter-spacing:.14em;text-transform:uppercase;
+      color:var(--pwa-muted);margin-top:3px;min-height:.7em;
+    }
+
+    .callrow{
+      display:grid;grid-template-columns:1fr auto 1fr;align-items:center;
+      justify-items:center;padding:8px 4px 4px;
+    }
+    .callrow__spacer{width:56px;height:56px}
+    .btn-round{
+      appearance:none;border:0;cursor:pointer;border-radius:50%;
+      display:grid;place-items:center;touch-action:manipulation;
+      transition:background .12s,transform .08s,box-shadow .12s,opacity .12s;
+    }
+    .btn-round:focus-visible{outline:3px solid var(--pwa-accent);outline-offset:2px}
+    .call-btn{
+      width:clamp(64px,17vw,72px);height:clamp(64px,17vw,72px);
+      background:var(--pwa-success);color:#fff;
+      box-shadow:0 6px 22px color-mix(in srgb,var(--pwa-success) 45%,transparent);
+    }
+    .call-btn:active{transform:scale(.93);background:color-mix(in srgb,var(--pwa-success) 85%,#000)}
+    .call-btn:disabled{background:color-mix(in srgb,var(--pwa-muted) 28%,var(--pwa-card-bg));box-shadow:none;cursor:not-allowed;color:var(--pwa-muted)}
+    .side-btn{
+      width:56px;height:56px;background:transparent;color:var(--pwa-muted);
+    }
+    .side-btn:active{color:var(--pwa-text);background:var(--pwa-primary-soft)}
+    .side-btn[disabled]{opacity:.35;cursor:default}
+    .side-btn.is-active{color:var(--pwa-primary);background:var(--pwa-primary-soft)}
+
+    /* in-call control cluster */
+    .incall{
+      display:grid;grid-template-columns:repeat(3,1fr);gap:14px;
+      padding:10px 6px 4px;justify-items:center;
+    }
+    .incall__btn{
+      appearance:none;border:1px solid var(--pwa-border);cursor:pointer;
+      width:100%;max-width:96px;border-radius:16px;padding:12px 6px;
+      display:flex;flex-direction:column;align-items:center;gap:6px;
+      background:var(--pwa-surface-2);color:var(--pwa-text);font-size:.74rem;
+      transition:background .12s,border-color .12s,color .12s;
+    }
+    .incall__btn:focus-visible{outline:3px solid var(--pwa-accent);outline-offset:2px}
+    .incall__btn.is-active{background:var(--pwa-primary-soft);border-color:var(--pwa-primary);color:var(--pwa-text)}
+    .incall__btn.danger{background:color-mix(in srgb,var(--pwa-danger) 16%,var(--pwa-surface-2));border-color:color-mix(in srgb,var(--pwa-danger) 45%,var(--pwa-border));color:color-mix(in srgb,var(--pwa-danger) 30%,var(--pwa-text))}
+    .incall__btn.danger:active{background:var(--pwa-danger);color:#fff}
+
+    /* caller-ID + registration — present but visually secondary */
+    .dialer__meta{
+      display:flex;flex-direction:column;gap:8px;
+      padding:12px 2px calc(8px + env(safe-area-inset-bottom));
+    }
+    .dialer[data-view="compact"] .dialer__meta{border-top:1px solid var(--pwa-border);margin-top:4px}
+    .callerid-field{display:flex;align-items:center;gap:8px;font-size:.8rem;color:var(--pwa-muted)}
+    .callerid-field select{
+      flex:1;background:var(--pwa-surface-2);border:1px solid var(--pwa-border);
+      color:var(--pwa-text);border-radius:10px;padding:9px 10px;font-size:.85rem;
+    }
+    .callerid-field select:focus-visible{outline:3px solid var(--pwa-accent);outline-offset:2px}
+    .wifi-btn{
+      appearance:none;cursor:pointer;border-radius:12px;padding:11px 14px;
+      font-size:.9rem;font-weight:500;
+      background:var(--pwa-primary-soft);color:var(--pwa-text);
+      border:1px solid color-mix(in srgb,var(--pwa-primary) 45%,var(--pwa-border));
+      display:flex;align-items:center;justify-content:center;gap:8px;
+    }
+    .wifi-btn:active{background:color-mix(in srgb,var(--pwa-primary) 30%,var(--pwa-card-bg))}
+    .wifi-btn:disabled{opacity:.75;cursor:default}
+    body[data-phase="ready"] .wifi-btn,
+    body[data-phase="connected"] .wifi-btn,
+    body[data-phase="muted"] .wifi-btn{
+      background:var(--pwa-primary);border-color:var(--pwa-primary);color:var(--pwa-primary-contrast);
+    }
+    .wifi-btn .dot{width:8px;height:8px;border-radius:50%;background:currentColor;opacity:.7}
+    body[data-phase="ready"] .wifi-btn .dot,
+    body[data-phase="connected"] .wifi-btn .dot,
+    body[data-phase="muted"] .wifi-btn .dot{background:#fff;opacity:1}
+    .mic-status,.diag-link{font-size:.74rem;color:var(--pwa-muted);text-align:center}
+    .diag-link{text-decoration:underline;text-underline-offset:2px}
+
+    /* ── Recents (Clock icon) ──────────────────────────────────────────── */
+    .tabs{display:flex;gap:8px;overflow-x:auto;padding:10px 0 12px}
+    .tab{
+      border:1px solid var(--pwa-border);background:var(--pwa-surface-2);
+      color:var(--pwa-muted);border-radius:999px;padding:8px 13px;white-space:nowrap;
+      font-size:.82rem;cursor:pointer;
+    }
+    .tab.active{background:var(--pwa-primary-soft);color:var(--pwa-text);border-color:var(--pwa-primary)}
+    .tab:focus-visible{outline:3px solid var(--pwa-accent);outline-offset:2px}
+    #list{flex:1}
+    .card,.pwa-card{
+      background:color-mix(in srgb,var(--pwa-card-bg) 92%,transparent);
+      border:1px solid var(--pwa-border);border-radius:var(--pwa-card-radius);
+      padding:14px;margin:10px 0;box-shadow:var(--pwa-shadow);
+    }
+    .row{display:flex;gap:12px;align-items:flex-start}
+    .avatar{width:42px;height:42px;border-radius:15px;background:var(--pwa-primary-soft);display:grid;place-items:center}
+    .meta{flex:1;min-width:0}
+    .name{font-weight:700}
+    .num,.small{color:var(--pwa-muted);font-size:.84rem}
+    .badge{font-size:.72rem;border-radius:999px;padding:3px 8px;background:var(--pwa-primary-soft);color:var(--pwa-text)}
+    .badge.missed,.badge.declined{background:color-mix(in srgb,var(--pwa-danger) 22%,transparent);color:color-mix(in srgb,var(--pwa-danger) 30%,var(--pwa-text))}
+    .badge.voicemail{background:color-mix(in srgb,var(--pwa-warning) 22%,transparent);color:color-mix(in srgb,var(--pwa-warning) 40%,var(--pwa-text))}
+    .badge.forwarded{background:var(--pwa-primary-soft);color:var(--pwa-text)}
+    .actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+    .btn{
+      border:1px solid var(--pwa-border);border-radius:11px;background:var(--pwa-surface-2);
+      color:var(--pwa-text);padding:8px 10px;text-decoration:none;font-size:.82rem;cursor:pointer;
+    }
+    .btn.primary{background:var(--pwa-primary);border-color:var(--pwa-primary);color:var(--pwa-primary-contrast)}
+    .btn.warn{background:color-mix(in srgb,var(--pwa-warning) 28%,var(--pwa-surface-2))}
+    .btn:disabled{opacity:.55;cursor:not-allowed}
+    .btn:focus-visible{outline:3px solid var(--pwa-accent);outline-offset:2px}
+    .voicemail-player{width:100%;margin-top:8px;accent-color:var(--pwa-primary)}
+    .transcript{margin-top:9px;font-size:.86rem;line-height:1.35;background:var(--pwa-surface-2);border-radius:12px;padding:9px}
+    .empty{text-align:center;color:var(--pwa-muted);padding:45px 20px}
+    .error{color:color-mix(in srgb,var(--pwa-danger) 45%,var(--pwa-text))}
+    .ok{color:color-mix(in srgb,var(--pwa-success) 55%,var(--pwa-text))}
+
+    /* ── Settings sheet ────────────────────────────────────────────────── */
+    .settings{display:none}
+    .settings.show{display:block}
+    .field{margin:12px 0}
+    .field label{display:block;font-size:.85rem;margin-bottom:5px}
+    .field input,.field textarea,.field select{
+      width:100%;background:var(--pwa-surface-2);border:1px solid var(--pwa-border);
+      color:var(--pwa-text);border-radius:11px;padding:10px;
+    }
+    .grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+
+    /* ── Incoming-call sheet ───────────────────────────────────────────── */
+    .incoming{
+      position:fixed;left:12px;right:12px;bottom:calc(84px + env(safe-area-inset-bottom));
+      max-width:420px;margin:0 auto;background:var(--pwa-surface);
+      border:1px solid var(--pwa-border);border-radius:24px;padding:18px;
+      box-shadow:0 24px 80px rgba(0,0,0,.55);display:none;z-index:40;
+    }
+    .incoming.show{display:block}
+    .incoming h2{margin:.2em 0}
+    .call-controls{display:flex;justify-content:space-around;margin-top:16px}
+    .round{width:58px;height:58px;border-radius:999px;border:0;color:#fff;display:grid;place-items:center;cursor:pointer}
+    .round:focus-visible{outline:3px solid var(--pwa-accent);outline-offset:2px}
+    .accept{background:var(--pwa-success)}
+    .decline{background:var(--pwa-danger)}
+    .vm,.mute{background:var(--pwa-primary)}
+
+    @media (min-width:900px){
+      .shell{border-left:1px solid var(--pwa-border);border-right:1px solid var(--pwa-border)}
+    }
   </style>
 </head>
 <body>
 <div class="shell">
-  <div class="top"><a class="icon" href="/app/inbox" aria-label="Back to Conversations"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg></a><h1 id="pageTitle">Recents</h1><button class="icon" onclick="toggleSettings()" aria-label="Phone settings"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06A2 2 0 1 1 7.04 4.3l.06.06A1.65 1.65 0 0 0 8.92 4a1.65 1.65 0 0 0 1-1.51V2a2 2 0 1 1 4 0v.09A1.65 1.65 0 0 0 15 3.6a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9c.36.37.56.87.56 1.39V10H21a2 2 0 1 1 0 4h-.09c-.52 0-1.02.2-1.39.56z"/></svg></button></div>
-  <div id="voiceState" class="voice-state">Offline — enable Wi-Fi Calling to register this browser.</div>
-  <section class="card" id="wifiCallingPanel">
-    <h2 style="margin:0 0 6px">Wi-Fi Calling</h2>
-    <p class="small">Calls use the LUXit PWA over Wi-Fi or cellular data. This does not change your phone carrier's Wi-Fi Calling setting.</p>
-    <button class="btn primary" id="enableVoice" onclick="enableWifiCalling()">Enable Wi-Fi Calling</button>
-    <a class="btn" href="/app/inbox?settings=devices">Device &amp; notification diagnostics</a>
-    <div class="field"><label>Company caller ID</label><select id="callerId" aria-label="Company-owned caller ID"></select></div>
-    <div class="field"><label>Contact or phone number</label><input id="dialNumber" inputmode="tel" autocomplete="tel" placeholder="Enter a phone number"></div>
-    <div class="grid" id="dialPad">{% for digit in ['1','2','3','4','5','6','7','8','9','*','0','#'] %}<button class="btn" type="button" onclick="dialNumber.value+='{{ digit }}'">{{ digit }}</button>{% endfor %}</div>
-    <div class="actions"><button class="btn primary" onclick="placeWifiCall()">Call</button><button class="btn" onclick="toggleMute()">Mute</button><button class="btn warn" onclick="endCall()">Hang Up</button></div>
-    <div class="small" id="micStatus">Microphone permission is requested only when you enable calling or place/answer a call.</div>
+  <div class="top">
+    <a class="icon" href="/app/inbox" aria-label="Back to Conversations">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>
+    </a>
+    <h1 id="pageTitle">Phone</h1>
+    <button class="icon" onclick="toggleSettings()" aria-label="Phone settings">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06A2 2 0 1 1 7.04 4.3l.06.06A1.65 1.65 0 0 0 8.92 4a1.65 1.65 0 0 0 1-1.51V2a2 2 0 1 1 4 0v.09A1.65 1.65 0 0 0 15 3.6a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9c.36.37.56.87.56 1.39V10H21a2 2 0 1 1 0 4h-.09c-.52 0-1.02.2-1.39.56z"/></svg>
+    </button>
+  </div>
+
+  <div id="voiceState" class="voice-state" role="status" aria-live="polite">Disabled — enable Wi-Fi Calling to register this browser.</div>
+
+  <!-- Canonical dialer. data-view="full" on /app/phone & /app/dial-pad; "compact" on Recents. -->
+  <section class="dialer" id="dialer" data-view="{{ 'full' if dialer_mode else 'compact' }}" aria-label="Dialer">
+    <div class="dialer__display">
+      <div class="dialer__number" id="dialDisplay" aria-live="polite" aria-label="Number to dial"></div>
+      <div class="dialer__hint" id="dialHint"></div>
+      <div class="dialer__timer" id="callTimer" hidden aria-live="off"></div>
+    </div>
+
+    <input type="hidden" id="dialNumber" name="dial_number" value="" autocomplete="off">
+
+    <div class="dialer__pad" id="dialPad" role="group" aria-label="Dial pad">
+      {% set KEYS = [('1',''),('2','ABC'),('3','DEF'),('4','GHI'),('5','JKL'),('6','MNO'),('7','PQRS'),('8','TUV'),('9','WXYZ'),('*',''),('0','+'),('#','')] %}
+      {% for digit, letters in KEYS %}
+      <button class="key" type="button" data-digit="{{ digit }}" aria-label="{{ digit }}{% if letters %} {{ letters }}{% endif %}">
+        <span class="key__num" aria-hidden="true">{{ digit }}</span>
+        <span class="key__sub" aria-hidden="true">{{ letters or '&nbsp;'|safe }}</span>
+      </button>
+      {% endfor %}
+    </div>
+
+    <div class="callrow" id="callRow">
+      <div class="callrow__spacer"></div>
+      <button class="btn-round call-btn" id="btnCall" onclick="placeWifiCall()" aria-label="Call" disabled>
+        <svg width="26" height="26" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M20.01 15.38c-1.23 0-2.42-.2-3.53-.56-.35-.12-.74-.03-1.01.24l-1.57 1.97c-2.83-1.35-5.48-3.9-6.89-6.83l1.95-1.66c.27-.28.35-.67.24-1.02-.37-1.11-.56-2.3-.56-3.53 0-.54-.45-.99-.99-.99H4.19C3.65 3 3 3.24 3 3.99 3 13.28 10.73 21 20.01 21c.71 0 .99-.63.99-1.18v-3.45c0-.54-.45-.99-.99-.99z"/></svg>
+      </button>
+      <button class="btn-round side-btn" id="btnBackspace" onclick="dialBackspace()" aria-label="Delete last digit" hidden>
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 4H8l-7 8 7 8h13a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2z"/><line x1="18" y1="9" x2="12" y2="15"/><line x1="12" y1="9" x2="18" y2="15"/></svg>
+      </button>
+    </div>
+
+    <div class="incall" id="inCallControls" hidden>
+      <button class="incall__btn" id="btnMute" onclick="toggleMute()" aria-pressed="false">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+        <span>Mute</span>
+      </button>
+      <button class="incall__btn" id="btnSpeaker" onclick="toggleSpeaker()" aria-pressed="false" hidden>
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg>
+        <span>Speaker</span>
+      </button>
+      <button class="incall__btn danger" id="btnHangup" onclick="endCall()" aria-label="Hang up">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M21 15.46l-5.27-.61-2.52 2.52a15.05 15.05 0 0 1-6.59-6.59l2.53-2.53L8.54 3H3.03C2.45 3 2 3.45 2 4.03 2 15.6 11.4 25 22.97 25c.58 0 1.03-.45 1.03-1.03v-5.49c0-.53-.4-.97-.93-1.02z" transform="scale(0.9) translate(1 -1)"/></svg>
+        <span>Hang Up</span>
+      </button>
+    </div>
+
+    <div class="dialer__meta">
+      <label class="callerid-field">
+        <span>Caller ID</span>
+        <select id="callerId" aria-label="Company-owned caller ID"></select>
+      </label>
+      <button class="wifi-btn" id="enableVoice" onclick="enableWifiCalling()">
+        <span class="dot" aria-hidden="true"></span><span id="enableVoiceLabel">Enable Wi-Fi Calling</span>
+      </button>
+      <p class="mic-status">Calls run in the LUXit PWA over Wi-Fi or cellular data — this does not change your phone carrier's Wi-Fi Calling setting.</p>
+      <p class="mic-status" id="micStatus">Microphone permission is requested only when you enable calling or place a call.</p>
+      <a class="diag-link" href="/app/inbox?settings=devices">Device &amp; notification diagnostics</a>
+    </div>
   </section>
+
   <div id="settings" class="settings card">
     <h2 style="margin-top:0">Phone Settings</h2>
     <div class="grid"><div class="field"><label>During hours route</label><select id="during_hours_route"><option value="ring_pwa">Ring PWA</option><option value="forward">Forward</option><option value="voicemail">Voicemail</option></select></div><div class="field"><label>After hours route</label><select id="after_hours_route"><option value="voicemail">Voicemail</option><option value="forward">Forward</option><option value="ring_pwa">Ring PWA</option></select></div></div>
@@ -33,9 +353,22 @@
     <div class="grid"><label><input type="checkbox" id="missed_call_sms_enabled"> Missed SMS</label><label><input type="checkbox" id="after_hours_sms_enabled"> After-hours SMS</label><label><input type="checkbox" id="recording_enabled"> Record calls</label><label><input type="checkbox" id="transcription_enabled"> Transcribe Voicemail</label></div>
     <div class="field"><label>Missed-call SMS body</label><textarea id="missed_call_sms_body"></textarea></div><div class="field"><label>After-hours SMS body</label><textarea id="after_hours_sms_body"></textarea></div><button class="btn primary" onclick="saveSettings()">Save settings</button><div class="field"><h3>Greeting management</h3><label>Greeting name</label><input id="greeting_name" placeholder="Main voicemail greeting"><label>Greeting type</label><select id="greeting_type"><option value="standard">Standard greeting</option><option value="upload">Upload greeting</option><option value="recorded">Record in browser</option><option value="text_to_speech">AI voice from text</option></select><label>Greeting text</label><textarea id="greeting_text" placeholder="Type the voicemail greeting or AI voice script"></textarea><button class="btn" onclick="previewGreeting()">Preview Greeting</button><button class="btn primary" onclick="saveGreeting()">Set Active Greeting</button></div>
   </div>
-  <div class="tabs" id="tabs"><button class="tab active" data-tab="all">All</button><button class="tab" data-tab="missed">Missed</button><button class="tab" data-tab="voicemail">Voicemails</button><button class="tab" data-tab="recordings">Call Recordings</button><button class="tab" data-tab="forwarded">Forwarded</button></div><div id="list"></div>
+
+  <div class="tabs" id="tabs" {% if dialer_mode %}hidden{% endif %}><button class="tab active" data-tab="all">All</button><button class="tab" data-tab="missed">Missed</button><button class="tab" data-tab="voicemail">Voicemails</button><button class="tab" data-tab="recordings">Call Recordings</button><button class="tab" data-tab="forwarded">Forwarded</button></div>
+  <div id="list" {% if dialer_mode %}hidden{% endif %}></div>
 </div>
-<div id="incoming" class="incoming"><div class="small" id="incomingMode">Incoming call</div><h2 id="incomingName">Unknown caller</h2><div class="num" id="incomingNumber"></div><div class="call-controls"><button class="round accept" onclick="acceptIncoming()" aria-label="Accept call"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6A19.79 19.79 0 0 1 2.12 4.18 2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72"/></svg></button><button class="round mute" onclick="toggleMute()" aria-label="Mute call"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg></button><button class="round vm" onclick="sendIncomingToVoicemail()" aria-label="Send to voicemail"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="5.5" cy="12.5" r="3.5"/><circle cx="18.5" cy="12.5" r="3.5"/><path d="M5.5 16h13"/></svg></button><button class="round decline" onclick="declineIncoming()" aria-label="Decline call"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div></div>
+
+<div id="incoming" class="incoming" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="incomingName">
+  <div class="small" id="incomingMode">Incoming call</div>
+  <h2 id="incomingName">Unknown caller</h2>
+  <div class="num" id="incomingNumber"></div>
+  <div class="call-controls">
+    <button class="round accept" onclick="acceptIncoming()" aria-label="Accept call"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6A19.79 19.79 0 0 1 2.12 4.18 2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72"/></svg></button>
+    <button class="round mute" onclick="toggleMute()" aria-label="Mute call"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg></button>
+    <button class="round vm" onclick="sendIncomingToVoicemail()" aria-label="Send to voicemail"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5.5" cy="12.5" r="3.5"/><circle cx="18.5" cy="12.5" r="3.5"/><path d="M5.5 16h13"/></svg></button>
+    <button class="round decline" onclick="declineIncoming()" aria-label="Decline call"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+  </div>
+</div>
 {% include "inbox_pwa/_bottom_nav.html" %}
 <script>
 'use strict';
@@ -44,14 +377,29 @@ const __p = new URLSearchParams(window.location.search);
 const qs = (id) => document.getElementById(id);
 const activeFromPath = window.location.pathname.includes('/voicemail') ? 'voicemail' : null;
 let active = activeFromPath || __p.get('tab') || 'all';
+// Dedicated Phone/Dialer page: /app/phone and /app/dial-pad both resolve here
+// (canonical routing in inbox_pwa.pwa_calls). In dialer mode the Recent Calls
+// list + tabs are hidden — call history stays under the Clock icon (/app/recents).
+const DIALER_MODE = /\/app\/(phone|dial-pad)(\/|$)/.test(window.location.pathname);
 
 const els = {
   pageTitle: qs('pageTitle'),
   voiceState: qs('voiceState'),
   enableVoice: qs('enableVoice'),
-  wifiCallingPanel: qs('wifiCallingPanel'),
+  enableVoiceLabel: qs('enableVoiceLabel'),
+  wifiCallingPanel: qs('dialer'),
+  dialer: qs('dialer'),
   callerId: qs('callerId'),
   dialNumber: qs('dialNumber'),
+  dialDisplay: qs('dialDisplay'),
+  dialHint: qs('dialHint'),
+  callTimer: qs('callTimer'),
+  btnCall: qs('btnCall'),
+  btnBackspace: qs('btnBackspace'),
+  callRow: qs('callRow'),
+  inCallControls: qs('inCallControls'),
+  btnMute: qs('btnMute'),
+  btnSpeaker: qs('btnSpeaker'),
   micStatus: qs('micStatus'),
   settings: qs('settings'),
   tabs: qs('tabs'),
@@ -70,9 +418,13 @@ const voice = {
   activeCall: null,
   pendingCallLogId: null,
   muted: false,
+  speakerOn: false,
   eventSource: null,
   lastIncomingKey: null,
-  actionPending: false
+  actionPending: false,
+  outboundEnabled: null,
+  timer: null,
+  startedAt: 0
 };
 
 function applyPalette(name) {
@@ -87,9 +439,36 @@ function state(message, className = '') {
   els.voiceState.className = `voice-state ${className}`.trim();
 }
 
+/* Coarse call-lifecycle phase → drives control visibility + themed accents.
+   Values: idle | permission | registering | ready | incoming | connecting
+           | connected | muted | ended | error */
+function setPhase(phase) {
+  document.body.dataset.phase = phase;
+  const inCall = ['connecting', 'connected', 'muted'].includes(phase);
+  if (els.inCallControls) els.inCallControls.hidden = !inCall;
+  if (els.callRow) els.callRow.hidden = inCall;
+  if (!inCall) stopTimer();
+}
+
 function setEnableState({disabled = false, label = null} = {}) {
   els.enableVoice.disabled = disabled;
-  if (label) els.enableVoice.textContent = label;
+  if (label && els.enableVoiceLabel) els.enableVoiceLabel.textContent = label;
+}
+
+function startTimer() {
+  if (voice.timer) return;               // already running for this call
+  voice.startedAt = Date.now();
+  els.callTimer.hidden = false;
+  const tick = () => {
+    const s = Math.floor((Date.now() - voice.startedAt) / 1000);
+    els.callTimer.textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+  };
+  tick();
+  voice.timer = setInterval(tick, 1000);
+}
+function stopTimer() {
+  if (voice.timer) { clearInterval(voice.timer); voice.timer = null; }
+  if (els.callTimer) els.callTimer.hidden = true;
 }
 
 function fmtDur(seconds) {
@@ -97,43 +476,69 @@ function fmtDur(seconds) {
   return value ? `${Math.floor(value / 60)}:${String(value % 60).padStart(2, '0')}` : '—';
 }
 
+/* ── Dial pad ─────────────────────────────────────────────────────────── */
+function rawNumber() { return els.dialNumber.value || ''; }
+function setRawNumber(v) {
+  els.dialNumber.value = (v || '').replace(/[^0-9+*#]/g, '').slice(0, 20);
+  refreshDial();
+}
+function formatNumber(n) {
+  const d = String(n).replace(/\D/g, '');
+  if (String(n).startsWith('+') && d.length > 11) return String(n);
+  if (!d) return String(n);
+  if (d.length <= 3) return d;
+  if (d.length <= 6) return `(${d.slice(0, 3)}) ${d.slice(3)}`;
+  if (d.length <= 10) return `(${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6)}`;
+  return `+${d.slice(0, 1)} (${d.slice(1, 4)}) ${d.slice(4, 7)}-${d.slice(7, 11)}${d.slice(11)}`;
+}
+function refreshDial() {
+  const n = rawNumber();
+  els.dialDisplay.textContent = n ? formatNumber(n) : '';
+  els.btnBackspace.hidden = !n;
+  const digits = n.replace(/\D/g, '').length;
+  els.btnCall.disabled = digits < 3 || !!voice.activeCall;
+  clearTimeout(voice._lookupTimer);
+  if (digits >= 3) voice._lookupTimer = setTimeout(dialLookup, 280);
+  else els.dialHint.textContent = '';
+}
+function appendDigit(d) {
+  if (voice.activeCall && voice.activeCall.sendDigits && /[0-9*#]/.test(d)) {
+    try { voice.activeCall.sendDigits(d); } catch (_) {}
+    return;
+  }
+  setRawNumber(rawNumber() + d);
+}
+function dialBackspace() { setRawNumber(rawNumber().slice(0, -1)); }
+
+async function dialLookup() {
+  const q = rawNumber().replace(/[^\d+]/g, '');
+  if (q.replace(/\D/g, '').length < 4) { els.dialHint.textContent = ''; return; }
+  try {
+    const data = await apiFetch(`/api/inbox/contacts/search?q=${encodeURIComponent(q)}`);
+    const hit = (data?.contacts || [])[0];
+    els.dialHint.textContent = hit ? `${hit.name}${hit.company ? ' · ' + hit.company : ''}` : '';
+  } catch (_) { els.dialHint.textContent = ''; }
+}
+
+/* ── Recents list ─────────────────────────────────────────────────────── */
 function callIcon(call) {
   const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-  svg.setAttribute('width', '18');
-  svg.setAttribute('height', '18');
-  svg.setAttribute('viewBox', '0 0 24 24');
-  svg.setAttribute('fill', 'none');
-  svg.setAttribute('stroke', 'currentColor');
-  svg.setAttribute('stroke-width', '2');
-  svg.setAttribute('stroke-linecap', 'round');
-  svg.setAttribute('stroke-linejoin', 'round');
-
-  const add = (tag, attrs) => {
-    const node = document.createElementNS('http://www.w3.org/2000/svg', tag);
-    Object.entries(attrs).forEach(([key, value]) => node.setAttribute(key, value));
-    svg.appendChild(node);
-  };
-
-  if (['missed', 'no-answer', 'declined'].includes(call.status)) {
-    add('path', {d: 'M22 2 11 13'}); add('path', {d: 'M22 2h-7'}); add('path', {d: 'M22 2v7'}); add('path', {d: 'M5 12a7 7 0 0 0 7 7'});
-  } else if (call.status === 'voicemail') {
-    add('circle', {cx: '5.5', cy: '12.5', r: '3.5'}); add('circle', {cx: '18.5', cy: '12.5', r: '3.5'}); add('path', {d: 'M5.5 16h13'});
-  } else if (call.status === 'forwarded' || call.forwarded_to_number) {
-    add('polyline', {points: '15 17 20 12 15 7'}); add('path', {d: 'M4 18v-2a4 4 0 0 1 4-4h12'});
-  } else if (call.direction === 'outbound') {
-    add('path', {d: 'M7 17 17 7'}); add('path', {d: 'M7 7h10v10'});
-  } else {
-    add('path', {d: 'M17 7 7 17'}); add('path', {d: 'M17 17H7V7'});
-  }
+  ['width', 'height'].forEach((a) => svg.setAttribute(a, '18'));
+  svg.setAttribute('viewBox', '0 0 24 24'); svg.setAttribute('fill', 'none');
+  svg.setAttribute('stroke', 'currentColor'); svg.setAttribute('stroke-width', '2');
+  svg.setAttribute('stroke-linecap', 'round'); svg.setAttribute('stroke-linejoin', 'round');
+  const add = (tag, attrs) => { const node = document.createElementNS('http://www.w3.org/2000/svg', tag); Object.entries(attrs).forEach(([k, v]) => node.setAttribute(k, v)); svg.appendChild(node); };
+  if (['missed', 'no-answer', 'declined'].includes(call.status)) { add('path', {d: 'M22 2 11 13'}); add('path', {d: 'M22 2h-7'}); add('path', {d: 'M22 2v7'}); add('path', {d: 'M5 12a7 7 0 0 0 7 7'}); }
+  else if (call.status === 'voicemail') { add('circle', {cx: '5.5', cy: '12.5', r: '3.5'}); add('circle', {cx: '18.5', cy: '12.5', r: '3.5'}); add('path', {d: 'M5.5 16h13'}); }
+  else if (call.status === 'forwarded' || call.forwarded_to_number) { add('polyline', {points: '15 17 20 12 15 7'}); add('path', {d: 'M4 18v-2a4 4 0 0 1 4-4h12'}); }
+  else if (call.direction === 'outbound') { add('path', {d: 'M7 17 17 7'}); add('path', {d: 'M7 7h10v10'}); }
+  else { add('path', {d: 'M17 7 7 17'}); add('path', {d: 'M17 17H7V7'}); }
   return svg;
 }
 
 function safeExternalUrl(value) {
   if (!value) return null;
-  try {
-    const url = new URL(value, window.location.origin);
-    if (url.origin === window.location.origin || url.protocol === 'https:') return url.href;
-  } catch (_) {}
+  try { const url = new URL(value, window.location.origin); if (url.origin === window.location.origin || url.protocol === 'https:') return url.href; } catch (_) {}
   return null;
 }
 
@@ -149,7 +554,6 @@ async function apiFetch(url, options = {}) {
   headers.set('Accept', 'application/json');
   const token = csrfToken();
   if (token && !['GET', 'HEAD'].includes((options.method || 'GET').toUpperCase())) headers.set('X-CSRFToken', token);
-
   const response = await fetch(url, {...options, credentials: 'same-origin', headers});
   const type = response.headers.get('content-type') || '';
   let body = null;
@@ -165,38 +569,29 @@ async function apiFetch(url, options = {}) {
 
 function button(label, className, handler) {
   const el = document.createElement('button');
-  el.type = 'button';
-  el.className = className;
-  el.textContent = label;
+  el.type = 'button'; el.className = className; el.textContent = label;
   el.addEventListener('click', handler);
   return el;
 }
-
 function link(label, className, href, attrs = {}) {
   const el = document.createElement('a');
-  el.className = className;
-  el.textContent = label;
-  el.href = href;
-  Object.entries(attrs).forEach(([key, value]) => el.setAttribute(key, value));
+  el.className = className; el.textContent = label; el.href = href;
+  Object.entries(attrs).forEach(([k, v]) => el.setAttribute(k, v));
   return el;
 }
 
 function render(calls) {
-  els.pageTitle.textContent = active === 'voicemail' ? 'Voicemail' : 'Recents';
+  if (!DIALER_MODE) els.pageTitle.textContent = active === 'voicemail' ? 'Voicemail' : 'Recents';
   els.list.replaceChildren();
   if (!calls.length) {
     const empty = document.createElement('div');
-    empty.className = 'empty pwa-card';
-    empty.textContent = 'No calls yet.';
+    empty.className = 'empty pwa-card'; empty.textContent = 'No calls yet.';
     els.list.appendChild(empty);
     return;
   }
-
   calls.forEach((call) => {
     const status = String(call.status || 'ringing').replace('no-answer', 'missed');
-    const card = document.createElement('div');
-    card.className = 'card pwa-card';
-
+    const card = document.createElement('div'); card.className = 'card pwa-card';
     const row = document.createElement('div'); row.className = 'row';
     const avatar = document.createElement('div'); avatar.className = 'avatar'; avatar.appendChild(callIcon(call));
     const meta = document.createElement('div'); meta.className = 'meta';
@@ -209,32 +604,24 @@ function render(calls) {
     meta.append(name, number, detail);
     const badge = document.createElement('span'); badge.className = `badge ${status}`; badge.textContent = status;
     row.append(avatar, meta, badge); card.appendChild(row);
-
     if (call.transcription_text) {
       const transcript = document.createElement('div'); transcript.className = 'transcript'; transcript.textContent = String(call.transcription_text).slice(0, 180); card.appendChild(transcript);
     }
-
     const actions = document.createElement('div'); actions.className = 'actions';
     const callbackTarget = call.callback_target || call.from_number || '';
     if (callbackTarget) {
-      actions.appendChild(button('Call with LUXit', 'btn primary', () => {
-        els.dialNumber.value = callbackTarget;
-        placeWifiCall();
-      }));
+      actions.appendChild(button('Call with LUXit', 'btn primary', () => { setRawNumber(callbackTarget); placeWifiCall(); }));
       actions.appendChild(link('Text from device', 'btn', `sms:${encodeURIComponent(callbackTarget)}`));
     }
-
     if (call.voicemail_exists) {
-      const audioId = `vm-${call.id}`;
       actions.appendChild(button('Play Voicemail', 'btn primary', () => playVoicemail(call.id)));
       actions.appendChild(button('Transcript', 'btn', () => window.alert(call.transcription_text || 'No transcript yet')));
       actions.appendChild(link('Download', 'btn', `/api/calls/${encodeURIComponent(call.id)}/voicemail/audio`, {download: ''}));
-      const audio = document.createElement('audio'); audio.id = audioId; audio.className = 'voicemail-player'; audio.preload = 'none'; audio.controls = true; audio.src = `/api/calls/${encodeURIComponent(call.id)}/voicemail/audio`; actions.appendChild(audio);
+      const audio = document.createElement('audio'); audio.id = `vm-${call.id}`; audio.className = 'voicemail-player'; audio.preload = 'none'; audio.controls = true; audio.src = `/api/calls/${encodeURIComponent(call.id)}/voicemail/audio`; actions.appendChild(audio);
     } else if (call.recording_url) {
       const recording = safeExternalUrl(call.recording_url);
       if (recording) actions.appendChild(link('Call Recording', 'btn', recording, {target: '_blank', rel: 'noopener noreferrer'}));
     }
-
     actions.appendChild(button(call.is_read ? 'Mark unread' : 'Mark read', 'btn', () => markRead(call.id, !call.is_read)));
     actions.appendChild(button('Archive', 'btn', () => archiveCall(call.id)));
     card.appendChild(actions);
@@ -258,12 +645,10 @@ async function markRead(id, read) {
   try { await apiFetch(`/api/calls/${encodeURIComponent(id)}/${read ? 'mark-read' : 'mark-unread'}`, {method: 'POST'}); await load(); }
   catch (error) { state(`Could not update call: ${error.message}`, 'error'); }
 }
-
 async function archiveCall(id) {
   try { await apiFetch(`/api/calls/${encodeURIComponent(id)}/archive`, {method: 'POST'}); await load(); }
   catch (error) { state(`Could not archive call: ${error.message}`, 'error'); }
 }
-
 function playVoicemail(id) {
   const audio = qs(`vm-${id}`);
   if (audio) audio.paused ? audio.play().catch(() => {}) : audio.pause();
@@ -282,7 +667,6 @@ async function loadSettings() {
     });
   } catch (error) { state(`Could not load phone settings: ${error.message}`, 'error'); }
 }
-
 async function saveSettings() {
   const data = {};
   document.querySelectorAll('#settings input,#settings textarea,#settings select').forEach((el) => {
@@ -291,12 +675,10 @@ async function saveSettings() {
   try { await apiFetch('/api/phone/settings', {method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(data)}); state('Phone settings saved.', 'ok'); }
   catch (error) { state(`Could not save settings: ${error.message}`, 'error'); }
 }
-
 function previewGreeting() {
   const text = qs('greeting_text')?.value?.trim();
   state(text ? 'Greeting text is ready to save. Audio preview requires a configured preview endpoint.' : 'Enter greeting text first.', text ? '' : 'error');
 }
-
 async function saveGreeting() {
   const numberId = els.callerId.value;
   if (!numberId) { state('Select an authorized phone number before saving a greeting.', 'error'); return; }
@@ -305,11 +687,11 @@ async function saveGreeting() {
   catch (error) { state(`Could not save greeting: ${error.message}`, 'error'); }
 }
 
+/* ── Call lifecycle ───────────────────────────────────────────────────── */
 function callIdFromInvite(call) {
   try { return call?.customParameters?.get('call_log_id') || call?.parameters?.call_log_id || voice.pendingCallLogId; }
   catch (_) { return voice.pendingCallLogId; }
 }
-
 function incomingKey(data, call) { return data.call_id || callIdFromInvite(call) || data.call_sid || `${data.from_number || ''}:${data.to_number || ''}`; }
 
 function showIncoming(data, call = null) {
@@ -323,9 +705,10 @@ function showIncoming(data, call = null) {
   els.incomingNumber.textContent = data.from_number || '';
   els.incoming.classList.add('show');
   els.incoming.setAttribute('aria-hidden', 'false');
-  load();
+  document.body.dataset.phase = 'incoming';
+  state(`Incoming call — ${data.caller_name || data.from_number || 'Unknown'}`);
+  if (!DIALER_MODE) load();
 }
-
 function hideIncoming() { els.incoming.classList.remove('show'); els.incoming.setAttribute('aria-hidden', 'true'); }
 
 async function markCall(action, callRef = null) {
@@ -335,12 +718,20 @@ async function markCall(action, callRef = null) {
 }
 
 function resetCallState(message = 'Ready', className = 'ok') {
-  voice.pendingCall = null; voice.activeCall = null; voice.pendingCallLogId = null; voice.muted = false; voice.actionPending = false; hideIncoming(); state(message, className); load();
+  voice.pendingCall = null; voice.activeCall = null; voice.pendingCallLogId = null;
+  voice.muted = false; voice.speakerOn = false; voice.actionPending = false;
+  els.btnMute.classList.remove('is-active'); els.btnMute.setAttribute('aria-pressed', 'false');
+  els.btnSpeaker.classList.remove('is-active'); els.btnSpeaker.setAttribute('aria-pressed', 'false');
+  hideIncoming();
+  setPhase(voice.registered ? 'ready' : 'idle');
+  state(message, className);
+  refreshDial();
+  if (!DIALER_MODE) load();
 }
 
 function bindCallEvents(call) {
   if (!call?.on) return;
-  call.on('accept', () => state('Call connected', 'ok'));
+  call.on('accept', () => { setPhase('connected'); startTimer(); state('Call connected', 'ok'); });
   call.on('disconnect', () => resetCallState('Call ended'));
   call.on('cancel', () => resetCallState('Caller canceled'));
   call.on('reject', () => resetCallState('Call declined'));
@@ -354,16 +745,15 @@ async function acceptIncoming() {
   voice.actionPending = true;
   try {
     await ensureMicReady();
+    setPhase('connecting'); state('Connecting…');
     call.accept();
-    voice.activeCall = call;
-    voice.pendingCall = null;
+    voice.activeCall = call; voice.pendingCall = null;
     await markCall('accept', call);
     hideIncoming();
-    state('Call connected', 'ok');
+    setPhase('connected'); startTimer(); state('Call connected', 'ok');
   } catch (error) { voiceError(error.voiceCode || 'CALL_FAILED', `Could not answer: ${error.message}`, error); }
   finally { voice.actionPending = false; }
 }
-
 async function declineIncoming() {
   if (voice.actionPending) return;
   const call = voice.pendingCall;
@@ -371,7 +761,6 @@ async function declineIncoming() {
   try { if (call?.reject) call.reject(); await markCall('decline', call); resetCallState('Call declined'); }
   catch (error) { voiceError('CALL_FAILED', `Could not decline call: ${error.message}`, error); }
 }
-
 async function sendIncomingToVoicemail() {
   if (voice.actionPending) return;
   const call = voice.pendingCall;
@@ -379,19 +768,36 @@ async function sendIncomingToVoicemail() {
   try { if (call?.reject) call.reject(); await markCall('voicemail', call); resetCallState('Sent to voicemail'); }
   catch (error) { voiceError('CALL_FAILED', `Could not send to voicemail: ${error.message}`, error); }
 }
-
 async function endCall() {
   const call = voice.activeCall || voice.pendingCall;
   if (!call) { state('No active call.'); return; }
-  try { if (voice.activeCall?.disconnect) voice.activeCall.disconnect(); else if (voice.pendingCall?.reject) voice.pendingCall.reject(); await markCall('end', call); resetCallState('Call ended'); }
-  catch (error) { voiceError('CALL_FAILED', `Could not end call: ${error.message}`, error); }
+  try {
+    if (voice.activeCall?.disconnect) voice.activeCall.disconnect();
+    else if (voice.pendingCall?.reject) voice.pendingCall.reject();
+    await markCall('end', call);
+    resetCallState('Call ended');
+  } catch (error) { voiceError('CALL_FAILED', `Could not end call: ${error.message}`, error); }
 }
-
 function toggleMute() {
   if (!voice.activeCall?.mute) { state('No connected call to mute.', 'error'); return; }
   voice.muted = !voice.muted;
   voice.activeCall.mute(voice.muted);
-  state(voice.muted ? 'Call muted' : 'Call unmuted', 'ok');
+  els.btnMute.classList.toggle('is-active', voice.muted);
+  els.btnMute.setAttribute('aria-pressed', String(voice.muted));
+  setPhase(voice.muted ? 'muted' : 'connected');
+  document.body.dataset.phase = voice.muted ? 'muted' : 'connected';
+  state(voice.muted ? 'Muted' : 'Call unmuted', 'ok');
+}
+function toggleSpeaker() {
+  const audio = voice.device?.audio;
+  if (!audio?.speakerDevices || !audio.isOutputSelectionSupported) { state('Speaker selection is not supported on this device.', 'error'); return; }
+  try {
+    voice.speakerOn = !voice.speakerOn;
+    audio.speakerDevices.set(voice.speakerOn ? 'default' : (audio.availableOutputDevices.keys().next().value || 'default'));
+    els.btnSpeaker.classList.toggle('is-active', voice.speakerOn);
+    els.btnSpeaker.setAttribute('aria-pressed', String(voice.speakerOn));
+    state(voice.speakerOn ? 'Speaker on' : 'Speaker off', 'ok');
+  } catch (error) { state(`Could not switch audio output: ${error.message}`, 'error'); }
 }
 
 function voiceSdkCtor() { return window.Twilio?.Device || window.Twilio?.Voice?.Device || null; }
@@ -401,22 +807,32 @@ async function loadCallerIds() {
   els.callerId.replaceChildren();
   try {
     const data = await apiFetch('/api/phone/numbers');
-    const numbers = (data?.numbers || []).filter((number) => number.is_active !== false && number.browser_calling_enabled !== false);
-    numbers.forEach((number) => {
-      const option = document.createElement('option'); option.value = String(number.id); option.textContent = `${number.friendly_name || number.phone_number} — ${number.phone_number}`; els.callerId.appendChild(option);
+    const numbers = (data?.numbers || []).filter((n) => n.is_active !== false && n.browser_calling_enabled !== false);
+    numbers.forEach((n) => {
+      const option = document.createElement('option');
+      option.value = String(n.id);
+      option.textContent = `${n.friendly_name || n.phone_number} — ${n.phone_number}`;
+      els.callerId.appendChild(option);
     });
     if (!numbers.length) {
-      const option = document.createElement('option'); option.value = ''; option.textContent = 'No authorized voice line'; els.callerId.appendChild(option); setEnableState({disabled: true, label: 'No Voice Line Available'});
+      const option = document.createElement('option'); option.value = ''; option.textContent = 'No authorized voice line';
+      els.callerId.appendChild(option);
+      setEnableState({disabled: true, label: 'No Voice Line Available'});
     } else {
-      if (numbers.some((number) => String(number.id) === previous)) els.callerId.value = previous;
+      if (numbers.some((n) => String(n.id) === previous)) els.callerId.value = previous;
       setEnableState({disabled: false, label: voice.registered ? 'Wi-Fi Calling Enabled' : 'Enable Wi-Fi Calling'});
     }
-  } catch (error) { const option = document.createElement('option'); option.value = ''; option.textContent = 'Unable to load voice lines'; els.callerId.appendChild(option); setEnableState({disabled: true}); state(`Offline — ${error.message}`, 'error'); }
+  } catch (error) {
+    const option = document.createElement('option'); option.value = ''; option.textContent = 'Unable to load voice lines';
+    els.callerId.appendChild(option);
+    setEnableState({disabled: true});
+    state(`Offline — ${error.message}`, 'error');
+  }
 }
 
 async function ensureMicReady() {
   if (!navigator.mediaDevices?.getUserMedia) throw Object.assign(new Error('WebRTC microphone capture is not supported in this browser.'), {voiceCode: 'WEBRTC_UNSUPPORTED'});
-  try { const stream = await navigator.mediaDevices.getUserMedia({audio: true}); stream.getTracks().forEach((track) => track.stop()); }
+  try { const stream = await navigator.mediaDevices.getUserMedia({audio: true}); stream.getTracks().forEach((t) => t.stop()); }
   catch (error) { throw Object.assign(error, {voiceCode: ['NotAllowedError', 'SecurityError'].includes(error.name) ? 'MICROPHONE_BLOCKED' : 'MICROPHONE_FAILED'}); }
 }
 
@@ -439,6 +855,7 @@ function voiceError(code, message, detail) {
   console.error('Browser voice setup failed', code, detail?.message || message);
   const safeMessage = String(message || '').slice(0, 500);
   apiFetch('/api/phone/voice-client-error', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({code: String(code || 'UNKNOWN').slice(0, 80), message: safeMessage, detail: String(detail?.message || '').slice(0, 500)})}).catch(() => {});
+  document.body.dataset.phase = 'error';
   state(safeMessage, 'error');
 }
 
@@ -453,6 +870,7 @@ async function initVoice() {
       if (!els.callerId.value) throw Object.assign(new Error('No authorized calling number is available.'), {voiceCode: 'NO_ASSIGNED_NUMBER'});
 
       setEnableState({disabled: true, label: 'Requesting Permission…'});
+      document.body.dataset.phase = 'permission';
       state('Requesting microphone permission…');
       await ensureMicReady();
       els.micStatus.textContent = 'Microphone permission granted.';
@@ -460,11 +878,18 @@ async function initVoice() {
       state('Requesting secure voice token…');
       const body = await readVoiceToken();
       if (!body.calling_number) throw Object.assign(new Error('No calling number assigned.'), {voiceCode: 'NO_ASSIGNED_NUMBER'});
+      voice.outboundEnabled = body.outbound_enabled;
 
       if (voice.device?.unregister) { try { voice.device.unregister(); } catch (_) {} }
       voice.device = new Device(body.token, {logLevel: 1, codecPreferences: ['opus', 'pcmu']});
-      voice.device.on('registered', () => { voice.registered = true; setEnableState({disabled: true, label: 'Wi-Fi Calling Enabled'}); state(`Browser phone registered for ${body.calling_number}`, 'ok'); });
-      voice.device.on('unregistered', () => { voice.registered = false; setEnableState({disabled: false, label: 'Enable Wi-Fi Calling'}); state('Browser phone unregistered'); });
+      voice.device.on('registered', () => {
+        voice.registered = true;
+        setEnableState({disabled: true, label: 'Wi-Fi Calling Enabled'});
+        setPhase('ready');
+        state(`Ready — ${body.calling_number}`, 'ok');
+        if (els.btnSpeaker && voice.device?.audio?.isOutputSelectionSupported) els.btnSpeaker.hidden = false;
+      });
+      voice.device.on('unregistered', () => { voice.registered = false; setEnableState({disabled: false, label: 'Enable Wi-Fi Calling'}); setPhase('idle'); state('Browser phone unregistered'); });
       voice.device.on('error', (error) => voiceError('TWILIO_REGISTRATION_FAILED', `Twilio registration failed: ${error.message || 'Unknown error'}`, error));
       voice.device.on('incoming', (call) => {
         const params = call.customParameters;
@@ -495,7 +920,7 @@ async function initVoice() {
         NO_ASSIGNED_NUMBER: 'No authorized calling number is assigned.',
         TWILIO_REGISTRATION_FAILED: `Twilio registration failed: ${error.message}`
       };
-      els.micStatus.textContent = ['MICROPHONE_BLOCKED', 'MICROPHONE_FAILED'].includes(code) ? 'Permission Required — allow microphone access in browser settings.' : 'Microphone permission is requested only when you enable calling or place/answer a call.';
+      els.micStatus.textContent = ['MICROPHONE_BLOCKED', 'MICROPHONE_FAILED'].includes(code) ? 'Permission required — allow microphone access in browser settings.' : 'Microphone permission is requested only when you enable calling or place a call.';
       setEnableState({disabled: false, label: 'Enable Wi-Fi Calling'});
       voiceError(code, messages[code] || `Voice setup failed: ${error.message}`, error);
       throw error;
@@ -507,18 +932,23 @@ async function initVoice() {
 async function enableWifiCalling() { try { await initVoice(); } catch (_) {} }
 
 async function placeWifiCall() {
-  const destination = els.dialNumber.value.trim();
+  const destination = rawNumber().trim();
   if (!destination) { state('Enter a phone number.', 'error'); return; }
   if (!els.callerId.value) { state('Select an authorized company caller ID.', 'error'); return; }
   if (voice.activeCall) { state('A call is already active.', 'error'); return; }
   try {
     const device = await initVoice();
-    state(`Connecting to ${destination}…`);
+    if (voice.outboundEnabled === false) {
+      state('Outbound calling isn’t enabled in this environment yet. Incoming calls still work.', 'error');
+      return;
+    }
+    setPhase('connecting');
+    state(`Connecting to ${formatNumber(destination)}…`);
     const call = await device.connect({params: {To: destination, phone_number_id: els.callerId.value}});
     voice.activeCall = call;
     voice.muted = false;
     bindCallEvents(call);
-  } catch (error) { voiceError(error.voiceCode || 'CALL_FAILED', `Call failed: ${error.message}`, error); }
+  } catch (error) { voiceError(error.voiceCode || 'CALL_FAILED', `Call failed: ${error.message}`, error); resetCallState('Call failed', 'error'); }
 }
 
 function connectInboxStream() {
@@ -534,7 +964,49 @@ function connectInboxStream() {
 function cleanupVoice() {
   try { voice.eventSource?.close(); } catch (_) {}
   try { voice.device?.unregister(); } catch (_) {}
+  stopTimer();
 }
+
+/* ── Wiring ──────────────────────────────────────────────────────────── */
+els.dialer.dataset.view = DIALER_MODE ? 'full' : 'compact';
+
+// Keypad — pointer + press feedback
+qs('dialPad').addEventListener('click', (event) => {
+  const key = event.target.closest('[data-digit]');
+  if (key) appendDigit(key.dataset.digit);
+});
+qs('dialPad').addEventListener('pointerdown', (event) => {
+  const key = event.target.closest('[data-digit]');
+  if (!key) return;
+  key.classList.add('is-down');
+  const clear = () => key.classList.remove('is-down');
+  key.addEventListener('pointerup', clear, {once: true});
+  key.addEventListener('pointerleave', clear, {once: true});
+  key.addEventListener('pointercancel', clear, {once: true});
+  if (key.dataset.digit === '0') {
+    key._plusTimer = setTimeout(() => { setRawNumber(rawNumber() + '+'); }, 550);
+    const cancelPlus = () => clearTimeout(key._plusTimer);
+    key.addEventListener('pointerup', cancelPlus, {once: true});
+    key.addEventListener('pointerleave', cancelPlus, {once: true});
+  }
+});
+
+// Physical keyboard (desktop) — never intercepts typing in form fields
+document.addEventListener('keydown', (event) => {
+  if (!DIALER_MODE) return;
+  const t = event.target;
+  if (t && /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName) && t.id !== 'dialNumber') return;
+  if (/^[0-9*#]$/.test(event.key)) { appendDigit(event.key); event.preventDefault(); }
+  else if (event.key === '+') { appendDigit('+'); event.preventDefault(); }
+  else if (event.key === 'Backspace') { dialBackspace(); event.preventDefault(); }
+  else if (event.key === 'Enter' && !voice.activeCall) { placeWifiCall(); event.preventDefault(); }
+});
+document.addEventListener('paste', (event) => {
+  if (!DIALER_MODE) return;
+  const txt = (event.clipboardData || window.clipboardData)?.getData('text') || '';
+  const cleaned = txt.replace(/[^0-9+*#]/g, '');
+  if (cleaned) { setRawNumber(rawNumber() + cleaned); event.preventDefault(); }
+});
 
 els.tabs.addEventListener('click', (event) => {
   const tab = event.target.closest('[data-tab]');
@@ -543,7 +1015,6 @@ els.tabs.addEventListener('click', (event) => {
   active = tab.dataset.tab;
   load();
 });
-
 document.querySelectorAll('.tab').forEach((tab) => {
   const selected = tab.dataset.tab === active;
   tab.classList.toggle('active', selected);
@@ -551,19 +1022,27 @@ document.querySelectorAll('.tab').forEach((tab) => {
   tab.setAttribute('aria-selected', selected ? 'true' : 'false');
 });
 els.tabs.setAttribute('role', 'tablist');
-els.voiceState.setAttribute('aria-live', 'polite');
-els.incoming.setAttribute('role', 'dialog');
-els.incoming.setAttribute('aria-modal', 'true');
-els.incoming.setAttribute('aria-hidden', 'true');
 
 window.addEventListener('load', () => {
   loadCallerIds();
-  if (__p.get('setup') === '1') state('Permission Required — press Enable Wi-Fi Calling.');
+  if (__p.get('setup') === '1') state('Permission required — press Enable Wi-Fi Calling.');
 });
 window.addEventListener('pagehide', cleanupVoice);
 
+if (DIALER_MODE) {
+  document.body.dataset.mode = 'dialer';
+  els.pageTitle.textContent = 'Phone';
+  els.tabs.hidden = true;
+  els.list.hidden = true;
+} else {
+  els.tabs.hidden = false;
+  els.list.hidden = false;
+}
+document.body.dataset.phase = 'idle';
+refreshDial();
+
 connectInboxStream();
-load();
+if (!DIALER_MODE) load();
 loadSettings();
 if (window.location.pathname.endsWith('/settings')) els.settings.classList.add('show');
 </script>
