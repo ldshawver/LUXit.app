@@ -1,3 +1,5 @@
+import os
+import re
 from datetime import datetime
 from unittest.mock import patch
 
@@ -140,3 +142,28 @@ def test_voice_schema_migration_covers_notification_and_call_log_fields():
         assert phrase in sql
     assert " drop " not in sql
     assert "delete from" not in sql
+
+
+def test_voice_sdk_is_self_hosted_not_the_retired_twilio_cdn():
+    """Regression guard for the "Twilio voice SDK unavailable" incident.
+
+    https://sdk.twilio.com/js/voice/releases/* was Twilio's legacy CDN for the
+    Voice JS SDK; Twilio retired it as of SDK v2.0 ("the Voice SDK is no
+    longer hosted via CDN") and every release path there -- including the
+    2.12.3 pin this app used -- now returns HTTP 403/AccessDenied. Twilio's
+    own guidance for non-bundler consumers is to vendor dist/twilio.min.js
+    locally, which is what static/vendor/twilio-voice-sdk/ does. This test
+    fails if the template ever points back at the dead CDN, or points at a
+    self-hosted path that doesn't actually exist on disk.
+    """
+    calls = open("templates/inbox_pwa/calls.html", encoding="utf-8").read()
+    assert "sdk.twilio.com" not in calls, "must not depend on Twilio's retired Voice SDK CDN"
+
+    match = re.search(r'<script src="(/static/vendor/twilio-voice-sdk/[^"]+/twilio\.min\.js)" defer>', calls)
+    assert match, "expected a self-hosted, versioned Voice SDK <script> tag"
+
+    vendored_path = "." + match.group(1)
+    assert os.path.isfile(vendored_path), f"referenced SDK asset is missing on disk: {vendored_path}"
+
+    sdk_source = open(vendored_path, encoding="utf-8").read()
+    assert "Twilio" in sdk_source and "Device" in sdk_source, "vendored file doesn't look like the Voice SDK UMD bundle"
