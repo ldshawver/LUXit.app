@@ -1005,6 +1005,43 @@ def api_segment_preview_root(sid):
     })
 
 
+@segment_api_bp.get("/segments/<int:sid>/audience-preview")
+@login_required
+def api_segment_audience_preview(sid):
+    """Read-only aggregate of the SMS campaign audience this segment would
+    resolve to, via the SAME canonical resolver that send/schedule/materialize
+    use (services.contact_audience.resolve_sms_campaign_recipients). No PII.
+
+    Segment membership is a customer/business classification; it is NOT SMS
+    marketing consent. Only affirmatively opted-in, non-suppressed, valid,
+    de-duplicated numbers are SMS-eligible.
+    """
+    from types import SimpleNamespace
+    from services.contact_audience import resolve_sms_campaign_recipients
+    s = _segment_or_404(sid)
+    probe = SimpleNamespace(company_id=s.company_id, segment=None, id=None,
+                            audience_filter={"selected_tag_ids": [s.id]})
+    try:
+        counts = resolve_sms_campaign_recipients(probe)["counts"]
+    except ValueError as exc:
+        # e.g. a contact_tag / automation_rule anchor segment is not a
+        # marketing-eligible audience -- fail closed, don't guess.
+        return jsonify({"success": False, "error": str(exc)}), 422
+    return jsonify({
+        "success": True,
+        "segment_members": counts["matching_contacts"],
+        "unique_valid_phones": counts["unique_phone_numbers"],
+        "duplicate_phone_exclusions": counts["duplicate_phone_numbers"],
+        "stop_suppressed": counts["opted_out_contacts"] + counts["archived_or_suppressed"],
+        "no_affirmative_consent": counts["missing_sms_consent"],
+        "invalid_or_missing_phone": counts["missing_phone_numbers"] + counts["invalid_phone_numbers"],
+        "final_sms_eligible": counts["eligible_recipients"],
+        "membership_is_not_sms_consent": True,
+        "note": ("Segment membership is a customer/business classification, not SMS "
+                 "marketing consent. Only affirmatively opted-in contacts are SMS-eligible."),
+    })
+
+
 @segment_api_bp.post("/segments/<int:sid>/refresh")
 @login_required
 def api_segment_refresh_root(sid):

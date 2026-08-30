@@ -429,3 +429,51 @@ def backfill_preview(company_id: int) -> dict:
         "cross_tenant_exclusions": cross_tenant,
         "proposed_inserts": len(missing), "contact_ids": [c.id for c in missing],
     }
+
+
+def backfill_apply(company_id: int, *, actor_user_id: int | None = None) -> dict:
+    """Idempotent tenant-scoped backfill of the canonical My Order Customer
+    segment for EXISTING historically-tagged customers.
+
+    Delegates membership mutation to the same delta-only mechanism the rest of
+    the app uses:
+      * dynamic canonical segment  -> services.segment_engine.refresh
+        (full delta first; additions/removals only; never delete+reinsert;
+        _canonical_candidate_contacts excludes merged/duplicate contacts;
+        tenant-scoped by segment.company_id)
+      * non-dynamic canonical anchor -> _add_membership for the qualifying,
+        active, canonical, in-tenant contacts backfill_preview reports missing.
+
+    Never writes consent, STOP, suppression, opt-in/opt-out, or DNC state.
+    Never touches another tenant. Safe to rerun: a second call adds/removes
+    nothing.
+    """
+    if not company_id:
+        raise AutomationContractError("company_id is required")
+    records = ensure_my_order_automation(company_id, create_missing=True)
+    segment = records["segment"]
+    if segment is None:
+        return {"company_id": company_id, "segment_id": None, "additions": 0,
+                "removals": 0, "members": 0, "skipped": "no canonical My Order segment"}
+
+    if segment.is_dynamic and segment.segment_type not in {"contact_tag", "automation_rule"}:
+        from services.segment_engine import refresh as engine_refresh
+        result = engine_refresh(segment, actor_user_id=actor_user_id)
+        return {
+            "company_id": company_id, "segment_id": segment.id,
+            "additions": len(result.additions), "removals": len(result.removals),
+            "members": len(result.desired_member_ids or result.current_member_ids),
+            "skipped": result.skipped_reason, "error": result.error,
+        }
+
+    preview = backfill_preview(company_id)
+    added = 0
+    for contact_id in preview.get("contact_ids", []):
+        contact = Contact.query.filter_by(id=contact_id, company_id=company_id).first()
+        if contact and _add_membership(contact, segment, source="my_order_backfill"):
+            added += 1
+    db.session.flush()
+    return {
+        "company_id": company_id, "segment_id": segment.id, "additions": added,
+        "removals": 0, "members": preview["already_in_segment"] + added, "skipped": None,
+    }
