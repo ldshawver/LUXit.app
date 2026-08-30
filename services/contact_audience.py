@@ -266,17 +266,42 @@ def resolve_segment_contacts(company_id: int, segment=None, audience_filter: dic
 
 
 def resolve_sms_campaign_recipients(campaign, *, materialize=False):
-    """Canonical recipient resolver for preview, sending, scheduling, jobs and reports."""
+    """Canonical recipient resolver for preview, sending, scheduling, jobs and reports.
+
+    Purpose-aware: campaign.audience_filter["campaign_purpose"] selects which
+    eligibility rule applies (promotional / transactional / conversational).
+    It defaults to 'promotional' -- the strictest rule, requiring an affirmative
+    SMS marketing opt-in -- so any campaign without an explicit purpose behaves
+    exactly as before. STOP / opt-out / suppression / invalid phone /
+    de-duplication always exclude, for every purpose.
+    """
+    from services.sms_consent_purpose import (
+        classify as _classify_purposes,
+        conversational_evidence_phone_digits,
+        is_eligible_for_purpose,
+        normalize_campaign_purpose,
+    )
+
     matched = resolve_segment_contacts(campaign.company_id, campaign.segment, campaign.audience_filter or {})
+    purpose = normalize_campaign_purpose((campaign.audience_filter or {}).get("campaign_purpose"))
+    evidence_digits = (
+        conversational_evidence_phone_digits(campaign.company_id)
+        if purpose != "promotional" else set()
+    )
     counts = {
         "matching_contacts": len(matched), "contacts_with_phone": 0,
         "unique_phone_numbers": 0, "eligible_recipients": 0,
         "missing_phone_numbers": 0, "invalid_phone_numbers": 0,
         "duplicate_phone_numbers": 0, "opted_out_contacts": 0,
         "missing_sms_consent": 0, "archived_or_suppressed": 0,
+        "campaign_purpose": purpose,
+        "conversational_eligible": 0, "transactional_eligible": 0, "promotional_eligible": 0,
     }
     valid_seen = set()
     eligible_seen = set()
+    conv_phone_seen = set()
+    trans_phone_seen = set()
+    promo_phone_seen = set()
     recipients = []
     for contact in matched:
         raw_phone = contact.normalized_phone or contact.phone
@@ -295,13 +320,23 @@ def resolve_sms_campaign_recipients(campaign, *, materialize=False):
         opted_out = bool(contact.sms_opted_out or contact.do_not_sms or contact.sms_opt_out_at or "sms_opt_out" in tags or "no_sms" in tags)
         suppressed = bool(not contact.is_active or contact.archived_at or contact.do_not_market or contact.do_not_contact or contact.status in {"archived", "suppressed", "merged"} or "blocked" in tags)
         consent = bool(contact.sms_marketing_opt_in and contact.sms_consent_status in {"opted_in", "subscribed"})
+        cls = _classify_purposes(campaign.company_id, contact, evidence_digits=evidence_digits or None)
         if opted_out:
             counts["opted_out_contacts"] += 1
         if not consent:
             counts["missing_sms_consent"] += 1
         if suppressed:
             counts["archived_or_suppressed"] += 1
-        if opted_out or suppressed or not consent or phone in eligible_seen:
+        # Per-purpose unique-phone buckets (STOP/opt-out already fold into cls.suppressed).
+        if not opted_out:
+            if cls["conversational_sms_evidence"] and phone not in conv_phone_seen:
+                conv_phone_seen.add(phone); counts["conversational_eligible"] += 1
+            if cls["transactional_eligibility"] and phone not in trans_phone_seen:
+                trans_phone_seen.add(phone); counts["transactional_eligible"] += 1
+            if cls["promotional_eligibility"] and phone not in promo_phone_seen:
+                promo_phone_seen.add(phone); counts["promotional_eligible"] += 1
+        eligible = is_eligible_for_purpose(purpose, cls) and not opted_out
+        if not eligible or phone in eligible_seen:
             continue
         eligible_seen.add(phone)
         recipients.append((contact, phone))
