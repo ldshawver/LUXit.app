@@ -2333,6 +2333,23 @@ def voice_no_answer():
 
     logger.info("Voice no-answer: sid=%s dial_status=%s", call_sid, dial_status)
 
+    # A call that was actually ANSWERED and then ended (either party hung up)
+    # must NOT fall through to voicemail -- otherwise the party still on the
+    # line hears the greeting and gets recorded (prod smoke 2026-08-30: browser
+    # hung up an answered call, the PSTN caller then heard the voicemail
+    # greeting). Only genuinely unconnected outcomes go to voicemail.
+    if str(dial_status).lower() in ("completed", "answered"):
+        if call_sid:
+            log = TwilioCallLog.query.filter_by(twilio_sid=call_sid).first()
+            if log and (log.status or "") not in ("no-answer", "voicemail", "missed"):
+                log.status = log.status or "completed"
+                db.session.commit()
+        logger.info("Voice no-answer: answered call ended (dial_status=%s) sid=%s -> hangup",
+                    dial_status, call_sid)
+        return (
+            '<?xml version="1.0" encoding="UTF-8"?>\n<Response>\n  <Hangup/>\n</Response>'
+        ), 200, {"Content-Type": "text/xml"}
+
     # Update call log
     if call_sid:
         log = TwilioCallLog.query.filter_by(twilio_sid=call_sid).first()

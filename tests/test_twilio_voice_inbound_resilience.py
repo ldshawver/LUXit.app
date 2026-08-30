@@ -125,6 +125,32 @@ def test_voicemail_record_has_a_terminal_action_and_does_not_reloop_no_answer(vo
     assert 'action="/twilio/voice/no-answer' not in body
 
 
+def test_answered_call_dial_action_hangs_up_instead_of_voicemail(voice_app, monkeypatch):
+    # Prod smoke 2026-08-30: browser hung up an ANSWERED call; the <Dial> action
+    # fired /twilio/voice/no-answer with DialCallStatus=completed and the still-
+    # connected PSTN caller was dropped into the voicemail greeting + <Record>.
+    app, client, company, forward_line, _ = voice_app
+    import twilio_sms
+    monkeypatch.setattr(twilio_sms, "_is_business_hours", lambda *a, **kw: True)
+    _seed_call_log(app, company.id, forward_line.id, "TEST_ANSWERED_HANGUP_001")
+
+    for status in ("completed", "answered", "COMPLETED"):
+        resp = client.post(
+            f"/twilio/voice/no-answer?to=+19165989519",
+            data={"To": "+19165989519", "From": "+14155551212",
+                  "CallSid": "TEST_ANSWERED_HANGUP_001", "DialCallStatus": status},
+        )
+        body = resp.get_data(as_text=True)
+        assert resp.status_code == 200
+        assert "<Hangup/>" in body
+        assert "<Record" not in body, f"answered call ({status}) must not reach voicemail"
+        assert "leave a message" not in body.lower()
+
+    # sanity: an unconnected outcome still routes to voicemail
+    vm = _post_no_answer(client, "+19165989519", "TEST_ANSWERED_HANGUP_001", dial_status="no-answer")
+    assert "<Record" in vm.get_data(as_text=True)
+
+
 def test_recording_complete_is_a_clean_terminal_hangup(voice_app):
     _, client, *_ = voice_app
     resp = client.post("/twilio/voice/recording-complete", data={
