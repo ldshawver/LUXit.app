@@ -1,7 +1,7 @@
 """Safe structured diagnostics logging and export helpers."""
 from __future__ import annotations
 
-import json, logging, os, re, shutil, time, traceback, zipfile
+import json, logging, os, re, shutil, tempfile, time, traceback, zipfile
 from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
@@ -21,17 +21,35 @@ BANK_RE = re.compile(r"\b(?:\d[ -]*?){10,17}\b")
 KEYVAL_RE = re.compile(r"(?i)(password|passwd|secret|api[_-]?key|github[_-]?token|token|authorization|cookie|session|jwt|refresh[_-]?token|access[_-]?token)\s*[:=]\s*[^\s,;&]+")
 
 
-def log_dir() -> Path:
-    base = os.environ.get("DIAGNOSTICS_LOG_DIR") or "/storage/logs"
-    p = Path(base)
+def _writable(p: Path) -> bool:
     try:
         p.mkdir(parents=True, exist_ok=True)
         test = p / ".write-test"; test.write_text("ok"); test.unlink(missing_ok=True)
-        return p
+        return True
     except Exception:
-        fallback = Path(os.environ.get("LOCAL_STORAGE_PATH", "storage")) / "logs"
-        fallback.mkdir(parents=True, exist_ok=True)
-        return fallback
+        return False
+
+
+def log_dir() -> Path:
+    # Try, in order, the configured dir then progressively safer fallbacks.
+    # Each candidate is write-tested — a dir that merely *exists* is not enough
+    # under systemd ProtectSystem=strict, where it can be read-only. The final
+    # tmp fallback always works, so this never raises.
+    candidates = [
+        os.environ.get("DIAGNOSTICS_LOG_DIR"),
+        "/storage/logs",
+        os.path.join(os.environ.get("LOCAL_STORAGE_PATH", "storage"), "logs"),
+        "logs",
+        os.path.join(os.environ.get("INSTANCE_PATH", "instance"), "logs"),
+        os.path.join(tempfile.gettempdir(), "luxit-logs"),
+    ]
+    for c in candidates:
+        if not c:
+            continue
+        p = Path(c)
+        if _writable(p):
+            return p
+    return Path(tempfile.gettempdir())
 
 
 def redact(value):
@@ -82,10 +100,16 @@ def structured_log(level="info", service="app", message="", error=None, metadata
         entry.update(errorName=type(error).__name__, errorMessage=str(error), stack="".join(traceback.format_exception(type(error), error, error.__traceback__)))
     entry.update(fields)
     entry = redact(entry)
-    p = log_dir() / f"{service}.log"; rotate(p)
-    p.open("a", encoding="utf-8").write(json.dumps(entry, default=str) + "\n")
-    if level in {"error", "fatal"} and service != "error":
-        ep = log_dir() / "error.log"; rotate(ep); ep.open("a", encoding="utf-8").write(json.dumps(entry, default=str) + "\n")
+    # Persisting a diagnostic must NEVER raise — this runs inside the global
+    # error handler, and a failed log write there would mask the real error
+    # with an opaque 500.
+    try:
+        p = log_dir() / f"{service}.log"; rotate(p)
+        p.open("a", encoding="utf-8").write(json.dumps(entry, default=str) + "\n")
+        if level in {"error", "fatal"} and service != "error":
+            ep = log_dir() / "error.log"; rotate(ep); ep.open("a", encoding="utf-8").write(json.dumps(entry, default=str) + "\n")
+    except Exception as exc:
+        logging.getLogger(__name__).warning("structured_log write failed: %s", exc)
     return entry
 
 

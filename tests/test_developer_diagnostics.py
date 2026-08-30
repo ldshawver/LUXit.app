@@ -42,3 +42,44 @@ def test_log_rotation_does_not_crash(monkeypatch, tmp_path):
     structured_log(level="info", service="app", message="second")
     assert (tmp_path / "app.log").exists()
     assert (tmp_path / "app.log.1").exists()
+
+
+def test_structured_log_never_raises_when_log_dir_is_unwritable(monkeypatch, tmp_path):
+    """Regression: under systemd ProtectSystem=strict the diagnostics dir can be
+    read-only. structured_log runs inside the global error handler, so a write
+    failure there must not propagate (it masked real errors with opaque 500s on
+    staging 2026-08-30)."""
+    import diagnostics_service as d
+
+    ro = tmp_path / "readonly"
+    ro.mkdir()
+
+    def boom(self, *a, **k):
+        raise OSError(30, "Read-only file system")
+
+    monkeypatch.setattr(d.Path, "open", boom)
+    monkeypatch.setattr(d, "log_dir", lambda: ro)
+
+    # must return the entry dict, not raise
+    entry = d.structured_log(level="fatal", service="app", message="x", error=RuntimeError("orig"))
+    assert entry["errorName"] == "RuntimeError"
+    assert entry["message"] == "x"
+
+
+def test_log_dir_skips_unwritable_candidates_and_always_resolves(monkeypatch):
+    import diagnostics_service as d
+    from pathlib import Path
+
+    monkeypatch.setenv("DIAGNOSTICS_LOG_DIR", "/proc/1/not-writable")
+    seen = []
+    real_writable = d._writable
+
+    def probe(p):
+        seen.append(str(p))
+        return "luxit-logs" in str(p) and real_writable(p)  # only the tmp fallback passes
+
+    monkeypatch.setattr(d, "_writable", probe)
+    out = d.log_dir()
+    assert isinstance(out, Path)
+    assert "/proc/1/not-writable" in seen[0]     # configured dir tried first
+    assert real_writable(out)                    # returned dir is genuinely writable
