@@ -2381,13 +2381,35 @@ def voice_no_answer():
         f'<?xml version="1.0" encoding="UTF-8"?>\n'
         f"<Response>\n"
         f"  {greeting_xml}\n"
-        f'  <Record maxLength="180" playBeep="true"\n'
+        f'  <Record maxLength="180" timeout="5" playBeep="true" trim="trim-silence"\n'
+        f'          action="/twilio/voice/recording-complete" method="POST"\n'
         f'          recordingStatusCallback="/twilio/voice/recording"\n'
         f'          recordingStatusCallbackMethod="POST" />\n'
         f"  <Say>We did not receive a recording. Goodbye.</Say>\n"
         f"</Response>"
     )
     return twiml, 200, {"Content-Type": "text/xml"}
+
+
+@twilio_bp.route("/voice/recording-complete", methods=["POST"])
+@csrf.exempt
+def voice_recording_complete():
+    """Terminal <Record> action for the voicemail flow.
+
+    Without an explicit `action`, Twilio re-requests the serving URL
+    (/twilio/voice/no-answer) once the recording finishes -- which re-runs the
+    no-answer handler and re-serves the greeting + <Record>, looping the
+    voicemail prompt (staging smoke 2026-08-30: caller never heard a clean
+    greeting, only a 2s fragment was captured, no-answer POSTed twice for one
+    call). Pointing <Record action> here ends the call cleanly instead.
+    """
+    call_sid = request.form.get("CallSid", "")
+    logger.info("Voicemail recording finished: sid=%s dur=%s digits=%s",
+                call_sid, request.form.get("RecordingDuration"), request.form.get("Digits"))
+    return (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        "<Response>\n  <Say>Thank you. Your message has been received. Goodbye.</Say>\n  <Hangup/>\n</Response>"
+    ), 200, {"Content-Type": "text/xml"}
 
 
 @twilio_bp.route("/voice/recording", methods=["POST"])

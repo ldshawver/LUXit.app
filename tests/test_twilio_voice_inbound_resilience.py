@@ -106,6 +106,38 @@ def test_voice_inbound_after_hours_returns_voicemail_twiml(voice_app, monkeypatc
     assert "InFailedSqlTransaction" not in body
 
 
+def test_voicemail_record_has_a_terminal_action_and_does_not_reloop_no_answer(voice_app, monkeypatch):
+    # Staging smoke 2026-08-30: <Record> had no `action`, so Twilio re-requested
+    # /twilio/voice/no-answer after the recording -> greeting looped, only a 2s
+    # fragment captured. The <Record> must point its action at a terminal
+    # handler instead.
+    app, client, company, forward_line, _ = voice_app
+    import twilio_sms
+    monkeypatch.setattr(twilio_sms, "_is_business_hours", lambda *a, **kw: True)
+    _seed_call_log(app, company.id, forward_line.id, "TEST_VM_NO_RELOOP_001")
+
+    body = _post_no_answer(client, "+19165989519", "TEST_VM_NO_RELOOP_001").get_data(as_text=True)
+    assert '<Record' in body
+    assert 'action="/twilio/voice/recording-complete"' in body
+    assert 'method="POST"' in body
+    assert 'recordingStatusCallback="/twilio/voice/recording"' in body
+    # the action target must NOT be the no-answer URL (that is the re-loop)
+    assert 'action="/twilio/voice/no-answer' not in body
+
+
+def test_recording_complete_is_a_clean_terminal_hangup(voice_app):
+    _, client, *_ = voice_app
+    resp = client.post("/twilio/voice/recording-complete", data={
+        "CallSid": "TEST_RC_DONE", "RecordingDuration": "7",
+    })
+    body = resp.get_data(as_text=True)
+    assert resp.status_code == 200
+    assert resp.content_type.startswith("text/xml")
+    assert "<Hangup/>" in body
+    assert "<Record" not in body          # never re-prompts
+    assert "voice/no-answer" not in body  # never re-enters the loop
+
+
 def test_voice_inbound_exception_rolls_back_and_returns_safe_twiml(voice_app, monkeypatch):
     _, client, *_ = voice_app
     import twilio_sms
