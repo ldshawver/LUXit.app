@@ -1018,9 +1018,11 @@ def api_segment_audience_preview(sid):
     """
     from types import SimpleNamespace
     from services.contact_audience import resolve_sms_campaign_recipients
+    from services.sms_consent_purpose import normalize_campaign_purpose
     s = _segment_or_404(sid)
+    purpose = normalize_campaign_purpose(request.args.get("purpose"))
     probe = SimpleNamespace(company_id=s.company_id, segment=None, id=None,
-                            audience_filter={"selected_tag_ids": [s.id]})
+                            audience_filter={"selected_tag_ids": [s.id], "campaign_purpose": purpose})
     try:
         counts = resolve_sms_campaign_recipients(probe)["counts"]
     except ValueError as exc:
@@ -1029,16 +1031,26 @@ def api_segment_audience_preview(sid):
         return jsonify({"success": False, "error": str(exc)}), 422
     return jsonify({
         "success": True,
+        "selected_campaign_purpose": counts["campaign_purpose"],
+        "total_customer_segment": counts["matching_contacts"],
         "segment_members": counts["matching_contacts"],
         "unique_valid_phones": counts["unique_phone_numbers"],
         "duplicate_phone_exclusions": counts["duplicate_phone_numbers"],
+        "invalid_or_missing_phone": counts["missing_phone_numbers"] + counts["invalid_phone_numbers"],
         "stop_suppressed": counts["opted_out_contacts"] + counts["archived_or_suppressed"],
         "no_affirmative_consent": counts["missing_sms_consent"],
-        "invalid_or_missing_phone": counts["missing_phone_numbers"] + counts["invalid_phone_numbers"],
+        # Four-bucket purpose view (unique valid phones per purpose; STOP/opt-out already excluded).
+        "conversational_followup_eligible": counts["conversational_eligible"],
+        "transactional_informational_eligible": counts["transactional_eligible"],
+        "promotional_marketing_eligible": counts["promotional_eligible"],
+        # Who actually receives THIS campaign, given the selected purpose.
         "final_sms_eligible": counts["eligible_recipients"],
         "membership_is_not_sms_consent": True,
         "note": ("Segment membership is a customer/business classification, not SMS "
-                 "marketing consent. Only affirmatively opted-in contacts are SMS-eligible."),
+                 "consent. Eligibility depends on the campaign purpose: promotional "
+                 "requires an affirmative marketing opt-in; conversational/transactional "
+                 "rely on verifiable prior inbound-SMS evidence. STOP/suppression "
+                 "overrides every purpose."),
     })
 
 
