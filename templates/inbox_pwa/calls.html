@@ -1053,7 +1053,7 @@ async function ensureMicReady() {
 async function readVoiceToken() {
   const key = localStorage.getItem('luxitPwaDeviceKey') || '';
   const url = `/api/phone/voice-token${key ? `?device_key=${encodeURIComponent(key)}` : ''}`;
-  const response = await fetch(url, {credentials: 'same-origin', headers: {'Accept': 'application/json', 'X-PWA-Device-Key': key}});
+  const response = await fetch(url, {cache: 'no-store', credentials: 'same-origin', headers: {'Accept': 'application/json', 'X-PWA-Device-Key': key}});
   const type = response.headers.get('content-type') || '';
   if (!type.includes('application/json')) throw Object.assign(new Error(`Voice token endpoint returned ${response.status} ${type || 'non-JSON response'}.`), {voiceCode: 'TOKEN_ENDPOINT_FAILED'});
   const body = await response.json();
@@ -1275,6 +1275,38 @@ window.addEventListener('load', () => {
 });
 window.addEventListener('pagehide', cleanupVoice);
 window.addEventListener('beforeunload', cleanupVoice);   // best-effort; the browser auto-releases the Web Lock on context loss regardless
+
+/* Ready must ALWAYS reflect the live Twilio Device lifecycle — never a prior
+   session. A page restored from the back/forward cache keeps its last-painted
+   DOM ("Ready — …") and JS heap, but pagehide already tore the Device down and
+   released the Web Lock. So on restore, re-derive the UI from live state and,
+   for a genuine bfcache restore, re-run the full acquire→token→Device→register
+   lifecycle once (initVoice is single-flight — one token mint, never a loop). */
+function voiceIsLive() {
+  return coord.isOwner && voice.registered && !!voice.device
+      && (voice.device.state ? voice.device.state === 'registered' : voice.deviceState === 'registered');
+}
+function resyncVoiceUi(reinit) {
+  if (voice.activeCall || voiceIsLive()) return;
+  const wasOwner = coord.isOwner;
+  teardownDevice();                       // retire any stale Device object (no-op if already gone)
+  coord._rendered = null;                 // force renderVoiceRole to repaint
+  setPhase('idle');
+  setEnableState({ disabled: false, label: 'Enable Wi-Fi Calling' });
+  state(coord.supported
+    ? 'Disabled — enable Wi-Fi Calling to register this browser.'
+    : 'Wi-Fi Calling cannot be safely enabled in this browser.',
+    coord.supported ? '' : 'error');
+  if (DIALER_MODE && coord.supported) {
+    acquireVoiceOwnership();
+    coordPost('owner-query');
+    if (reinit && wasOwner) { enableWifiCalling(); return; }
+  }
+  renderVoiceRole();
+}
+window.addEventListener('pageshow', (e) => { if (e.persisted) resyncVoiceUi(true); });
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') resyncVoiceUi(false); });
+
 if (DIALER_MODE) { acquireVoiceOwnership(); coordPost('owner-query'); }
 
 if (DIALER_MODE) {

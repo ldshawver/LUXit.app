@@ -40,6 +40,7 @@ CALLS = ROOT / "templates" / "inbox_pwa" / "calls.html"
 INBOX_PWA = ROOT / "inbox_pwa.py"
 TWILIO_SMS = ROOT / "twilio_sms.py"
 PHONE_IDENTITY = ROOT / "services" / "phone_identity.py"
+SW_JS = ROOT / "static" / "sw.js"
 
 
 @pytest.fixture(scope="module")
@@ -202,6 +203,124 @@ def test_initvoice_single_flight_and_device_teardown(html):
     assert "removeAllListeners" in td and "destroy" in td and "voice.initPromise = null;" in td
     assert html.count("new Device(") == 1
     assert html.count("voice.device.register()") == 1
+
+
+# ------------------------------------------------------------------------- #
+# 11b. Ready is derived only from the LIVE Twilio Device lifecycle.        #
+#      Staging (2026-08-30): a bfcache-restored /app/phone painted a stale #
+#      "Ready — +1830…" with no Device registration and no token mint.     #
+# ------------------------------------------------------------------------- #
+
+def _resync(html):
+    m = re.search(r"function voiceIsLive\(\) \{.*?\ndocument\.addEventListener\('visibilitychange'.*?\);\n", html, re.S)
+    assert m, "bfcache resync block not found"
+    return m.group(0)
+
+
+def test_ready_string_only_emitted_from_the_registered_event(html):
+    # The "Ready — <number>" text exists in exactly one place: the Twilio
+    # Device 'registered' handler. Nothing restores it from a prior session.
+    assert html.count("Ready — ${body.calling_number}") == 1
+    registered_cb = re.search(
+        r"voice\.device\.on\('registered', \(\) => \{(.*?)\n      \}\);", html, re.S
+    ).group(1)
+    assert "state(`Ready — ${body.calling_number}`, 'ok')" in registered_cb
+    assert "voice.registered = true;" in registered_cb
+    assert "voice.deviceState = 'registered';" in registered_cb
+    # no cached/persisted "Ready" string, and the <body> is not server-rendered ready
+    assert "setItem('luxit-voice-ready" not in html
+    assert 'data-phase="ready"' not in re.search(r"<body[^>]*>", html).group(0)
+
+
+def test_stale_restored_page_cannot_show_ready_before_device_registered(html):
+    r = _resync(html)
+    # bfcache restore + every return-to-visible re-derives from live state
+    assert "window.addEventListener('pageshow', (e) => { if (e.persisted) resyncVoiceUi(true); });" in r
+    assert "document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') resyncVoiceUi(false); });" in r
+    # "live" means: we own the lock AND our Device really is registered now
+    assert "coord.isOwner && voice.registered && !!voice.device" in r
+    assert "voice.device.state === 'registered'" in r
+    # when not live: retire the stale Device and drop out of the ready phase
+    assert "if (voice.activeCall || voiceIsLive()) return;" in r
+    assert "teardownDevice();" in r
+    assert "setPhase('idle');" in r
+    assert "setEnableState({ disabled: false, label: 'Enable Wi-Fi Calling' });" in r
+
+
+def test_reload_requires_a_fresh_registration_before_ready(html):
+    # A genuine bfcache restore re-runs the full lifecycle via enableWifiCalling
+    # (-> initVoice -> acquire lock -> token -> new Device -> register).
+    r = _resync(html)
+    assert "if (reinit && wasOwner) { enableWifiCalling(); return; }" in r
+    assert "acquireVoiceOwnership();" in r and "coordPost('owner-query');" in r
+    # a plain fresh navigation never auto-shows ready either: initVoice is only
+    # reached through the Enable button / placeWifiCall, never on load.
+    assert "if (DIALER_MODE) { acquireVoiceOwnership(); coordPost('owner-query'); }" in html
+    assert re.search(r"DOMContentLoaded[^\n]*initVoice", html) is None
+    assert "window.addEventListener('load', () => {\n  loadCallerIds();" in html  # load handler does NOT call initVoice
+
+
+def test_passive_second_tab_cannot_display_ready(html):
+    r = _resync(html)
+    # resync on a non-owner tab only re-inits when it *was* the owner
+    assert "if (reinit && wasOwner)" in r
+    render = re.search(r"function renderVoiceRole\(\) \{(.*?)\n\}", html, re.S).group(1)
+    # the passive branch never prints "Ready" and disables the enable button
+    assert "Ready —" not in render.split("if (coord.isOwner)")[0]
+    assert "Wi-Fi Calling is active in another LUXit window." in render
+    assert "setEnableState({ disabled: true, label: 'Active in another window' });" in render
+
+
+def test_one_lifecycle_mints_exactly_one_token_and_never_loops(html):
+    body = re.search(r"async function initVoice\(\) \{(.*?)\n  return voice\.initPromise;\n\}", html, re.S).group(1)
+    # single-flight + already-registered short-circuit => one readVoiceToken per lifecycle
+    assert "if (voice.initPromise) return voice.initPromise;" in body
+    assert "if (voice.registered && voice.device && voice.deviceState === 'registered') return voice.device;" in body
+    # exactly one token mint on the registration path (the second readVoiceToken
+    # is the Twilio-driven 'tokenWillExpire' refresh, not part of this lifecycle)
+    assert body.split("'tokenWillExpire'")[0].count("readVoiceToken()") == 1
+    assert html.count("await voice.device.register()") == 1
+    # resync re-init is gated to real bfcache restores (reinit && wasOwner);
+    # visibilitychange passes reinit=false, so tab-focus churn cannot mint tokens
+    r = _resync(html)
+    assert "visibilitychange', () => { if (document.visibilityState === 'visible') resyncVoiceUi(false); }" in r
+    # no timers/polling re-driving registration
+    assert "setInterval" not in r
+    # token fetch bypasses HTTP/SW cache so a reload can't replay a dead token
+    assert "await fetch(url, {cache: 'no-store', credentials: 'same-origin'" in html
+
+
+def test_registration_failure_cannot_leave_ready_visible(html):
+    # Device 'error' routes to voiceError() -> phase 'error', message shown.
+    err_line = re.search(r"voice\.device\.on\('error',.*", html).group(0)
+    assert "voiceError('TWILIO_REGISTRATION_FAILED'" in err_line
+    voice_error = re.search(r"function voiceError\(code, message, detail\) \{(.*?)\n\}", html, re.S).group(1)
+    assert "document.body.dataset.phase = 'error';" in voice_error
+    assert "state(safeMessage, 'error');" in voice_error
+    # Device 'unregistered' clears registration and drops out of the ready phase.
+    unreg_line = re.search(r"voice\.device\.on\('unregistered',.*", html).group(0)
+    assert "voice.registered = false;" in unreg_line
+    assert "voice.deviceState = 'none';" in unreg_line
+    assert "setPhase('idle');" in unreg_line
+    # initVoice's own catch clears deviceState so voiceIsLive() can't be true
+    body = re.search(r"async function initVoice\(\) \{(.*?)\n  return voice\.initPromise;\n\}", html, re.S).group(1)
+    assert "voice.deviceState = 'none';" in body
+    # and voiceIsLive() requires a Device that is *currently* 'registered'
+    assert "voice.device.state === 'registered' : voice.deviceState === 'registered'" in _resync(html)
+
+
+def test_service_worker_never_serves_a_cached_voice_page_or_token():
+    sw = SW_JS.read_text()
+    guard = re.search(r"if \(url\.pathname === '/app/phone'.*?\n    return;\n  \}", sw, re.S)
+    assert guard, "sw.js voice-path network-only guard missing"
+    g = guard.group(0)
+    assert "'/app/dial-pad'" in g and "'/api/phone/voice-token'" in g
+    assert "e.respondWith(fetch(e.request));" in g
+    # and the guard runs before the generic /app/ + /api/ cache-fallback branch
+    assert sw.index(g) < sw.index("caches.match(e.request).then(cached => cached || new Response('{\"error\":\"offline\"}'")
+    # /app/phone is not pre-cached into the app shell
+    shell = re.search(r"const APP_SHELL = \[(.*?)\];", sw, re.S).group(1)
+    assert "/app/phone" not in shell and "/app/dial-pad" not in shell
 
 
 # ------------------------------------------------------------------------- #

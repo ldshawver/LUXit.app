@@ -100,6 +100,13 @@ async function storePushDebug(payload, options) {
 /* Network-first for API/app shell calls, cache-first for versioned static assets */
 self.addEventListener('fetch', e => {
   const url = new URL(e.request.url);
+  // The Voice dialer pages and the voice token must ALWAYS come from the
+  // network — a cached copy could paint a false "Ready" with no live Twilio
+  // Device registration. Never serve these from cache, even offline.
+  if (url.pathname === '/app/phone' || url.pathname === '/app/dial-pad' || url.pathname === '/api/phone/voice-token') {
+    e.respondWith(fetch(e.request));
+    return;
+  }
   if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/app/')) {
     e.respondWith(fetch(e.request).catch(() => caches.match(e.request).then(cached => cached || new Response('{"error":"offline"}', {
       headers: {'Content-Type': 'application/json'}
