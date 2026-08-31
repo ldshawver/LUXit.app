@@ -51,6 +51,20 @@ class UserCompanyAccess(db.Model):
     assigned_number           = db.Column(db.String(20), nullable=True)
     number_type               = db.Column(db.String(20), default="shared")
 
+    # ── Phone Availability (shared-line real-time participation) ────────────
+    # 'available' | 'away'. AWAY pauses ringing / incoming-call UI / phone push
+    # + badges for this user on this tenant's shared lines. It is NOT an account
+    # disable: it never touches is_active, role, membership, SMS consent, or the
+    # business number, and never affects other users on the line.
+    phone_availability = db.Column(
+        db.String(16), nullable=False, default="available", server_default="available"
+    )
+    phone_availability_changed_at = db.Column(db.DateTime, nullable=True)
+    phone_availability_changed_by_user_id = db.Column(
+        db.Integer, db.ForeignKey("user.id"), nullable=True
+    )
+    phone_availability_source = db.Column(db.String(16), nullable=True)  # 'user' | 'admin'
+
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(
         db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow

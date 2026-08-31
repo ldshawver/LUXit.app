@@ -898,6 +898,76 @@ def api_pwa_favorite_detail(favorite_id):
 
 # ── API: accessible phone numbers ───────────────────────────────────────────
 
+@inbox_pwa_bp.route("/api/phone/availability", methods=["GET", "PUT"])
+def api_phone_availability():
+    """Get / set the current user's Phone Availability for their tenant.
+    AWAY pauses ringing / call UI / phone push+badges -- it is NOT account
+    disable and does not affect app access, role, membership, or consent."""
+    user = _require_auth()
+    company = _require_company(user)
+    from services.phone_availability import get_availability, set_availability, AvailabilityError
+    if request.method == "GET":
+        return jsonify({"success": True, **get_availability(user.id, company.id)})
+    data = request.get_json(silent=True) or {}
+    try:
+        result = set_availability(user.id, company.id, data.get("state"),
+                                  actor_user_id=user.id, source="user")
+    except AvailabilityError as exc:
+        return jsonify({"success": False, "error": str(exc)}), 400
+    db.session.commit()
+    _broadcast_phone_availability(company.id, user.id, result)
+    return jsonify({"success": True, **result})
+
+
+@inbox_pwa_bp.route("/api/phone/availability/team")
+def api_phone_availability_team():
+    """Admin view of every user's Phone Availability for the tenant."""
+    user = _require_auth()
+    company = _require_company(user)
+    from services.phone_availability import can_admin_manage, team_availability
+    if not can_admin_manage(user, company.id):
+        return jsonify({"success": False, "error": "Not authorized"}), 403
+    return jsonify({"success": True, "team": team_availability(company.id)})
+
+
+@inbox_pwa_bp.route("/api/phone/availability/user/<int:target_user_id>", methods=["PUT"])
+def api_phone_availability_admin_set(target_user_id):
+    """Admin sets another user's Phone Availability. Same-tenant admins only;
+    the company scope is server-side (a cross-tenant admin cannot reach here)."""
+    user = _require_auth()
+    company = _require_company(user)
+    from services.phone_availability import (
+        can_admin_manage, set_availability, get_availability, AvailabilityError)
+    from models import UserCompanyAccess
+    if not can_admin_manage(user, company.id):
+        return jsonify({"success": False, "error": "Not authorized"}), 403
+    if not UserCompanyAccess.query.filter_by(user_id=target_user_id, company_id=company.id).first():
+        return jsonify({"success": False, "error": "User is not a member of this company"}), 404
+    data = request.get_json(silent=True) or {}
+    try:
+        result = set_availability(target_user_id, company.id, data.get("state"),
+                                  actor_user_id=user.id, source="admin")
+    except AvailabilityError as exc:
+        return jsonify({"success": False, "error": str(exc)}), 400
+    db.session.commit()
+    _broadcast_phone_availability(company.id, target_user_id, result)
+    return jsonify({"success": True, **result})
+
+
+def _broadcast_phone_availability(company_id, target_user_id, result):
+    """Notify the tenant's SSE listeners so the affected user's clients apply
+    the change promptly without polling."""
+    try:
+        _push_sse_event(company_id, "phone_availability", {
+            "user_id": target_user_id,
+            "state": result.get("state"),
+            "source": result.get("source"),
+            "changed_at": result.get("changed_at"),
+        })
+    except Exception:
+        logger.exception("phone availability SSE broadcast failed", extra={"company_id": company_id})
+
+
 @inbox_pwa_bp.route("/api/phone/numbers")
 def api_phone_numbers():
     user = _require_auth()
@@ -1503,6 +1573,16 @@ def api_phone_voice_token():
     company = _require_company(user)
     from models import PhoneNumberUserPermission, TwilioAccount, TwilioPhoneNumber
     from services.comms_permissions import accessible_phone_numbers
+    from services.phone_availability import is_available
+
+    # Phone Availability gate — an AWAY user must fail BEFORE a token is minted
+    # or a Twilio.Device is registered.
+    if not is_available(user.id, company.id):
+        logger.info("Voice token denied: user is Away", extra={"user_id": user.id, "company_id": company.id})
+        return jsonify({
+            "success": False, "code": "PHONE_AWAY",
+            "error": "You're Away. Phone calls and communication notifications are paused.",
+        }), 403
 
     allowed_numbers = accessible_phone_numbers(user, company.id)
     if not allowed_numbers:
@@ -3350,6 +3430,20 @@ def create_pwa_notification(company_id: int, *, event_type: str, title: str, bod
         icon=icon,
     )
     allowed_user_ids = [u.id for u in _authorized_notification_users(company_id, phone_number_id)]
+    # Phone Availability — an AWAY user still gets the persisted notification
+    # record (history / unread state is untouched) but no real-time push or
+    # device badge for shared-line communications events.
+    _COMMS_EVENTS = {
+        "incoming_call", "missed_call", "voicemail", "new_voicemail",
+        "incoming_sms", "new_message", "unread_message_reminder", "sms",
+    }
+    if event_type in _COMMS_EVENTS and allowed_user_ids:
+        try:
+            from services.phone_availability import available_user_ids
+            avail = available_user_ids(company_id)
+            allowed_user_ids = [uid for uid in allowed_user_ids if uid in avail]
+        except Exception:
+            logger.exception("phone availability push filter failed", extra={"company_id": company_id})
     send_pwa_push_notification(
         company_id,
         user_ids=allowed_user_ids,

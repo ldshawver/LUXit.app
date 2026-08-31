@@ -2248,41 +2248,61 @@ def _inbound_call_impl():
             logger.debug("PWA incoming call event failed: %s", exc)
         caller_id = ta.from_phone or to_number
         client_identities = []
+        approved_devices = []
         try:
             from models import PWADevice
             from services.phone_identity import pwa_voice_identity
-            for device in PWADevice.query.filter_by(
-                company_id=ta.company_id,
-                approved_status="approved",
-                lifecycle_status="active",
-            ).all():
-                if device.phone_number_id and pn and device.phone_number_id != pn.id:
-                    continue
-                client_identities.append(pwa_voice_identity(ta.company_id, device.user_id, device.device_key))
+            from services.phone_availability import available_user_ids
+            approved_devices = [
+                device for device in PWADevice.query.filter_by(
+                    company_id=ta.company_id,
+                    approved_status="approved",
+                    lifecycle_status="active",
+                ).all()
+                if not (device.phone_number_id and pn and device.phone_number_id != pn.id)
+            ]
+            # Only ring users whose Phone Availability is 'available'. An AWAY
+            # user's Device must not ring / receive the incoming call.
+            avail = available_user_ids(ta.company_id)
+            client_identities = [
+                pwa_voice_identity(ta.company_id, device.user_id, device.device_key)
+                for device in approved_devices
+                if device.user_id is None or device.user_id in avail
+            ]
         except Exception:
             logger.exception("Unable to resolve eligible PWA voice devices", extra={"company_id": ta.company_id})
         if not client_identities:
-            client_identities = [_pwa_voice_identity(ta.company_id)]
+            if approved_devices:
+                # Devices exist but every eligible user is AWAY -> do not ring
+                # anyone; fall through to the business voicemail flow.
+                logger.info("Voice inbound: all shared-line users away, routing to voicemail company_id=%s", ta.company_id)
+                twiml = _voicemail_twiml(after_hours=not in_hours)
+                _ring_pwa_twiml_done = True
+            else:
+                client_identities = [_pwa_voice_identity(ta.company_id)]
+        else:
+            _ring_pwa_twiml_done = False
         safe_from = html.escape(from_number or "", quote=True)
         safe_caller = html.escape(caller_name or from_number or "", quote=True)
         safe_caller_id = html.escape(caller_id or "", quote=True)
-        clients_twiml = "".join(
-            '    <Client>\n'
-            f'      <Identity>{identity}</Identity>\n'
-            f'      <Parameter name="call_log_id" value="{log.id if log else ""}"/>\n'
-            f'      <Parameter name="from_number" value="{safe_from}"/>\n'
-            f'      <Parameter name="caller_name" value="{safe_caller}"/>\n'
-            '    </Client>\n'
-            for identity in client_identities
-        )
-        twiml = (
-            '<?xml version="1.0" encoding="UTF-8"?>\n'
-            '<Response>\n'
-            f'  <Dial callerId="{safe_caller_id}" timeout="{timeout}" action="/twilio/voice/no-answer?to={html.escape(to_number or "", quote=True)}" method="POST"{record_attr}>\n'
-            f'{clients_twiml}'
-            '  </Dial>\n'
-            '</Response>'
-        )
+        if not locals().get("_ring_pwa_twiml_done"):
+            clients_twiml = "".join(
+                '    <Client>\n'
+                f'      <Identity>{identity}</Identity>\n'
+                f'      <Parameter name="call_log_id" value="{log.id if log else ""}"/>\n'
+                f'      <Parameter name="from_number" value="{safe_from}"/>\n'
+                f'      <Parameter name="caller_name" value="{safe_caller}"/>\n'
+                '    </Client>\n'
+                for identity in client_identities
+            )
+            twiml = (
+                '<?xml version="1.0" encoding="UTF-8"?>\n'
+                '<Response>\n'
+                f'  <Dial callerId="{safe_caller_id}" timeout="{timeout}" action="/twilio/voice/no-answer?to={html.escape(to_number or "", quote=True)}" method="POST"{record_attr}>\n'
+                f'{clients_twiml}'
+                '  </Dial>\n'
+                '</Response>'
+            )
     elif route == "forward" and forward_to:
         twiml = _dial_twiml(forward_to, fallback_to)
     elif route == "voicemail":

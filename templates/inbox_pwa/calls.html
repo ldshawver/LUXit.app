@@ -332,6 +332,17 @@
 
     <div class="dialer__meta">
       <label class="callerid-field">
+        <span>Phone Availability</span>
+        <select id="availabilitySelect" aria-label="Phone availability">
+          <option value="available">Available</option>
+          <option value="away">Away</option>
+        </select>
+      </label>
+      <div id="awayBanner" class="voice-state" role="status" hidden>
+        <strong>You're Away</strong> — Phone calls and communication notifications are paused.
+        <button class="wifi-btn" type="button" id="becomeAvailableBtn" onclick="setPhoneAvailability('available')">Become Available</button>
+      </div>
+      <label class="callerid-field">
         <span>Caller ID</span>
         <select id="callerId" aria-label="Company-owned caller ID"></select>
       </label>
@@ -381,6 +392,61 @@ let active = activeFromPath || __p.get('tab') || 'all';
 // (canonical routing in inbox_pwa.pwa_calls). In dialer mode the Recent Calls
 // list + tabs are hidden — call history stays under the Clock icon (/app/recents).
 const DIALER_MODE = /\/app\/(phone|dial-pad)(\/|$)/.test(window.location.pathname);
+
+/* ── Phone Availability ────────────────────────────────────────────────────
+   'available' | 'away' — a communications-availability state (NOT account
+   disable). AWAY must fail BEFORE any voice-token mint / Device.register(),
+   and must not be recoverable by bfcache/visibility/re-init. Server is
+   authoritative; the tenant SSE stream pushes admin changes. */
+const CURRENT_USER_ID = Number('{{ user.id | default(0) }}') || 0;
+const phoneAvailability = { state: 'available' };
+function isAway() { return phoneAvailability.state === 'away'; }
+
+async function setPhoneAvailability(next) {
+  try {
+    const res = await apiFetch('/api/phone/availability', {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ state: next }),
+    });
+    const body = await res.json().catch(() => ({}));
+    if (body && body.state) applyPhoneAvailability(body.state);
+    else state('Could not update Phone Availability.', 'error');
+  } catch (_) { state('Could not update Phone Availability.', 'error'); }
+}
+
+function applyPhoneAvailability(next) {
+  phoneAvailability.state = (next === 'away') ? 'away' : 'available';
+  const sel = document.getElementById('availabilitySelect');
+  if (sel) sel.value = phoneAvailability.state;
+  const banner = document.getElementById('awayBanner');
+  coord._rendered = null;
+  if (phoneAvailability.state === 'away') {
+    if (banner) banner.hidden = false;
+    voice.registered = false;
+    voice.deviceState = 'none';
+    voice.initPromise = null;
+    teardownDevice();
+    releaseVoiceOwnership();              // give up any Voice ownership / queued lock
+    setPhase('idle');
+    setEnableState({ disabled: true, label: 'Away — calling paused' });
+    state("You're Away. Phone calls and communication notifications are paused.");
+  } else {
+    if (banner) banner.hidden = true;
+    setEnableState({ disabled: false, label: 'Enable Wi-Fi Calling' });
+    if (document.body.dataset.phase === 'idle')
+      state('Disabled — enable Wi-Fi Calling to register this browser.');
+    if (DIALER_MODE && coord.supported) { acquireVoiceOwnership(); coordPost('owner-query'); }
+    renderVoiceRole();
+  }
+}
+
+async function loadPhoneAvailability() {
+  try {
+    const res = await apiFetch('/api/phone/availability');
+    const body = await res.json().catch(() => ({}));
+    if (body && body.state) applyPhoneAvailability(body.state);
+  } catch (_) {}
+}
 
 const els = {
   pageTitle: qs('pageTitle'),
@@ -481,6 +547,7 @@ function coordPost(type, extra) {
    true once our callback runs (we are owner), false if we abandon the queue.
    Idempotent — repeated calls return the same in-flight promise. */
 function acquireVoiceOwnership() {
+  if (isAway()) return Promise.resolve(false);   // AWAY never becomes a Voice owner
   if (coord.isOwner) return Promise.resolve(true);
   if (!coord.supported) { renderVoiceRole(); return Promise.resolve(false); }
   if (coord.ownershipPromise) return coord.ownershipPromise;
@@ -1074,6 +1141,10 @@ function voiceError(code, message, detail) {
 }
 
 async function initVoice() {
+  if (isAway()) {                        // AWAY fails before token mint / Device.register()
+    const err = Object.assign(new Error("You're Away. Phone calls are paused."), {voiceCode: 'PHONE_AWAY'});
+    throw err;
+  }
   if (voice.registered && voice.device && voice.deviceState === 'registered') return voice.device;
   if (voice.initPromise) return voice.initPromise;                 // single-flight within the owner
   if (!coord.supported) {
@@ -1166,9 +1237,10 @@ async function initVoice() {
   return voice.initPromise;
 }
 
-async function enableWifiCalling() { try { await initVoice(); } catch (_) {} }
+async function enableWifiCalling() { if (isAway()) { applyPhoneAvailability('away'); return; } try { await initVoice(); } catch (_) {} }
 
 async function placeWifiCall() {
+  if (isAway()) { state("You're Away. Set yourself Available to make calls.", 'error'); return; }
   const destination = rawNumber().trim();
   if (!destination) { state('Enter a phone number.', 'error'); return; }
   if (!els.callerId.value) { state('Select an authorized company caller ID.', 'error'); return; }
@@ -1197,7 +1269,14 @@ function connectInboxStream() {
   if (!window.EventSource) return;
   voice.eventSource = new EventSource('/api/inbox/stream');
   voice.eventSource.onmessage = (event) => {
-    try { const data = JSON.parse(event.data); if (data.type === 'incoming_call') showIncoming(data); }
+    try {
+      const data = JSON.parse(event.data);
+      if (data.type === 'phone_availability') {
+        if (Number(data.user_id) === CURRENT_USER_ID) applyPhoneAvailability(data.state);
+        return;
+      }
+      if (data.type === 'incoming_call' && !isAway()) showIncoming(data);
+    }
     catch (error) { console.warn('Invalid inbox stream event', error); }
   };
   voice.eventSource.onerror = () => { if (!voice.registered) state('Notification stream reconnecting…'); };
@@ -1288,6 +1367,7 @@ function voiceIsLive() {
 }
 function resyncVoiceUi(reinit) {
   if (voice.activeCall || voiceIsLive()) return;
+  if (isAway()) { applyPhoneAvailability('away'); return; }   // bfcache/visibility must not re-register while Away
   const wasOwner = coord.isOwner;
   teardownDevice();                       // retire any stale Device object (no-op if already gone)
   coord._rendered = null;                 // force renderVoiceRole to repaint
@@ -1306,6 +1386,9 @@ function resyncVoiceUi(reinit) {
 }
 window.addEventListener('pageshow', (e) => { if (e.persisted) resyncVoiceUi(true); });
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') resyncVoiceUi(false); });
+
+document.getElementById('availabilitySelect')?.addEventListener('change', (e) => setPhoneAvailability(e.target.value));
+loadPhoneAvailability();   // if Away, applyPhoneAvailability tears Voice down; acquireVoiceOwnership() itself is a no-op while Away
 
 if (DIALER_MODE) { acquireVoiceOwnership(); coordPost('owner-query'); }
 
