@@ -3401,6 +3401,16 @@ def _fire_push_notification(company_id: int, conv, message_body: str, *, silent:
     )
 
     allowed_user_ids = [u.id for u in _authorized_notification_users(company_id, phone_number_id)]
+    # Phone Availability — an AWAY user still gets the persisted notification
+    # record above (history / unread state untouched) but no real-time push or
+    # device badge for an inbound shared-line SMS. Mirrors create_pwa_notification.
+    if allowed_user_ids:
+        try:
+            from services.phone_availability import available_user_ids
+            avail = available_user_ids(company_id)
+            allowed_user_ids = [uid for uid in allowed_user_ids if uid in avail]
+        except Exception:
+            logger.exception("phone availability push filter failed", extra={"company_id": company_id})
     in_business = _conversation_in_business_hours(conv)
     silent = False if silent is None else bool(silent)
     send_pwa_push_notification(
