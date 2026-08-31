@@ -1661,6 +1661,13 @@ def inbound_sms():
                 mark_opt_out(ta.company_id, from_number, conv)
             except Exception as opt_exc:
                 logger.warning("Campaign opt-out sync failed: %s", opt_exc)
+            try:
+                # STOP precedence: cancel any pending promotional opt-in request
+                # so a later stale YES can never revive it.
+                from services.promotional_optin import cancel_pending_for_phone
+                cancel_pending_for_phone(ta.company_id, from_number, reason="stop")
+            except Exception as promo_exc:
+                logger.warning("Promotional solicitation STOP-cancel failed: %s", promo_exc)
             reply_tuple = _twiml_message(_STOP_REPLY)
             completed = _set_inbound_processing_state(msg_record_id, "completed")
             completed.response_body = reply_tuple[0]
@@ -1668,10 +1675,61 @@ def inbound_sms():
             logger.info("Opt-out keyword received: company_id=%s phone_last4=%s", ta.company_id, from_number[-4:])
             return reply_tuple
 
+        _kw_contact = db.session.get(Contact, conv.contact_id) if conv.contact_id else None
         active_identity_confirmation = bool(
-            conv.contact_id and getattr(db.session.get(Contact, conv.contact_id), "identity_status", None) == "awaiting_confirmation"
+            getattr(_kw_contact, "identity_status", None) == "awaiting_confirmation"
         )
-        if kw in _START_KEYWORDS and not (kw == "yes" and active_identity_confirmation):
+
+        # ── 4a. Contextual promotional opt-in ────────────────────────────────
+        # A YES only creates promotional consent when it answers a pending,
+        # operator-approved promotional opt-in solicitation for this tenant /
+        # canonical phone / business number. Idempotent on the inbound SID.
+        # A YES with no pending solicitation is NOT handled here -- it falls
+        # through to normal keyword / identity / auto-reply processing.
+        promo_yes_kw = None
+        if not active_identity_confirmation:
+            try:
+                from services.promotional_optin import normalize_yes_keyword
+                promo_yes_kw = normalize_yes_keyword(body)
+            except Exception:
+                promo_yes_kw = None
+        if promo_yes_kw:
+            try:
+                from services.promotional_optin import record_contextual_yes
+                promo_outcome = record_contextual_yes(
+                    ta.company_id, from_number, to_number, twilio_sid,
+                    keyword=promo_yes_kw, received_at=datetime.utcnow(),
+                )
+            except Exception as promo_exc:
+                db.session.rollback()
+                logger.warning("Contextual promotional YES failed: %s", promo_exc)
+                promo_outcome = {"matched": False}
+            if promo_outcome.get("matched"):
+                reply_body = promo_outcome.get("reply")
+                reply_tuple = _twiml_message(reply_body) if reply_body else ('<Response></Response>', 200, {"Content-Type": "text/xml"})
+                completed = _set_inbound_processing_state(msg_record_id, "completed")
+                completed.response_body = reply_tuple[0]
+                db.session.commit()
+                logger.info(
+                    "Promotional opt-in YES: company_id=%s granted=%s duplicate=%s suppressed=%s",
+                    ta.company_id, promo_outcome.get("granted"),
+                    promo_outcome.get("duplicate"), promo_outcome.get("suppressed"),
+                )
+                return reply_tuple
+
+        # A bare, non-contextual "yes" must not become a promotional opt-in.
+        # It still works as a re-subscribe keyword for a contact who is
+        # currently opted out (matches the CTIA START/YES/UNSTOP resume
+        # contract); for anyone else it is treated as an ordinary inbound
+        # message below.
+        _yes_is_resubscribe = (
+            kw == "yes" and (
+                conv.is_opted_out
+                or bool(getattr(_kw_contact, "sms_opted_out", False))
+                or getattr(_kw_contact, "sms_opt_out_at", None) is not None
+            )
+        )
+        if kw in _START_KEYWORDS and (kw != "yes" or _yes_is_resubscribe) and not (kw == "yes" and active_identity_confirmation):
             conv.is_opted_out  = False
             conv.sms_opt_in_at = datetime.utcnow()
             conv.sms_opt_out_at = None

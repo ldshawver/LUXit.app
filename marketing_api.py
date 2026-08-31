@@ -1466,3 +1466,95 @@ def api_google_contacts_callback_compat():
     from flask import redirect, url_for
     qs = request.query_string.decode()
     return redirect((url_for("twilio.google_contacts_callback") if "twilio.google_contacts_callback" in current_app.view_functions else "/twilio/google-contacts/callback") + (f"?{qs}" if qs else ""))
+
+
+# ---------------------------------------------------------------------------
+# Promotional opt-in workflow (operator surface)
+# ---------------------------------------------------------------------------
+
+@segment_api_bp.get("/promotional-optin/overview")
+@login_required
+def api_promotional_optin_overview():
+    """Aggregate counts for the operator: My Order Customers, Already
+    Promotional, Needs Promotional Opt-In, STOP/Suppressed, No Conversational
+    Evidence. Tenant-scoped, read-only, no consent mutation.
+    """
+    from services.promotional_optin import classify_audience, SUGGESTED_SOLICITATION_COPY
+    cid = tenant_id()
+    if not cid:
+        return _json_error("tenant/company is required", 400)
+    sid = request.args.get("segment_id", type=int)
+    if sid and not Segment.query.filter_by(id=sid, company_id=cid).first():
+        return _json_error("segment not found", 404)
+    result = classify_audience(cid, sid)
+    return jsonify({
+        "success": True,
+        "segment_id": sid,
+        "counts": result["counts"],
+        "suggested_solicitation_copy": SUGGESTED_SOLICITATION_COPY,
+        "note": ("'Needs Promotional Opt-In' is a derived status, not consent. "
+                 "Nobody here is contacted automatically; a YES only grants "
+                 "promotional consent when it answers a pending, operator-"
+                 "approved solicitation."),
+    })
+
+
+@segment_api_bp.get("/promotional-optin/audience")
+@login_required
+def api_promotional_optin_audience():
+    """The Needs Promotional Opt-In audience for the operator's own tenant."""
+    from services.promotional_optin import needs_promotional_optin
+    cid = tenant_id()
+    if not cid:
+        return _json_error("tenant/company is required", 400)
+    err = _require_admin(cid)
+    if err:
+        return err
+    sid = request.args.get("segment_id", type=int)
+    if sid and not Segment.query.filter_by(id=sid, company_id=cid).first():
+        return _json_error("segment not found", 404)
+    audience = needs_promotional_optin(cid, sid)
+    return jsonify({
+        "success": True, "segment_id": sid,
+        "count": len(audience), "audience": audience,
+        "is_status_not_consent": True,
+    })
+
+
+@segment_api_bp.post("/promotional-optin/solicitations")
+@login_required
+def api_promotional_optin_create_solicitation():
+    """Record an operator-approved pending solicitation for one contact.
+    Does NOT send an SMS and does NOT change consent. Idempotent per contact.
+    """
+    from services.promotional_optin import create_solicitation
+    cid = tenant_id()
+    if not cid:
+        return _json_error("tenant/company is required", 400)
+    err = _require_admin(cid)
+    if err:
+        return err
+    data = request.get_json(silent=True) or {}
+    contact_id = data.get("contact_id")
+    if not contact_id:
+        return _json_error("contact_id is required", 400)
+    result = create_solicitation(
+        cid, int(contact_id),
+        business_phone_number=data.get("business_phone_number"),
+        actor_user_id=getattr(current_user, "id", None),
+        body=data.get("body"),
+        solicitation_message_sid=data.get("solicitation_message_sid"),
+    )
+    if not result.get("ok"):
+        return _json_error(result.get("error", "could not create solicitation"), 422)
+    db.session.commit()
+    row = result["solicitation"]
+    return jsonify({
+        "success": True, "created": result.get("created", False),
+        "solicitation": {
+            "id": row.id, "contact_id": row.contact_id, "status": row.status,
+            "canonical_phone": row.canonical_phone,
+            "business_phone_number": row.business_phone_number,
+            "solicited_at": row.solicited_at.isoformat() if row.solicited_at else None,
+        },
+    })

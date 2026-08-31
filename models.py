@@ -1574,6 +1574,68 @@ class MarketingAuditLog(db.Model):
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
+class PromotionalOptInSolicitation(db.Model):
+    """An operator-approved request asking a customer to opt in to promotional
+    SMS. Its presence in state ``pending`` is the *context* that lets a later
+    inbound ``YES`` from the same canonical phone / business number create
+    promotional consent. It is never promotional consent by itself, and its
+    creation never mutates the contact's consent columns.
+    """
+    __tablename__ = "promotional_optin_solicitation"
+
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=False, index=True)
+    contact_id = db.Column(db.Integer, db.ForeignKey("contact.id"), nullable=False, index=True)
+    canonical_phone = db.Column(db.String(32), nullable=False, index=True)
+    business_phone_number = db.Column(db.String(32), nullable=True, index=True)
+    # pending | consented | stopped | cancelled | superseded | expired
+    status = db.Column(db.String(20), nullable=False, default="pending", index=True)
+    solicitation_body = db.Column(db.Text, nullable=True)
+    solicitation_message_sid = db.Column(db.String(64), nullable=True)
+    solicited_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    solicited_by_user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True)
+    consent_message_sid = db.Column(db.String(64), nullable=True)
+    consented_at = db.Column(db.DateTime, nullable=True)
+    closed_at = db.Column(db.DateTime, nullable=True)
+    closed_reason = db.Column(db.String(60), nullable=True)
+    source = db.Column(db.String(40), nullable=False, default="operator")
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    __table_args__ = (
+        db.Index(
+            "uq_promo_solicitation_one_pending",
+            "company_id", "contact_id",
+            unique=True,
+            postgresql_where=db.text("status = 'pending'"),
+            sqlite_where=db.text("status = 'pending'"),
+        ),
+    )
+
+
+class PromotionalConsentEvent(db.Model):
+    """Immutable provenance record: a contextual inbound ``YES`` that granted
+    promotional SMS consent. Idempotent on the inbound Twilio MessageSid — a
+    duplicate webhook delivery can never create a second event.
+    """
+    __tablename__ = "promotional_consent_event"
+
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=False, index=True)
+    contact_id = db.Column(db.Integer, db.ForeignKey("contact.id"), nullable=False, index=True)
+    solicitation_id = db.Column(db.Integer, db.ForeignKey("promotional_optin_solicitation.id"), nullable=True, index=True)
+    canonical_phone = db.Column(db.String(32), nullable=False)
+    business_phone_number = db.Column(db.String(32), nullable=True)
+    inbound_message_sid = db.Column(db.String(64), nullable=False, unique=True)
+    solicitation_message_sid = db.Column(db.String(64), nullable=True)
+    solicited_at = db.Column(db.DateTime, nullable=True)
+    consent_purpose = db.Column(db.String(20), nullable=False, default="promotional")
+    consent_source = db.Column(db.String(40), nullable=False, default="sms_reply_yes")
+    consent_keyword = db.Column(db.String(20), nullable=True)
+    consented_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
 class WebForm(db.Model):
     __tablename__ = "web_form"
 
