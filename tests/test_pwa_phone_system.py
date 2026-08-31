@@ -1621,6 +1621,53 @@ def test_comms_device_controls_are_tenant_scoped_and_disable_subscriptions(clien
         assert PushSubscription.query.filter_by(device_key="own-device", is_active=True).count() == 0
 
 
+def test_comms_device_lifecycle_rename_remove_and_safe_failures(client, app, world):
+    """Item 3 device-lifecycle matrix: rename, remove, cross-tenant denial,
+    unknown action, and malformed / nonexistent id safe failure."""
+    from models import MarketingAuditLog
+    with app.app_context():
+        db.session.get(User, world["alice"]).is_admin = True
+        dev = PWADevice(company_id=world["co_a"], user_id=world["alice"], device_key="lifecycle-dev", device_name="Old Name", approved_status="approved", lifecycle_status="active", push_enabled=True)
+        foreign = PWADevice(company_id=world["co_b"], user_id=world["bob"], device_key="foreign-lifecycle", device_name="Foreign", approved_status="approved")
+        db.session.add_all([dev, foreign]); db.session.commit()
+        dev_id, foreign_id = dev.id, foreign.id
+
+    login(client, world["alice"])
+    # rename
+    assert client.post(f"/twilio/comms/devices/{dev_id}", data={"action": "rename", "device_name": "New Name"}).status_code == 302
+    with app.app_context():
+        assert db.session.get(PWADevice, dev_id).device_name == "New Name"
+    # cross-tenant target -> 404, not mutated
+    assert client.post(f"/twilio/comms/devices/{foreign_id}", data={"action": "rename", "device_name": "X"}).status_code == 404
+    with app.app_context():
+        assert db.session.get(PWADevice, foreign_id).device_name == "Foreign"
+    # nonexistent id -> 404 safe failure
+    assert client.post("/twilio/comms/devices/98765432", data={"action": "disable"}).status_code == 404
+    # unknown action -> 400
+    assert client.post(f"/twilio/comms/devices/{dev_id}", data={"action": "explode"}).status_code == 400
+    # remove
+    assert client.post(f"/twilio/comms/devices/{dev_id}", data={"action": "remove"}).status_code == 302
+    with app.app_context():
+        assert db.session.get(PWADevice, dev_id) is None
+        assert MarketingAuditLog.query.filter_by(company_id=world["co_a"], entity_type="pwa_device", action="pwa_device_remove").count() == 1
+
+
+def test_comms_device_action_denied_for_non_admin_user(client, app, world):
+    """An ordinary tenant member (no manage-users capability) cannot mutate a
+    PWA device."""
+    with app.app_context():
+        plain = User(username="phone_plain2", email="phone_plain2@test.com", password_hash="x", default_company_id=world["co_a"])
+        db.session.add(plain); db.session.flush()
+        db.session.add(UserCompanyAccess(user_id=plain.id, company_id=world["co_a"], role="viewer", is_default=True, is_active=True))
+        dev = PWADevice(company_id=world["co_a"], user_id=world["alice"], device_key="plain-dev", device_name="D", approved_status="approved")
+        db.session.add(dev); db.session.commit()
+        dev_id, plain_id = dev.id, plain.id
+    login(client, plain_id)
+    assert client.post(f"/twilio/comms/devices/{dev_id}", data={"action": "rename", "device_name": "Nope"}).status_code == 403
+    with app.app_context():
+        assert db.session.get(PWADevice, dev_id).device_name == "D"
+
+
 def test_resolve_sms_sender_and_send_sms_use_inbound_to_number_not_messaging_service(app, world, monkeypatch):
     import twilio_sms
     monkeypatch.setattr("services.license_service.has_feature", lambda *a, **k: True)
