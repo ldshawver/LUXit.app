@@ -332,14 +332,15 @@
 
     <div class="dialer__meta">
       <label class="callerid-field">
-        <span>Phone Availability</span>
-        <select id="availabilitySelect" aria-label="Phone availability">
+        <span>Communication Availability</span>
+        <select id="availabilitySelect" aria-label="Communication availability">
           <option value="available">Available</option>
           <option value="away">Away</option>
         </select>
       </label>
+      <p class="mic-status" id="availabilityHelp">Available: receive shared calls, messages and communication notifications. Away: pause shared calls, message notifications, sounds and badges. Your shared inbox history remains available when you return.</p>
       <div id="awayBanner" class="voice-state" role="status" hidden>
-        <strong>You're Away</strong> — Phone calls and communication notifications are paused.
+        <strong>You're Away</strong> — shared calls, messages and communication notifications are paused. Your inbox history is still available.
         <button class="wifi-btn" type="button" id="becomeAvailableBtn" onclick="setPhoneAvailability('available')">Become Available</button>
       </div>
       <label class="callerid-field">
@@ -410,8 +411,8 @@ async function setPhoneAvailability(next) {
     });
     const body = await res.json().catch(() => ({}));
     if (body && body.state) applyPhoneAvailability(body.state);
-    else state('Could not update Phone Availability.', 'error');
-  } catch (_) { state('Could not update Phone Availability.', 'error'); }
+    else state('Could not update Communication Availability.', 'error');
+  } catch (_) { state('Could not update Communication Availability.', 'error'); }
 }
 
 function applyPhoneAvailability(next) {

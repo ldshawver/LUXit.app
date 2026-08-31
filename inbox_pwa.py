@@ -187,10 +187,24 @@ def _refresh_call_contact_name(call):
 
 
 # ── SSE Event Bus ──────────────────────────────────────────────────────────────
-# Keyed by company_id → list of Queue objects (one per connected SSE client).
+# Keyed by company_id → list of (user_id, Queue) tuples (one per connected SSE
+# client). The user_id lets _push_sse_event suppress realtime *attention* events
+# (new message / incoming call / voicemail / reminder) for a user whose
+# Communication Availability is 'away' — see services/phone_availability.py.
 # Works with gunicorn gthread workers (--worker-class gthread --threads N).
 _sse_lock:      threading.Lock              = threading.Lock()
 _sse_listeners: dict[int, list]             = {}
+
+# Realtime events that constitute user-facing "attention" for a shared-line
+# communication. An AWAY user's SSE client receives NONE of these (no sound, no
+# toast, no badge bump, no conversation pop-up); every other event type
+# (connected / heartbeat / phone_availability / message_status) is always
+# delivered so state stays converged.
+_ATTENTION_SSE_EVENTS = {
+    "new_message", "incoming_sms", "sms",
+    "incoming_call", "missed_call", "voicemail", "new_voicemail",
+    "unread_message_reminder",
+}
 
 # ── Auth helpers ──────────────────────────────────────────────────────────────
 
@@ -900,9 +914,12 @@ def api_pwa_favorite_detail(favorite_id):
 
 @inbox_pwa_bp.route("/api/phone/availability", methods=["GET", "PUT"])
 def api_phone_availability():
-    """Get / set the current user's Phone Availability for their tenant.
-    AWAY pauses ringing / call UI / phone push+badges -- it is NOT account
-    disable and does not affect app access, role, membership, or consent."""
+    """Get / set the current user's Communication Availability for their tenant.
+    AWAY pauses live participation in shared calls AND shared SMS/chat — ringing
+    / call UI / Voice token, plus new-message push, badges, sounds and realtime
+    conversation attention. It is NOT account disable and does not affect app
+    access, role, membership, consent, or inbound persistence. Applies to all of
+    the user's devices."""
     user = _require_auth()
     company = _require_company(user)
     from services.phone_availability import get_availability, set_availability, AvailabilityError
@@ -919,15 +936,45 @@ def api_phone_availability():
     return jsonify({"success": True, **result})
 
 
-@inbox_pwa_bp.route("/api/phone/availability/team")
+@inbox_pwa_bp.route("/api/phone/availability/team", methods=["GET", "PUT"])
 def api_phone_availability_team():
-    """Admin view of every user's Phone Availability for the tenant."""
+    """GET  — admin view of every tenant member's Communication Availability.
+    PUT  — admin bulk 'Set All Available' / 'Set All Away' for the tenant.
+
+    Bulk 'away' is a tenant-wide live-communications pause, so it requires a
+    deliberate {"confirm": true} in the body (409 CONFIRM_REQUIRED otherwise);
+    inbound calls/messages keep arriving and persisting, they just do not nudge
+    anyone until a user returns Available. Same-tenant admins only; the company
+    scope is server-side so a cross-tenant admin can never reach another tenant.
+    """
     user = _require_auth()
     company = _require_company(user)
-    from services.phone_availability import can_admin_manage, team_availability
+    from services.phone_availability import (
+        can_admin_manage, team_availability, set_all_availability, AvailabilityError)
     if not can_admin_manage(user, company.id):
         return jsonify({"success": False, "error": "Not authorized"}), 403
-    return jsonify({"success": True, "team": team_availability(company.id)})
+    if request.method == "GET":
+        return jsonify({"success": True, "team": team_availability(company.id)})
+
+    data = request.get_json(silent=True) or {}
+    state = str(data.get("state") or "").strip().lower()
+    if state == "away" and not data.get("confirm"):
+        return jsonify({
+            "success": False, "code": "CONFIRM_REQUIRED",
+            "error": ("Set all users Away? Incoming messages will continue to be "
+                      "stored and calls will follow the configured "
+                      "fallback/voicemail path, but no users will receive live "
+                      "communications."),
+        }), 409
+    try:
+        results = set_all_availability(company.id, state, actor_user_id=user.id, source="admin")
+    except AvailabilityError as exc:
+        return jsonify({"success": False, "error": str(exc)}), 400
+    db.session.commit()
+    for r in results:
+        _broadcast_phone_availability(company.id, r.get("user_id"), r)
+    return jsonify({"success": True, "state": state, "updated": len(results),
+                    "team": team_availability(company.id)})
 
 
 @inbox_pwa_bp.route("/api/phone/availability/user/<int:target_user_id>", methods=["PUT"])
@@ -963,6 +1010,7 @@ def _broadcast_phone_availability(company_id, target_user_id, result):
             "state": result.get("state"),
             "source": result.get("source"),
             "changed_at": result.get("changed_at"),
+            "changed_by_user_id": result.get("changed_by_user_id"),
         })
     except Exception:
         logger.exception("phone availability SSE broadcast failed", extra={"company_id": company_id})
@@ -3014,20 +3062,43 @@ def push_test():
 # ── SSE helpers ───────────────────────────────────────────────────────────────
 
 def _push_sse_event(company_id: int, event_type: str, data: dict):
-    """Broadcast a JSON event to every SSE listener for a company."""
+    """Broadcast a JSON event to every SSE listener for a company.
+
+    For realtime *attention* events (`_ATTENTION_SSE_EVENTS`) a listener whose
+    user is currently AWAY (Communication Availability) is skipped — the event
+    never reaches that browser, so there is no sound / toast / badge / pop-up.
+    The underlying message/call/notification is already persisted by the caller;
+    only the live nudge is withheld. Non-attention events are always delivered.
+    """
     import json
     payload = json.dumps({"type": event_type, **data})
+    away_user_ids: set[int] = set()
+    if event_type in _ATTENTION_SSE_EVENTS:
+        try:
+            from services.phone_availability import available_user_ids
+            with _sse_lock:
+                candidate_uids = {uid for uid, _q in _sse_listeners.get(company_id, []) if uid}
+            if candidate_uids:
+                avail = available_user_ids(company_id)
+                away_user_ids = {uid for uid in candidate_uids if uid not in avail}
+        except Exception:
+            logger.exception("SSE availability filter failed; delivering to all",
+                             extra={"company_id": company_id})
+            away_user_ids = set()
     with _sse_lock:
         listeners = _sse_listeners.get(company_id, [])
         dead = []
-        for q in listeners:
+        for entry in listeners:
+            uid, q = entry
+            if uid and uid in away_user_ids:
+                continue
             try:
                 q.put_nowait(payload)
             except _queue_module.Full:
-                dead.append(q)
-        for q in dead:
+                dead.append(entry)
+        for entry in dead:
             try:
-                listeners.remove(q)
+                listeners.remove(entry)
             except ValueError:
                 pass
 
@@ -3044,10 +3115,12 @@ def sse_stream():
     if not company:
         return jsonify({"error": "No company"}), 400
 
+    entry = (getattr(user, "id", None), _queue_module.Queue(maxsize=100))
+
     def generate():
-        q = _queue_module.Queue(maxsize=100)
+        q = entry[1]
         with _sse_lock:
-            _sse_listeners.setdefault(company.id, []).append(q)
+            _sse_listeners.setdefault(company.id, []).append(entry)
         try:
             yield "event: connected\ndata: {}\n\n"
             while True:
@@ -3060,7 +3133,7 @@ def sse_stream():
             with _sse_lock:
                 lst = _sse_listeners.get(company.id, [])
                 try:
-                    lst.remove(q)
+                    lst.remove(entry)
                 except ValueError:
                     pass
 
