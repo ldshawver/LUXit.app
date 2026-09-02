@@ -1610,3 +1610,143 @@ def api_promotional_optin_send_solicitations():
     )
     db.session.commit()
     return jsonify({"success": True, **summary})
+
+
+# ---------------------------------------------------------------------------
+# Hosted web opt-in: per-contact consent link + QR + status. Generates a link
+# for an operator to share out-of-band (checkout / QR / print / customer
+# account). NEVER sends an SMS. Consent is still granted only when the customer
+# submits the hosted page (services.promotional_optin.record_web_optin).
+# ---------------------------------------------------------------------------
+
+def _web_optin_link_payload(cid: int, contact_id: int, link: dict) -> dict:
+    from services.promotional_optin import (
+        latest_solicitation_status_map, WEB_OPTIN_DISCLOSURE_VERSION,
+    )
+    status = latest_solicitation_status_map(cid, [contact_id]).get(contact_id) or {
+        "state": "not_sent", "label": "Not sent",
+    }
+    return {
+        "success": True,
+        "contact_id": contact_id,
+        "url": link["url"],
+        "path": link["path"],
+        "token": link["token"],
+        "created": link.get("created", False),
+        "disclosure_version": link.get("disclosure_version", WEB_OPTIN_DISCLOSURE_VERSION),
+        "qr_svg_url": f"/api/promotional-optin/consent-link/{contact_id}/qr.svg",
+        "consent_status": status,
+    }
+
+
+@segment_api_bp.post("/promotional-optin/consent-link")
+@login_required
+def api_promotional_optin_consent_link_create():
+    """Generate (or return the existing) hosted opt-in link for one contact.
+    Admin, tenant-scoped, idempotent. Does NOT send anything."""
+    from services.promotional_optin import generate_web_optin_link
+    cid = tenant_id()
+    if not cid:
+        return _json_error("tenant/company is required", 400)
+    err = _require_admin(cid)
+    if err:
+        return err
+    data = request.get_json(silent=True) or {}
+    contact_id = data.get("contact_id")
+    if not contact_id:
+        return _json_error("contact_id is required", 400)
+    link = generate_web_optin_link(
+        cid, int(contact_id),
+        actor_user_id=getattr(current_user, "id", None),
+        business_phone_number=data.get("business_phone_number"),
+    )
+    if not link.get("ok"):
+        return _json_error(link.get("error", "could not generate link"), 422)
+    db.session.commit()
+    return jsonify(_web_optin_link_payload(cid, int(contact_id), link))
+
+
+@segment_api_bp.get("/promotional-optin/consent-link/<int:contact_id>")
+@login_required
+def api_promotional_optin_consent_link_status(contact_id: int):
+    """Current hosted opt-in link + consent status for one contact. Read-only.
+    Returns the link only if one has already been generated."""
+    from services.promotional_optin import (
+        latest_solicitation_status_map, _encode_web_token, web_optin_link_base_url,
+        WEB_OPTIN_DISCLOSURE_VERSION,
+    )
+    from models import PromotionalOptInSolicitation
+    cid = tenant_id()
+    if not cid:
+        return _json_error("tenant/company is required", 400)
+    err = _require_admin(cid)
+    if err:
+        return err
+    if not Contact.query.filter_by(id=contact_id, company_id=cid).first():
+        return _json_error("contact not found", 404)
+    status = latest_solicitation_status_map(cid, [contact_id]).get(contact_id) or {
+        "state": "not_sent", "label": "Not sent",
+    }
+    row = (
+        PromotionalOptInSolicitation.query
+        .filter(PromotionalOptInSolicitation.company_id == cid,
+                PromotionalOptInSolicitation.contact_id == contact_id,
+                PromotionalOptInSolicitation.web_token_jti.isnot(None))
+        .order_by(PromotionalOptInSolicitation.id.desc())
+        .first()
+    )
+    out = {"success": True, "contact_id": contact_id, "consent_status": status}
+    if row:
+        token = _encode_web_token(cid, contact_id, row.web_token_jti)
+        base = web_optin_link_base_url()
+        path = f"/promo-optin/{token}"
+        out.update({
+            "url": (base + path) if base else path,
+            "path": path,
+            "token": token,
+            "disclosure_version": row.web_link_disclosure_version or WEB_OPTIN_DISCLOSURE_VERSION,
+            "qr_svg_url": f"/api/promotional-optin/consent-link/{contact_id}/qr.svg",
+        })
+    return jsonify(out)
+
+
+@segment_api_bp.get("/promotional-optin/consent-link/<int:contact_id>/qr.svg")
+@login_required
+def api_promotional_optin_consent_link_qr(contact_id: int):
+    """SVG QR code for a contact's existing hosted opt-in link. Admin, tenant
+    scoped. 404 if no link has been generated; 503 if the QR library is not
+    installed in this environment (the link/copy path still works)."""
+    from services.promotional_optin import _encode_web_token, web_optin_link_base_url
+    from models import PromotionalOptInSolicitation
+    cid = tenant_id()
+    if not cid:
+        return _json_error("tenant/company is required", 400)
+    err = _require_admin(cid)
+    if err:
+        return err
+    row = (
+        PromotionalOptInSolicitation.query
+        .filter(PromotionalOptInSolicitation.company_id == cid,
+                PromotionalOptInSolicitation.contact_id == contact_id,
+                PromotionalOptInSolicitation.web_token_jti.isnot(None))
+        .order_by(PromotionalOptInSolicitation.id.desc())
+        .first()
+    )
+    if not row:
+        return _json_error("no consent link for this contact", 404)
+    base = web_optin_link_base_url()
+    token = _encode_web_token(cid, contact_id, row.web_token_jti)
+    url = (base + f"/promo-optin/{token}") if base else f"/promo-optin/{token}"
+    try:
+        import qrcode
+        import qrcode.image.svg as qrsvg
+        img = qrcode.make(url, image_factory=qrsvg.SvgPathImage, box_size=10, border=2)
+        from io import BytesIO
+        buf = BytesIO()
+        img.save(buf)
+        from flask import Response
+        return Response(buf.getvalue(), mimetype="image/svg+xml",
+                        headers={"Cache-Control": "no-store"})
+    except ImportError:
+        return _json_error("QR generation is not available in this environment", 503,
+                           qr_available=False)

@@ -21,7 +21,9 @@ Three concerns, kept strictly separate:
 """
 from __future__ import annotations
 
+import os
 import re
+import secrets
 from datetime import datetime
 
 from sqlalchemy.exc import IntegrityError
@@ -46,6 +48,21 @@ SUGGESTED_SOLICITATION_COPY = (
     "promotions? Reply YES to opt in. Message frequency varies. Msg & data "
     "rates may apply. Reply STOP to opt out."
 )
+
+# --- Hosted web opt-in (customer_web_optin) --------------------------------
+# The brand and the exact disclosure the customer affirms on the hosted page.
+# DISCLOSURE_VERSION must change whenever WEB_OPTIN_DISCLOSURE_TEXT changes: the
+# version is snapshotted on the consent link and re-checked on submission, and
+# the full text is stored on every PromotionalConsentEvent as immutable proof.
+WEB_OPTIN_BRAND = "MyOrder.fun Text Specials"
+WEB_OPTIN_DISCLOSURE_VERSION = "2026-09-02.v1"
+WEB_OPTIN_DISCLOSURE_TEXT = (
+    "Yes, I want to receive recurring promotional text messages from MyOrder.fun "
+    "about sales, specials, new menu items and offers. Message frequency varies. "
+    "Msg & data rates may apply. Reply STOP to unsubscribe or HELP for help. "
+    "Consent is not a condition of purchase."
+)
+_WEB_TOKEN_SALT = "promotional-web-optin.v1"
 
 _YES_KEYWORDS = {"yes", "y", "yeah", "yep", "yes please", "opt in", "optin"}
 
@@ -79,6 +96,21 @@ def _audit(company_id, user_id, action, entity_id, details):
         company_id=company_id, created_by_user_id=user_id, action=action,
         entity_type="promotional_optin", entity_id=entity_id, details=details,
     ))
+
+
+def _grant_promotional_consent(contact: Contact, when: datetime, source: str) -> None:
+    """Set the contact's opt-in columns so the *existing* campaign resolver
+    includes them for promotional purpose. This is the only consent mutation
+    this module performs, and only after a channel-specific consent event has
+    been written (inbound YES, or a hosted web opt-in). ``source`` records which
+    channel granted it: ``promotional_optin_sms_yes`` / ``promotional_web_optin``.
+    """
+    contact.sms_marketing_opt_in = True
+    contact.sms_consent_status = "opted_in"
+    contact.sms_opted_out = False
+    contact.sms_opt_out_at = None
+    contact.sms_marketing_opt_in_at = when
+    contact.sms_marketing_opt_in_source = source
 
 
 # ---------------------------------------------------------------------------
@@ -380,15 +412,7 @@ def record_contextual_yes(
     solicitation.consent_message_sid = inbound_message_sid
     solicitation.consented_at = received_at
 
-    # Set the contact's opt-in columns so the *existing* campaign resolver
-    # includes them for promotional purpose. This is the only consent mutation
-    # this module performs, and only inside a matched contextual YES.
-    contact.sms_marketing_opt_in = True
-    contact.sms_consent_status = "opted_in"
-    contact.sms_opted_out = False
-    contact.sms_opt_out_at = None
-    contact.sms_marketing_opt_in_at = received_at
-    contact.sms_marketing_opt_in_source = "promotional_optin_sms_yes"
+    _grant_promotional_consent(contact, received_at, "promotional_optin_sms_yes")
 
     _audit(company_id, None, "promotional_consent_granted", event.id, {
         "contact_id": contact.id,
@@ -654,7 +678,10 @@ def latest_solicitation_status_map(company_id: int, contact_ids: list) -> dict:
 
     out: dict[int, dict] = {}
     for cid, row in latest.items():
-        if row.status == "consented":
+        is_web = (row.source == "web_optin") or bool(row.web_token_jti)
+        if row.status == "consented" and is_web:
+            state, label = "consented_web", "Consented (web)"
+        elif row.status == "consented":
             state, label = "replied_yes", "Replied YES"
         elif row.status == "stopped":
             state, label = "stopped", "STOP"
@@ -668,6 +695,8 @@ def latest_solicitation_status_map(company_id: int, contact_ids: list) -> dict:
             state, label = "blocked", "Blocked (SMS disabled)"
         elif row.delivery_status in {"failed", "undelivered"}:
             state, label = "failed", "Send failed"
+        elif is_web and row.web_token_jti:
+            state, label = "link", "Consent link generated"
         else:
             state, label = "not_sent", "Not sent"
         out[cid] = {
@@ -676,5 +705,333 @@ def latest_solicitation_status_map(company_id: int, contact_ids: list) -> dict:
             "message_sid": row.solicitation_message_sid,
             "sent_at": row.sent_at.isoformat() if row.sent_at else None,
             "solicitation_id": row.id,
+            "web_link": bool(row.web_token_jti),
+            "web_consent_at": row.web_consent_at.isoformat() if row.web_consent_at else None,
         }
     return out
+
+
+# ---------------------------------------------------------------------------
+# 5. Hosted web opt-in  (customer_web_optin — the second consent-granting path)
+# ---------------------------------------------------------------------------
+#
+# A signed link (or its QR) is generated per contact for an operator to share
+# out-of-band: at checkout, in person, on the customer's account page, on
+# printed material, or any other independently permitted channel. NO SMS is
+# sent to deliver this link. When the customer opens the page and affirmatively
+# checks the (initially unchecked) disclosure box and submits, promotional
+# consent is granted exactly as a contextual inbound YES would grant it —
+# through _grant_promotional_consent() — with an immutable PromotionalConsentEvent
+# recording the exact disclosure text + version + request context.
+#
+# STOP still wins: a suppressed / opted-out contact who somehow submits the form
+# grants nothing and the pending link is closed. Idempotent on the link's
+# web_token_jti: a double submission never creates a second event or side effect.
+
+def _web_optin_serializer():
+    from itsdangerous import URLSafeSerializer
+    from flask import current_app
+    secret = (
+        current_app.config.get("SECRET_KEY")
+        or os.environ.get("SESSION_SECRET")
+        or os.environ.get("SECRET_KEY")
+        or "insecure-dev-key"
+    )
+    return URLSafeSerializer(secret, salt=_WEB_TOKEN_SALT)
+
+
+def _encode_web_token(company_id: int, contact_id: int, jti: str) -> str:
+    return _web_optin_serializer().dumps({"c": int(company_id), "k": int(contact_id), "j": jti})
+
+
+def _decode_web_token(token: str) -> dict | None:
+    from itsdangerous import BadData
+    try:
+        data = _web_optin_serializer().loads(token)
+    except BadData:
+        return None
+    if not isinstance(data, dict) or not all(k in data for k in ("c", "k", "j")):
+        return None
+    return data
+
+
+def web_optin_link_base_url() -> str:
+    base = (
+        os.environ.get("APP_BASE_URL")
+        or os.environ.get("LUXIT_TWILIO_WEBHOOK_BASE_URL")
+        or ""
+    ).strip().rstrip("/")
+    if base:
+        return base
+    try:
+        from flask import request
+        if request:
+            return request.url_root.rstrip("/")
+    except Exception:
+        pass
+    return ""
+
+
+def _resolve_web_token(token: str):
+    """(solicitation, contact, payload) for a valid link, else (None, None, reason)."""
+    payload = _decode_web_token(token)
+    if not payload:
+        return None, None, "invalid_token"
+    row = (
+        PromotionalOptInSolicitation.query
+        .filter_by(web_token_jti=payload["j"])
+        .first()
+    )
+    if not row:
+        return None, None, "unknown_link"
+    # Tamper / cross-tenant: the signed body must match the stored row exactly.
+    if row.company_id != payload["c"] or row.contact_id != payload["k"]:
+        return None, None, "token_mismatch"
+    contact = Contact.query.filter_by(id=row.contact_id, company_id=row.company_id).first()
+    if not contact:
+        return None, None, "contact_not_found"
+    # The canonical phone must still resolve to the same number the link was
+    # minted for (a number change since minting invalidates the link).
+    current = _canonical_phone(contact)
+    if not current or current != row.canonical_phone:
+        return None, None, "phone_changed"
+    return row, contact, payload
+
+
+def generate_web_optin_link(
+    company_id: int,
+    contact_id: int,
+    *,
+    actor_user_id: int | None = None,
+    business_phone_number: str | None = None,
+) -> dict:
+    """Create-or-reuse a hosted opt-in link for one contact. Idempotent: a
+    second call returns the existing link. Refuses exactly where
+    create_solicitation refuses (suppressed / already-promotional / no phone).
+    Sends nothing.
+    """
+    created = create_solicitation(
+        company_id, contact_id,
+        business_phone_number=business_phone_number,
+        actor_user_id=actor_user_id,
+        body=SUGGESTED_SOLICITATION_COPY,
+        source="web_optin",
+    )
+    if not created.get("ok"):
+        return {"ok": False, "error": created.get("error")}
+    row = created["solicitation"]
+
+    minted = False
+    if not row.web_token_jti:
+        row.web_token_jti = secrets.token_urlsafe(24)
+        row.web_link_disclosure_version = WEB_OPTIN_DISCLOSURE_VERSION
+        row.web_link_created_at = _now()
+        row.web_link_created_by_user_id = actor_user_id
+        minted = True
+        db.session.flush()
+        _audit(company_id, actor_user_id, "promotional_web_optin_link_created", row.id, {
+            "contact_id": contact_id, "canonical_phone": row.canonical_phone,
+            "disclosure_version": WEB_OPTIN_DISCLOSURE_VERSION,
+        })
+
+    token = _encode_web_token(company_id, contact_id, row.web_token_jti)
+    base = web_optin_link_base_url()
+    path = f"/promo-optin/{token}"
+    return {
+        "ok": True,
+        "created": minted,
+        "solicitation_id": row.id,
+        "token": token,
+        "path": path,
+        "url": (base + path) if base else path,
+        "disclosure_version": row.web_link_disclosure_version or WEB_OPTIN_DISCLOSURE_VERSION,
+        "status": row.status,
+    }
+
+
+def get_web_optin_context(token: str) -> dict:
+    """Read-only context for rendering the public consent page."""
+    row, contact, payload = _resolve_web_token(token)
+    if not row:
+        return {"ok": False, "error": payload}
+    already = bool(row.status == "consented") or has_promotional_optin(contact)
+    suppressed = is_suppressed(contact) or bool(contact.sms_opted_out or contact.sms_opt_out_at)
+    first = _safe_first_name(contact)
+    return {
+        "ok": True,
+        "brand": WEB_OPTIN_BRAND,
+        "disclosure_version": WEB_OPTIN_DISCLOSURE_VERSION,
+        "disclosure_text": WEB_OPTIN_DISCLOSURE_TEXT,
+        "first_name": first,
+        "phone_hint": "•••• " + (row.canonical_phone or "")[-4:],
+        "already_consented": already,
+        "suppressed": suppressed,
+        "status": row.status,
+    }
+
+
+def _safe_first_name(contact: Contact) -> str | None:
+    fn = (getattr(contact, "first_name", "") or "").strip()
+    if not fn:
+        return None
+    level = getattr(contact, "name_verification_level", "") or ""
+    if level not in ("verified", "confirmed", "customer_confirmed"):
+        return None
+    if not re.match(r"^[A-Za-z][A-Za-z'.\-À-ɏ ]{0,39}$", fn):
+        return None
+    return fn
+
+
+def record_web_optin(
+    token: str,
+    *,
+    disclosure_version: str | None,
+    consent_ip: str | None = None,
+    user_agent: str | None = None,
+    page_url: str | None = None,
+    received_at: datetime | None = None,
+) -> dict:
+    """Grant promotional consent from an affirmative hosted-page submission.
+
+    Idempotent on the link's ``web_token_jti``. STOP precedence: a suppressed /
+    opted-out contact grants nothing and the link is closed. Rejects a stale
+    disclosure version (the page was cached before a disclosure change).
+    """
+    received_at = received_at or _now()
+    row, contact, payload = _resolve_web_token(token)
+    if not row:
+        return {"ok": False, "error": payload}
+
+    jti = row.web_token_jti
+
+    existing = PromotionalConsentEvent.query.filter_by(web_token_jti=jti).first()
+    if existing:
+        return {
+            "ok": True, "granted": False, "duplicate": True,
+            "event_id": existing.id, "solicitation_id": existing.solicitation_id,
+        }
+
+    # The exact disclosure the customer affirmed must be the one we still stand
+    # behind. A mismatch means a cached/stale page — refuse, don't silently
+    # record consent to text the customer never saw.
+    want = disclosure_version or row.web_link_disclosure_version or WEB_OPTIN_DISCLOSURE_VERSION
+    if want != WEB_OPTIN_DISCLOSURE_VERSION:
+        return {"ok": False, "error": "stale_disclosure",
+                "current_disclosure_version": WEB_OPTIN_DISCLOSURE_VERSION}
+
+    # STOP always wins.
+    if is_suppressed(contact) or contact.sms_opted_out or contact.sms_opt_out_at:
+        if row.status == "pending":
+            row.status = "stopped"
+            row.closed_at = received_at
+            row.closed_reason = "suppressed_at_web_optin"
+            _audit(row.company_id, None, "promotional_solicitation_closed", row.id, {
+                "contact_id": contact.id, "reason": "suppressed_at_web_optin",
+            })
+        return {"ok": True, "granted": False, "suppressed": True}
+
+    if row.status == "consented" or has_promotional_optin(contact):
+        # Already promotional through another path; nothing to grant, no error.
+        return {"ok": True, "granted": False, "already": True,
+                "solicitation_id": row.id}
+
+    canonical = _canonical_phone(contact) or row.canonical_phone
+    context = {
+        k: v for k, v in {
+            "ip": consent_ip, "user_agent": (user_agent or "")[:400],
+            "page_url": page_url, "channel": "customer_web_optin",
+        }.items() if v
+    }
+    event = PromotionalConsentEvent(
+        company_id=row.company_id,
+        contact_id=contact.id,
+        solicitation_id=row.id,
+        canonical_phone=canonical,
+        business_phone_number=row.business_phone_number,
+        inbound_message_sid=None,
+        web_token_jti=jti,
+        solicited_at=row.web_link_created_at or row.solicited_at,
+        consent_purpose="promotional",
+        consent_source="customer_web_optin",
+        disclosure_version=WEB_OPTIN_DISCLOSURE_VERSION,
+        disclosure_text=WEB_OPTIN_DISCLOSURE_TEXT,
+        consent_context=context or None,
+        consented_at=received_at,
+    )
+    try:
+        with db.session.begin_nested():
+            db.session.add(event)
+            db.session.flush()
+    except IntegrityError:
+        db.session.rollback()
+        existing = PromotionalConsentEvent.query.filter_by(web_token_jti=jti).first()
+        return {
+            "ok": True, "granted": False, "duplicate": True,
+            "event_id": getattr(existing, "id", None),
+            "solicitation_id": getattr(existing, "solicitation_id", row.id),
+        }
+
+    row.status = "consented"
+    row.consented_at = received_at
+    row.web_consent_at = received_at
+
+    _grant_promotional_consent(contact, received_at, "promotional_web_optin")
+
+    _audit(row.company_id, None, "promotional_consent_granted", event.id, {
+        "contact_id": contact.id,
+        "solicitation_id": row.id,
+        "canonical_phone": canonical,
+        "consent_purpose": "promotional",
+        "consent_source": "customer_web_optin",
+        "disclosure_version": WEB_OPTIN_DISCLOSURE_VERSION,
+        "consented_at": received_at.isoformat(),
+    })
+
+    confirmation_sent = _maybe_send_web_confirmation(row.company_id, contact, row)
+
+    return {
+        "ok": True, "granted": True, "duplicate": False,
+        "event_id": event.id, "solicitation_id": row.id,
+        "confirmation_sent": confirmation_sent,
+    }
+
+
+def _web_confirmation_enabled(company_id: int) -> bool:
+    """True only when the deployment has explicitly turned on the post-opt-in
+    confirmation SMS AND the tenant has a registered messaging campaign
+    (an active Twilio account with a Messaging Service SID). Off by default
+    everywhere, so a deploy sends nothing until it is deliberately configured.
+    """
+    flag = str(os.environ.get("PROMO_OPTIN_WEB_CONFIRMATION_SMS", "")).strip().lower()
+    if flag not in ("1", "true", "yes", "on"):
+        return False
+    try:
+        from twilio_sms import _get_twilio_account
+        ta = _get_twilio_account(company_id)
+        return bool(ta and getattr(ta, "messaging_service_sid", None))
+    except Exception:
+        return False
+
+
+def _maybe_send_web_confirmation(company_id: int, contact: Contact, row) -> bool:
+    if not _web_confirmation_enabled(company_id):
+        return False
+    try:
+        from twilio_sms import (
+            _get_twilio_account, _get_or_create_conversation, sendConversationSms,
+        )
+        ta = _get_twilio_account(company_id)
+        business = row.business_phone_number or getattr(ta, "from_phone", None)
+        conv = _get_or_create_conversation(
+            company_id, row.canonical_phone, business or "", create_contact=False,
+        )
+        if conv is not None and not conv.contact_id:
+            conv.contact_id = contact.id
+        db.session.flush()
+        send = sendConversationSms(
+            conv.id, PROMO_OPTIN_CONFIRMATION, twilio_account=ta,
+            effect_type="promotional_optin_web_confirmation", bypass_outbox=True,
+        )
+        return bool(send.get("success"))
+    except Exception:
+        return False

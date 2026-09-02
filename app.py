@@ -458,6 +458,11 @@ def create_app() -> Flask:
     app.register_blueprint(marketing_api_bp)
     app.register_blueprint(segment_api_bp)
     try:
+        from promo_optin_public import promo_optin_public_bp
+        app.register_blueprint(promo_optin_public_bp)
+    except Exception as exc:
+        app.logger.warning("Failed to register promo_optin_public blueprint: %s", exc)
+    try:
         from feedback import feedback_bp
         app.register_blueprint(feedback_bp)
     except Exception as exc:

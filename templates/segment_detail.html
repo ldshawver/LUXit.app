@@ -151,11 +151,17 @@
             anyone&rsquo;s consent by itself &mdash; only a YES reply does.
           </p>
           <div class="alert alert-info small d-none" id="promoSendResult" role="alert"></div>
+          <p class="small text-muted mb-2">
+            Or generate a <strong>hosted opt-in link</strong> per contact to share
+            at checkout, in person, on the customer&rsquo;s account, as a QR code,
+            or on printed material. No SMS is sent to deliver the link; the
+            customer opts in by checking the disclosure box on the page.
+          </p>
           <div class="table-responsive">
             <table class="table table-sm align-middle">
               <thead><tr>
                 <th style="width:2rem;"></th><th>Contact</th>
-                <th>Canonical phone</th><th>Status</th>
+                <th>Canonical phone</th><th>Status</th><th>Hosted opt-in link</th>
               </tr></thead>
               <tbody id="promoAudienceBody"></tbody>
             </table>
@@ -424,7 +430,8 @@ document.getElementById('bulkExcludeSelected')?.addEventListener('click', async 
   const csrf = () => (document.querySelector('meta[name="csrf-token"]') || {}).content || '';
 
   const STATE_BADGE = {
-    replied_yes: 'bg-success', delivered: 'bg-success', sent: 'bg-info text-dark',
+    replied_yes: 'bg-success', consented_web: 'bg-success', delivered: 'bg-success',
+    sent: 'bg-info text-dark', link: 'bg-primary',
     failed: 'bg-danger', blocked: 'bg-warning text-dark',
     stopped: 'bg-dark', not_sent: 'bg-light text-dark border',
   };
@@ -462,10 +469,25 @@ document.getElementById('bulkExcludeSelected')?.addEventListener('click', async 
     $('promoSelectAll').disabled = sendable.length === 0;
   }
 
+  function linkCellHtml(r) {
+    const st = (r.solicitation || {});
+    const state = st.state || 'not_sent';
+    if (state === 'consented_web') return '<span class="small text-success">Consented via web</span>';
+    if (state === 'replied_yes') return '<span class="small text-muted">Consented via SMS</span>';
+    if (state === 'stopped') return '<span class="small text-muted">&mdash;</span>';
+    const hasLink = !!st.web_link;
+    return `<div class="promo-link-cell" data-cid="${r.contact_id}">
+      <button type="button" class="btn btn-outline-primary btn-sm promo-link-btn" data-cid="${r.contact_id}">
+        ${hasLink ? 'Show link / QR' : 'Get consent link'}
+      </button>
+      <div class="promo-link-detail mt-1 d-none"></div>
+    </div>`;
+  }
+
   function renderRows() {
     const body = $('promoAudienceBody');
     if (!audience.length) {
-      body.innerHTML = '<tr><td colspan="4" class="text-muted">No contacts need promotional opt-in.</td></tr>';
+      body.innerHTML = '<tr><td colspan="5" class="text-muted">No contacts need promotional opt-in.</td></tr>';
       syncControls();
       return;
     }
@@ -480,6 +502,7 @@ document.getElementById('bulkExcludeSelected')?.addEventListener('click', async 
         <td>${esc(r.name) || '<span class="text-muted">(no name)</span>'}</td>
         <td>${esc(r.canonical_phone)}</td>
         <td><span class="badge ${STATE_BADGE[state] || 'bg-secondary'}">${esc(st.label || 'Not sent')}</span></td>
+        <td>${linkCellHtml(r)}</td>
       </tr>`;
     }).join('');
     body.querySelectorAll('.promo-row-cb').forEach(cb => {
@@ -489,17 +512,71 @@ document.getElementById('bulkExcludeSelected')?.addEventListener('click', async 
         syncControls();
       });
     });
+    body.querySelectorAll('.promo-link-btn').forEach(btn => {
+      btn.addEventListener('click', () => toggleConsentLink(parseInt(btn.dataset.cid, 10), btn));
+    });
     if (window.feather) feather.replace();
     syncControls();
   }
 
+  async function toggleConsentLink(cid, btn) {
+    const cell = btn.closest('.promo-link-cell');
+    const detail = cell.querySelector('.promo-link-detail');
+    if (!detail.classList.contains('d-none')) { detail.classList.add('d-none'); return; }
+    detail.classList.remove('d-none');
+    detail.innerHTML = '<span class="small text-muted">Working…</span>';
+    btn.disabled = true;
+    try {
+      // POST is create-or-return-existing (idempotent), so it is safe here.
+      const res = await fetch('/api/promotional-optin/consent-link', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrf() },
+        body: JSON.stringify({ contact_id: cid }),
+      });
+      const data = await res.json();
+      if (!res.ok) { detail.innerHTML = `<span class="small text-danger">${esc(data.error) || 'Failed'}</span>`; return; }
+      const abs = data.url && /^https?:/i.test(data.url) ? data.url : (location.origin + data.path);
+      detail.innerHTML = `
+        <div class="input-group input-group-sm mb-1" style="max-width:22rem;">
+          <input type="text" class="form-control form-control-sm promo-link-url" readonly value="${esc(abs)}">
+          <button type="button" class="btn btn-outline-secondary promo-link-copy">Copy</button>
+        </div>
+        <button type="button" class="btn btn-outline-secondary btn-sm promo-link-qr">Show QR</button>
+        <a class="btn btn-outline-secondary btn-sm" href="${esc(abs)}" target="_blank" rel="noopener">Open</a>
+        <div class="promo-qr-wrap mt-2 d-none"></div>`;
+      detail.querySelector('.promo-link-copy').addEventListener('click', async (e) => {
+        try { await navigator.clipboard.writeText(abs); e.target.textContent = 'Copied'; }
+        catch { detail.querySelector('.promo-link-url').select(); document.execCommand('copy'); e.target.textContent = 'Copied'; }
+        setTimeout(() => { e.target.textContent = 'Copy'; }, 1500);
+      });
+      detail.querySelector('.promo-link-qr').addEventListener('click', async (e) => {
+        const wrap = detail.querySelector('.promo-qr-wrap');
+        if (!wrap.classList.contains('d-none')) { wrap.classList.add('d-none'); return; }
+        wrap.classList.remove('d-none');
+        wrap.innerHTML = '<span class="small text-muted">Loading QR…</span>';
+        const q = await fetch(data.qr_svg_url, { headers: { 'X-CSRFToken': csrf() } });
+        if (q.ok) {
+          const svg = await q.text();
+          wrap.innerHTML = `<div style="background:#fff;display:inline-block;padding:8px;border-radius:8px;max-width:220px;">${svg}</div>`;
+        } else {
+          wrap.innerHTML = '<span class="small text-warning">QR not available in this environment — use the link above.</span>';
+        }
+      });
+      loadAudience();  // refresh the status badge (link generated)
+    } catch (e) {
+      detail.innerHTML = '<span class="small text-danger">Failed to generate link.</span>';
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
   async function loadAudience() {
     const body = $('promoAudienceBody');
-    body.innerHTML = '<tr><td colspan="4" class="text-muted">Loading…</td></tr>';
+    body.innerHTML = '<tr><td colspan="5" class="text-muted">Loading…</td></tr>';
     try {
       const res = await fetch(`/api/promotional-optin/audience?segment_id=${sid}`);
       const data = await res.json();
-      if (!res.ok) { body.innerHTML = `<tr><td colspan="4" class="text-danger">${esc(data.error) || 'Not authorized'}</td></tr>`; return; }
+      if (!res.ok) { body.innerHTML = `<tr><td colspan="5" class="text-danger">${esc(data.error) || 'Not authorized'}</td></tr>`; return; }
       audience = data.audience || [];
       // Drop selections that are no longer sendable.
       for (const cid of [...selected]) {
@@ -508,7 +585,7 @@ document.getElementById('bulkExcludeSelected')?.addEventListener('click', async 
       }
       renderRows();
     } catch (e) {
-      body.innerHTML = '<tr><td colspan="4" class="text-danger">Failed to load audience.</td></tr>';
+      body.innerHTML = '<tr><td colspan="5" class="text-danger">Failed to load audience.</td></tr>';
     }
   }
 

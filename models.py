@@ -1606,10 +1606,27 @@ class PromotionalOptInSolicitation(db.Model):
     sent_at = db.Column(db.DateTime, nullable=True)
     send_error = db.Column(db.Text, nullable=True)
     last_status_at = db.Column(db.DateTime, nullable=True)
+    # Hosted web opt-in channel (source='web_optin'). The signed consent link
+    # carries ``web_token_jti``; the disclosure text version shown to the
+    # customer is snapshotted at link creation. No SMS is sent to hand the
+    # customer this link — it is generated for an operator to share out-of-band
+    # (checkout, QR, printed material, customer account, permitted channels).
+    web_token_jti = db.Column(db.String(64), nullable=True)
+    web_link_disclosure_version = db.Column(db.String(40), nullable=True)
+    web_link_created_at = db.Column(db.DateTime, nullable=True)
+    web_link_created_by_user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True)
+    web_consent_at = db.Column(db.DateTime, nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     __table_args__ = (
+        db.Index(
+            "uq_promo_solicitation_web_token_jti",
+            "web_token_jti",
+            unique=True,
+            postgresql_where=db.text("web_token_jti IS NOT NULL"),
+            sqlite_where=db.text("web_token_jti IS NOT NULL"),
+        ),
         db.Index(
             "uq_promo_solicitation_one_pending",
             "company_id", "contact_id",
@@ -1621,9 +1638,15 @@ class PromotionalOptInSolicitation(db.Model):
 
 
 class PromotionalConsentEvent(db.Model):
-    """Immutable provenance record: a contextual inbound ``YES`` that granted
-    promotional SMS consent. Idempotent on the inbound Twilio MessageSid — a
-    duplicate webhook delivery can never create a second event.
+    """Immutable provenance record of a single act that granted promotional SMS
+    consent.
+
+    Two channels write this table, and each has its own idempotency key:
+      * inbound SMS ``YES`` -> ``inbound_message_sid`` (unique); a duplicate
+        webhook delivery can never create a second event.
+      * hosted web opt-in  -> ``web_token_jti`` (unique where not null); a
+        double form submission can never create a second event.
+    Exactly one of the two keys is set on any row.
     """
     __tablename__ = "promotional_consent_event"
 
@@ -1633,14 +1656,34 @@ class PromotionalConsentEvent(db.Model):
     solicitation_id = db.Column(db.Integer, db.ForeignKey("promotional_optin_solicitation.id"), nullable=True, index=True)
     canonical_phone = db.Column(db.String(32), nullable=False)
     business_phone_number = db.Column(db.String(32), nullable=True)
-    inbound_message_sid = db.Column(db.String(64), nullable=False, unique=True)
+    # Set for the inbound-SMS channel only. Nullable so the web channel (which
+    # has no inbound MessageSid) can write a row; still UNIQUE, and Postgres
+    # permits many NULLs under a UNIQUE constraint.
+    inbound_message_sid = db.Column(db.String(64), nullable=True, unique=True)
     solicitation_message_sid = db.Column(db.String(64), nullable=True)
     solicited_at = db.Column(db.DateTime, nullable=True)
     consent_purpose = db.Column(db.String(20), nullable=False, default="promotional")
+    # sms_reply_yes | customer_web_optin
     consent_source = db.Column(db.String(40), nullable=False, default="sms_reply_yes")
     consent_keyword = db.Column(db.String(20), nullable=True)
     consented_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    # Web opt-in evidence: the exact disclosure the customer affirmed, its
+    # version tag, and request context (ip / user agent / page url).
+    web_token_jti = db.Column(db.String(64), nullable=True)
+    disclosure_version = db.Column(db.String(40), nullable=True)
+    disclosure_text = db.Column(db.Text, nullable=True)
+    consent_context = db.Column(db.JSON, nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    __table_args__ = (
+        db.Index(
+            "uq_promo_consent_event_web_token_jti",
+            "web_token_jti",
+            unique=True,
+            postgresql_where=db.text("web_token_jti IS NOT NULL"),
+            sqlite_where=db.text("web_token_jti IS NOT NULL"),
+        ),
+    )
 
 
 class WebForm(db.Model):
