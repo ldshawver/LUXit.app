@@ -94,8 +94,15 @@ def _segment_contacts(company_id: int, segment_id: int | None) -> list[Contact]:
     return resolve_segment_contacts(company_id, None, {})
 
 
-def classify_audience(company_id: int, segment_id: int | None = None) -> dict:
-    """Aggregate the customer segment into the operator buckets. Read-only."""
+def classify_audience(company_id: int, segment_id: int | None = None,
+                      *, include_solicitation_status: bool = False) -> dict:
+    """Aggregate the customer segment into the operator buckets. Read-only.
+
+    ``include_solicitation_status`` adds a per-contact ``solicitation`` block to
+    every audience row and a ``delivery`` sub-count to ``counts`` (how many of
+    the Needs audience have been sent / delivered / replied YES etc.). It reads
+    the solicitation table but never writes anything.
+    """
     contacts = _segment_contacts(company_id, segment_id)
     evidence = conversational_evidence_phone_digits(company_id)
     pending_ids = pending_contact_ids(company_id)
@@ -146,6 +153,21 @@ def classify_audience(company_id: int, segment_id: int | None = None) -> dict:
             "canonical_phone": phone,
             "solicitation_pending": contact.id in pending_ids,
         })
+
+    if include_solicitation_status:
+        status_map = latest_solicitation_status_map(
+            company_id, [row["contact_id"] for row in audience]
+        )
+        delivery = {
+            "not_sent": 0, "sent": 0, "delivered": 0, "failed": 0,
+            "blocked": 0, "replied_yes": 0, "stopped": 0,
+        }
+        for row in audience:
+            info = status_map.get(row["contact_id"]) or {"state": "not_sent", "label": "Not sent"}
+            row["solicitation"] = info
+            delivery[info["state"]] = delivery.get(info["state"], 0) + 1
+        buckets["delivery"] = delivery
+
     return {"counts": buckets, "audience": audience}
 
 
@@ -385,3 +407,269 @@ def record_contextual_yes(
         "solicitation_id": solicitation.id, "event_id": event.id,
         "reply": PROMO_OPTIN_CONFIRMATION,
     }
+
+
+# ---------------------------------------------------------------------------
+# 4. Operator send flow  (dispatches the opt-in *request* SMS — never consent)
+# ---------------------------------------------------------------------------
+#
+# create_solicitation() records the operator-approved pending row. This section
+# adds the delivery: it sends the "Reply YES to opt in" request through the
+# tenant's normal conversational SMS path (services.twilio_gate enforces
+# LUXIT_TWILIO_MODE, so a disabled environment records 'blocked' and sends
+# nothing). Consent is still granted only by record_contextual_yes() when the
+# customer actually replies YES.
+
+_SENT_DELIVERY_STATES = {"queued", "sending", "sent", "delivered"}
+
+
+def _normalize_delivery_status(raw) -> str:
+    s = str(raw or "").strip().lower()
+    if s in {"delivered"}:
+        return "delivered"
+    if s in {"failed", "undelivered"}:
+        return s
+    if s in {"queued", "sending", "accepted", "scheduled"}:
+        return "queued"
+    return "sent"
+
+
+def send_solicitation(
+    company_id: int,
+    contact_id: int,
+    *,
+    actor_user_id: int | None,
+    business_phone_number: str | None = None,
+    body: str | None = None,
+    force_resend: bool = False,
+) -> dict:
+    """Record-or-reuse a pending solicitation for one contact AND dispatch the
+    opt-in request SMS.
+
+    Refuses (``ok=False``) exactly where create_solicitation refuses:
+    suppressed / already-promotional / no canonical phone / contact not found.
+
+    Idempotent: if the pending solicitation was already handed to Twilio
+    (``delivery_status`` in queued/sent/delivered) a second call sends nothing
+    and returns ``resent=False`` unless ``force_resend`` is set.
+
+    Never mutates consent columns. On a blocked/failed send the pending row is
+    kept (so a later YES still has context) with ``delivery_status`` recorded.
+    """
+    from twilio_sms import _get_twilio_account, _get_or_create_conversation, sendConversationSms
+    from services.phone_normalization import normalize_phone_e164
+    from models import TwilioMessage, TwilioPhoneNumber
+
+    created = create_solicitation(
+        company_id, contact_id,
+        business_phone_number=business_phone_number,
+        actor_user_id=actor_user_id, body=body, source="operator",
+    )
+    if not created.get("ok"):
+        return {"ok": False, "error": created.get("error"), "contact_id": contact_id}
+    row = created["solicitation"]
+
+    already_dispatched = (row.delivery_status or "") in _SENT_DELIVERY_STATES
+    if already_dispatched and not force_resend:
+        return {
+            "ok": True, "sent": True, "resent": False, "contact_id": contact_id,
+            "solicitation_id": row.id, "delivery_status": row.delivery_status,
+            "message_sid": row.solicitation_message_sid,
+        }
+
+    ta = _get_twilio_account(company_id)
+    if not ta:
+        return {
+            "ok": True, "sent": False, "blocked": False, "contact_id": contact_id,
+            "solicitation_id": row.id, "delivery_status": row.delivery_status,
+            "error": "twilio_not_configured",
+        }
+
+    business = (
+        normalize_phone_e164(business_phone_number)
+        or row.business_phone_number
+        or getattr(ta, "from_phone", None)
+    )
+    pn = None
+    if business:
+        pn = TwilioPhoneNumber.query.filter_by(
+            company_id=company_id, phone_number=business, is_active=True
+        ).first()
+
+    conv = _get_or_create_conversation(
+        company_id, row.canonical_phone, business or "",
+        phone_number_id=pn.id if pn else None, create_contact=False,
+    )
+    if conv is not None and not conv.contact_id:
+        conv.contact_id = contact_id
+    db.session.flush()
+
+    text = body or row.solicitation_body or SUGGESTED_SOLICITATION_COPY
+    send = sendConversationSms(
+        conv.id, text, twilio_account=ta,
+        effect_type="promotional_optin_solicitation", bypass_outbox=True,
+    )
+
+    now = _now()
+    row.last_status_at = now
+    if not row.solicitation_body:
+        row.solicitation_body = text
+    if business and not row.business_phone_number:
+        row.business_phone_number = business
+
+    if send.get("success"):
+        row.solicitation_message_sid = send.get("sid") or row.solicitation_message_sid
+        row.delivery_status = _normalize_delivery_status(send.get("provider_status"))
+        row.sent_at = row.sent_at or now
+        row.send_error = None
+        _audit(company_id, actor_user_id, "promotional_solicitation_sent", row.id, {
+            "contact_id": contact_id, "canonical_phone": row.canonical_phone,
+            "business_phone_number": row.business_phone_number,
+            "message_sid": row.solicitation_message_sid,
+            "delivery_status": row.delivery_status,
+        })
+        return {
+            "ok": True, "sent": True, "resent": already_dispatched,
+            "contact_id": contact_id, "solicitation_id": row.id,
+            "delivery_status": row.delivery_status,
+            "message_sid": row.solicitation_message_sid,
+        }
+
+    blocked = (
+        str(send.get("error_code") or "") == "TwilioSendBlockedError"
+        or "disabled" in str(send.get("error") or "").lower()
+    )
+    row.delivery_status = "blocked" if blocked else "failed"
+    row.send_error = send.get("error")
+    _audit(company_id, actor_user_id,
+           "promotional_solicitation_send_blocked" if blocked else "promotional_solicitation_send_failed",
+           row.id, {
+               "contact_id": contact_id, "error": send.get("error"),
+               "error_code": send.get("error_code"),
+           })
+    return {
+        "ok": True, "sent": False, "blocked": blocked, "contact_id": contact_id,
+        "solicitation_id": row.id, "delivery_status": row.delivery_status,
+        "error": send.get("error"),
+    }
+
+
+def send_solicitation_batch(
+    company_id: int,
+    contact_ids: list,
+    *,
+    actor_user_id: int | None,
+    segment_id: int | None = None,
+    body: str | None = None,
+    max_batch: int = 200,
+) -> dict:
+    """Send opt-in request SMS to a list of contacts.
+
+    The list is re-intersected against the CURRENT ``needs_promotional_optin``
+    audience for the tenant/segment, so a stale or hand-crafted client list can
+    never reach a STOP/suppressed contact, an already-promotional contact, a
+    duplicate phone, or a contact outside the segment. Anything not currently
+    eligible is reported in ``skipped_not_eligible`` and never contacted.
+    """
+    eligible = {a["contact_id"] for a in needs_promotional_optin(company_id, segment_id)}
+    requested = list(dict.fromkeys(int(c) for c in (contact_ids or [])))
+    targets = [c for c in requested if c in eligible][:max_batch]
+    skipped = [c for c in requested if c not in eligible]
+    over_cap = [c for c in requested if c in eligible][max_batch:]
+
+    results = []
+    for cid in targets:
+        try:
+            res = send_solicitation(
+                company_id, cid, actor_user_id=actor_user_id, body=body,
+            )
+            db.session.commit()
+        except Exception as exc:  # noqa: BLE001 — one bad contact must not abort the batch
+            db.session.rollback()
+            res = {"ok": False, "contact_id": cid, "error": str(exc)}
+        results.append(res)
+
+    return {
+        "ok": True,
+        "requested": len(requested),
+        "eligible": len(targets),
+        "sent": sum(1 for r in results if r.get("sent")),
+        "blocked": sum(1 for r in results if r.get("blocked")),
+        "failed": sum(1 for r in results if r.get("ok") and not r.get("sent") and not r.get("blocked")),
+        "refused": sum(1 for r in results if not r.get("ok")),
+        "skipped_not_eligible": skipped,
+        "skipped_over_cap": over_cap,
+        "results": results,
+    }
+
+
+def sync_solicitation_delivery_status(message_sid: str, status: str, error: str | None = None) -> int:
+    """Apply a Twilio delivery-status callback to any solicitation whose opt-in
+    request carried this MessageSid. Delivery status only — never consent."""
+    if not message_sid:
+        return 0
+    rows = PromotionalOptInSolicitation.query.filter_by(
+        solicitation_message_sid=message_sid
+    ).all()
+    mapped = _normalize_delivery_status(status)
+    now = _now()
+    for row in rows:
+        row.delivery_status = mapped
+        row.last_status_at = now
+        if mapped in {"failed", "undelivered"}:
+            row.send_error = error or status
+        elif mapped == "delivered":
+            row.send_error = None
+    return len(rows)
+
+
+def latest_solicitation_status_map(company_id: int, contact_ids: list) -> dict:
+    """{contact_id: {state, label, status, delivery_status, message_sid,
+    sent_at}} for the newest solicitation per contact. Read-only.
+
+    ``state`` is the single value the operator UI colours on:
+    replied_yes | stopped | delivered | sent | failed | blocked | not_sent.
+    """
+    ids = [int(c) for c in (contact_ids or [])]
+    if not ids:
+        return {}
+    rows = (
+        PromotionalOptInSolicitation.query
+        .filter(
+            PromotionalOptInSolicitation.company_id == company_id,
+            PromotionalOptInSolicitation.contact_id.in_(ids),
+        )
+        .order_by(PromotionalOptInSolicitation.contact_id.asc(),
+                  PromotionalOptInSolicitation.id.asc())
+        .all()
+    )
+    latest: dict[int, PromotionalOptInSolicitation] = {}
+    for row in rows:
+        latest[row.contact_id] = row  # ascending id → last wins
+
+    out: dict[int, dict] = {}
+    for cid, row in latest.items():
+        if row.status == "consented":
+            state, label = "replied_yes", "Replied YES"
+        elif row.status == "stopped":
+            state, label = "stopped", "STOP"
+        elif row.status == "cancelled":
+            state, label = "not_sent", "Cancelled"
+        elif row.delivery_status == "delivered":
+            state, label = "delivered", "Delivered"
+        elif row.delivery_status in _SENT_DELIVERY_STATES:
+            state, label = "sent", "Sent"
+        elif row.delivery_status == "blocked":
+            state, label = "blocked", "Blocked (SMS disabled)"
+        elif row.delivery_status in {"failed", "undelivered"}:
+            state, label = "failed", "Send failed"
+        else:
+            state, label = "not_sent", "Not sent"
+        out[cid] = {
+            "state": state, "label": label,
+            "status": row.status, "delivery_status": row.delivery_status,
+            "message_sid": row.solicitation_message_sid,
+            "sent_at": row.sent_at.isoformat() if row.sent_at else None,
+            "solicitation_id": row.id,
+        }
+    return out

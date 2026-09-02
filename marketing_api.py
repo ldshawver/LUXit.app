@@ -1486,7 +1486,7 @@ def api_promotional_optin_overview():
     sid = request.args.get("segment_id", type=int)
     if sid and not Segment.query.filter_by(id=sid, company_id=cid).first():
         return _json_error("segment not found", 404)
-    result = classify_audience(cid, sid)
+    result = classify_audience(cid, sid, include_solicitation_status=True)
     return jsonify({
         "success": True,
         "segment_id": sid,
@@ -1502,8 +1502,10 @@ def api_promotional_optin_overview():
 @segment_api_bp.get("/promotional-optin/audience")
 @login_required
 def api_promotional_optin_audience():
-    """The Needs Promotional Opt-In audience for the operator's own tenant."""
-    from services.promotional_optin import needs_promotional_optin
+    """The Needs Promotional Opt-In audience for the operator's own tenant,
+    each row annotated with its latest solicitation state (not_sent / sent /
+    delivered / failed / blocked / replied_yes / stopped)."""
+    from services.promotional_optin import classify_audience
     cid = tenant_id()
     if not cid:
         return _json_error("tenant/company is required", 400)
@@ -1513,10 +1515,11 @@ def api_promotional_optin_audience():
     sid = request.args.get("segment_id", type=int)
     if sid and not Segment.query.filter_by(id=sid, company_id=cid).first():
         return _json_error("segment not found", 404)
-    audience = needs_promotional_optin(cid, sid)
+    result = classify_audience(cid, sid, include_solicitation_status=True)
     return jsonify({
         "success": True, "segment_id": sid,
-        "count": len(audience), "audience": audience,
+        "count": len(result["audience"]), "audience": result["audience"],
+        "delivery": result["counts"].get("delivery"),
         "is_status_not_consent": True,
     })
 
@@ -1558,3 +1561,52 @@ def api_promotional_optin_create_solicitation():
             "solicited_at": row.solicited_at.isoformat() if row.solicited_at else None,
         },
     })
+
+
+@segment_api_bp.post("/promotional-optin/solicitations/send")
+@login_required
+def api_promotional_optin_send_solicitations():
+    """Dispatch the opt-in *request* SMS ("Reply YES to opt in") to one or more
+    contacts from the Needs Promotional Opt-In audience.
+
+    - Admin, tenant-scoped. The company is resolved server-side; a cross-tenant
+      contact_id is silently dropped (never contacted, reported as skipped).
+    - The submitted list is re-intersected against the CURRENT eligible audience
+      inside the service, so STOP/suppressed/already-promotional/duplicate/
+      out-of-segment contacts can never be reached even with a stale client list.
+    - Consent is NOT changed here. A contact becomes promotional-eligible only
+      by replying YES (services.promotional_optin.record_contextual_yes).
+    - Where outbound Twilio is disabled the per-contact result is 'blocked' and
+      no SMS leaves the system.
+    """
+    from services.promotional_optin import send_solicitation_batch
+    cid = tenant_id()
+    if not cid:
+        return _json_error("tenant/company is required", 400)
+    err = _require_admin(cid)
+    if err:
+        return err
+    data = request.get_json(silent=True) or {}
+    contact_ids = data.get("contact_ids")
+    if not isinstance(contact_ids, list) or not contact_ids:
+        return _json_error("contact_ids (non-empty list) is required", 400)
+    try:
+        contact_ids = [int(c) for c in contact_ids]
+    except (TypeError, ValueError):
+        return _json_error("contact_ids must be integers", 400)
+    sid = data.get("segment_id")
+    if sid is not None:
+        sid = int(sid)
+        if not Segment.query.filter_by(id=sid, company_id=cid).first():
+            return _json_error("segment not found", 404)
+    if len(contact_ids) > 500:
+        return _json_error("at most 500 contacts per request", 400)
+
+    summary = send_solicitation_batch(
+        cid, contact_ids,
+        actor_user_id=getattr(current_user, "id", None),
+        segment_id=sid,
+        body=(data.get("body") or None),
+    )
+    db.session.commit()
+    return jsonify({"success": True, **summary})

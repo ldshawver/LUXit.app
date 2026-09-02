@@ -129,13 +129,38 @@
         <button type="button" class="btn btn-outline-secondary btn-sm" id="promoAudienceToggle">
           <i data-feather="list"></i> View &ldquo;Needs Promotional Opt-In&rdquo; audience
         </button>
-        <span class="small text-muted ms-2" id="promoSuggestedCopy"></span>
       </div>
-      <div class="table-responsive mt-3 d-none" id="promoAudienceWrap">
-        <table class="table table-sm">
-          <thead><tr><th>Contact</th><th>Canonical phone</th><th>Solicitation</th></tr></thead>
-          <tbody id="promoAudienceBody"></tbody>
-        </table>
+
+      <div class="mt-3 d-none" id="promoAudienceWrap">
+        <div class="card"><div class="card-body">
+          <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+            <div class="form-check mb-0">
+              <input class="form-check-input" type="checkbox" id="promoSelectAll">
+              <label class="form-check-label small" for="promoSelectAll">Select all not-yet-sent</label>
+            </div>
+            <span class="small text-muted" id="promoSelCount">0 selected</span>
+            <button type="button" class="btn btn-primary btn-sm ms-auto" id="promoSendBtn" disabled>
+              <i data-feather="send"></i> Send opt-in request
+            </button>
+          </div>
+          <label class="form-label small mb-1" for="promoCopy">Opt-in request message</label>
+          <textarea class="form-control form-control-sm mb-1" id="promoCopy" rows="3"></textarea>
+          <p class="small text-muted mb-2">
+            Sent one-to-one from your business line. Recipients reply <strong>YES</strong>
+            to opt in; <strong>STOP</strong> always opts out. Sending does not change
+            anyone&rsquo;s consent by itself &mdash; only a YES reply does.
+          </p>
+          <div class="alert alert-info small d-none" id="promoSendResult" role="alert"></div>
+          <div class="table-responsive">
+            <table class="table table-sm align-middle">
+              <thead><tr>
+                <th style="width:2rem;"></th><th>Contact</th>
+                <th>Canonical phone</th><th>Status</th>
+              </tr></thead>
+              <tbody id="promoAudienceBody"></tbody>
+            </table>
+          </div>
+        </div></div>
       </div>
     </div>
   </div>
@@ -389,40 +414,162 @@ document.getElementById('bulkExcludeSelected')?.addEventListener('click', async 
 });
 
 // ── Promotional Opt-In panel ──────────────────────────────────────────────
-(async function () {
+(function () {
   const panel = document.getElementById('promoOptinPanel');
   if (!panel) return;
   const sid = panel.dataset.segmentId;
-  try {
-    const res = await fetch(`/api/promotional-optin/overview?segment_id=${sid}`);
-    if (res.ok) {
+  const $ = (id) => document.getElementById(id);
+  const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => (
+    {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const csrf = () => (document.querySelector('meta[name="csrf-token"]') || {}).content || '';
+
+  const STATE_BADGE = {
+    replied_yes: 'bg-success', delivered: 'bg-success', sent: 'bg-info text-dark',
+    failed: 'bg-danger', blocked: 'bg-warning text-dark',
+    stopped: 'bg-dark', not_sent: 'bg-light text-dark border',
+  };
+  // A contact is re-contactable only if we have not already reached them and
+  // they have not opted in or out.
+  const SENDABLE = new Set(['not_sent', 'failed']);
+
+  let audience = [];        // rows from the API
+  const selected = new Set();
+
+  async function loadOverview() {
+    try {
+      const res = await fetch(`/api/promotional-optin/overview?segment_id=${sid}`);
+      if (!res.ok) return;
       const data = await res.json();
       Object.entries(data.counts || {}).forEach(([k, v]) => {
-        const el = panel.querySelector(`[data-promo-count="${k}"]`);
-        if (el) el.textContent = v;
+        if (typeof v !== 'object') {
+          const el = panel.querySelector(`[data-promo-count="${k}"]`);
+          if (el) el.textContent = v;
+        }
       });
-      const copy = document.getElementById('promoSuggestedCopy');
-      if (copy && data.suggested_solicitation_copy) copy.textContent = 'Suggested copy: ' + data.suggested_solicitation_copy;
+      const copyEl = $('promoCopy');
+      if (copyEl && !copyEl.value && data.suggested_solicitation_copy) {
+        copyEl.value = data.suggested_solicitation_copy;
+      }
+    } catch (e) { /* non-blocking */ }
+  }
+
+  function syncControls() {
+    $('promoSelCount').textContent = `${selected.size} selected`;
+    $('promoSendBtn').disabled = selected.size === 0;
+    const sendable = audience.filter(r => SENDABLE.has((r.solicitation || {}).state || 'not_sent'));
+    const all = sendable.length > 0 && sendable.every(r => selected.has(r.contact_id));
+    $('promoSelectAll').checked = all;
+    $('promoSelectAll').disabled = sendable.length === 0;
+  }
+
+  function renderRows() {
+    const body = $('promoAudienceBody');
+    if (!audience.length) {
+      body.innerHTML = '<tr><td colspan="4" class="text-muted">No contacts need promotional opt-in.</td></tr>';
+      syncControls();
+      return;
     }
-  } catch (e) { /* non-blocking */ }
-  document.getElementById('promoAudienceToggle')?.addEventListener('click', async () => {
-    const wrap = document.getElementById('promoAudienceWrap');
-    wrap.classList.toggle('d-none');
-    if (wrap.classList.contains('d-none')) return;
-    const body = document.getElementById('promoAudienceBody');
-    body.innerHTML = '<tr><td colspan="3" class="text-muted">Loading…</td></tr>';
+    body.innerHTML = audience.map(r => {
+      const st = (r.solicitation || {});
+      const state = st.state || 'not_sent';
+      const canSend = SENDABLE.has(state);
+      const checked = selected.has(r.contact_id) ? 'checked' : '';
+      const dis = canSend ? '' : 'disabled';
+      return `<tr>
+        <td><input type="checkbox" class="form-check-input promo-row-cb" data-cid="${r.contact_id}" ${checked} ${dis}></td>
+        <td>${esc(r.name) || '<span class="text-muted">(no name)</span>'}</td>
+        <td>${esc(r.canonical_phone)}</td>
+        <td><span class="badge ${STATE_BADGE[state] || 'bg-secondary'}">${esc(st.label || 'Not sent')}</span></td>
+      </tr>`;
+    }).join('');
+    body.querySelectorAll('.promo-row-cb').forEach(cb => {
+      cb.addEventListener('change', () => {
+        const cid = parseInt(cb.dataset.cid, 10);
+        if (cb.checked) selected.add(cid); else selected.delete(cid);
+        syncControls();
+      });
+    });
+    if (window.feather) feather.replace();
+    syncControls();
+  }
+
+  async function loadAudience() {
+    const body = $('promoAudienceBody');
+    body.innerHTML = '<tr><td colspan="4" class="text-muted">Loading…</td></tr>';
     try {
       const res = await fetch(`/api/promotional-optin/audience?segment_id=${sid}`);
       const data = await res.json();
-      if (!res.ok) { body.innerHTML = `<tr><td colspan="3" class="text-danger">${data.error || 'Not authorized'}</td></tr>`; return; }
-      body.innerHTML = (data.audience || []).map(r =>
-        `<tr><td>${r.name || '(no name)'}</td><td>${r.canonical_phone || ''}</td>` +
-        `<td>${r.solicitation_pending ? '<span class="badge bg-info text-dark">pending</span>' : '<span class="text-muted">none</span>'}</td></tr>`
-      ).join('') || '<tr><td colspan="3" class="text-muted">No contacts need promotional opt-in.</td></tr>';
+      if (!res.ok) { body.innerHTML = `<tr><td colspan="4" class="text-danger">${esc(data.error) || 'Not authorized'}</td></tr>`; return; }
+      audience = data.audience || [];
+      // Drop selections that are no longer sendable.
+      for (const cid of [...selected]) {
+        const row = audience.find(r => r.contact_id === cid);
+        if (!row || !SENDABLE.has((row.solicitation || {}).state || 'not_sent')) selected.delete(cid);
+      }
+      renderRows();
     } catch (e) {
-      body.innerHTML = '<tr><td colspan="3" class="text-danger">Failed to load audience.</td></tr>';
+      body.innerHTML = '<tr><td colspan="4" class="text-danger">Failed to load audience.</td></tr>';
+    }
+  }
+
+  $('promoAudienceToggle')?.addEventListener('click', () => {
+    const wrap = $('promoAudienceWrap');
+    wrap.classList.toggle('d-none');
+    if (!wrap.classList.contains('d-none')) loadAudience();
+  });
+
+  $('promoSelectAll')?.addEventListener('change', (e) => {
+    audience.forEach(r => {
+      if (SENDABLE.has((r.solicitation || {}).state || 'not_sent')) {
+        if (e.target.checked) selected.add(r.contact_id); else selected.delete(r.contact_id);
+      }
+    });
+    renderRows();
+  });
+
+  $('promoSendBtn')?.addEventListener('click', async () => {
+    const ids = [...selected];
+    const body = ($('promoCopy').value || '').trim();
+    if (!ids.length) return;
+    if (!body) return alert('The opt-in request message cannot be empty.');
+    if (!confirm(`Send the opt-in request to ${ids.length} contact${ids.length === 1 ? '' : 's'}? They will receive one SMS asking them to reply YES.`)) return;
+
+    const btn = $('promoSendBtn');
+    btn.disabled = true; btn.textContent = 'Sending…';
+    const result = $('promoSendResult');
+    result.classList.remove('d-none', 'alert-danger', 'alert-info');
+    try {
+      const res = await fetch(`/api/promotional-optin/solicitations/send`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrf() },
+        body: JSON.stringify({ segment_id: parseInt(sid, 10), contact_ids: ids, body }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        result.classList.add('alert-danger');
+        result.textContent = data.error || 'Send failed.';
+      } else {
+        result.classList.add('alert-info');
+        const parts = [`${data.sent} sent`];
+        if (data.blocked) parts.push(`${data.blocked} blocked (SMS disabled)`);
+        if (data.failed) parts.push(`${data.failed} failed`);
+        if ((data.skipped_not_eligible || []).length) parts.push(`${data.skipped_not_eligible.length} skipped (no longer eligible)`);
+        if ((data.skipped_over_cap || []).length) parts.push(`${data.skipped_over_cap.length} skipped (over per-request cap)`);
+        result.textContent = parts.join(' · ');
+      }
+    } catch (e) {
+      result.classList.add('alert-danger');
+      result.textContent = 'Send failed.';
+    } finally {
+      selected.clear();
+      btn.innerHTML = '<i data-feather="send"></i> Send opt-in request';
+      await loadOverview();
+      await loadAudience();
+      if (window.feather) feather.replace();
     }
   });
+
+  loadOverview();
 })();
 </script>
 {% endblock %}

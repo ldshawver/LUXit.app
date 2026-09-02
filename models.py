@@ -1599,6 +1599,13 @@ class PromotionalOptInSolicitation(db.Model):
     closed_at = db.Column(db.DateTime, nullable=True)
     closed_reason = db.Column(db.String(60), nullable=True)
     source = db.Column(db.String(40), nullable=False, default="operator")
+    # Operator send-flow delivery tracking for the opt-in *request* SMS — never
+    # consent. NULL delivery_status = recorded but never dispatched;
+    # 'blocked' = outbound Twilio disabled (LUXIT_TWILIO_MODE).
+    delivery_status = db.Column(db.String(20), nullable=True)
+    sent_at = db.Column(db.DateTime, nullable=True)
+    send_error = db.Column(db.Text, nullable=True)
+    last_status_at = db.Column(db.DateTime, nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

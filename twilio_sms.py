@@ -2016,6 +2016,14 @@ def sms_status():
             db.session.rollback()
             logger.warning("Campaign delivery status sync failed: %s", campaign_status_exc)
 
+        try:
+            from services.promotional_optin import sync_solicitation_delivery_status
+            if sync_solicitation_delivery_status(sid, status, error_msg or error_code):
+                db.session.commit()
+        except Exception as promo_status_exc:
+            db.session.rollback()
+            logger.warning("Promotional opt-in solicitation delivery status sync failed: %s", promo_status_exc)
+
     return "", 204
 
 
