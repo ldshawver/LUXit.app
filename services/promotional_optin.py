@@ -535,8 +535,13 @@ def send_solicitation(
             "message_sid": row.solicitation_message_sid,
         }
 
+    # A system-level block (outbound Twilio disabled, or the tenant's Phone/PWA
+    # SMS licence inactive) is not a per-message delivery failure — mark it
+    # 'blocked' so the operator sees a config problem, not a bad number, and
+    # keep the pending row so a later YES still resolves.
     blocked = (
         str(send.get("error_code") or "") == "TwilioSendBlockedError"
+        or bool(send.get("license_blocked"))
         or "disabled" in str(send.get("error") or "").lower()
     )
     row.delivery_status = "blocked" if blocked else "failed"

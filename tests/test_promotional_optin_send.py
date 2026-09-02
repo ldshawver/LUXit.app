@@ -231,6 +231,24 @@ def test_blocked_send_records_blocked_and_raises_nothing(app, monkeypatch):
     assert row.send_error
 
 
+def test_license_inactive_send_records_blocked_not_failed(app, monkeypatch):
+    from services.promotional_optin import send_solicitation
+    monkeypatch.setattr("twilio_sms.sendConversationSms", lambda *a, **k: {
+        "success": False, "error": "Phone/PWA Communications license is not active.",
+        "license_blocked": True,
+    })
+    co = _company()
+    _twilio_account(co)
+    c = _contact(co, "+14155551006")
+    _inbound_evidence(co, "+14155551006", "SMv6")
+
+    res = send_solicitation(co.id, c.id, actor_user_id=None)
+    db.session.commit()
+    assert res["ok"] and res["sent"] is False and res["blocked"] is True
+    row = PromotionalOptInSolicitation.query.filter_by(company_id=co.id, contact_id=c.id).one()
+    assert row.status == "pending" and row.delivery_status == "blocked"
+
+
 def test_batch_reintersects_against_current_eligible_audience(app, patch_send):
     from services.promotional_optin import send_solicitation_batch
     co = _company()
