@@ -343,8 +343,13 @@
       display: none; flex-direction: column; overflow-y: auto;
     }
     .contact-panel-head {
+      display: flex; align-items: center; justify-content: space-between;
       padding: 14px 14px 10px; border-bottom: 1px solid var(--border);
       font-size: .8rem; font-weight: 600; color: var(--text-dim); text-transform: uppercase; letter-spacing: .05em;
+    }
+    .cp-close {
+      display: none; background: none; border: none; color: var(--text-dim);
+      cursor: pointer; padding: 4px; margin: -4px -4px -4px 8px; line-height: 0;
     }
     .cp-section { padding: 12px 14px; border-bottom: 1px solid var(--border); }
     .cp-label { font-size: .72rem; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; margin-bottom: 4px; }
@@ -586,6 +591,16 @@
 
     /* ── Mobile ─────────────────────────────────────── */
     @media (min-width: 900px) { #contactPanel { display: flex; } }
+    @media (max-width: 899px) {
+      /* A docked 260px column is unusable on a phone: present the panel as a
+         full-height slide-over the conversation view summons. toggleContactPanel()
+         flips inline display:flex; these rules apply once it is shown. */
+      #contactPanel {
+        position: fixed; inset: 0; width: 100%; max-width: 100%;
+        z-index: 320; border-left: none; box-shadow: 0 0 40px rgba(0,0,0,.5);
+      }
+      #contactPanel .cp-close { display: inline-flex; }
+    }
     @media (max-width: 640px) {
       #sidebar { width: 100%; max-width: 100%; border-right: none; min-width: 0; }
       #main { display: none; width: 100%; }
@@ -811,7 +826,12 @@
     </div>
 
     <div id="contactPanel">
-      <div class="contact-panel-head">Contact Info</div>
+      <div class="contact-panel-head">
+        <span>Contact Info</span>
+        <button type="button" class="cp-close" onclick="closeContactPanel()" aria-label="Close contact info">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
       <div id="cpContent"></div>
     </div>
   </div>
@@ -2106,6 +2126,8 @@ async function openConversation(convId) {
   state.activeConvId = convId;
   state.contactEditMode = false;
   state.contactEditSaving = false;
+  // Don't let a phone-sized contact slide-over hang over the next conversation.
+  if (window.matchMedia('(max-width: 899px)').matches) closeContactPanel();
   document.querySelectorAll('.conv-item').forEach(el => el.classList.remove('active'));
   const ci = document.getElementById('ci-' + convId);
   if (ci) { ci.classList.add('active'); ci.classList.remove('unread'); ci.querySelector('.conv-dot')?.remove(); }
@@ -2160,6 +2182,7 @@ async function refreshMessages(convId) {
 
 function closeThread() {
   state.activeConvId = null;
+  if (window.matchMedia('(max-width: 899px)').matches) closeContactPanel();
   document.getElementById('shell').classList.remove('thread-open');
   document.getElementById('thread').style.display = 'none';
   document.getElementById('threadPlaceholder').style.display = 'flex';
@@ -2320,10 +2343,30 @@ function renderContactPanel(c, contact) {
   `;
 }
 
-function toggleContactPanel() {
+function contactPanelOpen() {
   const p = document.getElementById('contactPanel');
-  p.style.display = p.style.display === 'flex' ? 'none' : 'flex';
+  return p && getComputedStyle(p).display !== 'none';
 }
+function openContactPanel() {
+  const p = document.getElementById('contactPanel');
+  if (p) p.style.display = 'flex';
+}
+function closeContactPanel() {
+  const p = document.getElementById('contactPanel');
+  if (!p) return;
+  // Below the 900px dock breakpoint the panel is a fixed overlay we fully hide;
+  // at/above it the panel is docked and the toggle just shows/hides the column.
+  p.style.display = 'none';
+}
+function toggleContactPanel() {
+  if (contactPanelOpen()) closeContactPanel(); else openContactPanel();
+}
+// Esc closes the mobile slide-over.
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && window.matchMedia('(max-width: 899px)').matches && contactPanelOpen()) {
+    closeContactPanel();
+  }
+});
 
 /* ── Contact panel: edit CRM identity fields ─────────────────────── */
 function enterContactEdit() {

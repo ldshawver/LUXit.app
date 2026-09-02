@@ -148,9 +148,16 @@ def update_contact_fields(
     if touched_identity and source in TRUSTED_EDIT_SOURCES:
         # A deliberate authorized edit is first-party evidence -- record its
         # provenance so the identity resolver (services/contact_resolver.py)
-        # ranks it correctly rather than leaving it unattributed.
+        # ranks it correctly rather than leaving it unattributed. Marking the
+        # verification level satisfies _trusted_name_provenance() via its strong
+        # path (not the bare first_name fallback), so a later Google/iOS sync
+        # cannot outrank or silently replace an operator-entered name.
         contact.name_source = source
         contact.name_provenance = {"source": source, "confidence": 100, "actor_user_id": actor_user_id}
+        if (getattr(contact, "name_verification_level", None) or "unverified") not in {"verified", "trusted"}:
+            contact.name_verification_level = "verified"
+        if getattr(contact, "name_verified_at", None) is None:
+            contact.name_verified_at = datetime.utcnow()
 
     contact.updated_at = datetime.utcnow()
     db.session.flush()
