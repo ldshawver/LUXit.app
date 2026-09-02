@@ -741,7 +741,14 @@ def _web_optin_serializer():
 
 
 def _encode_web_token(company_id: int, contact_id: int, jti: str) -> str:
-    return _web_optin_serializer().dumps({"c": int(company_id), "k": int(contact_id), "j": jti})
+    """Opaque, tamper-resistant public token. The only thing carried is the
+    random ``web_token_jti`` (192 bits from ``secrets.token_urlsafe(24)``): the
+    tenant, contact and solicitation are looked up server-side from the row it
+    identifies, never embedded. ``company_id`` / ``contact_id`` are accepted for
+    call-site symmetry but deliberately not serialized — the public link must
+    not expose raw internal identifiers. Signed with the app secret so a
+    tampered token fails closed without a DB hit."""
+    return _web_optin_serializer().dumps({"j": jti})
 
 
 def _decode_web_token(token: str) -> dict | None:
@@ -750,7 +757,7 @@ def _decode_web_token(token: str) -> dict | None:
         data = _web_optin_serializer().loads(token)
     except BadData:
         return None
-    if not isinstance(data, dict) or not all(k in data for k in ("c", "k", "j")):
+    if not isinstance(data, dict) or not isinstance(data.get("j"), str) or not data["j"]:
         return None
     return data
 
@@ -783,10 +790,13 @@ def _resolve_web_token(token: str):
         .first()
     )
     if not row:
+        # Unknown jti: a forged/guessed token, or a link that no longer exists.
+        # Fail closed without disclosing which.
         return None, None, "unknown_link"
-    # Tamper / cross-tenant: the signed body must match the stored row exactly.
-    if row.company_id != payload["c"] or row.contact_id != payload["k"]:
-        return None, None, "token_mismatch"
+    # The tenant and contact are the row's own — a token cannot point anywhere
+    # else, so there is no cross-tenant body to forge. Possession of the random
+    # jti is the authorization; the signature only lets us reject tampered
+    # tokens before touching the database.
     contact = Contact.query.filter_by(id=row.contact_id, company_id=row.company_id).first()
     if not contact:
         return None, None, "contact_not_found"
@@ -856,6 +866,10 @@ def get_web_optin_context(token: str) -> dict:
         return {"ok": False, "error": payload}
     already = bool(row.status == "consented") or has_promotional_optin(contact)
     suppressed = is_suppressed(contact) or bool(contact.sms_opted_out or contact.sms_opt_out_at)
+    # Closed = the link's opportunity is spent for a reason other than a
+    # completed consent (operator cancel, STOP-closed, superseded). The page
+    # shows a neutral "no longer active" state and offers no consent control.
+    closed = row.status not in ("pending", "consented")
     first = _safe_first_name(contact)
     return {
         "ok": True,
@@ -866,6 +880,7 @@ def get_web_optin_context(token: str) -> dict:
         "phone_hint": "•••• " + (row.canonical_phone or "")[-4:],
         "already_consented": already,
         "suppressed": suppressed,
+        "closed": closed,
         "status": row.status,
     }
 
@@ -934,6 +949,15 @@ def record_web_optin(
         # Already promotional through another path; nothing to grant, no error.
         return {"ok": True, "granted": False, "already": True,
                 "solicitation_id": row.id}
+
+    # A hosted link is single-use and only valid while its solicitation is
+    # pending. Any other non-terminal state means the opportunity was closed
+    # (STOP, operator cancel, superseded by a newer link) — a stale link must
+    # never revive promotional consent, even if the contact has since texted
+    # START and is no longer suppressed. Fail closed; grant nothing.
+    if row.status != "pending":
+        return {"ok": True, "granted": False, "closed": True,
+                "status": row.status, "solicitation_id": row.id}
 
     canonical = _canonical_phone(contact) or row.canonical_phone
     context = {

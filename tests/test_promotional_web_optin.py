@@ -221,7 +221,7 @@ def test_stop_precedence_web_optin_grants_nothing_and_closes_link(app):
 def test_tampered_and_cross_tenant_tokens_are_rejected(app):
     from services.promotional_optin import (
         generate_web_optin_link, record_web_optin, get_web_optin_context,
-        _encode_web_token, WEB_OPTIN_DISCLOSURE_VERSION,
+        _web_optin_serializer, WEB_OPTIN_DISCLOSURE_VERSION,
     )
     co_a = _company("A")
     co_b = _company("B")
@@ -231,15 +231,30 @@ def test_tampered_and_cross_tenant_tokens_are_rejected(app):
     db.session.commit()
     row = PromotionalOptInSolicitation.query.filter_by(company_id=co_a.id).one()
 
-    # garbage / truncated token
+    # garbage token -> bad signature -> fail closed
     assert get_web_optin_context("not-a-real-token")["error"] == "invalid_token"
+
+    # tampered token: flip the trailing signature bytes
     assert record_web_optin(link["token"][:-4] + "aaaa",
                             disclosure_version=WEB_OPTIN_DISCLOSURE_VERSION)["error"] in (
-        "invalid_token", "unknown_link", "token_mismatch")
+        "invalid_token", "unknown_link")
 
-    # a validly-signed token whose body points at another tenant/contact
-    forged = _encode_web_token(co_b.id, cb.id, row.web_token_jti)
-    assert record_web_optin(forged, disclosure_version=WEB_OPTIN_DISCLOSURE_VERSION)["error"] == "token_mismatch"
+    # the public token is opaque: no raw contact / company / solicitation id in it
+    import base64, json
+    body = link["token"].split(".", 1)[0]
+    decoded = json.loads(base64.urlsafe_b64decode(body + "=" * (-len(body) % 4)))
+    # only the random jti travels in the token - no company / contact /
+    # solicitation id, no tenant identifier
+    assert set(decoded.keys()) == {"j"}
+    assert decoded["j"] == row.web_token_jti
+
+    # a validly-signed token carrying a jti that does not exist -> fail closed,
+    # without disclosing whether any contact/link exists. A cross-tenant actor
+    # has nothing else to forge: the only way to reach tenant A's row is to
+    # already hold A's unguessable random jti (i.e. A's link itself).
+    forged = _web_optin_serializer().dumps({"j": "totally-made-up-jti-value"})
+    assert record_web_optin(forged, disclosure_version=WEB_OPTIN_DISCLOSURE_VERSION)["error"] == "unknown_link"
+    assert get_web_optin_context(forged)["error"] == "unknown_link"
     assert PromotionalConsentEvent.query.count() == 0
 
 
@@ -398,3 +413,144 @@ def test_confirmation_sms_sent_only_when_flag_and_messaging_service(app, monkeyp
     db.session.commit()
     assert out["granted"] and out["confirmation_sent"] is True
     assert sent["n"] == 1
+
+
+# --- closed / stale-link precedence -------------------------------------------
+
+def test_closed_link_fails_closed_and_grants_nothing(app, client):
+    """A link whose solicitation was closed (operator cancel) must never grant
+    consent, even though the contact is not suppressed. Fail closed."""
+    from services.promotional_optin import (
+        generate_web_optin_link, record_web_optin, cancel_pending_for_contact,
+        get_web_optin_context, WEB_OPTIN_DISCLOSURE_VERSION,
+    )
+    co = _company()
+    c = _contact(co, "+14155550230")
+    seg = _marketing_segment(co, [c.id])
+    link = generate_web_optin_link(co.id, c.id, actor_user_id=None)
+    db.session.commit()
+
+    cancel_pending_for_contact(co.id, c.id, reason="operator")
+    db.session.commit()
+
+    ctx = get_web_optin_context(link["token"])
+    assert ctx["ok"] and ctx["closed"] is True
+
+    out = record_web_optin(link["token"], disclosure_version=WEB_OPTIN_DISCLOSURE_VERSION)
+    db.session.commit()
+    assert out["granted"] is not True and out.get("closed") is True
+    assert PromotionalConsentEvent.query.count() == 0
+    db.session.refresh(c)
+    assert c.sms_marketing_opt_in is False
+
+    from services.contact_audience import resolve_sms_campaign_recipients
+    assert resolve_sms_campaign_recipients(_promo_campaign(co, seg))["counts"]["eligible_recipients"] == 0
+
+    # the public surface renders the invalid page, not a consent form / success
+    g = client.get(link["path"])
+    assert g.status_code == 404
+    p = client.post(link["path"], data={"agree": "on", "disclosure_version": link["disclosure_version"]})
+    assert p.status_code == 404
+    assert PromotionalConsentEvent.query.count() == 0
+
+
+def test_stop_then_start_stale_link_does_not_opt_back_in(app):
+    """STOP closes the pending link. A later START clears suppression, but the
+    stale link must NOT be able to re-grant promotional consent."""
+    from services.promotional_optin import (
+        generate_web_optin_link, record_web_optin, WEB_OPTIN_DISCLOSURE_VERSION,
+    )
+    co = _company()
+    c = _contact(co, "+14155550231")
+    link = generate_web_optin_link(co.id, c.id, actor_user_id=None)
+    db.session.commit()
+
+    # STOP arrives (link is closed as part of STOP precedence)
+    c.sms_opted_out = True
+    c.sms_opt_out_at = datetime.utcnow()
+    c.sms_consent_status = "opted_out"
+    db.session.commit()
+    r_stop = record_web_optin(link["token"], disclosure_version=WEB_OPTIN_DISCLOSURE_VERSION)
+    db.session.commit()
+    assert r_stop.get("suppressed") is True
+
+    # START / resubscribe clears the STOP flags
+    c.sms_opted_out = False
+    c.sms_opt_out_at = None
+    c.sms_consent_status = "subscribed_transactional"
+    db.session.commit()
+
+    out = record_web_optin(link["token"], disclosure_version=WEB_OPTIN_DISCLOSURE_VERSION)
+    db.session.commit()
+    assert out["granted"] is not True and out.get("closed") is True
+    assert PromotionalConsentEvent.query.count() == 0
+    db.session.refresh(c)
+    assert c.sms_marketing_opt_in is False
+
+
+def test_stop_after_web_consent_removes_promotional_eligibility(app):
+    from services.promotional_optin import (
+        generate_web_optin_link, record_web_optin, WEB_OPTIN_DISCLOSURE_VERSION,
+    )
+    from services.contact_audience import resolve_sms_campaign_recipients
+    co = _company()
+    c = _contact(co, "+14155550232")
+    seg = _marketing_segment(co, [c.id])
+    link = generate_web_optin_link(co.id, c.id, actor_user_id=None)
+    db.session.commit()
+
+    record_web_optin(link["token"], disclosure_version=WEB_OPTIN_DISCLOSURE_VERSION)
+    db.session.commit()
+    assert resolve_sms_campaign_recipients(_promo_campaign(co, seg))["counts"]["eligible_recipients"] == 1
+
+    c.sms_opted_out = True
+    c.sms_opt_out_at = datetime.utcnow()
+    c.sms_consent_status = "opted_out"
+    db.session.commit()
+    assert resolve_sms_campaign_recipients(_promo_campaign(co, seg))["counts"]["eligible_recipients"] == 0
+    # the immutable evidence of the original consent is untouched
+    assert PromotionalConsentEvent.query.filter_by(company_id=co.id).count() == 1
+
+
+def test_qr_encodes_only_the_public_consent_url(app, client):
+    from services.promotional_optin import generate_web_optin_link
+    co = _company()
+    admin = _admin(co)
+    c = _contact(co, "+14155559999")
+    link = generate_web_optin_link(co.id, c.id, actor_user_id=admin.id)
+    db.session.commit()
+    _login(client, admin)
+    r = client.get(f"/api/promotional-optin/consent-link/{c.id}/qr.svg")
+    assert r.status_code == 200 and r.mimetype == "image/svg+xml"
+    assert b"<svg" in r.data
+    # The QR is built only from the public opaque consent URL. That URL's token
+    # decodes to nothing but the random jti - no contact / company / solicitation
+    # id - so the QR cannot carry an internal identifier either.
+    import base64, json
+    assert link["path"].startswith("/promo-optin/")
+    body = link["token"].split(".", 1)[0]
+    decoded = json.loads(base64.urlsafe_b64decode(body + "=" * (-len(body) % 4)))
+    assert set(decoded.keys()) == {"j"}
+    row = PromotionalOptInSolicitation.query.filter_by(company_id=co.id, contact_id=c.id).one()
+    assert decoded["j"] == row.web_token_jti
+    assert PromotionalConsentEvent.query.count() == 0
+
+
+def test_generating_qr_and_link_send_zero_sms(app, client, monkeypatch):
+    import twilio_sms
+    calls = {"n": 0}
+    if hasattr(twilio_sms, "sendConversationSms"):
+        monkeypatch.setattr("twilio_sms.sendConversationSms",
+                            lambda *a, **k: calls.__setitem__("n", calls["n"] + 1) or {"success": True})
+    co = _company()
+    admin = _admin(co)
+    c = _contact(co, "+14155559998")
+    db.session.commit()
+    _login(client, admin)
+    cl = client.post("/api/promotional-optin/consent-link", json={"contact_id": c.id})
+    assert cl.status_code == 200
+    qr = client.get(f"/api/promotional-optin/consent-link/{c.id}/qr.svg")
+    assert qr.status_code == 200
+    assert calls["n"] == 0
+    sol = PromotionalOptInSolicitation.query.filter_by(company_id=co.id, contact_id=c.id).one()
+    assert sol.solicitation_message_sid is None and sol.delivery_status is None

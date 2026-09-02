@@ -38,6 +38,10 @@ def consent_page(token: str):
     if not ctx.get("ok"):
         # Do not leak why (unknown vs tampered vs phone-changed) to the public.
         return render_template("promo_optin/invalid.html"), 404
+    if ctx.get("closed"):
+        # The link's opportunity was closed (STOP, operator cancel, superseded).
+        # Never offer a consent control on a stale link.
+        return render_template("promo_optin/invalid.html"), 404
     return render_template(
         "promo_optin/consent.html",
         token=token,
@@ -56,7 +60,7 @@ def consent_page(token: str):
 @csrf.exempt
 def consent_submit(token: str):
     ctx = get_web_optin_context(token)
-    if not ctx.get("ok"):
+    if not ctx.get("ok") or ctx.get("closed"):
         return render_template("promo_optin/invalid.html"), 404
 
     agreed = (request.form.get("agree") or "").strip().lower() in ("on", "true", "yes", "1")
@@ -105,6 +109,10 @@ def consent_submit(token: str):
                 error="Our terms were updated. Please review and agree again.",
             ), 409
         return render_template("promo_optin/invalid.html"), 400
+
+    if result.get("closed"):
+        # Link closed between page load and submit (race with STOP / cancel).
+        return render_template("promo_optin/invalid.html"), 404
 
     state = "suppressed" if result.get("suppressed") else (
         "already" if result.get("already") else (
