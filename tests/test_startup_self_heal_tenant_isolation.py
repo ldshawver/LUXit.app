@@ -217,6 +217,33 @@ def test_g_idempotency(app_ctx):
     assert uca_after_first == uca_after_second
 
 
+# ── TEST I — archived user (inactive access row) is not resurrected ─────────
+def test_i_archived_user_not_resurrected(app_ctx):
+    company = _mk_company("Company A")
+    user = _mk_user("archived", is_admin=False, default_company_id=company.id)
+    db.session.add(
+        UserCompanyAccess(
+            user_id=user.id,
+            company_id=company.id,
+            role="staff",
+            is_default=True,
+            is_active=False,  # access was revoked
+        )
+    )
+    db.session.commit()
+
+    resolved = user.ensure_default_company_context()
+
+    assert resolved is None
+    # No legacy user_company link fabricated, access row still inactive.
+    legacy = db.session.execute(
+        user_company.select().where(user_company.c.user_id == user.id)
+    ).first()
+    assert legacy is None
+    row = UserCompanyAccess.query.filter_by(user_id=user.id).one()
+    assert row.is_active is False
+
+
 # ── TEST H — platform admin never fabricates tenant membership ──────────────
 def test_h_platform_admin_no_fabricated_membership(app_ctx):
     tenant_a = _mk_company("Tenant A")

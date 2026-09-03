@@ -387,7 +387,7 @@ class User(UserMixin, db.Model):
           * a valid ``default_company_id`` that the user is authorized for is
             left untouched;
           * otherwise a deterministic default is chosen *from the user's own
-            authorized companies only* (``get_all_companies()`` order — by name);
+            active access rows only* (ordered by company name);
           * if the user has no authorized company the method fails closed:
             it returns ``None`` and mutates nothing. No company is created, no
             unrelated company is reactivated, and no owner/admin/full-app grant
@@ -399,41 +399,47 @@ class User(UserMixin, db.Model):
         logger = logging.getLogger(__name__)
 
         try:
-            authorized = self.get_all_companies()
-            if not authorized:
+            # Authoritative membership: the user's OWN active access rows on
+            # active companies. Ordered by name so a deterministic default is
+            # picked when the user legitimately belongs to several tenants.
+            authorized = (
+                Company.query
+                .join(UserCompanyAccess, UserCompanyAccess.company_id == Company.id)
+                .filter(
+                    UserCompanyAccess.user_id == self.id,
+                    UserCompanyAccess.is_active == True,  # noqa: E712
+                    Company.is_active == True,  # noqa: E712
+                )
+                .order_by(Company.name.asc())
+                .all()
+            )
+
+            bootstrap = None
+            if not authorized and self.is_admin and self.default_company_id:
+                # Registration bootstrap: the very first admin gets a
+                # ``default_company_id`` for the company they created at sign-up,
+                # with no access row yet. Only treat this as authoritative when
+                # the user has NO access rows at all (never provisioned) and the
+                # company is real and active.
+                has_any_access = (
+                    UserCompanyAccess.query.filter_by(user_id=self.id).first()
+                    is not None
+                )
+                if not has_any_access:
+                    candidate = db.session.get(Company, self.default_company_id)
+                    if candidate is not None and candidate.is_active:
+                        bootstrap = candidate
+
+            if not authorized and bootstrap is None:
                 logger.warning(
-                    "Company context: user %s has no authorized tenant — "
-                    "leaving unbound (fail closed).",
+                    "Company context: user %s has no authoritative tenant "
+                    "membership — leaving unbound (fail closed).",
                     self.id,
                 )
                 return None
 
-            by_id = {c.id: c for c in authorized}
-
-            company = by_id.get(self.default_company_id)
-            if company is None:
-                # Deterministic pick from the user's OWN authorized set only.
-                company = authorized[0]
-                if self.default_company_id != company.id:
-                    self.default_company_id = company.id
-                    logger.warning(
-                        "Company context: set user %s default_company_id=%s "
-                        "(chosen from own memberships).",
-                        self.id,
-                        company.id,
-                    )
-
-            access = UserCompanyAccess.query.filter_by(
-                user_id=self.id, company_id=company.id
-            ).first()
-            if access is not None:
-                if not access.is_default:
-                    access.is_default = True
-            elif self.is_admin:
-                # The registration bootstrap sets ``default_company_id`` for the
-                # first admin's self-created company without an access row. That
-                # company is authoritative (it is in ``authorized``), so give the
-                # admin an owner row for their own tenant.
+            if bootstrap is not None:
+                company = bootstrap
                 access = UserCompanyAccess(
                     user_id=self.id,
                     company_id=company.id,
@@ -443,20 +449,40 @@ class User(UserMixin, db.Model):
                     can_access_mobile_inbox=True,
                 )
                 db.session.add(access)
-
-            # Keep the legacy relationship in sync for the resolved tenant only.
-            linked = db.session.execute(
-                user_company.select().where(
-                    (user_company.c.user_id == self.id)
-                    & (user_company.c.company_id == company.id)
-                )
-            ).first()
-            if linked is None:
-                db.session.execute(
-                    user_company.insert().values(
-                        user_id=self.id, company_id=company.id
+                linked = db.session.execute(
+                    user_company.select().where(
+                        (user_company.c.user_id == self.id)
+                        & (user_company.c.company_id == company.id)
                     )
+                ).first()
+                if linked is None:
+                    db.session.execute(
+                        user_company.insert().values(
+                            user_id=self.id, company_id=company.id
+                        )
+                    )
+                db.session.commit()
+                return company
+
+            by_id = {c.id: c for c in authorized}
+            company = by_id.get(self.default_company_id)
+            if company is None:
+                # Deterministic pick from the user's OWN authorized set only.
+                company = authorized[0]
+                self.default_company_id = company.id
+                logger.warning(
+                    "Company context: set user %s default_company_id=%s "
+                    "(chosen from own active memberships).",
+                    self.id,
+                    company.id,
                 )
+
+            # Normalise the is_default flag across the user's own access rows.
+            rows = UserCompanyAccess.query.filter_by(user_id=self.id).all()
+            for row in rows:
+                want = row.company_id == company.id
+                if bool(row.is_default) != want:
+                    row.is_default = want
 
             if db.session.new or db.session.dirty:
                 db.session.commit()
