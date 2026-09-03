@@ -558,72 +558,45 @@ def create_app() -> Flask:
             if os.environ.get("DOCUMENSO_REQUIRED", "").lower() in {"1", "true", "yes"}:
                 raise
 
-        # Self-heal guard: ensure at least one company exists and users are linked.
-        # This prevents post-sync "no company" outages when ops scripts were skipped.
+        # ── Startup tenant-context reconciliation ───────────────────────────
+        # Repairs ONLY internally inconsistent records where the correct tenant
+        # relationship is already authoritative (an access row that is missing
+        # its is_default flag, a default_company_id that names one of the user's
+        # own companies, etc.). It must NEVER infer tenant membership from
+        # company ordering, "the lowest / oldest / only active company", or
+        # Company.query.first() — doing so cross-binds unrelated tenants in a
+        # multi-tenant deployment. Users with no authoritative membership are
+        # left unbound; the app renders an onboarding / no-company state for
+        # them. No fallback company is created or reactivated here.
         try:
-            from models import Company, User, UserCompanyAccess
+            from models import User
 
             changed = 0
-            company = Company.query.filter_by(is_active=True).order_by(Company.id.asc()).first()
-            if not company:
-                company = Company.query.order_by(Company.id.asc()).first()
-                if company:
-                    company.is_active = True
-                    logging.warning(
-                        "Startup self-heal reactivated fallback company '%s' (id=%s)",
-                        company.name,
-                        company.id,
-                    )
-                    changed += 1
-
-            if not company:
-                company = Company(
-                    name="LUXit Marketing",
-                    is_active=True,
-                    billing_tier="professional",
-                    billing_status="active",
-                    subscription_tier="professional",
-                    onboarding_status="complete",
-                )
-                db.session.add(company)
-                db.session.flush()
-                logging.warning(
-                    "Startup self-heal created fallback company '%s' (id=%s)",
-                    company.name,
-                    company.id,
-                )
-                changed += 1
-
             for user in User.query.all():
-                if user.is_admin:
-                    if user.ensure_default_company_context():
+                try:
+                    before = user.default_company_id
+                    user.ensure_default_company_context()
+                    if user.default_company_id != before:
                         changed += 1
-                    continue
-
-                acc = UserCompanyAccess.query.filter_by(
-                    user_id=user.id, company_id=company.id
-                ).first()
-                if not acc:
-                    acc = UserCompanyAccess(
-                        user_id=user.id,
-                        company_id=company.id,
-                        role="viewer",
-                        is_default=True,
-                        can_access_full_app=True,
-                        can_access_mobile_inbox=False,
+                except Exception as _user_exc:
+                    # One bad user must never block application startup.
+                    db.session.rollback()
+                    logging.warning(
+                        "Startup tenant-context: skipped user %s (%s)",
+                        getattr(user, "id", "?"),
+                        _user_exc,
                     )
-                    db.session.add(acc)
-                    changed += 1
-                if not user.default_company_id:
-                    user.default_company_id = company.id
-                    changed += 1
-
             if changed:
-                db.session.commit()
-                logging.warning("Startup self-heal updated %s user/company links.", changed)
+                logging.warning(
+                    "Startup tenant-context reconciled %s user default(s).",
+                    changed,
+                )
         except Exception as _self_heal_exc:
             db.session.rollback()
-            logging.warning("Startup self-heal skipped due to error: %s", _self_heal_exc)
+            logging.warning(
+                "Startup tenant-context reconciliation skipped due to error: %s",
+                _self_heal_exc,
+            )
 
         # ── Auto-backfill provider credentials (incremental, every cold start) ─
         # Compares every env var in the CREDENTIALS map against existing DB rows.

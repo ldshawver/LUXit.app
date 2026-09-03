@@ -29,7 +29,9 @@ def _clear_company_state():
     db.session.commit()
 
 
-def test_admin_get_default_company_creates_fallback_company(app_ctx):
+def test_admin_with_no_membership_stays_unbound(app_ctx):
+    """An admin with no authoritative company membership must NOT be bound to
+    a fabricated fallback company. Tenant membership is never invented."""
     _clear_company_state()
     admin = User(
         username="luke",
@@ -42,21 +44,15 @@ def test_admin_get_default_company_creates_fallback_company(app_ctx):
 
     company = admin.get_default_company()
 
-    assert company is not None
-    assert company.name == "LUXit Marketing"
-    assert company.is_active is True
-    assert admin.default_company_id == company.id
-
-    access = UserCompanyAccess.query.filter_by(
-        user_id=admin.id, company_id=company.id
-    ).one()
-    assert access.role == UserCompanyAccess.ROLE_OWNER
-    assert access.is_default is True
-    assert access.can_access_full_app is True
-    assert access.can_access_mobile_inbox is True
+    assert company is None
+    assert admin.default_company_id is None
+    assert Company.query.count() == 0
+    assert UserCompanyAccess.query.filter_by(user_id=admin.id).count() == 0
 
 
-def test_admin_get_default_company_reactivates_inactive_company(app_ctx):
+def test_admin_not_bound_to_unrelated_inactive_company(app_ctx):
+    """An unrelated inactive company must never be reactivated and handed to an
+    admin who has no membership in it (the 'only company' / lowest-id trap)."""
     _clear_company_state()
     company = Company(name="Existing Tenant", is_active=False)
     admin = User(
@@ -70,7 +66,9 @@ def test_admin_get_default_company_reactivates_inactive_company(app_ctx):
 
     resolved = admin.get_default_company()
 
-    assert resolved.id == company.id
-    assert resolved.is_active is True
-    assert admin.default_company_id == company.id
+    assert resolved is None
+    assert admin.default_company_id is None
+    refreshed = db.session.get(Company, company.id)
+    assert refreshed.is_active is False
     assert Company.query.count() == 1
+    assert UserCompanyAccess.query.filter_by(user_id=admin.id).count() == 0

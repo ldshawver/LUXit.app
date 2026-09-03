@@ -373,55 +373,67 @@ class User(UserMixin, db.Model):
     # -------------------------
 
     def ensure_default_company_context(self, company_name=None):
-        """Ensure an admin user has a usable active company context.
+        """Reconcile this user's default-company context using ONLY tenants the
+        user is already authorized to access.
 
-        Production restores can leave an admin account without a company or can
-        leave only inactive companies behind. This method self-heals that state
-        by creating (or reactivating) a fallback company, assigning the user as
-        owner/admin, syncing the legacy ``user_company`` join table, and setting
-        ``default_company_id``. It returns ``None`` instead of raising so callers
-        can keep rendering graceful no-company states if the database is not
-        writable.
+        Tenant membership is authoritative — it comes from ``UserCompanyAccess``
+        rows, the legacy ``user_company`` link, or a default company that was
+        explicitly provisioned for this user (e.g. at registration). It is NEVER
+        inferred from global company ordering, "the lowest active company", the
+        oldest company, or ``Company.query.first()``.
+
+        Behaviour:
+
+          * a valid ``default_company_id`` that the user is authorized for is
+            left untouched;
+          * otherwise a deterministic default is chosen *from the user's own
+            authorized companies only* (``get_all_companies()`` order — by name);
+          * if the user has no authorized company the method fails closed:
+            it returns ``None`` and mutates nothing. No company is created, no
+            unrelated company is reactivated, and no owner/admin/full-app grant
+            is fabricated on a tenant the user is not already a member of.
+
+        ``company_name`` is accepted for backwards compatibility and ignored.
+        Returns the resolved :class:`Company` or ``None``; never raises.
         """
         logger = logging.getLogger(__name__)
-        if not self.is_admin:
-            return None
 
         try:
-            company = Company.query.filter_by(is_active=True).order_by(Company.id.asc()).first()
-            if company is None:
-                company = Company.query.order_by(Company.id.asc()).first()
-                if company is not None:
-                    company.is_active = True
-                    logger.warning(
-                        "Company self-heal reactivated fallback company %s (%s)",
-                        company.id,
-                        company.name,
-                    )
-
-            if company is None:
-                company = Company(
-                    name=company_name or "LUXit Marketing",
-                    is_active=True,
-                    billing_tier="professional",
-                    billing_status="active",
-                    subscription_tier="professional",
-                    onboarding_status="complete",
-                )
-                db.session.add(company)
-                db.session.flush()
+            authorized = self.get_all_companies()
+            if not authorized:
                 logger.warning(
-                    "Company self-heal created fallback company '%s' (id=%s)",
-                    company.name,
-                    company.id,
+                    "Company context: user %s has no authorized tenant — "
+                    "leaving unbound (fail closed).",
+                    self.id,
                 )
+                return None
 
-            self.default_company_id = company.id
+            by_id = {c.id: c for c in authorized}
+
+            company = by_id.get(self.default_company_id)
+            if company is None:
+                # Deterministic pick from the user's OWN authorized set only.
+                company = authorized[0]
+                if self.default_company_id != company.id:
+                    self.default_company_id = company.id
+                    logger.warning(
+                        "Company context: set user %s default_company_id=%s "
+                        "(chosen from own memberships).",
+                        self.id,
+                        company.id,
+                    )
 
             access = UserCompanyAccess.query.filter_by(
                 user_id=self.id, company_id=company.id
             ).first()
-            if access is None:
+            if access is not None:
+                if not access.is_default:
+                    access.is_default = True
+            elif self.is_admin:
+                # The registration bootstrap sets ``default_company_id`` for the
+                # first admin's self-created company without an access row. That
+                # company is authoritative (it is in ``authorized``), so give the
+                # admin an owner row for their own tenant.
                 access = UserCompanyAccess(
                     user_id=self.id,
                     company_id=company.id,
@@ -431,15 +443,8 @@ class User(UserMixin, db.Model):
                     can_access_mobile_inbox=True,
                 )
                 db.session.add(access)
-            else:
-                if access.role not in (UserCompanyAccess.ROLE_OWNER, UserCompanyAccess.ROLE_ADMIN):
-                    access.role = UserCompanyAccess.ROLE_OWNER
-                access.is_default = True
-                access.can_access_full_app = True
-                access.can_access_mobile_inbox = True
 
-            # Keep older code paths that still read the secondary relationship in
-            # sync without depending on database-specific UPSERT syntax.
+            # Keep the legacy relationship in sync for the resolved tenant only.
             linked = db.session.execute(
                 user_company.select().where(
                     (user_company.c.user_id == self.id)
@@ -448,14 +453,19 @@ class User(UserMixin, db.Model):
             ).first()
             if linked is None:
                 db.session.execute(
-                    user_company.insert().values(user_id=self.id, company_id=company.id)
+                    user_company.insert().values(
+                        user_id=self.id, company_id=company.id
+                    )
                 )
 
-            db.session.commit()
+            if db.session.new or db.session.dirty:
+                db.session.commit()
             return company
         except Exception as exc:
             db.session.rollback()
-            logger.warning("Company self-heal failed for user %s: %s", self.id, exc)
+            logger.warning(
+                "Company context self-heal failed for user %s: %s", self.id, exc
+            )
             return None
 
     def set_default_company(self, company_id):
