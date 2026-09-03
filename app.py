@@ -553,69 +553,16 @@ def create_app() -> Flask:
             if os.environ.get("DOCUMENSO_REQUIRED", "").lower() in {"1", "true", "yes"}:
                 raise
 
-        # Self-heal guard: ensure at least one company exists and users are linked.
-        # This prevents post-sync "no company" outages when ops scripts were skipped.
+        # Tenant self-heal: normalize internally-inconsistent user/company
+        # records using AUTHORITATIVE membership only. This never creates a
+        # company, never attaches a user to a tenant because of company
+        # ordering / recency / count / ``first()``, and never grants a role.
+        # Users with no authoritative membership are left unbound (the app
+        # renders an onboarding / no-company state for them).
         try:
-            from models import Company, User, UserCompanyAccess
+            from tenant_self_heal import run_startup_self_heal
 
-            changed = 0
-            company = Company.query.filter_by(is_active=True).order_by(Company.id.asc()).first()
-            if not company:
-                company = Company.query.order_by(Company.id.asc()).first()
-                if company:
-                    company.is_active = True
-                    logging.warning(
-                        "Startup self-heal reactivated fallback company '%s' (id=%s)",
-                        company.name,
-                        company.id,
-                    )
-                    changed += 1
-
-            if not company:
-                company = Company(
-                    name="LUXit Marketing",
-                    is_active=True,
-                    billing_tier="professional",
-                    billing_status="active",
-                    subscription_tier="professional",
-                    onboarding_status="complete",
-                )
-                db.session.add(company)
-                db.session.flush()
-                logging.warning(
-                    "Startup self-heal created fallback company '%s' (id=%s)",
-                    company.name,
-                    company.id,
-                )
-                changed += 1
-
-            for user in User.query.all():
-                if user.is_admin:
-                    if user.ensure_default_company_context():
-                        changed += 1
-                    continue
-
-                acc = UserCompanyAccess.query.filter_by(
-                    user_id=user.id, company_id=company.id
-                ).first()
-                if not acc:
-                    acc = UserCompanyAccess(
-                        user_id=user.id,
-                        company_id=company.id,
-                        role="viewer",
-                        is_default=True,
-                        can_access_full_app=True,
-                        can_access_mobile_inbox=False,
-                    )
-                    db.session.add(acc)
-                    changed += 1
-                if not user.default_company_id:
-                    user.default_company_id = company.id
-                    changed += 1
-
-            if changed:
-                db.session.commit()
-                logging.warning("Startup self-heal updated %s user/company links.", changed)
+            run_startup_self_heal()
         except Exception as _self_heal_exc:
             db.session.rollback()
             logging.warning("Startup self-heal skipped due to error: %s", _self_heal_exc)

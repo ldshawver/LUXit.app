@@ -299,6 +299,46 @@ class User(UserMixin, db.Model):
     # -------------------------
     # 🔑 DEFAULT COMPANY LOGIC
     # -------------------------
+    def _authorized_company_ids(self):
+        """Set of company ids this user is *already* authorized to access.
+
+        Union of active ``UserCompanyAccess`` rows and legacy ``user_company``
+        links, both restricted to active companies.  This is the ONLY source of
+        truth for tenant membership — never a global ``first()`` / lowest-id /
+        "only active company" fallback.
+        """
+        ids = set()
+        try:
+            access_rows = (
+                db.session.query(UserCompanyAccess.company_id)
+                .join(Company, Company.id == UserCompanyAccess.company_id)
+                .filter(
+                    UserCompanyAccess.user_id == self.id,
+                    UserCompanyAccess.is_active == True,  # noqa: E712
+                    Company.is_active == True,  # noqa: E712
+                )
+                .all()
+            )
+            ids.update(cid for (cid,) in access_rows)
+
+            legacy = db.session.execute(
+                user_company.select().where(user_company.c.user_id == self.id)
+            ).fetchall()
+            legacy_ids = {row.company_id for row in legacy}
+            if legacy_ids:
+                active_legacy = (
+                    db.session.query(Company.id)
+                    .filter(Company.id.in_(legacy_ids), Company.is_active == True)  # noqa: E712
+                    .all()
+                )
+                ids.update(cid for (cid,) in active_legacy)
+        except Exception:
+            try:
+                db.session.rollback()
+            except Exception:
+                pass
+        return ids
+
     def get_default_company(self):
         """Get the user's default company safely (never poisons the DB session)."""
         """
@@ -308,24 +348,27 @@ class User(UserMixin, db.Model):
         logger = logging.getLogger(__name__)
 
         try:
-            # 1) Explicit default_company_id (fall through if company was deleted)
+            authorized_ids = self._authorized_company_ids()
+
+            # 1) Explicit default_company_id — honored ONLY if the user is
+            #    actually a member of that company. A pointer to a tenant the
+            #    user has no membership in is never followed (fail closed).
             if self.default_company_id:
-                if hasattr(self, "default_company") and self.default_company is not None:
-                    return self.default_company
-                found = db.session.get(Company, self.default_company_id)
-                if found:
-                    return found
-                # Company was deleted — clear stale FK and fall through to fallbacks
-                logger.warning("User %s default_company_id=%s not found, clearing", self.id, self.default_company_id)
-                self.default_company_id = None
-                try:
-                    db.session.commit()
-                except Exception:
-                    db.session.rollback()
+                if self.default_company_id in authorized_ids:
+                    found = db.session.get(Company, self.default_company_id)
+                    if found:
+                        return found
+                else:
+                    logger.warning(
+                        "User %s default_company_id=%s is not in their authorized "
+                        "memberships; ignoring stale pointer",
+                        self.id,
+                        self.default_company_id,
+                    )
 
             access = (
                 UserCompanyAccess.query
-                .filter_by(user_id=self.id, is_default=True)
+                .filter_by(user_id=self.id, is_default=True, is_active=True)
                 .join(Company, Company.id == UserCompanyAccess.company_id)
                 .filter(Company.is_active == True)
                 .first()
@@ -333,15 +376,15 @@ class User(UserMixin, db.Model):
             if access:
                 return access.company
 
-            user_companies = self.get_all_companies()
+            user_companies = [
+                c for c in self.get_all_companies() if c.id in authorized_ids
+            ]
             if user_companies:
                 return user_companies[0]
 
-            # Platform admins are the last line of defense for tenant setup.
-            # If a restore/deploy leaves the database with no active company (or
-            # this admin is orphaned from every company), create or attach a safe
-            # default company immediately so company-scoped pages do not crash on
-            # ``None.id``. Non-admin users still require an explicit assignment.
+            # No authoritative membership. Do NOT infer a tenant from global
+            # company state — not even for platform admins. Callers render a
+            # graceful no-company / onboarding state instead.
             if self.is_admin:
                 return self.ensure_default_company_context()
 
@@ -359,89 +402,66 @@ class User(UserMixin, db.Model):
     # -------------------------
 
     def ensure_default_company_context(self, company_name=None):
-        """Ensure an admin user has a usable active company context.
+        """Resolve a usable default company for this user from *authoritative*
+        membership only.
 
-        Production restores can leave an admin account without a company or can
-        leave only inactive companies behind. This method self-heals that state
-        by creating (or reactivating) a fallback company, assigning the user as
-        owner/admin, syncing the legacy ``user_company`` join table, and setting
-        ``default_company_id``. It returns ``None`` instead of raising so callers
-        can keep rendering graceful no-company states if the database is not
-        writable.
+        Historically this method attached the user to the lowest-id active
+        company (creating one, or reactivating an arbitrary inactive one) and
+        granted ``owner``/``full_app``.  That is a tenant-isolation defect:
+        platform-admin status must not imply ownership of arbitrary tenant data,
+        and no user may be bound to a tenant merely because of company ordering.
+
+        It now only selects among companies the user is already authorized to
+        access:
+
+          * if ``default_company_id`` already points at an authorized company,
+            leave it unchanged;
+          * else if the user has any authorized membership, set
+            ``default_company_id`` to the deterministic policy default from that
+            set;
+          * else return ``None`` — the caller renders a graceful no-company /
+            onboarding state.
+
+        Never creates a company, never reactivates a tenant, never grants a
+        role.  Returns ``None`` instead of raising.
         """
         logger = logging.getLogger(__name__)
-        if not self.is_admin:
-            return None
+        # ``company_name`` is retained for signature compatibility; provisioning
+        # a brand-new tenant is an explicit onboarding action, not a self-heal.
+        _ = company_name
 
         try:
-            company = Company.query.filter_by(is_active=True).order_by(Company.id.asc()).first()
-            if company is None:
-                company = Company.query.order_by(Company.id.asc()).first()
-                if company is not None:
-                    company.is_active = True
-                    logger.warning(
-                        "Company self-heal reactivated fallback company %s (%s)",
-                        company.id,
-                        company.name,
-                    )
+            authorized_ids = self._authorized_company_ids()
+            if not authorized_ids:
+                return None
 
-            if company is None:
-                company = Company(
-                    name=company_name or "LUXit Marketing",
-                    is_active=True,
-                    billing_tier="professional",
-                    billing_status="active",
-                    subscription_tier="professional",
-                    onboarding_status="complete",
-                )
-                db.session.add(company)
-                db.session.flush()
-                logger.warning(
-                    "Company self-heal created fallback company '%s' (id=%s)",
-                    company.name,
-                    company.id,
-                )
+            if self.default_company_id in authorized_ids:
+                return db.session.get(Company, self.default_company_id)
 
-            self.default_company_id = company.id
+            from tenant_self_heal import _deterministic_default_company
 
-            access = UserCompanyAccess.query.filter_by(
-                user_id=self.id, company_id=company.id
-            ).first()
-            if access is None:
-                access = UserCompanyAccess(
-                    user_id=self.id,
-                    company_id=company.id,
-                    role=UserCompanyAccess.ROLE_OWNER,
-                    is_default=True,
-                    can_access_full_app=True,
-                    can_access_mobile_inbox=True,
-                )
-                db.session.add(access)
-            else:
-                if access.role not in (UserCompanyAccess.ROLE_OWNER, UserCompanyAccess.ROLE_ADMIN):
-                    access.role = UserCompanyAccess.ROLE_OWNER
-                access.is_default = True
-                access.can_access_full_app = True
-                access.can_access_mobile_inbox = True
+            chosen = _deterministic_default_company(self)
+            if chosen is None:
+                return None
 
-            # Keep older code paths that still read the secondary relationship in
-            # sync without depending on database-specific UPSERT syntax.
-            linked = db.session.execute(
-                user_company.select().where(
-                    (user_company.c.user_id == self.id)
-                    & (user_company.c.company_id == company.id)
-                )
-            ).first()
-            if linked is None:
-                db.session.execute(
-                    user_company.insert().values(user_id=self.id, company_id=company.id)
-                )
-
-            db.session.commit()
-            return company
+            if self.default_company_id != chosen.id:
+                self.default_company_id = chosen.id
+                try:
+                    db.session.commit()
+                except Exception:
+                    db.session.rollback()
+                    return None
+            return chosen
         except Exception as exc:
-            db.session.rollback()
-            logger.warning("Company self-heal failed for user %s: %s", self.id, exc)
+            try:
+                db.session.rollback()
+            except Exception:
+                pass
+            logger.warning(
+                "Default company context resolution failed for user %s: %s",
+                self.id,
+                exc,
+            )
             return None
 
     def set_default_company(self, company_id):
@@ -474,12 +494,10 @@ class User(UserMixin, db.Model):
 
             merged = {c.id: c for c in companies_by_access + companies_by_legacy_link}
 
-            if self.default_company_id:
-                default_company = Company.query.filter_by(
-                    id=self.default_company_id, is_active=True
-                ).first()
-                if default_company:
-                    merged[default_company.id] = default_company
+            # NOTE: ``default_company_id`` is deliberately NOT force-added here.
+            # A default pointer to a tenant the user has no membership in must
+            # not surface as an accessible company (tenant isolation). Repairing
+            # such a stale pointer is the job of the authoritative self-heal.
 
             return sorted(merged.values(), key=lambda c: (c.name or "").lower())
         except Exception:
