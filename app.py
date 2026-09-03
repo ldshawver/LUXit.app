@@ -703,8 +703,7 @@ def create_app() -> Flask:
 
         # Apply any missing columns to existing tables (safe migrations)
         try:
-            from sqlalchemy import inspect, text
-            inspector = inspect(db.engine)
+            from services.schema_self_heal import apply_missing_columns
             migrations = {
                 "automation_trigger_library": [
                     ("name", "VARCHAR(200)"),
@@ -891,20 +890,7 @@ def create_app() -> Flask:
                     ("created_at", "TIMESTAMP"),
                 ],
             }
-            for table, columns in migrations.items():
-                if inspector.has_table(table):
-                    existing = {c["name"] for c in inspector.get_columns(table)}
-                    for col_name, col_type in columns:
-                        if col_name not in existing:
-                            try:
-                                db.session.execute(text(
-                                    f"ALTER TABLE {table} ADD COLUMN {col_name} {col_type}"
-                                ))
-                                db.session.commit()
-                                logging.info(f"Added column {col_name} to {table}")
-                            except Exception as col_err:
-                                db.session.rollback()
-                                logging.warning(f"Could not add {col_name} to {table}: {col_err}")
+            apply_missing_columns(db.engine, migrations)
         except Exception as mig_err:
             logging.warning(f"Migration check failed: {mig_err}")
 
