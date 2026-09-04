@@ -1,6 +1,7 @@
 import csv
 import io
 import base64
+import hmac
 import logging
 import os
 import uuid
@@ -2092,6 +2093,58 @@ def contacts():
         db.session.rollback()
         logger.exception("GET /contacts failed request_id=%s company_id=%s", request_id, company_id)
         return render_template("safe_error.html", request_id=request_id, message="Audience could not be loaded. Please try again or contact support with the request ID."), 500
+
+
+def _require_shared_secret_auth(*, env_var):
+    """Mandatory shared-secret authentication for csrf-exempt machine webhooks.
+
+    Fail-closed. Returns a Flask ``(response, status)`` tuple that the caller
+    MUST return immediately when the request is not authenticated; returns
+    ``None`` only when a valid credential was presented.
+
+    Contract:
+    - The server-side secret is read from ``env_var``. A missing/blank secret
+      is a configuration error and is rejected (503) -- it is never treated as
+      "auth disabled" or "allow".
+    - Authentication is unconditional. A request with no ``Authorization``
+      header, or a malformed one, is rejected (401) *before* any side effect.
+    - The presented credential is accepted from either
+      ``Authorization: Bearer <token>`` or HTTP Basic (the password field), and
+      compared to the expected secret in constant time.
+    """
+    expected = (os.environ.get(env_var) or "").strip()
+    if not expected:
+        logger.error(
+            "webhook auth misconfigured: %s is not set (path=%s) -- rejecting",
+            env_var, request.path,
+        )
+        return jsonify({
+            'success': False,
+            'error': 'Webhook authentication is not configured',
+        }), 503
+
+    provided = ''
+    header = request.headers.get('Authorization', '') or ''
+    if header[:7].lower() == 'bearer ':
+        provided = header[7:].strip()
+    else:
+        auth = request.authorization
+        if auth and (auth.type or '').lower() == 'basic':
+            provided = auth.password or ''
+
+    if not provided:
+        return jsonify({
+            'success': False,
+            'error': 'Authentication required',
+        }), 401
+
+    if not hmac.compare_digest(provided, expected):
+        return jsonify({
+            'success': False,
+            'error': 'Invalid credentials',
+        }), 401
+
+    return None
 
 
 def _trusted_public_company_id():
@@ -8459,8 +8512,16 @@ def import_forminator_newsletter():
     return render_template('import_forminator.html')
 
 @main_bp.route('/admin/forminator-webhook', methods=['POST'])
+@csrf.exempt
 def forminator_webhook():
-    """Webhook endpoint for Forminator form submissions (form ID 3482)"""
+    """Webhook endpoint for Forminator form submissions (form ID 3482).
+
+    Machine-to-machine: shared-secret auth is mandatory and fail-closed
+    (``FORMINATOR_WEBHOOK_TOKEN``). See ``_require_shared_secret_auth``.
+    """
+    auth_error = _require_shared_secret_auth(env_var='FORMINATOR_WEBHOOK_TOKEN')
+    if auth_error is not None:
+        return auth_error
     try:
         data = request.get_json()
         form_id = data.get('form_id')
@@ -8574,8 +8635,16 @@ def import_wordpress_users():
     return render_template('import_wordpress.html')
 
 @main_bp.route('/admin/wordpress-webhook', methods=['POST'])
+@csrf.exempt
 def wordpress_webhook():
-    """Webhook for WordPress new user registration"""
+    """Webhook for WordPress new user registration.
+
+    Machine-to-machine: shared-secret auth is mandatory and fail-closed
+    (``WORDPRESS_WEBHOOK_TOKEN``). See ``_require_shared_secret_auth``.
+    """
+    auth_error = _require_shared_secret_auth(env_var='WORDPRESS_WEBHOOK_TOKEN')
+    if auth_error is not None:
+        return auth_error
     try:
         data = request.get_json()
         email = data.get('email')
@@ -8742,21 +8811,21 @@ def view_wordpress_imports():
 @csrf.exempt
 def zapier_contact_webhook():
     """
-    Public API endpoint for Zapier webhook integration
+    Machine-to-machine webhook for Zapier contact intake.
     Receives: email, name, phone, source (flexible payload)
-    Validates, checks duplicates, inserts/updates contact
-    Supports basic auth: luke|Wow548302!
+    Validates, checks duplicates, inserts/updates contact.
+
+    Authentication is mandatory and fail-closed: the caller must present the
+    shared secret from ``ZAPIER_WEBHOOK_TOKEN`` via ``Authorization: Bearer``
+    or HTTP Basic (password field). See ``_require_shared_secret_auth``.
     """
+    # Authenticate BEFORE reading the body or touching the database. A rejected
+    # request must cause zero mutation.
+    auth_error = _require_shared_secret_auth(env_var='ZAPIER_WEBHOOK_TOKEN')
+    if auth_error is not None:
+        return auth_error
+
     try:
-        # Validate basic auth if provided
-        auth = request.authorization
-        if auth:
-            if auth.username != 'luke' or auth.password != 'Wow548302!':
-                return jsonify({
-                    'success': False,
-                    'error': 'Invalid credentials'
-                }), 401
-        
         data = request.get_json()
         
         if not data:
