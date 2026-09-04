@@ -473,61 +473,32 @@ def _twilio_send_error_message_LEGACY(exc) -> str:
     return raw
 
 
-def retry_queued_outbound_messages(company_id: int, limit: int = 100, dry_run: bool = False) -> dict:
-    """Admin-safe retry for legacy PWA outbound rows stuck as queued without a Twilio SID."""
-    from models import TwilioConversation, TwilioMessage
-
-    ta = _get_twilio_account(company_id)
-    if not ta or not ta.is_configured:
-        return {"success": False, "error": "Twilio is not configured for this company.", "retried": 0, "failed": 0}
-
-    rows = (TwilioMessage.query
-        .join(TwilioConversation, TwilioConversation.id == TwilioMessage.conversation_id)
-        .filter(
-            TwilioMessage.company_id == company_id,
-            TwilioMessage.direction == "outbound",
-            TwilioMessage.status == "queued",
-            TwilioMessage.twilio_sid.is_(None),
-            TwilioConversation.company_id == company_id,
-        )
-        .order_by(TwilioMessage.created_at.asc(), TwilioMessage.id.asc())
-        .limit(max(1, min(int(limit or 100), 500)))
-        .all())
-    if dry_run:
-        return {"success": True, "dry_run": True, "matched": len(rows), "retried": 0, "failed": 0}
-
-    retried = failed = 0
-    errors = []
-    for row in rows:
-        conv = row.conversation
-        to_number = row.to_number or getattr(conv, "from_number", None)
-        if not to_number:
-            row.status = "failed"
-            row.error_message = "Queued outbound message has no recipient phone number."
-            failed += 1
-            errors.append({"id": row.id, "error": row.error_message})
-            db.session.commit()
-            continue
-        from twilio_sms import sendConversationSms
-        result = sendConversationSms(conv.id, row.body or "", twilio_account=ta, to_number=to_number, persist_record=False)
-        if not result.get("success"):
-            row.status = "failed"
-            row.error_message = result.get("error") or "SMS retry failed."
-            db.session.commit()
-            failed += 1
-            errors.append({"id": row.id, "error": row.error_message})
-        else:
-            row.status = "sent"
-            row.twilio_sid = result.get("sid")
-            row.error_message = None
-            row.raw_payload = {
-                "retried_from_queue": True,
-                "resent_via": "sendConversationSms",
-                "provider_status": result.get("provider_status") or result.get("status"),
-            }
-            db.session.commit()
-            retried += 1
-    return {"success": failed == 0, "matched": len(rows), "retried": retried, "failed": failed, "errors": errors[:20]}
+# Canonical outbound SMS send lifecycle (as of 2026-09-04):
+#
+# 1. Every send -- manual (PWA/desktop conversation reply) or automated
+#    (auto-reply/campaign/outbox) -- goes through the single entry point
+#    ``twilio_sms.sendConversationSms``. It calls the Twilio API
+#    synchronously inside the request/task; on a 2xx it persists a
+#    ``TwilioMessage`` row with the real ``twilio_sid`` in the same call, on
+#    an exception it persists a ``status="failed"`` row with no SID. There is
+#    no intermediate "queued, SID not yet known" state a row can be
+#    durably stuck in -- a send either gets a SID or is marked failed.
+# 2. Manual sends additionally go through
+#    ``services.sms_send_idempotency.send_with_idempotency``, which claims a
+#    durable idempotency key before calling ``sendConversationSms`` so a
+#    browser/network retry of the same logical send cannot produce a second
+#    real Twilio submission (see that module's docstring).
+# 3. ``/twilio/sms/status`` (Twilio's delivery-status webhook) applies the
+#    out-of-order-safe transition guard in ``services.sms_status`` to move a
+#    row from ``sent`` to its real terminal ``delivered``/``failed``/
+#    ``undelivered`` state.
+#
+# A prior "retry queued outbound messages stuck without a SID" admin repair
+# function lived here. It was never wired to any route or scheduled job (only
+# ever called from tests), and a live-data check confirmed zero rows anywhere
+# in staging or production match its target shape (``status="queued"`` AND
+# ``twilio_sid IS NULL``) -- because step 1 above means the current send path
+# cannot produce that shape. Removed as obsolete rather than activated.
 
 
 def _conv_to_dict(conv, brief=True):
@@ -2005,24 +1976,38 @@ def send_message(conv_id):
             "twilio_not_configured",
         )
 
-    from twilio_sms import sendConversationSms
-    result = sendConversationSms(conv.id, body, twilio_account=ta)
+    from services.sms_send_idempotency import send_with_idempotency
+    result = send_with_idempotency(
+        company_id=company.id, user_id=user.id, conversation_id=conv.id,
+        body=body, twilio_account=ta, idempotency_key=payload.get("idempotency_key"),
+    )
+    if result.get("status") == "delivery_unknown":
+        # A send for this exact request is already in flight or its provider
+        # outcome is unknown -- never resend. The caller should treat this as
+        # "already handled", not retry again.
+        return _json_error(result.get("error") or "Send already in progress.", 409, "send_in_progress")
     if not result.get("success"):
         logger.error("send_message failed: user=%d company=%d conv=%d to=%s error=%s",
                      user.id, company.id, conv_id, conv.from_number, result.get("error"))
         return _json_error(result.get("error") or "SMS send failed", 502, "provider_failure")
     from models import TwilioMessage
-    record = TwilioMessage.query.filter_by(conversation_id=conv.id, direction="outbound").order_by(TwilioMessage.id.desc()).first()
+    record = TwilioMessage.query.filter_by(twilio_sid=result.get("sid")).first() if result.get("sid") else None
+    if not record:
+        record = TwilioMessage.query.filter_by(conversation_id=conv.id, direction="outbound").order_by(TwilioMessage.id.desc()).first()
 
-    # Update conversation preview
-    conv.last_message_at      = datetime.utcnow()
-    conv.last_message_preview = f"You: {body[:150]}"
-    conv.message_count        = (conv.message_count or 0) + 1
-    conv.is_read              = True
-    db.session.commit()
+    if not result.get("idempotent"):
+        # Only the request that actually performed the send updates the
+        # conversation preview/unread count -- an idempotent replay (a
+        # retried duplicate request) must not touch it a second time.
+        conv.last_message_at      = datetime.utcnow()
+        conv.last_message_preview = f"You: {body[:150]}"
+        conv.message_count        = (conv.message_count or 0) + 1
+        conv.is_read              = True
+        db.session.commit()
 
-    logger.info("send_message: user=%d company=%d conv=%d to=%s sid=%s",
-                user.id, company.id, conv_id, conv.from_number, record.twilio_sid)
+    logger.info("send_message: user=%d company=%d conv=%d to=%s sid=%s idempotent=%s",
+                user.id, company.id, conv_id, conv.from_number, getattr(record, "twilio_sid", None),
+                bool(result.get("idempotent")))
     return jsonify({"success": True, "message": _msg_to_dict(record)})
 
 
@@ -2256,6 +2241,14 @@ def update_conversation_contact(conv_id):
         conv.contact_name = display
     db.session.commit()
 
+    # Notify every other connected client (other tabs/devices, the desktop
+    # CRM's own listeners) so an already-open conversation/contact view picks
+    # up the edit without a reload. Not an "attention" event -- always
+    # delivered regardless of Away status.
+    _push_sse_event(company.id, "contact_updated", {
+        "contact_id": contact.id, "conversation_id": conv.id, "contact_name": conv.contact_name,
+    })
+
     return jsonify({"success": True, "contact": serialize_contact(contact), "contact_name": conv.contact_name})
 
 
@@ -2327,6 +2320,14 @@ def _pwa_badge_counts_for(user, company):
         "missedCalls": missed_calls,
         "voicemails": voicemails,
         "notifications": notifications,
+        # The OS/app-icon red badge: unread texts + unseen missed calls +
+        # unheard voicemails, exactly -- never system/admin Notification rows
+        # (those are informational and already surfaced by other in-app UI,
+        # and were never a canonical "unread communication" in the first
+        # place). Distinct from `count` above, which is a broader dashboard
+        # total that intentionally also includes non-communications
+        # Notification rows and has its own existing test contract.
+        "effectiveBadge": len(sms_unread) + missed_calls + voicemails,
     }
 
 
@@ -2335,7 +2336,7 @@ def pwa_badge_count():
     user = _require_auth()
     company = _get_company(user)
     if not company:
-        return jsonify({"count": 0, "smsUnread": 0, "missedCalls": 0, "voicemails": 0, "notifications": 0})
+        return jsonify({"count": 0, "smsUnread": 0, "missedCalls": 0, "voicemails": 0, "notifications": 0, "effectiveBadge": 0})
     denied = _require_mobile_inbox_api_access(user, company)
     if denied:
         return denied
@@ -2662,11 +2663,11 @@ def send_pwa_push_notification(company_id: int, *, user_ids, title: str, body: s
         try:
             from models import Company
             company = db.session.get(Company, company_id)
-            # The OS/app-icon badge must represent only unread inbound SMS visible
-            # to this user in the active company -- not missed calls, voicemails,
-            # or generic Notification rows (those have their own in-app indicators
-            # via the smsUnread/missedCalls/voicemails/notifications breakdown).
-            badge_count = _pwa_badge_counts_for(user, company)["smsUnread"] if company else None
+            # The OS/app-icon badge = unread texts + unseen missed calls +
+            # unheard voicemails -- never generic/system Notification rows
+            # (those have their own in-app indicators via the
+            # smsUnread/missedCalls/voicemails/notifications breakdown).
+            badge_count = _pwa_badge_counts_for(user, company)["effectiveBadge"] if company else None
         except Exception:
             badge_count = None
         payload = {

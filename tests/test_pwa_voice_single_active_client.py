@@ -437,3 +437,13 @@ def test_dialer_page_leaks_no_secrets(app):
     body = client.get("/app/phone").get_data(as_text=True)
     assert "ACtest" not in body and "SKtest" not in body
     assert "auth_token" not in body and "api_secret" not in body
+
+
+def test_device_registration_enables_ice_restart_for_network_handover(html):
+    """A live call must be able to survive a real Wi-Fi<->cellular handover.
+    Without enableIceRestart the SDK will not renegotiate ICE candidates when
+    the network path changes mid-call, so an active call is likely to
+    freeze/drop on handover rather than self-heal."""
+    i_device = html.index("new Device(body.token")
+    snippet = html[i_device:i_device + 200]
+    assert "enableIceRestart: true" in snippet

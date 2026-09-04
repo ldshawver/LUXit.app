@@ -9250,7 +9250,16 @@ def update_contact_profile(contact_id):
         
         contact.updated_at = datetime.utcnow()
         db.session.commit()
-        
+
+        # Notify any already-open PWA conversation/contact view for this
+        # contact so a desktop CRM edit reaches it without a reload. Not an
+        # "attention" event -- always delivered regardless of Away status.
+        try:
+            from inbox_pwa import _push_sse_event
+            _push_sse_event(company_id, "contact_updated", {"contact_id": contact.id})
+        except Exception:
+            logger.warning("contact_updated SSE push failed for contact %s", contact_id, exc_info=True)
+
         return jsonify({'success': True, 'message': 'Profile updated successfully'})
     except Exception as e:
         db.session.rollback()

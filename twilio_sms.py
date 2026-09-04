@@ -671,6 +671,16 @@ def sendConversationSms(conversation_id: int, message: str, *,
     conv = db.session.get(TwilioConversation, conversation_id) if conversation_id else None
     if not conv:
         return {"success": False, "error": "Conversation is required for SMS send."}
+    if conv.is_opted_out:
+        # Single entry point for every conversational send: a STOP'd/opted-out
+        # conversation is blocked here so no caller path (manual reply, auto-
+        # reply, campaign follow-up) can accidentally text a suppressed
+        # contact. Automated paths already pre-check this before calling in;
+        # this is the backstop for the manual PWA/desktop send routes, which
+        # previously had no opt-out check at all.
+        logger.warning("Outbound SMS blocked: conversation %s is opted out (STOP).", conv.id)
+        return {"success": False, "error": "This contact has replied STOP and cannot be sent SMS.",
+                "error_code": "recipient_opted_out"}
     if (
         not bypass_outbox
         and has_request_context()
@@ -3323,13 +3333,18 @@ def send_message():
     if not conv:
         conv = _get_or_create_conversation(company.id, to_number, ta.from_phone or "")
 
-    result = sendConversationSms(conv.id, body, twilio_account=ta, to_number=to_number)
-    if result.get("success"):
+    from services.sms_send_idempotency import send_with_idempotency
+    result = send_with_idempotency(
+        company_id=company.id, user_id=current_user.id, conversation_id=conv.id,
+        to_number=to_number, body=body, twilio_account=ta,
+        idempotency_key=payload.get("idempotency_key"),
+    )
+    if result.get("success") and not result.get("idempotent"):
         conv.last_message_at      = datetime.utcnow()
         conv.last_message_preview = f"You: {body[:150]}"
         conv.message_count        = (conv.message_count or 0) + 1
         db.session.commit()
-    else:
+    elif not result.get("success"):
         logger.error("/twilio/send failed company=%s conv=%s to=%s error=%s", company.id, conv.id, to_number, result.get("error"))
     return jsonify(result)
 

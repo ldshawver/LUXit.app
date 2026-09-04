@@ -729,8 +729,8 @@ class Company(db.Model):
     apply_brand_colors = db.Column(db.Boolean, default=False)
     industry = db.Column(db.String(100))
     description = db.Column(Text)
-    require_approved_pwa_devices = db.Column(db.Boolean, default=False, nullable=False)
-    sync_confirmed_contacts_to_google = db.Column(db.Boolean, default=False, nullable=False)
+    require_approved_pwa_devices = db.Column(db.Boolean, default=False, nullable=False, server_default=db.text("false"))
+    sync_confirmed_contacts_to_google = db.Column(db.Boolean, default=False, nullable=False, server_default=db.text("false"))
 
     # ── SaaS / Billing Integration ───────────────────────────────────────────
     stripe_customer_id         = db.Column(db.String(100))
@@ -752,7 +752,7 @@ class Company(db.Model):
     # Charged exactly once per company on the very first Checkout Session.
     # Once paid, future Checkout Sessions for this company must NOT include
     # the setup-fee line item again.
-    setup_fee_paid                = db.Column(db.Boolean, default=False, nullable=False)
+    setup_fee_paid                = db.Column(db.Boolean, default=False, nullable=False, server_default=db.text("false"))
     setup_fee_paid_at             = db.Column(db.DateTime, nullable=True)
     setup_fee_checkout_session_id = db.Column(db.String(120), nullable=True)
     # ── Contact-usage / metered billing ─────────────────────────────────────
@@ -762,10 +762,10 @@ class Company(db.Model):
     # is the surplus we report to Stripe via the metered subscription item
     # identified by ``stripe_contact_usage_subscription_item_id``.
     included_contacts                          = db.Column(db.Integer, nullable=True)
-    contacts_used                              = db.Column(db.Integer, default=0, nullable=False)
-    contacts_overage                           = db.Column(db.Integer, default=0, nullable=False)
+    contacts_used                              = db.Column(db.Integer, default=0, nullable=False, server_default=db.text("0"))
+    contacts_overage                           = db.Column(db.Integer, default=0, nullable=False, server_default=db.text("0"))
     stripe_contact_usage_subscription_item_id  = db.Column(db.String(120), nullable=True)
-    last_reported_contact_usage                = db.Column(db.Integer, default=0, nullable=False)
+    last_reported_contact_usage                = db.Column(db.Integer, default=0, nullable=False, server_default=db.text("0"))
     last_usage_reported_at                     = db.Column(db.DateTime, nullable=True)
     onboarding_status          = db.Column(db.String(50), default='pending')
     implementation_status      = db.Column(db.String(50), default='none')
@@ -3752,6 +3752,37 @@ class SMSOutboundAttempt(db.Model):
 
     __table_args__ = (
         db.UniqueConstraint("intent_id", "attempt_number", name="uq_sms_outbound_attempt_number"),
+    )
+
+
+class SmsSendIdempotencyRecord(db.Model):
+    """Durable claim on one manual (operator-initiated) SMS send.
+
+    Distinct from ``SMSOutboundIntent`` (which requires an ``inbound_message_id``
+    and models an automated *reply effect*): this covers a human hitting Send
+    in the PWA/desktop conversation UI. The unique constraint on
+    ``(company_id, idempotency_key)`` is the concurrency backstop -- a second
+    request for the same key fails the INSERT and reads the first request's
+    outcome instead of sending again. See ``services/sms_send_idempotency.py``.
+    """
+    __tablename__ = "sms_send_idempotency"
+
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=False, index=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True, index=True)
+    conversation_id = db.Column(db.Integer, db.ForeignKey("twilio_conversation.id"), nullable=False, index=True)
+    idempotency_key = db.Column(db.String(128), nullable=False)
+    # sending -> {sent | failed | delivery_unknown}. "sending" with no terminal
+    # follow-up is exactly the crash/timeout-after-provider-submission case --
+    # a later request for the same key must never resend, only report it.
+    status = db.Column(db.String(20), nullable=False, default="sending", server_default="sending", index=True)
+    twilio_sid = db.Column(db.String(100), nullable=True, unique=True)
+    error_message = db.Column(db.Text, nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    __table_args__ = (
+        db.UniqueConstraint("company_id", "idempotency_key", name="uq_sms_send_idempotency_key"),
     )
 
 

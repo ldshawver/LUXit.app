@@ -1913,7 +1913,26 @@ function handleSSEEvent(data) {
     if (state.activeConvId === data.conversation_id) {
       refreshMessages(data.conversation_id);
     }
+  } else if (data.type === 'contact_updated') {
+    // A contact was edited on another surface (desktop CRM, another PWA
+    // tab/device). If the change might affect the open conversation, refresh
+    // it -- unconditionally when we only know the contact_id (desktop edits
+    // don't know which conversation(s) reference it), narrowed to the
+    // matching conversation when the event names one (PWA edits do).
+    if (state.activeConvId && (!data.conversation_id || data.conversation_id === state.activeConvId)) {
+      refreshContactPanel(state.activeConvId);
+    }
+    loadConversations();
   }
+}
+
+async function refreshContactPanel(convId) {
+  const data = await apiFetch(`/api/inbox/conversations/${convId}`);
+  if (!data || convId !== state.activeConvId) return;
+  const c = data.conversation;
+  document.getElementById('threadName').textContent   = c.display_name || c.from_number;
+  document.getElementById('threadNumber').textContent = c.from_number !== c.display_name ? c.from_number : '';
+  renderContactPanel(c, data.contact);
 }
 
 /* ── Polling (fallback only) ──────────────────────────────────── */
@@ -2948,10 +2967,10 @@ async function loadBadgeCounts() {
     const vmBadge = document.getElementById('vmBadge');
     if (mcBadge) { mcBadge.textContent = mc; mcBadge.style.display = mc > 0 ? 'flex' : 'none'; }
     if (vmBadge) { vmBadge.textContent = vm; vmBadge.style.display = vm > 0 ? 'flex' : 'none'; }
-    // The OS app-icon badge is unread inbound SMS only -- not the combined
-    // total (which also includes missed calls, voicemails, and generic
-    // notifications, each already shown via their own in-app indicators).
-    await updateAppBadge(data.smsUnread || 0);
+    // The OS app-icon badge = unread texts + unseen missed calls + unheard
+    // voicemails (server-computed as effectiveBadge) -- never generic/system
+    // notifications, which have their own in-app indicators only.
+    await updateAppBadge(data.effectiveBadge || 0);
   } catch (e) {}
 }
 

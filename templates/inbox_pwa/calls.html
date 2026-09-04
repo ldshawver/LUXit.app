@@ -898,7 +898,13 @@ function render(calls) {
       actions.appendChild(button('Play Voicemail', 'btn primary', () => playVoicemail(call.id)));
       actions.appendChild(button('Transcript', 'btn', () => window.alert(call.transcription_text || 'No transcript yet')));
       actions.appendChild(link('Download', 'btn', `/api/calls/${encodeURIComponent(call.id)}/voicemail/audio`, {download: ''}));
-      const audio = document.createElement('audio'); audio.id = `vm-${call.id}`; audio.className = 'voicemail-player'; audio.preload = 'none'; audio.controls = true; audio.src = `/api/calls/${encodeURIComponent(call.id)}/voicemail/audio`; actions.appendChild(audio);
+      const audio = document.createElement('audio'); audio.id = `vm-${call.id}`; audio.className = 'voicemail-player'; audio.preload = 'none'; audio.controls = true; audio.src = `/api/calls/${encodeURIComponent(call.id)}/voicemail/audio`;
+      // Listening through the canonical player marks it listened -- covers
+      // both the native browser controls and the Play Voicemail button
+      // (same <audio> element). Replaying an already-listened voicemail is a
+      // no-op here (and idempotent server-side either way).
+      audio.addEventListener('ended', () => { if (!call.is_read) markRead(call.id, true); });
+      actions.appendChild(audio);
     } else if (call.recording_url) {
       const recording = safeExternalUrl(call.recording_url);
       if (recording) actions.appendChild(link('Call Recording', 'btn', recording, {target: '_blank', rel: 'noopener noreferrer'}));
@@ -1185,7 +1191,11 @@ async function initVoice() {
 
       teardownDevice();                       // retire any prior Device (listeners, media, registration) before building one
       voice.deviceState = 'registering';
-      voice.device = new Device(body.token, {logLevel: 1, codecPreferences: ['opus', 'pcmu']});
+      // enableIceRestart: a live call must survive a real network handover
+      // (Wi-Fi<->cellular) without dropping -- without this the SDK will not
+      // attempt to re-negotiate ICE candidates when the network path changes
+      // mid-call, so an active call is likely to freeze/drop on handover.
+      voice.device = new Device(body.token, {logLevel: 1, codecPreferences: ['opus', 'pcmu'], enableIceRestart: true});
       voice.device.on('registered', () => {
         voice.registered = true;
         voice.deviceState = 'registered';

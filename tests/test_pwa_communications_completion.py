@@ -412,7 +412,7 @@ def test_pwa_badge_count_endpoint_is_user_and_company_scoped(pwa_app):
         conv_id = conv.id
     login(client, ids["staff"])
     data = client.get("/api/pwa/badge-count").get_json()
-    assert data == {"count": 4, "smsUnread": 1, "missedCalls": 1, "voicemails": 1, "notifications": 1}
+    assert data == {"count": 4, "smsUnread": 1, "missedCalls": 1, "voicemails": 1, "notifications": 1, "effectiveBadge": 3}
     client.patch(f"/api/inbox/conversations/{conv_id}/read", json={"is_read": True})
     client.post(f"/api/calls/{call_id}/mark-read")
     data = client.get("/api/pwa/badge-count").get_json()
@@ -1390,3 +1390,52 @@ def test_pwa_badge_and_dashboard_notification_count_measure_different_things(pwa
     html = resp.get_data(as_text=True)
     assert ">1 unread<" in html  # dashboard bell only ever sees the system notification
     assert ">2 unread<" not in html
+
+
+def test_effective_badge_is_texts_plus_missed_calls_plus_voicemails_never_system_notifications(pwa_app):
+    """The OS/app-icon badge (`effectiveBadge`) must equal exactly
+    unread_texts + unseen_missed_calls + unheard_voicemails and must never
+    include generic/system Notification rows, even though the broader
+    dashboard `count` field intentionally does."""
+    app, client, ids = pwa_app
+    with app.app_context():
+        conv = TwilioConversation(company_id=ids["company"], phone_number_id=ids["line"], from_number="+14155559030", to_number="+15550001000", is_read=False, last_message_preview="Hi")
+        call = TwilioCallLog(company_id=ids["company"], phone_number_id=ids["line"], twilio_sid="CAeffmissed", direction="inbound", from_number="+14155559031", to_number="+15550001000", status="missed", is_read=False)
+        vm_call = TwilioCallLog(company_id=ids["company"], phone_number_id=ids["line"], twilio_sid="CAeffvoice", direction="inbound", from_number="+14155559032", to_number="+15550001000", status="voicemail", is_read=False)
+        db.session.add_all([conv, call, vm_call]); db.session.flush()
+        vm = VoiceVoicemailMessage(company_id=ids["company"], call_log_id=vm_call.id, phone_number_id=ids["line"], recording_url="https://example.test/vm.mp3", is_read=False)
+        note = Notification(user_id=ids["staff"], company_id=ids["company"], event_type="system", title="Pending", message="Pending", is_read=False)
+        db.session.add_all([vm, note]); db.session.commit()
+        conv_id, call_id = conv.id, call.id
+    login(client, ids["staff"])
+    data = client.get("/api/pwa/badge-count").get_json()
+    assert data["smsUnread"] == 1 and data["missedCalls"] == 1 and data["voicemails"] == 1
+    assert data["notifications"] == 1
+    assert data["count"] == 4  # broader dashboard total still includes the system notification
+    assert data["effectiveBadge"] == 3  # the actual OS badge never does
+
+    # Clearing each component decrements effectiveBadge; the system
+    # notification never contributed to it, so it stays 3 until each real
+    # communication is cleared, then reaches 0.
+    client.patch(f"/api/inbox/conversations/{conv_id}/read", json={"is_read": True})
+    assert client.get("/api/pwa/badge-count").get_json()["effectiveBadge"] == 2
+    client.post(f"/api/calls/{call_id}/mark-read")
+    data = client.get("/api/pwa/badge-count").get_json()
+    assert data["effectiveBadge"] == 1
+    assert data["notifications"] == 1  # the system notification is still there, untouched
+
+
+def test_calls_html_marks_voicemail_listened_via_canonical_player():
+    """Static text-contract check (no headless browser in this sandbox, same
+    approach as the voice single-active-client suite): the voicemail <audio>
+    element must call markRead on natural playback completion, so listening
+    through the canonical player -- not just an explicit button tap --
+    clears the badge. Must not fire on every render/replay of an
+    already-read voicemail (idempotent: only when call.is_read is false)."""
+    import pathlib
+    html = pathlib.Path(__file__).parent.parent.joinpath("templates/inbox_pwa/calls.html").read_text()
+    i_audio = html.index("audio.src = `/api/calls/")
+    i_ended = html.index("addEventListener('ended'", i_audio)
+    snippet = html[i_ended:i_ended + 200]
+    assert "markRead(call.id, true)" in snippet
+    assert "!call.is_read" in snippet
