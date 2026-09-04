@@ -141,6 +141,16 @@ def update_delivery_status(message_sid: str, status: str, error_code: str | None
     next_status = recipient.status
     if normalized in {"delivered", "sent", "failed", "undelivered"}:
         next_status = "failed" if normalized == "undelivered" else normalized
+    if error_code:
+        next_status = "failed"
+
+    # A Twilio status callback can arrive out of order. Once a recipient has
+    # reached a terminal state, a late/stale earlier status must not regress
+    # it (e.g. an out-of-order "sent" landing after "delivered").
+    from services.sms_status import is_forward_status_transition
+    if not is_forward_status_transition(recipient.status, next_status):
+        return recipient
+
     next_error_code = str(error_code) if error_code else recipient.provider_error_code
     next_error_message = error_message if error_code else recipient.error_message
     if (
@@ -156,7 +166,6 @@ def update_delivery_status(message_sid: str, status: str, error_code: str | None
     if error_code:
         recipient.provider_error_code = next_error_code
         recipient.error_message = next_error_message
-        recipient.status = "failed"
     recipient.updated_at = _now()
     _audit(recipient.company_id, None, "sms_delivery_status", "sms_recipient", recipient.id, {
         "message_sid": message_sid,

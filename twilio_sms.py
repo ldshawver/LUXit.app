@@ -1991,6 +1991,14 @@ def sms_status():
         if not _validate_twilio_signature(ta, "/twilio/sms/status"):
             abort(403)
         if msg:
+            from services.sms_status import is_forward_status_transition
+            if not is_forward_status_transition(msg.status, status):
+                logger.info(
+                    "SMS status: dropped out-of-order/late callback sid=%s current=%s incoming=%s",
+                    sid, msg.status, status,
+                )
+                msg = None
+        if msg:
             msg.status         = status
             msg.error_code     = error_code
             msg.error_message  = error_msg

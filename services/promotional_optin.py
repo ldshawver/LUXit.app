@@ -642,14 +642,21 @@ def sync_solicitation_delivery_status(message_sid: str, status: str, error: str 
     ).all()
     mapped = _normalize_delivery_status(status)
     now = _now()
+    from services.sms_status import is_forward_status_transition
+    applied = 0
     for row in rows:
+        # A late/out-of-order callback must not regress an already-terminal
+        # delivery_status (e.g. a stale "sent" arriving after "delivered").
+        if not is_forward_status_transition(row.delivery_status, mapped):
+            continue
         row.delivery_status = mapped
         row.last_status_at = now
         if mapped in {"failed", "undelivered"}:
             row.send_error = error or status
         elif mapped == "delivered":
             row.send_error = None
-    return len(rows)
+        applied += 1
+    return applied
 
 
 def latest_solicitation_status_map(company_id: int, contact_ids: list) -> dict:
