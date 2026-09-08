@@ -3,6 +3,12 @@ import logging
 
 from flask_login import UserMixin
 from sqlalchemy import JSON, Text
+from sqlalchemy.dialects.postgresql import JSONB
+
+# Postgres-preferred JSON storage for columns a migration compares/builds with
+# jsonb operators (=, jsonb_build_object, ||, ?, @>, ...). Falls back to plain
+# JSON on any other dialect (sqlite in tests) where JSONB doesn't exist.
+_JSONB_OR_JSON = JSON().with_variant(JSONB(), "postgresql")
 
 from extensions import db
 
@@ -975,7 +981,7 @@ class Contact(db.Model):
     name_verification_level = db.Column(db.String(32), default="unverified", nullable=False)
     name_verified_at = db.Column(db.DateTime, nullable=True)
     name_verified_by_user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True)
-    name_provenance = db.Column(db.JSON, default=dict, nullable=False)
+    name_provenance = db.Column(_JSONB_OR_JSON, default=dict, nullable=False)
     approval_status = db.Column(db.String(32), default="pending", nullable=False, index=True)
     approved_at = db.Column(db.DateTime, nullable=True)
     approved_by_user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True)
@@ -1387,7 +1393,7 @@ class SMSCampaign(db.Model):
     message = db.Column(db.String(1000))
     segment = db.Column(db.String(100), nullable=True)
     status = db.Column(db.String(50), default="draft")
-    audience_filter = db.Column(JSON, default=dict)
+    audience_filter = db.Column(_JSONB_OR_JSON, default=dict)
     estimated_recipient_count = db.Column(db.Integer, default=0)
     selected_tag_ids = db.Column(JSON, default=list)
     scheduled_preview_count = db.Column(db.Integer)
@@ -4517,7 +4523,7 @@ class TwilioPhoneNumber(db.Model):
     business_hours_auto_reply_text    = db.Column(db.Text)
     ring_timeout             = db.Column(db.Integer, default=25)
 
-    business_hours           = db.Column(JSON, default=dict)
+    business_hours           = db.Column(_JSONB_OR_JSON, default=dict)
     timezone                 = db.Column(db.String(80), default="America/Los_Angeles")
     during_hours_route       = db.Column(db.String(30), default="ring_pwa")
     after_hours_route        = db.Column(db.String(30), default="voicemail")
