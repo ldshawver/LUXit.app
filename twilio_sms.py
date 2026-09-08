@@ -68,6 +68,7 @@ def _guard_sms_feature():
         "/twilio/voice/no-answer",
         "/twilio/voice/recording",
         "/twilio/voice/status",
+        "/twilio/fallback",
     }
     if request.path in _WEBHOOK_PATHS or request.path.startswith("/twilio/google-contacts/"):
         return None
@@ -2258,13 +2259,31 @@ def _inbound_call_impl():
             f"</Response>"
         )
 
-    number_route = getattr(ta, "during_hours_route", None) if in_hours else getattr(ta, "after_hours_route", None)
-    settings_route = (settings.during_hours_route if settings and in_hours else settings.after_hours_route if settings else None)
-    # Treat model defaults as unset so tenant PhoneSettings keep routing calls unless
-    # the selected phone number has a non-default explicit route.
-    if settings_route and number_route in (None, "", "ring_pwa") and settings_route != number_route:
-        route = settings_route
+    if in_hours:
+        # Daytime precedence is unchanged: the tenant-wide PhoneSettings route
+        # keeps routing calls unless the selected number carries a non-default
+        # explicit route ("forward" / "voicemail" / ...). The number-model
+        # default is "ring_pwa", so a stored "ring_pwa" is treated as "not
+        # configured" here and does not shadow a company-level "forward".
+        number_route = (getattr(ta, "during_hours_route", None) or "").strip() or None
+        settings_route = (settings.during_hours_route if settings else None)
+        settings_route = (settings_route or "").strip() or None
+        if settings_route and number_route in (None, "ring_pwa") and settings_route != number_route:
+            route = settings_route
+        else:
+            route = number_route or settings_route
     else:
+        # After-hours: an explicit per-number after_hours_route WINS over the
+        # tenant PhoneSettings route. The number-model default here is
+        # "voicemail", so a stored "ring_pwa" / "forward" is unambiguously a
+        # deliberate operator choice -- it must not be demoted to the company
+        # route (prod defect 2026-09-08: +19165989519 after_hours_route=ring_pwa
+        # was overridden by PhoneSettings after_hours_route=voicemail, so an
+        # after-hours call fell to voicemail and the PWA never rang). A number
+        # with no route of its own falls back to the company route.
+        number_route = (getattr(ta, "after_hours_route", None) or "").strip() or None
+        settings_route = (settings.after_hours_route if settings else None)
+        settings_route = (settings_route or "").strip() or None
         route = number_route or settings_route
     configured_call_forward_to = getattr(ta, "call_forwarding_number", None) or getattr(ta, "call_forward_to", None)
     settings_forward_to = ((settings.forward_number if in_hours else settings.after_hours_forward_number) if settings else None)
@@ -2305,7 +2324,12 @@ def _inbound_call_impl():
         # Explicit per-line call forwarding wins over browser ringing. This
         # applies only to voice webhooks; SMS routing never reads these fields.
         twiml = _dial_twiml(forward_to, fallback_to)
-    elif in_hours and (route in (None, "ring_pwa")):
+    elif route == "ring_pwa" or (in_hours and route is None):
+        # Explicit route == "ring_pwa" rings the PWA regardless of business
+        # hours -- an operator who sets after_hours_route=ring_pwa wants
+        # after-hours calls to reach the browser, not voicemail. The IMPLICIT
+        # daytime default (route is None) stays gated on in_hours so an
+        # unconfigured number still falls through to voicemail after hours.
         if log:
             log.status = "ringing"
             db.session.commit()
@@ -3417,12 +3441,20 @@ def upload_voicemail():
 
 
 @twilio_bp.route("/fallback", methods=["GET", "POST"])
+@csrf.exempt
 def twilio_fallback():
     """
     Twilio calls this URL when the primary SMS or Voice webhook fails to respond.
     Returns a valid TwiML response so the call/message is handled gracefully,
     logs the failure so it appears in the error dashboard, and never returns
     a non-2xx status (which would cause Twilio to retry and double-log).
+
+    CSRF-exempt like every other Twilio server-to-server webhook route: Twilio
+    POSTs here with no session/CSRF token, so without the exemption Flask-WTF
+    raised CSRFError -> the app's handler 302-redirected -> Twilio followed with
+    a GET to the POST-only /twilio/voice/inbound -> 405, and the caller got an
+    unrecoverable failure (prod 2026-09-08). GET is accepted too so a stray
+    redirect-follow can never 405-loop.
     """
     try:
         from flask import request as _req
@@ -3430,24 +3462,14 @@ def twilio_fallback():
         error_url  = _req.values.get("ErrorUrl", "")
         call_sid   = _req.values.get("CallSid")
         msg_sid    = _req.values.get("MessageSid")
+        # ErrorCode / ErrorUrl / CallSid / MessageSid are Twilio-supplied and
+        # carry no secrets. This log line is the durable record of a primary
+        # webhook failure; keep the handler itself dependency-free so it can
+        # never be the thing that fails.
         logger.error(
             "Twilio fallback triggered: ErrorCode=%s ErrorUrl=%s CallSid=%s MessageSid=%s",
             error_code, error_url, call_sid, msg_sid,
         )
-        # Try to log to the error dashboard
-        try:
-            from models import AppError
-            from extensions import db as _db
-            _db.session.add(AppError(
-                error_type="TwilioFallback",
-                error_message=f"Primary webhook failed (ErrorCode {error_code}). URL: {error_url}",
-                severity="high",
-                source="twilio_fallback",
-                context=dict(_req.values),
-            ))
-            _db.session.commit()
-        except Exception:
-            pass
     except Exception as log_exc:
         logger.warning("Fallback logging error: %s", log_exc)
 
