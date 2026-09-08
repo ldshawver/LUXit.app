@@ -20,7 +20,7 @@ from datetime import datetime
 from email_validator import EmailNotValidError, validate_email
 
 from extensions import db
-from models import Contact, ContactEmailAddress, ContactPhoneNumber
+from models import Contact, ContactEmailAddress, ContactPhoneNumber, TwilioConversation
 from services.phone_normalization import normalize_phone
 from services.contact_resolver import resolve_contact_identity
 
@@ -64,6 +64,46 @@ def _sync_contact_point(model, contact: Contact, company_id: int, normalized_val
             original_value=original_value, normalized_value=normalized_value,
             is_primary=True, verification_status=verification_status, source=source,
         ))
+
+
+def _propagate_display_name_to_conversations(contact: Contact, company_id: int) -> None:
+    """A deliberate authorized edit is the highest-trust name source, so push the
+    new display name onto the denormalized ``TwilioConversation.contact_name``
+    for this contact's conversations immediately.
+
+    The inbox list re-resolves the name from the canonical Contact on every read
+    (inbox_pwa._refresh_conversation_contact_name), so the *displayed* name is
+    already correct without this. But inbox SEARCH filters on the stored
+    ``contact_name`` column *before* that re-resolve, so a CRM-side edit would
+    not be findable by the new name until an unrelated list refresh wrote it
+    back. The PWA conversation editor already syncs the single open
+    conversation; this makes both surfaces converge for every conversation,
+    which is what "CRM edit -> PWA search reflects" requires.
+
+    Consent / opt-out / STOP / tags / segment membership / message history are
+    never touched here -- only the cached display string.
+    """
+    display = f"{contact.first_name or ''} {contact.last_name or ''}".strip()
+    if not display:
+        return
+    match = [TwilioConversation.contact_id == contact.id]
+    if contact.normalized_phone:
+        match.append(db.and_(
+            TwilioConversation.contact_id.is_(None),
+            TwilioConversation.from_number == contact.normalized_phone,
+        ))
+    convs = (
+        TwilioConversation.query
+        .filter(TwilioConversation.company_id == company_id, db.or_(*match))
+        .all()
+    )
+    for conv in convs:
+        if conv.contact_id != contact.id:
+            conv.contact_id = contact.id
+        if conv.contact_name != display:
+            conv.contact_name = display
+            if hasattr(conv, "contact_source"):
+                conv.contact_source = "crm"
 
 
 def update_contact_fields(
@@ -173,6 +213,9 @@ def update_contact_fields(
         # reach at least minimum_established without waiting for another
         # inbound SMS; never forces "confirmed".
         resolve_contact_identity(company_id, contact_id=contact.id, allow_enrichment=True)
+        if source in TRUSTED_EDIT_SOURCES:
+            _propagate_display_name_to_conversations(contact, company_id)
+            db.session.flush()
 
     return contact
 
