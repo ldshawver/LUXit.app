@@ -97,7 +97,8 @@ def test_dialer_preserves_mute_hangup_callerid_and_wifi_registration():
     assert 'id="btnMute"' in html and "function toggleMute(" in html
     assert 'id="btnHangup"' in html and "function endCall(" in html
     assert 'id="callerId"' in html
-    assert 'id="enableVoice"' in html and "function enableWifiCalling(" in html
+    assert 'id="receiveCallsToggle"' in html and "async function setReceiveCalls(" in html
+    assert 'id="enableVoice"' in html and "async function startVoiceRegistration(" in html
     assert 'id="micStatus"' in html
     # single Twilio Device — still guarded, still one constructor call
     assert html.count("new Device(") == 1

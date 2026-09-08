@@ -133,9 +133,10 @@ def test_ordering_invariant_lock_before_token_before_device_before_register(html
 
 def test_passive_tab_shows_active_elsewhere_and_use_calling_here(html):
     render = re.search(r"function renderVoiceRole\(\) \{(.*?)\n\}\n", html, re.S).group(1)
-    assert "Wi-Fi Calling is active in another LUXit window." in render
+    assert "Calling is active in another LUXit window." in render
     assert "ensureUseHereButton(true);" in render
-    assert "setEnableState({ disabled: true" in render
+    # passive tab: the registration affordance is hidden / not actionable
+    assert "els.enableVoice.hidden = true;" in render
     assert "function requestCallingHere()" in html
 
 
@@ -160,9 +161,9 @@ def test_transfer_tears_down_old_device_before_releasing_lock(html):
     i_teardown = transfer.index("teardownDevice();")
     i_release = transfer.index("releaseVoiceOwnership();")
     assert i_teardown < i_release, "owner must destroy its Device before releasing the lock"
-    # the requester only registers after it holds the lock (grant callback → enableWifiCalling)
+    # the requester only registers after it holds the lock (grant callback → startVoiceRegistration)
     grant = re.search(r"navigator\.locks\.request\(VOICE_LOCK_NAME.*?\n(.*?)\n  \}\)\.catch", coord, re.S).group(1)
-    assert "if (coord.wantsOwnership) { coord.wantsOwnership = false; enableWifiCalling(); }" in grant
+    assert "if (coord.wantsOwnership) { coord.wantsOwnership = false; startVoiceRegistration(); }" in grant
 
 
 def test_no_intentional_overlap_window_in_transfer(html):
@@ -244,31 +245,35 @@ def test_stale_restored_page_cannot_show_ready_before_device_registered(html):
     assert "if (voice.activeCall || voiceIsLive()) return;" in r
     assert "teardownDevice();" in r
     assert "setPhase('idle');" in r
-    assert "setEnableState({ disabled: false, label: 'Enable Wi-Fi Calling' });" in r
+    # the restored page's registration affordance is not shown as actionable-ready
+    assert "els.enableVoice.hidden = true;" in r
+    assert "setEnableState({ disabled: true });" in r
 
 
 def test_reload_requires_a_fresh_registration_before_ready(html):
-    # A genuine bfcache restore re-runs the full lifecycle via enableWifiCalling
-    # (-> initVoice -> acquire lock -> token -> new Device -> register).
+    # A genuine bfcache restore re-runs the full acquire→token→Device→register
+    # lifecycle via startVoiceRegistration(). With Receive Calls ON + Available
+    # the restored owner tab re-registers automatically (no manual step) — but
+    # "Ready" is still only painted by the Device 'registered' event, never on
+    # load and never from cache.
     r = _resync(html)
-    assert "if (reinit && wasOwner) { enableWifiCalling(); return; }" in r
+    assert "startVoiceRegistration();" in r
     assert "acquireVoiceOwnership();" in r and "coordPost('owner-query');" in r
-    # a plain fresh navigation never auto-shows ready either: initVoice is only
-    # reached through the Enable button / placeWifiCall, never on load.
-    assert "if (DIALER_MODE) { acquireVoiceOwnership(); coordPost('owner-query'); }" in html
+    # initVoice is never wired to fire directly on DOMContentLoaded/load; the
+    # only auto path is startVoiceRegistration() (which is single-flight and
+    # gated by shouldRegisterVoice()).
     assert re.search(r"DOMContentLoaded[^\n]*initVoice", html) is None
-    assert "window.addEventListener('load', () => {\n  loadCallerIds();" in html  # load handler does NOT call initVoice
+    assert re.search(r"addEventListener\('load'[^\n]*initVoice", html) is None
+    assert "async function startVoiceRegistration() {\n  if (!shouldRegisterVoice()) return;" in html
 
 
 def test_passive_second_tab_cannot_display_ready(html):
     r = _resync(html)
-    # resync on a non-owner tab only re-inits when it *was* the owner
-    assert "if (reinit && wasOwner)" in r
     render = re.search(r"function renderVoiceRole\(\) \{(.*?)\n\}", html, re.S).group(1)
-    # the passive branch never prints "Ready" and disables the enable button
+    # the passive branch never prints "Ready" and hides the registration control
     assert "Ready —" not in render.split("if (coord.isOwner)")[0]
-    assert "Wi-Fi Calling is active in another LUXit window." in render
-    assert "setEnableState({ disabled: true, label: 'Active in another window' });" in render
+    assert "Calling is active in another LUXit window." in render
+    assert "els.enableVoice.dataset.passive = '1';" in render and "els.enableVoice.hidden = true;" in render
 
 
 def test_one_lifecycle_mints_exactly_one_token_and_never_loops(html):
@@ -298,10 +303,10 @@ def test_registration_failure_cannot_leave_ready_visible(html):
     assert "document.body.dataset.phase = 'error';" in voice_error
     assert "state(safeMessage, 'error');" in voice_error
     # Device 'unregistered' clears registration and drops out of the ready phase.
-    unreg_line = re.search(r"voice\.device\.on\('unregistered',.*", html).group(0)
-    assert "voice.registered = false;" in unreg_line
-    assert "voice.deviceState = 'none';" in unreg_line
-    assert "setPhase('idle');" in unreg_line
+    unreg = re.search(r"voice\.device\.on\('unregistered', \(\) => \{(.*?)\n      \}\);", html, re.S).group(1)
+    assert "voice.registered = false;" in unreg
+    assert "voice.deviceState = 'none';" in unreg
+    assert "setPhase('idle');" in unreg
     # initVoice's own catch clears deviceState so voiceIsLive() can't be true
     body = re.search(r"async function initVoice\(\) \{(.*?)\n  return voice\.initPromise;\n\}", html, re.S).group(1)
     assert "voice.deviceState = 'none';" in body

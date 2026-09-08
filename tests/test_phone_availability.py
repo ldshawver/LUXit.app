@@ -266,7 +266,9 @@ def test_calls_template_fails_closed_while_away():
     assert "voiceCode: 'PHONE_AWAY'" in CALLS_HTML                            # initVoice throws
     assert "if (isAway()) { applyPhoneAvailability('away'); return; }" in CALLS_HTML  # resyncVoiceUi
     assert "data.type === 'phone_availability'" in CALLS_HTML                 # SSE apply
-    assert "loadPhoneAvailability();" in CALLS_HTML
+    assert "loadPhoneAvailability" in CALLS_HTML                              # fetched on init
+    # registration is gated so an Away user never registers
+    assert "function shouldRegisterVoice()" in CALLS_HTML and "!isAway()" in CALLS_HTML
     # teardown on Away
     block = CALLS_HTML.split("function applyPhoneAvailability")[1].split("async function loadPhoneAvailability")[0]
     assert "teardownDevice();" in block and "releaseVoiceOwnership();" in block

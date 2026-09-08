@@ -6594,12 +6594,37 @@ def manage_users():
             for user in users:
                 restoration_by_user[user.id] = restoration_eligible(user, company.id)
 
+        # Per-user communication state for the tenant Team view: availability
+        # (Available / Away) and Receive Calls, with provenance. Tenant-scoped;
+        # a platform admin with no company context gets an empty map.
+        comms_by_user = {}
+        can_manage_comms = False
+        if company:
+            try:
+                from services.phone_availability import team_availability, can_admin_manage
+                from services.receive_calls import team_receive_calls
+                can_manage_comms = can_admin_manage(current_user, company.id)
+                for row in team_availability(company.id):
+                    comms_by_user.setdefault(row["user_id"], {}).update({
+                        "availability": row.get("state"),
+                        "availability_changed_at": row.get("changed_at"),
+                        "availability_changed_by": row.get("changed_by_name"),
+                        "availability_source": row.get("source"),
+                    })
+                for row in team_receive_calls(company.id):
+                    comms_by_user.setdefault(row["user_id"], {})["receive_calls"] = row.get("receive_calls")
+            except Exception:
+                logger.exception("manage_users: comms state load failed")
+
         return render_template(
             'manage_users.html',
             users=users,
             access_by_user=access_by_user,
             show_archived=show_archived,
             restoration_by_user=restoration_by_user,
+            comms_by_user=comms_by_user,
+            can_manage_comms=can_manage_comms,
+            current_company=company,
         )
     except Exception as e:
         logger.error("manage_users error: %s", e)
@@ -6648,7 +6673,10 @@ def delete_user(user_id):
     from services.comms_permissions import can_manage_users
     from services.user_lifecycle import archive_user_for_company
     company = current_user.get_default_company()
-    if not current_user.is_admin and (not company or not can_manage_users(current_user, company.id)):
+    if not company:
+        flash('Select a company context before removing a user.', 'danger')
+        return redirect(url_for('main.manage_users'))
+    if not current_user.is_admin and not can_manage_users(current_user, company.id):
         flash('Access denied.', 'danger')
         return redirect(url_for('main.dashboard'))
     user = User.query.get_or_404(user_id)
@@ -6671,7 +6699,10 @@ def restore_user(user_id):
     from services.comms_permissions import can_manage_users
     from services.user_lifecycle import restore_user_for_company
     company = current_user.get_default_company()
-    if not current_user.is_admin and (not company or not can_manage_users(current_user, company.id)):
+    if not company:
+        flash('Select a company context before restoring a user.', 'danger')
+        return redirect(url_for('main.manage_users', archived='1'))
+    if not current_user.is_admin and not can_manage_users(current_user, company.id):
         flash('Access denied.', 'danger')
         return redirect(url_for('main.dashboard'))
     user = User.query.get_or_404(user_id)

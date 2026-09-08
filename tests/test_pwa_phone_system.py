@@ -1239,7 +1239,7 @@ def test_disabled_calling_methods_are_blocked_per_number(client, app, world):
     login(client, world["alice"])
     browser = client.post("/api/inbox/call/dial", json={"to": "+15559990000", "selected_number": "+15550001000", "calling_method": "browser"})
     assert browser.status_code == 403
-    assert "Browser/WiFi calling is disabled" in browser.get_json()["error"]
+    assert "Browser calling is disabled" in browser.get_json()["error"]
     cell = client.post("/api/inbox/call/dial", json={"to": "+15559990000", "selected_number": "+15550001000", "calling_method": "cell_callback"})
     assert cell.status_code == 403
     assert "Cell callback calling is disabled" in cell.get_json()["error"]

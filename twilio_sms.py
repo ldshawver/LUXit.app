@@ -2337,6 +2337,7 @@ def _inbound_call_impl():
             from models import PWADevice
             from services.phone_identity import pwa_voice_identity
             from services.phone_availability import available_user_ids
+            from services.receive_calls import receive_calls_user_ids
             approved_devices = [
                 device for device in PWADevice.query.filter_by(
                     company_id=ta.company_id,
@@ -2345,13 +2346,16 @@ def _inbound_call_impl():
                 ).all()
                 if not (device.phone_number_id and pn and device.phone_number_id != pn.id)
             ]
-            # Only ring users whose Phone Availability is 'available'. An AWAY
-            # user's Device must not ring / receive the incoming call.
-            avail = available_user_ids(ta.company_id)
+            # Server is the authority on who receives a routed call. Ring a
+            # device only when its user (a) has Receive Calls ON for this
+            # tenant and (b) is 'available'. A stale/malicious client that
+            # registered a Twilio.Device cannot make an excluded user ring:
+            # its identity is simply not placed in the <Dial>.
+            eligible = receive_calls_user_ids(ta.company_id) & available_user_ids(ta.company_id)
             client_identities = [
                 pwa_voice_identity(ta.company_id, device.user_id, device.device_key)
                 for device in approved_devices
-                if device.user_id is None or device.user_id in avail
+                if device.user_id is None or device.user_id in eligible
             ]
         except Exception:
             logger.exception("Unable to resolve eligible PWA voice devices", extra={"company_id": ta.company_id})

@@ -71,6 +71,28 @@ class UserCompanyAccess(db.Model):
     )
     phone_availability_source = db.Column(db.String(16), nullable=True)  # 'user' | 'admin'
 
+    # ── Receive Calls (per-user, per-tenant call-routing preference) ────────
+    # TRUE  = route this tenant's shared LUXit calls to the user's eligible PWA
+    #         devices; an eligible device registers its Twilio.Device
+    #         automatically once calling prerequisites are ready, over Wi-Fi OR
+    #         cellular data (the OS/browser picks the path -- this is not a
+    #         network-transport setting).
+    # FALSE = the user's PWA does not register for / present inbound calls and
+    #         server-side inbound routing excludes them, regardless of
+    #         phone_availability. Voicemail / no-answer fallback is unaffected.
+    # Independent of phone_availability: AWAY temporarily suppresses shared-call
+    # attention without changing this preference; this preference does not
+    # change availability. Compatibility default is TRUE so existing active
+    # memberships keep receiving calls exactly as before.
+    receive_calls = db.Column(
+        db.Boolean, nullable=False, default=True, server_default=db.text("true")
+    )
+    receive_calls_changed_at = db.Column(db.DateTime, nullable=True)
+    receive_calls_changed_by_user_id = db.Column(
+        db.Integer, db.ForeignKey("user.id"), nullable=True
+    )
+    receive_calls_source = db.Column(db.String(16), nullable=True)  # 'user' | 'admin' | 'system'
+
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(
         db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow

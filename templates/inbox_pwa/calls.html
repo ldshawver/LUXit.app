@@ -200,6 +200,28 @@
     .mic-status,.diag-link{font-size:.74rem;color:var(--pwa-muted);text-align:center}
     .diag-link{text-decoration:underline;text-underline-offset:2px}
 
+    /* ── Receive Calls toggle ─────────────────────────────────────────────── */
+    .receivecalls-row{justify-content:space-between}
+    .switch{
+      appearance:none;cursor:pointer;background:none;border:0;padding:4px;
+      display:inline-flex;align-items:center;gap:8px;font-size:.8rem;color:var(--pwa-muted);
+    }
+    .switch__track{
+      width:44px;height:26px;border-radius:999px;padding:3px;box-sizing:border-box;
+      background:color-mix(in srgb,var(--pwa-muted) 45%,var(--pwa-card-bg));
+      border:1px solid var(--pwa-border);transition:background .15s ease;
+      display:inline-flex;align-items:center;
+    }
+    .switch__thumb{
+      width:18px;height:18px;border-radius:50%;background:#fff;
+      transition:transform .15s ease;transform:translateX(0);
+    }
+    .switch[aria-checked="true"] .switch__track{background:var(--pwa-primary);border-color:var(--pwa-primary)}
+    .switch[aria-checked="true"] .switch__thumb{transform:translateX(18px)}
+    .switch[aria-checked="true"] .switch__state{color:var(--pwa-text)}
+    .switch:disabled{opacity:.55;cursor:default}
+    .switch:focus-visible{outline:3px solid var(--pwa-accent);outline-offset:2px;border-radius:6px}
+
     /* ── Recents (Clock icon) ──────────────────────────────────────────── */
     .tabs{display:flex;gap:8px;overflow-x:auto;padding:10px 0 12px}
     .tab{
@@ -283,7 +305,7 @@
     </button>
   </div>
 
-  <div id="voiceState" class="voice-state" role="status" aria-live="polite">Disabled — enable Wi-Fi Calling to register this browser.</div>
+  <div id="voiceState" class="voice-state" role="status" aria-live="polite">Loading calling settings…</div>
 
   <!-- Canonical dialer. data-view="full" on /app/phone & /app/dial-pad; "compact" on Recents. -->
   <section class="dialer" id="dialer" data-view="{{ 'full' if dialer_mode else 'compact' }}" aria-label="Dialer">
@@ -343,15 +365,22 @@
         <strong>You're Away</strong> — shared calls, messages and communication notifications are paused. Your inbox history is still available.
         <button class="wifi-btn" type="button" id="becomeAvailableBtn" onclick="setPhoneAvailability('available')">Become Available</button>
       </div>
+      <div class="callerid-field receivecalls-row">
+        <span>Receive Calls</span>
+        <button type="button" id="receiveCallsToggle" class="switch" role="switch" aria-checked="false" aria-label="Receive Calls">
+          <span class="switch__track"><span class="switch__thumb"></span></span>
+          <span class="switch__state" id="receiveCallsToggleLabel">Off</span>
+        </button>
+      </div>
+      <p class="mic-status">Receive calls in LUXit using WiFi or cellular data. Your phone carrier's Wi-Fi Calling setting is not affected.</p>
       <label class="callerid-field">
         <span>Caller ID</span>
         <select id="callerId" aria-label="Company-owned caller ID"></select>
       </label>
-      <button class="wifi-btn" id="enableVoice" onclick="enableWifiCalling()">
-        <span class="dot" aria-hidden="true"></span><span id="enableVoiceLabel">Enable Wi-Fi Calling</span>
+      <button class="wifi-btn" id="enableVoice" onclick="retryVoiceRegistration()" hidden>
+        <span class="dot" aria-hidden="true"></span><span id="enableVoiceLabel">Registration failed — Retry</span>
       </button>
-      <p class="mic-status">Calls run in the LUXit PWA over Wi-Fi or cellular data — this does not change your phone carrier's Wi-Fi Calling setting.</p>
-      <p class="mic-status" id="micStatus">Microphone permission is requested only when you enable calling or place a call.</p>
+      <p class="mic-status" id="micStatus">Microphone permission is requested only when calls are turned on or you place a call.</p>
       <a class="diag-link" href="/app/inbox?settings=devices">Device &amp; notification diagnostics</a>
     </div>
   </section>
@@ -394,22 +423,105 @@ let active = activeFromPath || __p.get('tab') || 'all';
 // list + tabs are hidden — call history stays under the Clock icon (/app/recents).
 const DIALER_MODE = /\/app\/(phone|dial-pad)(\/|$)/.test(window.location.pathname);
 
-/* ── Phone Availability ────────────────────────────────────────────────────
-   'available' | 'away' — a communications-availability state (NOT account
-   disable). AWAY must fail BEFORE any voice-token mint / Device.register(),
-   and must not be recoverable by bfcache/visibility/re-init. Server is
-   authoritative; the tenant SSE stream pushes admin changes. */
 const CURRENT_USER_ID = Number('{{ user.id | default(0) }}') || 0;
+
+/* ── Receive Calls ────────────────────────────────────────────────────────
+   Persisted per-user, per-tenant preference (UserCompanyAccess.receive_calls).
+   ON  = this PWA registers a Twilio.Device automatically once calling
+         prerequisites are ready and receives routed calls (over Wi-Fi OR
+         cellular data — the OS picks the path). No manual button every load.
+   OFF = the Device unregisters, no incoming calls are presented, and
+         server-side routing excludes this user. Voicemail / no-answer
+         fallback is unaffected.
+   Independent of Communication Availability — AWAY suppresses shared-call
+   attention without changing this preference. Server is authoritative; the
+   tenant SSE stream pushes admin changes. */
+const receiveCalls = { enabled: {{ 'true' if receive_calls else 'false' }}, loaded: false, busy: false };
+
+/* ── Communication Availability ('available' | 'away') ────────────────────
+   AWAY must fail BEFORE any voice-token mint / Device.register(), and must not
+   be recoverable by bfcache/visibility/re-init. Server authoritative; SSE
+   pushes admin changes. */
 const phoneAvailability = { state: 'available' };
 function isAway() { return phoneAvailability.state === 'away'; }
 
+/* Single predicate: may this browser hold a registered Twilio.Device now? */
+function shouldRegisterVoice() {
+  return receiveCalls.enabled && !isAway() && coord.supported;
+}
+
+function renderReceiveCallsToggle() {
+  const t = document.getElementById('receiveCallsToggle');
+  const lbl = document.getElementById('receiveCallsToggleLabel');
+  if (!t) return;
+  t.setAttribute('aria-checked', receiveCalls.enabled ? 'true' : 'false');
+  t.disabled = receiveCalls.busy;
+  if (lbl) lbl.textContent = receiveCalls.busy ? '…' : (receiveCalls.enabled ? 'On' : 'Off');
+}
+
+/* Persist ONCE, then converge this browser. */
+async function setReceiveCalls(next) {
+  const want = !!next;
+  if (receiveCalls.busy || want === receiveCalls.enabled) return;
+  receiveCalls.busy = true; renderReceiveCallsToggle();
+  try {
+    const body = await apiFetch('/api/phone/receive-calls', {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ receive_calls: want }),
+    });
+    receiveCalls.busy = false;
+    applyReceiveCalls(body && typeof body.receive_calls === 'boolean' ? body.receive_calls : want);
+  } catch (err) {
+    receiveCalls.busy = false; renderReceiveCallsToggle();
+    state(`Could not update Receive Calls — ${err.message}`, 'error');
+  }
+}
+
+function applyReceiveCalls(enabled) {
+  receiveCalls.enabled = !!enabled;
+  receiveCalls.loaded = true;
+  renderReceiveCallsToggle();
+  coord._rendered = null;
+  if (!receiveCalls.enabled) {
+    voice.registered = false; voice.deviceState = 'none'; voice.initPromise = null;
+    teardownDevice();
+    releaseVoiceOwnership();
+    setPhase('idle');
+    setEnableState({ disabled: true });
+    els.enableVoice.hidden = true;
+    state('Calls disabled');
+    return;
+  }
+  // Enabled — bring this browser into agreement with the server preference.
+  if (isAway()) { applyPhoneAvailability('away'); return; }
+  if (!coord.supported) { renderVoiceRole(); return; }
+  if (DIALER_MODE) { acquireVoiceOwnership(); coordPost('owner-query'); }
+  if (document.body.dataset.phase === 'idle') state('Registering…');
+  startVoiceRegistration();
+  renderVoiceRole();
+}
+
+async function loadReceiveCalls() {
+  try {
+    const body = await apiFetch('/api/phone/receive-calls');
+    if (body && typeof body.receive_calls === 'boolean') applyReceiveCalls(body.receive_calls);
+    else applyReceiveCalls(receiveCalls.enabled);
+  } catch (_) { applyReceiveCalls(receiveCalls.enabled); }
+}
+
+function retryVoiceRegistration() {
+  els.enableVoice.hidden = true;
+  if (!shouldRegisterVoice()) return;
+  state('Registering…');
+  startVoiceRegistration();
+}
+
 async function setPhoneAvailability(next) {
   try {
-    const res = await apiFetch('/api/phone/availability', {
+    const body = await apiFetch('/api/phone/availability', {
       method: 'PUT', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ state: next }),
     });
-    const body = await res.json().catch(() => ({}));
     if (body && body.state) applyPhoneAvailability(body.state);
     else state('Could not update Communication Availability.', 'error');
   } catch (_) { state('Could not update Communication Availability.', 'error'); }
@@ -429,22 +541,23 @@ function applyPhoneAvailability(next) {
     teardownDevice();
     releaseVoiceOwnership();              // give up any Voice ownership / queued lock
     setPhase('idle');
-    setEnableState({ disabled: true, label: 'Away — calling paused' });
+    setEnableState({ disabled: true });
+    els.enableVoice.hidden = true;
     state("You're Away. Phone calls and communication notifications are paused.");
   } else {
     if (banner) banner.hidden = true;
-    setEnableState({ disabled: false, label: 'Enable Wi-Fi Calling' });
-    if (document.body.dataset.phase === 'idle')
-      state('Disabled — enable Wi-Fi Calling to register this browser.');
+    if (!receiveCalls.enabled) { applyReceiveCalls(false); return; }
+    setEnableState({ disabled: true });
+    if (document.body.dataset.phase === 'idle') state('Registering…');
     if (DIALER_MODE && coord.supported) { acquireVoiceOwnership(); coordPost('owner-query'); }
+    startVoiceRegistration();
     renderVoiceRole();
   }
 }
 
 async function loadPhoneAvailability() {
   try {
-    const res = await apiFetch('/api/phone/availability');
-    const body = await res.json().catch(() => ({}));
+    const body = await apiFetch('/api/phone/availability');
     if (body && body.state) applyPhoneAvailability(body.state);
   } catch (_) {}
 }
@@ -566,7 +679,7 @@ function acquireVoiceOwnership() {
     settle(true);
     renderVoiceRole();
     coordPost('owner-changed', { registered: voice.registered });
-    if (coord.wantsOwnership) { coord.wantsOwnership = false; enableWifiCalling(); }
+    if (coord.wantsOwnership) { coord.wantsOwnership = false; startVoiceRegistration(); }
     // Hold the lock for the entire ownership lifetime.
     return new Promise((release) => { coord.releaseLock = release; });
   }).catch(() => {
@@ -633,12 +746,12 @@ async function requestCallingHere() {
   coord.wantsOwnership = true;
   acquireVoiceOwnership();                       // ensure we're in the lock queue
   coordPost('request-ownership');
-  state('Moving Wi-Fi Calling to this window…');
+  state('Moving calling to this window…');
   setTimeout(() => {
     if (!coord.isOwner && coord.wantsOwnership) {
       coord.wantsOwnership = false;
       renderVoiceRole();
-      state('Could not move Wi-Fi Calling here — the other window may be on a call. Try again.', 'error');
+      state('Could not move calling here — the other window may be on a call. Try again.', 'error');
     }
   }, TAKEOVER_TIMEOUT_MS);
 }
@@ -661,35 +774,46 @@ function ensureUseHereButton(show) {
 
 function renderVoiceRole() {
   if (!DIALER_MODE) return;
-  const sig = `${coord.supported}:${coord.isOwner}:${voice.registered}:${coord.ownerRegistered}:${!!voice.activeCall}`;
+  const sig = `${coord.supported}:${coord.isOwner}:${voice.registered}:${coord.ownerRegistered}:${!!voice.activeCall}:${receiveCalls.enabled}:${isAway()}`;
   if (sig === coord._rendered) return;
   coord._rendered = sig;
 
+  if (!receiveCalls.enabled) {
+    ensureUseHereButton(false);
+    els.enableVoice.hidden = true;
+    if (!voice.activeCall) { setPhase('idle'); state('Calls disabled'); }
+    return;
+  }
+  if (isAway()) {
+    ensureUseHereButton(false);
+    els.enableVoice.hidden = true;
+    if (!voice.activeCall) { setPhase('idle'); state("You're Away. Phone calls and communication notifications are paused."); }
+    return;
+  }
   if (!coord.supported) {
     ensureUseHereButton(false);
     delete els.enableVoice.dataset.passive;
-    setEnableState({ disabled: true, label: 'Wi-Fi Calling unavailable' });
-    if (!voice.activeCall) { setPhase('idle'); state('Wi-Fi Calling cannot be safely enabled in this browser.', 'error'); }
+    els.enableVoice.hidden = true;
+    if (!voice.activeCall) { setPhase('idle'); state('Calling cannot be safely enabled in this browser.', 'error'); }
     return;
   }
   if (coord.isOwner) {
     ensureUseHereButton(false);
     delete els.enableVoice.dataset.passive;
-    if (!voice.registered && !voice.activeCall) {
-      setEnableState({ disabled: false, label: 'Enable Wi-Fi Calling' });
-      if (document.body.dataset.phase === 'idle') state('Ready to enable Wi-Fi Calling.');
+    if (!voice.registered && !voice.activeCall && document.body.dataset.phase !== 'error') {
+      if (document.body.dataset.phase === 'idle') state('Registering…');
     }
     return;
   }
-  // passive — another context holds the exclusive lock
+  // passive — another LUXit window holds the exclusive Voice lock.
   ensureUseHereButton(true);
   els.enableVoice.dataset.passive = '1';
-  setEnableState({ disabled: true, label: 'Active in another window' });
+  els.enableVoice.hidden = true;
   if (!voice.activeCall) {
     setPhase('idle');
     state(coord.ownerRegistered
-      ? 'Wi-Fi Calling is active in another LUXit window.'
-      : 'Another LUXit window controls Wi-Fi Calling.', '');
+      ? 'Calling is active in another LUXit window.'
+      : 'Another LUXit window controls calling.', '');
   }
 }
 
@@ -1089,32 +1213,32 @@ function toggleSpeaker() {
 
 function voiceSdkCtor() { return window.Twilio?.Device || window.Twilio?.Voice?.Device || null; }
 
+let callerIdsLoaded = false;
 async function loadCallerIds() {
   const previous = els.callerId.value;
-  els.callerId.replaceChildren();
   try {
     const data = await apiFetch('/api/phone/numbers');
     const numbers = (data?.numbers || []).filter((n) => n.is_active !== false && n.browser_calling_enabled !== false);
+    els.callerId.replaceChildren();
     numbers.forEach((n) => {
       const option = document.createElement('option');
       option.value = String(n.id);
       option.textContent = `${n.friendly_name || n.phone_number} — ${n.phone_number}`;
       els.callerId.appendChild(option);
     });
+    callerIdsLoaded = true;
     if (!numbers.length) {
       const option = document.createElement('option'); option.value = ''; option.textContent = 'No authorized voice line';
       els.callerId.appendChild(option);
-      setEnableState({disabled: true, label: 'No Voice Line Available'});
-    } else {
-      if (numbers.some((n) => String(n.id) === previous)) els.callerId.value = previous;
-      if (!DIALER_MODE || coord.isOwner) setEnableState({disabled: false, label: voice.registered ? 'Wi-Fi Calling Enabled' : 'Enable Wi-Fi Calling'});
-      else renderVoiceRole();
+      if (document.body.dataset.phase === 'idle') state('No authorized calling number');
+    } else if (numbers.some((n) => String(n.id) === previous)) {
+      els.callerId.value = previous;
     }
   } catch (error) {
+    els.callerId.replaceChildren();
     const option = document.createElement('option'); option.value = ''; option.textContent = 'Unable to load voice lines';
     els.callerId.appendChild(option);
-    setEnableState({disabled: true});
-    state(`Offline — ${error.message}`, 'error');
+    state(`Offline — could not load calling numbers (${error.message})`, 'error');
   }
 }
 
@@ -1148,6 +1272,9 @@ function voiceError(code, message, detail) {
 }
 
 async function initVoice() {
+  if (!receiveCalls.enabled) {           // Receive Calls OFF — never register
+    throw Object.assign(new Error('Calls disabled'), {voiceCode: 'CALLING_DISABLED'});
+  }
   if (isAway()) {                        // AWAY fails before token mint / Device.register()
     const err = Object.assign(new Error("You're Away. Phone calls are paused."), {voiceCode: 'PHONE_AWAY'});
     throw err;
@@ -1155,7 +1282,7 @@ async function initVoice() {
   if (voice.registered && voice.device && voice.deviceState === 'registered') return voice.device;
   if (voice.initPromise) return voice.initPromise;                 // single-flight within the owner
   if (!coord.supported) {
-    const err = Object.assign(new Error('Wi-Fi Calling cannot be safely enabled in this browser.'), {voiceCode: 'VOICE_UNSUPPORTED'});
+    const err = Object.assign(new Error('Calling cannot be safely enabled in this browser.'), {voiceCode: 'VOICE_UNSUPPORTED'});
     voiceError('VOICE_UNSUPPORTED', err.message, err);
     throw err;
   }
@@ -1167,8 +1294,11 @@ async function initVoice() {
     await Promise.race([acquireVoiceOwnership(), new Promise((r) => setTimeout(() => r(false), 400))]);
   }
   if (!coord.isOwner) {
-    const blocked = Object.assign(new Error('Wi-Fi Calling is active in another LUXit window.'), {voiceCode: 'VOICE_ACTIVE_ELSEWHERE'});
-    voiceError('VOICE_ACTIVE_ELSEWHERE', blocked.message, blocked);
+    // Passive tab — another LUXit window owns Voice. Not an error: renderVoiceRole
+    // already shows "Calling active in another window". Only surface it loudly
+    // for an explicit user action (placing a call).
+    const blocked = Object.assign(new Error('Calling is active in another LUXit window.'), {voiceCode: 'VOICE_ACTIVE_ELSEWHERE'});
+    renderVoiceRole();
     throw blocked;
   }
   voice.initPromise = (async () => {
@@ -1176,9 +1306,10 @@ async function initVoice() {
       const Device = voiceSdkCtor();
       if (!Device) throw Object.assign(new Error('Calling SDK failed to load. Refresh the page or check your network connection.'), {voiceCode: 'SDK_MISSING'});
       if (location.protocol !== 'https:' && !['localhost', '127.0.0.1'].includes(location.hostname)) throw Object.assign(new Error('Browser calling requires HTTPS.'), {voiceCode: 'HTTPS_REQUIRED'});
+      if (!callerIdsLoaded) { try { await loadCallerIds(); } catch (_) {} }   // don't race auto-register against the number list
       if (!els.callerId.value) throw Object.assign(new Error('No authorized calling number is available.'), {voiceCode: 'NO_ASSIGNED_NUMBER'});
 
-      setEnableState({disabled: true, label: 'Requesting Permission…'});
+      setEnableState({disabled: true});
       document.body.dataset.phase = 'permission';
       state('Requesting microphone permission…');
       await ensureMicReady();
@@ -1200,12 +1331,26 @@ async function initVoice() {
         voice.registered = true;
         voice.deviceState = 'registered';
         coordPost('owner-changed', {registered: true});
-        setEnableState({disabled: true, label: 'Wi-Fi Calling Enabled'});
+        setEnableState({disabled: true});
+        els.enableVoice.hidden = true;
         setPhase('ready');
         state(`Ready — ${body.calling_number}`, 'ok');
         if (els.btnSpeaker && voice.device?.audio?.isOutputSelectionSupported) els.btnSpeaker.hidden = false;
       });
-      voice.device.on('unregistered', () => { voice.registered = false; voice.deviceState = 'none'; if (coord.isOwner) coordPost('owner-changed', {registered: false}); setEnableState({disabled: false, label: 'Enable Wi-Fi Calling'}); setPhase('idle'); state('Browser phone unregistered'); });
+      voice.device.on('unregistered', () => {
+        voice.registered = false; voice.deviceState = 'none';
+        if (coord.isOwner) coordPost('owner-changed', {registered: false});
+        setEnableState({disabled: true});
+        setPhase('idle');
+        // An unregister while Receive Calls is still ON and we're Available and
+        // own the lock is unexpected — re-register rather than sit idle.
+        if (shouldRegisterVoice() && coord.isOwner && !voice.activeCall) {
+          state('Registering…');
+          startVoiceRegistration();
+        } else {
+          state(receiveCalls.enabled ? 'Calling paused' : 'Calls disabled');
+        }
+      });
       voice.device.on('error', (error) => voiceError('TWILIO_REGISTRATION_FAILED', `Twilio registration failed: ${error.message || 'Unknown error'}`, error));
       voice.device.on('incoming', (call) => {
         const params = call.customParameters;
@@ -1220,37 +1365,52 @@ async function initVoice() {
     } catch (error) {
       voice.deviceState = 'none';
       const code = error.voiceCode || 'TWILIO_REGISTRATION_FAILED';
+      // Passive tab / disabled / away are normal states, not failures — no
+      // error banner, no Retry button.
+      if (['VOICE_ACTIVE_ELSEWHERE', 'CALLING_DISABLED', 'PHONE_AWAY'].includes(code)) {
+        renderVoiceRole();
+        throw error;
+      }
       const messages = {
-        VOICE_ACTIVE_ELSEWHERE: 'Wi-Fi Calling is active in another LUXit window. Choose “Use Calling Here” to move it.',
-        VOICE_UNSUPPORTED: 'Wi-Fi Calling cannot be safely enabled in this browser.',
+        VOICE_UNSUPPORTED: 'Calling cannot be safely enabled in this browser.',
         SDK_MISSING: 'Calling SDK failed to load. Refresh the page or check your network connection.',
         HTTPS_REQUIRED: 'Browser calling requires HTTPS.',
         SESSION_EXPIRED: 'Your session expired. Sign in again.',
-        DEVICE_KEY_REQUIRED: 'Register this device before enabling Wi-Fi Calling.',
+        DEVICE_KEY_REQUIRED: 'Register this device to receive calls.',
         DEVICE_NOT_FOUND: 'This browser is not registered as an approved device.',
         DEVICE_NOT_APPROVED: 'This device is awaiting administrator approval.',
         DEVICE_DISABLED: 'This device has been disabled.',
         DEVICE_USER_MISMATCH: 'This device belongs to a different user.',
         DEVICE_TENANT_MISMATCH: 'This device belongs to a different company.',
         TOKEN_ENDPOINT_FAILED: 'Could not reach the voice token endpoint. Please sign in again or contact support.',
-        MICROPHONE_BLOCKED: 'Microphone permission is blocked. Allow microphone access to use browser calling.',
+        MICROPHONE_BLOCKED: 'Microphone permission is blocked. Allow microphone access to receive calls.',
         MICROPHONE_FAILED: 'Microphone is unavailable. Check your browser audio settings.',
         WEBRTC_UNSUPPORTED: 'WebRTC calling is not supported in this browser.',
         NO_ASSIGNED_NUMBER: 'No authorized calling number is assigned.',
-        TWILIO_REGISTRATION_FAILED: `Twilio registration failed: ${error.message}`
+        TWILIO_REGISTRATION_FAILED: `Registration failed — ${error.message}`
       };
-      els.micStatus.textContent = ['MICROPHONE_BLOCKED', 'MICROPHONE_FAILED'].includes(code) ? 'Permission required — allow microphone access in browser settings.' : 'Microphone permission is requested only when you enable calling or place a call.';
-      setEnableState({disabled: false, label: 'Enable Wi-Fi Calling'});
-      voiceError(code, messages[code] || `Voice setup failed: ${error.message}`, error);
+      els.micStatus.textContent = ['MICROPHONE_BLOCKED', 'MICROPHONE_FAILED'].includes(code) ? 'Permission required — allow microphone access in browser settings.' : 'Microphone permission is requested only when calls are turned on or you place a call.';
+      // Show the explicit "Registration failed — Retry" affordance.
+      setEnableState({disabled: false, label: 'Registration failed — Retry'});
+      els.enableVoice.hidden = false;
+      voiceError(code, messages[code] || `Registration failed — ${error.message}`, error);
       throw error;
     } finally { voice.initPromise = null; }
   })();
   return voice.initPromise;
 }
 
-async function enableWifiCalling() { if (isAway()) { applyPhoneAvailability('away'); return; } try { await initVoice(); } catch (_) {} }
+/* Bring this browser to a registered Twilio.Device when it should be (Receive
+   Calls ON + Available + supported + this tab owns the Web Lock). Safe to call
+   repeatedly — initVoice() is single-flight. Never requires a user gesture
+   beyond the one-time microphone permission. */
+async function startVoiceRegistration() {
+  if (!shouldRegisterVoice()) return;
+  try { await initVoice(); } catch (_) { /* initVoice already rendered the state */ }
+}
 
 async function placeWifiCall() {
+  if (!receiveCalls.enabled) { state('Turn on Receive Calls to place calls from LUXit.', 'error'); return; }
   if (isAway()) { state("You're Away. Set yourself Available to make calls.", 'error'); return; }
   const destination = rawNumber().trim();
   if (!destination) { state('Enter a phone number.', 'error'); return; }
@@ -1260,7 +1420,7 @@ async function placeWifiCall() {
   if (!coord.isOwner) {
     await Promise.race([acquireVoiceOwnership(), new Promise((r) => setTimeout(() => r(false), 400))]);
   }
-  if (!coord.isOwner) { renderVoiceRole(); state('Wi-Fi Calling is active in another LUXit window — choose “Use Calling Here” first.', 'error'); return; }
+  if (!coord.isOwner) { renderVoiceRole(); state('Calling is active in another LUXit window — choose “Use Calling Here” first.', 'error'); return; }
   try {
     const device = await initVoice();
     if (voice.outboundEnabled === false) {
@@ -1286,7 +1446,15 @@ function connectInboxStream() {
         if (Number(data.user_id) === CURRENT_USER_ID) applyPhoneAvailability(data.state);
         return;
       }
-      if (data.type === 'incoming_call' && !isAway()) showIncoming(data);
+      if (data.type === 'receive_calls') {
+        if (Number(data.user_id) === CURRENT_USER_ID
+            && typeof data.receive_calls === 'boolean'
+            && data.receive_calls !== receiveCalls.enabled) {
+          applyReceiveCalls(data.receive_calls);
+        }
+        return;
+      }
+      if (data.type === 'incoming_call' && !isAway() && receiveCalls.enabled) showIncoming(data);
     }
     catch (error) { console.warn('Invalid inbox stream event', error); }
   };
@@ -1359,10 +1527,6 @@ document.querySelectorAll('.tab').forEach((tab) => {
 });
 els.tabs.setAttribute('role', 'tablist');
 
-window.addEventListener('load', () => {
-  loadCallerIds();
-  if (__p.get('setup') === '1') state('Permission required — press Enable Wi-Fi Calling.');
-});
 window.addEventListener('pagehide', cleanupVoice);
 window.addEventListener('beforeunload', cleanupVoice);   // best-effort; the browser auto-releases the Web Lock on context loss regardless
 
@@ -1379,30 +1543,31 @@ function voiceIsLive() {
 function resyncVoiceUi(reinit) {
   if (voice.activeCall || voiceIsLive()) return;
   if (isAway()) { applyPhoneAvailability('away'); return; }   // bfcache/visibility must not re-register while Away
+  if (!receiveCalls.enabled) { applyReceiveCalls(false); return; }
   const wasOwner = coord.isOwner;
   teardownDevice();                       // retire any stale Device object (no-op if already gone)
   coord._rendered = null;                 // force renderVoiceRole to repaint
   setPhase('idle');
-  setEnableState({ disabled: false, label: 'Enable Wi-Fi Calling' });
-  state(coord.supported
-    ? 'Disabled — enable Wi-Fi Calling to register this browser.'
-    : 'Wi-Fi Calling cannot be safely enabled in this browser.',
+  els.enableVoice.hidden = true;
+  setEnableState({ disabled: true });
+  state(coord.supported ? 'Registering…' : 'Calling cannot be safely enabled in this browser.',
     coord.supported ? '' : 'error');
   if (DIALER_MODE && coord.supported) {
     acquireVoiceOwnership();
     coordPost('owner-query');
-    if (reinit && wasOwner) { enableWifiCalling(); return; }
+    startVoiceRegistration();             // Receive Calls ON + Available → always re-register (no manual step)
+    return;
   }
   renderVoiceRole();
 }
 window.addEventListener('pageshow', (e) => { if (e.persisted) resyncVoiceUi(true); });
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') resyncVoiceUi(false); });
 
-document.getElementById('availabilitySelect')?.addEventListener('change', (e) => setPhoneAvailability(e.target.value));
-loadPhoneAvailability();   // if Away, applyPhoneAvailability tears Voice down; acquireVoiceOwnership() itself is a no-op while Away
-
-if (DIALER_MODE) { acquireVoiceOwnership(); coordPost('owner-query'); }
-
+/* ── Init ── Phone controls come up as soon as the authenticated user/company
+   context exists (server-rendered). Do NOT wait for window.load or any
+   unrelated resource: caller-ID + calling settings load immediately and in
+   parallel; contacts / conversations / SMS history / voicemail history / push
+   / dashboard / Google Contacts / campaign data are never on this path. */
 if (DIALER_MODE) {
   document.body.dataset.mode = 'dialer';
   els.pageTitle.textContent = 'Phone';
@@ -1414,6 +1579,18 @@ if (DIALER_MODE) {
 }
 document.body.dataset.phase = 'idle';
 refreshDial();
+
+document.getElementById('availabilitySelect')?.addEventListener('change', (e) => setPhoneAvailability(e.target.value));
+document.getElementById('receiveCallsToggle')?.addEventListener('click', () => {
+  if (!receiveCalls.busy) setReceiveCalls(!receiveCalls.enabled);
+});
+renderReceiveCallsToggle();
+
+if (DIALER_MODE && coord.supported) { acquireVoiceOwnership(); coordPost('owner-query'); }
+
+// Phone controls, in parallel, from the authenticated context that already exists:
+loadCallerIds();
+loadReceiveCalls().then(loadPhoneAvailability);   // server-authoritative; then converge registration
 
 connectInboxStream();
 if (!DIALER_MODE) load();

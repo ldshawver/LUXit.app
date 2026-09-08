@@ -655,12 +655,18 @@ def pwa_calls():
     # /app/phone and /app/dial-pad render the dedicated dialer view of this one
     # canonical template; the Clock-icon routes render the Recent Calls view.
     dialer_mode = (request.path or "").rstrip("/") in ("/app/phone", "/app/dial-pad")
+    try:
+        from services.receive_calls import receive_calls_enabled
+        receive_calls = receive_calls_enabled(user.id, company.id)
+    except Exception:
+        receive_calls = True
     return render_template(
         "inbox_pwa/calls.html",
         user=user,
         company=company,
         pwa_version=pwa_version,
         dialer_mode=dialer_mode,
+        receive_calls=receive_calls,
     )
 
 
@@ -985,6 +991,88 @@ def _broadcast_phone_availability(company_id, target_user_id, result):
         })
     except Exception:
         logger.exception("phone availability SSE broadcast failed", extra={"company_id": company_id})
+
+
+def _broadcast_receive_calls(company_id, target_user_id, result):
+    """Notify the tenant's SSE listeners so the affected user's other PWA
+    instances converge (register / unregister) without a reload."""
+    try:
+        _push_sse_event(company_id, "receive_calls", {
+            "user_id": target_user_id,
+            "receive_calls": result.get("receive_calls"),
+            "source": result.get("source"),
+            "changed_at": result.get("changed_at"),
+            "changed_by_user_id": result.get("changed_by_user_id"),
+        })
+    except Exception:
+        logger.exception("receive_calls SSE broadcast failed", extra={"company_id": company_id})
+
+
+@inbox_pwa_bp.route("/api/phone/receive-calls", methods=["GET", "PUT"])
+def api_phone_receive_calls():
+    """Get / set the current user's Receive Calls preference for their tenant.
+
+    Independent of Communication Availability. FALSE means this user's PWA does
+    not register for or present inbound calls and server-side routing excludes
+    them; voicemail / no-answer fallback is unaffected. It is not a
+    network-transport setting -- calling works over Wi-Fi or cellular data."""
+    user = _require_auth()
+    company = _require_company(user)
+    from services.receive_calls import get_receive_calls, set_receive_calls, ReceiveCallsError
+    if request.method == "GET":
+        return jsonify({"success": True, **get_receive_calls(user.id, company.id)})
+    data = request.get_json(silent=True) or {}
+    value = data.get("receive_calls")
+    if value is None:
+        value = data.get("enabled")
+    try:
+        result = set_receive_calls(user.id, company.id, value,
+                                   actor_user_id=user.id, source="user")
+    except ReceiveCallsError as exc:
+        return jsonify({"success": False, "error": str(exc)}), 400
+    db.session.commit()
+    _broadcast_receive_calls(company.id, user.id, result)
+    return jsonify({"success": True, **result})
+
+
+@inbox_pwa_bp.route("/api/phone/receive-calls/team", methods=["GET"])
+def api_phone_receive_calls_team():
+    """Admin view of every active tenant member's Receive Calls preference.
+    Same-tenant admins only; company scope is server-side."""
+    user = _require_auth()
+    company = _require_company(user)
+    from services.receive_calls import can_admin_manage, team_receive_calls
+    if not can_admin_manage(user, company.id):
+        return jsonify({"success": False, "error": "Not authorized"}), 403
+    return jsonify({"success": True, "team": team_receive_calls(company.id)})
+
+
+@inbox_pwa_bp.route("/api/phone/receive-calls/user/<int:target_user_id>", methods=["PUT"])
+def api_phone_receive_calls_admin_set(target_user_id):
+    """Admin sets another user's Receive Calls preference. Same-tenant admins
+    only; the company scope is server-side (a cross-tenant admin cannot reach
+    here)."""
+    user = _require_auth()
+    company = _require_company(user)
+    from services.receive_calls import (
+        can_admin_manage, set_receive_calls, ReceiveCallsError)
+    from models import UserCompanyAccess
+    if not can_admin_manage(user, company.id):
+        return jsonify({"success": False, "error": "Not authorized"}), 403
+    if not UserCompanyAccess.query.filter_by(user_id=target_user_id, company_id=company.id).first():
+        return jsonify({"success": False, "error": "User is not a member of this company"}), 404
+    data = request.get_json(silent=True) or {}
+    value = data.get("receive_calls")
+    if value is None:
+        value = data.get("enabled")
+    try:
+        result = set_receive_calls(target_user_id, company.id, value,
+                                   actor_user_id=user.id, source="admin")
+    except ReceiveCallsError as exc:
+        return jsonify({"success": False, "error": str(exc)}), 400
+    db.session.commit()
+    _broadcast_receive_calls(company.id, target_user_id, result)
+    return jsonify({"success": True, **result})
 
 
 @inbox_pwa_bp.route("/api/phone/numbers")
@@ -1593,6 +1681,18 @@ def api_phone_voice_token():
     from models import PhoneNumberUserPermission, TwilioAccount, TwilioPhoneNumber
     from services.comms_permissions import accessible_phone_numbers
     from services.phone_availability import is_available
+    from services.receive_calls import receive_calls_enabled
+
+    # Receive Calls gate — when the user has turned calls off for this tenant,
+    # no token is minted and no Twilio.Device registers. Distinct from AWAY
+    # (a temporary availability pause): CALLING_DISABLED is the persisted
+    # preference and is not cleared by returning Available.
+    if not receive_calls_enabled(user.id, company.id):
+        logger.info("Voice token denied: receive_calls is off", extra={"user_id": user.id, "company_id": company.id})
+        return jsonify({
+            "success": False, "code": "CALLING_DISABLED",
+            "error": "Receive Calls is turned off for you in this company.",
+        }), 403
 
     # Phone Availability gate — an AWAY user must fail BEFORE a token is minted
     # or a Twilio.Device is registered.
@@ -3299,11 +3399,13 @@ def place_outbound_call(conv_id):
         pn = TwilioPhoneNumber.query.filter_by(company_id=company.id, phone_number=business_number, is_active=True).first()
         method = payload.get("calling_method") or "cell_callback"
         if method == "browser" and pn and not pn.browser_calling_enabled:
-            return jsonify({"success": False, "error": "Browser/WiFi calling is disabled for this number."}), 403
+            return jsonify({"success": False, "error": "Browser calling is disabled for this number."}), 403
         if method == "cell_callback" and pn and not pn.cell_callback_enabled:
             return jsonify({"success": False, "error": "Cell callback calling is disabled for this number."}), 403
-        if method == "browser" and pn and pn.wifi_only and payload.get("network_type") == "cellular":
-            return jsonify({"success": False, "error": "This line is WiFi-only for browser calling."}), 403
+        # No network-transport gate: browser calling uses whatever internet
+        # connection the device has (Wi-Fi or cellular data). The former
+        # wifi_only / mobile_data_allowed + network_type=='cellular' checks were
+        # removed -- no canonical calling decision may require Wi-Fi.
         forward_to  = payload.get("forward_to") or ta.call_forward_to
         customer_no = conv.from_number
 
@@ -3385,13 +3487,12 @@ def dial_number():
         pn = TwilioPhoneNumber.query.filter_by(company_id=company.id, phone_number=business_number, is_active=True).first()
         method = payload.get("calling_method") or "cell_callback"
         if method == "browser" and pn and not pn.browser_calling_enabled:
-            return jsonify({"success": False, "error": "Browser/WiFi calling is disabled for this number."}), 403
+            return jsonify({"success": False, "error": "Browser calling is disabled for this number."}), 403
         if method == "cell_callback" and pn and not pn.cell_callback_enabled:
             return jsonify({"success": False, "error": "Cell callback calling is disabled for this number."}), 403
-        if method == "browser" and pn and pn.wifi_only and payload.get("network_type") == "cellular":
-            return jsonify({"success": False, "error": "This line is WiFi-only for browser calling."}), 403
-        if method == "browser" and pn and not pn.mobile_data_allowed and payload.get("network_type") == "cellular":
-            return jsonify({"success": False, "error": "Mobile-data browser calling is blocked for this number."}), 403
+        # No network-transport gate (see place_outbound_call): browser calling
+        # uses whatever internet connection the device has. wifi_only /
+        # mobile_data_allowed + network_type checks were removed.
 
         forward_to = payload.get("forward_to") or ta.call_forward_to
 

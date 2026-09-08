@@ -49,16 +49,15 @@ def change_password():
     
     return render_template('change_password.html')
 
-@user_bp.route('/manage-users')
+@user_bp.route('/manage-users-legacy')
 @login_required
 def manage_users():
-    """Manage all users (admin function)"""
-    company = current_user.get_default_company() if hasattr(current_user, "get_default_company") else None
-    from services.comms_permissions import can_manage_users
-    if not company or not can_manage_users(current_user, company.id):
-        return make_response("Forbidden", 403)
-    users = User.query.filter(User.active.is_(True)).order_by(User.created_at.desc()).all()
-    return render_template('manage_users.html', users=users)
+    """Superseded by main.manage_users (the tenant-scoped Team page with
+    availability / Receive Calls / archive-based removal). The endpoint name is
+    kept so existing url_for('user.manage_users') links keep working; it now
+    lives at a distinct path (no collision with main.manage_users) and always
+    forwards to the canonical page."""
+    return redirect(url_for('main.manage_users'))
 
 @user_bp.route('/add-user', methods=['GET', 'POST'])
 @login_required
@@ -139,19 +138,12 @@ def add_user():
 @user_bp.route('/delete-user/<int:user_id>', methods=['POST'])
 @login_required
 def delete_user(user_id):
-    """Delete a user"""
-    if user_id == current_user.id:
-        flash('Cannot delete your own account', 'error')
-        return redirect(url_for('user.manage_users'))
-    
-    user = User.query.get_or_404(user_id)
-    username = user.username
-    
-    db.session.delete(user)
-    db.session.commit()
-    
-    flash(f'User "{username}" deleted successfully', 'success')
-    return redirect(url_for('user.manage_users'))
+    """DEPRECATED destructive route. Tenant-admin user removal is archive-based
+    and tenant-scoped -- it must never physically DELETE a canonical User (that
+    would orphan historical message/call/actor references and cross tenant
+    boundaries). Forward to the canonical archive route so there is exactly one
+    removal path. 307 preserves the POST + body."""
+    return redirect(url_for('main.delete_user', user_id=user_id), code=307)
 
 @user_bp.route('/edit-user/<int:user_id>', methods=['GET', 'POST'])
 @login_required

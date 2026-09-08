@@ -4,8 +4,16 @@
 
 {% block content %}
 <div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
-    <h1 class="h2"><i data-feather="users"></i> Manage Users</h1>
+    <h1 class="h2"><i data-feather="users"></i> Team{% if current_company %} — {{ current_company.name }}{% endif %}</h1>
     <div>
+        {% if can_manage_comms and not show_archived %}
+        <button type="button" class="btn btn-outline-success" onclick="setAllAvailability('available')">
+            <i data-feather="check-circle"></i> Set All Available
+        </button>
+        <button type="button" class="btn btn-outline-warning" onclick="setAllAvailability('away')">
+            <i data-feather="moon"></i> Set All Away
+        </button>
+        {% endif %}
         <a href="{{ url_for('main.manage_users', archived='1' if not show_archived else None) }}" class="btn btn-outline-info">
             <i data-feather="archive"></i> {{ 'Active Users' if show_archived else 'Archived Users' }}
         </a>
@@ -40,6 +48,10 @@
                 <th>Archived</th>
                 <th>Archived by</th>
                 <th>Restoration eligibility</th>
+                {% else %}
+                <th title="Available: receives shared calls & message attention. Away: paused (history retained).">Availability</th>
+                <th class="text-center" title="Route this tenant's shared calls to this user's PWA devices">Receive Calls</th>
+                <th title="Last availability / Receive Calls change">Comms changed</th>
                 {% endif %}
                 <th class="text-center" title="Can log in and use the Mobile Inbox PWA">Mobile Inbox</th>
                 <th class="text-center" title="Can access the full LUXit dashboard">Full App</th>
@@ -85,6 +97,38 @@
                 <td>
                     <span class="badge {{ 'bg-success' if eligible and eligible[0] else 'bg-secondary' }}">{{ eligible[1] if eligible else 'Unknown' }}</span>
                 </td>
+                {% else %}
+                {% set cs = comms_by_user.get(user.id, {}) %}
+                <td data-avail-cell="{{ user.id }}">
+                    {% if user.id in comms_by_user %}
+                    <select class="form-select form-select-sm" style="width:auto;min-width:120px;"
+                            data-avail-select="{{ user.id }}"
+                            {% if not can_manage_comms %}disabled{% endif %}
+                            onchange="setUserAvailability({{ user.id }}, this.value)">
+                        <option value="available" {{ 'selected' if cs.get('availability') != 'away' else '' }}>Available</option>
+                        <option value="away" {{ 'selected' if cs.get('availability') == 'away' else '' }}>Away</option>
+                    </select>
+                    {% else %}
+                    <span class="badge bg-secondary text-muted">—</span>
+                    {% endif %}
+                </td>
+                <td class="text-center">
+                    {% if user.id in comms_by_user %}
+                    <div class="form-check form-switch d-flex justify-content-center m-0">
+                        <input class="form-check-input" type="checkbox" role="switch"
+                               data-rc-switch="{{ user.id }}"
+                               {% if cs.get('receive_calls', True) %}checked{% endif %}
+                               {% if not can_manage_comms %}disabled{% endif %}
+                               onchange="setUserReceiveCalls({{ user.id }}, this.checked)">
+                    </div>
+                    {% else %}
+                    <span class="badge bg-secondary text-muted">—</span>
+                    {% endif %}
+                </td>
+                <td class="small text-muted" data-comms-changed="{{ user.id }}">
+                    {{ (cs.get('availability_changed_at') or '')[:16].replace('T',' ') or '—' }}
+                    {% if cs.get('availability_changed_by') %}<br><span class="text-muted">by {{ cs.get('availability_changed_by') }}{% if cs.get('availability_source') %} ({{ cs.get('availability_source') }}){% endif %}</span>{% endif %}
+                </td>
                 {% endif %}
                 <td class="text-center">
                     <div class="form-check form-switch d-flex justify-content-center m-0">
@@ -121,10 +165,10 @@
                             </form>
                         {% else %}
                             <form method="POST" action="{{ url_for('main.delete_user', user_id=user.id) }}" class="d-inline"
-                                  onsubmit="return confirm('Archive {{ user.username }}? Access will be revoked but history preserved.')">
+                                  onsubmit="return confirm('Remove {{ user.username }} from {{ (current_company.name if current_company else 'this company')|e }}?\n\nThey will immediately lose access to this company.\nHistorical activity will be retained.')">
                                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
-                                <button type="submit" class="btn btn-outline-danger">
-                                    <i data-feather="archive"></i>
+                                <button type="submit" class="btn btn-outline-danger" title="Remove user from this company">
+                                    <i data-feather="user-x"></i> Remove
                                 </button>
                             </form>
                         {% endif %}
@@ -186,6 +230,65 @@ function showToast(msg, ok) {
   wrap.style.display = '';
   setTimeout(() => { wrap.style.display = 'none'; }, 3000);
 }
+
+const CSRF = '{{ csrf_token() }}';
+async function apiPut(url, body) {
+  const res = await fetch(url, {
+    method: 'PUT', credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF },
+    body: JSON.stringify(body || {}),
+  });
+  let data = {}; try { data = await res.json(); } catch (_) {}
+  return { ok: res.ok, status: res.status, data };
+}
+
+async function setUserAvailability(userId, stateVal) {
+  const { ok, data } = await apiPut(`/api/phone/availability/user/${userId}`, { state: stateVal });
+  if (ok) { applyAvailabilityRow(userId, data.state); showToast('Availability updated.', true); }
+  else { showToast(data.error || 'Could not update availability.', false); }
+}
+
+async function setUserReceiveCalls(userId, enabled) {
+  const { ok, data } = await apiPut(`/api/phone/receive-calls/user/${userId}`, { receive_calls: !!enabled });
+  if (ok) { applyReceiveCallsRow(userId, data.receive_calls); showToast('Receive Calls updated.', true); }
+  else {
+    showToast(data.error || 'Could not update Receive Calls.', false);
+    const sw = document.querySelector(`[data-rc-switch="${userId}"]`);
+    if (sw) sw.checked = !enabled;   // revert optimistic flip
+  }
+}
+
+async function setAllAvailability(stateVal) {
+  if (stateVal === 'away' && !confirm(
+      'Set ALL team members Away?\n\nIncoming messages and calls keep arriving and are stored, but no one will receive live call/message attention until a user returns Available.')) return;
+  const { ok, data } = await apiPut('/api/phone/availability/team', { state: stateVal, confirm: true });
+  if (ok) {
+    (data.team || []).forEach((r) => applyAvailabilityRow(r.user_id, r.state));
+    showToast(`All members set ${stateVal === 'away' ? 'Away' : 'Available'} (${data.updated}).`, true);
+  } else { showToast(data.error || 'Bulk update failed.', false); }
+}
+
+function applyAvailabilityRow(userId, stateVal) {
+  const sel = document.querySelector(`[data-avail-select="${userId}"]`);
+  if (sel) sel.value = (stateVal === 'away') ? 'away' : 'available';
+}
+function applyReceiveCallsRow(userId, enabled) {
+  const sw = document.querySelector(`[data-rc-switch="${userId}"]`);
+  if (sw) sw.checked = !!enabled;
+}
+
+// Realtime: reflect changes made elsewhere (other admins, the user's own PWA)
+// without a reload -- same SSE stream the PWA uses.
+(function connectTeamStream() {
+  if (!window.EventSource) return;
+  const es = new EventSource('/api/inbox/stream');
+  es.onmessage = (evt) => {
+    let d; try { d = JSON.parse(evt.data); } catch (_) { return; }
+    if (d.type === 'phone_availability' && d.user_id != null) applyAvailabilityRow(d.user_id, d.state);
+    else if (d.type === 'receive_calls' && d.user_id != null) applyReceiveCallsRow(d.user_id, d.receive_calls);
+  };
+})();
+
 feather.replace();
 </script>
 {% endblock %}

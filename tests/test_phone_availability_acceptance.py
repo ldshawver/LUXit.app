@@ -234,8 +234,10 @@ def test_client_suppresses_incoming_call_ui_and_sound_while_away(ctx):
     # ring — the SSE incoming_call handler is guarded by !isAway().
     html = (Path(__file__).resolve().parents[1] / "templates/inbox_pwa/calls.html").read_text()
     assert "data.type === 'incoming_call' && !isAway()" in html
-    # and the enable path is inert while Away
-    assert 'enableWifiCalling() { if (isAway())' in html
+    # and the registration path is inert while Away (shouldRegisterVoice gate +
+    # initVoice throws PHONE_AWAY before any token mint / Device.register()).
+    assert "function shouldRegisterVoice() {\n  return receiveCalls.enabled && !isAway()" in html
+    assert "if (isAway()) {" in html and "voiceCode: 'PHONE_AWAY'" in html
 
 
 def test_availability_service_only_reads_membership_not_consent(ctx):
