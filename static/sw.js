@@ -1,11 +1,12 @@
 /* LUX Connect — Service Worker */
-const SW_VERSION = new URL(self.location.href).searchParams.get('v') || '20260908-lux-connect';
+const SW_VERSION = new URL(self.location.href).searchParams.get('v') || '20260908-lux-connect-2';
 const CACHE = `luxit-inbox-${SW_VERSION}`;
 const APP_SHELL = [
   '/app/inbox',
   '/static/manifest.json',
   '/static/pwa/lux-connect-192.png',
   '/static/pwa/lux-connect-512.png',
+  '/static/pwa/lux-connect-maskable-512.png',
 ];
 
 self.addEventListener('install', e => {

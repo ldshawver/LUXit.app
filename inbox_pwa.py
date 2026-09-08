@@ -618,7 +618,7 @@ def pwa_index():
         os.environ.get("LUXIT_ASSET_VERSION")
         or os.environ.get("GIT_SHA")
         or os.environ.get("RENDER_GIT_COMMIT")
-        or "20260908-lux-connect"
+        or "20260908-lux-connect-2"
     )
     return render_template(
         "inbox_pwa/index.html",
@@ -650,7 +650,7 @@ def pwa_calls():
         os.environ.get("LUXIT_ASSET_VERSION")
         or os.environ.get("GIT_SHA")
         or os.environ.get("RENDER_GIT_COMMIT")
-        or "20260908-lux-connect"
+        or "20260908-lux-connect-2"
     )
     # /app/phone and /app/dial-pad render the dedicated dialer view of this one
     # canonical template; the Clock-icon routes render the Recent Calls view.
@@ -2823,7 +2823,7 @@ def send_pwa_push_notification(company_id: int, *, user_ids, title: str, body: s
             "event_type": decision["event_type"], "silent": payload["silent"], "sound": payload["sound"],
             "vibrate": payload["vibrate"], "renotify": payload["renotify"], "tag": payload["tag"],
             "badgeCount": badge_count, "channel": payload["channelId"], "importance": payload["importance"],
-            "sw_version": os.environ.get("LUXIT_ASSET_VERSION") or os.environ.get("GIT_SHA") or os.environ.get("RENDER_GIT_COMMIT") or "20260908-lux-connect",
+            "sw_version": os.environ.get("LUXIT_ASSET_VERSION") or os.environ.get("GIT_SHA") or os.environ.get("RENDER_GIT_COMMIT") or "20260908-lux-connect-2",
             "push_provider_result": result,
         })
         total += result.get("sent", 0)
@@ -2882,7 +2882,7 @@ def pwa_push_debug():
         "vapid_configured": not missing,
         "vapid_public_key_present": bool(os.environ.get("VAPID_PUBLIC_KEY")),
         "vapid_missing": missing,
-        "service_worker_version": os.environ.get("LUXIT_ASSET_VERSION") or os.environ.get("GIT_SHA") or os.environ.get("RENDER_GIT_COMMIT") or "20260908-lux-connect",
+        "service_worker_version": os.environ.get("LUXIT_ASSET_VERSION") or os.environ.get("GIT_SHA") or os.environ.get("RENDER_GIT_COMMIT") or "20260908-lux-connect-2",
         "decision": decision,
         "device_instructions": [
             "Android: Chrome/LUX Connect PWA notification channel cannot be Silent or Low Importance.",
