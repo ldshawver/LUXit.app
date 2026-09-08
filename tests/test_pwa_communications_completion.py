@@ -564,7 +564,7 @@ def test_pwa_sound_forwarding_autoreply_static_requirements():
     html = open("templates/inbox_pwa/index.html", encoding="utf-8").read()
     nav = open("templates/inbox_pwa/_bottom_nav.html", encoding="utf-8").read()
     migration = open("migrations/20260705_pwa_sound_forwarding_autoreply.sql", encoding="utf-8").read()
-    assert "20260710-push-receipt-ack" in sw
+    assert "20260908-lux-connect" in sw
     assert "silent:  false" in sw
     assert "renotify: data.renotify !== false" in sw
     assert "[200, 100, 200]" in sw
@@ -1202,7 +1202,7 @@ def test_push_receipt_endpoint_records_redacted_service_worker_delivery_state(pw
     receipt = client.post("/api/pwa/push/receipt", json={
         "stage": "displayed",
         "received_at": "2026-07-10T13:30:00.000Z",
-        "sw_version": "20260710-push-receipt-ack",
+        "sw_version": "20260908-lux-connect",
         "event_type": "push_test",
         "tag": "push-test",
         "silent": False,
@@ -1223,7 +1223,7 @@ def test_push_receipt_endpoint_records_redacted_service_worker_delivery_state(pw
     assert debug.status_code == 200
     payload = debug.get_json()
     assert payload["latest_push_receipt"]["stage"] == "displayed"
-    assert payload["latest_push_receipt"]["sw_version"] == "20260710-push-receipt-ack"
+    assert payload["latest_push_receipt"]["sw_version"] == "20260908-lux-connect"
     assert payload["latest_push_receipt"]["silent"] is False
     assert payload["latest_push_receipt"]["renotify"] is True
     assert payload["latest_push_receipt"]["vibrate"] == [200, 100, 200]

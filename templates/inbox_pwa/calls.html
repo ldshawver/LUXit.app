@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta name="csrf-token" content="{{ csrf_token() }}">
   <meta name="theme-color" content="#0b0d14">
-  <title>LUXit Calls</title>
+  <title>LUX Connect · Calls</title>
   <script src="/static/vendor/twilio-voice-sdk/2.18.3/twilio.min.js" defer></script>
   <style>
     /* ── Canonical PWA theme tokens (shared with inbox_pwa/index.html) ──────
@@ -372,7 +372,7 @@
           <span class="switch__state" id="receiveCallsToggleLabel">Off</span>
         </button>
       </div>
-      <p class="mic-status">Receive calls in LUXit using WiFi or cellular data. Your phone carrier's Wi-Fi Calling setting is not affected.</p>
+      <p class="mic-status">Receive calls in LUX Connect using WiFi or cellular data. Your phone carrier's Wi-Fi Calling setting is not affected.</p>
       <label class="callerid-field">
         <span>Caller ID</span>
         <select id="callerId" aria-label="Company-owned caller ID"></select>
@@ -845,15 +845,15 @@ function renderVoiceRole() {
     }
     return;
   }
-  // passive — another LUXit window holds the exclusive Voice lock.
+  // passive — another LUX Connect window holds the exclusive Voice lock.
   ensureUseHereButton(true);
   els.enableVoice.dataset.passive = '1';
   els.enableVoice.hidden = true;
   if (!voice.activeCall) {
     setPhase('idle');
     state(coord.ownerRegistered
-      ? 'Calling is active in another LUXit window.'
-      : 'Another LUXit window controls calling.', '');
+      ? 'Calling is active in another LUX Connect window.'
+      : 'Another LUX Connect window controls calling.', '');
   }
 }
 
@@ -1055,7 +1055,7 @@ function render(calls) {
     const actions = document.createElement('div'); actions.className = 'actions';
     const callbackTarget = call.callback_target || call.from_number || '';
     if (callbackTarget) {
-      actions.appendChild(button('Call with LUXit', 'btn primary', () => { setRawNumber(callbackTarget); placeWifiCall(); }));
+      actions.appendChild(button('Call with LUX Connect', 'btn primary', () => { setRawNumber(callbackTarget); placeWifiCall(); }));
       actions.appendChild(link('Text from device', 'btn', `sms:${encodeURIComponent(callbackTarget)}`));
     }
     if (call.voicemail_exists) {
@@ -1334,10 +1334,10 @@ async function initVoice() {
     await Promise.race([acquireVoiceOwnership(), new Promise((r) => setTimeout(() => r(false), 400))]);
   }
   if (!coord.isOwner) {
-    // Passive tab — another LUXit window owns Voice. Not an error: renderVoiceRole
+    // Passive tab — another LUX Connect window owns Voice. Not an error: renderVoiceRole
     // already shows "Calling active in another window". Only surface it loudly
     // for an explicit user action (placing a call).
-    const blocked = Object.assign(new Error('Calling is active in another LUXit window.'), {voiceCode: 'VOICE_ACTIVE_ELSEWHERE'});
+    const blocked = Object.assign(new Error('Calling is active in another LUX Connect window.'), {voiceCode: 'VOICE_ACTIVE_ELSEWHERE'});
     renderVoiceRole();
     throw blocked;
   }
@@ -1475,7 +1475,7 @@ async function startVoiceRegistration(opts) {
 }
 
 async function placeWifiCall() {
-  if (!receiveCalls.enabled) { state('Turn on Receive Calls to place calls from LUXit.', 'error'); return; }
+  if (!receiveCalls.enabled) { state('Turn on Receive Calls to place calls from LUX Connect.', 'error'); return; }
   if (isAway()) { state("You're Away. Set yourself Available to make calls.", 'error'); return; }
   const destination = rawNumber().trim();
   if (!destination) { state('Enter a phone number.', 'error'); return; }
@@ -1485,7 +1485,7 @@ async function placeWifiCall() {
   if (!coord.isOwner) {
     await Promise.race([acquireVoiceOwnership(), new Promise((r) => setTimeout(() => r(false), 400))]);
   }
-  if (!coord.isOwner) { renderVoiceRole(); state('Calling is active in another LUXit window — choose “Use Calling Here” first.', 'error'); return; }
+  if (!coord.isOwner) { renderVoiceRole(); state('Calling is active in another LUX Connect window — choose “Use Calling Here” first.', 'error'); return; }
   try {
     const device = await initVoice();
     if (voice.outboundEnabled === false) {

@@ -133,7 +133,7 @@ def test_ordering_invariant_lock_before_token_before_device_before_register(html
 
 def test_passive_tab_shows_active_elsewhere_and_use_calling_here(html):
     render = re.search(r"function renderVoiceRole\(\) \{(.*?)\n\}\n", html, re.S).group(1)
-    assert "Calling is active in another LUXit window." in render
+    assert "Calling is active in another LUX Connect window." in render
     assert "ensureUseHereButton(true);" in render
     # passive tab: the registration affordance is hidden / not actionable
     assert "els.enableVoice.hidden = true;" in render
@@ -276,7 +276,7 @@ def test_passive_second_tab_cannot_display_ready(html):
     render = re.search(r"function renderVoiceRole\(\) \{(.*?)\n\}", html, re.S).group(1)
     # the passive branch never prints "Ready" and hides the registration control
     assert "Ready —" not in render.split("if (coord.isOwner)")[0]
-    assert "Calling is active in another LUXit window." in render
+    assert "Calling is active in another LUX Connect window." in render
     assert "els.enableVoice.dataset.passive = '1';" in render and "els.enableVoice.hidden = true;" in render
 
 

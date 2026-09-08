@@ -347,7 +347,7 @@ def test_legacy_destructive_delete_route_forwards_to_archive(app):
 def test_client_auto_registers_and_has_explicit_states():
     assert "const receiveCalls = { enabled:" in CALLS_HTML
     assert "id=\"receiveCallsToggle\"" in CALLS_HTML
-    assert "Receive calls in LUXit using WiFi or cellular data" in CALLS_HTML
+    assert "Receive calls in LUX Connect using WiFi or cellular data" in CALLS_HTML
     # no manual "Enable Wi-Fi Calling" button label
     assert "Enable Wi-Fi Calling" not in CALLS_HTML
     # explicit deterministic states

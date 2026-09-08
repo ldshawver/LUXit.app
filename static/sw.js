@@ -1,10 +1,11 @@
-/* LUXit Inbox — Service Worker */
-const SW_VERSION = new URL(self.location.href).searchParams.get('v') || '20260710-push-receipt-ack';
+/* LUX Connect — Service Worker */
+const SW_VERSION = new URL(self.location.href).searchParams.get('v') || '20260908-lux-connect';
 const CACHE = `luxit-inbox-${SW_VERSION}`;
 const APP_SHELL = [
   '/app/inbox',
   '/static/manifest.json',
-  '/static/favicon.png',
+  '/static/pwa/lux-connect-192.png',
+  '/static/pwa/lux-connect-512.png',
 ];
 
 self.addEventListener('install', e => {
@@ -125,7 +126,7 @@ self.addEventListener('fetch', e => {
 
 /* Push notification handler */
 self.addEventListener('push', e => {
-  let data = { title: 'LUXit Inbox', body: 'New message', url: '/app/inbox' };
+  let data = { title: 'LUX Connect', body: 'New message', url: '/app/inbox' };
   try { data = e.data ? e.data.json() : data; } catch {}
   const badgeCount = data.badgeCount ?? (data.data && data.data.badgeCount);
   const updateBadge = () => {
@@ -137,8 +138,8 @@ self.addEventListener('push', e => {
   };
   const notificationOptions = {
     body:    data.body,
-    icon:    data.icon || '/static/favicon.png',
-    badge:   data.badge || '/static/favicon.png',
+    icon:    data.icon || '/static/pwa/lux-connect-192.png',
+    badge:   data.badge || '/static/pwa/lux-connect-192.png',
     tag:     data.tag || `luxit-${data.eventType || (data.data && data.data.event_type) || 'notification'}`,
     data:    Object.assign({ url: data.url || '/app/inbox' }, data.data || {}),
     renotify: data.renotify !== false,

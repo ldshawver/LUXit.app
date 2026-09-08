@@ -6,11 +6,11 @@
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <meta name="apple-mobile-web-app-title" content="LUXit Inbox">
+  <meta name="apple-mobile-web-app-title" content="LUX Connect">
   <meta name="theme-color" content="var(--pwa-primary)">
-  <title>LUXit Inbox</title>
+  <title>LUX Connect</title>
   <link rel="manifest" href="/static/manifest.json?v={{ pwa_version }}">
-  <link rel="apple-touch-icon" href="/static/favicon.png">
+  <link rel="apple-touch-icon" href="/static/pwa/lux-connect-apple-touch.png?v={{ pwa_version }}">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css">
   <style>
     :root {
@@ -983,7 +983,7 @@
 <div>
   <span id="wifiCallingLabel">VoIP / Wi-Fi Calling</span>
   <small id="wifiCallingDescription">
-    Calls use the LUXit PWA over Wi-Fi or cellular data. This does not enable
+    Calls use the LUX Connect PWA over Wi-Fi or cellular data. This does not enable
     or change your mobile carrier's Wi-Fi Calling feature.
   </small>
 </div>
@@ -1198,7 +1198,7 @@
 
 <script>
 /* ═══════════════════════════════════════════════════════════════
-   LUXit Inbox PWA — Real-time SSE + full feature set
+   LUX Connect PWA — Real-time SSE + full feature set
 ═══════════════════════════════════════════════════════════════ */
 const CSRF        = '{{ csrf_token() }}';
 const CURRENT_USER_ID = Number('{{ user.id | default(0) }}') || 0;
@@ -2825,7 +2825,7 @@ function iosPushBlockReason() {
   const isIOS = /iPhone|iPad|iPod/i.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
   if (!isIOS) return '';
   const standalone = window.matchMedia?.('(display-mode: standalone)').matches || window.navigator.standalone === true;
-  if (!standalone) return 'iOS blocks Web Push unless LUXit is installed to the Home Screen and opened from the app icon.';
+  if (!standalone) return 'iOS blocks Web Push unless LUX Connect is installed to the Home Screen and opened from the app icon.';
   if (!('PushManager' in window)) return 'iOS Web Push is unavailable in this browser/version. Use Safari on iOS 16.4+ from the installed Home Screen app.';
   return '';
 }

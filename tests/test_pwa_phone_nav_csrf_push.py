@@ -207,7 +207,7 @@ def test_phone_icon_route_renders_dialer_not_conversations(app):
     resp = client.get("/app/dial-pad")
     assert resp.status_code == 200
     page = resp.get_data(as_text=True)
-    assert "<title>LUXit Calls</title>" in page
+    assert "<title>LUX Connect · Calls</title>" in page
     assert 'data-digit="5"' in page          # keypad present
     assert 'id="callerId"' in page
     assert 'id="enableVoice"' in page
@@ -219,7 +219,7 @@ def test_phone_alias_route_also_renders_dialer(app):
     client = app.test_client()
     _login(client, uid)
     assert client.get("/app/phone").status_code == 200
-    assert "<title>LUXit Calls</title>" in client.get("/app/phone").get_data(as_text=True)
+    assert "<title>LUX Connect · Calls</title>" in client.get("/app/phone").get_data(as_text=True)
 
 
 def test_dialer_route_is_server_marked_full_and_recents_compact(app):
@@ -247,7 +247,7 @@ def test_text_icon_route_renders_conversations(app):
     client = app.test_client()
     _login(client, uid)
     page = client.get("/app/inbox").get_data(as_text=True)
-    assert "<title>LUXit Inbox</title>" in page
+    assert "<title>LUX Connect</title>" in page
     assert 'id="convList"' in page
 
 
@@ -258,7 +258,7 @@ def test_clock_icon_route_renders_recent_calls(app):
     resp = client.get("/app/recents")
     assert resp.status_code == 200
     page = resp.get_data(as_text=True)
-    assert "<title>LUXit Calls</title>" in page
+    assert "<title>LUX Connect · Calls</title>" in page
     assert 'id="tabs"' in page
 
 
