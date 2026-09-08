@@ -1746,16 +1746,34 @@ def api_phone_voice_token():
         from twilio.jwt.access_token.grants import VoiceGrant
         from models import PWADevice
         from services.phone_identity import pwa_voice_identity
+        # Device-approval policy. The company flag governs DEVICE APPROVAL only —
+        # never the Voice authorization already enforced above (auth, tenant
+        # isolation, active membership, can_access_pwa / can_call, receive_calls,
+        # Available/Away).
+        require_approved_devices = bool(getattr(company, "require_approved_pwa_devices", False))
         device_key = (request.args.get("device_key") or request.headers.get("X-PWA-Device-Key") or "").strip()
-        device = None
-        if device_key:
-            device = PWADevice.query.filter_by(
-                company_id=company.id, user_id=user.id, device_key=device_key,
-                approved_status="approved", lifecycle_status="active",
-            ).first()
+        device = PWADevice.query.filter_by(
+            company_id=company.id, user_id=user.id, device_key=device_key,
+            approved_status="approved", lifecycle_status="active",
+        ).first() if device_key else None
+        if require_approved_devices:
+            # Approval mandatory: a missing / stale / unresolved / pending /
+            # unapproved device fails closed. The identity is device-scoped and
+            # is the one twilio_sms ring_pwa targets for that approved device.
             if not device:
+                logger.info(
+                    "Voice token denied: device approval required, device not approved/active",
+                    extra={"user_id": user.id, "company_id": company.id, "has_device_key": bool(device_key)},
+                )
                 return jsonify({"success": False, "code": "DEVICE_NOT_REGISTERED", "error": "Register and approve this device before enabling Wi-Fi Calling."}), 403
-        identity = pwa_voice_identity(company.id, user.id, device_key) if device else pwa_voice_identity(company.id)
+            identity = pwa_voice_identity(company.id, user.id, device.device_key)
+        else:
+            # Approval NOT required: a stale / pending / unresolved / missing
+            # device_key must not block an otherwise-eligible user. Bind the
+            # token to the user's non-device Voice identity — exactly what
+            # twilio_sms ring_pwa targets for an approval-disabled tenant, so the
+            # registered Twilio.Device and the inbound <Client> always match.
+            identity = pwa_voice_identity(company.id, user.id)
         twiml_app_sid = os.environ.get("TWILIO_TWIML_APP_SID")
         token = AccessToken(account_sid, api_key, api_secret, identity=identity)
         token.add_grant(VoiceGrant(

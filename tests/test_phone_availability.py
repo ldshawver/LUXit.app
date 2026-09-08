@@ -138,11 +138,16 @@ def test_available_user_rings_away_user_does_not(app_ctx):
     set_availability(app_ctx["B"], co, "away", actor_user_id=app_ctx["B"], source="user"); db.session.commit()
 
     body = _post_inbound(client, "+19165989519", "TEST_ROUTE_1").get_data(as_text=True)
-    id_a = pwa_voice_identity(co, app_ctx["A"], "dev-alice")
-    id_b = pwa_voice_identity(co, app_ctx["B"], "dev-bob")
-    id_c = pwa_voice_identity(co, app_ctx["C"], "dev-carol")
+    # This tenant does NOT require approved devices, so inbound routing rings the
+    # per-user, non-device identity — the exact identity /api/phone/voice-token
+    # mints for that user — not the device-scoped one.
+    id_a = pwa_voice_identity(co, app_ctx["A"])
+    id_b = pwa_voice_identity(co, app_ctx["B"])
+    id_c = pwa_voice_identity(co, app_ctx["C"])
     assert id_a in body and id_c in body
     assert id_b not in body, "an AWAY user must not be rung"
+    # the device-scoped identity is NOT used when approval is disabled
+    assert pwa_voice_identity(co, app_ctx["A"], "dev-alice") not in body
 
 
 def test_all_users_away_falls_through_to_voicemail_not_a_drop(app_ctx):

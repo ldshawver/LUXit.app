@@ -2333,41 +2333,67 @@ def _inbound_call_impl():
         caller_id = ta.from_phone or to_number
         client_identities = []
         approved_devices = []
+        _routing_targets_configured = False
         try:
-            from models import PWADevice
+            from models import Company, PWADevice, User
             from services.phone_identity import pwa_voice_identity
             from services.phone_availability import available_user_ids
             from services.receive_calls import receive_calls_user_ids
-            approved_devices = [
-                device for device in PWADevice.query.filter_by(
-                    company_id=ta.company_id,
-                    approved_status="approved",
-                    lifecycle_status="active",
-                ).all()
-                if not (device.phone_number_id and pn and device.phone_number_id != pn.id)
-            ]
-            # Server is the authority on who receives a routed call. Ring a
-            # device only when its user (a) has Receive Calls ON for this
-            # tenant and (b) is 'available'. A stale/malicious client that
-            # registered a Twilio.Device cannot make an excluded user ring:
-            # its identity is simply not placed in the <Dial>.
+
+            company_row = db.session.get(Company, ta.company_id)
+            require_approved_devices = bool(getattr(company_row, "require_approved_pwa_devices", False))
+            # Server is the authority on who receives a routed call: the AND of
+            # Receive Calls ON and 'available' for this tenant. A stale/malicious
+            # client that registered a Twilio.Device cannot make an excluded user
+            # ring — its identity is simply never placed in the <Dial>.
             eligible = receive_calls_user_ids(ta.company_id) & available_user_ids(ta.company_id)
-            client_identities = [
-                pwa_voice_identity(ta.company_id, device.user_id, device.device_key)
-                for device in approved_devices
-                if device.user_id is None or device.user_id in eligible
-            ]
+
+            if require_approved_devices:
+                # Device approval is an authorization requirement: ring only an
+                # approved + active device whose user is eligible. The identity
+                # is device-scoped and matches the token minted for that device.
+                approved_devices = [
+                    device for device in PWADevice.query.filter_by(
+                        company_id=ta.company_id,
+                        approved_status="approved",
+                        lifecycle_status="active",
+                    ).all()
+                    if not (device.phone_number_id and pn and device.phone_number_id != pn.id)
+                ]
+                _routing_targets_configured = bool(approved_devices)
+                client_identities = [
+                    pwa_voice_identity(ta.company_id, device.user_id, device.device_key)
+                    for device in approved_devices
+                    if device.user_id is None or device.user_id in eligible
+                ]
+            else:
+                # Device approval is NOT an authorization requirement. Ring every
+                # eligible user on their per-user, non-device Voice identity —
+                # exactly the identity /api/phone/voice-token mints for them —
+                # independent of any PWADevice row. A stale / pending / missing
+                # device_key must not drop an otherwise-eligible user from
+                # routing, and a first-ever call (no device row yet) must not
+                # fall straight to voicemail.
+                _routing_targets_configured = bool(eligible)
+                for uid in sorted(u for u in eligible if u is not None):
+                    user_row = db.session.get(User, uid)
+                    if not user_row or not getattr(user_row, "active", True):
+                        continue
+                    client_identities.append(pwa_voice_identity(ta.company_id, uid))
         except Exception:
             logger.exception("Unable to resolve eligible PWA voice devices", extra={"company_id": ta.company_id})
         if not client_identities:
-            if approved_devices:
-                # Devices exist but every eligible user is AWAY -> do not ring
-                # anyone; fall through to the business voicemail flow.
-                logger.info("Voice inbound: all shared-line users away, routing to voicemail company_id=%s", ta.company_id)
-                twiml = _voicemail_twiml(after_hours=not in_hours)
-                _ring_pwa_twiml_done = True
-            else:
-                client_identities = [_pwa_voice_identity(ta.company_id)]
+            # No identity to ring. Either nobody is configured/reachable, or
+            # (approval required) no approved+active device exists. Every path
+            # that could mint a Voice token is per-user or per-device — no client
+            # ever holds a bare company-scoped identity — so there is nothing to
+            # dial. Fail closed to the business voicemail flow; the call is never
+            # silently lost.
+            _routing_targets_reason = "configured but unreachable" if _routing_targets_configured else "none configured"
+            logger.info("Voice inbound: no PWA client to ring (%s), routing to voicemail company_id=%s",
+                        _routing_targets_reason, ta.company_id)
+            twiml = _voicemail_twiml(after_hours=not in_hours)
+            _ring_pwa_twiml_done = True
         else:
             _ring_pwa_twiml_done = False
         safe_from = html.escape(from_number or "", quote=True)

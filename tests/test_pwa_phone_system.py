@@ -326,12 +326,15 @@ def test_tenant_pwa_identity_is_scoped_to_called_number(app, client, world):
         save_settings(world["co_a"], during_hours_route="ring_pwa")
         save_settings(world["co_b"], during_hours_route="ring_pwa")
         from services.phone_identity import pwa_voice_identity
-        a_identity = pwa_voice_identity(world["co_a"]).encode()
-        b_identity = pwa_voice_identity(world["co_b"]).encode()
+        # approval disabled -> ring_pwa targets the per-user, non-device identity
+        # (the exact one /api/phone/voice-token mints for that user).
+        a_identity = pwa_voice_identity(world["co_a"], world["alice"]).encode()
+        b_identity = pwa_voice_identity(world["co_b"], world["bob"]).encode()
     resp = post_incoming(client, to="+15550002000", sid="CAbtenant")
     assert resp.status_code == 200
     assert b_identity in resp.data
     assert a_identity not in resp.data
+    assert b"luxit_c%d_" % world["co_a"] not in resp.data   # tenant A identity never leaks into tenant B's call
 
 
 def test_call_action_idempotency_does_not_duplicate_audit_rows(client, app, world):

@@ -264,7 +264,11 @@ def test_reload_requires_a_fresh_registration_before_ready(html):
     # gated by shouldRegisterVoice()).
     assert re.search(r"DOMContentLoaded[^\n]*initVoice", html) is None
     assert re.search(r"addEventListener\('load'[^\n]*initVoice", html) is None
-    assert "async function startVoiceRegistration() {\n  if (!shouldRegisterVoice()) return;" in html
+    assert "async function startVoiceRegistration(opts) {" in html
+    assert "if (!shouldRegisterVoice()) return;" in html
+    # single-flight is still the first gate after the eligibility check
+    assert "if (voice.initPromise) return voice.initPromise;" in re.search(
+        r"async function startVoiceRegistration\(opts\) \{(.*?)\n\}", html, re.S).group(1)
 
 
 def test_passive_second_tab_cannot_display_ready(html):
@@ -346,8 +350,17 @@ def test_route_aliases_use_one_coordinator(html):
 
 def test_twilio_identity_algorithm_is_unchanged():
     assert "def pwa_voice_identity(company_id: int, user_id: int | None = None, device_key: str | None = None)" in PHONE_IDENTITY.read_text()
-    assert "identity = pwa_voice_identity(company.id, user.id, device_key) if device else pwa_voice_identity(company.id)" in INBOX_PWA.read_text()
+    inbox = INBOX_PWA.read_text()
+    # Device-approval policy branches the identity, not the Voice authorization:
+    #   approval required  -> device-scoped identity (fail closed without one)
+    #   approval disabled  -> per-user non-device identity (stale key can't block)
+    assert "identity = pwa_voice_identity(company.id, user.id, device.device_key)" in inbox
+    assert "identity = pwa_voice_identity(company.id, user.id)" in inbox
+    assert 'require_approved_devices = bool(getattr(company, "require_approved_pwa_devices", False))' in inbox
+    # inbound routing keeps the device-scoped identity for approval-required tenants
     assert "pwa_voice_identity(ta.company_id, device.user_id, device.device_key)" in TWILIO_SMS.read_text()
+    # …and rings the matching per-user identity for approval-disabled tenants
+    assert "client_identities.append(pwa_voice_identity(ta.company_id, uid))" in TWILIO_SMS.read_text()
 
 
 def test_csrf_and_outbound_safe_fail_intact(html):

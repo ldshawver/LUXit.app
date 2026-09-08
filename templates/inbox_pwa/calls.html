@@ -470,14 +470,14 @@ async function setReceiveCalls(next) {
       body: JSON.stringify({ receive_calls: want }),
     });
     receiveCalls.busy = false;
-    applyReceiveCalls(body && typeof body.receive_calls === 'boolean' ? body.receive_calls : want);
+    applyReceiveCalls(body && typeof body.receive_calls === 'boolean' ? body.receive_calls : want, { force: true });
   } catch (err) {
     receiveCalls.busy = false; renderReceiveCallsToggle();
     state(`Could not update Receive Calls — ${err.message}`, 'error');
   }
 }
 
-function applyReceiveCalls(enabled) {
+function applyReceiveCalls(enabled, opts) {
   receiveCalls.enabled = !!enabled;
   receiveCalls.loaded = true;
   renderReceiveCallsToggle();
@@ -497,7 +497,9 @@ function applyReceiveCalls(enabled) {
   if (!coord.supported) { renderVoiceRole(); return; }
   if (DIALER_MODE) { acquireVoiceOwnership(); coordPost('owner-query'); }
   if (document.body.dataset.phase === 'idle') state('Registering…');
-  startVoiceRegistration();
+  // Turning Receive Calls ON is a material authoritative state change -> one
+  // controlled retry, past any backoff/terminal guard from a prior attempt.
+  startVoiceRegistration(opts && opts.force ? { force: true } : undefined);
   renderVoiceRole();
 }
 
@@ -511,9 +513,10 @@ async function loadReceiveCalls() {
 
 function retryVoiceRegistration() {
   els.enableVoice.hidden = true;
+  clearVoiceFailure();                       // explicit user action bypasses the cooldown/backoff guard
   if (!shouldRegisterVoice()) return;
   state('Registering…');
-  startVoiceRegistration();
+  startVoiceRegistration({ force: true });
 }
 
 async function setPhoneAvailability(next) {
@@ -522,12 +525,12 @@ async function setPhoneAvailability(next) {
       method: 'PUT', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ state: next }),
     });
-    if (body && body.state) applyPhoneAvailability(body.state);
+    if (body && body.state) applyPhoneAvailability(body.state, { force: true });
     else state('Could not update Communication Availability.', 'error');
   } catch (_) { state('Could not update Communication Availability.', 'error'); }
 }
 
-function applyPhoneAvailability(next) {
+function applyPhoneAvailability(next, opts) {
   phoneAvailability.state = (next === 'away') ? 'away' : 'available';
   const sel = document.getElementById('availabilitySelect');
   if (sel) sel.value = phoneAvailability.state;
@@ -550,7 +553,9 @@ function applyPhoneAvailability(next) {
     setEnableState({ disabled: true });
     if (document.body.dataset.phase === 'idle') state('Registering…');
     if (DIALER_MODE && coord.supported) { acquireVoiceOwnership(); coordPost('owner-query'); }
-    startVoiceRegistration();
+    // Returning Available is a material authoritative state change -> one
+    // controlled retry, past any backoff/terminal guard from a prior attempt.
+    startVoiceRegistration(opts && opts.force ? { force: true } : undefined);
     renderVoiceRole();
   }
 }
@@ -605,8 +610,43 @@ const voice = {
   actionPending: false,
   outboundEnabled: null,
   timer: null,
-  startedAt: 0
+  startedAt: 0,
+  /* Registration failure guard — stops visibilitychange/pageshow and the
+     bootstrap double-load from hammering /api/phone/voice-token after a failed
+     attempt. `failure.terminal` = a config/permission failure that will not
+     self-resolve (no automatic retry, explicit Retry only). A transient failure
+     sets `nextAttemptAt` to a bounded exponential-backoff deadline. An explicit
+     Retry or a material authoritative state change (Receive Calls / Available)
+     clears all of this and forces one controlled attempt. */
+  failure: null,          // { code, terminal, at } | null
+  backoffStep: 0,
+  nextAttemptAt: 0        // epoch ms; earliest permitted automatic attempt
 };
+
+/* Codes that will not fix themselves on a blind retry — surface Retry and wait
+   for the user or a real state change. Everything else is treated as transient
+   (network / Twilio edge / token endpoint hiccup) and uses bounded backoff. */
+const VOICE_TERMINAL_CODES = new Set([
+  'VOICE_UNSUPPORTED', 'SDK_MISSING', 'HTTPS_REQUIRED', 'SESSION_EXPIRED',
+  'DEVICE_NOT_REGISTERED', 'DEVICE_KEY_REQUIRED', 'DEVICE_NOT_FOUND',
+  'DEVICE_NOT_APPROVED', 'DEVICE_DISABLED', 'DEVICE_USER_MISMATCH',
+  'DEVICE_TENANT_MISMATCH', 'NO_ASSIGNED_NUMBER', 'MICROPHONE_BLOCKED',
+  'WEBRTC_UNSUPPORTED', 'CALLING_DISABLED'
+]);
+
+function clearVoiceFailure() {
+  voice.failure = null; voice.backoffStep = 0; voice.nextAttemptAt = 0;
+}
+
+/* Re-show the explicit "Registration failed — Retry" affordance WITHOUT
+   triggering another attempt. Used by the guards that decline an automatic
+   retry so the page never sits on a stale "Registering…". */
+function showRetryAffordance() {
+  if (!voice.failure) return;
+  setEnableState({ disabled: false, label: 'Registration failed — Retry' });
+  els.enableVoice.hidden = false;
+  if (document.body.dataset.phase !== 'ready') document.body.dataset.phase = 'error';
+}
 
 /* ── Single-active-voice-client coordination ──────────────────────────────
    ONE authority for Twilio Voice ownership: an exclusive same-origin
@@ -1328,6 +1368,7 @@ async function initVoice() {
       // mid-call, so an active call is likely to freeze/drop on handover.
       voice.device = new Device(body.token, {logLevel: 1, codecPreferences: ['opus', 'pcmu'], enableIceRestart: true});
       voice.device.on('registered', () => {
+        clearVoiceFailure();
         voice.registered = true;
         voice.deviceState = 'registered';
         coordPost('owner-changed', {registered: true});
@@ -1390,6 +1431,18 @@ async function initVoice() {
         TWILIO_REGISTRATION_FAILED: `Registration failed — ${error.message}`
       };
       els.micStatus.textContent = ['MICROPHONE_BLOCKED', 'MICROPHONE_FAILED'].includes(code) ? 'Permission required — allow microphone access in browser settings.' : 'Microphone permission is requested only when calls are turned on or you place a call.';
+      // Record the failure so visibilitychange/pageshow and the bootstrap
+      // double-load cannot immediately re-attempt. Terminal codes get no
+      // automatic retry (explicit Retry only); transient codes get a bounded
+      // exponential backoff (2s, 4s, 8s … capped at 60s).
+      const terminal = VOICE_TERMINAL_CODES.has(code);
+      voice.failure = { code, terminal, at: Date.now() };
+      if (terminal) {
+        voice.nextAttemptAt = Number.POSITIVE_INFINITY;
+      } else {
+        voice.backoffStep = Math.min(voice.backoffStep + 1, 5);
+        voice.nextAttemptAt = Date.now() + Math.min(2000 * (2 ** (voice.backoffStep - 1)), 60000);
+      }
       // Show the explicit "Registration failed — Retry" affordance.
       setEnableState({disabled: false, label: 'Registration failed — Retry'});
       els.enableVoice.hidden = false;
@@ -1404,8 +1457,20 @@ async function initVoice() {
    Calls ON + Available + supported + this tab owns the Web Lock). Safe to call
    repeatedly — initVoice() is single-flight. Never requires a user gesture
    beyond the one-time microphone permission. */
-async function startVoiceRegistration() {
+async function startVoiceRegistration(opts) {
+  opts = opts || {};
   if (!shouldRegisterVoice()) return;
+  if (voice.initPromise) return voice.initPromise;   // single-flight — never a second concurrent mint
+  if (voiceIsLive()) return;                         // already registered on this owner
+  if (!opts.force) {
+    // A recorded failure gates automatic retries. `force` (explicit Retry or a
+    // material authoritative state change) is the only bypass. Terminal =>
+    // never auto-retry; transient => wait out the bounded backoff window.
+    if (voice.failure && voice.failure.terminal) { showRetryAffordance(); return; }
+    if (voice.nextAttemptAt && Date.now() < voice.nextAttemptAt) { showRetryAffordance(); return; }
+  } else {
+    clearVoiceFailure();
+  }
   try { await initVoice(); } catch (_) { /* initVoice already rendered the state */ }
 }
 
@@ -1443,14 +1508,14 @@ function connectInboxStream() {
     try {
       const data = JSON.parse(event.data);
       if (data.type === 'phone_availability') {
-        if (Number(data.user_id) === CURRENT_USER_ID) applyPhoneAvailability(data.state);
+        if (Number(data.user_id) === CURRENT_USER_ID) applyPhoneAvailability(data.state, { force: true });
         return;
       }
       if (data.type === 'receive_calls') {
         if (Number(data.user_id) === CURRENT_USER_ID
             && typeof data.receive_calls === 'boolean'
             && data.receive_calls !== receiveCalls.enabled) {
-          applyReceiveCalls(data.receive_calls);
+          applyReceiveCalls(data.receive_calls, { force: true });
         }
         return;
       }
@@ -1544,6 +1609,14 @@ function resyncVoiceUi(reinit) {
   if (voice.activeCall || voiceIsLive()) return;
   if (isAway()) { applyPhoneAvailability('away'); return; }   // bfcache/visibility must not re-register while Away
   if (!receiveCalls.enabled) { applyReceiveCalls(false); return; }
+  // A recorded registration failure survives tab focus / bfcache restore.
+  // visibilitychange/pageshow must NOT silently re-attempt — keep the explicit
+  // Retry affordance. Only Retry or a material authoritative state change
+  // (which force past this) may drive a fresh attempt.
+  if (voice.failure && (voice.failure.terminal || (voice.nextAttemptAt && Date.now() < voice.nextAttemptAt))) {
+    showRetryAffordance();
+    return;
+  }
   const wasOwner = coord.isOwner;
   teardownDevice();                       // retire any stale Device object (no-op if already gone)
   coord._rendered = null;                 // force renderVoiceRole to repaint
