@@ -50,22 +50,28 @@
       <div class="imx-store">
         <div class="imx-store-floor"></div>
         <div class="imx-shelf">
-          <div class="imx-product" tabindex="0" style="--pc1:#ffb27a;--pc2:#ff8a5c">
+          <div class="imx-product" data-shape="pack" tabindex="0" style="--pc1:#ffc79a;--pc2:#ff8a5c">
+            <span class="imx-p-fig"></span>
             <span class="imx-p-name">Trail Pack 32L</span><span class="imx-p-meta">Outdoor</span>
           </div>
-          <div class="imx-product" tabindex="0" style="--pc1:#7ea6ff;--pc2:#9d7bff">
+          <div class="imx-product" data-shape="duffel" tabindex="0" style="--pc1:#9cbcff;--pc2:#7e7bff">
+            <span class="imx-p-fig"></span>
             <span class="imx-p-name">Weekender Duffel</span><span class="imx-p-meta">Travel</span>
           </div>
-          <div class="imx-product" tabindex="0" style="--pc1:#8be0c8;--pc2:#5ec4d8">
+          <div class="imx-product" data-shape="roll" tabindex="0" style="--pc1:#8be0c8;--pc2:#5ec4d8">
+            <span class="imx-p-fig"></span>
             <span class="imx-p-name">Dry Roll Bag</span><span class="imx-p-meta">Travel</span>
           </div>
-          <div class="imx-product" tabindex="0" style="--pc1:#c7a3ff;--pc2:#8b7bff">
+          <div class="imx-product" data-shape="cubes" tabindex="0" style="--pc1:#d0b6ff;--pc2:#8b7bff">
+            <span class="imx-p-fig"></span>
             <span class="imx-p-name">Packing Cubes</span><span class="imx-p-meta">Accessory</span>
           </div>
-          <div class="imx-product" tabindex="0" style="--pc1:#ffd08a;--pc2:#ffab5c">
+          <div class="imx-product" data-shape="jacket" tabindex="0" style="--pc1:#ffd9a0;--pc2:#ffab5c">
+            <span class="imx-p-fig"></span>
             <span class="imx-p-name">Field Jacket</span><span class="imx-p-meta">Apparel</span>
           </div>
-          <div class="imx-product" tabindex="0" style="--pc1:#9ec1ff;--pc2:#6f9dff">
+          <div class="imx-product" data-shape="bottle" tabindex="0" style="--pc1:#aecdff;--pc2:#6f9dff">
+            <span class="imx-p-fig"></span>
             <span class="imx-p-name">Insulated Bottle</span><span class="imx-p-meta">Accessory</span>
           </div>
         </div>
@@ -92,13 +98,17 @@
     <div class="imx-stage" aria-hidden="true">
       <div class="imx-customer">
         <svg class="imx-thread"></svg>
-        <div class="imx-person">A.R.</div>
+        <div class="imx-person">
+          <span class="imx-person-init">A.R.</span>
+          <span class="imx-person-name">Alex Rivera</span>
+        </div>
         <div class="imx-panel"><h4>Identity</h4><p>Alex Rivera &middot; verified contact</p></div>
         <div class="imx-panel"><h4>Phone</h4><p>Mobile on file &middot; consent recorded</p></div>
         <div class="imx-panel"><h4>Conversations</h4><p>SMS thread &middot; last reply 2d ago</p></div>
         <div class="imx-panel"><h4>Notes</h4><p>Prefers pickup &middot; weekend shopper</p></div>
         <div class="imx-panel"><h4>Campaign activity</h4><p>Opened last 2 campaigns</p></div>
         <div class="imx-panel"><h4>Recent calls</h4><p>Inbound &middot; 4m &middot; resolved</p></div>
+        <div class="imx-panel" data-tie="store"><h4>Recent purchase</h4><p>Weekender Duffel &middot; from the store</p></div>
       </div>
     </div>
   </section>
@@ -121,16 +131,21 @@
         <span class="imx-clabel" style="left:28%;top:30%">Recent</span>
         <span class="imx-clabel" style="left:72%;top:30%">Inactive</span>
         <span class="imx-clabel" style="left:30%;top:72%">Opted In</span>
-        <span class="imx-clabel" style="left:70%;top:72%">Follow Up</span>
+        <span class="imx-clabel" data-target-label="1" style="left:70%;top:72%">Follow Up</span>
+      </div>
+      <div class="imx-seg-summary">
+        <h4>Target &middot; Follow Up</h4>
+        <p>Customers who engaged recently but haven&rsquo;t converted &mdash; the group most worth a message today.</p>
       </div>
     </div>
   </section>
 
   {# ---- ENTREPRENEUR SCALE BEAT ------------------------------------- #}
   <section class="imx-scale">
-    <div class="imx-eyebrow" style="justify-content:center">Grow</div>
-    <span class="imx-scale-count">1,000</span>
-    <h2>More customers shouldn&rsquo;t mean more operational chaos.</h2>
+    <div class="imx-eyebrow">Grow</div>
+    <span class="imx-scale-count" data-seq="1|10|100|1,000">1,000</span>
+    <div class="imx-scale-dots" aria-hidden="true"></div>
+    <h2>More customers. More conversations. Still one system.</h2>
     <p>Messages, calls and campaigns scale around you &mdash; the interface stays calm.</p>
   </section>
 
@@ -145,16 +160,22 @@
         before anything happens.
       </p>
     </div>
-    <div class="imx-xray" aria-hidden="true">
-      <div class="imx-stack">
-        <div class="imx-layer"><span class="imx-l-name">Interface</span><span class="imx-l-note">what the user sees</span></div>
-        <div class="imx-layer"><span class="imx-l-name">Application logic</span><span class="imx-l-note">business rules</span></div>
-        <div class="imx-layer"><span class="imx-l-name">Authorization</span><span class="imx-l-note">role &amp; action validation, server-side</span></div>
-        <div class="imx-layer"><span class="imx-l-name">Tenant boundary</span><span class="imx-l-note">one business&rsquo;s data stays its own</span></div>
-        <div class="imx-layer"><span class="imx-l-name">Data &amp; history</span><span class="imx-l-note">recorded state, consent, audit trail</span></div>
-        <div class="imx-layer"><span class="imx-l-name">Provider boundary</span><span class="imx-l-note">SMS &amp; calling providers, scoped</span></div>
+    <div class="imx-xray">
+      <div class="imx-stack" aria-hidden="true">
+        <div class="imx-layer" tabindex="0"><span class="imx-l-name">Interface</span><span class="imx-l-note">what the user sees</span>
+          <span class="imx-l-detail">The screen &mdash; and any AI in it &mdash; can suggest an action.</span></div>
+        <div class="imx-layer" tabindex="0"><span class="imx-l-name">Application logic</span><span class="imx-l-note">business rules</span>
+          <span class="imx-l-detail">Every request runs the same rules, whoever or whatever started it.</span></div>
+        <div class="imx-layer" tabindex="0"><span class="imx-l-name">Authorization</span><span class="imx-l-note">role &amp; action validation</span>
+          <span class="imx-l-detail">Role &amp; action validation happens on the server, not the browser.</span></div>
+        <div class="imx-layer" tabindex="0"><span class="imx-l-name">Tenant boundary</span><span class="imx-l-note">customer separation</span>
+          <span class="imx-l-detail">One business&rsquo;s data stays its own &mdash; queries can&rsquo;t cross it.</span></div>
+        <div class="imx-layer" tabindex="0"><span class="imx-l-name">Data &amp; history</span><span class="imx-l-note">recorded state</span>
+          <span class="imx-l-detail">Recorded state, consent status and an audit trail of what happened.</span></div>
+        <div class="imx-layer" tabindex="0"><span class="imx-l-name">Provider boundary</span><span class="imx-l-note">external services</span>
+          <span class="imx-l-detail">SMS and calling providers are called with scoped, server-held credentials.</span></div>
       </div>
-      <div class="imx-xray-note">AI assists across these layers. It does not bypass them.</div>
+      <p class="imx-xray-note">AI assists across these layers. It does not bypass them. <span style="opacity:.6">Hover a layer for detail.</span></p>
     </div>
   </section>
 

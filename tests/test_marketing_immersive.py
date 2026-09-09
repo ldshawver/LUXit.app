@@ -28,6 +28,19 @@ def test_homepage_is_complete_without_js():
     assert 'href="/auth/login"' not in _hero(body)
 
 
+def test_scene_continuity_and_quality_markup():
+    body = _client().get("/").get_data(as_text=True)
+    # storefront product silhouettes
+    assert 'data-shape="duffel"' in body and body.count("imx-p-fig") >= 6
+    # customer scene ties back to the store, and names the person
+    assert 'data-tie="store"' in body and "Weekender Duffel" in body
+    assert "Alex Rivera" in body
+    # segmentation names its target + summary; security layers have inspectable detail
+    assert "imx-seg-summary" in body
+    assert body.count("imx-l-detail") == 6
+    assert "AI assists across these layers. It does not bypass them." in body
+
+
 def test_immersive_assets_referenced_on_home_only():
     home = _client().get("/").get_data(as_text=True)
     assert "marketing/immersive/experience.css" in home

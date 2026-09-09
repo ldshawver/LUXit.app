@@ -13,7 +13,7 @@
   --imx-dim: #9aa3b8;
   --imx-line: rgba(255, 255, 255, 0.10);
   --imx-glass: rgba(255, 255, 255, 0.035);
-  --imx-panel: rgba(14, 17, 26, 0.72);
+  --imx-panel: rgba(13, 16, 24, 0.78);
   position: relative;
   isolation: isolate;
 }
@@ -23,7 +23,7 @@
   position: relative;
   min-height: 100svh;
   display: grid;
-  grid-template-columns: minmax(320px, 46%) 1fr;
+  grid-template-columns: minmax(320px, 44%) 1fr;
   align-items: center;
   gap: 3vw;
   padding: 12vh 6vw;
@@ -35,7 +35,9 @@
 .imx-eyebrow {
   font-size: 0.72rem; font-weight: 700; letter-spacing: 0.16em;
   text-transform: uppercase; color: var(--accent-cyan); margin-bottom: 14px;
+  display: flex; align-items: center; gap: 8px;
 }
+.imx-eyebrow::before { content: ""; width: 22px; height: 1px; background: currentColor; opacity: 0.7; }
 .imx-copy h1, .imx-copy h2 {
   font-size: clamp(2rem, 4.6vw, 3.6rem); line-height: 1.06;
   letter-spacing: -0.03em; font-weight: 900; margin: 0 0 18px;
@@ -49,267 +51,346 @@
   padding: 7px 12px; border-radius: 999px;
 }
 
-/* ---- The stage (3D holder) --------------------------------------------------
-   Each stage owns its own perspective so scenes don't interfere.            */
 .imx-stage {
-  position: relative;
-  z-index: 1;
-  height: min(76vh, 640px);
-  perspective: 1400px;
-  perspective-origin: 60% 45%;
+  position: relative; z-index: 1;
+  height: min(78vh, 660px);
+  perspective: 1500px;
+  perspective-origin: 62% 46%;
   transform-style: preserve-3d;
 }
 .imx-stage * { transform-style: preserve-3d; }
 
 /* ambient light wash — controlled, not glow-everything */
 .imx-scene::before {
-  content: "";
-  position: absolute; inset: -20% -10%;
-  background: radial-gradient(60% 55% at 68% 38%, rgba(110,168,255,0.10), transparent 70%);
+  content: ""; position: absolute; inset: -20% -10%;
+  background: radial-gradient(58% 52% at 66% 40%, rgba(110,168,255,0.10), transparent 70%);
   z-index: 0; pointer-events: none;
 }
 .imx-scene[data-scene="storefront"]::before {
-  background: radial-gradient(58% 52% at 66% 42%, rgba(255,159,107,0.13), transparent 72%);
+  background:
+    radial-gradient(46% 40% at 62% 34%, rgba(255,196,150,0.20), transparent 70%),
+    radial-gradient(70% 60% at 70% 70%, rgba(255,159,107,0.08), transparent 76%);
 }
 .imx-scene[data-scene="security"]::before {
-  background: radial-gradient(62% 60% at 50% 40%, rgba(59,111,212,0.16), transparent 74%);
+  background: radial-gradient(62% 62% at 50% 38%, rgba(59,111,212,0.18), transparent 76%);
 }
 
 /* ============================================================================
-   SCENE 1 — STOREFRONT
+   SCENE 1 — STOREFRONT  (premium concept store, not a marketplace grid)
    ========================================================================== */
 .imx-store {
   position: absolute; inset: 0;
   display: flex; align-items: center; justify-content: center;
-  transform: rotateX(6deg) rotateY(-16deg);
+  transform: rotateX(7deg) rotateY(-17deg);
   transition: transform 0.25s ease-out;
 }
+/* back wall + warm key light */
+.imx-store::before {
+  content: ""; position: absolute; left: 8%; right: -6%; top: 2%; bottom: 24%;
+  border-radius: 18px;
+  background: linear-gradient(180deg, rgba(255,255,255,0.05), rgba(255,255,255,0.01));
+  border: 1px solid var(--imx-line);
+  transform: translateZ(-120px);
+}
 .imx-store-floor {
-  position: absolute; left: -20%; right: -20%; bottom: 6%; height: 46%;
-  background: linear-gradient(180deg, rgba(255,255,255,0.05), transparent 70%);
-  transform: rotateX(74deg); transform-origin: bottom;
-  border-top: 1px solid var(--imx-line);
+  position: absolute; left: -24%; right: -18%; bottom: 4%; height: 52%;
+  background:
+    linear-gradient(180deg, rgba(255,214,180,0.10), transparent 62%),
+    linear-gradient(180deg, rgba(255,255,255,0.06), transparent 70%);
+  transform: rotateX(76deg); transform-origin: bottom;
+  border-top: 1px solid rgba(255,255,255,0.14);
 }
 .imx-shelf {
   position: relative;
-  width: min(70%, 460px);
-  display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px;
+  width: min(74%, 500px);
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px 20px;
 }
 .imx-product {
   position: relative;
-  aspect-ratio: 3 / 4;
-  border-radius: 14px;
-  border: 1px solid var(--imx-line);
+  aspect-ratio: 4 / 5;
+  border-radius: 16px;
+  border: 1px solid rgba(255,255,255,0.14);
   background:
-    linear-gradient(160deg, rgba(255,255,255,0.09), rgba(255,255,255,0.02)),
+    linear-gradient(158deg, rgba(255,255,255,0.12), rgba(255,255,255,0.02) 55%),
     var(--imx-panel);
-  box-shadow: 0 26px 60px -30px rgba(0,0,0,0.8), inset 0 1px 0 rgba(255,255,255,0.08);
+  box-shadow:
+    0 30px 60px -28px rgba(0,0,0,0.85),
+    0 2px 0 rgba(255,255,255,0.05) inset,
+    0 -30px 40px -30px rgba(0,0,0,0.6) inset;
   padding: 14px;
   display: flex; flex-direction: column; justify-content: flex-end;
   transform: translateZ(var(--z, 0));
-  transition: transform 0.5s cubic-bezier(.2,.7,.2,1), box-shadow 0.4s ease, border-color 0.3s;
-  cursor: pointer;
-  will-change: transform;
+  transition: transform 0.55s cubic-bezier(.2,.7,.2,1), box-shadow 0.4s ease, border-color 0.3s, filter 0.4s;
+  cursor: pointer; will-change: transform;
 }
-.imx-product::before {
-  content: "";
-  position: absolute; left: 14px; right: 14px; top: 14px; height: 46%;
-  border-radius: 9px;
-  background: linear-gradient(135deg, var(--pc1, #7ea6ff), var(--pc2, #b98bff));
-  opacity: 0.9;
+/* contact shadow on the floor */
+.imx-product::after {
+  content: ""; position: absolute; left: 12%; right: 12%; bottom: -10%; height: 16px;
+  background: radial-gradient(closest-side, rgba(0,0,0,0.5), transparent);
+  filter: blur(4px); transform: translateZ(-2px);
 }
-.imx-product .imx-p-name { font-size: 0.8rem; font-weight: 700; color: var(--imx-ink); }
-.imx-product .imx-p-meta { font-size: 0.72rem; color: var(--imx-dim); }
+/* distinct product silhouette per card */
+.imx-p-fig {
+  position: absolute; left: 16%; right: 16%; top: 14%; height: 48%;
+  background: linear-gradient(140deg, var(--pc1, #7ea6ff), var(--pc2, #b98bff));
+  box-shadow: 0 8px 20px -8px var(--pc2, #b98bff), 0 0 0 1px rgba(255,255,255,0.14) inset;
+  filter: saturate(1.05);
+}
+.imx-product[data-shape="pack"]    .imx-p-fig { border-radius: 14px 14px 22px 22px; clip-path: polygon(14% 0,86% 0,100% 100%,0 100%); }
+.imx-product[data-shape="duffel"]  .imx-p-fig { border-radius: 999px / 60px; top: 22%; height: 34%; }
+.imx-product[data-shape="roll"]    .imx-p-fig { border-radius: 999px; top: 20%; height: 40%; clip-path: inset(0 8% 0 8% round 999px); }
+.imx-product[data-shape="cubes"]   .imx-p-fig { border-radius: 8px; background:
+  repeating-linear-gradient(90deg, var(--pc1) 0 42%, transparent 42% 50%, var(--pc2) 50% 92%, transparent 92% 100%); }
+.imx-product[data-shape="jacket"]  .imx-p-fig { clip-path: polygon(24% 0,76% 0,100% 26%,84% 34%,84% 100%,16% 100%,16% 34%,0 26%); }
+.imx-product[data-shape="bottle"]  .imx-p-fig { left: 34%; right: 34%; border-radius: 10px 10px 16px 16px; top: 10%; height: 62%;
+  background: linear-gradient(180deg, rgba(255,255,255,0.35), transparent 30%), linear-gradient(140deg, var(--pc1), var(--pc2)); }
+/* reflection sliver */
+.imx-p-fig::after {
+  content: ""; position: absolute; left: 6%; top: 4%; width: 26%; height: 70%;
+  background: linear-gradient(180deg, rgba(255,255,255,0.5), transparent 70%);
+  border-radius: inherit; opacity: 0.7;
+}
+.imx-product .imx-p-name { font-size: 0.82rem; font-weight: 700; color: var(--imx-ink); }
+.imx-product .imx-p-meta { font-size: 0.7rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--imx-dim); }
 .imx-product[data-emph="1"] {
-  border-color: rgba(126,166,255,0.55);
-  box-shadow: 0 30px 70px -26px rgba(59,111,212,0.5), inset 0 1px 0 rgba(255,255,255,0.14);
+  border-color: rgba(255,196,150,0.6);
+  box-shadow: 0 36px 74px -26px rgba(255,159,107,0.45), 0 2px 0 rgba(255,255,255,0.14) inset;
+  filter: brightness(1.06);
 }
+.imx-product[data-emph="0"] { filter: brightness(0.82) saturate(0.9); }
 @media (hover: hover) {
-  .imx-product:hover { transform: translateZ(60px) translateY(-6px); border-color: rgba(255,255,255,0.28); }
+  .imx-product:hover { transform: translateZ(70px) translateY(-8px); border-color: rgba(255,255,255,0.34); }
 }
 
 /* scripted mini-exchange */
 .imx-exchange {
-  position: absolute; right: 2%; bottom: 4%;
-  width: min(78%, 320px);
+  position: absolute; right: 1%; bottom: 2%;
+  width: min(78%, 330px);
   display: flex; flex-direction: column; gap: 8px;
-  transform: translateZ(90px);
-  opacity: 0; pointer-events: none;
+  transform: translateZ(110px);
 }
 .imx-bubble {
-  font-size: 0.86rem; line-height: 1.4;
-  padding: 9px 13px; border-radius: 13px;
+  font-size: 0.86rem; line-height: 1.4; padding: 9px 13px; border-radius: 13px;
   border: 1px solid var(--imx-line); background: var(--imx-panel);
   color: var(--imx-ink); max-width: 86%;
   opacity: 0; transform: translateY(8px);
 }
-.imx-bubble.you { align-self: flex-end; background: rgba(126,166,255,0.16); border-color: rgba(126,166,255,0.3); }
+.imx-bubble.you { align-self: flex-end; background: rgba(255,196,150,0.16); border-color: rgba(255,196,150,0.32); }
 .imx-bubble.zappy { align-self: flex-start; }
-.imx-bubble .who { display: block; font-size: 0.66rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--imx-dim); margin-bottom: 2px; }
+.imx-bubble .who { display: block; font-size: 0.64rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--imx-dim); margin-bottom: 2px; }
 
 /* ============================================================================
-   SCENE 2 — CUSTOMER / ONE HISTORY
+   SCENE 2 — CUSTOMER / ONE HISTORY  (person is the object, panels orbit)
    ========================================================================== */
 .imx-customer {
   position: absolute; inset: 0;
   display: flex; align-items: center; justify-content: center;
-  transform: rotateX(4deg) rotateY(-10deg);
+  transform: rotateX(3deg) rotateY(-8deg);
 }
 .imx-person {
-  position: relative; z-index: 2;
-  width: 128px; height: 128px; border-radius: 50%;
-  background: radial-gradient(circle at 38% 32%, var(--imx-warm-1), var(--imx-warm-2));
-  box-shadow: 0 0 0 8px rgba(255,159,107,0.12), 0 30px 60px -20px rgba(0,0,0,0.7);
-  display: grid; place-items: center;
-  font-weight: 800; color: #2a1206; font-size: 0.9rem;
+  position: relative; z-index: 4;
+  width: 150px; height: 150px; border-radius: 50%;
+  background: radial-gradient(circle at 36% 30%, var(--imx-warm-1), var(--imx-warm-2) 70%, #e07a44);
+  box-shadow: 0 0 0 10px rgba(255,159,107,0.10), 0 0 60px 8px rgba(255,159,107,0.22), 0 30px 60px -18px rgba(0,0,0,0.75);
+  display: grid; place-items: center; transform: translateZ(60px);
+}
+.imx-person .imx-person-init { font-weight: 900; color: #2a1206; font-size: 1.1rem; letter-spacing: 0.02em; }
+.imx-person .imx-person-name {
+  position: absolute; bottom: -30px; left: 50%; transform: translateX(-50%);
+  white-space: nowrap; font-size: 0.8rem; font-weight: 700; color: var(--imx-ink);
 }
 .imx-panel {
   position: absolute;
-  width: 190px;
+  width: 176px;
   border-radius: 12px;
   border: 1px solid var(--imx-line);
   background: var(--imx-panel);
-  box-shadow: 0 24px 50px -28px rgba(0,0,0,0.85);
-  padding: 12px 14px;
-  opacity: 0;
-  will-change: transform, opacity;
+  box-shadow: 0 24px 50px -30px rgba(0,0,0,0.85);
+  padding: 11px 13px;
+  opacity: 0; will-change: transform, opacity;
 }
-.imx-panel h4 { margin: 0 0 6px; font-size: 0.75rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--accent-cyan); }
-.imx-panel p { margin: 0; font-size: 0.82rem; color: var(--imx-dim); line-height: 1.45; }
-/* radial placement around the person, pushed into depth */
-.imx-panel:nth-child(2) { top: 4%;  left: 8%;   transform: translateZ(40px)  translate(-30px,-20px); }
-.imx-panel:nth-child(3) { top: 2%;  right: 6%;  transform: translateZ(90px)  translate(30px,-20px); }
-.imx-panel:nth-child(4) { top: 40%; left: -2%;  transform: translateZ(140px) translate(-40px,0); }
-.imx-panel:nth-child(5) { top: 44%; right: -4%; transform: translateZ(70px)  translate(40px,0); }
-.imx-panel:nth-child(6) { bottom: 2%; left: 12%; transform: translateZ(110px) translate(-20px,20px); }
-.imx-panel:nth-child(7) { bottom: 0%; right: 10%; transform: translateZ(50px) translate(20px,24px); }
-.imx-thread { position: absolute; inset: 0; pointer-events: none; z-index: 1; }
-.imx-thread line { stroke: rgba(126,166,255,0.35); stroke-width: 1; stroke-dasharray: 3 4; }
+.imx-panel h4 { margin: 0 0 5px; font-size: 0.68rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent-cyan); }
+.imx-panel p { margin: 0; font-size: 0.8rem; color: var(--imx-dim); line-height: 1.4; }
+.imx-panel[data-tie="store"] { border-color: rgba(255,196,150,0.36); }
+.imx-panel[data-tie="store"] h4 { color: var(--imx-warm-1); }
+/* radial placement around the person, into depth (panels sit BEHIND the person plane) */
+.imx-panel:nth-of-type(1) { top: 3%;  left: 4%;   transform: translateZ(20px)  translate(-24px,-16px); }
+.imx-panel:nth-of-type(2) { top: 0%;  right: 2%;  transform: translateZ(-30px) translate(26px,-14px); }
+.imx-panel:nth-of-type(3) { top: 38%; left: -4%;  transform: translateZ(0)     translate(-34px,0); }
+.imx-panel:nth-of-type(4) { top: 42%; right: -6%; transform: translateZ(-50px) translate(34px,0); }
+.imx-panel:nth-of-type(5) { bottom: 3%; left: 8%;  transform: translateZ(-10px) translate(-16px,18px); }
+.imx-panel:nth-of-type(6) { bottom: 0%; right: 6%; transform: translateZ(-40px) translate(18px,20px); }
+.imx-panel:nth-of-type(7) { bottom: 42%; left: 40%; transform: translateZ(30px) translate(0,60px); }
+.imx-thread { position: absolute; inset: 0; pointer-events: none; z-index: 2; }
+.imx-thread line { stroke: rgba(126,166,255,0.32); stroke-width: 1; stroke-dasharray: 2 5; }
 
 /* ============================================================================
-   SCENE 3 — SEGMENTATION
+   SCENE 3 — SEGMENTATION  (points read as customers)
    ========================================================================== */
 .imx-audience { position: absolute; inset: 0; }
 .imx-audience canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
 .imx-cluster-labels { position: absolute; inset: 0; pointer-events: none; }
 .imx-clabel {
   position: absolute; transform: translate(-50%, -50%);
-  font-size: 0.72rem; font-weight: 700; letter-spacing: 0.04em;
+  font-size: 0.7rem; font-weight: 700; letter-spacing: 0.03em;
   color: var(--imx-ink); background: var(--imx-panel);
-  border: 1px solid var(--imx-line); border-radius: 999px; padding: 4px 10px;
-  opacity: 0; transition: opacity 0.4s ease;
+  border: 1px solid var(--imx-line); border-radius: 999px; padding: 4px 11px;
+  opacity: 0; transition: opacity 0.4s ease, border-color 0.3s;
 }
-.imx-clabel[data-active="1"] { opacity: 1; border-color: rgba(126,166,255,0.5); }
+.imx-clabel[data-active="1"] { opacity: 1; }
+.imx-clabel[data-target="1"] { border-color: rgba(126,166,255,0.6); color: #cfe0ff; }
+.imx-seg-summary {
+  position: absolute; right: 3%; bottom: 5%;
+  width: min(74%, 240px);
+  border: 1px solid rgba(126,166,255,0.4); border-radius: 12px;
+  background: var(--imx-panel); padding: 12px 14px;
+  opacity: 0; transform: translateY(8px); transition: opacity .4s ease, transform .4s ease;
+}
+.imx-seg-summary[data-on="1"] { opacity: 1; transform: none; }
+.imx-seg-summary h4 { margin: 0 0 4px; font-size: 0.72rem; letter-spacing: 0.06em; text-transform: uppercase; color: #cfe0ff; }
+.imx-seg-summary p { margin: 0; font-size: 0.82rem; color: var(--imx-dim); line-height: 1.45; }
 
 /* ============================================================================
-   SCENE 4 — SECURITY X-RAY
+   SCENE 4 — SECURITY X-RAY  (go behind the storefront)
    ========================================================================== */
 .imx-scene[data-scene="security"] { grid-template-columns: 1fr; }
-.imx-scene[data-scene="security"] .imx-copy { max-width: 46rem; margin: 0 auto 4vh; text-align: center; }
+.imx-scene[data-scene="security"] .imx-copy { max-width: 46rem; margin: 0 auto 3vh; text-align: center; }
+.imx-scene[data-scene="security"] .imx-eyebrow { justify-content: center; }
 .imx-xray {
   position: relative; z-index: 1;
-  height: min(72vh, 620px);
-  perspective: 1600px; perspective-origin: 50% 40%;
+  height: min(74vh, 640px);
+  perspective: 1700px; perspective-origin: 50% 38%;
   display: grid; place-items: center;
 }
-.imx-stack { position: relative; width: min(560px, 82vw); height: 100%; transform-style: preserve-3d; transform: rotateX(52deg) rotateZ(-2deg); }
-.imx-layer {
-  position: absolute; left: 0; right: 0; height: 84px;
-  border: 1px solid rgba(110,168,255,0.28);
-  background: linear-gradient(180deg, rgba(59,111,212,0.10), rgba(10,14,22,0.4));
-  border-radius: 10px;
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 0 16px;
-  box-shadow: 0 20px 40px -24px rgba(0,0,0,0.8);
-  opacity: 0;
+/* translucent ghost of the storefront, behind everything */
+.imx-xray::before {
+  content: ""; position: absolute; width: min(420px, 60vw); aspect-ratio: 4/5; top: 4%;
+  border: 1px solid rgba(255,255,255,0.10); border-radius: 16px;
+  background: linear-gradient(160deg, rgba(255,255,255,0.06), transparent 60%);
+  transform: translateZ(320px) rotateX(46deg); opacity: 0.5;
 }
-.imx-layer .imx-l-name { font-size: 0.86rem; font-weight: 800; color: var(--imx-ink); letter-spacing: 0.02em; }
+.imx-stack { position: relative; width: min(600px, 86vw); height: 100%; transform: rotateX(54deg) rotateZ(-2deg); }
+/* the architectural spine connecting the layers */
+.imx-stack::after {
+  content: ""; position: absolute; left: 50%; top: 4%; bottom: 4%; width: 2px;
+  margin-left: -1px; transform: translateZ(-40px);
+  background: linear-gradient(180deg, rgba(126,166,255,0.05), rgba(126,166,255,0.5), rgba(126,166,255,0.05));
+}
+.imx-layer {
+  position: absolute; left: 0; right: 0; height: 78px;
+  border: 1px solid rgba(110,168,255,0.30);
+  background: linear-gradient(180deg, rgba(59,111,212,0.12), rgba(9,12,20,0.5));
+  border-radius: 11px;
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 18px;
+  box-shadow: 0 24px 44px -26px rgba(0,0,0,0.85);
+  opacity: 0;
+  transition: border-color .25s ease, box-shadow .25s ease, background .25s ease;
+}
+.imx-layer .imx-l-name { font-size: 0.9rem; font-weight: 800; color: var(--imx-ink); letter-spacing: 0.02em; }
 .imx-layer .imx-l-note { font-size: 0.74rem; color: var(--imx-dim); }
-.imx-layer:nth-child(1) { top: 2%;   transform: translateZ(240px); }
-.imx-layer:nth-child(2) { top: 18%;  transform: translateZ(180px); }
-.imx-layer:nth-child(3) { top: 34%;  transform: translateZ(120px); border-color: rgba(126,166,255,0.5); }
-.imx-layer:nth-child(4) { top: 50%;  transform: translateZ(60px);  border-style: dashed; }
-.imx-layer:nth-child(5) { top: 66%;  transform: translateZ(0); }
-.imx-layer:nth-child(6) { top: 82%;  transform: translateZ(-60px); opacity: 0; }
-.imx-xray-note { position: absolute; bottom: -2.4rem; left: 0; right: 0; text-align: center; font-size: 0.8rem; color: var(--imx-dim); }
+.imx-layer .imx-l-detail {
+  position: absolute; left: 18px; right: 18px; bottom: -1.35rem;
+  font-size: 0.72rem; color: #cfe0ff; opacity: 0; transition: opacity .25s ease;
+}
+@media (hover: hover) { .imx-layer:hover, .imx-layer:focus-within {
+  border-color: rgba(126,166,255,0.75); background: linear-gradient(180deg, rgba(59,111,212,0.22), rgba(9,12,20,0.55));
+} }
+.imx-layer:hover .imx-l-detail, .imx-layer:focus-within .imx-l-detail, .imx-layer[data-open="1"] .imx-l-detail { opacity: 1; }
+.imx-layer:nth-child(1) { top: 1%;  transform: translateZ(260px); }
+.imx-layer:nth-child(2) { top: 17%; transform: translateZ(196px); }
+.imx-layer:nth-child(3) { top: 33%; transform: translateZ(132px); border-color: rgba(126,166,255,0.55); }
+.imx-layer:nth-child(4) { top: 49%; transform: translateZ(68px);  border-style: dashed; }
+.imx-layer:nth-child(5) { top: 65%; transform: translateZ(4px); }
+.imx-layer:nth-child(6) { top: 81%; transform: translateZ(-60px); }
+.imx-xray-note { position: absolute; bottom: -2.6rem; left: 0; right: 0; text-align: center; font-size: 0.8rem; color: var(--imx-dim); }
 
 /* ============================================================================
    ENTREPRENEUR SCALE BEAT
    ========================================================================== */
-.imx-scale { text-align: center; padding: 14vh 6vw; position: relative; }
-.imx-scale h2 { font-size: clamp(1.8rem, 4vw, 3rem); font-weight: 900; letter-spacing: -0.03em; margin: 0 0 10px; }
-.imx-scale p { color: var(--imx-dim); margin: 0 auto; max-width: 34rem; }
+.imx-scale { text-align: center; padding: 15vh 6vw; position: relative; overflow: clip; }
+.imx-scale::before {
+  content: ""; position: absolute; inset: 0;
+  background: radial-gradient(40% 60% at 50% 40%, rgba(110,168,255,0.10), transparent 70%);
+}
+.imx-scale .imx-eyebrow { justify-content: center; }
+.imx-scale h2 { font-size: clamp(1.8rem, 4vw, 3rem); font-weight: 900; letter-spacing: -0.03em; margin: 6px 0 10px; position: relative; }
+.imx-scale p { color: var(--imx-dim); margin: 0 auto; max-width: 34rem; position: relative; }
 .imx-scale-count {
   font-variant-numeric: tabular-nums; font-weight: 900;
-  font-size: clamp(2.6rem, 9vw, 6rem); letter-spacing: -0.04em;
+  font-size: clamp(3rem, 11vw, 7rem); letter-spacing: -0.04em; line-height: 1;
   background: linear-gradient(120deg, var(--imx-cool-1), var(--accent-purple));
   -webkit-background-clip: text; background-clip: text; color: transparent;
-  display: block; margin: 8px 0 4px;
+  display: block; margin: 6px 0; position: relative;
+}
+.imx-scale-dots { position: relative; height: 46px; margin: 4px auto 0; max-width: 420px; }
+.imx-scale-dots i {
+  position: absolute; width: 5px; height: 5px; border-radius: 50%;
+  background: var(--imx-cool-1); opacity: 0.5;
 }
 
 /* ============================================================================
    ZAPPY — one continuous entity
    ========================================================================== */
 .imx-zappy {
-  position: fixed;
-  left: 26px; bottom: 26px;
-  width: 120px; height: 120px;
-  z-index: 40;
-  pointer-events: none;
-  opacity: 0;
-  transition: opacity 0.5s ease, transform 0.6s cubic-bezier(.2,.7,.2,1);
+  position: fixed; left: 26px; bottom: 26px;
+  width: 128px; height: 128px; z-index: 40;
+  pointer-events: none; opacity: 0;
+  transition: opacity 0.5s ease;
 }
 .imx-zappy.is-on { opacity: 1; }
 .imx-zappy canvas { width: 100%; height: 100%; display: block; }
 .imx-zappy-line {
-  position: fixed; left: 150px; bottom: 54px;
-  max-width: min(320px, 60vw);
-  font-size: 0.9rem; line-height: 1.4; font-weight: 500;
-  color: var(--imx-ink);
+  position: fixed; left: 160px; bottom: 56px;
+  max-width: min(320px, 58vw);
+  font-size: 0.9rem; line-height: 1.4; font-weight: 500; color: var(--imx-ink);
   background: var(--imx-panel); border: 1px solid var(--imx-line);
-  border-radius: 12px; padding: 9px 13px;
-  z-index: 40; pointer-events: none;
+  border-radius: 12px; padding: 9px 13px; z-index: 40; pointer-events: none;
   opacity: 0; transform: translateY(6px);
   transition: opacity 0.4s ease, transform 0.4s ease;
+}
+.imx-zappy-line::after {
+  content: ""; position: absolute; left: -6px; bottom: 14px;
+  border: 6px solid transparent; border-right-color: var(--imx-panel);
 }
 .imx-zappy-line.is-on { opacity: 1; transform: none; }
 
 /* ============================================================================
-   MOBILE — its own composition (2.5D layering, not "disabled desktop")
+   MOBILE — its own composition (2.5D layering)
    ========================================================================== */
 @media (max-width: 860px) {
-  .imx-scene {
-    grid-template-columns: 1fr;
-    min-height: auto;
-    padding: 9vh 6vw;
-    gap: 6vw;
-  }
-  .imx-stage, .imx-xray { height: 60vw; max-height: 380px; perspective: 900px; }
-  .imx-store { transform: rotateX(4deg) rotateY(-8deg) scale(0.92); }
-  .imx-shelf { width: 90%; gap: 12px; }
-  .imx-customer { transform: none; }
-  .imx-person { width: 92px; height: 92px; }
-  .imx-panel { width: 150px; padding: 9px 11px; }
-  .imx-panel:nth-child(n) { transform: none; position: relative; inset: auto; opacity: 1; margin: 0; }
-  .imx-customer { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; place-items: stretch; }
-  .imx-customer .imx-person { grid-column: 1 / -1; justify-self: center; margin-bottom: 6px; }
+  .imx-scene { grid-template-columns: 1fr; min-height: auto; padding: 8vh 6vw; gap: 6vw; }
+  .imx-stage, .imx-xray { height: 66vw; max-height: 400px; perspective: 900px; }
+  .imx-store { transform: rotateX(4deg) rotateY(-7deg) scale(0.94); }
+  .imx-store::before { display: none; }
+  .imx-shelf { width: 92%; gap: 12px; }
+  .imx-customer { transform: none; display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; align-content: center; }
+  .imx-customer .imx-person { grid-column: 1 / -1; justify-self: center; width: 108px; height: 108px; transform: none; margin-bottom: 22px; }
+  .imx-person .imx-person-name { bottom: -24px; }
+  .imx-panel { position: relative; inset: auto; width: auto; transform: none !important; opacity: 1; }
+  .imx-panel:nth-of-type(7) { grid-column: 1 / -1; }
   .imx-thread { display: none; }
-  .imx-stack { transform: rotateX(40deg); width: 92vw; }
-  .imx-layer { height: 62px; }
-  .imx-exchange { position: relative; right: auto; bottom: auto; width: 100%; transform: none; margin-top: 10px; }
-  .imx-zappy { width: 76px; height: 76px; left: 14px; bottom: 14px; }
-  .imx-zappy-line { left: 100px; bottom: 30px; font-size: 0.82rem; }
+  .imx-stack { transform: rotateX(42deg); width: 94vw; }
+  .imx-stack::after { display: none; }
+  .imx-layer { height: 58px; padding: 0 12px; }
+  .imx-layer .imx-l-detail { position: static; opacity: 1; margin-top: 2px; font-size: 0.68rem; }
+  .imx-layer .imx-l-note { display: none; }
+  .imx-xray::before { display: none; }
+  .imx-exchange { position: relative; right: auto; bottom: auto; width: 100%; transform: none; margin-top: 12px; }
+  .imx-seg-summary { position: relative; right: auto; bottom: auto; width: auto; margin-top: 10px; }
+  .imx-zappy { width: 72px; height: 72px; left: 14px; bottom: 14px; }
+  .imx-zappy-line { left: 96px; bottom: 30px; font-size: 0.8rem; max-width: 62vw; }
 }
 
 /* ============================================================================
-   REDUCED MOTION / SAVE-DATA — static dimensional composition, no travel
+   REDUCED MOTION / SAVE-DATA / no-JS — static dimensional composition
    ========================================================================== */
 @media (prefers-reduced-motion: reduce) {
-  .imx-store, .imx-customer, .imx-stack { transition: none !important; }
-  .imx-product, .imx-panel, .imx-layer, .imx-exchange, .imx-bubble { opacity: 1 !important; transform: translateZ(var(--z, 0)) !important; }
-  .imx-panel:nth-child(2), .imx-panel:nth-child(3), .imx-panel:nth-child(4),
-  .imx-panel:nth-child(5), .imx-panel:nth-child(6), .imx-panel:nth-child(7) { opacity: 1 !important; }
+  .imx-store, .imx-customer, .imx-stack, .imx-product { transition: none !important; }
+  .imx-product, .imx-panel, .imx-layer, .imx-bubble, .imx-seg-summary { opacity: 1 !important; }
+  .imx-panel { transform: translateZ(0) !important; }
   .imx-clabel { opacity: 1 !important; }
+  .imx-layer .imx-l-detail { opacity: 1 !important; position: static; margin-top: 2px; }
   .imx-zappy { opacity: 1 !important; }
   .imx-zappy-line { opacity: 1 !important; transform: none !important; }
 }
@@ -317,15 +398,18 @@
 .imx[data-motion="off"] .imx-panel,
 .imx[data-motion="off"] .imx-layer,
 .imx[data-motion="off"] .imx-bubble,
-.imx[data-motion="off"] .imx-exchange { opacity: 1 !important; }
+.imx[data-motion="off"] .imx-seg-summary { opacity: 1 !important; }
+.imx[data-motion="off"] .imx-panel { transform: translateZ(0) !important; }
 .imx[data-motion="off"] .imx-clabel { opacity: 1 !important; }
+.imx[data-motion="off"] .imx-layer .imx-l-detail { opacity: 1 !important; position: static; margin-top: 2px; }
 .imx[data-motion="off"] .imx-zappy,
 .imx[data-motion="off"] .imx-zappy-line { opacity: 1 !important; transform: none !important; }
 
-/* When JS/GSAP absent: everything is visible and static (progressive enhancement) */
 .imx:not([data-enhanced]) .imx-product,
 .imx:not([data-enhanced]) .imx-panel,
 .imx:not([data-enhanced]) .imx-layer,
-.imx:not([data-enhanced]) .imx-exchange,
-.imx:not([data-enhanced]) .imx-bubble { opacity: 1; }
+.imx:not([data-enhanced]) .imx-bubble,
+.imx:not([data-enhanced]) .imx-seg-summary { opacity: 1; }
+.imx:not([data-enhanced]) .imx-panel { transform: translateZ(0); }
 .imx:not([data-enhanced]) .imx-clabel { opacity: 1; }
+.imx:not([data-enhanced]) .imx-layer .imx-l-detail { opacity: 1; position: static; margin-top: 2px; }

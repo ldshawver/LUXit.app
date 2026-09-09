@@ -115,28 +115,34 @@
     onUpdate: function (self) { if (field) field.setProgress(self.progress); },
     onEnter: function () { say("I've narrowed this down.", "recommend", 213); },
   });
+  var segSummary = s3.querySelector(".imx-seg-summary");
   ScrollTrigger.create({
-    trigger: s3, start: "center 60%", once: true,
+    trigger: s3, start: "center 62%", once: true,
     onEnter: function () {
       if (field) field.setHighlight(3); // "Follow Up"
-      labels.forEach(function (l, i) { l.setAttribute("data-active", i === 3 ? "1" : "1"); });
-      labels[3] && labels[3].setAttribute("data-active", "1");
+      labels.forEach(function (l) { l.setAttribute("data-active", "1"); });
+      var tgt = s3.querySelector('.imx-clabel[data-target-label="1"]');
+      if (tgt) tgt.setAttribute("data-target", "1");
+      if (segSummary) segSummary.setAttribute("data-on", "1");
     }
   });
 
   /* ---- ENTREPRENEUR SCALE beat ------------------------------------- */
   var scale = root.querySelector(".imx-scale-count");
   if (scale) {
-    var seq = ["1", "10", "100", "1,000"];
+    var seq = (scale.getAttribute("data-seq") || "1|10|100|1,000").split("|");
+    var dots = root.querySelector(".imx-scale-dots");
     ScrollTrigger.create({
       trigger: scale, start: "top 80%", once: true,
       onEnter: function () {
         var i = 0;
         scale.textContent = seq[0];
         var iv = setInterval(function () {
-          i++; if (i >= seq.length) { clearInterval(iv); return; }
+          i++;
+          if (i >= seq.length) { clearInterval(iv); scatterDots(dots, 90); return; }
           scale.textContent = seq[i];
-        }, 520);
+          scatterDots(dots, [1, 10, 40][i] || 90);
+        }, 560);
       }
     });
   }
@@ -155,6 +161,16 @@
   io(s4, function (on) {
     if (on) say("I can assist. The system still decides.", "secure", 218);
   });
+  // touch: tap a layer to toggle its detail (hover covers desktop via CSS)
+  if (!fine) {
+    layers.forEach(function (ly) {
+      ly.addEventListener("click", function () {
+        var open = ly.getAttribute("data-open") === "1";
+        layers.forEach(function (o) { o.removeAttribute("data-open"); });
+        if (!open) ly.setAttribute("data-open", "1");
+      });
+    });
+  }
 
   ScrollTrigger.refresh();
 
@@ -256,8 +272,25 @@
     var scene = root.querySelector('[data-scene="segmentation"]');
     var f = mountSegments(scene);
     if (f) { f.setHighlight(3); f.setProgress(1); }
-    var labels = scene ? scene.querySelectorAll(".imx-clabel") : [];
-    labels.forEach(function (l) { l.setAttribute("data-active", "1"); });
+    if (!scene) return;
+    scene.querySelectorAll(".imx-clabel").forEach(function (l) { l.setAttribute("data-active", "1"); });
+    var tgt = scene.querySelector('.imx-clabel[data-target-label="1"]');
+    if (tgt) tgt.setAttribute("data-target", "1");
+    var sum = scene.querySelector(".imx-seg-summary");
+    if (sum) sum.setAttribute("data-on", "1");
+  }
+
+  function scatterDots(holder, n) {
+    if (!holder) return;
+    holder.innerHTML = "";
+    n = Math.min(n, 90);
+    for (var i = 0; i < n; i++) {
+      var d = document.createElement("i");
+      d.style.left = (Math.random() * 100) + "%";
+      d.style.top = (Math.random() * 100) + "%";
+      d.style.opacity = (0.25 + Math.random() * 0.4).toFixed(2);
+      holder.appendChild(d);
+    }
   }
 
   function debounce(fn, ms) { var t; return function () { clearTimeout(t); t = setTimeout(fn, ms); }; }
