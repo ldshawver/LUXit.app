@@ -1,0 +1,331 @@
+/* ============================================================================
+   LUXit — immersive experience layer ("Walk through your business")
+   Enhancement only. The page is fully functional with this CSS/JS absent or
+   with prefers-reduced-motion. Scope: everything under .imx.
+   ========================================================================== */
+
+.imx {
+  --imx-warm-1: #ffd9a8;
+  --imx-warm-2: #ff9f6b;
+  --imx-cool-1: #6ea8ff;
+  --imx-cool-2: #3b6fd4;
+  --imx-ink: #eef1f8;
+  --imx-dim: #9aa3b8;
+  --imx-line: rgba(255, 255, 255, 0.10);
+  --imx-glass: rgba(255, 255, 255, 0.035);
+  --imx-panel: rgba(14, 17, 26, 0.72);
+  position: relative;
+  isolation: isolate;
+}
+
+/* ---- Scene scaffold ------------------------------------------------------- */
+.imx-scene {
+  position: relative;
+  min-height: 100svh;
+  display: grid;
+  grid-template-columns: minmax(320px, 46%) 1fr;
+  align-items: center;
+  gap: 3vw;
+  padding: 12vh 6vw;
+  overflow: clip;
+}
+.imx-scene + .imx-scene { border-top: 1px solid var(--imx-line); }
+
+.imx-copy { position: relative; z-index: 3; max-width: 34rem; }
+.imx-eyebrow {
+  font-size: 0.72rem; font-weight: 700; letter-spacing: 0.16em;
+  text-transform: uppercase; color: var(--accent-cyan); margin-bottom: 14px;
+}
+.imx-copy h1, .imx-copy h2 {
+  font-size: clamp(2rem, 4.6vw, 3.6rem); line-height: 1.06;
+  letter-spacing: -0.03em; font-weight: 900; margin: 0 0 18px;
+}
+.imx-copy p { color: var(--imx-dim); font-size: 1.05rem; line-height: 1.6; margin: 0 0 26px; }
+.imx-cta { display: flex; flex-wrap: wrap; gap: 12px; }
+.imx-chiprow { display: flex; flex-wrap: wrap; gap: 9px; margin-top: 26px; }
+.imx-chip {
+  font-size: 0.78rem; font-weight: 600; color: var(--imx-dim);
+  border: 1px solid var(--imx-line); background: var(--imx-glass);
+  padding: 7px 12px; border-radius: 999px;
+}
+
+/* ---- The stage (3D holder) --------------------------------------------------
+   Each stage owns its own perspective so scenes don't interfere.            */
+.imx-stage {
+  position: relative;
+  z-index: 1;
+  height: min(76vh, 640px);
+  perspective: 1400px;
+  perspective-origin: 60% 45%;
+  transform-style: preserve-3d;
+}
+.imx-stage * { transform-style: preserve-3d; }
+
+/* ambient light wash — controlled, not glow-everything */
+.imx-scene::before {
+  content: "";
+  position: absolute; inset: -20% -10%;
+  background: radial-gradient(60% 55% at 68% 38%, rgba(110,168,255,0.10), transparent 70%);
+  z-index: 0; pointer-events: none;
+}
+.imx-scene[data-scene="storefront"]::before {
+  background: radial-gradient(58% 52% at 66% 42%, rgba(255,159,107,0.13), transparent 72%);
+}
+.imx-scene[data-scene="security"]::before {
+  background: radial-gradient(62% 60% at 50% 40%, rgba(59,111,212,0.16), transparent 74%);
+}
+
+/* ============================================================================
+   SCENE 1 — STOREFRONT
+   ========================================================================== */
+.imx-store {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  transform: rotateX(6deg) rotateY(-16deg);
+  transition: transform 0.25s ease-out;
+}
+.imx-store-floor {
+  position: absolute; left: -20%; right: -20%; bottom: 6%; height: 46%;
+  background: linear-gradient(180deg, rgba(255,255,255,0.05), transparent 70%);
+  transform: rotateX(74deg); transform-origin: bottom;
+  border-top: 1px solid var(--imx-line);
+}
+.imx-shelf {
+  position: relative;
+  width: min(70%, 460px);
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px;
+}
+.imx-product {
+  position: relative;
+  aspect-ratio: 3 / 4;
+  border-radius: 14px;
+  border: 1px solid var(--imx-line);
+  background:
+    linear-gradient(160deg, rgba(255,255,255,0.09), rgba(255,255,255,0.02)),
+    var(--imx-panel);
+  box-shadow: 0 26px 60px -30px rgba(0,0,0,0.8), inset 0 1px 0 rgba(255,255,255,0.08);
+  padding: 14px;
+  display: flex; flex-direction: column; justify-content: flex-end;
+  transform: translateZ(var(--z, 0));
+  transition: transform 0.5s cubic-bezier(.2,.7,.2,1), box-shadow 0.4s ease, border-color 0.3s;
+  cursor: pointer;
+  will-change: transform;
+}
+.imx-product::before {
+  content: "";
+  position: absolute; left: 14px; right: 14px; top: 14px; height: 46%;
+  border-radius: 9px;
+  background: linear-gradient(135deg, var(--pc1, #7ea6ff), var(--pc2, #b98bff));
+  opacity: 0.9;
+}
+.imx-product .imx-p-name { font-size: 0.8rem; font-weight: 700; color: var(--imx-ink); }
+.imx-product .imx-p-meta { font-size: 0.72rem; color: var(--imx-dim); }
+.imx-product[data-emph="1"] {
+  border-color: rgba(126,166,255,0.55);
+  box-shadow: 0 30px 70px -26px rgba(59,111,212,0.5), inset 0 1px 0 rgba(255,255,255,0.14);
+}
+@media (hover: hover) {
+  .imx-product:hover { transform: translateZ(60px) translateY(-6px); border-color: rgba(255,255,255,0.28); }
+}
+
+/* scripted mini-exchange */
+.imx-exchange {
+  position: absolute; right: 2%; bottom: 4%;
+  width: min(78%, 320px);
+  display: flex; flex-direction: column; gap: 8px;
+  transform: translateZ(90px);
+  opacity: 0; pointer-events: none;
+}
+.imx-bubble {
+  font-size: 0.86rem; line-height: 1.4;
+  padding: 9px 13px; border-radius: 13px;
+  border: 1px solid var(--imx-line); background: var(--imx-panel);
+  color: var(--imx-ink); max-width: 86%;
+  opacity: 0; transform: translateY(8px);
+}
+.imx-bubble.you { align-self: flex-end; background: rgba(126,166,255,0.16); border-color: rgba(126,166,255,0.3); }
+.imx-bubble.zappy { align-self: flex-start; }
+.imx-bubble .who { display: block; font-size: 0.66rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--imx-dim); margin-bottom: 2px; }
+
+/* ============================================================================
+   SCENE 2 — CUSTOMER / ONE HISTORY
+   ========================================================================== */
+.imx-customer {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  transform: rotateX(4deg) rotateY(-10deg);
+}
+.imx-person {
+  position: relative; z-index: 2;
+  width: 128px; height: 128px; border-radius: 50%;
+  background: radial-gradient(circle at 38% 32%, var(--imx-warm-1), var(--imx-warm-2));
+  box-shadow: 0 0 0 8px rgba(255,159,107,0.12), 0 30px 60px -20px rgba(0,0,0,0.7);
+  display: grid; place-items: center;
+  font-weight: 800; color: #2a1206; font-size: 0.9rem;
+}
+.imx-panel {
+  position: absolute;
+  width: 190px;
+  border-radius: 12px;
+  border: 1px solid var(--imx-line);
+  background: var(--imx-panel);
+  box-shadow: 0 24px 50px -28px rgba(0,0,0,0.85);
+  padding: 12px 14px;
+  opacity: 0;
+  will-change: transform, opacity;
+}
+.imx-panel h4 { margin: 0 0 6px; font-size: 0.75rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--accent-cyan); }
+.imx-panel p { margin: 0; font-size: 0.82rem; color: var(--imx-dim); line-height: 1.45; }
+/* radial placement around the person, pushed into depth */
+.imx-panel:nth-child(2) { top: 4%;  left: 8%;   transform: translateZ(40px)  translate(-30px,-20px); }
+.imx-panel:nth-child(3) { top: 2%;  right: 6%;  transform: translateZ(90px)  translate(30px,-20px); }
+.imx-panel:nth-child(4) { top: 40%; left: -2%;  transform: translateZ(140px) translate(-40px,0); }
+.imx-panel:nth-child(5) { top: 44%; right: -4%; transform: translateZ(70px)  translate(40px,0); }
+.imx-panel:nth-child(6) { bottom: 2%; left: 12%; transform: translateZ(110px) translate(-20px,20px); }
+.imx-panel:nth-child(7) { bottom: 0%; right: 10%; transform: translateZ(50px) translate(20px,24px); }
+.imx-thread { position: absolute; inset: 0; pointer-events: none; z-index: 1; }
+.imx-thread line { stroke: rgba(126,166,255,0.35); stroke-width: 1; stroke-dasharray: 3 4; }
+
+/* ============================================================================
+   SCENE 3 — SEGMENTATION
+   ========================================================================== */
+.imx-audience { position: absolute; inset: 0; }
+.imx-audience canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+.imx-cluster-labels { position: absolute; inset: 0; pointer-events: none; }
+.imx-clabel {
+  position: absolute; transform: translate(-50%, -50%);
+  font-size: 0.72rem; font-weight: 700; letter-spacing: 0.04em;
+  color: var(--imx-ink); background: var(--imx-panel);
+  border: 1px solid var(--imx-line); border-radius: 999px; padding: 4px 10px;
+  opacity: 0; transition: opacity 0.4s ease;
+}
+.imx-clabel[data-active="1"] { opacity: 1; border-color: rgba(126,166,255,0.5); }
+
+/* ============================================================================
+   SCENE 4 — SECURITY X-RAY
+   ========================================================================== */
+.imx-scene[data-scene="security"] { grid-template-columns: 1fr; }
+.imx-scene[data-scene="security"] .imx-copy { max-width: 46rem; margin: 0 auto 4vh; text-align: center; }
+.imx-xray {
+  position: relative; z-index: 1;
+  height: min(72vh, 620px);
+  perspective: 1600px; perspective-origin: 50% 40%;
+  display: grid; place-items: center;
+}
+.imx-stack { position: relative; width: min(560px, 82vw); height: 100%; transform-style: preserve-3d; transform: rotateX(52deg) rotateZ(-2deg); }
+.imx-layer {
+  position: absolute; left: 0; right: 0; height: 84px;
+  border: 1px solid rgba(110,168,255,0.28);
+  background: linear-gradient(180deg, rgba(59,111,212,0.10), rgba(10,14,22,0.4));
+  border-radius: 10px;
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 16px;
+  box-shadow: 0 20px 40px -24px rgba(0,0,0,0.8);
+  opacity: 0;
+}
+.imx-layer .imx-l-name { font-size: 0.86rem; font-weight: 800; color: var(--imx-ink); letter-spacing: 0.02em; }
+.imx-layer .imx-l-note { font-size: 0.74rem; color: var(--imx-dim); }
+.imx-layer:nth-child(1) { top: 2%;   transform: translateZ(240px); }
+.imx-layer:nth-child(2) { top: 18%;  transform: translateZ(180px); }
+.imx-layer:nth-child(3) { top: 34%;  transform: translateZ(120px); border-color: rgba(126,166,255,0.5); }
+.imx-layer:nth-child(4) { top: 50%;  transform: translateZ(60px);  border-style: dashed; }
+.imx-layer:nth-child(5) { top: 66%;  transform: translateZ(0); }
+.imx-layer:nth-child(6) { top: 82%;  transform: translateZ(-60px); opacity: 0; }
+.imx-xray-note { position: absolute; bottom: -2.4rem; left: 0; right: 0; text-align: center; font-size: 0.8rem; color: var(--imx-dim); }
+
+/* ============================================================================
+   ENTREPRENEUR SCALE BEAT
+   ========================================================================== */
+.imx-scale { text-align: center; padding: 14vh 6vw; position: relative; }
+.imx-scale h2 { font-size: clamp(1.8rem, 4vw, 3rem); font-weight: 900; letter-spacing: -0.03em; margin: 0 0 10px; }
+.imx-scale p { color: var(--imx-dim); margin: 0 auto; max-width: 34rem; }
+.imx-scale-count {
+  font-variant-numeric: tabular-nums; font-weight: 900;
+  font-size: clamp(2.6rem, 9vw, 6rem); letter-spacing: -0.04em;
+  background: linear-gradient(120deg, var(--imx-cool-1), var(--accent-purple));
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+  display: block; margin: 8px 0 4px;
+}
+
+/* ============================================================================
+   ZAPPY — one continuous entity
+   ========================================================================== */
+.imx-zappy {
+  position: fixed;
+  left: 26px; bottom: 26px;
+  width: 120px; height: 120px;
+  z-index: 40;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.5s ease, transform 0.6s cubic-bezier(.2,.7,.2,1);
+}
+.imx-zappy.is-on { opacity: 1; }
+.imx-zappy canvas { width: 100%; height: 100%; display: block; }
+.imx-zappy-line {
+  position: fixed; left: 150px; bottom: 54px;
+  max-width: min(320px, 60vw);
+  font-size: 0.9rem; line-height: 1.4; font-weight: 500;
+  color: var(--imx-ink);
+  background: var(--imx-panel); border: 1px solid var(--imx-line);
+  border-radius: 12px; padding: 9px 13px;
+  z-index: 40; pointer-events: none;
+  opacity: 0; transform: translateY(6px);
+  transition: opacity 0.4s ease, transform 0.4s ease;
+}
+.imx-zappy-line.is-on { opacity: 1; transform: none; }
+
+/* ============================================================================
+   MOBILE — its own composition (2.5D layering, not "disabled desktop")
+   ========================================================================== */
+@media (max-width: 860px) {
+  .imx-scene {
+    grid-template-columns: 1fr;
+    min-height: auto;
+    padding: 9vh 6vw;
+    gap: 6vw;
+  }
+  .imx-stage, .imx-xray { height: 60vw; max-height: 380px; perspective: 900px; }
+  .imx-store { transform: rotateX(4deg) rotateY(-8deg) scale(0.92); }
+  .imx-shelf { width: 90%; gap: 12px; }
+  .imx-customer { transform: none; }
+  .imx-person { width: 92px; height: 92px; }
+  .imx-panel { width: 150px; padding: 9px 11px; }
+  .imx-panel:nth-child(n) { transform: none; position: relative; inset: auto; opacity: 1; margin: 0; }
+  .imx-customer { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; place-items: stretch; }
+  .imx-customer .imx-person { grid-column: 1 / -1; justify-self: center; margin-bottom: 6px; }
+  .imx-thread { display: none; }
+  .imx-stack { transform: rotateX(40deg); width: 92vw; }
+  .imx-layer { height: 62px; }
+  .imx-exchange { position: relative; right: auto; bottom: auto; width: 100%; transform: none; margin-top: 10px; }
+  .imx-zappy { width: 76px; height: 76px; left: 14px; bottom: 14px; }
+  .imx-zappy-line { left: 100px; bottom: 30px; font-size: 0.82rem; }
+}
+
+/* ============================================================================
+   REDUCED MOTION / SAVE-DATA — static dimensional composition, no travel
+   ========================================================================== */
+@media (prefers-reduced-motion: reduce) {
+  .imx-store, .imx-customer, .imx-stack { transition: none !important; }
+  .imx-product, .imx-panel, .imx-layer, .imx-exchange, .imx-bubble { opacity: 1 !important; transform: translateZ(var(--z, 0)) !important; }
+  .imx-panel:nth-child(2), .imx-panel:nth-child(3), .imx-panel:nth-child(4),
+  .imx-panel:nth-child(5), .imx-panel:nth-child(6), .imx-panel:nth-child(7) { opacity: 1 !important; }
+  .imx-clabel { opacity: 1 !important; }
+  .imx-zappy { opacity: 1 !important; }
+  .imx-zappy-line { opacity: 1 !important; transform: none !important; }
+}
+.imx[data-motion="off"] .imx-product,
+.imx[data-motion="off"] .imx-panel,
+.imx[data-motion="off"] .imx-layer,
+.imx[data-motion="off"] .imx-bubble,
+.imx[data-motion="off"] .imx-exchange { opacity: 1 !important; }
+.imx[data-motion="off"] .imx-clabel { opacity: 1 !important; }
+.imx[data-motion="off"] .imx-zappy,
+.imx[data-motion="off"] .imx-zappy-line { opacity: 1 !important; transform: none !important; }
+
+/* When JS/GSAP absent: everything is visible and static (progressive enhancement) */
+.imx:not([data-enhanced]) .imx-product,
+.imx:not([data-enhanced]) .imx-panel,
+.imx:not([data-enhanced]) .imx-layer,
+.imx:not([data-enhanced]) .imx-exchange,
+.imx:not([data-enhanced]) .imx-bubble { opacity: 1; }
+.imx:not([data-enhanced]) .imx-clabel { opacity: 1; }
