@@ -175,6 +175,25 @@ PRODUCTS = [
             {"q": "What happens if an agent makes a mistake?", "a": "Content approval workflows catch errors before they go live. You can also roll back any action and the audit trail shows exactly what happened and when."},
         ],
     },
+    {
+        "slug": "lux-connect",
+        "name": "LUX Connect",
+        "category": "Calling",
+        "tagline": "The calling layer inside LUXit — inbound and outbound calls from the browser, with the customer on screen.",
+        "bullets": [
+            "Call from the browser or the mobile PWA — no desk phone",
+            "Inbound and outbound calls on your business number",
+            "Caller identity and customer history on the call screen",
+            "Recent calls and voicemail logged to the customer record",
+            "Mute, hang up and native-style dialer controls",
+            "One active calling client at a time, so calls don't ring everywhere",
+        ],
+        "faqs": [
+            {"q": "How is LUX Connect different from a regular phone system?", "a": "It runs inside LUXit, so a call isn't a separate event — the customer's CRM record, past messages and notes are on screen while you talk, and the call lands back on that record afterward."},
+            {"q": "Do agents need to install anything?", "a": "No. LUX Connect runs in the browser and in the LUXit mobile PWA. Calls route to whoever is set up to take them."},
+            {"q": "Does it use my existing business number?", "a": "Calls are placed and received on your configured business number so customers see a consistent caller ID."},
+        ],
+    },
 ]
 
 SOLUTIONS = [
