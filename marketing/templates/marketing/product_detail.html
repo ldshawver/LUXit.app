@@ -8,11 +8,11 @@
   <h1>{{ item.name }}</h1>
   <p>{{ item.tagline }}</p>
   <div class="sell-cta-row" style="margin-bottom:0;">
-    <a class="btn-primary" href="/auth/login">
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
-      Start Free
+    <a class="btn-primary" href="/book-demo">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M8 5v14l11-7z"/></svg>
+      Book a Demo
     </a>
-    <a class="btn-secondary" href="/book-demo">Request Demo</a>
+    <a class="btn-secondary" href="/products">All products</a>
   </div>
 </div>
 
@@ -39,6 +39,7 @@
   </div>
 </section>
 
+{% if item.testimonial %}
 <!-- Social Proof -->
 <section class="social-proof-bar">
   <div class="proof-label">Used by teams across industries</div>
@@ -47,6 +48,7 @@
     <cite>— {{ item.testimonial_author }}</cite>
   </div>
 </section>
+{% endif %}
 
 <!-- FAQ -->
 <section class="section">
@@ -71,11 +73,11 @@
 <section class="section bottom-cta-section">
   <div class="bottom-cta-box">
     <div class="section-label">Get started</div>
-    <h2 class="section-title" style="font-size:2.2rem;">Launch your first {{ item.name }} workflow today.</h2>
-    <p class="section-subtitle" style="margin-bottom:32px;">Get live in 15 minutes. No credit card required.</p>
+    <h2 class="section-title" style="font-size:2.2rem;">See {{ item.name }} on your customer data.</h2>
+    <p class="section-subtitle" style="margin-bottom:32px;">Book a demo and we&rsquo;ll walk through it with your use case.</p>
     <div class="sell-cta-row">
-      <a class="btn-primary" href="/auth/login" style="font-size:1rem; padding:15px 32px;">Start Free</a>
-      <a class="btn-secondary" href="/book-demo" style="font-size:1rem; padding:15px 32px;">Request Demo</a>
+      <a class="btn-primary" href="/book-demo" style="font-size:1rem; padding:15px 32px;">Book a Demo</a>
+      <a class="btn-secondary" href="/contact" style="font-size:1rem; padding:15px 32px;">Contact Sales</a>
     </div>
   </div>
 </section>
