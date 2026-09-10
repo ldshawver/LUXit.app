@@ -1661,14 +1661,11 @@ def api_phone_voice_client_error():
     company = _require_company(user)
     data = request.get_json(silent=True) or {}
     logger.warning(
-        "Browser voice client error",
-        extra={
-            "user_id": user.id,
-            "company_id": company.id,
-            "voice_error_code": data.get("code"),
-            "voice_error_message": data.get("message"),
-            "voice_error_detail": data.get("detail"),
-        },
+        "Browser voice client error user_id=%s company_id=%s code=%s message=%s detail=%s",
+        user.id, company.id,
+        str(data.get("code"))[:80],
+        str(data.get("message"))[:300],
+        str(data.get("detail"))[:300],
     )
     return jsonify({"success": True})
 

@@ -68,6 +68,8 @@ def _guard_sms_feature():
         "/twilio/voice/no-answer",
         "/twilio/voice/recording",
         "/twilio/voice/status",
+        "/twilio/voice/pwa-outbound",
+        "/twilio/voice/pwa-outbound-complete",
         "/twilio/fallback",
     }
     if request.path in _WEBHOOK_PATHS or request.path.startswith("/twilio/google-contacts/"):
@@ -2070,6 +2072,161 @@ def outbound_call_twiml():
         "</Response>"
     )
     return twiml, 200, {"Content-Type": "text/xml"}
+
+
+def _pwa_outbound_fail_twiml(message: str):
+    return (
+        '<?xml version="1.0" encoding="UTF-8"?>\n<Response>\n'
+        f'  <Say voice="Polly.Joanna">{html.escape(message)}</Say>\n'
+        '  <Hangup/>\n</Response>'
+    ), 200, {"Content-Type": "text/xml"}
+
+
+@twilio_bp.route("/voice/pwa-outbound", methods=["POST"])
+@csrf.exempt
+def pwa_outbound_twiml():
+    """TwiML App VoiceUrl for browser-originated (Twilio Voice SDK) outbound calls.
+
+    A registered Twilio.Device calls ``device.connect({params:{To, phone_number_id}})``.
+    Twilio then POSTs here with ``From = client:<voice identity>``. The caller ID
+    is resolved SERVER-SIDE from the *verified* Client identity — the browser
+    never chooses it, and an unauthorized / unverifiable identity is hung up
+    rather than dialed.
+    """
+    from models import CallEvent, TwilioCallLog, TwilioPhoneNumber, User
+    from services.phone_identity import pwa_voice_identity
+    from services.comms_permissions import accessible_phone_numbers
+
+    data = request.values
+    call_sid = (data.get("CallSid") or "").strip()
+    frm = (data.get("From") or "").strip()
+    to_raw = (data.get("To") or data.get("PhoneNumber") or "").strip()
+    requested_pn_id = (data.get("phone_number_id") or "").strip()
+
+    identity = frm[7:] if frm.startswith("client:") else frm
+    m = re.match(r"^luxit_c(\d+)_u(\d+)_[0-9a-f]{16}$", identity)
+    if not m:
+        logger.warning("pwa-outbound: unrecognized client identity sid=%s", call_sid)
+        return _pwa_outbound_fail_twiml("This call could not be authorized. Goodbye.")
+    company_id, user_id = int(m.group(1)), int(m.group(2))
+    if pwa_voice_identity(company_id, user_id) != identity:
+        logger.warning(
+            "pwa-outbound: identity signature mismatch company_id=%s user_id=%s sid=%s",
+            company_id, user_id, call_sid,
+        )
+        return _pwa_outbound_fail_twiml("This call could not be authorized. Goodbye.")
+
+    user = db.session.get(User, user_id)
+    if not user or not getattr(user, "active", True):
+        return _pwa_outbound_fail_twiml("This call could not be authorized. Goodbye.")
+
+    allowed = accessible_phone_numbers(user, company_id)
+    if not allowed:
+        return _pwa_outbound_fail_twiml("No calling number is assigned to your account. Goodbye.")
+
+    caller_id = None
+    if requested_pn_id.isdigit():
+        pn = db.session.get(TwilioPhoneNumber, int(requested_pn_id))
+        if pn and pn.company_id == company_id and pn.is_active and pn.phone_number in allowed:
+            caller_id = pn.phone_number
+    if not caller_id:
+        caller_id = allowed[0]
+
+    digits = re.sub(r"[^\d]", "", to_raw)
+    if not digits:
+        return _pwa_outbound_fail_twiml("No destination number was provided. Goodbye.")
+    if to_raw.startswith("+"):
+        to_number = "+" + digits
+    elif len(digits) == 10:
+        to_number = "+1" + digits
+    else:
+        to_number = "+" + digits
+
+    # Outbound call history — idempotent on CallSid so a Twilio retry never dupes.
+    if call_sid and not TwilioCallLog.query.filter_by(twilio_sid=call_sid).first():
+        pn_row = TwilioPhoneNumber.query.filter_by(
+            company_id=company_id, phone_number=caller_id, is_active=True
+        ).first()
+        try:
+            log = TwilioCallLog(
+                company_id=company_id,
+                phone_number_id=getattr(pn_row, "id", None),
+                twilio_sid=call_sid,
+                direction="outbound",
+                from_number=caller_id,
+                to_number=to_number,
+                status="initiated",
+                assigned_user_id=user_id,
+                answered_by_user_id=user_id,
+                transcription_status="not_requested",
+                raw_payload=dict(data),
+            )
+            db.session.add(log)
+            db.session.flush()
+            db.session.add(CallEvent(
+                call_log_id=log.id, event_type="outbound",
+                provider_event_id=call_sid, payload=dict(data),
+            ))
+            db.session.commit()
+        except Exception as exc:
+            db.session.rollback()
+            logger.warning("pwa-outbound: call log insert failed sid=%s: %s", call_sid, exc)
+
+    logger.info(
+        "pwa-outbound: company_id=%s user_id=%s callerId=%s dest=***%s sid=%s",
+        company_id, user_id, caller_id, to_number[-4:], call_sid,
+    )
+    safe_to = html.escape(to_number, quote=True)
+    safe_cid = html.escape(caller_id, quote=True)
+    twiml = (
+        '<?xml version="1.0" encoding="UTF-8"?>\n<Response>\n'
+        f'  <Dial callerId="{safe_cid}" timeout="30" answerOnBridge="true" '
+        f'action="/twilio/voice/pwa-outbound-complete" method="POST">\n'
+        f'    <Number>{safe_to}</Number>\n'
+        '  </Dial>\n'
+        '</Response>'
+    )
+    return twiml, 200, {"Content-Type": "text/xml"}
+
+
+@twilio_bp.route("/voice/pwa-outbound-complete", methods=["POST"])
+@csrf.exempt
+def pwa_outbound_complete_twiml():
+    """<Dial action> target for browser outbound calls — finalize the call log."""
+    from models import TwilioCallLog
+
+    data = request.values
+    call_sid = (data.get("CallSid") or "").strip()
+    dial_status = (data.get("DialCallStatus") or "").strip()
+    try:
+        dial_dur = int(data.get("DialCallDuration") or 0)
+    except (TypeError, ValueError):
+        dial_dur = 0
+
+    if call_sid:
+        log = TwilioCallLog.query.filter_by(twilio_sid=call_sid).first()
+        if log:
+            log.status = dial_status or log.status
+            if dial_status == "completed":
+                log.status = "completed"
+                log.ended_at = datetime.utcnow()
+            elif dial_status in ("no-answer", "busy", "failed", "canceled"):
+                log.status = dial_status
+            if dial_dur:
+                log.duration = dial_dur
+                if not log.answered_at:
+                    log.answered_at = datetime.utcnow()
+            try:
+                db.session.commit()
+            except Exception as exc:
+                db.session.rollback()
+                logger.warning("pwa-outbound-complete: commit failed sid=%s: %s", call_sid, exc)
+
+    return (
+        '<?xml version="1.0" encoding="UTF-8"?>\n<Response>\n'
+        '  <Say voice="Polly.Joanna">The call has ended. Goodbye.</Say>\n'
+        '  <Hangup/>\n</Response>'
+    ), 200, {"Content-Type": "text/xml"}
 
 
 @twilio_bp.route("/voice/inbound", methods=["POST"])

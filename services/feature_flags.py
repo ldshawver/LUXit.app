@@ -39,6 +39,8 @@ _TWILIO_WEBHOOK_PATHS = {
     "/twilio/voice/no-answer",
     "/twilio/voice/recording",
     "/twilio/voice/status",
+    "/twilio/voice/pwa-outbound",
+    "/twilio/voice/pwa-outbound-complete",
 }
 
 
