@@ -425,6 +425,41 @@ const DIALER_MODE = /\/app\/(phone|dial-pad)(\/|$)/.test(window.location.pathnam
 
 const CURRENT_USER_ID = Number('{{ user.id | default(0) }}') || 0;
 
+/* ── Voice SDK readiness ────────────────────────────────────────────────────
+   P0 fix (2026-09-11): the vendor SDK <script> is `defer`, which only runs
+   after the whole document has parsed — strictly AFTER this inline block
+   (parser-synchronous, no defer) starts running. The bootstrap chain below
+   (loadReceiveCalls() -> applyReceiveCalls() -> startVoiceRegistration() ->
+   initVoice()) used to check `voiceSdkCtor()` once, synchronously, with
+   nothing forcing it to wait for the deferred script. Whichever finishes
+   first wins: a fast /api/phone/receive-calls round-trip can beat a slow
+   SDK parse+eval (loaded mobile CPU, cold cache) and permanently fail
+   registration with SDK_MISSING (a terminal code — no auto-retry) even
+   though the script itself loads fine a moment later. Proven from prod
+   logs: twilio.min.js 200, SDK_MISSING logged in the same second.
+   Fix: one shared readiness Promise settled by the script's real load/error
+   event (never polled). initVoice() awaits it before touching the SDK
+   constructor; already-loaded is a zero-cost synchronous short-circuit, and
+   a bfcache restore (script never re-runs) short-circuits the same way
+   because window.Twilio is already set. */
+const voiceSdkScriptEl = document.querySelector('script[src^="/static/vendor/twilio-voice-sdk/"]');
+const voiceSdkReady = new Promise((resolve, reject) => {
+  if (voiceSdkCtor()) { resolve(true); return; }
+  voiceSdkScriptEl.addEventListener('load', () => resolve(true), {once: true});
+  voiceSdkScriptEl.addEventListener('error', () => reject(new Error('Voice SDK script failed to load.')), {once: true});
+});
+async function waitForVoiceSdk() {
+  if (voiceSdkCtor()) return true;
+  try {
+    await Promise.race([
+      voiceSdkReady,
+      new Promise((_, reject) => setTimeout(() => reject(new Error('Voice SDK load timed out.')), 15000)),
+    ]);
+  } catch (_) { /* fall through to the uniform SDK_MISSING error below */ }
+  if (!voiceSdkCtor()) throw Object.assign(new Error('Calling SDK failed to load. Refresh the page or check your network connection.'), {voiceCode: 'SDK_MISSING'});
+  return true;
+}
+
 /* ── Receive Calls ────────────────────────────────────────────────────────
    Persisted per-user, per-tenant preference (UserCompanyAccess.receive_calls).
    ON  = this PWA registers a Twilio.Device automatically once calling
@@ -1343,8 +1378,8 @@ async function initVoice() {
   }
   voice.initPromise = (async () => {
     try {
+      await waitForVoiceSdk();          // deterministic — never a synchronous one-shot check
       const Device = voiceSdkCtor();
-      if (!Device) throw Object.assign(new Error('Calling SDK failed to load. Refresh the page or check your network connection.'), {voiceCode: 'SDK_MISSING'});
       if (location.protocol !== 'https:' && !['localhost', '127.0.0.1'].includes(location.hostname)) throw Object.assign(new Error('Browser calling requires HTTPS.'), {voiceCode: 'HTTPS_REQUIRED'});
       if (!callerIdsLoaded) { try { await loadCallerIds(); } catch (_) {} }   // don't race auto-register against the number list
       if (!els.callerId.value) throw Object.assign(new Error('No authorized calling number is available.'), {voiceCode: 'NO_ASSIGNED_NUMBER'});
