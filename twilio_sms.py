@@ -353,6 +353,22 @@ TWILIO_WEBHOOK_PUBLIC_URL = os.environ.get(
 )
 
 
+def _sms_status_callback_url(ta) -> str | None:
+    """Absolute /twilio/sms/status URL to attach to an outbound send.
+
+    Twilio only calls back to a status callback URL that was actually given
+    to it -- either per-message, or as a default configured on the sending
+    Messaging Service. A message sent with an explicit ``from_=<number>``
+    (bypassing the Messaging Service) inherits no default, so without this
+    the send is accepted by Twilio but its real delivery outcome (delivered/
+    undelivered/failed) is never reported back and the local record is
+    frozen at whatever status Twilio returned synchronously.
+    """
+    base = (ta.webhook_base_url.rstrip("/") if ta and ta.webhook_base_url
+            else TWILIO_WEBHOOK_PUBLIC_URL.rsplit("/twilio/", 1)[0])
+    return f"{base}/twilio/sms/status" if base else None
+
+
 def _twiml_message(text: str):
     """Return a TwiML <Response><Message> reply."""
     safe = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
@@ -733,6 +749,9 @@ def sendConversationSms(conversation_id: int, message: str, *,
             "to":   to_number,
             "from_": canonical_sender,
         }
+        status_callback_url = _sms_status_callback_url(ta)
+        if status_callback_url:
+            kwargs["status_callback"] = status_callback_url
 
         msg = client.messages.create(**kwargs)
         provider_status = getattr(msg, "status", None) or "sent"
@@ -746,7 +765,7 @@ def sendConversationSms(conversation_id: int, message: str, *,
                 from_number=canonical_sender,
                 to_number=to_number,
                 body=body,
-                status="sent",
+                status=provider_status,
                 is_auto_reply=is_auto_reply,
                 rule_id=rule_id,
                 raw_payload={"provider_status": provider_status},
