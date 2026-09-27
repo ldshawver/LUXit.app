@@ -774,7 +774,7 @@ def sendConversationSms(conversation_id: int, message: str, *,
             )
             db.session.add(record)
             db.session.commit()
-        logger.info("Outbound SMS sent: sid=%s to=%s", msg.sid, to_number)
+        logger.info("Outbound SMS sent: sid=%s to_ref=%s", msg.sid, _safe_phone_ref(to_number))
         try:
             from services.posthog_client import track_event
             track_event(f"company_{ta.company_id}", 'sms_sent', {
@@ -1043,7 +1043,7 @@ def _apply_auto_reply_rules(conv, body: str, ta) -> bool:
     """
     from models import AutoReplyRule, Contact
 
-    _tag = f"[auto-reply company={ta.company_id} conv={conv.id} from={conv.from_number}]"
+    _tag = f"[auto-reply company={ta.company_id} conv={conv.id} from_ref={_safe_phone_ref(conv.from_number)}]"
 
     if not ta.automation_enabled:
         logger.info("%s automation_enabled=False — skipping all rules", _tag)
