@@ -254,6 +254,7 @@ def test_signed_inbound_matches_to_and_persists_one_event(
         "body": intent.body,
         "to": DESTINATION,
         "from_": DESTINATION,
+        "status_callback": "http://localhost/twilio/sms/status",
     }
 
 
