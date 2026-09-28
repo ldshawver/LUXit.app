@@ -43,6 +43,8 @@ from services.receive_calls import (get_receive_calls, receive_calls_enabled,
                                      receive_calls_user_ids, set_receive_calls)
 
 ROOT = Path(__file__).resolve().parents[1]
+ENGINE_JS = (Path(__file__).resolve().parents[1] / "static" / "js" / "lux-voice.js").read_text()
+
 CALLS_HTML = (ROOT / "templates/inbox_pwa/calls.html").read_text()
 INBOX_PWA = (ROOT / "inbox_pwa.py").read_text()
 TWILIO_SMS = (ROOT / "twilio_sms.py").read_text()
@@ -345,20 +347,21 @@ def test_legacy_destructive_delete_route_forwards_to_archive(app):
 # ── client contract (A: auto-register, states) ─────────────────────────── #
 
 def test_client_auto_registers_and_has_explicit_states():
-    assert "const receiveCalls = { enabled:" in CALLS_HTML
+    assert "receiveCalls: {{ 'true' if receive_calls else 'false' }}" in CALLS_HTML
     assert "id=\"receiveCallsToggle\"" in CALLS_HTML
     assert "Receive calls in LUX Connect using WiFi or cellular data" in CALLS_HTML
     # no manual "Enable Wi-Fi Calling" button label
     assert "Enable Wi-Fi Calling" not in CALLS_HTML
-    # explicit deterministic states
-    for s in ("Loading calling settings…", "Registering…", "Calls disabled",
-              "Registration failed — Retry"):
+    # explicit deterministic, truthful states (Phone P0 view of the engine)
+    for s in ("Loading calling settings…", "Connecting…", "Reconnecting…", "Calls disabled",
+              "Registration failed — Retry", "Ready —"):
         assert s in CALLS_HTML
-    # auto-register on init when it should
-    assert "loadReceiveCalls().then(loadPhoneAvailability)" in CALLS_HTML
-    assert "function shouldRegisterVoice() {\n  return receiveCalls.enabled && !isAway() && coord.supported;" in CALLS_HTML
+    # auto-register on boot when it should (server prefs first, then converge)
+    assert "voiceEngine.boot();" in CALLS_HTML
+    assert "function shouldRegister() { return st.receiveCalls && st.availability !== 'away' && st.lockSupported; }" in ENGINE_JS
     # SSE convergence
-    assert "data.type === 'receive_calls'" in CALLS_HTML
-    # "Ready" is only ever set from the Device 'registered' event
-    ready_ctx = CALLS_HTML.split("state(`Ready — ${body.calling_number}`")[0]
-    assert ready_ctx.rstrip().endswith("setPhase('ready');")
+    assert "data.type === 'receive_calls' && Number(data.user_id) === opts.userId" in ENGINE_JS
+    assert "voiceEngine.handleServerEvent(JSON.parse(event.data))" in CALLS_HTML
+    # "Ready" is only ever set from the live SDK 'registered' state
+    reg = ENGINE_JS.split("d.on('registered', () => {")[1].split("\n      });")[0]
+    assert "setStatus('ready'" in reg

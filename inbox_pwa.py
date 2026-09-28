@@ -620,6 +620,11 @@ def pwa_index():
         or os.environ.get("RENDER_GIT_COMMIT")
         or "20260908-lux-connect-2"
     )
+    try:
+        from services.receive_calls import receive_calls_enabled
+        receive_calls = receive_calls_enabled(user.id, company.id)
+    except Exception:
+        receive_calls = True
     return render_template(
         "inbox_pwa/index.html",
         user=user,
@@ -627,6 +632,7 @@ def pwa_index():
         vapid_public=vapid_public,
         vapid_missing=vapid_missing,
         pwa_version=pwa_version,
+        receive_calls=receive_calls,
     )
 
 

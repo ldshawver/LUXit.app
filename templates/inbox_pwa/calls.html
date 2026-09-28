@@ -7,6 +7,7 @@
   <meta name="theme-color" content="#0b0d14">
   <title>LUX Connect · Calls</title>
   <script src="/static/vendor/twilio-voice-sdk/2.18.3/twilio.min.js" defer></script>
+  <script src="/static/js/lux-voice.js?v={{ pwa_version }}"></script>
   <style>
     /* ── Canonical PWA theme tokens (shared with inbox_pwa/index.html) ──────
        The color-picker sets <html data-palette="…">; every accent below is a
@@ -380,7 +381,7 @@
       <button class="wifi-btn" id="enableVoice" onclick="retryVoiceRegistration()" hidden>
         <span class="dot" aria-hidden="true"></span><span id="enableVoiceLabel">Registration failed — Retry</span>
       </button>
-      <p class="mic-status" id="micStatus">Microphone permission is requested only when calls are turned on or you place a call.</p>
+      <p class="mic-status" id="micStatus">Microphone permission is requested only when you answer or place a call.</p>
       <a class="diag-link" href="/app/inbox?settings=devices">Device &amp; notification diagnostics</a>
     </div>
   </section>
@@ -399,17 +400,6 @@
   <div id="list" {% if dialer_mode %}hidden{% endif %}></div>
 </div>
 
-<div id="incoming" class="incoming" role="dialog" aria-modal="true" aria-hidden="true" aria-labelledby="incomingName">
-  <div class="small" id="incomingMode">Incoming call</div>
-  <h2 id="incomingName">Unknown caller</h2>
-  <div class="num" id="incomingNumber"></div>
-  <div class="call-controls">
-    <button class="round accept" onclick="acceptIncoming()" aria-label="Accept call"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6A19.79 19.79 0 0 1 2.12 4.18 2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72"/></svg></button>
-    <button class="round mute" onclick="toggleMute()" aria-label="Mute call"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg></button>
-    <button class="round vm" onclick="sendIncomingToVoicemail()" aria-label="Send to voicemail"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5.5" cy="12.5" r="3.5"/><circle cx="18.5" cy="12.5" r="3.5"/><path d="M5.5 16h13"/></svg></button>
-    <button class="round decline" onclick="declineIncoming()" aria-label="Decline call"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
-  </div>
-</div>
 {% include "inbox_pwa/_bottom_nav.html" %}
 <script>
 'use strict';
@@ -425,182 +415,27 @@ const DIALER_MODE = /\/app\/(phone|dial-pad)(\/|$)/.test(window.location.pathnam
 
 const CURRENT_USER_ID = Number('{{ user.id | default(0) }}') || 0;
 
-/* ── Voice SDK readiness ────────────────────────────────────────────────────
-   P0 fix (2026-09-11): the vendor SDK <script> is `defer`, which only runs
-   after the whole document has parsed — strictly AFTER this inline block
-   (parser-synchronous, no defer) starts running. The bootstrap chain below
-   (loadReceiveCalls() -> applyReceiveCalls() -> startVoiceRegistration() ->
-   initVoice()) used to check `voiceSdkCtor()` once, synchronously, with
-   nothing forcing it to wait for the deferred script. Whichever finishes
-   first wins: a fast /api/phone/receive-calls round-trip can beat a slow
-   SDK parse+eval (loaded mobile CPU, cold cache) and permanently fail
-   registration with SDK_MISSING (a terminal code — no auto-retry) even
-   though the script itself loads fine a moment later. Proven from prod
-   logs: twilio.min.js 200, SDK_MISSING logged in the same second.
-   Fix: one shared readiness Promise settled by the script's real load/error
-   event (never polled). initVoice() awaits it before touching the SDK
-   constructor; already-loaded is a zero-cost synchronous short-circuit, and
-   a bfcache restore (script never re-runs) short-circuits the same way
-   because window.Twilio is already set. */
-const voiceSdkScriptEl = document.querySelector('script[src^="/static/vendor/twilio-voice-sdk/"]');
-const voiceSdkReady = new Promise((resolve, reject) => {
-  if (voiceSdkCtor()) { resolve(true); return; }
-  voiceSdkScriptEl.addEventListener('load', () => resolve(true), {once: true});
-  voiceSdkScriptEl.addEventListener('error', () => reject(new Error('Voice SDK script failed to load.')), {once: true});
+/* ── Voice state is owned by the persistent Voice service ────────────────
+   static/js/lux-voice.js owns the Twilio Device lifecycle (Web Lock, token,
+   registration, reconnect, incoming calls, ringtone unlock) for EVERY PWA
+   page — Conversations and Settings included — so calls reach LUX Connect
+   wherever the user is. This page is a VIEW: it renders engine snapshots and
+   forwards user actions. It never creates, registers or destroys a Device.
+   Receive Calls / Communication Availability stay server-authoritative
+   (the engine loads them, applies SSE pushes, and tears down before any
+   token mint when OFF / Away). */
+const voiceEngine = LuxVoice.create({
+  userId: CURRENT_USER_ID,
+  companyId: Number('{{ company.id | default(0) }}') || 0,
+  receiveCalls: {{ 'true' if receive_calls else 'false' }},
+  csrf: document.querySelector('meta[name="csrf-token"]')?.content || '',
+  reportErrors: true,
 });
-async function waitForVoiceSdk() {
-  if (voiceSdkCtor()) return true;
-  try {
-    await Promise.race([
-      voiceSdkReady,
-      new Promise((_, reject) => setTimeout(() => reject(new Error('Voice SDK load timed out.')), 15000)),
-    ]);
-  } catch (_) { /* fall through to the uniform SDK_MISSING error below */ }
-  if (!voiceSdkCtor()) throw Object.assign(new Error('Calling SDK failed to load. Refresh the page or check your network connection.'), {voiceCode: 'SDK_MISSING'});
-  return true;
-}
+window.luxVoice = voiceEngine;
+LuxVoice.mountOverlay(voiceEngine, { inCallBar: !DIALER_MODE, statusChip: false });   // dialer has its own in-call controls; compact (Recents) view hides them
 
-/* ── Receive Calls ────────────────────────────────────────────────────────
-   Persisted per-user, per-tenant preference (UserCompanyAccess.receive_calls).
-   ON  = this PWA registers a Twilio.Device automatically once calling
-         prerequisites are ready and receives routed calls (over Wi-Fi OR
-         cellular data — the OS picks the path). No manual button every load.
-   OFF = the Device unregisters, no incoming calls are presented, and
-         server-side routing excludes this user. Voicemail / no-answer
-         fallback is unaffected.
-   Independent of Communication Availability — AWAY suppresses shared-call
-   attention without changing this preference. Server is authoritative; the
-   tenant SSE stream pushes admin changes. */
-const receiveCalls = { enabled: {{ 'true' if receive_calls else 'false' }}, loaded: false, busy: false };
-
-/* ── Communication Availability ('available' | 'away') ────────────────────
-   AWAY must fail BEFORE any voice-token mint / Device.register(), and must not
-   be recoverable by bfcache/visibility/re-init. Server authoritative; SSE
-   pushes admin changes. */
-const phoneAvailability = { state: 'available' };
-function isAway() { return phoneAvailability.state === 'away'; }
-
-/* Single predicate: may this browser hold a registered Twilio.Device now? */
-function shouldRegisterVoice() {
-  return receiveCalls.enabled && !isAway() && coord.supported;
-}
-
-function renderReceiveCallsToggle() {
-  const t = document.getElementById('receiveCallsToggle');
-  const lbl = document.getElementById('receiveCallsToggleLabel');
-  if (!t) return;
-  t.setAttribute('aria-checked', receiveCalls.enabled ? 'true' : 'false');
-  t.disabled = receiveCalls.busy;
-  if (lbl) lbl.textContent = receiveCalls.busy ? '…' : (receiveCalls.enabled ? 'On' : 'Off');
-}
-
-/* Persist ONCE, then converge this browser. */
-async function setReceiveCalls(next) {
-  const want = !!next;
-  if (receiveCalls.busy || want === receiveCalls.enabled) return;
-  receiveCalls.busy = true; renderReceiveCallsToggle();
-  try {
-    const body = await apiFetch('/api/phone/receive-calls', {
-      method: 'PUT', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ receive_calls: want }),
-    });
-    receiveCalls.busy = false;
-    applyReceiveCalls(body && typeof body.receive_calls === 'boolean' ? body.receive_calls : want, { force: true });
-  } catch (err) {
-    receiveCalls.busy = false; renderReceiveCallsToggle();
-    state(`Could not update Receive Calls — ${err.message}`, 'error');
-  }
-}
-
-function applyReceiveCalls(enabled, opts) {
-  receiveCalls.enabled = !!enabled;
-  receiveCalls.loaded = true;
-  renderReceiveCallsToggle();
-  coord._rendered = null;
-  if (!receiveCalls.enabled) {
-    voice.registered = false; voice.deviceState = 'none'; voice.initPromise = null;
-    teardownDevice();
-    releaseVoiceOwnership();
-    setPhase('idle');
-    setEnableState({ disabled: true });
-    els.enableVoice.hidden = true;
-    state('Calls disabled');
-    return;
-  }
-  // Enabled — bring this browser into agreement with the server preference.
-  if (isAway()) { applyPhoneAvailability('away'); return; }
-  if (!coord.supported) { renderVoiceRole(); return; }
-  if (DIALER_MODE) { acquireVoiceOwnership(); coordPost('owner-query'); }
-  if (document.body.dataset.phase === 'idle') state('Registering…');
-  // Turning Receive Calls ON is a material authoritative state change -> one
-  // controlled retry, past any backoff/terminal guard from a prior attempt.
-  startVoiceRegistration(opts && opts.force ? { force: true } : undefined);
-  renderVoiceRole();
-}
-
-async function loadReceiveCalls() {
-  try {
-    const body = await apiFetch('/api/phone/receive-calls');
-    if (body && typeof body.receive_calls === 'boolean') applyReceiveCalls(body.receive_calls);
-    else applyReceiveCalls(receiveCalls.enabled);
-  } catch (_) { applyReceiveCalls(receiveCalls.enabled); }
-}
-
-function retryVoiceRegistration() {
-  els.enableVoice.hidden = true;
-  clearVoiceFailure();                       // explicit user action bypasses the cooldown/backoff guard
-  if (!shouldRegisterVoice()) return;
-  state('Registering…');
-  startVoiceRegistration({ force: true });
-}
-
-async function setPhoneAvailability(next) {
-  try {
-    const body = await apiFetch('/api/phone/availability', {
-      method: 'PUT', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ state: next }),
-    });
-    if (body && body.state) applyPhoneAvailability(body.state, { force: true });
-    else state('Could not update Communication Availability.', 'error');
-  } catch (_) { state('Could not update Communication Availability.', 'error'); }
-}
-
-function applyPhoneAvailability(next, opts) {
-  phoneAvailability.state = (next === 'away') ? 'away' : 'available';
-  const sel = document.getElementById('availabilitySelect');
-  if (sel) sel.value = phoneAvailability.state;
-  const banner = document.getElementById('awayBanner');
-  coord._rendered = null;
-  if (phoneAvailability.state === 'away') {
-    if (banner) banner.hidden = false;
-    voice.registered = false;
-    voice.deviceState = 'none';
-    voice.initPromise = null;
-    teardownDevice();
-    releaseVoiceOwnership();              // give up any Voice ownership / queued lock
-    setPhase('idle');
-    setEnableState({ disabled: true });
-    els.enableVoice.hidden = true;
-    state("You're Away. Phone calls and communication notifications are paused.");
-  } else {
-    if (banner) banner.hidden = true;
-    if (!receiveCalls.enabled) { applyReceiveCalls(false); return; }
-    setEnableState({ disabled: true });
-    if (document.body.dataset.phase === 'idle') state('Registering…');
-    if (DIALER_MODE && coord.supported) { acquireVoiceOwnership(); coordPost('owner-query'); }
-    // Returning Available is a material authoritative state change -> one
-    // controlled retry, past any backoff/terminal guard from a prior attempt.
-    startVoiceRegistration(opts && opts.force ? { force: true } : undefined);
-    renderVoiceRole();
-  }
-}
-
-async function loadPhoneAvailability() {
-  try {
-    const body = await apiFetch('/api/phone/availability');
-    if (body && body.state) applyPhoneAvailability(body.state);
-  } catch (_) {}
-}
+/* View-local call UI state (timer + dial lookup). */
+const ui = { timer: null, startedAt: 0, lookupTimer: null, inCall: false, callPhase: 'idle', lastSnap: null };
 
 const els = {
   pageTitle: qs('pageTitle'),
@@ -623,289 +458,9 @@ const els = {
   micStatus: qs('micStatus'),
   settings: qs('settings'),
   tabs: qs('tabs'),
-  list: qs('list'),
-  incoming: qs('incoming'),
-  incomingMode: qs('incomingMode'),
-  incomingName: qs('incomingName'),
-  incomingNumber: qs('incomingNumber')
+  list: qs('list')
 };
 
-const voice = {
-  device: null,
-  registered: false,
-  deviceState: 'none',          // 'none' | 'registering' | 'registered'
-  initPromise: null,
-  pendingCall: null,
-  activeCall: null,
-  pendingCallLogId: null,
-  muted: false,
-  speakerOn: false,
-  eventSource: null,
-  lastIncomingKey: null,
-  actionPending: false,
-  outboundEnabled: null,
-  timer: null,
-  startedAt: 0,
-  /* Registration failure guard — stops visibilitychange/pageshow and the
-     bootstrap double-load from hammering /api/phone/voice-token after a failed
-     attempt. `failure.terminal` = a config/permission failure that will not
-     self-resolve (no automatic retry, explicit Retry only). A transient failure
-     sets `nextAttemptAt` to a bounded exponential-backoff deadline. An explicit
-     Retry or a material authoritative state change (Receive Calls / Available)
-     clears all of this and forces one controlled attempt. */
-  failure: null,          // { code, terminal, at } | null
-  backoffStep: 0,
-  nextAttemptAt: 0        // epoch ms; earliest permitted automatic attempt
-};
-
-/* Codes that will not fix themselves on a blind retry — surface Retry and wait
-   for the user or a real state change. Everything else is treated as transient
-   (network / Twilio edge / token endpoint hiccup) and uses bounded backoff. */
-const VOICE_TERMINAL_CODES = new Set([
-  'VOICE_UNSUPPORTED', 'SDK_MISSING', 'HTTPS_REQUIRED', 'SESSION_EXPIRED',
-  'DEVICE_NOT_REGISTERED', 'DEVICE_KEY_REQUIRED', 'DEVICE_NOT_FOUND',
-  'DEVICE_NOT_APPROVED', 'DEVICE_DISABLED', 'DEVICE_USER_MISMATCH',
-  'DEVICE_TENANT_MISMATCH', 'NO_ASSIGNED_NUMBER', 'MICROPHONE_BLOCKED',
-  'WEBRTC_UNSUPPORTED', 'CALLING_DISABLED'
-]);
-
-function clearVoiceFailure() {
-  voice.failure = null; voice.backoffStep = 0; voice.nextAttemptAt = 0;
-}
-
-/* Re-show the explicit "Registration failed — Retry" affordance WITHOUT
-   triggering another attempt. Used by the guards that decline an automatic
-   retry so the page never sits on a stale "Registering…". */
-function showRetryAffordance() {
-  if (!voice.failure) return;
-  setEnableState({ disabled: false, label: 'Registration failed — Retry' });
-  els.enableVoice.hidden = false;
-  if (document.body.dataset.phase !== 'ready') document.body.dataset.phase = 'error';
-}
-
-/* ── Single-active-voice-client coordination ──────────────────────────────
-   ONE authority for Twilio Voice ownership: an exclusive same-origin
-   Web Lock (VOICE_LOCK_NAME). A browsing context owns Voice for exactly as
-   long as its Web Lock callback is executing (its holding promise pending).
-   `coord.isOwner` is set true ONLY inside that callback and false the moment
-   the lock is released — so at most one context origin-wide is ever owner.
-
-   The lock is OS-managed: it is unaffected by background timer throttling,
-   it is released automatically when the context disappears (crash / close /
-   discard), and a queued request is granted FIFO only after the current
-   holder's promise resolves — there is never an overlap window.
-
-   BroadcastChannel + localStorage carry STATUS only (owner registration
-   state for passive UI, "Use Calling Here" transfer requests, diagnostics).
-   They can describe ownership; they can never grant it. There is no
-   heartbeat, no lease, no elapsed-time staleness check, no claim/vote and no
-   non-blocking availability probe — a losing tab QUEUES. If exclusive locking
-   is unavailable we FAIL CLOSED — Voice is simply not enabled (coord.supported).
-
-   Browser support (Web Locks API): Chrome/Edge 69+, Firefox 96+,
-   Safari 15.4+. Older browsers get "Wi-Fi Calling cannot be safely
-   enabled in this browser." rather than a race-prone fallback. */
-const VOICE_BUS_KEY   = 'luxit-voice-coord-v1';
-const VOICE_LOCK_NAME = 'luxit-voice-owner-v1';
-const VOICE_STATUS_KEY = 'luxit-voice-status-v1';   // localStorage status mirror (UI only)
-const TAKEOVER_TIMEOUT_MS = 6000;                   // give up *asking*; never steals
-const TAB_ID = (self.crypto?.randomUUID?.() || `tab-${Date.now()}-${Math.random().toString(16).slice(2)}`);
-
-const coord = {
-  supported: !!(navigator.locks && navigator.locks.request),
-  isOwner: false,               // true ONLY while our exclusive lock callback runs
-  lockHeld: false,
-  releaseLock: null,            // resolves the holding promise → releases the Web Lock
-  lockAbort: null,              // AbortController for a still-queued lock request
-  ownershipPromise: null,       // resolves(true) when we become owner, resolve(false) if we abandon the queue
-  wantsOwnership: false,        // user chose "Use Calling Here" on this tab
-  ownerRegistered: false,       // last-known registration state of the current owner (passive UI)
-  useHereBtn: null,
-  _rendered: null
-};
-
-const voiceBus = ('BroadcastChannel' in self) ? new BroadcastChannel(VOICE_BUS_KEY) : null;
-
-function coordPost(type, extra) {
-  const msg = Object.assign({ type, tabId: TAB_ID, ts: Date.now() }, extra || {});
-  try { voiceBus ? voiceBus.postMessage(msg) : localStorage.setItem(VOICE_BUS_KEY, JSON.stringify(msg)); } catch (_) {}
-  if (type === 'owner-changed') { try { localStorage.setItem(VOICE_STATUS_KEY, JSON.stringify(msg)); } catch (_) {} }
-}
-
-/* Queue for the exclusive lock. Resolves the outcome of THIS attempt:
-   true once our callback runs (we are owner), false if we abandon the queue.
-   Idempotent — repeated calls return the same in-flight promise. */
-function acquireVoiceOwnership() {
-  if (isAway()) return Promise.resolve(false);   // AWAY never becomes a Voice owner
-  if (coord.isOwner) return Promise.resolve(true);
-  if (!coord.supported) { renderVoiceRole(); return Promise.resolve(false); }
-  if (coord.ownershipPromise) return coord.ownershipPromise;
-
-  const ac = new AbortController();
-  coord.lockAbort = ac;
-  let settle;
-  coord.ownershipPromise = new Promise((res) => { settle = res; });
-
-  navigator.locks.request(VOICE_LOCK_NAME, { signal: ac.signal }, () => {
-    // We now EXCLUSIVELY hold the lock. This is the only place isOwner goes true.
-    coord.lockAbort = null;
-    coord.lockHeld = true;
-    coord.isOwner = true;
-    settle(true);
-    renderVoiceRole();
-    coordPost('owner-changed', { registered: voice.registered });
-    if (coord.wantsOwnership) { coord.wantsOwnership = false; startVoiceRegistration(); }
-    // Hold the lock for the entire ownership lifetime.
-    return new Promise((release) => { coord.releaseLock = release; });
-  }).catch(() => {
-    // AbortError (we cancelled the queued request) or a real failure → not owner.
-    // Fail closed: isOwner stays false; we never register without the lock.
-    coord.lockAbort = null;
-    coord.lockHeld = false;
-    settle(false);
-    renderVoiceRole();
-  });
-
-  return coord.ownershipPromise;
-}
-
-/* Give up Voice ownership: release the held lock, or cancel a queued request. */
-function releaseVoiceOwnership() {
-  coord.isOwner = false;
-  coord.ownerRegistered = false;
-  coord.ownershipPromise = null;
-  if (coord.lockAbort) { try { coord.lockAbort.abort(); } catch (_) {} coord.lockAbort = null; }
-  if (coord.releaseLock) { const r = coord.releaseLock; coord.releaseLock = null; coord.lockHeld = false; try { r(); } catch (_) {} }
-  renderVoiceRole();
-}
-
-function handleCoordMessage(msg) {
-  if (!msg || !msg.type || msg.tabId === TAB_ID) return;
-  switch (msg.type) {
-    case 'owner-query':
-      // A tab is asking who owns Voice; only the real lock holder answers.
-      if (coord.isOwner) coordPost('owner-changed', { registered: voice.registered });
-      break;
-    case 'owner-changed':
-      // STATUS ONLY — never touches isOwner / the lock.
-      if (!coord.isOwner) { coord.ownerRegistered = !!msg.registered; renderVoiceRole(); }
-      break;
-    case 'request-ownership':
-      // "Use Calling Here" from another tab. Only the current owner acts:
-      // tear the Device down, then release the lock so the requester's
-      // queued request is granted next (browser FIFO — no overlap).
-      if (coord.isOwner) {
-        coordPost('owner-changed', { registered: false });
-        teardownDevice();
-        releaseVoiceOwnership();
-      }
-      break;
-  }
-}
-voiceBus?.addEventListener('message', (e) => handleCoordMessage(e.data));
-window.addEventListener('storage', (e) => {
-  // localStorage-only status fallback for browsers without BroadcastChannel.
-  // Delivers STATUS ('owner-changed') and transfer requests — never ownership.
-  if (e.key === VOICE_BUS_KEY && e.newValue) { try { handleCoordMessage(JSON.parse(e.newValue)); } catch (_) {} }
-  else if (e.key === VOICE_STATUS_KEY && e.newValue && !coord.isOwner) {
-    try { const m = JSON.parse(e.newValue); coord.ownerRegistered = !!m.registered; renderVoiceRole(); } catch (_) {}
-  }
-});
-
-/* "Use Calling Here" — ask the current owner to hand off. Never steals:
-   we simply queue for the lock and request the owner release; our queued
-   callback fires only after the owner's promise resolves. */
-async function requestCallingHere() {
-  if (coord.isOwner) return;
-  if (!coord.supported) { renderVoiceRole(); return; }
-  coord.wantsOwnership = true;
-  acquireVoiceOwnership();                       // ensure we're in the lock queue
-  coordPost('request-ownership');
-  state('Moving calling to this window…');
-  setTimeout(() => {
-    if (!coord.isOwner && coord.wantsOwnership) {
-      coord.wantsOwnership = false;
-      renderVoiceRole();
-      state('Could not move calling here — the other window may be on a call. Try again.', 'error');
-    }
-  }, TAKEOVER_TIMEOUT_MS);
-}
-
-function ensureUseHereButton(show) {
-  if (show && !coord.useHereBtn) {
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'wifi-btn';
-    btn.id = 'useCallingHere';
-    btn.textContent = 'Use Calling Here';
-    btn.addEventListener('click', requestCallingHere);
-    els.enableVoice.insertAdjacentElement('afterend', btn);
-    coord.useHereBtn = btn;
-  } else if (!show && coord.useHereBtn) {
-    coord.useHereBtn.remove();
-    coord.useHereBtn = null;
-  }
-}
-
-function renderVoiceRole() {
-  if (!DIALER_MODE) return;
-  const sig = `${coord.supported}:${coord.isOwner}:${voice.registered}:${coord.ownerRegistered}:${!!voice.activeCall}:${receiveCalls.enabled}:${isAway()}`;
-  if (sig === coord._rendered) return;
-  coord._rendered = sig;
-
-  if (!receiveCalls.enabled) {
-    ensureUseHereButton(false);
-    els.enableVoice.hidden = true;
-    if (!voice.activeCall) { setPhase('idle'); state('Calls disabled'); }
-    return;
-  }
-  if (isAway()) {
-    ensureUseHereButton(false);
-    els.enableVoice.hidden = true;
-    if (!voice.activeCall) { setPhase('idle'); state("You're Away. Phone calls and communication notifications are paused."); }
-    return;
-  }
-  if (!coord.supported) {
-    ensureUseHereButton(false);
-    delete els.enableVoice.dataset.passive;
-    els.enableVoice.hidden = true;
-    if (!voice.activeCall) { setPhase('idle'); state('Calling cannot be safely enabled in this browser.', 'error'); }
-    return;
-  }
-  if (coord.isOwner) {
-    ensureUseHereButton(false);
-    delete els.enableVoice.dataset.passive;
-    if (!voice.registered && !voice.activeCall && document.body.dataset.phase !== 'error') {
-      if (document.body.dataset.phase === 'idle') state('Registering…');
-    }
-    return;
-  }
-  // passive — another LUX Connect window holds the exclusive Voice lock.
-  ensureUseHereButton(true);
-  els.enableVoice.dataset.passive = '1';
-  els.enableVoice.hidden = true;
-  if (!voice.activeCall) {
-    setPhase('idle');
-    state(coord.ownerRegistered
-      ? 'Calling is active in another LUX Connect window.'
-      : 'Another LUX Connect window controls calling.', '');
-  }
-}
-
-/* Fully retire a Twilio.Device: listeners, in-flight media, registration. */
-function teardownDevice() {
-  const dev = voice.device;
-  voice.device = null;
-  voice.registered = false;
-  voice.deviceState = 'none';
-  voice.initPromise = null;
-  if (dev) {
-    try { dev.removeAllListeners?.(); } catch (_) {}
-    try { dev.disconnectAll?.(); } catch (_) {}
-    try { dev.unregister?.(); } catch (_) {}
-    try { dev.destroy?.(); } catch (_) {}
-  }
-}
 
 function applyPalette(name) {
   const palette = name || localStorage.getItem('luxitPwaPalette') || 'lux';
@@ -936,18 +491,18 @@ function setEnableState({disabled = false, label = null} = {}) {
 }
 
 function startTimer() {
-  if (voice.timer) return;               // already running for this call
-  voice.startedAt = Date.now();
+  if (ui.timer) return;               // already running for this call
+  ui.startedAt = Date.now();
   els.callTimer.hidden = false;
   const tick = () => {
-    const s = Math.floor((Date.now() - voice.startedAt) / 1000);
+    const s = Math.floor((Date.now() - ui.startedAt) / 1000);
     els.callTimer.textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
   };
   tick();
-  voice.timer = setInterval(tick, 1000);
+  ui.timer = setInterval(tick, 1000);
 }
 function stopTimer() {
-  if (voice.timer) { clearInterval(voice.timer); voice.timer = null; }
+  if (ui.timer) { clearInterval(ui.timer); ui.timer = null; }
   if (els.callTimer) els.callTimer.hidden = true;
 }
 
@@ -976,16 +531,13 @@ function refreshDial() {
   els.dialDisplay.textContent = n ? formatNumber(n) : '';
   els.btnBackspace.hidden = !n;
   const digits = n.replace(/\D/g, '').length;
-  els.btnCall.disabled = digits < 3 || !!voice.activeCall;
-  clearTimeout(voice._lookupTimer);
-  if (digits >= 3) voice._lookupTimer = setTimeout(dialLookup, 280);
+  els.btnCall.disabled = digits < 3 || ui.inCall;
+  clearTimeout(ui.lookupTimer);
+  if (digits >= 3) ui.lookupTimer = setTimeout(dialLookup, 280);
   else els.dialHint.textContent = '';
 }
 function appendDigit(d) {
-  if (voice.activeCall && voice.activeCall.sendDigits && /[0-9*#]/.test(d)) {
-    try { voice.activeCall.sendDigits(d); } catch (_) {}
-    return;
-  }
+  if (ui.inCall && /[0-9*#]/.test(d)) { voiceEngine.sendDigits(d); return; }
   setRawNumber(rawNumber() + d);
 }
 function dialBackspace() { setRawNumber(rawNumber().slice(0, -1)); }
@@ -1173,120 +725,6 @@ async function saveGreeting() {
   catch (error) { state(`Could not save greeting: ${error.message}`, 'error'); }
 }
 
-/* ── Call lifecycle ───────────────────────────────────────────────────── */
-function callIdFromInvite(call) {
-  try { return call?.customParameters?.get('call_log_id') || call?.parameters?.call_log_id || voice.pendingCallLogId; }
-  catch (_) { return voice.pendingCallLogId; }
-}
-function incomingKey(data, call) { return data.call_id || callIdFromInvite(call) || data.call_sid || `${data.from_number || ''}:${data.to_number || ''}`; }
-
-function showIncoming(data, call = null) {
-  const key = incomingKey(data, call);
-  if (key && voice.lastIncomingKey === key && !call) return;
-  voice.lastIncomingKey = key;
-  if (call) voice.pendingCall = call;
-  voice.pendingCallLogId = data.call_id || callIdFromInvite(call);
-  els.incomingMode.textContent = call ? 'Incoming browser call' : 'Incoming call notification';
-  els.incomingName.textContent = data.caller_name || data.from_number || 'Unknown caller';
-  els.incomingNumber.textContent = data.from_number || '';
-  els.incoming.classList.add('show');
-  els.incoming.setAttribute('aria-hidden', 'false');
-  document.body.dataset.phase = 'incoming';
-  state(`Incoming call — ${data.caller_name || data.from_number || 'Unknown'}`);
-  if (!DIALER_MODE) load();
-}
-function hideIncoming() { els.incoming.classList.remove('show'); els.incoming.setAttribute('aria-hidden', 'true'); }
-
-async function markCall(action, callRef = null) {
-  const id = callIdFromInvite(callRef || voice.pendingCall || voice.activeCall);
-  if (!id) return;
-  await apiFetch(`/api/calls/${encodeURIComponent(id)}/${encodeURIComponent(action)}`, {method: 'POST'});
-}
-
-function resetCallState(message = 'Ready', className = 'ok') {
-  voice.pendingCall = null; voice.activeCall = null; voice.pendingCallLogId = null;
-  voice.muted = false; voice.speakerOn = false; voice.actionPending = false;
-  els.btnMute.classList.remove('is-active'); els.btnMute.setAttribute('aria-pressed', 'false');
-  els.btnSpeaker.classList.remove('is-active'); els.btnSpeaker.setAttribute('aria-pressed', 'false');
-  hideIncoming();
-  setPhase(voice.registered ? 'ready' : 'idle');
-  state(message, className);
-  refreshDial();
-  if (!DIALER_MODE) load();
-}
-
-function bindCallEvents(call) {
-  if (!call?.on) return;
-  call.on('accept', () => { setPhase('connected'); startTimer(); state('Call connected', 'ok'); });
-  call.on('disconnect', () => resetCallState('Call ended'));
-  call.on('cancel', () => resetCallState('Caller canceled'));
-  call.on('reject', () => resetCallState('Call declined'));
-  call.on('error', (error) => { voiceError('CALL_FAILED', `Call error: ${error.message || 'Unknown error'}`, error); resetCallState('Call failed', 'error'); });
-}
-
-async function acceptIncoming() {
-  if (voice.actionPending) return;
-  const call = voice.pendingCall;
-  if (!call) { state('This notification is not an active browser call.', 'error'); return; }
-  voice.actionPending = true;
-  try {
-    await ensureMicReady();
-    setPhase('connecting'); state('Connecting…');
-    call.accept();
-    voice.activeCall = call; voice.pendingCall = null;
-    await markCall('accept', call);
-    hideIncoming();
-    setPhase('connected'); startTimer(); state('Call connected', 'ok');
-  } catch (error) { voiceError(error.voiceCode || 'CALL_FAILED', `Could not answer: ${error.message}`, error); }
-  finally { voice.actionPending = false; }
-}
-async function declineIncoming() {
-  if (voice.actionPending) return;
-  const call = voice.pendingCall;
-  voice.actionPending = true;
-  try { if (call?.reject) call.reject(); await markCall('decline', call); resetCallState('Call declined'); }
-  catch (error) { voiceError('CALL_FAILED', `Could not decline call: ${error.message}`, error); }
-}
-async function sendIncomingToVoicemail() {
-  if (voice.actionPending) return;
-  const call = voice.pendingCall;
-  voice.actionPending = true;
-  try { if (call?.reject) call.reject(); await markCall('voicemail', call); resetCallState('Sent to voicemail'); }
-  catch (error) { voiceError('CALL_FAILED', `Could not send to voicemail: ${error.message}`, error); }
-}
-async function endCall() {
-  const call = voice.activeCall || voice.pendingCall;
-  if (!call) { state('No active call.'); return; }
-  try {
-    if (voice.activeCall?.disconnect) voice.activeCall.disconnect();
-    else if (voice.pendingCall?.reject) voice.pendingCall.reject();
-    await markCall('end', call);
-    resetCallState('Call ended');
-  } catch (error) { voiceError('CALL_FAILED', `Could not end call: ${error.message}`, error); }
-}
-function toggleMute() {
-  if (!voice.activeCall?.mute) { state('No connected call to mute.', 'error'); return; }
-  voice.muted = !voice.muted;
-  voice.activeCall.mute(voice.muted);
-  els.btnMute.classList.toggle('is-active', voice.muted);
-  els.btnMute.setAttribute('aria-pressed', String(voice.muted));
-  setPhase(voice.muted ? 'muted' : 'connected');
-  document.body.dataset.phase = voice.muted ? 'muted' : 'connected';
-  state(voice.muted ? 'Muted' : 'Call unmuted', 'ok');
-}
-function toggleSpeaker() {
-  const audio = voice.device?.audio;
-  if (!audio?.speakerDevices || !audio.isOutputSelectionSupported) { state('Speaker selection is not supported on this device.', 'error'); return; }
-  try {
-    voice.speakerOn = !voice.speakerOn;
-    audio.speakerDevices.set(voice.speakerOn ? 'default' : (audio.availableOutputDevices.keys().next().value || 'default'));
-    els.btnSpeaker.classList.toggle('is-active', voice.speakerOn);
-    els.btnSpeaker.setAttribute('aria-pressed', String(voice.speakerOn));
-    state(voice.speakerOn ? 'Speaker on' : 'Speaker off', 'ok');
-  } catch (error) { state(`Could not switch audio output: ${error.message}`, 'error'); }
-}
-
-function voiceSdkCtor() { return window.Twilio?.Device || window.Twilio?.Voice?.Device || null; }
 
 let callerIdsLoaded = false;
 async function loadCallerIds() {
@@ -1317,259 +755,133 @@ async function loadCallerIds() {
   }
 }
 
-async function ensureMicReady() {
-  if (!navigator.mediaDevices?.getUserMedia) throw Object.assign(new Error('WebRTC microphone capture is not supported in this browser.'), {voiceCode: 'WEBRTC_UNSUPPORTED'});
-  try { const stream = await navigator.mediaDevices.getUserMedia({audio: true}); stream.getTracks().forEach((t) => t.stop()); }
-  catch (error) { throw Object.assign(error, {voiceCode: ['NotAllowedError', 'SecurityError'].includes(error.name) ? 'MICROPHONE_BLOCKED' : 'MICROPHONE_FAILED'}); }
+/* ── Render engine state ──────────────────────────────────────────────── */
+function renderReceiveCallsToggle(s) {
+  const t = document.getElementById('receiveCallsToggle');
+  const lbl = document.getElementById('receiveCallsToggleLabel');
+  if (!t) return;
+  t.setAttribute('aria-checked', s.receiveCalls ? 'true' : 'false');
+  t.disabled = !!ui.toggleBusy;
+  if (lbl) lbl.textContent = ui.toggleBusy ? '…' : (s.receiveCalls ? 'On' : 'Off');
 }
 
-async function readVoiceToken() {
-  const key = localStorage.getItem('luxitPwaDeviceKey') || '';
-  const url = `/api/phone/voice-token${key ? `?device_key=${encodeURIComponent(key)}` : ''}`;
-  const response = await fetch(url, {cache: 'no-store', credentials: 'same-origin', headers: {'Accept': 'application/json', 'X-PWA-Device-Key': key}});
-  const type = response.headers.get('content-type') || '';
-  if (!type.includes('application/json')) throw Object.assign(new Error(`Voice token endpoint returned ${response.status} ${type || 'non-JSON response'}.`), {voiceCode: 'TOKEN_ENDPOINT_FAILED'});
-  const body = await response.json();
-  if (!response.ok || !body.success) {
-    const error = new Error(body.error || `Voice token endpoint failed (${response.status}).`);
-    error.voiceCode = body.code || (response.status === 401 ? 'SESSION_EXPIRED' : 'TOKEN_ENDPOINT_FAILED');
-    throw error;
-  }
-  return body;
+function ensureUseHereButton(show) {
+  let btn = document.getElementById('useCallingHere');
+  if (show && !btn) {
+    btn = document.createElement('button');
+    btn.type = 'button'; btn.className = 'wifi-btn'; btn.id = 'useCallingHere'; btn.textContent = 'Use Calling Here';
+    btn.addEventListener('click', () => voiceEngine.requestCallingHere());
+    els.enableVoice.insertAdjacentElement('afterend', btn);
+  } else if (!show && btn) btn.remove();
 }
 
-function voiceError(code, message, detail) {
-  console.error('Browser voice setup failed', code, detail?.message || message);
-  const safeMessage = String(message || '').slice(0, 500);
-  apiFetch('/api/phone/voice-client-error', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({code: String(code || 'UNKNOWN').slice(0, 80), message: safeMessage, detail: String(detail?.message || '').slice(0, 500)})}).catch(() => {});
-  document.body.dataset.phase = 'error';
-  state(safeMessage, 'error');
+/* Truthful status line — 'Ready' only while the SDK Device is registered. */
+function voiceStatusText(s) {
+  switch (s.status) {
+    case 'loading': return ['Loading calling settings…', ''];
+    case 'off': return ['Calls disabled', ''];
+    case 'away': return ["You're Away. Phone calls and communication notifications are paused.", ''];
+    case 'unsupported': return ['Calling cannot be safely enabled in this browser.', 'error'];
+    case 'passive': return [s.detail || 'Another LUX Connect window controls calling.', ''];
+    case 'connecting': return ['Connecting…', ''];
+    case 'reconnecting': return [s.offline ? 'Offline — reconnecting when the network returns…' : 'Reconnecting…', ''];
+    case 'unavailable': return [s.detail || 'Phone unavailable.', 'error'];
+    case 'ready': return [`Ready — ${s.callingNumber || ''}${s.audioLocked ? ' · tap anywhere to enable the ringtone' : ''}`, 'ok'];
+    default: return ['', ''];
+  }
 }
 
-async function initVoice() {
-  if (!receiveCalls.enabled) {           // Receive Calls OFF — never register
-    throw Object.assign(new Error('Calls disabled'), {voiceCode: 'CALLING_DISABLED'});
-  }
-  if (isAway()) {                        // AWAY fails before token mint / Device.register()
-    const err = Object.assign(new Error("You're Away. Phone calls are paused."), {voiceCode: 'PHONE_AWAY'});
-    throw err;
-  }
-  if (voice.registered && voice.device && voice.deviceState === 'registered') return voice.device;
-  if (voice.initPromise) return voice.initPromise;                 // single-flight within the owner
-  if (!coord.supported) {
-    const err = Object.assign(new Error('Calling cannot be safely enabled in this browser.'), {voiceCode: 'VOICE_UNSUPPORTED'});
-    voiceError('VOICE_UNSUPPORTED', err.message, err);
-    throw err;
-  }
-  // Ordering invariant: exclusive lock → coord.isOwner → token → new Device → register.
-  // If we are not already the lock holder, wait BRIEFLY for the queued request
-  // to be granted (a free lock grants within a microtask). We NEVER steal — if
-  // another context holds it, this resolves false and we refuse.
-  if (!coord.isOwner) {
-    await Promise.race([acquireVoiceOwnership(), new Promise((r) => setTimeout(() => r(false), 400))]);
-  }
-  if (!coord.isOwner) {
-    // Passive tab — another LUX Connect window owns Voice. Not an error: renderVoiceRole
-    // already shows "Calling active in another window". Only surface it loudly
-    // for an explicit user action (placing a call).
-    const blocked = Object.assign(new Error('Calling is active in another LUX Connect window.'), {voiceCode: 'VOICE_ACTIVE_ELSEWHERE'});
-    renderVoiceRole();
-    throw blocked;
-  }
-  voice.initPromise = (async () => {
-    try {
-      await waitForVoiceSdk();          // deterministic — never a synchronous one-shot check
-      const Device = voiceSdkCtor();
-      if (location.protocol !== 'https:' && !['localhost', '127.0.0.1'].includes(location.hostname)) throw Object.assign(new Error('Browser calling requires HTTPS.'), {voiceCode: 'HTTPS_REQUIRED'});
-      if (!callerIdsLoaded) { try { await loadCallerIds(); } catch (_) {} }   // don't race auto-register against the number list
-      if (!els.callerId.value) throw Object.assign(new Error('No authorized calling number is available.'), {voiceCode: 'NO_ASSIGNED_NUMBER'});
+function renderVoice(s) {
+  ui.lastSnap = s;
+  const wasInCall = ui.inCall;
+  ui.inCall = s.callPhase === 'connecting' || s.callPhase === 'active';
+  renderReceiveCallsToggle(s);
+  const sel = document.getElementById('availabilitySelect');
+  if (sel) sel.value = s.availability;
+  const banner = document.getElementById('awayBanner');
+  if (banner) banner.hidden = s.availability !== 'away';
+  ensureUseHereButton(s.status === 'passive');
+  els.enableVoice.hidden = s.status !== 'unavailable';
+  setEnableState({ disabled: s.status !== 'unavailable', label: 'Registration failed — Retry' });
+  if (els.btnSpeaker) els.btnSpeaker.hidden = !(voiceEngine.device?.audio?.isOutputSelectionSupported);
+  els.btnMute.classList.toggle('is-active', !!s.muted);
+  els.btnMute.setAttribute('aria-pressed', String(!!s.muted));
 
-      setEnableState({disabled: true});
-      document.body.dataset.phase = 'permission';
-      state('Requesting microphone permission…');
-      await ensureMicReady();
-      els.micStatus.textContent = 'Microphone permission granted.';
-
-      state('Requesting secure voice token…');
-      const body = await readVoiceToken();
-      if (!body.calling_number) throw Object.assign(new Error('No calling number assigned.'), {voiceCode: 'NO_ASSIGNED_NUMBER'});
-      voice.outboundEnabled = body.outbound_enabled;
-
-      teardownDevice();                       // retire any prior Device (listeners, media, registration) before building one
-      voice.deviceState = 'registering';
-      // enableIceRestart: a live call must survive a real network handover
-      // (Wi-Fi<->cellular) without dropping -- without this the SDK will not
-      // attempt to re-negotiate ICE candidates when the network path changes
-      // mid-call, so an active call is likely to freeze/drop on handover.
-      voice.device = new Device(body.token, {logLevel: 1, codecPreferences: ['opus', 'pcmu'], enableIceRestart: true});
-      voice.device.on('registered', () => {
-        clearVoiceFailure();
-        voice.registered = true;
-        voice.deviceState = 'registered';
-        coordPost('owner-changed', {registered: true});
-        setEnableState({disabled: true});
-        els.enableVoice.hidden = true;
-        setPhase('ready');
-        state(`Ready — ${body.calling_number}`, 'ok');
-        if (els.btnSpeaker && voice.device?.audio?.isOutputSelectionSupported) els.btnSpeaker.hidden = false;
-      });
-      voice.device.on('unregistered', () => {
-        voice.registered = false; voice.deviceState = 'none';
-        if (coord.isOwner) coordPost('owner-changed', {registered: false});
-        setEnableState({disabled: true});
-        setPhase('idle');
-        // An unregister while Receive Calls is still ON and we're Available and
-        // own the lock is unexpected — re-register rather than sit idle.
-        if (shouldRegisterVoice() && coord.isOwner && !voice.activeCall) {
-          state('Registering…');
-          startVoiceRegistration();
-        } else {
-          state(receiveCalls.enabled ? 'Calling paused' : 'Calls disabled');
-        }
-      });
-      voice.device.on('error', (error) => voiceError('TWILIO_REGISTRATION_FAILED', `Twilio registration failed: ${error.message || 'Unknown error'}`, error));
-      voice.device.on('incoming', (call) => {
-        const params = call.customParameters;
-        bindCallEvents(call);
-        showIncoming({call_id: params?.get('call_log_id'), call_sid: params?.get('call_sid'), from_number: params?.get('from_number'), caller_name: params?.get('caller_name')}, call);
-      });
-      voice.device.on('tokenWillExpire', async () => { try { const fresh = await readVoiceToken(); await voice.device.updateToken(fresh.token); } catch (error) { voiceError(error.voiceCode || 'TOKEN_ENDPOINT_FAILED', `Could not refresh voice token: ${error.message}`, error); } });
-
-      state('Registering browser phone…');
-      await voice.device.register();
-      return voice.device;
-    } catch (error) {
-      voice.deviceState = 'none';
-      const code = error.voiceCode || 'TWILIO_REGISTRATION_FAILED';
-      // Passive tab / disabled / away are normal states, not failures — no
-      // error banner, no Retry button.
-      if (['VOICE_ACTIVE_ELSEWHERE', 'CALLING_DISABLED', 'PHONE_AWAY'].includes(code)) {
-        renderVoiceRole();
-        throw error;
-      }
-      const messages = {
-        VOICE_UNSUPPORTED: 'Calling cannot be safely enabled in this browser.',
-        SDK_MISSING: 'Calling SDK failed to load. Refresh the page or check your network connection.',
-        HTTPS_REQUIRED: 'Browser calling requires HTTPS.',
-        SESSION_EXPIRED: 'Your session expired. Sign in again.',
-        DEVICE_KEY_REQUIRED: 'Register this device to receive calls.',
-        DEVICE_NOT_FOUND: 'This browser is not registered as an approved device.',
-        DEVICE_NOT_APPROVED: 'This device is awaiting administrator approval.',
-        DEVICE_DISABLED: 'This device has been disabled.',
-        DEVICE_USER_MISMATCH: 'This device belongs to a different user.',
-        DEVICE_TENANT_MISMATCH: 'This device belongs to a different company.',
-        TOKEN_ENDPOINT_FAILED: 'Could not reach the voice token endpoint. Please sign in again or contact support.',
-        MICROPHONE_BLOCKED: 'Microphone permission is blocked. Allow microphone access to receive calls.',
-        MICROPHONE_FAILED: 'Microphone is unavailable. Check your browser audio settings.',
-        WEBRTC_UNSUPPORTED: 'WebRTC calling is not supported in this browser.',
-        NO_ASSIGNED_NUMBER: 'No authorized calling number is assigned.',
-        TWILIO_REGISTRATION_FAILED: `Registration failed — ${error.message}`
-      };
-      els.micStatus.textContent = ['MICROPHONE_BLOCKED', 'MICROPHONE_FAILED'].includes(code) ? 'Permission required — allow microphone access in browser settings.' : 'Microphone permission is requested only when calls are turned on or you place a call.';
-      // Record the failure so visibilitychange/pageshow and the bootstrap
-      // double-load cannot immediately re-attempt. Terminal codes get no
-      // automatic retry (explicit Retry only); transient codes get a bounded
-      // exponential backoff (2s, 4s, 8s … capped at 60s).
-      const terminal = VOICE_TERMINAL_CODES.has(code);
-      voice.failure = { code, terminal, at: Date.now() };
-      if (terminal) {
-        voice.nextAttemptAt = Number.POSITIVE_INFINITY;
-      } else {
-        voice.backoffStep = Math.min(voice.backoffStep + 1, 5);
-        voice.nextAttemptAt = Date.now() + Math.min(2000 * (2 ** (voice.backoffStep - 1)), 60000);
-      }
-      // Show the explicit "Registration failed — Retry" affordance.
-      setEnableState({disabled: false, label: 'Registration failed — Retry'});
-      els.enableVoice.hidden = false;
-      voiceError(code, messages[code] || `Registration failed — ${error.message}`, error);
-      throw error;
-    } finally { voice.initPromise = null; }
-  })();
-  return voice.initPromise;
-}
-
-/* Bring this browser to a registered Twilio.Device when it should be (Receive
-   Calls ON + Available + supported + this tab owns the Web Lock). Safe to call
-   repeatedly — initVoice() is single-flight. Never requires a user gesture
-   beyond the one-time microphone permission. */
-async function startVoiceRegistration(opts) {
-  opts = opts || {};
-  if (!shouldRegisterVoice()) return;
-  if (voice.initPromise) return voice.initPromise;   // single-flight — never a second concurrent mint
-  if (voiceIsLive()) return;                         // already registered on this owner
-  if (!opts.force) {
-    // A recorded failure gates automatic retries. `force` (explicit Retry or a
-    // material authoritative state change) is the only bypass. Terminal =>
-    // never auto-retry; transient => wait out the bounded backoff window.
-    if (voice.failure && voice.failure.terminal) { showRetryAffordance(); return; }
-    if (voice.nextAttemptAt && Date.now() < voice.nextAttemptAt) { showRetryAffordance(); return; }
+  if (s.callPhase === 'active') {
+    setPhase(s.muted ? 'muted' : 'connected');
+    startTimer();
+    state(s.muted ? 'Muted' : 'Call connected', 'ok');
+  } else if (s.callPhase === 'connecting') {
+    setPhase('connecting');
+    state(s.call?.direction === 'outbound' ? `Connecting to ${formatNumber(s.call.from)}…` : 'Connecting…');
+  } else if (s.callPhase === 'incoming') {
+    document.body.dataset.phase = 'incoming';
+    state(`Incoming call — ${s.call?.name || s.call?.from || 'Unknown'}`);
   } else {
-    clearVoiceFailure();
+    setPhase(s.status === 'ready' ? 'ready' : (s.status === 'unavailable' ? 'error' : 'idle'));
+    const [text, cls] = voiceStatusText(s);
+    state(text, cls);
   }
-  try { await initVoice(); } catch (_) { /* initVoice already rendered the state */ }
+  if (wasInCall && !ui.inCall && !DIALER_MODE) load();
+  if (wasInCall !== ui.inCall) refreshDial();
+}
+
+function retryVoiceRegistration() { voiceEngine.retry(); }
+
+async function setReceiveCalls(next) {
+  if (ui.toggleBusy) return;
+  ui.toggleBusy = true; if (ui.lastSnap) renderReceiveCallsToggle(ui.lastSnap);
+  try { await voiceEngine.setReceiveCalls(next); }
+  catch (err) { state(`Could not update Receive Calls — ${err.message}`, 'error'); }
+  finally { ui.toggleBusy = false; renderVoice(voiceEngine.snapshot()); }
+}
+
+async function setPhoneAvailability(next) {
+  try { await voiceEngine.setAvailability(next); }
+  catch (_) { state('Could not update Communication Availability.', 'error'); }
+}
+
+/* ── Call actions (all delegate to the engine) ──────────────────────────── */
+function endCall() { if (!voiceEngine.hangup()) state('No active call.'); }
+function toggleMute() { if (!ui.inCall) { state('No connected call to mute.', 'error'); return; } voiceEngine.toggleMute(); }
+function toggleSpeaker() {
+  const audio = voiceEngine.device?.audio;
+  if (!audio?.speakerDevices || !audio.isOutputSelectionSupported) { state('Speaker selection is not supported on this device.', 'error'); return; }
+  try {
+    ui.speakerOn = !ui.speakerOn;
+    audio.speakerDevices.set(ui.speakerOn ? 'default' : (audio.availableOutputDevices.keys().next().value || 'default'));
+    els.btnSpeaker.classList.toggle('is-active', ui.speakerOn);
+    els.btnSpeaker.setAttribute('aria-pressed', String(ui.speakerOn));
+    state(ui.speakerOn ? 'Speaker on' : 'Speaker off', 'ok');
+  } catch (error) { state(`Could not switch audio output: ${error.message}`, 'error'); }
 }
 
 async function placeWifiCall() {
-  if (!receiveCalls.enabled) { state('Turn on Receive Calls to place calls from LUX Connect.', 'error'); return; }
-  if (isAway()) { state("You're Away. Set yourself Available to make calls.", 'error'); return; }
   const destination = rawNumber().trim();
   if (!destination) { state('Enter a phone number.', 'error'); return; }
   if (!els.callerId.value) { state('Select an authorized company caller ID.', 'error'); return; }
-  if (voice.activeCall) { state('A call is already active.', 'error'); return; }
-  if (!coord.supported) { renderVoiceRole(); return; }
-  if (!coord.isOwner) {
-    await Promise.race([acquireVoiceOwnership(), new Promise((r) => setTimeout(() => r(false), 400))]);
+  try { await voiceEngine.placeCall(destination, els.callerId.value); }
+  catch (error) {
+    const msg = error.voiceCode === 'MICROPHONE_BLOCKED' ? 'Microphone access is blocked — allow it in Settings to place calls.' : error.message;
+    state(`Call failed: ${msg}`, 'error');
   }
-  if (!coord.isOwner) { renderVoiceRole(); state('Calling is active in another LUX Connect window — choose “Use Calling Here” first.', 'error'); return; }
-  try {
-    const device = await initVoice();
-    if (voice.outboundEnabled === false) {
-      state('Outbound calling isn’t enabled in this environment yet. Incoming calls still work.', 'error');
-      return;
-    }
-    setPhase('connecting');
-    state(`Connecting to ${formatNumber(destination)}…`);
-    const call = await device.connect({params: {To: destination, phone_number_id: els.callerId.value}});
-    voice.activeCall = call;
-    voice.muted = false;
-    bindCallEvents(call);
-  } catch (error) { voiceError(error.voiceCode || 'CALL_FAILED', `Call failed: ${error.message}`, error); resetCallState('Call failed', 'error'); }
 }
 
+
+/* Tenant SSE: forward authoritative preference pushes to the engine. An
+   incoming_call event is only a hint — the registered Device presents the
+   real call (with ringtone) through the shared overlay. */
 function connectInboxStream() {
   if (!window.EventSource) return;
-  voice.eventSource = new EventSource('/api/inbox/stream');
-  voice.eventSource.onmessage = (event) => {
-    try {
-      const data = JSON.parse(event.data);
-      if (data.type === 'phone_availability') {
-        if (Number(data.user_id) === CURRENT_USER_ID) applyPhoneAvailability(data.state, { force: true });
-        return;
-      }
-      if (data.type === 'receive_calls') {
-        if (Number(data.user_id) === CURRENT_USER_ID
-            && typeof data.receive_calls === 'boolean'
-            && data.receive_calls !== receiveCalls.enabled) {
-          applyReceiveCalls(data.receive_calls, { force: true });
-        }
-        return;
-      }
-      if (data.type === 'incoming_call' && !isAway() && receiveCalls.enabled) showIncoming(data);
-    }
+  const es = new EventSource('/api/inbox/stream');
+  es.onmessage = (event) => {
+    try { voiceEngine.handleServerEvent(JSON.parse(event.data)); }
     catch (error) { console.warn('Invalid inbox stream event', error); }
   };
-  voice.eventSource.onerror = () => { if (!voice.registered) state('Notification stream reconnecting…'); };
+  window.addEventListener('pagehide', () => { try { es.close(); } catch (_) {} });
 }
 
-function cleanupVoice() {
-  try { voice.eventSource?.close(); } catch (_) {}
-  if (coord.isOwner) coordPost('owner-changed', {registered: false, gone: true});
-  teardownDevice();
-  releaseVoiceOwnership();           // release the held lock / cancel the queued request
-  stopTimer();
-  // The browser also auto-releases the Web Lock when this context is destroyed,
-  // so a crash / discard / hard-close recovers without this handler running.
-}
+
 
 /* ── Wiring ──────────────────────────────────────────────────────────── */
 els.dialer.dataset.view = DIALER_MODE ? 'full' : 'compact';
@@ -1603,7 +915,7 @@ document.addEventListener('keydown', (event) => {
   if (/^[0-9*#]$/.test(event.key)) { appendDigit(event.key); event.preventDefault(); }
   else if (event.key === '+') { appendDigit('+'); event.preventDefault(); }
   else if (event.key === 'Backspace') { dialBackspace(); event.preventDefault(); }
-  else if (event.key === 'Enter' && !voice.activeCall) { placeWifiCall(); event.preventDefault(); }
+  else if (event.key === 'Enter' && !ui.inCall) { placeWifiCall(); event.preventDefault(); }
 });
 document.addEventListener('paste', (event) => {
   if (!DIALER_MODE) return;
@@ -1627,50 +939,6 @@ document.querySelectorAll('.tab').forEach((tab) => {
 });
 els.tabs.setAttribute('role', 'tablist');
 
-window.addEventListener('pagehide', cleanupVoice);
-window.addEventListener('beforeunload', cleanupVoice);   // best-effort; the browser auto-releases the Web Lock on context loss regardless
-
-/* Ready must ALWAYS reflect the live Twilio Device lifecycle — never a prior
-   session. A page restored from the back/forward cache keeps its last-painted
-   DOM ("Ready — …") and JS heap, but pagehide already tore the Device down and
-   released the Web Lock. So on restore, re-derive the UI from live state and,
-   for a genuine bfcache restore, re-run the full acquire→token→Device→register
-   lifecycle once (initVoice is single-flight — one token mint, never a loop). */
-function voiceIsLive() {
-  return coord.isOwner && voice.registered && !!voice.device
-      && (voice.device.state ? voice.device.state === 'registered' : voice.deviceState === 'registered');
-}
-function resyncVoiceUi(reinit) {
-  if (voice.activeCall || voiceIsLive()) return;
-  if (isAway()) { applyPhoneAvailability('away'); return; }   // bfcache/visibility must not re-register while Away
-  if (!receiveCalls.enabled) { applyReceiveCalls(false); return; }
-  // A recorded registration failure survives tab focus / bfcache restore.
-  // visibilitychange/pageshow must NOT silently re-attempt — keep the explicit
-  // Retry affordance. Only Retry or a material authoritative state change
-  // (which force past this) may drive a fresh attempt.
-  if (voice.failure && (voice.failure.terminal || (voice.nextAttemptAt && Date.now() < voice.nextAttemptAt))) {
-    showRetryAffordance();
-    return;
-  }
-  const wasOwner = coord.isOwner;
-  teardownDevice();                       // retire any stale Device object (no-op if already gone)
-  coord._rendered = null;                 // force renderVoiceRole to repaint
-  setPhase('idle');
-  els.enableVoice.hidden = true;
-  setEnableState({ disabled: true });
-  state(coord.supported ? 'Registering…' : 'Calling cannot be safely enabled in this browser.',
-    coord.supported ? '' : 'error');
-  if (DIALER_MODE && coord.supported) {
-    acquireVoiceOwnership();
-    coordPost('owner-query');
-    startVoiceRegistration();             // Receive Calls ON + Available → always re-register (no manual step)
-    return;
-  }
-  renderVoiceRole();
-}
-window.addEventListener('pageshow', (e) => { if (e.persisted) resyncVoiceUi(true); });
-document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') resyncVoiceUi(false); });
-
 /* ── Init ── Phone controls come up as soon as the authenticated user/company
    context exists (server-rendered). Do NOT wait for window.load or any
    unrelated resource: caller-ID + calling settings load immediately and in
@@ -1690,15 +958,12 @@ refreshDial();
 
 document.getElementById('availabilitySelect')?.addEventListener('change', (e) => setPhoneAvailability(e.target.value));
 document.getElementById('receiveCallsToggle')?.addEventListener('click', () => {
-  if (!receiveCalls.busy) setReceiveCalls(!receiveCalls.enabled);
+  if (!ui.toggleBusy) setReceiveCalls(!voiceEngine.snapshot().receiveCalls);
 });
-renderReceiveCallsToggle();
 
-if (DIALER_MODE && coord.supported) { acquireVoiceOwnership(); coordPost('owner-query'); }
-
-// Phone controls, in parallel, from the authenticated context that already exists:
+voiceEngine.subscribe(renderVoice);
 loadCallerIds();
-loadReceiveCalls().then(loadPhoneAvailability);   // server-authoritative; then converge registration
+voiceEngine.boot();                       // server-authoritative prefs → lock → token → Device → register
 
 connectInboxStream();
 if (!DIALER_MODE) load();

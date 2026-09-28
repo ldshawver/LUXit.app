@@ -28,6 +28,8 @@ from services.phone_availability import (AVAILABLE, AWAY, available_user_ids,
                                          AvailabilityError)
 
 CALLS_HTML = (Path(__file__).resolve().parents[1] / "templates/inbox_pwa/calls.html").read_text()
+ENGINE_JS = (Path(__file__).resolve().parents[1] / "static" / "js" / "lux-voice.js").read_text()
+
 TWILIO_SMS = (Path(__file__).resolve().parents[1] / "twilio_sms.py").read_text()
 INBOX_PWA = (Path(__file__).resolve().parents[1] / "inbox_pwa.py").read_text()
 
@@ -266,17 +268,19 @@ def test_comms_notification_suppressed_for_away_but_record_persists(app_ctx):
 # ── client contract (calls.html) ─────────────────────────────────────────── #
 
 def test_calls_template_fails_closed_while_away():
-    assert "function isAway()" in CALLS_HTML
-    assert "if (isAway()) return Promise.resolve(false);" in CALLS_HTML       # acquireVoiceOwnership
-    assert "voiceCode: 'PHONE_AWAY'" in CALLS_HTML                            # initVoice throws
-    assert "if (isAway()) { applyPhoneAvailability('away'); return; }" in CALLS_HTML  # resyncVoiceUi
-    assert "data.type === 'phone_availability'" in CALLS_HTML                 # SSE apply
-    assert "loadPhoneAvailability" in CALLS_HTML                              # fetched on init
-    # registration is gated so an Away user never registers
-    assert "function shouldRegisterVoice()" in CALLS_HTML and "!isAway()" in CALLS_HTML
-    # teardown on Away
-    block = CALLS_HTML.split("function applyPhoneAvailability")[1].split("async function loadPhoneAvailability")[0]
-    assert "teardownDevice();" in block and "releaseVoiceOwnership();" in block
+    # Phone P0: Away gating lives in the persistent Voice service used by
+    # every PWA page (calls.html + index.html are views of it).
+    e = ENGINE_JS
+    assert "function shouldRegister() { return st.receiveCalls && st.availability !== 'away' && st.lockSupported; }" in e
+    acq = e.split("function acquireOwnership()")[1].split("\n    }\n")[0]
+    assert "if (!shouldRegister()) return Promise.resolve(false);" in acq    # Away never queues for the lock
+    assert "if (!shouldRegister()) return Promise.resolve();" in e            # ensureRegistered gate before token
+    assert "data.type === 'phone_availability' && Number(data.user_id) === opts.userId" in e  # SSE apply
+    assert "apiJson('/api/phone/availability')" in e                         # fetched on boot
+    conv = e.split("function converge(o)")[1].split("\n    }\n")[0]
+    assert "goQuiet('away'" in conv
+    gq = e.split("function goQuiet(status, detail)")[1].split("\n    }\n")[0]
+    assert "teardownDevice(status);" in gq and "releaseOwnership();" in gq
 
 
 def test_server_gates_present():

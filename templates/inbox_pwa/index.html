@@ -708,6 +708,10 @@
     }
     .compose-picker-btn:hover { border-color: var(--brand); color: var(--brand-l); }
   </style>
+  <!-- Persistent Voice service: this page registers LUX Connect Phone too, so
+       incoming calls reach the PWA on Conversations/Settings, not only Phone. -->
+  <script src="/static/vendor/twilio-voice-sdk/2.18.3/twilio.min.js" defer></script>
+  <script src="/static/js/lux-voice.js?v={{ pwa_version }}"></script>
 </head>
 <body>
 
@@ -1875,6 +1879,8 @@ function connectSSE() {
 const _ATTENTION_SSE = ['new_message','incoming_sms','sms','incoming_call','missed_call','voicemail','unread_message_reminder'];
 
 function handleSSEEvent(data) {
+  // Receive Calls / Availability pushes also converge the persistent Voice service.
+  window.luxVoice?.handleServerEvent(data);
   if (data.type === 'phone_availability') {
     if (Number(data.user_id) === CURRENT_USER_ID) applyCommsAvailability(data.state);
     return;
@@ -1904,7 +1910,10 @@ function handleSSEEvent(data) {
       refreshMessages(data.conversation_id);
     }
   } else if (['incoming_call', 'missed_call', 'voicemail', 'unread_message_reminder'].includes(data.type)) {
-    if (!data.silent) {
+    // A registered Device rings the real call (SDK ringtone + shared overlay);
+    // don't layer the short notification chime on top of it.
+    const deviceRings = data.type === 'incoming_call' && window.luxVoice?.snapshot().status === 'ready';
+    if (!data.silent && !deviceRings) {
       vibrateIfEnabled([120, 60, 120]);
       playSound(data.type + '-' + (data.call_id || data.id || data.call_sid || Date.now()));
     }
@@ -3389,6 +3398,22 @@ function toast(msg, type = '') {
   el.className   = `show ${type}`;
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => { el.className = ''; }, 3000);
+}
+
+/* ── LUX Connect Phone: persistent Voice service ─────────────────────
+   Same engine as the Phone page (static/js/lux-voice.js). Registers the
+   browser for incoming calls here too and presents them in the shared
+   overlay; Receive Calls OFF / Away keep it fully torn down. */
+if (window.LuxVoice) {
+  window.luxVoice = LuxVoice.create({
+    userId: CURRENT_USER_ID,
+    companyId: Number('{{ company.id | default(0) }}') || 0,
+    receiveCalls: {{ 'true' if receive_calls else 'false' }},
+    csrf: CSRF,
+    reportErrors: true,
+  });
+  LuxVoice.mountOverlay(window.luxVoice, { inCallBar: true, statusChip: true });
+  window.luxVoice.boot();
 }
 </script>
 </body>
