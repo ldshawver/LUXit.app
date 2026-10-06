@@ -52,6 +52,12 @@ WHERE c.do_not_email
   AND c.email_consent_status = 'unsubscribed'
   AND c.marketing_preferences_source IS NULL
   AND c.marketing_preferences_updated_at IS NULL
+  -- is_subscribed is also the legacy SMS gate: never restore it (or touch the
+  -- row at all) once any SMS STOP / opt-out evidence exists on the contact.
+  AND NOT c.do_not_sms
+  AND NOT c.sms_opted_out
+  AND c.sms_opt_out_at IS NULL
+  AND coalesce(c.tags, '') !~* 'sms_opt_out'
   AND NOT EXISTS (
         SELECT 1 FROM marketing_audit_log a
         WHERE a.entity_type = 'contact' AND a.entity_id = c.id
@@ -65,7 +71,7 @@ WHERE c.do_not_email
           AND NOT d.do_not_email AND NOT d.email_unsubscribed
           AND d.merged_at >= '2026-08-30 03:00' AND d.merged_at < '2026-08-30 03:01');
 
-SELECT id, company_id, email, is_subscribed, pre_is_subscribed FROM repair_rows ORDER BY id;
+SELECT id, company_id, (email IS NOT NULL) AS has_email, is_subscribed, pre_is_subscribed FROM repair_rows ORDER BY id;
 
 DO $$
 BEGIN
