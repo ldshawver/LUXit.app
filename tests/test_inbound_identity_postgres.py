@@ -285,7 +285,11 @@ def test_sms_recipient_nulls_preserved_and_provider_history_lossless(pg_app):
         ({"email_opt_in": True}, {"email_unsubscribed": True, "email_consent_status": "unknown"}, "unsubscribed"),
         ({"email_consent_status": "opted_out"}, {"email_consent_status": "opted_in"}, "unsubscribed"),
         ({"email_consent_status": "unsubscribed"}, {"email_consent_status": "opted_in"}, "unsubscribed"),
-        ({"email_consent_status": "unknown"}, {"is_subscribed": False}, "unsubscribed"),
+        # Legacy newsletter flag (Google import default / SMS STOP) is not an
+        # email opt-out and must not be escalated by a merge.
+        ({"email_consent_status": "unknown"}, {"is_subscribed": False}, "unknown"),
+        ({"email_consent_status": "unknown", "is_subscribed": False}, {"is_subscribed": False}, "unknown"),
+        ({"is_subscribed": False}, {"email_subscribed": False}, "unsubscribed"),
         ({"email_consent_status": "unknown"}, {"email_consent_status": "opted_in"}, "opted_in"),
         ({"email_consent_status": "opted_in"}, {"email_consent_status": "opted_in"}, "opted_in"),
         ({"email_consent_status": "unknown"}, {"email_consent_status": "unknown"}, "unknown"),

@@ -18,7 +18,7 @@ from models import (
     Campaign, Company, Contact, SMSCampaign, SMSRecipient,
     MarketingAuditLog, SMSAutoReplyRule, SMSKeywordRule, SocialPost, TwilioAccount, user_company,
 )
-from services.contact_consent import has_explicit_email_opt_out
+from services.contact_consent import has_explicit_email_opt_out, has_sms_opt_out, suppression_badges
 
 marketing_api_bp = Blueprint("marketing_api", __name__, url_prefix="/api/marketing")
 
@@ -878,13 +878,7 @@ def _segment_json(s, include_rules=True):
 
 
 def _suppression_badges(c):
-    badges = []
-    if c.do_not_market: badges.append("Do Not Market")
-    if c.do_not_email: badges.append("Do Not Email")
-    if c.do_not_sms: badges.append("Do Not SMS")
-    if c.sms_opted_out or c.sms_opt_out_at: badges.append("SMS Opted Out")
-    if c.email_unsubscribed or not c.is_subscribed: badges.append("Email Unsubscribed")
-    return badges
+    return suppression_badges(c)
 
 
 def _contact_json(c, membership=None):
@@ -892,7 +886,7 @@ def _contact_json(c, membership=None):
     resolved = resolve_contact_identity(c.company_id, contact_id=c.id, allow_enrichment=True)
     data = {"id": c.id, "email": c.email, "phone": c.phone, "first_name": c.first_name, "last_name": c.last_name,
             "do_not_market": c.do_not_market, "do_not_email": c.do_not_email, "do_not_sms": c.do_not_sms,
-            "email_unsubscribed": c.email_unsubscribed or not c.is_subscribed, "sms_opted_out": c.sms_opted_out or bool(c.sms_opt_out_at),
+            "email_unsubscribed": "Email Unsubscribed" in suppression_badges(c), "sms_opted_out": has_sms_opt_out(c),
             "suppression_badges": _suppression_badges(c), **resolved.as_dict()}
     if membership:
         data["membership"] = {"source": membership.source, "added_by_user_id": membership.added_by_user_id,

@@ -5,6 +5,7 @@ Handles synchronization between contacts and newsletter subscribers
 import logging
 from datetime import datetime
 from models import db, Contact
+from services.contact_consent import apply_email_opt_out
 
 logger = logging.getLogger(__name__)
 
@@ -129,7 +130,10 @@ class SubscriberSyncService:
             if not contact:
                 return {'success': False, 'error': 'Contact not found'}
             
-            contact.is_subscribed = False
+            # Canonical opt-out: is_subscribed alone is not email suppression.
+            apply_email_opt_out(contact)
+            contact.marketing_preferences_source = 'operator_unsubscribe'
+            contact.marketing_preferences_updated_at = datetime.utcnow()
             contact.unsubscribed_at = datetime.utcnow()
             
             db.session.commit()

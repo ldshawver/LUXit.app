@@ -11,7 +11,7 @@ from flask_login import login_required, current_user
 from sqlalchemy import or_, case, text, func
 from sqlalchemy.exc import IntegrityError
 from extensions import db, csrf
-from services.contact_consent import has_explicit_email_opt_out
+from services.contact_consent import has_explicit_email_opt_out, has_sms_opt_out, suppression_badges
 try:
     from models import (
         Contact, Campaign, EmailTemplate, CampaignRecipient, EmailTracking,
@@ -2393,7 +2393,7 @@ def _segment_detail_metrics(segment):
     active_members = [m for m in memberships if not m.removed_at and not m.is_excluded]
     excluded_members = [m for m in memberships if m.is_excluded]
     contacts = [m.contact for m in active_members if m.contact and m.contact.company_id == segment.company_id]
-    suppressed = [c for c in contacts if c.do_not_market or has_explicit_email_opt_out(c) or c.do_not_sms or c.sms_opted_out or c.sms_opt_out_at]
+    suppressed = [c for c in contacts if suppression_badges(c)]
     email_eligible = [c for c in contacts if c.email and not c.do_not_market and not has_explicit_email_opt_out(c)]
     sms_eligible = [c for c in contacts if c.phone and not c.do_not_market and not c.do_not_sms and not c.sms_opted_out and not c.sms_opt_out_at]
     return {
@@ -2425,13 +2425,10 @@ def _segment_member_view(member):
     }
     badges = [source_badges.get(source, source.replace("_", " ").title())]
     if contact:
-        if contact.do_not_market or contact.do_not_email or contact.do_not_sms or contact.email_unsubscribed or contact.sms_opted_out or contact.sms_opt_out_at or not contact.is_subscribed:
+        channel_badges = suppression_badges(contact)
+        if channel_badges:
             badges.append("Suppressed")
-        if contact.do_not_market: badges.append("Do Not Market")
-        if contact.do_not_email: badges.append("Do Not Email")
-        if contact.do_not_sms: badges.append("Do Not SMS")
-        if contact.sms_opted_out or contact.sms_opt_out_at: badges.append("SMS Opted Out")
-        if contact.email_unsubscribed or not contact.is_subscribed: badges.append("Email Unsubscribed")
+        badges.extend(channel_badges)
     return {"membership": member, "contact": contact, "badges": badges}
 
 
