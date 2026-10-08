@@ -742,6 +742,7 @@ test('second incoming call while busy: rejected to voicemail, current call untou
   assert.equal(s.phase, 'connected'); assert.equal(s.call.callSid, 'CA6');
   assert.equal(first.disconnected, 0);
   assert.deepEqual([s.notice.kind, s.notice.name], ['missed-busy', 'Second']);
+  assert.equal(tab.sdk.created[0].options.allowIncomingWhileBusy, true, 'SDK must deliver the busy invite so it can be rejected at once');
   p.engine.dismissNotice();
   assert.equal(p.engine.snapshot().notice, null);
 });

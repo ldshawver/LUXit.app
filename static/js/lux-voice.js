@@ -444,8 +444,13 @@
       // enableIceRestart: a live call survives a Wi-Fi<->cellular handover.
       // sounds.incoming: same-origin ringtone (SW/HTTP cached) instead of the
       // SDK's sdk.twilio.com default, fetched at ring time with a 2 s budget.
+      // allowIncomingWhileBusy: the SDK default (false) silently swallows a
+      // second invite during a call, so that caller rings out the full Dial
+      // timeout (25 s on staging) before voicemail and the user never knows.
+      // Receiving it lets onIncoming() reject at once and notify the user.
       const d = new Device(token, {
         logLevel: 1, codecPreferences: ['opus', 'pcmu'], enableIceRestart: true,
+        allowIncomingWhileBusy: true,
         sounds: { incoming: RINGTONE_URL },
       });
       st.device = d;
