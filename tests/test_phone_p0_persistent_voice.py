@@ -264,3 +264,21 @@ def test_no_eligible_client_goes_straight_to_voicemail(app, monkeypatch, open_si
     assert "<Client>" not in twiml
     assert "<Record" in twiml or "<Play" in twiml or "<Say" in twiml
 
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node not installed")
+@pytest.mark.parametrize("path", ["/app/inbox", "/app/phone", "/app/recents"])
+def test_rendered_pwa_inline_scripts_are_valid_javascript(app, path, tmp_path):
+    """String-level template tests cannot see a JS syntax error, and one
+    such error leaves the phone stuck on "Starting phone…" (no engine boot).
+    Render the real page and parse every inline <script> with node."""
+    co, ta, pn = _tenant(); u = _user(co, pn); db.session.commit()
+    c = app.test_client(); _login(c, u)
+    html = c.get(path).get_data(as_text=True)
+    scripts = re.findall(r"<script>(.*?)</script>", html, re.S)
+    assert scripts, path
+    for i, js in enumerate(scripts):
+        f = tmp_path / f"inline_{i}.js"
+        f.write_text(js)
+        r = subprocess.run(["node", "--check", str(f)], capture_output=True, text=True, timeout=60)
+        assert r.returncode == 0, f"{path} inline script #{i}: {r.stderr[:400]}"
