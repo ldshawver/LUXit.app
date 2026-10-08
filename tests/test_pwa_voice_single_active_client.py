@@ -146,8 +146,8 @@ def test_passive_tab_shows_active_elsewhere_and_use_calling_here(engine, html):
     assert "Calling is active in another LUX Connect window." in engine
     assert "setStatus('passive'" in engine
     assert "function requestCallingHere()" in engine
-    assert "ensureUseHereButton(s.status === 'passive');" in html
-    assert "els.enableVoice.hidden = s.status !== 'unavailable';" in html
+    assert "ensureUseHereButton(s.phase === 'passive');" in html
+    assert "els.enableVoice.hidden = s.phase !== 'error'" in html
 
 
 def test_status_channels_cannot_grant_ownership(engine):
@@ -206,8 +206,11 @@ def test_initvoice_single_flight_and_device_teardown(engine, html):
 # ------------------------------------------------------------------------- #
 
 def test_ready_string_only_emitted_from_the_registered_event(engine, html):
-    assert "case 'ready': return [`Ready — ${s.callingNumber || ''}" in html
-    assert html.count("Ready —") == 1, "the view prints Ready only for engine status 'ready'"
+    assert "case 'ready': return 'Ready to receive calls';" in html
+    assert html.count("Ready to receive calls") == 1, "the view prints Ready only for engine phase 'ready'"
+    # the phase itself demands a live registration + network, not just the status word
+    derive = _fn(engine, "function derivePhase()")
+    assert "if (isRegistered() && !st.offline) return 'ready';" in derive
     reg = _fn(engine, "d.on('registered', () =>")
     assert "setStatus('ready'" in reg
     assert "setItem('luxit-voice-ready" not in engine + html
@@ -368,7 +371,7 @@ def test_both_dialer_aliases_carry_the_lock_coordinator(app, path):
     client = app.test_client()
     _login(client, uid)
     body = client.get(path).get_data(as_text=True)
-    assert 'id="btnCall"' in body and 'id="btnMute"' in body and 'id="btnHangup"' in body
+    assert 'id="btnCall"' in body and "LuxVoice.mountOverlay(voiceEngine" in body
     assert 'id="callerId"' in body and 'id="enableVoice"' in body and 'data-digit=' in body
     assert "/static/js/lux-voice.js" in body and "LuxVoice.create(" in body
     assert "voiceEngine.boot();" in body

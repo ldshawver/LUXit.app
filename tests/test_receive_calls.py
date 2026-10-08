@@ -353,8 +353,8 @@ def test_client_auto_registers_and_has_explicit_states():
     # no manual "Enable Wi-Fi Calling" button label
     assert "Enable Wi-Fi Calling" not in CALLS_HTML
     # explicit deterministic, truthful states (Phone P0 view of the engine)
-    for s in ("Loading calling settings…", "Connecting…", "Reconnecting…", "Calls disabled",
-              "Registration failed — Retry", "Ready —"):
+    for s in ("Starting phone…", "Connecting phone…", "Reconnecting…", "Receive Calls is off",
+              "Phone unavailable", "Reconnect phone", "Ready to receive calls"):
         assert s in CALLS_HTML
     # auto-register on boot when it should (server prefs first, then converge)
     assert "voiceEngine.boot();" in CALLS_HTML

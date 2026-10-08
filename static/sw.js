@@ -173,8 +173,16 @@ self.addEventListener('push', e => {
 self.addEventListener('notificationclick', e => {
   e.notification.close();
   const url = (e.notification.data && e.notification.data.url) || '/app/inbox';
+  const focusOnly = !!(e.notification.data && e.notification.data.focusOnly);
   e.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then(list => {
+      // Incoming-call notification: the ringing call lives in an existing
+      // LUX Connect window — focus it. Navigating would end that document
+      // (and the call with it).
+      if (focusOnly) {
+        const live = list.find(c => c.url.includes('/app/'));
+        if (live) return live.focus();
+      }
       for (const c of list) {
         if (c.url.includes('/app/inbox')) { c.focus(); c.navigate(url); return; }
       }

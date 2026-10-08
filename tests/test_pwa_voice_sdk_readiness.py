@@ -115,5 +115,6 @@ def test_mic_permission_is_not_part_of_registration(engine):
     registration. SDK_MISSING keeps its own distinct copy."""
     assert "ensureMic" not in _fn(engine, "function ensureRegistered(reason, o)")
     assert "MICROPHONE_BLOCKED" not in re.search(r"const TERMINAL_CODES = new Set\(\[(.*?)\]\);", engine, re.S).group(1)
-    assert "Microphone access is blocked" in _fn(engine, "async function accept()")
+    assert "kind: 'mic-blocked', context: 'answer'" in _fn(engine, "async function accept()")
+    assert "Microphone is blocked" in engine and "MIC_HELP" in engine
     assert "SDK_MISSING: 'Calling SDK failed to load." in engine

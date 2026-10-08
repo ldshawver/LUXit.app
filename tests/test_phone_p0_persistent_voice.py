@@ -84,10 +84,15 @@ def test_registration_never_requests_the_microphone():
     assert "getUserMedia" not in _fn_body(ENGINE_JS, "function ensureRegistered(")
     assert "ensureMic" not in _fn_body(ENGINE_JS, "function ensureRegistered(")
     assert "ensureMic" not in _fn_body(ENGINE_JS, "function buildDevice(")
+    # Only the three user-gesture entry points may touch the microphone:
+    # Answer, Call, and the explicit "Allow / Try again" microphone button.
     callers = {m.start() for m in re.finditer(r"await ensureMic\(\)", ENGINE_JS)}
-    assert len(callers) == 2
+    assert len(callers) == 3
     assert "await ensureMic()" in _fn_body(ENGINE_JS, "async function accept(")
     assert "await ensureMic()" in _fn_body(ENGINE_JS, "async function placeCall(")
+    assert "await ensureMic()" in _fn_body(ENGINE_JS, "async function requestMicrophone(")
+    for path in ("async function boot(", "function converge(", "function onVisible(", "function armSlowRetry("):
+        assert "ensureMic" not in _fn_body(ENGINE_JS, path) and "getUserMedia" not in _fn_body(ENGINE_JS, path)
 
 
 def test_sdk_reconnect_is_not_fought_on_unregistered():

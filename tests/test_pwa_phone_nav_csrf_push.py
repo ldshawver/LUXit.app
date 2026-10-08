@@ -96,8 +96,12 @@ def test_dialer_has_number_display_and_backspace_and_call_control():
 
 def test_dialer_preserves_mute_hangup_callerid_and_wifi_registration():
     html = CALLS.read_text()
-    assert 'id="btnMute"' in html and "function toggleMute(" in html
-    assert 'id="btnHangup"' in html and "function endCall(" in html
+    # In-call controls moved to the shared full-screen call screen (every page):
+    # large persistent End, Mute/Unmute, Keypad (DTMF), Audio where supported.
+    assert "LuxVoice.mountOverlay(voiceEngine" in html and "function endCall(" in html
+    assert 'data-lv-act="hangup" aria-label="End call"' in ENGINE_JS
+    assert 'data-lv-act="mute"' in ENGINE_JS and 'data-lv-act="keypad"' in ENGINE_JS and 'data-lv-act="audio"' in ENGINE_JS
+    assert "engine.sendDigits(d)" in ENGINE_JS
     assert 'id="callerId"' in html
     assert 'id="receiveCallsToggle"' in html and "async function setReceiveCalls(" in html
     assert 'id="enableVoice"' in html and "function retryVoiceRegistration()" in html
@@ -115,7 +119,9 @@ def test_dialer_uses_theme_tokens_not_a_hardcoded_accent():
     # themed via the canonical palette tokens
     assert "var(--pwa-primary)" in dialer_css
     assert "var(--pwa-success)" in dialer_css   # semantic call colour
-    assert "var(--pwa-danger)" in dialer_css    # semantic hang-up colour
+    # hang-up red now lives on the shared call screen; the status pill keeps
+    # the semantic danger token for the error phase
+    assert "var(--pwa-danger)" in html
     # no raw brand hex slipped into the dialer rules (contrast #fff / shade #000 ok)
     stray = [h for h in re.findall(r"#[0-9a-fA-F]{3,8}\b", dialer_css)
              if h.lower() not in ("#fff", "#000", "#ffffff", "#000000")]

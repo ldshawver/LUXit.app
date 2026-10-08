@@ -81,9 +81,10 @@ function makeSdk() {
       this.customParameters = new Map(Object.entries(params));
       this.accepted = 0; this.rejected = 0; this.disconnected = 0; this.muted = false;
     }
-    accept() { this.accepted++; this.emit('accept', this); }
-    reject() { this.rejected++; this.emit('reject'); }
-    disconnect() { this.disconnected++; this.emit('disconnect', this); }
+    status() { return this._status || 'pending'; }
+    accept() { this.accepted++; this._status = 'open'; this.emit('accept', this); }
+    reject() { this.rejected++; this._status = 'closed'; this.emit('reject'); }
+    disconnect() { this.disconnected++; this._status = 'closed'; this.emit('disconnect', this); }
     mute(m) { this.muted = m; }
   }
   class FakeDevice extends Emitter {
@@ -172,15 +173,16 @@ function makeTab(o) {
     if (method === 'POST') { calls.posts.push(url); return json(200, { success: true }); }
     return json(200, {});
   };
-  function openPage(extra) {
+  function openPage(extra, page) {
+    page = page || {};
     const win = makeTarget(); const doc = makeTarget(); doc.visibilityState = 'visible';
-    const nav = { locks, onLine: true, mediaDevices: { getUserMedia: async () => ({ getTracks: () => [{ stop() {} }] }) } };
-    const env = {
+    const nav = Object.assign({ locks, onLine: true, mediaDevices: { getUserMedia: async () => ({ getTracks: () => [{ stop() {} }] }) } }, page.nav || {});
+    const env = Object.assign({
       window: win, document: doc, navigator: nav, fetch,
       setTimeout: clock.setTimeout, clearTimeout: clock.clearTimeout, now: clock.now, random: () => 0.5,
       session, local, BroadcastChannel: null, tabId: `doc-${Math.random()}`,
       deviceCtor: () => sdk.FakeDevice, sdkReady: async () => true, confirm: () => true,
-    };
+    }, page.env || {});
     const engine = LuxVoice.create(Object.assign({ userId: 1, companyId: 1, receiveCalls: true, csrf: 't', env }, extra || {}));
     return { engine, win, doc, nav, env };
   }
@@ -331,18 +333,47 @@ test('resume (visibilitychange) with a live registration does nothing', async ()
   assert.equal(tab.calls.token, 1);
 });
 
-test('bounded backoff: repeated failures stop after the cap (no infinite loop)', async () => {
+test('bounded backoff: fast retries stop at the cap, then ONE quiet attempt per SLOW_RETRY_MS, self-heals without a tap', async () => {
   const tab = makeTab({ server: { tokenStatus: 503, tokenCode: 'TOKEN_ENDPOINT_FAILED' } });
   const p = tab.openPage();
   await p.engine.boot();
-  await tab.clock.advance(60 * 60 * 1000);
+  await tab.clock.advance(5 * 60 * 1000);              // fast backoff fully spent (2+4+8+…+60 s ≈ 4 min)
   assert.equal(p.engine.snapshot().status, 'unavailable');
+  assert.equal(p.engine.snapshot().phase, 'error');
   assert.ok(tab.calls.token <= LuxVoice.constants.MAX_AUTO_ATTEMPTS + 1, `token attempts ${tab.calls.token}`);
   const before = tab.calls.token;
-  await tab.clock.advance(60 * 60 * 1000);
-  assert.equal(tab.calls.token, before, 'no further automatic attempts');
+  await tab.clock.advance(60 * 60 * 1000);             // one hour of a dead token service
+  const slow = tab.calls.token - before;
+  assert.ok(slow <= Math.ceil(3600000 / LuxVoice.constants.SLOW_RETRY_MS), `slow attempts ${slow} — bounded, no storm`);
+  assert.ok(slow >= 1, 'keeps trying quietly instead of stranding the user');
+  tab.server.tokenStatus = 200;                        // service comes back; NO user action
+  await tab.clock.advance(LuxVoice.constants.SLOW_RETRY_MS + 10);
+  assert.equal(p.engine.snapshot().phase, 'ready');
+  assert.equal(tab.sdk.created.filter((d) => !d.destroyed).length, 1, 'exactly one live Device after recovery');
+});
+
+test('slow retry pauses while the page is hidden; resume retries immediately', async () => {
+  const tab = makeTab({ server: { tokenStatus: 503, tokenCode: 'TOKEN_ENDPOINT_FAILED' } });
+  const p = tab.openPage();
+  await p.engine.boot();
+  await tab.clock.advance(5 * 60 * 1000);
+  p.doc.visibilityState = 'hidden';
+  const before = tab.calls.token;
+  await tab.clock.advance(30 * 60 * 1000);
+  assert.equal(tab.calls.token, before, 'no token requests from a background page');
   tab.server.tokenStatus = 200;
-  p.engine.retry();                                    // explicit Retry recovers
+  p.doc.visibilityState = 'visible'; p.doc.dispatch('visibilitychange');
+  await tab.clock.advance(10);
+  assert.equal(p.engine.snapshot().phase, 'ready');
+});
+
+test('explicit Reconnect (diagnostic) still recovers at once', async () => {
+  const tab = makeTab({ server: { tokenStatus: 503, tokenCode: 'TOKEN_ENDPOINT_FAILED' } });
+  const p = tab.openPage();
+  await p.engine.boot();
+  await tab.clock.advance(5 * 60 * 1000);
+  tab.server.tokenStatus = 200;
+  p.engine.retry();
   await tab.clock.advance(10);
   assert.equal(p.engine.snapshot().status, 'ready');
 });
@@ -613,4 +644,257 @@ test('brief offline blip where the SDK stayed registered returns to Ready on onl
   assert.equal(p.engine.snapshot().status, 'ready');
   assert.equal(tab.sdk.created.length, 1);
   assert.equal(tab.calls.token, 1);
+});
+
+
+/* ───────────── Phone reliability + native-like UX (2026-10-08) ───────────── */
+
+test('state machine: initializing → registering → ready → incoming → connecting → connected → ended → ready', async () => {
+  const tab = makeTab();
+  tab.sdk.FakeDevice.autoRegister = false;
+  const p = tab.openPage();
+  assert.equal(p.engine.snapshot().phase, 'initializing');
+  await p.engine.boot();
+  await tab.clock.advance(10);
+  assert.equal(p.engine.snapshot().phase, 'registering');
+  tab.sdk.created[0].sdkReconnects();                  // SDK 'registered'
+  assert.equal(p.engine.snapshot().phase, 'ready');
+  const call = tab.sdk.created[0].invite('CA1');
+  assert.equal(p.engine.snapshot().phase, 'incoming');
+  const accepting = p.engine.accept();
+  assert.equal(p.engine.snapshot().phase, 'connecting', 'tap gives instant Connecting feedback');
+  await accepting;
+  assert.equal(p.engine.snapshot().phase, 'connected');
+  await tab.clock.advance(65000);
+  call.emit('disconnect', call);                       // remote party hangs up
+  const s = p.engine.snapshot();
+  assert.equal(s.phase, 'ended');
+  assert.equal(s.ended.durationSec, 65);
+  assert.equal(s.ended.why, 'disconnect');
+  await tab.clock.advance(LuxVoice.constants.ENDED_HOLD_MS + 1);
+  assert.equal(p.engine.snapshot().phase, 'ready');
+  const t = p.engine._internal.st.transitions.join(' ');
+  assert.match(t, /initializing>registering.*registering>ready.*ready>incoming.*incoming>connecting.*connecting>connected.*connected>ended.*ended>ready/);
+  for (const ph of p.engine._internal.st.transitions.flatMap((x) => x.split('>'))) assert.ok(LuxVoice.constants.PHASES.includes(ph), ph);
+});
+
+test('Ready is never shown when offline even if the SDK still reports registered', async () => {
+  const tab = makeTab(); const p = tab.openPage(); await bootReady(p, tab.clock);
+  p.engine._internal.st.offline = true;                 // network dropped, socket not yet noticed
+  assert.notEqual(p.engine.snapshot().phase, 'ready');
+  p.engine._internal.st.offline = false;
+  tab.sdk.created[0].state = 'unregistered';            // status word says ready, SDK disagrees
+  assert.notEqual(p.engine.snapshot().phase, 'ready');
+});
+
+test('local hang-up: End disconnects the call once, shows ended, returns to Ready, posts /end', async () => {
+  const tab = makeTab(); const p = tab.openPage(); await bootReady(p, tab.clock);
+  const call = tab.sdk.created[0].invite('CA2');
+  await p.engine.accept();
+  assert.equal(p.engine.hangup(), true);
+  assert.equal(call.disconnected, 1);
+  assert.equal(call.rejected, 0);
+  assert.equal(p.engine.snapshot().phase, 'ended');
+  assert.equal(p.engine.hangup(), false, 'second End is a no-op');
+  assert.ok(tab.calls.posts.some((u) => u.endsWith('/77/end')));
+  await tab.clock.advance(LuxVoice.constants.ENDED_HOLD_MS + 1);
+  assert.equal(p.engine.snapshot().phase, 'ready');
+});
+
+test('decline rejects the pending call cleanly and returns to Ready (no ended-duration)', async () => {
+  const tab = makeTab(); const p = tab.openPage(); await bootReady(p, tab.clock);
+  const call = tab.sdk.created[0].invite('CA3');
+  assert.equal(p.engine.decline(), true);
+  assert.equal(call.rejected, 1);
+  const s = p.engine.snapshot();
+  assert.equal(s.phase, 'ended'); assert.equal(s.ended.answered, false); assert.equal(s.ended.durationSec, 0);
+  assert.ok(tab.calls.posts.some((u) => u.endsWith('/77/decline')));
+  assert.equal(p.engine.decline(), false, 'no second reject');
+});
+
+test('double-tap Answer accepts exactly once', async () => {
+  const tab = makeTab(); const p = tab.openPage(); await bootReady(p, tab.clock);
+  const call = tab.sdk.created[0].invite('CA4');
+  const a = p.engine.accept(); const b = p.engine.accept();
+  assert.equal(await b, false);
+  assert.equal(await a, true);
+  assert.equal(call.accepted, 1);
+  assert.equal(tab.calls.posts.filter((u) => u.endsWith('/accept')).length, 1);
+});
+
+test('End while the answer is still connecting disconnects (does not reject an accepted call)', async () => {
+  const tab = makeTab(); const p = tab.openPage(); await bootReady(p, tab.clock);
+  const call = tab.sdk.created[0].invite('CA5');
+  call.accept = function () { this.accepted++; this._status = 'connecting'; };   // media not up yet
+  await p.engine.accept();
+  assert.equal(p.engine.snapshot().phase, 'connecting');
+  p.engine.hangup();
+  assert.equal(call.disconnected, 1); assert.equal(call.rejected, 0);
+});
+
+test('second incoming call while busy: rejected to voicemail, current call untouched, user notified', async () => {
+  const tab = makeTab(); const p = tab.openPage(); await bootReady(p, tab.clock);
+  const first = tab.sdk.created[0].invite('CA6');
+  await p.engine.accept();
+  const second = tab.sdk.created[0].invite('CA7', { from_number: '+15005550009', caller_name: 'Second' });
+  assert.equal(second.rejected, 1);
+  const s = p.engine.snapshot();
+  assert.equal(s.phase, 'connected'); assert.equal(s.call.callSid, 'CA6');
+  assert.equal(first.disconnected, 0);
+  assert.deepEqual([s.notice.kind, s.notice.name], ['missed-busy', 'Second']);
+  p.engine.dismissNotice();
+  assert.equal(p.engine.snapshot().notice, null);
+});
+
+test('denied microphone on Answer: call released to voicemail, mic=denied, recovery notice shown', async () => {
+  const tab = makeTab();
+  const denied = Object.assign(new Error('denied'), { name: 'NotAllowedError' });
+  const p = tab.openPage({}, { nav: { mediaDevices: { getUserMedia: async () => { throw denied; } } } });
+  await bootReady(p, tab.clock);
+  const call = tab.sdk.created[0].invite('CA8');
+  assert.equal(await p.engine.accept(), false);
+  assert.equal(call.rejected, 1);
+  const s = p.engine.snapshot();
+  assert.equal(s.mic, 'denied');
+  assert.deepEqual([s.notice.kind, s.notice.context], ['mic-blocked', 'answer']);
+  assert.equal(s.phase, 'ended');
+  await tab.clock.advance(LuxVoice.constants.ENDED_HOLD_MS + 1);
+  assert.equal(p.engine.snapshot().phase, 'ready', 'registration itself is unaffected by the microphone');
+});
+
+test('Allow microphone (gesture) grants and clears the blocked notice', async () => {
+  const tab = makeTab(); let allow = false;
+  const p = tab.openPage({}, { nav: { mediaDevices: { getUserMedia: async () => { if (!allow) throw Object.assign(new Error('x'), { name: 'NotAllowedError' }); return { getTracks: () => [] }; } } } });
+  await bootReady(p, tab.clock);
+  assert.equal(await p.engine.requestMicrophone(), false);
+  assert.equal(p.engine.snapshot().notice.kind, 'mic-blocked');
+  allow = true;
+  assert.equal(await p.engine.requestMicrophone(), true);
+  assert.equal(p.engine.snapshot().mic, 'granted');
+  assert.equal(p.engine.snapshot().notice, null);
+});
+
+test('microphone permission state is read from the Permissions API without prompting', async () => {
+  const tab = makeTab(); let prompted = 0;
+  const perm = makeTarget(); perm.state = 'denied';
+  const p = tab.openPage({}, { nav: {
+    permissions: { query: async ({ name }) => { assert.equal(name, 'microphone'); return perm; } },
+    mediaDevices: { getUserMedia: async () => { prompted++; return { getTracks: () => [] }; } },
+  } });
+  await bootReady(p, tab.clock);
+  assert.equal(p.engine.snapshot().mic, 'denied');
+  perm.state = 'granted'; perm.dispatch('change');
+  assert.equal(p.engine.snapshot().mic, 'granted');
+  assert.equal(prompted, 0);
+});
+
+test('End during outbound dialing cancels the call even before connect() resolves', async () => {
+  const tab = makeTab(); const p = tab.openPage(); await bootReady(p, tab.clock);
+  let resolveConnect; const out = new tab.sdk.FakeCall('CAout', {});
+  tab.sdk.created[0].connect = () => new Promise((r) => { resolveConnect = r; });
+  const placing = p.engine.placeCall('+15005550006', '1');
+  await tab.clock.advance(1);
+  assert.equal(p.engine.snapshot().phase, 'connecting');
+  assert.equal(p.engine.hangup(), true);
+  assert.equal(p.engine.snapshot().phase, 'ended');
+  resolveConnect(out);
+  assert.equal(await placing, null);
+  assert.equal(out.disconnected, 1, 'late call leg is torn down');
+});
+
+test('outbound: remote ringing then answer — duration counts from answer, not from dialing', async () => {
+  const tab = makeTab(); const p = tab.openPage(); await bootReady(p, tab.clock);
+  const call = await p.engine.placeCall('+15005550006', '1');
+  call.emit('ringing');
+  assert.equal(p.engine.snapshot().remoteRinging, true);
+  assert.equal(p.engine.snapshot().phase, 'connecting');
+  await tab.clock.advance(12000);
+  call.emit('accept', call);
+  assert.equal(p.engine.snapshot().phase, 'connected');
+  assert.equal(p.engine.snapshot().callStartedAt, tab.clock.now());
+});
+
+test('call network quality: reconnecting / poor / recovered are reflected live', async () => {
+  const tab = makeTab(); const p = tab.openPage(); await bootReady(p, tab.clock);
+  const call = tab.sdk.created[0].invite('CA9'); await p.engine.accept();
+  call.emit('warning', 'high-rtt'); assert.equal(p.engine.snapshot().callNetwork, 'poor');
+  call.emit('reconnecting'); assert.equal(p.engine.snapshot().callNetwork, 'reconnecting');
+  call.emit('reconnected'); assert.equal(p.engine.snapshot().callNetwork, 'ok');
+  assert.equal(p.engine.snapshot().phase, 'connected');
+});
+
+test('vibration while ringing (where supported) stops on answer', async () => {
+  const tab = makeTab(); const buzz = [];
+  const p = tab.openPage({}, { nav: { vibrate: (x) => { buzz.push(x); return true; } } });
+  await bootReady(p, tab.clock);
+  tab.sdk.created[0].invite('CA10');
+  await tab.clock.advance(3000);
+  const ringingBuzzes = buzz.filter((x) => x !== 0).length;
+  assert.ok(ringingBuzzes >= 2, `buzzes ${ringingBuzzes}`);
+  await p.engine.accept();
+  assert.equal(buzz[buzz.length - 1], 0, 'vibrate(0) cancels');
+  await tab.clock.advance(5000);
+  assert.equal(buzz.filter((x) => x !== 0).length, ringingBuzzes, 'no buzz after answer');
+});
+
+test('background window: incoming call raises a system notification, cleared when ringing stops', async () => {
+  const tab = makeTab(); const shown = []; let cleared = 0;
+  const p = tab.openPage({}, { env: { notifyCall: (t, b) => shown.push([t, b]), clearCallNotification: () => { cleared++; } } });
+  await bootReady(p, tab.clock);
+  p.doc.visibilityState = 'hidden';
+  const call = tab.sdk.created[0].invite('CA11');
+  assert.equal(shown.length, 1); assert.match(shown[0][1], /Test Caller/);
+  call.emit('cancel');
+  assert.equal(cleared, 1);
+  p.doc.visibilityState = 'visible';
+  tab.sdk.created[0].invite('CA12');
+  assert.equal(shown.length, 1, 'no notification while the app is in front');
+});
+
+test('screen wake lock is held only while connected', async () => {
+  const tab = makeTab(); const locks = [];
+  const wakeLock = { request: async () => { const l = makeTarget(); l.released = false; l.release = () => { l.released = true; }; locks.push(l); return l; } };
+  const p = tab.openPage({}, { nav: { wakeLock } });
+  await bootReady(p, tab.clock);
+  tab.sdk.created[0].invite('CA13');
+  assert.equal(locks.length, 0, 'not while merely ringing');
+  await p.engine.accept(); await tab.clock.advance(1);
+  assert.equal(locks.length, 1); assert.equal(locks[0].released, false);
+  p.engine.hangup();
+  assert.equal(locks[0].released, true);
+});
+
+test('caller name equal to the number is not shown twice', async () => {
+  const tab = makeTab(); const p = tab.openPage(); await bootReady(p, tab.clock);
+  tab.sdk.created[0].invite('CA14', { from_number: '+15005550006', caller_name: '+15005550006' });
+  assert.equal(p.engine.snapshot().call.name, '');
+  assert.equal(p.engine.snapshot().call.from, '+15005550006');
+});
+
+test('repeat calls: 10 answer/hang-up cycles leave one Device, constant listeners, no stuck state', async () => {
+  const tab = makeTab(); const p = tab.openPage(); await bootReady(p, tab.clock);
+  const d = tab.sdk.created[0];
+  const before = ['incoming', 'registered', 'unregistered', 'error', 'tokenWillExpire'].map((e) => d.listenerCount(e));
+  for (let i = 0; i < 10; i++) {
+    const call = d.invite(`CArep${i}`);
+    await p.engine.accept();
+    if (i % 2) p.engine.hangup(); else call.emit('disconnect', call);
+    await tab.clock.advance(LuxVoice.constants.ENDED_HOLD_MS + 1);
+    assert.equal(p.engine.snapshot().phase, 'ready', `cycle ${i}`);
+  }
+  const after = ['incoming', 'registered', 'unregistered', 'error', 'tokenWillExpire'].map((e) => d.listenerCount(e));
+  assert.deepEqual(after, before);
+  assert.equal(tab.sdk.created.length, 1);
+  assert.equal(tab.calls.token, 1);
+  assert.equal(p.engine._internal.st.diag.accepts, 10);
+});
+
+test('a new incoming call during the "Call ended" screen is presented immediately', async () => {
+  const tab = makeTab(); const p = tab.openPage(); await bootReady(p, tab.clock);
+  tab.sdk.created[0].invite('CA15'); p.engine.decline();
+  assert.equal(p.engine.snapshot().phase, 'ended');
+  tab.sdk.created[0].invite('CA16');
+  assert.equal(p.engine.snapshot().phase, 'incoming');
+  await tab.clock.advance(LuxVoice.constants.ENDED_HOLD_MS + 1);
+  assert.equal(p.engine.snapshot().phase, 'incoming', 'stale ended timer cannot clobber the new call');
 });
