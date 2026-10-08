@@ -859,7 +859,9 @@
         setMic('granted');
         if (st.notice && st.notice.kind === 'mic-blocked') st.notice = null;
       } catch (e) {
-        const blocked = ['NotAllowedError', 'SecurityError'].includes(e.name);
+        // Browsers/WebViews disagree on the error name for a denied
+        // permission; a known 'denied' state from the Permissions API wins.
+        const blocked = ['NotAllowedError', 'SecurityError'].includes(e.name) || st.mic === 'denied';
         if (blocked) setMic('denied');
         throw Object.assign(e, { voiceCode: blocked ? 'MICROPHONE_BLOCKED' : 'MICROPHONE_FAILED' });
       }

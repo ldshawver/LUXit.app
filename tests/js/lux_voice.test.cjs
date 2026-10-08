@@ -899,3 +899,15 @@ test('a new incoming call during the "Call ended" screen is presented immediatel
   await tab.clock.advance(LuxVoice.constants.ENDED_HOLD_MS + 1);
   assert.equal(p.engine.snapshot().phase, 'incoming', 'stale ended timer cannot clobber the new call');
 });
+
+test('denied permission state wins over an unusual getUserMedia error name', async () => {
+  const tab = makeTab(); const perm = makeTarget(); perm.state = 'denied';
+  const p = tab.openPage({}, { nav: {
+    permissions: { query: async () => perm },
+    mediaDevices: { getUserMedia: async () => { throw Object.assign(new Error('Not supported'), { name: 'NotSupportedError' }); } },
+  } });
+  await bootReady(p, tab.clock);
+  tab.sdk.created[0].invite('CA20');
+  assert.equal(await p.engine.accept(), false);
+  assert.equal(p.engine.snapshot().notice.kind, 'mic-blocked');
+});
