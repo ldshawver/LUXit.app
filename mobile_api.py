@@ -105,7 +105,7 @@ def app_config():
     return jsonify({
         "success": True,
         "api_version": API_VERSION,
-        "environment": os.environ.get("LUXIT_ENVIRONMENT") or os.environ.get("FLASK_ENV") or "production",
+        "environment": os.environ.get("APP_ENV") or os.environ.get("LUXIT_ENVIRONMENT") or "production",
         "min_app_version": os.environ.get("LUX_CONNECT_MIN_APP_VERSION") or "1.0.0",
     })
 
