@@ -6,12 +6,14 @@ Secrets never go in the app or in git. The app holds only bearer tokens it recei
 
 ## Apple (Apple Developer Program, team admin)
 
+0. **Bundle ID decision (open, 2026-10-09):** the app uses `com.luxit.connect` / `com.luxit.connect.staging`. An earlier planning doc proposed `app.luxit.connect` ("or similar"); nothing on this server shows which one is actually registered in the Apple Developer account. If `app.luxit.connect` is already registered (or has an App Store Connect record), switch the two ids in `mobile/app.config.ts` `VARIANTS` before the first build. A bundle id cannot be renamed once an App Store Connect record uses it. The Android package and Firebase apps must use the same final ids.
 1. **Identifiers:** create App IDs `com.luxit.connect` (production) and `com.luxit.connect.staging`, each with *Push Notifications* enabled.
 2. **VoIP Services certificate:** one per App ID. Export it as .p12 and convert it to PEM cert + key.
    - Create Twilio Push Credentials of type APN from it (Console → Voice → Credentials, or `twilio api:chat:v2:credentials:create`):
-     - `LUX Connect iOS (production)`: sandbox = false
-     - `LUX Connect iOS (sandbox)`: sandbox = true, from the same certificate, for development builds
-   - Server env: `TWILIO_PUSH_CREDENTIAL_SID_IOS`, `TWILIO_PUSH_CREDENTIAL_SID_IOS_SANDBOX`.
+     - `LUX Connect iOS (production)`: sandbox = false. **Required, including for the first EAS dev-client build**: EAS internal (ad hoc) and store builds all use the production APNs environment.
+     - `LUX Connect iOS (sandbox)`: sandbox = true. **Optional**: only for a local Xcode run signed with a development profile.
+   - Server env: `TWILIO_PUSH_CREDENTIAL_SID_IOS` (required), `TWILIO_PUSH_CREDENTIAL_SID_IOS_SANDBOX` (optional).
+   - When a phone switches between a sandbox and a production build, delete and reinstall the app: PushKit can hand back the previous environment's token, which Twilio then rejects as an invalid device token.
 3. **APNs Auth Key (.p8)** for text / voicemail alerts. Server env:
    - `LUXIT_APNS_KEY_FILE`: path to the .p8, mode 600, outside the repo
    - `LUXIT_APNS_KEY_ID`, `LUXIT_APNS_TEAM_ID`
@@ -26,7 +28,9 @@ Secrets never go in the app or in git. The app holds only bearer tokens it recei
 ## Google (Firebase and Play Console)
 
 1. **Firebase project** (e.g. `lux-connect`): add Android apps `com.luxit.connect` and `com.luxit.connect.staging` and download `google-services.json`.
-   - Give it to EAS as a file secret: `eas secret:create --type file --name GOOGLE_SERVICES_JSON --value ./google-services.json`. `app.config.ts` reads `GOOGLE_SERVICES_JSON`.
+   - Give it to EAS as a file variable for each environment the profiles use (`staging-dev` → development, `staging` / `testflight-staging` → preview, `production` → production):
+     `eas env:create --name GOOGLE_SERVICES_JSON --type file --value ./google-services.json --environment development --environment preview --visibility secret`
+     `app.config.ts` reads `GOOGLE_SERVICES_JSON`.
    - No iOS Firebase app is needed. iOS alerts go to APNs directly and VoIP goes through Twilio.
 2. **Twilio Android Push Credential** (type FCM) from the Firebase project's FCM server credential (Twilio supports FCM HTTP v1 service-account credentials). Server env: `TWILIO_PUSH_CREDENTIAL_SID_ANDROID`.
 3. **Server FCM sender:** a service-account JSON with the *Firebase Cloud Messaging API Admin* role. Server env: `LUXIT_FCM_SERVICE_ACCOUNT_FILE` (path, mode 600).
@@ -57,25 +61,28 @@ Secrets never go in the app or in git. The app holds only bearer tokens it recei
 
 ## Expo / EAS
 
-- EAS account and project. Run `eas init` in `mobile/`, then set `EAS_PROJECT_ID`.
-- CI or user token `EXPO_TOKEN`.
-- Profiles in `mobile/eas.json`:
+- An EAS account. If the project should belong to an Expo organization, set `EXPO_OWNER` to it.
+- In `mobile/`, run `eas login` and then `eas init`. Put the printed project id into `EAS_PROJECT_ID` (or hard-code it in `app.config.ts` `extra.eas.projectId`; it is not a secret).
+- For CI or for Claude to run builds: an `EXPO_TOKEN` (Account settings → Access tokens).
+- EAS CLI 19.1 or later (24.12.1 is current). `eas.json` validates against EAS's own schema.
+- iOS internal builds: register each test iPhone with `eas device:create`. Then run the first `eas build` **interactively**, signed in to Apple, so EAS can create the ad hoc profile containing those devices. Add `--refresh-ad-hoc-provisioning-profile` to later non-interactive builds.
+- Build numbers and versionCodes are managed by EAS (`appVersionSource: remote`, `autoIncrement` on store profiles).
 
-| Profile | Variant | `aps-environment` | Output |
-|---|---|---|---|
-| `staging-dev` | staging | development | dev client, internal |
-| `staging` | staging | production | ad-hoc IPA / APK |
-| `testflight-staging` | staging | production | TestFlight / Play internal |
-| `production` | production | production | stores |
+| Profile | Variant | APNs | EAS environment | Output |
+|---|---|---|---|---|
+| `staging-dev` | staging | production | development | dev client: ad hoc IPA + APK |
+| `staging` | staging | production | preview | ad hoc IPA + APK |
+| `testflight-staging` | staging | production | preview | TestFlight / Play internal |
+| `production` | production | production | production | stores |
 
-  Use `staging-dev` only with the iOS **sandbox** Push Credential. The app reports `apns_environment` and the server picks the matching credential.
+First physical test: `eas build --profile staging-dev --platform all`.
 
 ## Server environment summary
 
 ```
 # Twilio Voice push (per platform); absent => app says "Outgoing calls only"
 TWILIO_PUSH_CREDENTIAL_SID_IOS=CR…
-TWILIO_PUSH_CREDENTIAL_SID_IOS_SANDBOX=CR…
+TWILIO_PUSH_CREDENTIAL_SID_IOS_SANDBOX=CR…   # optional, local Xcode builds only
 TWILIO_PUSH_CREDENTIAL_SID_ANDROID=CR…
 # Alert push; absent => no native alert push (calls unaffected)
 LUXIT_APNS_KEY_FILE=/etc/luxit-staging/apns/AuthKey_XXXX.p8

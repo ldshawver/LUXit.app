@@ -1,29 +1,78 @@
 {
-  "cli": { "version": ">= 16.0.0", "appVersionSource": "local" },
+  "cli": {
+    "version": ">= 19.1.0",
+    "appVersionSource": "remote"
+  },
   "build": {
+    "base": {
+      "env": {
+        "APS_ENVIRONMENT": "production"
+      }
+    },
     "staging-dev": {
+      "extends": "base",
       "developmentClient": true,
       "distribution": "internal",
-      "env": { "APP_VARIANT": "staging", "APS_ENVIRONMENT": "development" }
+      "env": {
+        "APP_VARIANT": "staging"
+      },
+      "android": {
+        "buildType": "apk"
+      },
+      "environment": "development"
     },
     "staging": {
+      "extends": "base",
       "distribution": "internal",
-      "env": { "APP_VARIANT": "staging", "APS_ENVIRONMENT": "production" },
-      "android": { "buildType": "apk" }
+      "env": {
+        "APP_VARIANT": "staging"
+      },
+      "android": {
+        "buildType": "apk"
+      },
+      "environment": "preview"
     },
     "testflight-staging": {
+      "extends": "base",
       "distribution": "store",
-      "env": { "APP_VARIANT": "staging", "APS_ENVIRONMENT": "production" },
-      "android": { "buildType": "app-bundle" }
+      "autoIncrement": true,
+      "env": {
+        "APP_VARIANT": "staging"
+      },
+      "android": {
+        "buildType": "app-bundle"
+      },
+      "environment": "preview"
     },
     "production": {
+      "extends": "base",
       "distribution": "store",
-      "env": { "APP_VARIANT": "production", "APS_ENVIRONMENT": "production" },
-      "android": { "buildType": "app-bundle" }
+      "autoIncrement": true,
+      "env": {
+        "APP_VARIANT": "production"
+      },
+      "android": {
+        "buildType": "app-bundle"
+      },
+      "environment": "production"
     }
   },
   "submit": {
-    "testflight-staging": { "ios": { "ascAppId": "SET_ME" }, "android": { "track": "internal" } },
-    "production": { "ios": { "ascAppId": "SET_ME" }, "android": { "track": "internal" } }
+    "testflight-staging": {
+      "ios": {
+        "ascAppId": "SET_ME"
+      },
+      "android": {
+        "track": "internal"
+      }
+    },
+    "production": {
+      "ios": {
+        "ascAppId": "SET_ME"
+      },
+      "android": {
+        "track": "internal"
+      }
+    }
   }
 }

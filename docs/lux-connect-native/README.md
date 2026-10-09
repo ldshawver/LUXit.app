@@ -9,6 +9,7 @@ A second-number phone app on the existing LUXit backend: calls through Twilio Vo
 | [CREDENTIALS.md](CREDENTIALS.md) | Apple / Google / Twilio / Expo accounts and server env needed |
 | [MESSAGING_10DLC.md](MESSAGING_10DLC.md) | Carrier registration rules, what the app enforces, onboarding |
 | [DEVICE_ACCEPTANCE.md](DEVICE_ACCEPTANCE.md) | Test results to date and the physical-device checklist |
+| [FEATURES.md](FEATURES.md) | LUXit Phone release features: app vs web status, code and tests |
 | [RELEASE.md](RELEASE.md) | TestFlight / Play internal, production requirements, rollback |
 
 ## Code map

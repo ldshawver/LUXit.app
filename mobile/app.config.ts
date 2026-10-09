@@ -7,10 +7,14 @@ import type { ConfigContext, ExpoConfig } from 'expo/config';
  *   APP_VARIANT=staging     com.luxit.connect.staging  -> https://staging.luxit.app
  *   APP_VARIANT=production  com.luxit.connect          -> https://luxit.app
  *
- * APS_ENVIRONMENT must be "production" for TestFlight / App Store builds or the
- * PushKit VoIP token is issued against the APNs sandbox and incoming calls never
- * arrive (eas.json sets it per profile). The server picks the matching Twilio
- * push credential from the apns_environment the app reports.
+ * APS_ENVIRONMENT: every EAS build is signed with an ad hoc (internal) or App
+ * Store profile, and both use the *production* APNs environment, so eas.json
+ * sets "production" for all profiles (including the dev client). "development"
+ * (the default here) is only for a local Xcode run with a development profile,
+ * which then needs the iOS *sandbox* Twilio Push Credential. The server picks
+ * the matching credential from the apns_environment the app reports.
+ *
+ * Build numbers / versionCodes come from EAS (appVersionSource "remote").
  */
 const variant = (process.env.APP_VARIANT ?? 'staging') as 'staging' | 'production';
 const apsEnvironment = (process.env.APS_ENVIRONMENT ?? 'development') as 'development' | 'production';
@@ -27,6 +31,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     ...config,
     name: v.name,
     slug: 'lux-connect',
+    ...(process.env.EXPO_OWNER ? { owner: process.env.EXPO_OWNER } : {}),
     scheme: 'luxconnect',
     version: '1.0.0',
     orientation: 'portrait',
@@ -34,7 +39,6 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     icon: './assets/icon.png',
     ios: {
       bundleIdentifier: v.id,
-      buildNumber: '1',
       supportsTablet: false,
       entitlements: { 'aps-environment': apsEnvironment },
       infoPlist: {
@@ -47,7 +51,6 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     android: {
       package: v.id,
       adaptiveIcon: { foregroundImage: './assets/adaptive-icon.png', backgroundColor: '#080A1A' },
-      versionCode: 1,
       // Firebase project config (EAS file secret GOOGLE_SERVICES_JSON). Required
       // for Android incoming calls; without it the build still produces an app
       // that can sign in, text and place calls.
