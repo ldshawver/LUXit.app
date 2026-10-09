@@ -31,26 +31,54 @@ No proprietary or non-standard algorithm is used. Everything outside Apple's OS 
   - Declaring `YES` without an approved document produced build-processing error **90592** for that developer.
   - Apple's docs and the App Store Connect wording are not perfectly consistent; no Apple staff answer exists in that thread.
 
-**Conclusion:** the app is *not* "OS-only" encryption. Strictly, it is not in Apple's exempt row. It is in the standard-algorithm row, which needs **no documents unless the app is distributed in France**.
-- **Not in France:** `ITSAppUsesNonExemptEncryption = NO` is what App Store Connect itself instructs, so the build no longer asks per upload.
-- **In France:** upload the French declaration (ANSSI), wait for Apple's code, and ship `YES` + `ITSEncryptionExportComplianceCode`.
+**Earlier conclusion, withdrawn 2026-10-09:** this doc first treated "standard algorithms, not in France" as enough to ship `NO`. That reads App Store Connect's *documentation* answer as an answer to the *Info.plist* question, and they are different questions (section 2a).
+
+## 2a. Three separate obligations
+
+| | What it is | Decided by | Does leaving France out change it? |
+|---|---|---|---|
+| **Apple `ITSAppUsesNonExemptEncryption`** | A statement to Apple: the app uses no encryption, or only *exempt* encryption. Lets Apple skip the export questions for each build. | Apple's definition of "exempt". Apple's text says encryption *including third-party libraries*. It does not say that standard algorithms outside the OS are exempt. | **No.** France only decides whether a document must be uploaded. |
+| **US export classification (EAR)** | Publishing the app worldwide from the App Store is an export of encryption software. Likely ECCN 5D992.c, mass market, License Exception ENC § 740.17(b)(1). Self-classified; the annual report probably doesn't apply (section 5). | The company and its counsel. Apple does not classify the app. | **No.** It applies to every country the app ships to. |
+| **France** | A French encryption declaration (ANSSI), uploaded to App Store Connect, which then issues `ITSEncryptionExportComplianceCode`. | Needed only if the app is distributed in France. | **Yes.** This is the only part France affects. |
+
+How the `NO` question looks:
+- **Strict reading.** The app ships cryptography Apple doesn't provide (Twilio's BoringSSL/WebRTC). Mass-market treatment under ENC is a *licence exception*, not a decontrol. The communications-app decontrol (Cat. 5 Part 2 Note 4) doesn't fit, because communications is the app's main purpose. On that reading the answer is **YES**.
+- **Practical reading.** App Store Connect, for "standard, not France", says no documents are needed. One reported case also suggested that `NO` is acceptable (forum thread 849352, no Apple staff answer). That is evidence, not a ruling.
+- **EAS itself** asks "only uses standard/exempt encryption?", running the two together. Its follow-up says choosing "non-exempt" means annual self-classification reports. That is a tool's view, not Apple's or BIS's.
+
+**Decision:** until Apple (App Store Connect / Developer Support) or counsel confirms which reading is right, the build **writes no value**. App Store Connect then asks the export questions on each build ("Missing Compliance" in TestFlight), and the account holder answers them there. Builds are not blocked.
 
 ## 3. Configuration (mobile/app.config.ts)
 
-- `ios.config.usesNonExemptEncryption` replaces the raw `infoPlist.ITSAppUsesNonExemptEncryption`.
-- The default is `false`. If `ITS_ENCRYPTION_EXPORT_COMPLIANCE_CODE` is set (EAS env), it becomes `true` and the code is added.
-- Verified with `expo prebuild` (iOS):
-  - staging, default: `ITSAppUsesNonExemptEncryption = NO`, no code
-  - production variant, default: `NO`, no code
-  - with `ITS_ENCRYPTION_EXPORT_COMPLIANCE_CODE=TEST-CODE-123`: `YES` + the code
+| EAS environment | Info.plist |
+|---|---|
+| nothing set (**default**) | no `ITSAppUsesNonExemptEncryption`; answer in App Store Connect for each build |
+| `ITS_USES_NON_EXEMPT_ENCRYPTION=false` | `NO` (only after confirmation) |
+| `ITS_USES_NON_EXEMPT_ENCRYPTION=true` | `YES` (App Store Connect then asks about documentation) |
+| `ITS_ENCRYPTION_EXPORT_COMPLIANCE_CODE=<code>` | `YES` + the code (overrides the line above) |
+| any other value | treated as not set |
 
-## 4. App Store Connect answers to give (first upload)
+Verified with `expo config --type introspect` for both variants (staging `com.luxit.connect.staging`, production `com.luxit.connect`).
+
+`eas build` with no value: non-interactive builds log a warning and continue. Interactive builds ask "only uses standard/exempt encryption?". **Answer No to keep the default**: with this dynamic config EAS can't edit the file anyway; it only prints a suggestion.
+
+## 4. App Store Connect answers (each build until a value is set)
 
 1. Does your app use encryption? **Yes.**
-2. Algorithm type: **"Standard encryption algorithms instead of, or in addition to, using or accessing the encryption within Apple's operating system."** Not proprietary, not "none".
-3. Distributed in France? Answer according to the availability you choose. If **No**, no documents are needed, and that matches the shipped `NO`. If **Yes**, upload the French declaration and use the issued code as above.
+2. Algorithm type: **"Standard encryption algorithms instead of, or in addition to, using or accessing the encryption within Apple's operating system."** Not proprietary, and not "only Apple's OS". That would be untrue because of the bundled BoringSSL/WebRTC.
+3. Distributed in France? **No**, for the first release (section 4a).
 
-Do not answer "only Apple's OS". It is untrue because of the bundled BoringSSL/WebRTC.
+## 4a. First release without France, and adding it later
+
+- **App Store Connect → Pricing and Availability:** deselect France. Overseas departments and territories sold as their own storefronts are not covered by that and need their own checks. Do the same in **Google Play → Countries/regions**: ANSSI covers supplying the app in France on any store.
+- **Adding France later:**
+  1. File the ANSSI declaration.
+  2. Upload it in App Store Connect and wait for the code.
+  3. Set `ITS_ENCRYPTION_EXPORT_COMPLIANCE_CODE` in the EAS environment.
+  4. Build and submit.
+  5. Only then enable France.
+
+  Nothing else in the app changes.
 
 ## 5. US export law (for counsel to confirm)
 

@@ -23,7 +23,7 @@ Secrets never go in the app or in git. The app holds only bearer tokens it recei
 5. **Privacy:**
    - Microphone, photos and camera strings are already in `app.config.ts`.
    - App Privacy questionnaire: phone number, contacts (from LUXit, not the device), messages content, audio (calls only), diagnostics.
-   - Encryption export: standard HTTPS only (`ITSAppUsesNonExemptEncryption=false`).
+   - Encryption export: see `EXPORT_COMPLIANCE.md`. Not OS-only (the Twilio SDK bundles BoringSSL/WebRTC). By default no `ITSAppUsesNonExemptEncryption` is written; answer the questions in App Store Connect for each build. Exclude France from availability for the first release.
 
 ## Google (Firebase and Play Console)
 

@@ -19,13 +19,17 @@ import type { ConfigContext, ExpoConfig } from 'expo/config';
 /**
  * Export compliance (docs/lux-connect-native/EXPORT_COMPLIANCE.md). The Twilio
  * Voice SDK bundles BoringSSL/WebRTC (DTLS-SRTP, TLS): standard, non-proprietary
- * encryption that is NOT only Apple's OS. App Store Connect needs no documents
- * for that unless the app is distributed in France, so the default declares
- * ITSAppUsesNonExemptEncryption = NO. If France is enabled, upload the French
- * declaration, then set the code Apple issues here: the build then declares
- * YES + ITSEncryptionExportComplianceCode.
+ * encryption that is NOT only Apple's OS. Whether that counts as "exempt" for
+ * ITSAppUsesNonExemptEncryption is not settled by leaving France out, so the
+ * default is to write no value: App Store Connect then asks the export
+ * questions for each build and the account holder answers them there.
+ *   ITS_USES_NON_EXEMPT_ENCRYPTION=false|true  declare it once confirmed
+ *   ITS_ENCRYPTION_EXPORT_COMPLIANCE_CODE      code Apple issues after approved
+ *                                              documents (e.g. France); forces YES
  */
 const exportComplianceCode = process.env.ITS_ENCRYPTION_EXPORT_COMPLIANCE_CODE || undefined;
+const declaredNonExempt = ({ true: true, false: false } as Record<string, boolean>)[process.env.ITS_USES_NON_EXEMPT_ENCRYPTION ?? ''];
+const usesNonExemptEncryption = exportComplianceCode ? true : declaredNonExempt;
 
 const variant = (process.env.APP_VARIANT ?? 'staging') as 'staging' | 'production';
 const apsEnvironment = (process.env.APS_ENVIRONMENT ?? 'development') as 'development' | 'production';
@@ -52,7 +56,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       bundleIdentifier: v.id,
       supportsTablet: false,
       entitlements: { 'aps-environment': apsEnvironment },
-      config: { usesNonExemptEncryption: Boolean(exportComplianceCode) },
+      ...(usesNonExemptEncryption === undefined ? {} : { config: { usesNonExemptEncryption } }),
       infoPlist: {
         NSMicrophoneUsageDescription: 'LUX Connect uses the microphone so the people you call can hear you.',
         NSPhotoLibraryUsageDescription: 'LUX Connect lets you attach photos to text messages.',
