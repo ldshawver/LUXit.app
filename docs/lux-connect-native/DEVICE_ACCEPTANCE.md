@@ -64,6 +64,29 @@ No real SMS was sent (the staging Twilio gate is closed). Every Twilio call in t
 | Logout | Registration revoked | **Verified on staging with a real call** |
 | Account isolation | No cross-account access | Verified (unit, two tenants); staging has no second tenant with conversations to probe |
 
+## First session: priority run
+
+Run this before the full checklist below, on the `staging-dev` build, once TEST_BUILD_RUNBOOK.md steps 1–8 are done.
+- Each row is run twice on each platform: **Wi-Fi only** (cellular data off), then **cellular only** (Wi-Fi off).
+- Record PASS / FAIL / NOT TESTED, with device, OS, build number and the time, so the run can be matched to staging logs and Twilio call SIDs.
+
+| P | Test | How | Pass when |
+|---|---|---|---|
+| 1 | Ready state | sign in, allow microphone and notifications | Keypad shows **Ready to receive calls** within 5 s; `/me` reports incoming available |
+| 2 | Incoming call, app open | call +18302591310 from a second phone | rings in the app within about 3 s |
+| 3 | Incoming call, **locked** | lock the phone, call | iPhone: CallKit screen. Android: full-screen call notification |
+| 4 | Incoming call, **app swiped away** | force-quit, call | same as P3 |
+| 5 | Answer | answer from P3 / P4 | two-way audio within about 2 s; call screen appears on unlock |
+| 6 | Decline / no answer | decline, or let it ring | caller reaches staging voicemail; app returns to Ready |
+| 7 | Outgoing call | dial the second phone from the Keypad | second phone shows +18302591310 (or the chosen caller ID); two-way audio |
+| 8 | Hang up both ways | end on each side in turn | other side ends within about 1 s |
+| 9 | Voicemail | leave a voicemail at P6 | voicemail / missed-call **push** arrives with the app closed; plays in the Voicemail tab |
+| 10 | Incoming text alert | real SMS if the staging SMS decision allows, otherwise the **synthetic inbound** webhook (record which) | push with the app closed; tap opens the thread; badge clears |
+| 11 | Outgoing text | only with the allowlist mode or a staging number approved | delivered to the test phone from the business number |
+| 12 | Network change mid-call | turn Wi-Fi off during a call | "Reconnecting call…" then continues, or ends clearly |
+
+SMS (P10 real, P11) stays **NOT TESTED** until the staging SMS decision is made. Push results from the synthetic webhook count as push tests, not SMS tests.
+
 ## Physical-device checklist (run on staging builds)
 
 Prerequisites:
