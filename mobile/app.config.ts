@@ -16,6 +16,17 @@ import type { ConfigContext, ExpoConfig } from 'expo/config';
  *
  * Build numbers / versionCodes come from EAS (appVersionSource "remote").
  */
+/**
+ * Export compliance (docs/lux-connect-native/EXPORT_COMPLIANCE.md). The Twilio
+ * Voice SDK bundles BoringSSL/WebRTC (DTLS-SRTP, TLS): standard, non-proprietary
+ * encryption that is NOT only Apple's OS. App Store Connect needs no documents
+ * for that unless the app is distributed in France, so the default declares
+ * ITSAppUsesNonExemptEncryption = NO. If France is enabled, upload the French
+ * declaration, then set the code Apple issues here: the build then declares
+ * YES + ITSEncryptionExportComplianceCode.
+ */
+const exportComplianceCode = process.env.ITS_ENCRYPTION_EXPORT_COMPLIANCE_CODE || undefined;
+
 const variant = (process.env.APP_VARIANT ?? 'staging') as 'staging' | 'production';
 const apsEnvironment = (process.env.APS_ENVIRONMENT ?? 'development') as 'development' | 'production';
 
@@ -41,11 +52,12 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       bundleIdentifier: v.id,
       supportsTablet: false,
       entitlements: { 'aps-environment': apsEnvironment },
+      config: { usesNonExemptEncryption: Boolean(exportComplianceCode) },
       infoPlist: {
         NSMicrophoneUsageDescription: 'LUX Connect uses the microphone so the people you call can hear you.',
         NSPhotoLibraryUsageDescription: 'LUX Connect lets you attach photos to text messages.',
         NSCameraUsageDescription: 'LUX Connect lets you take photos to send in text messages.',
-        ITSAppUsesNonExemptEncryption: false,
+        ...(exportComplianceCode ? { ITSEncryptionExportComplianceCode: exportComplianceCode } : {}),
       },
     },
     android: {
