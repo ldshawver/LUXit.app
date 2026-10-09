@@ -678,7 +678,8 @@ def sendConversationSms(conversation_id: int, message: str, *,
                         persist_record: bool = True,
                         effect_type: str | None = None,
                         idempotency_key: str | None = None,
-                        bypass_outbox: bool = False) -> dict:
+                        bypass_outbox: bool = False,
+                        media_urls: list[str] | None = None) -> dict:
     """Single entry point for all conversational SMS sends.
 
     Every outbound reply/forward/auto-reply resolves its sender from the
@@ -751,6 +752,10 @@ def sendConversationSms(conversation_id: int, message: str, *,
             "to":   to_number,
             "from_": canonical_sender,
         }
+        if media_urls:
+            # MMS: Twilio fetches each URL itself (LUX Connect app uploads are
+            # served from short-lived unguessable /mobile-media/<token> URLs).
+            kwargs["media_url"] = list(media_urls)[:10]
         status_callback_url = _sms_status_callback_url(ta)
         if status_callback_url:
             kwargs["status_callback"] = status_callback_url
@@ -771,6 +776,7 @@ def sendConversationSms(conversation_id: int, message: str, *,
                 is_auto_reply=is_auto_reply,
                 rule_id=rule_id,
                 raw_payload={"provider_status": provider_status},
+                media_urls=list(media_urls)[:10] if media_urls else None,
             )
             db.session.add(record)
             db.session.commit()
@@ -2123,17 +2129,28 @@ def pwa_outbound_twiml():
     requested_pn_id = (data.get("phone_number_id") or "").strip()
 
     identity = frm[7:] if frm.startswith("client:") else frm
-    m = re.match(r"^luxit_c(\d+)_u(\d+)_[0-9a-f]{16}$", identity)
-    if not m:
-        logger.warning("pwa-outbound: unrecognized client identity sid=%s", call_sid)
+    # LUX Connect native app: per-device identity, verified against an active
+    # device row. Anything else falls through to the PWA per-user identity.
+    from services.mobile_voice import verify_outbound_identity
+    try:
+        native = verify_outbound_identity(identity)
+    except PermissionError:
+        logger.warning("pwa-outbound: native identity not verified sid=%s", call_sid)
         return _pwa_outbound_fail_twiml("This call could not be authorized. Goodbye.")
-    company_id, user_id = int(m.group(1)), int(m.group(2))
-    if pwa_voice_identity(company_id, user_id) != identity:
-        logger.warning(
-            "pwa-outbound: identity signature mismatch company_id=%s user_id=%s sid=%s",
-            company_id, user_id, call_sid,
-        )
-        return _pwa_outbound_fail_twiml("This call could not be authorized. Goodbye.")
+    if native:
+        company_id, user_id = native[0], native[1]
+    else:
+        m = re.match(r"^luxit_c(\d+)_u(\d+)_[0-9a-f]{16}$", identity)
+        if not m:
+            logger.warning("pwa-outbound: unrecognized client identity sid=%s", call_sid)
+            return _pwa_outbound_fail_twiml("This call could not be authorized. Goodbye.")
+        company_id, user_id = int(m.group(1)), int(m.group(2))
+        if pwa_voice_identity(company_id, user_id) != identity:
+            logger.warning(
+                "pwa-outbound: identity signature mismatch company_id=%s user_id=%s sid=%s",
+                company_id, user_id, call_sid,
+            )
+            return _pwa_outbound_fail_twiml("This call could not be authorized. Goodbye.")
 
     user = db.session.get(User, user_id)
     if not user or not getattr(user, "active", True):
@@ -2580,6 +2597,16 @@ def _inbound_call_impl():
                     if not user_row or not getattr(user_row, "active", True):
                         continue
                     client_identities.append(pwa_voice_identity(ta.company_id, uid))
+            # LUX Connect native handsets of the same eligible users ring in the
+            # same <Dial>: first answer wins, Twilio cancels every other leg.
+            from services.mobile_voice import merge_dial_identities
+            _pwa_identity_count = len(client_identities)
+            client_identities = merge_dial_identities(
+                client_identities, ta.company_id, eligible,
+                getattr(pn, "phone_number", None) or to_number,
+            )
+            if len(client_identities) > _pwa_identity_count:
+                _routing_targets_configured = True
         except Exception:
             logger.exception("Unable to resolve eligible PWA voice devices", extra={"company_id": ta.company_id})
         if not client_identities:

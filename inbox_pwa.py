@@ -567,11 +567,18 @@ def _proxied_message_media_url(message_id: int, index: int) -> str:
     return f"/api/inbox/messages/{message_id}/media/{index}"
 
 
+_MOBILE_MEDIA_PATH_RE = re.compile(r"^https?://[^/]+/mobile-media/([A-Za-z0-9_-]{20,100})$")
+
+
 def _safe_message_media_urls(m):
     safe = []
     for idx, url in enumerate(m.media_urls or []):
         if _is_twilio_protected_url(url):
             safe.append(_proxied_message_media_url(m.id, idx))
+        elif _MOBILE_MEDIA_PATH_RE.match(url or ""):
+            # LUX Connect app upload: the public URL only works while Twilio
+            # fetches it; readers go through the authenticated route.
+            safe.append(f"/api/inbox/media-uploads/{_MOBILE_MEDIA_PATH_RE.match(url).group(1)}")
         else:
             safe.append(url)
     return safe
@@ -1676,11 +1683,24 @@ def api_phone_voice_client_error():
     return jsonify({"success": True})
 
 
-@inbox_pwa_bp.route("/api/phone/voice-token")
-def api_phone_voice_token():
-    """Issue a Twilio Voice SDK access token for an authorized PWA user."""
-    user = _require_auth()
-    company = _require_company(user)
+class VoiceGate:
+    """Result of the shared Voice authorization gate (PWA and native app)."""
+    __slots__ = ("allowed_numbers", "account_sid", "api_key", "api_secret")
+
+    def __init__(self, allowed_numbers, account_sid, api_key, api_secret):
+        self.allowed_numbers = allowed_numbers
+        self.account_sid = account_sid
+        self.api_key = api_key
+        self.api_secret = api_secret
+
+
+def _voice_token_gate(user, company):
+    """Every check that must pass before ANY Voice token is minted.
+
+    Returns ``(VoiceGate, None)`` or ``(None, (response, status))``. Shared by
+    the PWA token endpoint and the native app token endpoint so the two can
+    never drift apart.
+    """
     from models import PhoneNumberUserPermission, TwilioAccount, TwilioPhoneNumber
     from services.comms_permissions import accessible_phone_numbers
     from services.phone_availability import is_available
@@ -1692,24 +1712,24 @@ def api_phone_voice_token():
     # preference and is not cleared by returning Available.
     if not receive_calls_enabled(user.id, company.id):
         logger.info("Voice token denied: receive_calls is off", extra={"user_id": user.id, "company_id": company.id})
-        return jsonify({
+        return None, (jsonify({
             "success": False, "code": "CALLING_DISABLED",
             "error": "Receive Calls is turned off for you in this company.",
-        }), 403
+        }), 403)
 
     # Phone Availability gate — an AWAY user must fail BEFORE a token is minted
     # or a Twilio.Device is registered.
     if not is_available(user.id, company.id):
         logger.info("Voice token denied: user is Away", extra={"user_id": user.id, "company_id": company.id})
-        return jsonify({
+        return None, (jsonify({
             "success": False, "code": "PHONE_AWAY",
             "error": "You're Away. Phone calls and communication notifications are paused.",
-        }), 403
+        }), 403)
 
     allowed_numbers = accessible_phone_numbers(user, company.id)
     if not allowed_numbers:
         logger.info("Voice token denied: no assigned calling number", extra={"user_id": user.id, "company_id": company.id})
-        return jsonify({"success": False, "code": "NO_ASSIGNED_NUMBER", "error": "No calling number assigned"}), 403
+        return None, (jsonify({"success": False, "code": "NO_ASSIGNED_NUMBER", "error": "No calling number assigned"}), 403)
 
     callable_numbers = [
         p.phone_number.phone_number for p in PhoneNumberUserPermission.query
@@ -1728,7 +1748,7 @@ def api_phone_voice_token():
         allowed_numbers = [n for n in allowed_numbers if n in set(callable_numbers)]
     if not allowed_numbers:
         logger.info("Voice token denied: user lacks call permission", extra={"user_id": user.id, "company_id": company.id})
-        return jsonify({"success": False, "code": "NO_ASSIGNED_NUMBER", "error": "No calling number assigned"}), 403
+        return None, (jsonify({"success": False, "code": "NO_ASSIGNED_NUMBER", "error": "No calling number assigned"}), 403)
 
     ta = TwilioAccount.query.filter_by(company_id=company.id).first()
     account_sid = (
@@ -1739,11 +1759,24 @@ def api_phone_voice_token():
     api_secret = os.environ.get("TWILIO_API_SECRET")
     if not account_sid or not api_key or not api_secret:
         logger.error("Voice token failed: Twilio Voice SDK credentials are not configured", extra={"user_id": user.id, "company_id": company.id})
-        return jsonify({
+        return None, (jsonify({
             "success": False,
             "code": "TOKEN_ENDPOINT_FAILED",
             "error": "Twilio Voice SDK credentials are not configured. Set TWILIO_ACCOUNT_SID, TWILIO_API_KEY, and TWILIO_API_SECRET.",
-        }), 503
+        }), 503)
+    return VoiceGate(allowed_numbers, account_sid, api_key, api_secret), None
+
+
+@inbox_pwa_bp.route("/api/phone/voice-token")
+def api_phone_voice_token():
+    """Issue a Twilio Voice SDK access token for an authorized PWA user."""
+    user = _require_auth()
+    company = _require_company(user)
+    gate, denied = _voice_token_gate(user, company)
+    if denied:
+        return denied
+    allowed_numbers = gate.allowed_numbers
+    account_sid, api_key, api_secret = gate.account_sid, gate.api_key, gate.api_secret
     try:
         from twilio.jwt.access_token import AccessToken
         from twilio.jwt.access_token.grants import VoiceGrant
@@ -1960,6 +1993,21 @@ def list_messages():
         .limit(limit)
         .all())
     return jsonify({"success": True, "messages": [_msg_to_dict(m) for m in rows], "total": len(rows)})
+
+
+@inbox_pwa_bp.route("/api/inbox/media-uploads/<token>")
+def api_inbox_media_upload(token):
+    """Attachment sent from the LUX Connect app, readable by the same tenant."""
+    user = _require_auth()
+    company = _require_company(user)
+    denied = _require_pwa_communications_access(user, company)
+    if denied:
+        return denied
+    from models import MobileMediaUpload
+    up = MobileMediaUpload.query.filter_by(public_token=token, company_id=company.id).first()
+    if not up or up.expires_at < datetime.utcnow():
+        abort(404)
+    return Response(up.data, mimetype=up.content_type, headers={"Cache-Control": "private, max-age=86400"})
 
 
 @inbox_pwa_bp.route("/api/inbox/messages/<int:message_id>/media/<int:media_index>")
@@ -2831,6 +2879,18 @@ def send_pwa_push_notification(company_id: int, *, user_ids, title: str, body: s
         })
         total += result.get("sent", 0)
         errors.extend(result.get("errors", []))
+        if not device_key:
+            # Same per-user decision (Away, quiet hours, alert preferences)
+            # fans out to the user's LUX Connect native devices as well.
+            try:
+                from services.native_push import queue_for_user
+                queue_for_user(
+                    company_id, user.id, title=title, body=body, link=link,
+                    event_type=decision["event_type"], badge=badge_count,
+                    silent=bool(decision["silent"]), phone_number_id=phone_number_id,
+                )
+            except Exception:
+                logger.exception("Native push enqueue failed", extra={"user_id": user.id, "company_id": company_id})
     return {"sent": total, "errors": errors, "debug": debug}
 
 

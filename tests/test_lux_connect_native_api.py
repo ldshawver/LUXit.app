@@ -1,0 +1,610 @@
+"""LUX Connect native app API (/api/mobile/v1) — backend contract.
+
+Covers: bearer-only auth (no cookie, no CSRF hole), refresh rotation with
+reuse detection and the lost-response grace, sign-in throttling, revocation
+(logout / remote revoke / archived user / removed membership / global
+session revoke), tenant isolation through the shared PWA views, the native
+Voice token, native handsets in the inbound <Dial>, native outbound identity
+verification, the idempotent unified text/MMS send (STOP still enforced,
+10DLC block), handset reassignment, native push decisions, sync and number
+assignment.
+"""
+import os
+import re
+from datetime import datetime, timedelta
+from unittest.mock import patch
+
+import pytest
+from werkzeug.security import generate_password_hash
+
+os.environ.setdefault("FLASK_ENV", "testing")
+os.environ.setdefault("DATABASE_URL", "sqlite:///:memory:")
+os.environ.setdefault("OPENAI_API_KEY", "test")
+os.environ.setdefault("DATA_ENCRYPTION_KEY", "g2CDXwdc6VKAElQ5QWqFBCsmXL_dQAs3e44_Gl1oJaU=")
+os.environ.setdefault("TWILIO_ACCOUNT_SID", "ACtest")
+os.environ.setdefault("TWILIO_API_KEY", "SKtest")
+os.environ.setdefault("TWILIO_API_SECRET", "secretsecretsecret")
+
+from app import create_app
+from extensions import db
+from models import (Company, MobileDevice, MobileMediaUpload, MobileSession, PhoneNumberMessagingRegistration,
+                    PhoneNumberUserPermission, PWADevice, TwilioAccount, TwilioCallLog, TwilioConversation,
+                    TwilioMessage, TwilioPhoneNumber, User, UserCompanyAccess)
+from services import mobile_auth, native_push
+from services.phone_availability import set_availability
+from services.phone_identity import mobile_voice_identity, pwa_voice_identity
+from services.receive_calls import set_receive_calls
+
+NUMBER = "+19165550123"
+OTHER_NUMBER = "+19165550999"
+UID_A = "ios-install-aaaaaaaaaaaaaaaa"
+UID_B = "android-install-bbbbbbbbbbbbbb"
+
+
+@pytest.fixture
+def app():
+    a = create_app()
+    a.config.update(TESTING=True, SQLALCHEMY_DATABASE_URI="sqlite:///:memory:",
+                    WTF_CSRF_ENABLED=False, SERVER_NAME="localhost")
+    with a.app_context():
+        db.create_all()
+        yield a
+        db.session.remove()
+        db.drop_all()
+
+
+@pytest.fixture
+def client(app):
+    return app.test_client()
+
+
+def _tenant(name="T", number=NUMBER, require_approval=False):
+    co = Company(name=name, is_active=True, require_approved_pwa_devices=require_approval)
+    db.session.add(co); db.session.flush()
+    ta = TwilioAccount(company_id=co.id, from_phone=number, is_active=True,
+                       _account_sid="ACtest", _auth_token="auth")
+    db.session.add(ta); db.session.flush()
+    pn = TwilioPhoneNumber(company_id=co.id, twilio_account_id=ta.id, phone_number=number,
+                           friendly_name="Main", is_active=True, voice_enabled=True,
+                           during_hours_route="ring_pwa", after_hours_route="ring_pwa")
+    db.session.add(pn); db.session.flush()
+    return co, ta, pn
+
+
+def _user(co, pn, name="rep", *, role="staff", can_call=True, permission=True, password="pw-123456"):
+    u = User(username=name, email=f"{name}@t.co", password_hash=generate_password_hash(password),
+             active=True, default_company_id=co.id)
+    db.session.add(u); db.session.flush()
+    db.session.add(UserCompanyAccess(user_id=u.id, company_id=co.id, role=role, is_active=True,
+                                     pwa_access_enabled=True, can_access_full_app=True, is_default=True))
+    if permission:
+        db.session.add(PhoneNumberUserPermission(company_id=co.id, user_id=u.id, phone_number_id=pn.id,
+                                                 can_access_pwa=True, can_call=can_call, can_view_calls=True,
+                                                 can_view_sms=True, can_send_sms=True))
+    db.session.flush()
+    return u
+
+
+def _login(client, name="rep", uid=UID_A, platform="ios", password="pw-123456"):
+    return client.post("/api/mobile/v1/auth/login", json={
+        "email": f"{name}@t.co", "password": password,
+        "device": {"device_uid": uid, "platform": platform, "device_name": "Phone", "app_version": "1.0.0"},
+    })
+
+
+def _auth(tokens):
+    return {"Authorization": f"Bearer {tokens['access_token']}"}
+
+
+def _signed_in(client, name="rep", uid=UID_A, platform="ios"):
+    r = _login(client, name, uid, platform)
+    assert r.status_code == 200, r.get_json()
+    return r.get_json()
+
+
+def _inbound(client, monkeypatch, sid="CAin1", to=NUMBER):
+    import twilio_sms
+    monkeypatch.setattr(twilio_sms, "_is_business_hours", lambda *a, **k: True)
+    r = client.post("/twilio/voice/inbound", data={"To": to, "From": "+14155559999", "CallSid": sid,
+                                                   "Direction": "inbound"})
+    return r.get_data(as_text=True)
+
+
+def _identities(twiml):
+    return re.findall(r"<Identity>([^<]+)</Identity>", twiml)
+
+
+def _register_voice(client, tokens, voice_token="voip-token-1"):
+    r = client.post("/api/mobile/v1/devices/current/voice-registration", headers=_auth(tokens),
+                    json={"registered": True, "voice_device_token": voice_token})
+    assert r.status_code == 200
+    return r
+
+
+# ══ authentication ═════════════════════════════════════════════════════════ #
+
+def test_login_issues_bearer_tokens_and_sets_no_cookie(app, client):
+    co, _ta, pn = _tenant(); _user(co, pn); db.session.commit()
+    r = _login(client)
+    body = r.get_json()
+    assert r.status_code == 200 and body["success"]
+    assert body["access_token"].startswith("lxa_") and body["refresh_token"].startswith("lxr_")
+    assert "Set-Cookie" not in r.headers
+    row = MobileSession.query.one()
+    assert body["access_token"] not in (row.access_token_hash, row.refresh_token_hash)  # only hashes stored
+    assert row.access_token_hash == mobile_auth.token_hash(body["access_token"])
+    me = client.get("/api/mobile/v1/me", headers=_auth(body))
+    assert me.status_code == 200 and me.get_json()["company"]["id"] == co.id
+    assert "Set-Cookie" not in me.headers
+
+
+def test_wrong_password_and_throttle(app, client):
+    co, _ta, pn = _tenant(); _user(co, pn); db.session.commit()
+    for _ in range(mobile_auth.MAX_FAILURES_PER_IDENTIFIER):
+        assert _login(client, password="wrong").status_code == 401
+    r = _login(client)  # even the right password is throttled now
+    assert r.status_code == 429 and r.get_json()["code"] == "too_many_attempts"
+
+
+def test_cookie_session_is_not_accepted_on_mobile_api(app, client):
+    co, _ta, pn = _tenant(); u = _user(co, pn); db.session.commit()
+    with client.session_transaction() as s:
+        s["_user_id"] = str(u.id); s["_fresh"] = True
+    r = client.get("/api/mobile/v1/me")
+    assert r.status_code == 401 and r.get_json()["code"] == "auth_required"
+    # and a cookie-only POST cannot send a text through the CSRF-exempt prefix
+    r = client.post("/api/mobile/v1/messages", json={"to": "+14155550000", "body": "x",
+                                                     "idempotency_key": "k" * 20})
+    assert r.status_code == 401
+
+
+def test_bearer_post_works_with_csrf_enabled_and_web_still_requires_csrf(app, client):
+    app.config["WTF_CSRF_ENABLED"] = True
+    co, _ta, pn = _tenant(); _user(co, pn); db.session.commit()
+    tokens = _signed_in(client)
+    r = client.post("/api/mobile/v1/devices/current/voice-registration", headers=_auth(tokens),
+                    json={"registered": False, "error": "test"})
+    assert r.status_code == 200
+    # The web PWA route is unchanged: no CSRF token -> rejected.
+    with client.session_transaction() as s:
+        s["_user_id"] = str(User.query.first().id); s["_fresh"] = True
+    r = client.post("/api/calls/1/accept")
+    assert r.status_code in (302, 400, 403)  # the app's CSRFError handler redirects
+    assert r.status_code != 200
+
+
+def test_refresh_rotates_and_invalidates_previous_tokens(app, client):
+    co, _ta, pn = _tenant(); _user(co, pn); db.session.commit()
+    first = _signed_in(client)
+    r = client.post("/api/mobile/v1/auth/refresh", json={"refresh_token": first["refresh_token"]})
+    second = r.get_json()
+    assert r.status_code == 200 and second["access_token"] != first["access_token"]
+    assert client.get("/api/mobile/v1/me", headers=_auth(first)).status_code == 401
+    assert client.get("/api/mobile/v1/me", headers=_auth(second)).status_code == 200
+
+
+def test_refresh_reuse_after_successor_used_revokes_device(app, client):
+    co, _ta, pn = _tenant(); _user(co, pn); db.session.commit()
+    first = _signed_in(client)
+    second = client.post("/api/mobile/v1/auth/refresh", json={"refresh_token": first["refresh_token"]}).get_json()
+    assert client.get("/api/mobile/v1/me", headers=_auth(second)).status_code == 200  # successor used
+    r = client.post("/api/mobile/v1/auth/refresh", json={"refresh_token": first["refresh_token"]})
+    assert r.status_code == 401 and r.get_json()["code"] == "session_revoked"
+    assert client.get("/api/mobile/v1/me", headers=_auth(second)).status_code == 401
+
+
+def test_refresh_lost_response_grace(app, client):
+    """The phone never received the refresh response and retries with the old token."""
+    co, _ta, pn = _tenant(); _user(co, pn); db.session.commit()
+    first = _signed_in(client)
+    lost = client.post("/api/mobile/v1/auth/refresh", json={"refresh_token": first["refresh_token"]}).get_json()
+    retry = client.post("/api/mobile/v1/auth/refresh", json={"refresh_token": first["refresh_token"]})
+    assert retry.status_code == 200
+    assert client.get("/api/mobile/v1/me", headers=_auth(retry.get_json())).status_code == 200
+    assert client.get("/api/mobile/v1/me", headers=_auth(lost)).status_code == 401
+
+
+def test_refresh_reuse_outside_grace_revokes(app, client):
+    co, _ta, pn = _tenant(); _user(co, pn); db.session.commit()
+    first = _signed_in(client)
+    client.post("/api/mobile/v1/auth/refresh", json={"refresh_token": first["refresh_token"]})
+    old = MobileSession.query.filter_by(refresh_token_hash=mobile_auth.token_hash(first["refresh_token"])).one()
+    old.rotated_at = datetime.utcnow() - timedelta(minutes=5)
+    db.session.commit()
+    r = client.post("/api/mobile/v1/auth/refresh", json={"refresh_token": first["refresh_token"]})
+    assert r.status_code == 401
+
+
+def test_expired_access_token_is_rejected_with_specific_code(app, client):
+    co, _ta, pn = _tenant(); _user(co, pn); db.session.commit()
+    tokens = _signed_in(client)
+    MobileSession.query.update({"access_expires_at": datetime.utcnow() - timedelta(seconds=1)})
+    db.session.commit()
+    r = client.get("/api/mobile/v1/me", headers=_auth(tokens))
+    assert r.status_code == 401 and r.get_json()["code"] == "token_expired"
+
+
+@pytest.mark.parametrize("change", ["archive_user", "remove_membership", "revoke_all_sessions"])
+def test_principal_changes_take_effect_on_next_request(app, client, change):
+    co, _ta, pn = _tenant(); u = _user(co, pn); db.session.commit()
+    tokens = _signed_in(client)
+    if change == "archive_user":
+        u.active = False
+    elif change == "remove_membership":
+        UserCompanyAccess.query.filter_by(user_id=u.id).update({"is_active": False})
+    else:
+        u.session_revoked_at = datetime.utcnow() + timedelta(seconds=1)
+    db.session.commit()
+    assert client.get("/api/mobile/v1/me", headers=_auth(tokens)).status_code == 401
+
+
+def test_user_without_mobile_access_cannot_sign_in(app, client):
+    co, _ta, pn = _tenant(); u = _user(co, pn)
+    UserCompanyAccess.query.filter_by(user_id=u.id).update({"pwa_access_enabled": False, "role": "viewer"})
+    db.session.commit()
+    r = _login(client)
+    assert r.status_code == 403 and r.get_json()["code"] == "mobile_access_disabled"
+
+
+# ══ tenant isolation ═══════════════════════════════════════════════════════ #
+
+def test_other_tenant_conversation_and_device_are_invisible(app, client):
+    co_a, _ta, pn_a = _tenant("A"); _user(co_a, pn_a, "alice")
+    co_b, _tb, pn_b = _tenant("B", OTHER_NUMBER); bob = _user(co_b, pn_b, "bob")
+    conv_b = TwilioConversation(company_id=co_b.id, from_number="+14155550001", to_number=OTHER_NUMBER,
+                                phone_number_id=pn_b.id)
+    db.session.add(conv_b); db.session.commit()
+    bob_tokens = _signed_in(client, "bob", UID_B, "android")
+    alice = _signed_in(client, "alice")
+    assert client.get(f"/api/mobile/v1/inbox/conversations/{conv_b.id}", headers=_auth(alice)).status_code == 404
+    listed = client.get("/api/mobile/v1/inbox/conversations", headers=_auth(alice)).get_json()
+    assert all(c["id"] != conv_b.id for c in listed.get("conversations", []))
+    bob_device = MobileDevice.query.filter_by(user_id=bob.id).one()
+    assert client.delete(f"/api/mobile/v1/devices/{bob_device.id}", headers=_auth(alice)).status_code == 404
+    r = client.post("/api/mobile/v1/messages", headers=_auth(alice),
+                    json={"conversation_id": conv_b.id, "body": "hi", "idempotency_key": "x" * 20})
+    assert r.status_code == 404
+    assert client.get("/api/mobile/v1/me", headers=_auth(bob_tokens)).status_code == 200
+
+
+# ══ voice ══════════════════════════════════════════════════════════════════ #
+
+def test_voice_token_is_device_scoped_with_platform_push_credential(app, client, monkeypatch):
+    monkeypatch.setenv("TWILIO_PUSH_CREDENTIAL_SID_IOS", "CRios")
+    monkeypatch.setenv("TWILIO_PUSH_CREDENTIAL_SID_ANDROID", "CRandroid")
+    monkeypatch.setenv("TWILIO_TWIML_APP_SID", "APapp")
+    co, _ta, pn = _tenant(); u = _user(co, pn); db.session.commit()
+    tokens = _signed_in(client)
+    body = client.get("/api/mobile/v1/voice/token", headers=_auth(tokens)).get_json()
+    device = MobileDevice.query.one()
+    assert body["identity"] == mobile_voice_identity(co.id, u.id, device.id, UID_A)
+    assert body["identity"] != pwa_voice_identity(co.id, u.id)
+    assert body["incoming_enabled"] and body["outbound_enabled"]
+    import jwt
+    claims = jwt.decode(body["token"], options={"verify_signature": False})
+    assert claims["grants"]["voice"]["push_credential_sid"] == "CRios"
+    assert claims["grants"]["identity"] == body["identity"]
+
+
+def test_voice_token_without_push_credential_is_honest(app, client, monkeypatch):
+    monkeypatch.delenv("TWILIO_PUSH_CREDENTIAL_SID_IOS", raising=False)
+    co, _ta, pn = _tenant(); _user(co, pn); db.session.commit()
+    tokens = _signed_in(client)
+    body = client.get("/api/mobile/v1/voice/token", headers=_auth(tokens)).get_json()
+    assert body["incoming_enabled"] is False
+    me = client.get("/api/mobile/v1/me", headers=_auth(tokens)).get_json()
+    assert me["calling"]["incoming"] is False and me["calling"]["reason"] == "PUSH_CREDENTIAL_NOT_CONFIGURED"
+
+
+def test_voice_token_uses_the_shared_gate(app, client):
+    co, _ta, pn = _tenant(); u = _user(co, pn); db.session.commit()
+    tokens = _signed_in(client)
+    set_receive_calls(u.id, co.id, False, actor_user_id=u.id, source="user"); db.session.commit()
+    r = client.get("/api/mobile/v1/voice/token", headers=_auth(tokens))
+    assert r.status_code == 403 and r.get_json()["code"] == "CALLING_DISABLED"
+
+
+def test_pending_approval_device_gets_no_token_until_approved(app, client):
+    co, _ta, pn = _tenant(require_approval=True)
+    _user(co, pn)
+    _user(co, pn, "boss", role="owner")
+    db.session.commit()
+    tokens = _signed_in(client)
+    r = client.get("/api/mobile/v1/voice/token", headers=_auth(tokens))
+    assert r.status_code == 403 and r.get_json()["code"] == "DEVICE_PENDING_APPROVAL"
+    boss = _signed_in(client, "boss", UID_B, "android")
+    device = MobileDevice.query.filter_by(device_uid=UID_A).one()
+    assert client.post(f"/api/mobile/v1/devices/{device.id}/approve", headers=_auth(boss)).status_code == 200
+    assert client.get("/api/mobile/v1/voice/token", headers=_auth(tokens)).status_code == 200
+
+
+def test_inbound_rings_pwa_and_every_registered_native_handset(app, client, monkeypatch):
+    co, _ta, pn = _tenant(); u = _user(co, pn); db.session.commit()
+    iphone = _signed_in(client, uid=UID_A, platform="ios")
+    android = _signed_in(client, uid=UID_B, platform="android")
+    _register_voice(client, iphone, "voip-ios"); _register_voice(client, android, "fcm-android")
+    ids = _identities(_inbound(client, monkeypatch))
+    d_ios = MobileDevice.query.filter_by(device_uid=UID_A).one()
+    d_and = MobileDevice.query.filter_by(device_uid=UID_B).one()
+    assert pwa_voice_identity(co.id, u.id) in ids
+    assert mobile_voice_identity(co.id, u.id, d_ios.id, UID_A) in ids
+    assert mobile_voice_identity(co.id, u.id, d_and.id, UID_B) in ids
+    assert len(ids) == len(set(ids)) == 3  # one <Dial>, no duplicates
+
+
+@pytest.mark.parametrize("exclusion", ["not_registered", "ring_disabled", "signed_out", "revoked",
+                                       "away", "no_number_permission"])
+def test_inbound_excludes_ineligible_handsets(app, client, monkeypatch, exclusion):
+    co, _ta, pn = _tenant(); u = _user(co, pn); db.session.commit()
+    tokens = _signed_in(client)
+    if exclusion != "not_registered":
+        _register_voice(client, tokens)
+    device = MobileDevice.query.one()
+    if exclusion == "ring_disabled":
+        client.patch(f"/api/mobile/v1/devices/{device.id}", headers=_auth(tokens), json={"ring_enabled": False})
+    elif exclusion == "signed_out":
+        client.post("/api/mobile/v1/auth/logout", headers=_auth(tokens))
+    elif exclusion == "revoked":
+        client.delete(f"/api/mobile/v1/devices/{device.id}", headers=_auth(tokens))
+    elif exclusion == "away":
+        set_availability(u.id, co.id, "away", actor_user_id=u.id, source="user"); db.session.commit()
+    elif exclusion == "no_number_permission":
+        PhoneNumberUserPermission.query.filter_by(user_id=u.id).update({"can_call": False}); db.session.commit()
+    ids = _identities(_inbound(client, monkeypatch))
+    assert mobile_voice_identity(co.id, u.id, device.id, UID_A) not in ids
+
+
+def test_logout_revokes_sessions_and_push(app, client):
+    co, _ta, pn = _tenant(); _user(co, pn); db.session.commit()
+    tokens = _signed_in(client)
+    client.put("/api/mobile/v1/devices/current/push-token", headers=_auth(tokens),
+               json={"token": "a" * 64, "type": "apns"})
+    assert client.post("/api/mobile/v1/auth/logout", headers=_auth(tokens)).status_code == 200
+    device = MobileDevice.query.one()
+    assert device.status == "signed_out" and device.push_token is None and device.voice_registered_at is None
+    assert client.get("/api/mobile/v1/me", headers=_auth(tokens)).status_code == 401
+    assert client.post("/api/mobile/v1/auth/refresh", json={"refresh_token": tokens["refresh_token"]}).status_code == 401
+
+
+def test_handset_reassigned_to_another_user_stops_ringing_previous_user(app, client, monkeypatch):
+    co, _ta, pn = _tenant(); a = _user(co, pn, "anna"); _user(co, pn, "ben"); db.session.commit()
+    anna = _signed_in(client, "anna", UID_A)
+    _register_voice(client, anna, "same-handset-voip")
+    ben = _signed_in(client, "ben", "ios-reinstall-cccccccccccccc")
+    _register_voice(client, ben, "same-handset-voip")
+    anna_device = MobileDevice.query.filter_by(user_id=a.id).one()
+    assert anna_device.status == "signed_out"
+    ids = _identities(_inbound(client, monkeypatch))
+    assert mobile_voice_identity(co.id, a.id, anna_device.id, UID_A) not in ids
+    assert client.get("/api/mobile/v1/me", headers=_auth(anna)).status_code == 401
+
+
+def test_native_outbound_identity_verified_and_caller_id_is_assigned_number(app, client):
+    co, _ta, pn = _tenant(); u = _user(co, pn); db.session.commit()
+    _signed_in(client)
+    device = MobileDevice.query.one()
+    identity = mobile_voice_identity(co.id, u.id, device.id, UID_A)
+    data = {"CallSid": "CAout1", "From": f"client:{identity}", "To": "(415) 555-0100"}
+    twiml = client.post("/twilio/voice/pwa-outbound", data=data).get_data(as_text=True)
+    assert f'callerId="{NUMBER}"' in twiml and "<Number>+14155550100</Number>" in twiml
+    client.post("/twilio/voice/pwa-outbound", data=data)  # Twilio retry
+    assert TwilioCallLog.query.filter_by(twilio_sid="CAout1").count() == 1
+
+
+@pytest.mark.parametrize("tamper", ["digest", "revoked", "other_user"])
+def test_native_outbound_rejects_unverified_identity(app, client, tamper):
+    co, _ta, pn = _tenant(); u = _user(co, pn); other = _user(co, pn, "other"); db.session.commit()
+    _signed_in(client)
+    device = MobileDevice.query.one()
+    identity = mobile_voice_identity(co.id, u.id, device.id, UID_A)
+    if tamper == "digest":
+        identity = identity[:-1] + ("0" if identity[-1] != "0" else "1")
+    elif tamper == "revoked":
+        device.status = "revoked"; db.session.commit()
+    else:
+        identity = identity.replace(f"_u{u.id}_", f"_u{other.id}_")
+    twiml = client.post("/twilio/voice/pwa-outbound", data={
+        "CallSid": "CAbad", "From": f"client:{identity}", "To": "+14155550100"}).get_data(as_text=True)
+    assert "<Dial" not in twiml and "could not be authorized" in twiml
+
+
+# ══ messaging ══════════════════════════════════════════════════════════════ #
+
+def _fake_send(calls):
+    def fake(conversation_id, message, **kw):
+        calls.append({"conversation_id": conversation_id, "body": message, **kw})
+        sid = f"SM{len(calls):030d}"
+        conv = db.session.get(TwilioConversation, conversation_id)
+        db.session.add(TwilioMessage(conversation_id=conversation_id, company_id=conv.company_id, twilio_sid=sid,
+                                     direction="outbound", body=message, status="queued",
+                                     media_urls=kw.get("media_urls")))
+        db.session.commit()
+        return {"success": True, "sid": sid, "status": "sent"}
+    return fake
+
+
+def test_send_requires_idempotency_key(app, client):
+    co, _ta, pn = _tenant(); _user(co, pn); db.session.commit()
+    tokens = _signed_in(client)
+    r = client.post("/api/mobile/v1/messages", headers=_auth(tokens), json={"to": "+14155550000", "body": "hi"})
+    assert r.status_code == 400 and r.get_json()["code"] == "idempotency_key_required"
+
+
+def test_send_to_new_number_is_idempotent_across_retries(app, client):
+    co, _ta, pn = _tenant(); _user(co, pn); db.session.commit()
+    tokens = _signed_in(client)
+    calls = []
+    payload = {"to": "(415) 555-0000", "body": "On my way", "idempotency_key": "compose-0001-abcdef"}
+    with patch("twilio_sms.sendConversationSms", side_effect=_fake_send(calls)):
+        first = client.post("/api/mobile/v1/messages", headers=_auth(tokens), json=payload)
+        retry = client.post("/api/mobile/v1/messages", headers=_auth(tokens), json=payload)
+    assert first.status_code == 200 and retry.status_code == 200
+    assert len(calls) == 1
+    assert retry.get_json()["idempotent"] is True
+    assert first.get_json()["conversation_id"] == retry.get_json()["conversation_id"]
+    conv = db.session.get(TwilioConversation, first.get_json()["conversation_id"])
+    assert conv.from_number == "+14155550000" and conv.to_number == NUMBER
+    assert conv.message_count == 1
+
+
+def test_send_to_stopped_contact_is_blocked(app, client):
+    co, _ta, pn = _tenant(); _user(co, pn)
+    conv = TwilioConversation(company_id=co.id, from_number="+14155550000", to_number=NUMBER,
+                              phone_number_id=pn.id, is_opted_out=True)
+    db.session.add(conv); db.session.commit()
+    tokens = _signed_in(client)
+    with patch("twilio_sms._build_client") as build:
+        r = client.post("/api/mobile/v1/messages", headers=_auth(tokens),
+                        json={"conversation_id": conv.id, "body": "hello", "idempotency_key": "stop-check-000001"})
+    assert r.status_code == 409 and r.get_json()["code"] == "recipient_opted_out"
+    build.assert_not_called()
+
+
+def test_mms_upload_send_and_media_urls(app, client):
+    co, _ta, pn = _tenant(); _user(co, pn); db.session.commit()
+    tokens = _signed_in(client)
+    import io
+    up = client.post("/api/mobile/v1/media", headers=_auth(tokens), content_type="multipart/form-data",
+                     data={"file": (io.BytesIO(b"\x89PNG fake"), "photo.png", "image/png")})
+    assert up.status_code == 200
+    media_id = up.get_json()["media"]["id"]
+    calls = []
+    with patch("twilio_sms.sendConversationSms", side_effect=_fake_send(calls)):
+        r = client.post("/api/mobile/v1/messages", headers=_auth(tokens),
+                        json={"to": "+14155550000", "media_ids": [media_id], "idempotency_key": "mms-0001-abcdefgh"})
+    assert r.status_code == 200
+    urls = calls[0]["media_urls"]
+    assert len(urls) == 1 and "/mobile-media/" in urls[0]
+    token = urls[0].rsplit("/", 1)[1]
+    public = client.get(f"/mobile-media/{token}")
+    assert public.status_code == 200 and public.data == b"\x89PNG fake"
+    # The message as the app/PWA reads it points at the authenticated route, not the public one.
+    shown = r.get_json()["message"]["media_urls"][0]
+    assert shown == f"/api/inbox/media-uploads/{token}"
+    assert client.get(f"/api/mobile/v1/inbox/media-uploads/{token}", headers=_auth(tokens)).status_code == 200
+    MobileMediaUpload.query.update({"created_at": datetime.utcnow() - timedelta(hours=5)}); db.session.commit()
+    assert client.get(f"/mobile-media/{token}").status_code == 404
+
+
+def test_media_rejects_unsupported_and_oversize(app, client):
+    co, _ta, pn = _tenant(); _user(co, pn); db.session.commit()
+    tokens = _signed_in(client)
+    import io
+    r = client.post("/api/mobile/v1/media", headers=_auth(tokens), content_type="multipart/form-data",
+                    data={"file": (io.BytesIO(b"MZ"), "x.exe", "application/x-msdownload")})
+    assert r.status_code == 415
+    big = io.BytesIO(b"0" * (5 * 1024 * 1024 + 1))
+    r = client.post("/api/mobile/v1/media", headers=_auth(tokens), content_type="multipart/form-data",
+                    data={"file": (big, "big.jpg", "image/jpeg")})
+    assert r.status_code == 413
+
+
+def test_unregistered_number_cannot_text_but_unknown_still_can(app, client):
+    co, _ta, pn = _tenant(); _user(co, pn); db.session.commit()
+    tokens = _signed_in(client)
+    calls = []
+    with patch("twilio_sms.sendConversationSms", side_effect=_fake_send(calls)):
+        ok = client.post("/api/mobile/v1/messages", headers=_auth(tokens),
+                         json={"to": "+14155550000", "body": "a", "idempotency_key": "unknown-reg-000001"})
+        assert ok.status_code == 200
+        db.session.add(PhoneNumberMessagingRegistration(company_id=co.id, phone_number_id=pn.id,
+                                                        status="not_registered"))
+        db.session.commit()
+        r = client.post("/api/mobile/v1/messages", headers=_auth(tokens),
+                        json={"to": "+14155550000", "body": "b", "idempotency_key": "not-reg-000000001"})
+    assert r.status_code == 422 and r.get_json()["code"] == "messaging_not_registered"
+    assert len(calls) == 1
+
+
+def test_sync_returns_changes_since(app, client):
+    co, _ta, pn = _tenant(); _user(co, pn)
+    old = TwilioConversation(company_id=co.id, from_number="+14155550001", to_number=NUMBER, phone_number_id=pn.id,
+                             last_message_at=datetime.utcnow() - timedelta(days=2))
+    new = TwilioConversation(company_id=co.id, from_number="+14155550002", to_number=NUMBER, phone_number_id=pn.id,
+                             last_message_at=datetime.utcnow())
+    db.session.add_all([old, new]); db.session.commit()
+    tokens = _signed_in(client)
+    since = (datetime.utcnow() - timedelta(hours=1)).isoformat() + "Z"
+    body = client.get(f"/api/mobile/v1/sync?since={since}", headers=_auth(tokens)).get_json()
+    ids = [c["id"] for c in body["conversations"]]
+    assert new.id in ids and old.id not in ids and body["server_time"].endswith("Z")
+
+
+# ══ native push ════════════════════════════════════════════════════════════ #
+
+def test_native_push_skips_calls_silent_and_unconfigured(app, client, monkeypatch):
+    co, _ta, pn = _tenant(); u = _user(co, pn); db.session.commit()
+    tokens = _signed_in(client)
+    client.put("/api/mobile/v1/devices/current/push-token", headers=_auth(tokens),
+               json={"token": "b" * 64, "type": "apns"})
+    common = dict(title="t", body="b", link="/app/inbox?conv=5", badge=2, phone_number_id=pn.id)
+    assert native_push.queue_for_user(co.id, u.id, event_type="incoming_sms", silent=False, **common) == 0  # nothing configured
+    monkeypatch.setattr(native_push, "status", lambda: {"apns": True, "fcm": True})
+    monkeypatch.setattr(native_push, "SYNC_FOR_TESTS", True)
+    sent = []
+    monkeypatch.setattr(native_push, "deliver", lambda job, devices: sent.append((job, devices)) or
+                        {"sent": len(devices), "dead_ids": [devices[0]["id"]], "errors": 0})
+    assert native_push.queue_for_user(co.id, u.id, event_type="incoming_call", silent=False, **common) == 0
+    assert native_push.queue_for_user(co.id, u.id, event_type="incoming_sms", silent=True, **common) == 0
+    assert native_push.queue_for_user(co.id, u.id, event_type="incoming_sms", silent=False, **common) == 1
+    assert sent[0][1][0]["push_token_type"] == "apns"
+    assert MobileDevice.query.one().push_token is None  # provider said the token is dead
+
+
+def test_push_payloads_deep_link_and_badge():
+    apns, fcm = native_push.build_messages({"title": "Ann", "body": "Hi", "link": "/app/inbox?conv=42",
+                                            "event_type": "incoming_sms", "badge": 3, "phone_number_id": 7})
+    assert apns["aps"]["badge"] == 3 and apns["route"] == "conversation" and apns["conversation_id"] == "42"
+    assert fcm["android"]["notification"]["channel_id"] == "messages"
+    assert fcm["data"]["conversation_id"] == "42" and all(isinstance(v, str) for v in fcm["data"].values())
+    assert "notification" in fcm  # notification message: shown by the OS even with Twilio owning FCM
+
+
+def test_push_token_type_must_match_platform(app, client):
+    co, _ta, pn = _tenant(); _user(co, pn); db.session.commit()
+    tokens = _signed_in(client, platform="ios")
+    r = client.put("/api/mobile/v1/devices/current/push-token", headers=_auth(tokens),
+                   json={"token": "fcm:token", "type": "fcm"})
+    assert r.status_code == 400
+
+
+# ══ numbers ════════════════════════════════════════════════════════════════ #
+
+def test_number_assignment_admin_only_and_tenant_scoped(app, client):
+    co, _ta, pn = _tenant(); _user(co, pn, "staffer"); owner = _user(co, pn, "owner", role="owner")
+    newbie = _user(co, pn, "newbie", permission=False)
+    co_b, _tb, pn_b = _tenant("B", OTHER_NUMBER); outsider = _user(co_b, pn_b, "outsider")
+    db.session.commit()
+    staff = _signed_in(client, "staffer")
+    assert client.get("/api/mobile/v1/admin/numbers", headers=_auth(staff)).status_code == 403
+    boss = _signed_in(client, "owner", UID_B, "android")
+    listed = client.get("/api/mobile/v1/admin/numbers", headers=_auth(boss)).get_json()["numbers"]
+    assert [n["phone_number"] for n in listed] == [NUMBER]
+    r = client.put(f"/api/mobile/v1/admin/numbers/{pn.id}/assignments/{newbie.id}", headers=_auth(boss), json={})
+    assert r.status_code == 200 and r.get_json()["assignment"]["can_call"] is True
+    r = client.put(f"/api/mobile/v1/admin/numbers/{pn.id}/assignments/{outsider.id}", headers=_auth(boss), json={})
+    assert r.status_code == 404
+    r = client.put(f"/api/mobile/v1/admin/numbers/{pn_b.id}/assignments/{newbie.id}", headers=_auth(boss), json={})
+    assert r.status_code == 404
+    assert client.delete(f"/api/mobile/v1/admin/numbers/{pn.id}", headers=_auth(boss)).status_code == 405
+    assert owner.id
+
+
+def test_me_reports_numbers_and_messaging_status(app, client):
+    co, _ta, pn = _tenant(); _user(co, pn)
+    db.session.add(PhoneNumberMessagingRegistration(company_id=co.id, phone_number_id=pn.id, status="registered"))
+    db.session.commit()
+    tokens = _signed_in(client)
+    me = client.get("/api/mobile/v1/me", headers=_auth(tokens)).get_json()
+    assert me["numbers"][0]["phone_number"] == NUMBER
+    assert me["numbers"][0]["messaging"]["status"] == "registered"
+    assert me["device"]["is_current"] is True
+
+
+def test_pwa_device_rows_are_untouched_by_native_sign_in(app, client):
+    co, _ta, pn = _tenant(); u = _user(co, pn)
+    db.session.add(PWADevice(company_id=co.id, user_id=u.id, device_key="dk", approved_status="approved",
+                             lifecycle_status="active"))
+    db.session.commit()
+    _signed_in(client)
+    assert PWADevice.query.count() == 1 and MobileDevice.query.count() == 1
