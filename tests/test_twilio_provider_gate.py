@@ -127,3 +127,60 @@ def test_no_individual_send_path_bypasses_the_gate(rel_path, expected):
         f"{rel_path} expected at least {expected_gate_uses} get_twilio_client() "
         f"call(s), found {gate_uses}"
     )
+
+
+# ── allowlist mode (staging real-device QA) ──────────────────────────────── #
+
+class _FakeRealClient:
+    def __init__(self, *a, **k):
+        self.sent = []
+        outer = self
+
+        class _M:
+            def create(self, **kw):
+                outer.sent.append(kw)
+                return type("Msg", (), {"sid": "SMok", "status": "queued"})()
+        self.messages = _M()
+
+
+@pytest.fixture
+def allowlist(monkeypatch):
+    import twilio.rest
+    monkeypatch.setattr(twilio.rest, "Client", _FakeRealClient)
+    monkeypatch.setenv("APP_ENV", "staging")
+    monkeypatch.setenv("LUXIT_TWILIO_MODE", "allowlist")
+    monkeypatch.setenv("LUXIT_TWILIO_ALLOWED_RECIPIENTS", "+15550001111, +15550003333 junk 5550004444")
+
+
+def test_allowlist_sends_only_to_listed_recipients(allowlist):
+    client = twilio_gate.get_twilio_client("ACfake", "tokfake", boundary="test.boundary")
+    msg = client.messages.create(body="hi", to="+15550001111", from_="+15550002222", media_url=["https://x/y.jpg"])
+    assert msg.sid == "SMok"
+    with pytest.raises(twilio_gate.TwilioSendBlockedError):
+        client.messages.create(body="hi", to="+15550009999", from_="+15550002222")
+    with pytest.raises(twilio_gate.TwilioSendBlockedError):
+        client.messages.create(body="hi", to="5550004444", from_="+15550002222")  # malformed entries ignored
+    assert twilio_gate.allowed_recipients() == {"+15550001111", "+15550003333"}
+
+
+def test_allowlist_blocks_calls_config_and_message_reads(allowlist):
+    client = twilio_gate.get_twilio_client("ACfake", "tokfake", boundary="test.boundary")
+    with pytest.raises(twilio_gate.TwilioSendBlockedError):
+        client.calls.create(to="+15550001111", from_="+15550002222", url="https://example.test")
+    with pytest.raises(twilio_gate.TwilioSendBlockedError):
+        client.incoming_phone_numbers.list()
+    with pytest.raises(twilio_gate.TwilioSendBlockedError):
+        client.messages.list()
+
+
+def test_allowlist_with_empty_list_is_disabled(allowlist, monkeypatch):
+    monkeypatch.setenv("LUXIT_TWILIO_ALLOWED_RECIPIENTS", "")
+    client = twilio_gate.get_twilio_client("ACfake", "tokfake", boundary="test.boundary")
+    with pytest.raises(twilio_gate.TwilioSendBlockedError):
+        client.messages.create(body="hi", to="+15550001111", from_="+15550002222")
+
+
+def test_allowlist_is_refused_in_production(monkeypatch):
+    monkeypatch.setenv("APP_ENV", "production")
+    monkeypatch.setenv("LUXIT_TWILIO_MODE", "allowlist")
+    assert twilio_gate.resolve_twilio_mode() == twilio_gate.MODE_DISABLED

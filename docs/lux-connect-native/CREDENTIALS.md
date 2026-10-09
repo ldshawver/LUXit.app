@@ -41,11 +41,19 @@ Secrets never go in the app or in git. The app holds only bearer tokens it recei
 ## Twilio
 
 - **Push Credentials:** the three above. Optionally rename the TwiML App to show it serves the PWA and native (same `TWILIO_TWIML_APP_SID`; the app reuses `/twilio/voice/pwa-outbound`).
-- **SMS on staging:** `+18302591310`'s SMS webhook points at **production** (`https://luxit.app/adiken/sms/inbound`), and staging runs `LUXIT_TWILIO_MODE=disabled`. For end-to-end texting on staging you need to authorize one of:
-  - a staging-only number whose SMS URL is `https://staging.luxit.app/twilio/sms/inbound` (recommended), or
-  - a temporary repoint of +18302591310 (this changes what production receives; not done).
+- **SMS on staging (re-audited 2026-10-09, read-only).** The earlier "repoint +18302591310's SMS URL" option **would not work**:
+  - +18302591310 is in Messaging Service `MGa8e0cd…` "Default Messaging Service for Conversations" with **"use inbound webhook on number" = off**, so its inbound texts go to the **service** URL `https://luxit.app/twilio/sms/inbound` (production). The number's own SMS URL (`/adiken/sms/inbound`) is ignored.
+  - That service also holds production's +19165989519 and +18664868340, and carries the account's only **VERIFIED** A2P 10DLC campaign (low volume). Changing the service's inbound URL or its "use number webhook" flag changes production routing. Not done.
+  - Outbound from +18302591310 *is* A2P-registered (through that service), so staging can **send** from it once its gate allows.
 
-  Plus a decision to open the staging send gate for that number only.
+  **Recommended (full fidelity, needs your approval + purchase):**
+  1. Buy one local number for staging. Do **not** add it to `MGa8e0cd…`.
+  2. Create a new Messaging Service "LUX Connect STAGING" with inbound + status callback → `https://staging.luxit.app/twilio/sms/inbound` / staging status route, and add the new number to it. Set the number's voice URL to `https://staging.luxit.app/twilio/voice/inbound`.
+  3. Register a second A2P campaign on the existing verified brand for that service (low-volume mixed). Until it is approved, **inbound** SMS/MMS and voice work immediately; **outbound** texts from that number are carrier-blocked (Twilio 30034).
+  4. In staging's DB, point the QA tenant's `TwilioPhoneNumber` at the new number and record its messaging registration.
+
+  **Interim (no purchase, outbound only):** set staging to the new gate mode
+  `LUXIT_TWILIO_MODE=allowlist` + `LUXIT_TWILIO_ALLOWED_RECIPIENTS=+1<your test phones>`. Staging may then send SMS/MMS **only** to those numbers (calls, number/webhook config and every other Twilio API stay blocked; the mode is refused in production). Send from +18302591310. **Do not reply** from the test phones: replies land in production's inbound handler (and may trigger production auto-replies). This needs your approval and a staging restart; it is not enabled.
 
 ## Expo / EAS
 

@@ -117,7 +117,14 @@ export interface EngineDeps {
   /** Classify an error thrown by api.voiceToken(). */
   classify?: (e: unknown) => 'policy' | 'auth' | 'transient';
   log?: (msg: string, extra?: Record<string, unknown>) => void;
+  /**
+   * Microphone permission; `ask` shows the OS prompt when it still can.
+   * Absent => assumed granted (tests, platforms that prompt on first use).
+   */
+  micPermission?: (ask: boolean) => Promise<boolean>;
 }
+
+export const MIC_DENIED_MESSAGE = 'Microphone access is off. Turn it on in Settings so the other person can hear you.';
 
 export const REREGISTER_AFTER_MS = 6 * 60 * 60 * 1000;
 export const POLICY_RECHECK_MS = 30 * 60 * 1000;
@@ -141,6 +148,7 @@ export class VoiceEngine extends Observable<VoiceSnapshot> {
   private random: () => number;
   private classify: (e: unknown) => 'policy' | 'auth' | 'transient';
   private log: (msg: string, extra?: Record<string, unknown>) => void;
+  private micPermission: (ask: boolean) => Promise<boolean>;
 
   private signedIn = false;
   private started = false;
@@ -188,6 +196,7 @@ export class VoiceEngine extends Observable<VoiceSnapshot> {
     this.random = deps.random ?? Math.random;
     this.classify = deps.classify ?? (() => 'transient');
     this.log = deps.log ?? (() => undefined);
+    this.micPermission = deps.micPermission ?? (async () => true);
     // SDK listeners are attached exactly once for the life of the engine.
     this.sdk.on('callInvite', (invite: SdkCallInvite) => this.onCallInvite(invite));
     this.sdk.on('registered', () => this.onSdkRegistered());
@@ -522,6 +531,10 @@ export class VoiceEngine extends Observable<VoiceSnapshot> {
       state: 'connecting', muted: false, startedAt: null, qualityWarnings: [], callLogId: view.callLogId,
     };
     this.changed();
+    // Answer even without the mic (the caller still hears nothing rather than
+    // ringing out), but say why so the user can fix it.
+    const micOk = await this.micPermission(true).catch(() => true);
+    if (!micOk) this.notice = { kind: 'mic_denied', text: MIC_DENIED_MESSAGE, at: this.now() };
     try {
       const call = await invite.accept();
       if (this.abandonedInvites.has(view.id)) {
@@ -558,6 +571,7 @@ export class VoiceEngine extends Observable<VoiceSnapshot> {
     const to = toE164(rawNumber);
     if (!to) throw new Error('Enter a valid phone number.');
     if (!this.online) throw new Error('No internet connection.');
+    if (!(await this.micPermission(true).catch(() => true))) throw new Error(MIC_DENIED_MESSAGE);
     this.clearEnded();
     this.hangupRequested = false;
     this.stats.connects += 1;

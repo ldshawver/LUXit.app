@@ -1,11 +1,12 @@
 import React from 'react';
-import { Platform, StyleSheet, Text, View } from 'react-native';
-import { useVoice } from '../state/hooks';
+import { Linking, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useController, useVoice } from '../state/hooks';
 import { usePalette } from '../ui/theme';
 import { voiceStatusText } from '../voice/statusText';
 
 export function StatusBanner() {
   const p = usePalette();
+  const c = useController();
   const s = useVoice();
   const t = voiceStatusText(s, Platform.OS === 'ios' ? 'ios' : 'android');
   const dot = t.tone === 'ok' ? p.green : t.tone === 'working' ? p.accent : t.tone === 'warn' ? p.amber : p.muted;
@@ -16,6 +17,19 @@ export function StatusBanner() {
         <Text style={[styles.title, { color: p.text }]}>{t.title}</Text>
       </View>
       {t.detail ? <Text style={{ color: p.muted, marginTop: 4 }}>{t.detail}</Text> : null}
+      {s.notice && !s.call && !s.invite ? (
+        <View style={styles.notice}>
+          <Text style={{ color: p.amber, flex: 1 }}>{s.notice.text}</Text>
+          {s.notice.kind === 'mic_denied' ? (
+            <Pressable accessibilityRole="button" hitSlop={8} onPress={() => void Linking.openSettings()}>
+              <Text style={{ color: p.accent, fontWeight: '600' }}>Settings</Text>
+            </Pressable>
+          ) : null}
+          <Pressable accessibilityRole="button" accessibilityLabel="Dismiss" hitSlop={8} onPress={() => c.voice.dismissNotice()}>
+            <Text style={{ color: p.muted, fontWeight: '600' }}>✕</Text>
+          </Pressable>
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -25,4 +39,5 @@ const styles = StyleSheet.create({
   line: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   dot: { width: 10, height: 10, borderRadius: 5 },
   title: { fontSize: 15, fontWeight: '600' },
+  notice: { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 8 },
 });

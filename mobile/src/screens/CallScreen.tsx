@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { ActionSheetIOS, Alert, Modal, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActionSheetIOS, Alert, Linking, Modal, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { formatDuration, formatPhone } from '../lib/phone';
@@ -83,6 +83,9 @@ export function CallScreen() {
               {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
               <Text style={styles.status} accessibilityLiveRegion="polite">{status}</Text>
               {poor ? <Text style={[styles.status, { color: p.amber }]}>{poor}</Text> : null}
+              {inCall && s.notice?.kind === 'mic_denied' ? (
+                <Text style={[styles.status, { color: p.amber, textAlign: 'center' }]} onPress={() => void Linking.openSettings()}>{s.notice.text}</Text>
+              ) : null}
             </View>
           ) : (
             <View style={styles.keysHeader}>

@@ -560,6 +560,48 @@ def test_push_payloads_deep_link_and_badge():
     assert "notification" in fcm  # notification message: shown by the OS even with Twilio owning FCM
 
 
+@pytest.mark.parametrize("event_type,link,route", [
+    ("voicemail", "/app/inbox?tab=voicemail", "voicemail"),
+    ("missed_call", "/app/inbox?tab=calls", "recents"),
+])
+def test_call_alert_payloads_route_and_use_calls_channel(event_type, link, route):
+    # The exact links twilio_sms.py queues for voicemail / missed-call alerts.
+    apns, fcm = native_push.build_messages({"title": "Voicemail", "body": "From Ann", "link": link,
+                                            "event_type": event_type, "badge": 1, "phone_number_id": 7})
+    assert apns["route"] == route and fcm["data"]["route"] == route
+    assert fcm["android"]["notification"]["channel_id"] == "calls"
+    assert "conversation_id" not in apns
+
+
+def test_remote_revoke_of_another_device_kills_it_everywhere(app, client, monkeypatch):
+    """Lost phone: revoked from the user's other handset. It cannot refresh, get a
+    voice token, ring, or place a call; the revoking handset keeps working."""
+    co, _ta, pn = _tenant(); u = _user(co, pn); _user(co, pn, "colleague"); db.session.commit()
+    iphone = _signed_in(client, uid=UID_A, platform="ios")
+    lost = _signed_in(client, uid=UID_B, platform="android")
+    _register_voice(client, iphone, "voip-ios"); _register_voice(client, lost, "fcm-lost")
+    d_lost = MobileDevice.query.filter_by(device_uid=UID_B).one()
+    lost_identity = mobile_voice_identity(co.id, u.id, d_lost.id, UID_B)
+
+    # A colleague (non-admin) in the same tenant cannot see or revoke it.
+    colleague = _signed_in(client, "colleague", uid="ios-colleague-cccccccccccc")
+    assert client.delete(f"/api/mobile/v1/devices/{d_lost.id}", headers=_auth(colleague)).status_code == 404
+
+    assert client.delete(f"/api/mobile/v1/devices/{d_lost.id}", headers=_auth(iphone)).status_code == 200
+    assert client.get("/api/mobile/v1/me", headers=_auth(lost)).status_code == 401
+    assert client.get("/api/mobile/v1/voice/token", headers=_auth(lost)).status_code == 401
+    assert client.post("/api/mobile/v1/auth/refresh", json={"refresh_token": lost["refresh_token"]}).status_code == 401
+
+    ids = _identities(_inbound(client, monkeypatch))
+    assert lost_identity not in ids
+    assert mobile_voice_identity(co.id, u.id, MobileDevice.query.filter_by(device_uid=UID_A).one().id, UID_A) in ids
+
+    twiml = client.post("/twilio/voice/pwa-outbound", data={
+        "CallSid": "CAlost", "From": f"client:{lost_identity}", "To": "+14155550100"}).get_data(as_text=True)
+    assert "<Dial" not in twiml
+    assert client.get("/api/mobile/v1/me", headers=_auth(iphone)).status_code == 200
+
+
 def test_push_token_type_must_match_platform(app, client):
     co, _ta, pn = _tenant(); _user(co, pn); db.session.commit()
     tokens = _signed_in(client, platform="ios")

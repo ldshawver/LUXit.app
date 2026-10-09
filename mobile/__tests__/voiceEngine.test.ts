@@ -1,22 +1,24 @@
 import { ApiError, NetworkError } from '../src/api/http';
 import { classifyVoiceError } from '../src/api/endpoints';
-import { ENDED_HOLD_MS, POLICY_RECHECK_MS, REREGISTER_AFTER_MS, RETRY_CAP_MS, VoiceEngine, type VoiceSnapshot } from '../src/voice/VoiceEngine';
+import { ENDED_HOLD_MS, MIC_DENIED_MESSAGE, POLICY_RECHECK_MS, REREGISTER_AFTER_MS, RETRY_CAP_MS, VoiceEngine, type VoiceSnapshot } from '../src/voice/VoiceEngine';
 import { voiceStatusText } from '../src/voice/statusText';
 import { FakeCall, FakeClock, FakeInvite, FakeSdk, FakeVoiceApi, flush } from './helpers/fakes';
 
-function setup(platform: 'ios' | 'android' = 'ios') {
+function setup(platform: 'ios' | 'android' = 'ios', opts: { mic?: boolean } = {}) {
   const sdk = new FakeSdk();
   const api = new FakeVoiceApi();
   const clock = new FakeClock();
+  const micAsks: boolean[] = [];
   const engine = new VoiceEngine({
     sdk, api, platform, now: clock.now, setTimer: clock.set, clearTimer: clock.clear, random: () => 0.5,
     classify: classifyVoiceError,
+    micPermission: async (ask) => { micAsks.push(ask); return opts.mic ?? true; },
   });
   const phases: string[] = [];
   engine.subscribe((s: VoiceSnapshot) => {
     if (phases[phases.length - 1] !== s.phase) phases.push(s.phase);
   });
-  return { sdk, api, clock, engine, phases };
+  return { sdk, api, clock, engine, phases, micAsks };
 }
 
 describe('registration', () => {
@@ -416,5 +418,27 @@ describe('outbound calls', () => {
     await engine.placeCall('4155550100');
     out.fire('connectFailure', { message: 'Busy', code: 31486 });
     expect(engine.snapshot().ended).toMatchObject({ reason: 'failed', message: 'Busy (31486)' });
+  });
+});
+
+describe('microphone permission', () => {
+  test('outbound is refused with a fix-it message when the mic is off, SDK untouched', async () => {
+    const { engine, sdk, micAsks } = setup('android', { mic: false });
+    await engine.start();
+    await expect(engine.placeCall('4155550100')).rejects.toThrow(MIC_DENIED_MESSAGE);
+    expect(micAsks).toEqual([true]);
+    expect(sdk.connects).toEqual([]);
+    expect(engine.snapshot().call).toBeNull();
+  });
+
+  test('inbound is still answered without the mic, with a notice saying why', async () => {
+    const { engine, sdk } = setup('android', { mic: false });
+    await engine.start();
+    const inv = new FakeInvite();
+    sdk.fire('callInvite', inv);
+    await engine.accept();
+    expect(engine.snapshot().phase).not.toBe('ended');
+    expect(engine.snapshot().call).not.toBeNull();
+    expect(engine.snapshot().notice).toMatchObject({ kind: 'mic_denied' });
   });
 });

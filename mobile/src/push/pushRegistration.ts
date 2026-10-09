@@ -28,16 +28,28 @@ export async function notificationPermission(ask: boolean): Promise<'granted' | 
   return next.granted ? 'granted' : next.status;
 }
 
+/** Last token the server accepted in this session, so foreground re-checks are free. */
+let lastSent: string | null = null;
+export function forgetSentPushToken(): void {
+  lastSent = null;
+}
+
 export async function registerAlertPush(api: LuxApi, sdk: VoiceSdk, apnsEnvironment: 'sandbox' | 'production'): Promise<boolean> {
   const perm = await notificationPermission(false);
   if (perm !== 'granted') return false;
   if (Platform.OS === 'ios') {
-    const t = await Notifications.getDevicePushTokenAsync();
-    await api.setPushToken(String(t.data), 'apns', apnsEnvironment);
+    const token = String((await Notifications.getDevicePushTokenAsync()).data);
+    const key = `apns:${apnsEnvironment}:${token}`;
+    if (key === lastSent) return true;
+    await api.setPushToken(token, 'apns', apnsEnvironment);
+    lastSent = key;
   } else {
     const token = await sdk.getDeviceToken();
     if (!token) return false;
+    const key = `fcm:${token}`;
+    if (key === lastSent) return true;
     await api.setPushToken(token, 'fcm');
+    lastSent = key;
   }
   return true;
 }

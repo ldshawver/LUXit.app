@@ -6,9 +6,11 @@
 
 | Layer | Result |
 |---|---|
-| Backend contract `tests/test_lux_connect_native_api.py` | **44 / 44 pass** (both the prod-lineage branch and the staging branch) |
+| Backend contract `tests/test_lux_connect_native_api.py` | **47 / 47 pass** (re-run 2026-10-09 PM; +remote revoke of another handset, +voicemail / missed-call push payloads) |
+| Twilio send gate `tests/test_twilio_provider_gate.py` | **19 / 19 pass** (+4 for the new staging-only `allowlist` mode) |
+| `tests/test_pwa_phone_system.py` | 71 pass, 1 fail; **the same 1 fails on untouched HEAD a84119f** (after-hours auto-reply fallback); 0 regressions |
 | Existing voice/PWA/SMS/Twilio/consent suites (592 tests) | 558 pass, **34 fail — the identical 34 fail on the untouched baseline 32814a7; 0 regressions** |
-| Mobile unit tests (jest) | **58 / 58 pass**: VoiceEngine 31, API client 8, outbox 8, sync 5, utils 4, manifest plugin 1 |
+| Mobile unit tests (jest) | **60 / 60 pass**: VoiceEngine 33 (+mic denied: outbound refused before the SDK, inbound still answered with a notice), API client 8, outbox 8, sync 5, utils 4, manifest plugin 1 |
 | TypeScript 6 strict typecheck | clean |
 | `expo-doctor` | 21 / 21 |
 | `expo prebuild` (iOS + Android) | succeeds; Twilio Kotlin proxies wired, Expo FCM service removed, Google Services applied, `UIBackgroundModes=[audio, voip]`, `aps-environment=production` |
@@ -86,6 +88,10 @@ Record pass/fail, device model and OS for each.
 11. Text from the other phone → notification (app closed) → tap opens the thread; unread badge clears.
 12. Send a text and a photo → delivered on the other phone from the LUX Connect number (needs the staging SMS decision).
 13. Settings → Sign out → call the number → this iPhone does not ring.
+14. Receive a photo (MMS) from the other phone → thumbnail in the thread, opens full size.
+15. Delete the app, reinstall, sign in → step 1 again; the old install never rings (its device row is replaced).
+16. Fresh install, **deny** microphone → Keypad call shows "Microphone access is off…" and does not dial; Settings link works. Answer an incoming call → it connects and the call screen says why the caller can't hear you.
+17. Repeat 2, 3 and 11 on Wi-Fi only and on cellular only.
 
 **Android (Pixel on Android 15/16, plus one Samsung)**
 - Steps 1–13 equivalents, using the full-screen incoming notification on the lock screen.
@@ -96,6 +102,16 @@ Record pass/fail, device model and OS for each.
 1. Same user signed in on the iPhone, the Android phone and the desktop PWA → one call rings all three → answer on one → the other two stop ringing within about a second.
 2. Settings → Ring this phone off on the iPhone → the iPhone does not ring; the others do.
 3. Devices → sign out the Android phone from the iPhone → the Android phone stops ringing and asks for sign-in on next use.
+4. On the revoked Android phone, before it notices, try to place a call → refused (server rejects the identity; no caller ID is ever assigned).
+5. Text sent from the iPhone appears in the same thread on the Android phone and the PWA within a few seconds (SSE / sync).
 
 **Isolation**
 - A user in another company signed in on a second phone never rings for, or sees texts of, this number.
+
+## Results log
+
+No physical-device test has been run yet. Fill this in as tests are executed; do not mark simulator or unit results here.
+
+| # | Device / OS | Network | Build | Result | Notes |
+|---|---|---|---|---|---|
+| | | | | NOT RUN | |

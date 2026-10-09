@@ -14,7 +14,9 @@ import { Observable } from '../lib/emitter';
 import { Outbox } from '../messaging/outbox';
 import { makeStreamOpener } from '../messaging/sseStream';
 import { SyncManager } from '../messaging/sync';
-import { ensureNotificationChannels, registerAlertPush, setBadge } from '../push/pushRegistration';
+import * as Notifications from 'expo-notifications';
+import { microphonePermission, requestCallingPermissions } from '../push/permissions';
+import { ensureNotificationChannels, forgetSentPushToken, registerAlertPush, setBadge } from '../push/pushRegistration';
 import { createTwilioSdk } from '../voice/twilioAdapter';
 import { VoiceEngine } from '../voice/VoiceEngine';
 
@@ -71,6 +73,7 @@ export class AppController extends Observable<SessionSnapshot> {
       platform: Platform.OS === 'ios' ? 'ios' : 'android',
       classify: classifyVoiceError,
       log: (msg, extraInfo) => console.log(`[voice] ${msg}`, extraInfo ?? ''),
+      micPermission: microphonePermission,
     });
     this.outbox = new Outbox({
       api: this.api,
@@ -137,7 +140,19 @@ export class AppController extends Observable<SessionSnapshot> {
     void this.outbox.load();
     void this.sync.start();
     await this.voice.start();
+    await requestCallingPermissions().catch(() => undefined);
     void this.registerPush();
+    this.watchPushToken();
+  }
+
+  private pushTokenSub: { remove(): void } | null = null;
+
+  /** iOS can rotate the APNs token (restore, reinstall); re-send it when it does. */
+  private watchPushToken(): void {
+    if (Platform.OS !== 'ios' || this.pushTokenSub) return;
+    this.pushTokenSub = Notifications.addPushTokenListener(() => {
+      if (this.state.status === 'signed_in') void this.registerPush();
+    });
   }
 
   async registerPush(): Promise<void> {
@@ -175,6 +190,7 @@ export class AppController extends Observable<SessionSnapshot> {
     await this.voice.signOut().catch(() => undefined);
     this.sync.stop();
     await this.tokens.clear();
+    forgetSentPushToken();
     setBadge(0);
     this.set({ status: 'signed_out', me: null, signOutReason: reason });
   }
@@ -188,6 +204,8 @@ export class AppController extends Observable<SessionSnapshot> {
     if (active && !wasActive) {
       void this.voice.onForeground();
       void this.refreshMe();
+      // Picks up a permission granted in system Settings and a rotated FCM token.
+      void this.registerPush();
       this.outbox.wake();
     }
   }
