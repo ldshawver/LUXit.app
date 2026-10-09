@@ -1,5 +1,6 @@
 import { ApiClient, ApiError, NetworkError } from './http';
-import type { CallRecord, ContactHit, Conversation, DeviceInfo, Me, Message, VoiceToken } from './types';
+import type { AutomationRule, CallRecord, CallRouting, ContactHit, Conversation, DeviceInfo, Me, Message, NumberSettings, VoiceToken } from './types';
+import type { PaletteId } from '../state/prefs';
 import type { VoiceApi } from '../voice/VoiceEngine';
 
 /** Typed calls into /api/mobile/v1. Paths are relative to that prefix. */
@@ -84,7 +85,7 @@ export class LuxApi implements VoiceApi {
     return this.http.post<{ media: { id: number } }>('/media', undefined, { form, timeoutMs: 60000 });
   }
 
-  sendMessage(payload: { conversation_id?: number; to?: string; body: string; media_ids: number[]; idempotency_key: string }) {
+  sendMessage(payload: { conversation_id?: number; to?: string; from_phone_number_id?: number; body: string; media_ids: number[]; idempotency_key: string }) {
     return this.http.post<{ conversation_id: number; idempotent: boolean; message: Message | null }>('/messages', payload, { timeoutMs: 30000 });
   }
 
@@ -104,6 +105,46 @@ export class LuxApi implements VoiceApi {
 
   markCallRead(id: number) {
     return this.http.post(`/calls/${id}/mark-read`);
+  }
+
+  // number settings, routing, automation (admins edit; everyone may read)
+  numberSettings(id: number) {
+    return this.http.get<{ editable: boolean; settings: NumberSettings }>(`/phone/numbers/${id}/settings`);
+  }
+
+  saveNumberSettings(id: number, fields: Partial<NumberSettings>) {
+    return this.http.put<{ editable: boolean; settings: NumberSettings }>(`/phone/numbers/${id}/settings`, fields);
+  }
+
+  numberRouting(id: number) {
+    return this.http.get<{ routing: CallRouting | null }>(`/phone/numbers/${id}/routing`);
+  }
+
+  rules(phoneNumberId?: number) {
+    return this.http.get<{ editable: boolean; rules: AutomationRule[] }>(
+      phoneNumberId ? `/automation/rules?phone_number_id=${phoneNumberId}` : '/automation/rules');
+  }
+
+  createRule(rule: Partial<AutomationRule>) {
+    return this.http.post<{ rule: AutomationRule }>('/automation/rules', rule);
+  }
+
+  updateRule(id: number, fields: Partial<AutomationRule>) {
+    return this.http.patch<{ rule: AutomationRule }>(`/automation/rules/${id}`, fields);
+  }
+
+  deleteRule(id: number) {
+    return this.http.delete(`/automation/rules/${id}`);
+  }
+
+  // preferences (palette is account-wide, shared with the web app)
+  preferences() {
+    return this.http.get<{ preferences?: { palette_id?: string } }>('/pwa/preferences');
+  }
+
+  savePalette(paletteId: PaletteId) {
+    // The server resets the palette when palette_id is missing, so it is always sent.
+    return this.http.patch('/pwa/preferences', { palette_id: paletteId });
   }
 
   searchContacts(q: string) {

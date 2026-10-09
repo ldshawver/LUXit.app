@@ -1435,6 +1435,14 @@ def _normalize_e164(value):
         return "+" + digits
     return None
 
+def phone_settings_editable(user, company_id: int) -> bool:
+    """Who may change a number's routing, forwarding and automatic replies."""
+    from services.comms_permissions import can_manage_users, normalize_role, user_access_for_company
+    acc = user_access_for_company(user, company_id)
+    role = normalize_role(getattr(acc, "role", None)) if acc else "viewer"
+    return bool(can_manage_users(user, company_id) or role in {"owner", "admin"} or getattr(user, "is_admin", False))
+
+
 @inbox_pwa_bp.route("/api/phone/numbers/<int:number_id>/settings", methods=["GET", "PUT"])
 def api_phone_number_settings(number_id):
     user = _require_auth()
@@ -1444,13 +1452,24 @@ def api_phone_number_settings(number_id):
     pn = TwilioPhoneNumber.query.filter_by(id=number_id, company_id=company.id, is_active=True).first_or_404()
     if pn.phone_number not in accessible_phone_numbers(user, company.id):
         abort(404)
-    acc = user_access_for_company(user, company.id)
-    role = normalize_role(getattr(acc, "role", None)) if acc else "viewer"
-    editable = can_manage_users(user, company.id) or role in {"owner", "admin"} or getattr(user, "is_admin", False)
+    editable = phone_settings_editable(user, company.id)
     if request.method == "PUT":
         if not editable:
             return jsonify({"success": False, "error": "Permission denied."}), 403
         data = request.get_json() or {}
+        if "sms_forward_to" in data:
+            raw = (data.get("sms_forward_to") or "").strip()
+            if raw:
+                normalized = _normalize_e164(raw)
+                if normalized is None:
+                    return jsonify({"success": False, "error": "Forwarding number must be E.164 (for example +15551234567)."}), 400
+                data["sms_forward_to"] = normalized
+            else:
+                data["sms_forward_to"] = None
+        own_numbers = {n.phone_number for n in TwilioPhoneNumber.query.filter_by(company_id=company.id).all()}
+        for fwd_key in ("sms_forward_to", "call_forwarding_number", "call_forward_to"):
+            if data.get(fwd_key) and data[fwd_key] in own_numbers:
+                return jsonify({"success": False, "error": "Forwarding cannot point at one of this account's own numbers."}), 400
         allowed = {
             "business_hours", "timezone", "during_hours_route", "after_hours_route",
             "sms_forward_to", "sms_forwarding_enabled", "auto_reply_enabled", "number_auto_reply_text",

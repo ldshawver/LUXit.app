@@ -33,6 +33,8 @@ export interface OutboxItem {
   idempotencyKey: string;
   conversationId?: number;
   to?: string;
+  /** Sender for a new thread (caller ID choice); ignored for existing threads. */
+  fromNumberId?: number;
   body: string;
   attachments: OutboxAttachment[];
   state: OutboxState;
@@ -51,7 +53,7 @@ export interface KeyValueStore {
 
 export interface OutboxApi {
   uploadMedia(file: { uri: string; name: string; type: string }): Promise<{ media: { id: number } }>;
-  sendMessage(payload: { conversation_id?: number; to?: string; body: string; media_ids: number[]; idempotency_key: string }):
+  sendMessage(payload: { conversation_id?: number; to?: string; from_phone_number_id?: number; body: string; media_ids: number[]; idempotency_key: string }):
     Promise<{ conversation_id: number; idempotent: boolean; message: Message | null }>;
 }
 
@@ -108,7 +110,7 @@ export class Outbox extends Observable<OutboxItem[]> {
     void this.kick();
   }
 
-  async enqueue(input: { conversationId?: number; to?: string; body: string; attachments?: OutboxAttachment[] }): Promise<OutboxItem> {
+  async enqueue(input: { conversationId?: number; to?: string; fromNumberId?: number; body: string; attachments?: OutboxAttachment[] }): Promise<OutboxItem> {
     await this.load();
     const body = input.body.trim();
     if (!body && !(input.attachments?.length)) throw new Error('Nothing to send.');
@@ -117,6 +119,7 @@ export class Outbox extends Observable<OutboxItem[]> {
       idempotencyKey: this.deps.newKey(),
       conversationId: input.conversationId,
       to: input.to,
+      fromNumberId: input.conversationId ? undefined : input.fromNumberId,
       body,
       attachments: (input.attachments ?? []).map((a) => ({ ...a })),
       state: 'queued',
@@ -197,6 +200,7 @@ export class Outbox extends Observable<OutboxItem[]> {
       const res = await this.deps.api.sendMessage({
         conversation_id: item.conversationId,
         to: item.conversationId ? undefined : item.to,
+        ...(item.conversationId || item.fromNumberId == null ? {} : { from_phone_number_id: item.fromNumberId }),
         body: item.body,
         media_ids: item.attachments.map((a) => a.mediaId!),
         idempotency_key: item.idempotencyKey,

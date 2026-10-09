@@ -3,7 +3,7 @@ import { ActionSheetIOS, Alert, FlatList, Platform, TextInput, Text, View } from
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { ContactHit } from '../api/types';
 import { formatPhone } from '../lib/phone';
-import { useController, useSession } from '../state/hooks';
+import { useController, useCallingNumber } from '../state/hooks';
 import { Avatar, EmptyState, Row } from '../ui/components';
 import { usePalette } from '../ui/theme';
 import type { RootStackParams } from './navTypes';
@@ -12,7 +12,7 @@ import type { RootStackParams } from './navTypes';
 export function ContactsScreen({ navigation }: { navigation: NativeStackScreenProps<RootStackParams>['navigation'] }) {
   const p = usePalette();
   const c = useController();
-  const { me } = useSession();
+  const callingNumber = useCallingNumber();
   const [q, setQ] = useState('');
   const [hits, setHits] = useState<ContactHit[]>([]);
   const [loading, setLoading] = useState(false);
@@ -37,7 +37,7 @@ export function ContactsScreen({ navigation }: { navigation: NativeStackScreenPr
   }, [q, c]);
 
   const open = (h: ContactHit) => {
-    const call = () => c.voice.placeCall(h.phone, { name: h.name, phoneNumberId: me?.numbers[0]?.id }).catch((e) => Alert.alert('Can’t call', (e as Error).message));
+    const call = () => c.voice.placeCall(h.phone, { name: h.name, phoneNumberId: callingNumber?.id }).catch((e) => Alert.alert('Can’t call', (e as Error).message));
     const text = () => navigation.navigate('Conversation', { title: h.name, number: h.phone });
     if (Platform.OS === 'ios') {
       ActionSheetIOS.showActionSheetWithOptions({ title: h.name, message: formatPhone(h.phone), options: ['Call', 'Message', 'Cancel'], cancelButtonIndex: 2 },

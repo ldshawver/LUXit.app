@@ -12,6 +12,7 @@ import { getDeviceUid } from '../auth/deviceId';
 import { SecureTokenStore } from '../auth/secureTokenStore';
 import { Observable } from '../lib/emitter';
 import { Outbox } from '../messaging/outbox';
+import { PrefsStore } from './prefs';
 import { makeStreamOpener } from '../messaging/sseStream';
 import { SyncManager } from '../messaging/sync';
 import * as Notifications from 'expo-notifications';
@@ -54,6 +55,7 @@ export class AppController extends Observable<SessionSnapshot> {
   readonly voice: VoiceEngine;
   readonly outbox: Outbox;
   readonly sync: SyncManager;
+  readonly prefs: PrefsStore;
 
   private state: SessionSnapshot = { status: 'booting', me: null, signOutReason: null, online: true };
   private appState: AppStateStatus = AppState.currentState;
@@ -82,6 +84,7 @@ export class AppController extends Observable<SessionSnapshot> {
       isOnline: () => this.state.online,
     });
     this.sync = new SyncManager({ api: this.api, openStream: makeStreamOpener(this.http) });
+    this.prefs = new PrefsStore(AsyncStorage, this.api);
     this.sync.subscribe((s) => setBadge(s.unreadMessages + s.missedCalls));
   }
 
@@ -101,6 +104,7 @@ export class AppController extends Observable<SessionSnapshot> {
     AppState.addEventListener('change', (next) => this.onAppState(next));
     NetInfo.addEventListener((s) => this.onNetwork(Boolean(s.isConnected) && s.isInternetReachable !== false));
     await ensureNotificationChannels().catch(() => undefined);
+    await this.prefs.load();
     const tokens = await this.tokens.get();
     if (!tokens) {
       this.set({ status: 'signed_out' });
@@ -137,6 +141,7 @@ export class AppController extends Observable<SessionSnapshot> {
       await this.api.updateCurrentDevice({ apns_environment: APNS_ENVIRONMENT }).catch(() => undefined);
     }
     await this.refreshMe();
+    void this.prefs.syncFromServer();
     void this.outbox.load();
     void this.sync.start();
     await this.voice.start();
@@ -191,6 +196,7 @@ export class AppController extends Observable<SessionSnapshot> {
     this.sync.stop();
     await this.tokens.clear();
     forgetSentPushToken();
+    await this.prefs.clear();
     setBadge(0);
     this.set({ status: 'signed_out', me: null, signOutReason: reason });
   }
@@ -204,6 +210,7 @@ export class AppController extends Observable<SessionSnapshot> {
     if (active && !wasActive) {
       void this.voice.onForeground();
       void this.refreshMe();
+      void this.prefs.syncFromServer();
       // Picks up a permission granted in system Settings and a rotated FCM token.
       void this.registerPush();
       this.outbox.wake();

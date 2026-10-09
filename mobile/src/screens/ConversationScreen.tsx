@@ -5,7 +5,8 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { Message } from '../api/types';
 import type { OutboxAttachment, OutboxItem } from '../messaging/outbox';
 import { formatPhone } from '../lib/phone';
-import { useController, useOutbox, useSession, useSync } from '../state/hooks';
+import { useController, useOutbox, usePrefs, useSession, useSync } from '../state/hooks';
+import { outgoingNumber } from '../state/prefs';
 import { usePalette } from '../ui/theme';
 import type { RootStackParams } from './navTypes';
 import { relativeTime } from './time';
@@ -30,7 +31,10 @@ export function ConversationScreen({ route, navigation }: Props) {
   const [text, setText] = useState('');
   const [attachments, setAttachments] = useState<OutboxAttachment[]>([]);
   const number = route.params.number;
-  const smsNumber = me?.numbers[0];
+  const prefs = usePrefs();
+  // New threads use the chosen outgoing number; an existing thread keeps its own line (server-enforced).
+  const smsNumber = outgoingNumber(me?.numbers, route.params.fromNumberId ?? prefs.callerNumberId, 'text');
+  const callNumber = outgoingNumber(me?.numbers, prefs.callerNumberId, 'call');
   const smsBlocked = smsNumber && ['not_registered', 'pending', 'toll_free_pending'].includes(smsNumber.messaging.status);
 
   useLayoutEffect(() => {
@@ -38,12 +42,12 @@ export function ConversationScreen({ route, navigation }: Props) {
       title: route.params.title || formatPhone(number),
       headerRight: () => (
         <Pressable accessibilityLabel={`Call ${route.params.title || number}`} hitSlop={10}
-          onPress={() => c.voice.placeCall(number, { name: route.params.title, phoneNumberId: smsNumber?.id }).catch((e) => Alert.alert('Can’t call', (e as Error).message))}>
+          onPress={() => c.voice.placeCall(number, { name: route.params.title, phoneNumberId: callNumber?.id }).catch((e) => Alert.alert('Can’t call', (e as Error).message))}>
           <Text style={{ color: p.accent, fontSize: 22 }}>{'☎︎'}</Text>
         </Pressable>
       ),
     });
-  }, [navigation, route.params.title, number, p.accent, c, smsNumber?.id]);
+  }, [navigation, route.params.title, number, p.accent, c, callNumber?.id]);
 
   const load = useCallback(async () => {
     if (!convId) return;
@@ -99,7 +103,7 @@ export function ConversationScreen({ route, navigation }: Props) {
   const send = async () => {
     if (!text.trim() && !attachments.length) return;
     try {
-      await c.outbox.enqueue({ conversationId: convId, to: convId ? undefined : number, body: text, attachments });
+      await c.outbox.enqueue({ conversationId: convId, to: convId ? undefined : number, fromNumberId: convId ? undefined : smsNumber?.id, body: text, attachments });
       setText('');
       setAttachments([]);
     } catch (e) {

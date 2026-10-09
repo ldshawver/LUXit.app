@@ -31,6 +31,58 @@ export interface LuxNumber {
   can_call: boolean;
   can_send_sms: boolean;
   messaging: { status: MessagingStatus; checked_at: string | null; detail: string | null };
+  call_routing?: CallRouting | null;
+}
+
+export type CallDestination = 'app' | 'forward' | 'voicemail';
+
+/** Where calls to a number go; computed by the server with the webhook's own logic. */
+export interface CallRouting {
+  in_business_hours: boolean;
+  business_hours: { destination: CallDestination; forward_to: string | null };
+  after_hours: { destination: CallDestination; forward_to: string | null };
+  now: { destination: CallDestination; forward_to: string | null };
+}
+
+/** Subset of /phone/numbers/<id>/settings the app edits. */
+export interface NumberSettings {
+  id: number;
+  phone_number: string;
+  friendly_name: string;
+  sms_forward_to: string | null;
+  sms_forwarding_enabled: boolean;
+  call_forwarding_number: string | null;
+  call_forwarding_enabled: boolean;
+  during_hours_route: string | null;
+  after_hours_route: string | null;
+  auto_reply_enabled: boolean;
+  number_auto_reply_text: string | null;
+  business_hours_auto_reply_enabled: boolean;
+  business_hours_auto_reply_text: string;
+  after_hours_sms_enabled?: boolean;
+  after_hours_text?: string | null;
+}
+
+export type RuleTrigger = 'keyword_contains' | 'keyword_exact' | 'regex' | 'first_contact' | 'after_hours' | 'always' | 'stop_keyword';
+export type RuleAction = 'reply' | 'forward' | 'tag' | 'opt_out';
+
+export interface AutomationRule {
+  id: number;
+  name: string;
+  phone_number_id: number | null;
+  trigger_type: RuleTrigger;
+  keywords: string[];
+  response: string;
+  action: RuleAction;
+  forward_to: string | null;
+  tag_value: string | null;
+  priority: number;
+  active_days: number[];
+  active_hours_start: string | null;
+  active_hours_end: string | null;
+  is_active: boolean;
+  match_count: number;
+  system: boolean;
 }
 
 export interface CallingStatus {
@@ -46,6 +98,7 @@ export interface Me {
   user: { id: number; name: string; email: string };
   company: { id: number; name: string };
   is_admin: boolean;
+  can_edit_phone_settings?: boolean;
   device: DeviceInfo;
   numbers: LuxNumber[];
   availability: { state?: string; available?: boolean } & Record<string, unknown>;

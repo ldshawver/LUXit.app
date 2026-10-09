@@ -650,3 +650,189 @@ def test_pwa_device_rows_are_untouched_by_native_sign_in(app, client):
     db.session.commit()
     _signed_in(client)
     assert PWADevice.query.count() == 1 and MobileDevice.query.count() == 1
+
+
+# ══ LUXit Phone features: number settings, call routing, rules, sender ════ #
+
+def _admin(co, pn, name="boss"):
+    return _user(co, pn, name, role="admin")
+
+
+def _rule(client, tokens, **body):
+    return client.post("/api/mobile/v1/automation/rules", headers=_auth(tokens), json=body)
+
+
+def test_number_settings_forwarding_admin_only_validated_and_tenant_scoped(app, client):
+    co, _ta, pn = _tenant(); _admin(co, pn); _user(co, pn); db.session.commit()
+    co2, _ta2, pn2 = _tenant("Other", OTHER_NUMBER); _user(co2, pn2, "outsider"); db.session.commit()
+    boss, rep = _signed_in(client, "boss"), _signed_in(client, "rep", UID_B, "android")
+    url = f"/api/mobile/v1/phone/numbers/{pn.id}/settings"
+
+    r = client.put(url, headers=_auth(boss), json={"sms_forward_to": "(415) 555-0100", "sms_forwarding_enabled": True})
+    assert r.status_code == 200 and r.get_json()["settings"]["sms_forward_to"] == "+14155550100"
+    assert client.put(url, headers=_auth(boss), json={"sms_forward_to": "12"}).status_code == 400
+    assert client.put(url, headers=_auth(boss), json={"sms_forward_to": NUMBER}).status_code == 400  # loop
+    assert client.put(url, headers=_auth(boss), json={"call_forwarding_number": NUMBER}).status_code == 400
+    r = client.put(url, headers=_auth(boss), json={"sms_forward_to": ""})
+    assert r.get_json()["settings"]["sms_forward_to"] is None
+
+    got = client.get(url, headers=_auth(rep)).get_json()
+    assert got["editable"] is False
+    assert client.put(url, headers=_auth(rep), json={"sms_forwarding_enabled": False}).status_code == 403
+    outsider = _signed_in(client, "outsider", "ios-outsider-xxxxxxxxxxxx")
+    assert client.get(url, headers=_auth(outsider)).status_code == 404
+
+
+def test_call_routing_status_matches_webhook_and_masks_destination_for_staff(app, client, monkeypatch):
+    co, _ta, pn = _tenant(); _admin(co, pn); _user(co, pn); db.session.commit()
+    boss, rep = _signed_in(client, "boss"), _signed_in(client, "rep", UID_B, "android")
+    me = client.get("/api/mobile/v1/me", headers=_auth(boss)).get_json()
+    assert me["can_edit_phone_settings"] is True
+    assert me["numbers"][0]["call_routing"]["business_hours"]["destination"] == "app"
+
+    client.put(f"/api/mobile/v1/phone/numbers/{pn.id}/settings", headers=_auth(boss),
+               json={"during_hours_route": "forward", "call_forwarding_number": "+14155550123", "call_forwarding_enabled": True})
+    routing = client.get(f"/api/mobile/v1/phone/numbers/{pn.id}/routing", headers=_auth(boss)).get_json()["routing"]
+    assert routing["business_hours"] == {"destination": "forward", "forward_to": "+14155550123"}
+    staff = client.get(f"/api/mobile/v1/phone/numbers/{pn.id}/routing", headers=_auth(rep)).get_json()["routing"]
+    assert staff["business_hours"] == {"destination": "forward", "forward_to": "•••0123"}
+    assert client.get("/api/mobile/v1/me", headers=_auth(rep)).get_json()["can_edit_phone_settings"] is False
+
+    # The status is the webhook's own decision: a business-hours call really is forwarded.
+    twiml = _inbound(client, monkeypatch, sid="CAfwd")
+    assert "<Number>+14155550123</Number>" in twiml and "<Client>" not in twiml
+
+
+def test_rules_crud_admin_only_validation_and_isolation(app, client):
+    co, _ta, pn = _tenant(); _admin(co, pn); _user(co, pn); db.session.commit()
+    co2, _ta2, pn2 = _tenant("Other", OTHER_NUMBER); _admin(co2, pn2, "boss2"); db.session.commit()
+    boss, rep = _signed_in(client, "boss"), _signed_in(client, "rep", UID_B, "android")
+    boss2 = _signed_in(client, "boss2", "ios-boss2-yyyyyyyyyyyyyyy")
+
+    r = _rule(client, boss, name="Hours", trigger_type="keyword_contains", keywords=["hours"], action="reply",
+              response="We're open 9-5.", phone_number_id=pn.id)
+    assert r.status_code == 201
+    rid = r.get_json()["rule"]["id"]
+    fwd = _rule(client, boss, name="Urgent", trigger_type="keyword_contains", keywords="urgent, asap",
+                action="forward", forward_to="415-555-0100")
+    assert fwd.status_code == 201 and fwd.get_json()["rule"]["forward_to"] == "+14155550100"
+    assert fwd.get_json()["rule"]["keywords"] == ["urgent", "asap"]
+
+    for bad, code in [
+        (dict(name="x", trigger_type="keyword_contains", keywords=[], action="reply", response="r"), 400),
+        (dict(name="x", trigger_type="always", action="reply", response=""), 400),
+        (dict(name="x", trigger_type="always", action="forward", forward_to="nope"), 400),
+        (dict(name="x", trigger_type="always", action="forward", forward_to=NUMBER), 400),  # own number
+        (dict(name="x", trigger_type="always", action="tag"), 400),
+        (dict(name="x", trigger_type="regex", keywords=["("], action="reply", response="r"), 400),
+        (dict(name="x", trigger_type="stop_keyword", action="reply", response="r"), 400),
+        (dict(name="x", trigger_type="always", action="reply", response="r", active_hours_start="09:00"), 400),
+        (dict(name="x", trigger_type="keyword_contains", keywords=["HOURS"], action="reply", response="r"), 409),
+        (dict(name="x", trigger_type="always", action="reply", response="r", phone_number_id=pn2.id), 404),
+    ]:
+        assert _rule(client, boss, **bad).status_code == code, bad
+
+    listing = client.get("/api/mobile/v1/automation/rules", headers=_auth(rep)).get_json()
+    assert listing["editable"] is False and {x["name"] for x in listing["rules"]} == {"Hours", "Urgent"}
+    assert _rule(client, rep, name="x", trigger_type="always", action="reply", response="r").status_code == 403
+    assert client.patch(f"/api/mobile/v1/automation/rules/{rid}", headers=_auth(rep), json={"is_active": False}).status_code == 403
+    assert client.get(f"/api/mobile/v1/automation/rules/{rid}", headers=_auth(boss2)).status_code == 404
+    assert client.get("/api/mobile/v1/automation/rules", headers=_auth(boss2)).get_json()["rules"] == []
+
+    r = client.patch(f"/api/mobile/v1/automation/rules/{rid}", headers=_auth(boss), json={"response": "Open 8-6.", "is_active": False})
+    assert r.status_code == 200 and r.get_json()["rule"]["response"] == "Open 8-6." and r.get_json()["rule"]["is_active"] is False
+    assert r.get_json()["rule"]["keywords"] == ["hours"]  # partial update keeps the rest
+    assert client.delete(f"/api/mobile/v1/automation/rules/{rid}", headers=_auth(boss)).status_code == 200
+    assert client.get(f"/api/mobile/v1/automation/rules/{rid}", headers=_auth(boss)).status_code == 404
+
+
+def test_system_stop_rule_cannot_be_changed_from_the_app(app, client):
+    from models import AutoReplyRule
+    co, _ta, pn = _tenant(); _admin(co, pn); db.session.commit()
+    stop = AutoReplyRule(company_id=co.id, name="STOP", trigger_type="stop_keyword", action="opt_out", is_active=True)
+    db.session.add(stop); db.session.commit()
+    boss = _signed_in(client, "boss")
+    listed = client.get("/api/mobile/v1/automation/rules", headers=_auth(boss)).get_json()["rules"]
+    assert listed[0]["system"] is True
+    assert client.patch(f"/api/mobile/v1/automation/rules/{stop.id}", headers=_auth(boss), json={"is_active": False}).status_code == 409
+    assert client.delete(f"/api/mobile/v1/automation/rules/{stop.id}", headers=_auth(boss)).status_code == 409
+
+
+def _inbound_sms(client, monkeypatch, body, sid, frm="+14155559999"):
+    monkeypatch.setattr("services.contact_identity.apply_cached_google_match", lambda contact: "unmatched")
+    monkeypatch.setattr("services.contact_identity.process_identity_message", lambda *a, **k: {"reply": None})
+    monkeypatch.setattr("services.contact_identity.should_request_identity", lambda contact: False)
+    return client.post("/twilio/sms/inbound", data={"From": frm, "To": NUMBER, "Body": body, "MessageSid": sid})
+
+
+def _capture_sends(monkeypatch):
+    sent = []
+
+    def fake(conversation_id, message, **kw):  # mocked Twilio delivery: nothing leaves the process
+        sent.append({"conversation_id": conversation_id, "body": message, **kw})
+        return {"success": True, "sid": f"SMfake{len(sent)}"}
+    monkeypatch.setattr("twilio_sms.sendConversationSms", fake)
+    return sent
+
+
+def test_forward_rule_sends_copy_to_destination(app, client, monkeypatch):
+    from models import AutoReplyRule
+    co, ta, pn = _tenant(); ta.automation_enabled = True
+    db.session.add(AutoReplyRule(company_id=co.id, name="Urgent", trigger_type="keyword_contains", keywords=["urgent"],
+                                 action="forward", forward_to="+14155550100", is_active=True))
+    db.session.commit()
+    sent = _capture_sends(monkeypatch)
+    assert _inbound_sms(client, monkeypatch, "This is URGENT please call", "SMfwd1").status_code == 200
+    fwd = [s for s in sent if s.get("to_number") == "+14155550100"]
+    assert len(fwd) == 1
+    assert fwd[0]["effect_type"].startswith("rule_forward:") and "This is URGENT please call" in fwd[0]["body"]
+    assert "+14155559999" in fwd[0]["body"] and "Reply using" not in fwd[0]["body"]  # replies aren't relayed from rule numbers
+    assert AutoReplyRule.query.one().match_count == 1
+
+
+def test_forward_rule_not_duplicated_with_number_forwarding_and_skips_stop(app, client, monkeypatch):
+    from models import AutoReplyRule
+    co, ta, pn = _tenant(); ta.automation_enabled = True
+    pn.sms_forward_to = "+14155550100"; pn.sms_forwarding_enabled = True
+    db.session.add(AutoReplyRule(company_id=co.id, name="All", trigger_type="always", action="forward",
+                                 forward_to="+14155550100", is_active=True))
+    db.session.commit()
+    sent = _capture_sends(monkeypatch)
+    _inbound_sms(client, monkeypatch, "hello", "SMdup1")
+    to_fwd = [s for s in sent if s.get("to_number") == "+14155550100"]
+    assert len(to_fwd) == 1 and to_fwd[0]["effect_type"] == "inbound_forward"  # number forwarding only
+
+    sent.clear()
+    _inbound_sms(client, monkeypatch, "STOP", "SMstop1")
+    assert sent == []  # STOP is answered by the system; no forward, no rule
+
+
+def test_new_text_from_chosen_number_only_if_permitted(app, client, monkeypatch):
+    co, ta, pn = _tenant(); u = _user(co, pn)
+    second = TwilioPhoneNumber(company_id=co.id, twilio_account_id=ta.id, phone_number="+19165550777",
+                               friendly_name="Sales", is_active=True, voice_enabled=True)
+    db.session.add(second); db.session.flush()
+    db.session.add(PhoneNumberUserPermission(company_id=co.id, user_id=u.id, phone_number_id=second.id,
+                                             can_access_pwa=True, can_call=True, can_view_calls=True,
+                                             can_view_sms=True, can_send_sms=True))
+    co2, _ta2, pn2 = _tenant("Other", OTHER_NUMBER)
+    db.session.commit()
+    calls = []
+    monkeypatch.setattr("services.sms_send_idempotency.sendConversationSms", _fake_send(calls), raising=False)
+    monkeypatch.setattr("twilio_sms.sendConversationSms", _fake_send(calls))
+    tokens = _signed_in(client)
+    send = lambda **b: client.post("/api/mobile/v1/messages", headers=_auth(tokens), json={"to": "+14155550111", "body": "hi", **b})
+    r = send(idempotency_key="k" * 20, from_phone_number_id=second.id)
+    assert r.status_code == 200, r.get_json()
+    conv = db.session.get(TwilioConversation, r.get_json()["conversation_id"])
+    assert conv.to_number == "+19165550777" and conv.phone_number_id == second.id
+    assert calls[-1]["conversation_id"] == conv.id
+    # One thread per customer: choosing the primary line moves the thread to it (as an inbound text would).
+    r2 = send(idempotency_key="m" * 20, from_phone_number_id=pn.id)
+    assert r2.get_json()["conversation_id"] == conv.id
+    db.session.refresh(conv)
+    assert conv.to_number == NUMBER and conv.phone_number_id == pn.id
+    assert send(idempotency_key="n" * 20, from_phone_number_id=pn2.id).status_code == 403  # other tenant's number
+    PhoneNumberUserPermission.query.filter_by(user_id=u.id, phone_number_id=second.id).update({"can_send_sms": False})
+    db.session.commit()
+    assert send(idempotency_key="p" * 20, from_phone_number_id=second.id).status_code == 403

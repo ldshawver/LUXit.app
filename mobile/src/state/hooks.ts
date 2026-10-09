@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, useSyncExternalStore } from 'react';
 import type { Observable } from '../lib/emitter';
 import { getController } from './controller';
+import { outgoingNumber } from './prefs';
 
 export function useObservable<T>(obs: Observable<T>, get: () => T): T {
   const subscribe = useCallback((cb: () => void) => obs.subscribe(() => cb()), [obs]);
@@ -19,6 +20,18 @@ export function useSession() {
 export function useVoice() {
   const c = getController();
   return useObservable(c.voice, () => c.voice.snapshot());
+}
+
+export function usePrefs() {
+  const c = getController();
+  return useObservable(c.prefs, () => c.prefs.snapshot());
+}
+
+/** The number outgoing calls will show (chosen caller ID, else first permitted). */
+export function useCallingNumber() {
+  const me = useSession().me;
+  const prefs = usePrefs();
+  return outgoingNumber(me?.numbers, prefs.callerNumberId, 'call');
 }
 
 export function useSync() {

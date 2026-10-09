@@ -5,9 +5,11 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { formatPhone } from '../lib/phone';
 import { notificationPermission } from '../push/pushRegistration';
 import { APP_VARIANT } from '../state/controller';
-import { useController, useSession, useVoice } from '../state/hooks';
+import { useCallingNumber, useController, usePrefs, useSession, useVoice } from '../state/hooks';
+import { PALETTE_IDS } from '../state/prefs';
 import { Button, Row } from '../ui/components';
-import { usePalette } from '../ui/theme';
+import { LUX_PALETTES, usePalette } from '../ui/theme';
+import { routingSummary } from './routingText';
 import { voiceStatusText } from '../voice/statusText';
 import type { RootStackParams } from './navTypes';
 
@@ -21,6 +23,8 @@ export function SettingsScreen({ navigation }: NativeStackScreenProps<RootStackP
   const c = useController();
   const { me } = useSession();
   const voice = useVoice();
+  const prefs = usePrefs();
+  const callingNumber = useCallingNumber();
   const [mic, setMic] = useState<string>('undetermined');
   const [notif, setNotif] = useState<string>('undetermined');
   const [busy, setBusy] = useState(false);
@@ -67,15 +71,53 @@ export function SettingsScreen({ navigation }: NativeStackScreenProps<RootStackP
     <ScrollView style={{ backgroundColor: p.bg }} contentContainerStyle={{ paddingBottom: 40 }}>
       <Section title="Account">
         <Row><Text style={[styles.label, { color: p.text }]}>{me?.user.name}</Text><Text style={{ color: p.muted }}>{me?.company.name}</Text></Row>
-        {(me?.numbers ?? []).map((n) => (
-          <Row key={n.id}>
-            <View style={{ flex: 1 }}>
-              <Text style={[styles.label, { color: p.text }]}>{formatPhone(n.phone_number)}</Text>
-              <Text style={{ color: p.muted, fontSize: 13 }}>{[n.friendly_name !== n.phone_number ? n.friendly_name : null, TEXTING_LABEL[n.messaging.status]].filter(Boolean).join(' · ')}</Text>
-            </View>
-          </Row>
-        ))}
+        {(me?.numbers ?? []).map((n) => {
+          const routing = routingSummary(n.call_routing);
+          return (
+            <Row key={n.id} onPress={() => navigation.navigate('PhoneSettings', { numberId: n.id })} accessibilityLabel={`Settings for ${formatPhone(n.phone_number)}`}>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.label, { color: p.text }]}>{formatPhone(n.phone_number)}</Text>
+                <Text style={{ color: p.muted, fontSize: 13 }}>{[n.friendly_name !== n.phone_number ? n.friendly_name : null, TEXTING_LABEL[n.messaging.status]].filter(Boolean).join(' · ')}</Text>
+                {n.call_routing ? <Text style={{ color: routing.bypassesApp ? p.amber : p.muted, fontSize: 13 }}>{routing.now}</Text> : null}
+              </View>
+              <Text style={{ color: p.muted, fontSize: 20 }}>›</Text>
+            </Row>
+          );
+        })}
+        {me?.numbers.length ? (
+          <Row onPress={() => navigation.navigate('Rules', {})}><Text style={[styles.label, { color: p.accent }]}>Automatic replies and rules</Text></Row>
+        ) : null}
         {me && !me.numbers.length ? <Row><Text style={{ color: p.amber }}>No LUX Connect number assigned. Ask your administrator.</Text></Row> : null}
+      </Section>
+
+      {(me?.numbers ?? []).filter((n) => n.can_call && n.voice_enabled).length > 1 ? (
+        <Section title="Caller ID">
+          {(me?.numbers ?? []).filter((n) => n.can_call && n.voice_enabled).map((n) => (
+            <Row key={n.id} onPress={() => c.prefs.setCallerNumber(n.id)} accessibilityLabel={`Call from ${formatPhone(n.phone_number)}`}>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.label, { color: p.text }]}>{formatPhone(n.phone_number)}</Text>
+                {n.friendly_name !== n.phone_number ? <Text style={{ color: p.muted, fontSize: 13 }}>{n.friendly_name}</Text> : null}
+              </View>
+              {callingNumber?.id === n.id ? <Text style={{ color: p.accent, fontSize: 18 }}>✓</Text> : null}
+            </Row>
+          ))}
+          <Text style={{ color: p.muted, fontSize: 13, marginHorizontal: 16, marginTop: 6 }}>
+            Calls and new texts show the selected number. Only numbers assigned to you can be used. The caller name people see is set by phone carriers, not by this app.
+          </Text>
+        </Section>
+      ) : null}
+
+      <Section title="Appearance">
+        <View style={styles.palettes}>
+          {PALETTE_IDS.map((id) => (
+            <Text key={id} accessibilityRole="button" accessibilityState={{ selected: prefs.paletteId === id }}
+              onPress={() => c.prefs.setPalette(id).catch((e) => Alert.alert('Couldn’t change theme', (e as Error).message))}
+              style={[styles.paletteChip, { backgroundColor: LUX_PALETTES[id].primary, borderColor: prefs.paletteId === id ? p.text : 'transparent' }]}>
+              {LUX_PALETTES[id].label}
+            </Text>
+          ))}
+        </View>
+        <Text style={{ color: p.muted, fontSize: 13, marginHorizontal: 16 }}>Same palettes as the LUXit web app; your choice follows your account. Dark mode uses the full palette.</Text>
       </Section>
 
       <Section title="Calls">
@@ -160,4 +202,8 @@ function Diag({ k, v }: { k: string; v: string }) {
   return <Row><Text style={{ color: p.muted, width: 120 }}>{k}</Text><Text style={{ color: p.text, flex: 1 }} selectable>{v}</Text></Row>;
 }
 
-const styles = StyleSheet.create({ label: { fontSize: 16 } });
+const styles = StyleSheet.create({
+  label: { fontSize: 16 },
+  palettes: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, padding: 16 },
+  paletteChip: { color: '#fff', fontWeight: '600', paddingHorizontal: 14, paddingVertical: 10, borderRadius: 18, overflow: 'hidden', borderWidth: 2 },
+});

@@ -121,3 +121,16 @@ test('empty messages are refused', async () => {
   const t = setup(ok);
   await expect(t.mk().enqueue({ conversationId: 1, body: '   ' })).rejects.toThrow();
 });
+
+test('a new thread carries the chosen sender; an existing thread never does', async () => {
+  const t = setup(ok);
+  const box = t.mk();
+  await box.enqueue({ to: '+14155550000', fromNumberId: 7, body: 'hi' });
+  await box.enqueue({ conversationId: 9, fromNumberId: 7, body: 'reply' });
+  await flush();
+  await t.clock.advance(1000);
+  await flush();
+  expect(t.sent[0]).toMatchObject({ to: '+14155550000', from_phone_number_id: 7 });
+  expect(t.sent[1]).toMatchObject({ conversation_id: 9 });
+  expect(t.sent[1]).not.toHaveProperty('from_phone_number_id');
+});

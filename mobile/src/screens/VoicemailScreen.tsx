@@ -3,7 +3,7 @@ import { Alert, FlatList, Pressable, RefreshControl, Text, View } from 'react-na
 import { useAudioPlayer, useAudioPlayerStatus } from 'expo-audio';
 import type { CallRecord } from '../api/types';
 import { formatDuration, formatPhone } from '../lib/phone';
-import { useController, useSession, useSync } from '../state/hooks';
+import { useController, useCallingNumber, useSync } from '../state/hooks';
 import { EmptyState, Row } from '../ui/components';
 import { usePalette } from '../ui/theme';
 import { relativeTime } from './time';
@@ -12,7 +12,7 @@ export function VoicemailScreen() {
   const p = usePalette();
   const c = useController();
   const sync = useSync();
-  const { me } = useSession();
+  const callingNumber = useCallingNumber();
   const [items, setItems] = useState<CallRecord[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [playing, setPlaying] = useState<number | null>(null);
@@ -47,7 +47,7 @@ export function VoicemailScreen() {
   };
 
   const callBack = (vm: CallRecord) =>
-    c.voice.placeCall(vm.callback_target, { name: vm.caller_name ?? undefined, phoneNumberId: me?.numbers[0]?.id })
+    c.voice.placeCall(vm.callback_target, { name: vm.caller_name ?? undefined, phoneNumberId: callingNumber?.id })
       .catch((e) => Alert.alert('Can’t call', (e as Error).message));
 
   return (

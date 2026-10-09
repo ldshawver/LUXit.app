@@ -224,6 +224,7 @@ def me():
     from services.lux_numbers import numbers_for_user
     from services.phone_availability import get_availability
     from services.receive_calls import get_receive_calls
+    from inbox_pwa import phone_settings_editable
     ctx = g.mobile
     user, company, device = ctx.user, ctx.company, ctx.device
     return jsonify({
@@ -234,13 +235,144 @@ def me():
         "company": {"id": company.id, "name": company.name},
         "is_admin": bool(can_manage_users(user, company.id)),
         "device": _device_json(device),
-        "numbers": numbers_for_user(user, company.id),
+        "numbers": _numbers_with_routing(user, company.id),
+        "can_edit_phone_settings": phone_settings_editable(user, company.id),
         "availability": get_availability(user.id, company.id),
         "receive_calls": get_receive_calls(user.id, company.id),
         "calling": _calling_status(user, company, device),
         "push": native_push.status(),
         "server_time": datetime.utcnow().isoformat() + "Z",
     })
+
+
+def _mask_number(number: str | None, reveal: bool) -> str | None:
+    if not number or reveal:
+        return number
+    return "•••" + number[-4:]
+
+
+def _routing_for(phone_number: str, reveal: bool) -> dict | None:
+    """Where calls to this number go (same decision as the voice webhook).
+    Forwarding destinations are masked for users who cannot edit them."""
+    from twilio_sms import number_call_routing_status
+    try:
+        status = number_call_routing_status(phone_number)
+    except Exception:
+        logger.exception("call routing status failed")
+        return None
+    if not status:
+        return None
+    for key in ("business_hours", "after_hours", "now"):
+        status[key] = {**status[key], "forward_to": _mask_number(status[key]["forward_to"], reveal)}
+    return status
+
+
+def _numbers_with_routing(user, company_id: int) -> list[dict]:
+    from inbox_pwa import phone_settings_editable
+    from services.lux_numbers import numbers_for_user
+    reveal = phone_settings_editable(user, company_id)
+    rows = numbers_for_user(user, company_id)
+    for n in rows:
+        n["call_routing"] = _routing_for(n["phone_number"], reveal)
+    return rows
+
+
+@mobile_api_bp.route("/phone/numbers/<int:number_id>/routing")
+def number_routing(number_id):
+    from inbox_pwa import phone_settings_editable
+    from models import TwilioPhoneNumber
+    from services.comms_permissions import accessible_phone_numbers
+    ctx = g.mobile
+    pn = TwilioPhoneNumber.query.filter_by(id=number_id, company_id=ctx.company.id, is_active=True).first()
+    if not pn or pn.phone_number not in accessible_phone_numbers(ctx.user, ctx.company.id):
+        return _err("not_found", "Number not found.", 404)
+    return jsonify({"success": True, "routing": _routing_for(pn.phone_number, phone_settings_editable(ctx.user, ctx.company.id))})
+
+
+# ── automation rules (shared validation: services/auto_reply_rules.py) ───── #
+
+def _rules_scope():
+    from inbox_pwa import _require_pwa_communications_access, phone_settings_editable
+    from models import TwilioPhoneNumber
+    from services.comms_permissions import accessible_phone_numbers
+    ctx = g.mobile
+    denied = _require_pwa_communications_access(ctx.user, ctx.company)
+    if denied:
+        return None, denied
+    allowed = set(accessible_phone_numbers(ctx.user, ctx.company.id))
+    ids = {n.id for n in TwilioPhoneNumber.query.filter_by(company_id=ctx.company.id).all() if n.phone_number in allowed}
+    return {"ids": ids, "editable": phone_settings_editable(ctx.user, ctx.company.id)}, None
+
+
+def _visible_rule(rule_id: int, scope):
+    from models import AutoReplyRule
+    rule = AutoReplyRule.query.filter_by(id=rule_id, company_id=g.mobile.company.id).first()
+    if not rule or (rule.phone_number_id is not None and rule.phone_number_id not in scope["ids"]):
+        return None
+    return rule
+
+
+@mobile_api_bp.route("/automation/rules", methods=["GET", "POST"])
+def automation_rules():
+    from models import AutoReplyRule
+    from services import auto_reply_rules as svc
+    scope, denied = _rules_scope()
+    if denied:
+        return denied
+    company = g.mobile.company
+    if request.method == "GET":
+        q = AutoReplyRule.query.filter_by(company_id=company.id)
+        number_id = request.args.get("phone_number_id", type=int)
+        if number_id:
+            q = q.filter(db.or_(AutoReplyRule.phone_number_id.is_(None), AutoReplyRule.phone_number_id == number_id))
+        rules = [r for r in q.order_by(AutoReplyRule.priority.desc(), AutoReplyRule.id).all()
+                 if r.phone_number_id is None or r.phone_number_id in scope["ids"]]
+        return jsonify({"success": True, "editable": scope["editable"], "rules": [svc.to_dict(r) for r in rules]})
+    if not scope["editable"]:
+        return _err("forbidden", "Only an administrator can change automatic replies and rules.", 403)
+    data = request.get_json(silent=True) or {}
+    try:
+        fields = svc.validate(company.id, data)
+    except svc.RuleError as e:
+        return _err(e.code, str(e), e.status)
+    if fields["phone_number_id"] is not None and fields["phone_number_id"] not in scope["ids"]:
+        return _err("not_found", "Unknown phone number.", 404)
+    rule = AutoReplyRule(company_id=company.id, **fields)
+    db.session.add(rule)
+    db.session.commit()
+    logger.info("LUX Connect rule %s created by user_id=%s", rule.id, g.mobile.user.id)
+    return jsonify({"success": True, "rule": svc.to_dict(rule)}), 201
+
+
+@mobile_api_bp.route("/automation/rules/<int:rule_id>", methods=["GET", "PATCH", "DELETE"])
+def automation_rule(rule_id):
+    from services import auto_reply_rules as svc
+    scope, denied = _rules_scope()
+    if denied:
+        return denied
+    rule = _visible_rule(rule_id, scope)
+    if not rule:
+        return _err("not_found", "Rule not found.", 404)
+    if request.method == "GET":
+        return jsonify({"success": True, "editable": scope["editable"], "rule": svc.to_dict(rule)})
+    if not scope["editable"]:
+        return _err("forbidden", "Only an administrator can change automatic replies and rules.", 403)
+    if rule.trigger_type == "stop_keyword":
+        return _err("system_rule", "Opt-out handling can't be changed from the app.", 409)
+    if request.method == "DELETE":
+        db.session.delete(rule)
+        db.session.commit()
+        return jsonify({"success": True})
+    try:
+        fields = svc.validate(g.mobile.company.id, request.get_json(silent=True) or {}, existing=rule)
+    except svc.RuleError as e:
+        return _err(e.code, str(e), e.status)
+    if fields["phone_number_id"] is not None and fields["phone_number_id"] not in scope["ids"]:
+        return _err("not_found", "Unknown phone number.", 404)
+    for k, v in fields.items():
+        setattr(rule, k, v)
+    db.session.commit()
+    return jsonify({"success": True, "rule": svc.to_dict(rule)})
 
 
 # ── devices ───────────────────────────────────────────────────────────────── #
@@ -528,15 +660,37 @@ def send_unified():
         to_num = _normalize_phone(to_raw) if to_raw else ""
         if len(re.sub(r"\D", "", to_num)) < 10:
             return _err("invalid_recipient", "Enter a valid phone number.", 422)
-        if not ta.from_phone or not _can_send_sms_from_number(user, company.id, ta.from_phone):
-            return _err("phone_line_forbidden", "You can't text from this number.", 403)
-        conv = (TwilioConversation.query.filter_by(company_id=company.id, from_number=to_num).first()
-                or TwilioConversation.query.filter_by(company_id=company.id, from_number=to_raw).first())
-        if not conv:
-            conv = TwilioConversation(company_id=company.id, from_number=to_num,
-                                      to_number=ta.from_phone or "", is_read=True)
-            db.session.add(conv)
-            db.session.flush()
+        sender_id = data.get("from_phone_number_id")
+        if sender_id not in (None, ""):
+            # Chosen sender: only an active number of this company the user may
+            # text from. A company has one thread per customer and the thread
+            # follows the line last used (as inbound texts do), so an existing
+            # thread is moved to the chosen line.
+            sender = TwilioPhoneNumber.query.filter_by(
+                id=int(sender_id) if str(sender_id).isdigit() else -1,
+                company_id=company.id, is_active=True).first()
+            if not sender or not _can_send_sms_from_number(user, company.id, sender.phone_number):
+                return _err("phone_line_forbidden", "You can't text from this number.", 403)
+            conv = (TwilioConversation.query.filter_by(company_id=company.id, from_number=to_num).first()
+                    or TwilioConversation.query.filter_by(company_id=company.id, from_number=to_raw).first())
+            if conv:
+                conv.to_number = sender.phone_number
+                conv.phone_number_id = sender.id
+            else:
+                conv = TwilioConversation(company_id=company.id, from_number=to_num, phone_number_id=sender.id,
+                                          to_number=sender.phone_number, is_read=True)
+                db.session.add(conv)
+                db.session.flush()
+        else:
+            if not ta.from_phone or not _can_send_sms_from_number(user, company.id, ta.from_phone):
+                return _err("phone_line_forbidden", "You can't text from this number.", 403)
+            conv = (TwilioConversation.query.filter_by(company_id=company.id, from_number=to_num).first()
+                    or TwilioConversation.query.filter_by(company_id=company.id, from_number=to_raw).first())
+            if not conv:
+                conv = TwilioConversation(company_id=company.id, from_number=to_num,
+                                          to_number=ta.from_phone or "", is_read=True)
+                db.session.add(conv)
+                db.session.flush()
 
     pn = TwilioPhoneNumber.query.filter_by(company_id=company.id, phone_number=conv.to_number).first()
     blocked = messaging_blocked(getattr(pn, "id", None))
@@ -690,6 +844,7 @@ def _mount_shared_views():
         ("/calls/<int:call_id>/decline", v.api_call_decline, ["POST"]),
         ("/calls/<int:call_id>/end", v.api_call_end, ["POST"]),
         ("/phone/numbers", v.api_phone_numbers, ["GET"]),
+        ("/phone/numbers/<int:number_id>/settings", v.api_phone_number_settings, ["GET", "PUT"]),
         ("/phone/availability", v.api_phone_availability, ["GET", "PUT"]),
         ("/phone/receive-calls", v.api_phone_receive_calls, ["GET", "PUT"]),
         ("/phone/voice-client-error", v.api_phone_voice_client_error, ["POST"]),

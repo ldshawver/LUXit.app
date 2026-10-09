@@ -1034,6 +1034,23 @@ def _send_number_configured_auto_reply(conv, ta, *, in_business=None) -> bool:
     return bool(result.get("success"))
 
 
+def _forwarded_sms_body(ta, conv, from_number: str, body: str, *, reply_hint: bool) -> str:
+    """Text sent to a forwarding phone for one inbound customer message.
+    The reply hint is only offered when replies from that phone are relayed
+    (the number's SMS forwarding destination, see "Owner reply relay")."""
+    company_name = (ta.company.name if ta.company else "LUXit")
+    sender_label = f"{conv.contact_name} ({from_number})" if conv.contact_name else from_number
+    msg_text = body if body else "(media message)"
+    text = (
+        f"New SMS for {company_name}\n"
+        f"From: {sender_label}\n"
+        f"Message:\n{msg_text}"
+    )
+    if reply_hint:
+        text += f"\n\nReply using:\nreply {from_number} your message"
+    return text
+
+
 def _apply_auto_reply_rules(conv, body: str, ta) -> bool:
     """
     Evaluate auto-reply rules in priority order.
@@ -1195,6 +1212,31 @@ def _apply_auto_reply_rules(conv, body: str, ta) -> bool:
                 reply_sent = result.get("success", False)
                 logger.info("%s tag rule reply: success=%s err=%s", _tag, result.get("success"), result.get("error"))
             # Continue — after_hours must still have a chance to fire
+
+        elif rule.action == "forward":
+            # Send a copy of the customer's message to the rule's number. Not a
+            # reply: later rules (and the number's auto-reply) still run.
+            rule.match_count = (rule.match_count or 0) + 1
+            db.session.commit()
+            dest = _normalize_e164(rule.forward_to or "")
+            relay_to = _normalize_e164(ta.sms_forward_to or "") if ta.sms_forwarding_enabled else None
+            if not dest:
+                logger.warning("%s forward rule id=%s has no valid forward_to — skipped", _tag, rule.id)
+            elif dest == relay_to:
+                # Number-level SMS forwarding already sent this exact copy.
+                logger.info("%s forward rule id=%s: destination already receives number forwarding — not sent twice", _tag, rule.id)
+            else:
+                try:
+                    fwd = _forwarded_sms_body(ta, conv, conv.from_number, body, reply_hint=False)
+                    result = sendConversationSms(conv.id, fwd, twilio_account=ta, to_number=dest,
+                                                 effect_type=f"rule_forward:{rule.id}", rule_id=rule.id)
+                    logger.info("%s forward rule id=%s sent: success=%s err=%s", _tag, rule.id,
+                                result.get("success"), result.get("error"))
+                except Exception as exc:
+                    logger.warning("%s forward rule id=%s failed: %s", _tag, rule.id, exc)
+            if rule.response and not reply_sent:
+                result = sendConversationSms(conv.id, rule.response, twilio_account=ta, is_auto_reply=True, rule_id=rule.id)
+                reply_sent = result.get("success", False)
 
         elif rule.action == "reply" and (rule.response or rule.trigger_type == "after_hours"):
             response_body = rule.response
@@ -1835,19 +1877,7 @@ def inbound_sms():
         if ta.sms_forward_to and ta.sms_forwarding_enabled:
             try:
                 company_name = (ta.company.name if ta.company else "LUXit")
-                sender_label = conv.contact_name if conv.contact_name else from_number
-                if conv.contact_name:
-                    sender_label = f"{conv.contact_name} ({from_number})"
-                else:
-                    sender_label = from_number
-                msg_text = body if body else "(media message)"
-                fwd_body = (
-                    f"New SMS for {company_name}\n"
-                    f"From: {sender_label}\n"
-                    f"Message:\n{msg_text}\n\n"
-                    f"Reply using:\n"
-                    f"reply {from_number} your message"
-                )
+                fwd_body = _forwarded_sms_body(ta, conv, from_number, body, reply_hint=True)
                 sendConversationSms(conv.id, fwd_body, twilio_account=ta, to_number=ta.sms_forward_to, effect_type="inbound_forward")
                 logger.info(
                     "SMS forwarded: customer=%s → admin=%s company=%s",
@@ -2312,6 +2342,79 @@ def _voice_inbound_safe_fallback_twiml(ctx=None):
     )
 
 
+def resolve_inbound_voice_route(ta, settings, pn, in_hours):
+    """The inbound-call routing decision, shared by the voice webhook and the
+    LUX Connect "where do my calls go" status. ``ta`` is the number-scoped
+    config (``_effective_twilio_config``), ``settings`` the company
+    PhoneSettings row or None. Returns (route, forward_to, fallback_to,
+    settings_forward_to); ``route`` may be None (implicit default)."""
+    if in_hours:
+        # Daytime precedence is unchanged: the tenant-wide PhoneSettings route
+        # keeps routing calls unless the selected number carries a non-default
+        # explicit route ("forward" / "voicemail" / ...). The number-model
+        # default is "ring_pwa", so a stored "ring_pwa" is treated as "not
+        # configured" here and does not shadow a company-level "forward".
+        number_route = (getattr(ta, "during_hours_route", None) or "").strip() or None
+        settings_route = (settings.during_hours_route if settings else None)
+        settings_route = (settings_route or "").strip() or None
+        if settings_route and number_route in (None, "ring_pwa") and settings_route != number_route:
+            route = settings_route
+        else:
+            route = number_route or settings_route
+    else:
+        # After-hours: an explicit per-number after_hours_route WINS over the
+        # tenant PhoneSettings route. The number-model default here is
+        # "voicemail", so a stored "ring_pwa" / "forward" is unambiguously a
+        # deliberate operator choice -- it must not be demoted to the company
+        # route (prod defect 2026-09-08: +19165989519 after_hours_route=ring_pwa
+        # was overridden by PhoneSettings after_hours_route=voicemail, so an
+        # after-hours call fell to voicemail and the PWA never rang). A number
+        # with no route of its own falls back to the company route.
+        number_route = (getattr(ta, "after_hours_route", None) or "").strip() or None
+        settings_route = (settings.after_hours_route if settings else None)
+        settings_route = (settings_route or "").strip() or None
+        route = number_route or settings_route
+    configured_call_forward_to = getattr(ta, "call_forwarding_number", None) or getattr(ta, "call_forward_to", None)
+    settings_forward_to = ((settings.forward_number if in_hours else settings.after_hours_forward_number) if settings else None)
+    forward_to = (
+        (configured_call_forward_to if pn else settings_forward_to)
+        or settings_forward_to
+        or configured_call_forward_to
+    )
+    fallback_to = ((settings.fallback_forward_number if in_hours else settings.after_hours_fallback_forward_number) if settings else None)
+    return route, forward_to, fallback_to, settings_forward_to
+
+
+def inbound_voice_destination(ta, settings, pn, in_hours):
+    """What an inbound call does right now: "forward", "app" (rings LUX
+    Connect / PWA) or "voicemail"; mirrors the branch order in
+    _inbound_call_impl."""
+    route, forward_to, _fallback, settings_forward_to = resolve_inbound_voice_route(ta, settings, pn, in_hours)
+    if route == "forward" and forward_to and (settings_forward_to or ta.voice_forwarding_enabled or getattr(ta, "call_forwarding_enabled", False)):
+        return "forward", forward_to
+    if route == "ring_pwa" or (in_hours and route is None):
+        return "app", None
+    return "voicemail", None
+
+
+def number_call_routing_status(phone_number: str) -> dict | None:
+    """Where calls to this business number go now, in business hours and
+    after hours, computed with the exact webhook logic. None if unknown."""
+    from models import PhoneSettings
+    pn, ta = _resolve_number(phone_number)
+    if not ta:
+        return None
+    ta = _effective_twilio_config(ta, pn)
+    settings = PhoneSettings.query.filter_by(company_id=ta.company_id).first()
+    in_hours = _is_business_hours(ta.company_id, phone_config=ta)
+    out = {"in_business_hours": bool(in_hours)}
+    for key, hours in (("business_hours", True), ("after_hours", False)):
+        dest, to = inbound_voice_destination(ta, settings, pn, hours)
+        out[key] = {"destination": dest, "forward_to": to}
+    out["now"] = out["business_hours" if in_hours else "after_hours"]
+    return out
+
+
 def _inbound_call_impl():
     """
     Twilio voice webhook — business-hours-aware call routing.
@@ -2452,40 +2555,7 @@ def _inbound_call_impl():
             f"</Response>"
         )
 
-    if in_hours:
-        # Daytime precedence is unchanged: the tenant-wide PhoneSettings route
-        # keeps routing calls unless the selected number carries a non-default
-        # explicit route ("forward" / "voicemail" / ...). The number-model
-        # default is "ring_pwa", so a stored "ring_pwa" is treated as "not
-        # configured" here and does not shadow a company-level "forward".
-        number_route = (getattr(ta, "during_hours_route", None) or "").strip() or None
-        settings_route = (settings.during_hours_route if settings else None)
-        settings_route = (settings_route or "").strip() or None
-        if settings_route and number_route in (None, "ring_pwa") and settings_route != number_route:
-            route = settings_route
-        else:
-            route = number_route or settings_route
-    else:
-        # After-hours: an explicit per-number after_hours_route WINS over the
-        # tenant PhoneSettings route. The number-model default here is
-        # "voicemail", so a stored "ring_pwa" / "forward" is unambiguously a
-        # deliberate operator choice -- it must not be demoted to the company
-        # route (prod defect 2026-09-08: +19165989519 after_hours_route=ring_pwa
-        # was overridden by PhoneSettings after_hours_route=voicemail, so an
-        # after-hours call fell to voicemail and the PWA never rang). A number
-        # with no route of its own falls back to the company route.
-        number_route = (getattr(ta, "after_hours_route", None) or "").strip() or None
-        settings_route = (settings.after_hours_route if settings else None)
-        settings_route = (settings_route or "").strip() or None
-        route = number_route or settings_route
-    configured_call_forward_to = getattr(ta, "call_forwarding_number", None) or getattr(ta, "call_forward_to", None)
-    settings_forward_to = ((settings.forward_number if in_hours else settings.after_hours_forward_number) if settings else None)
-    forward_to = (
-        (configured_call_forward_to if pn else settings_forward_to)
-        or settings_forward_to
-        or configured_call_forward_to
-    )
-    fallback_to = ((settings.fallback_forward_number if in_hours else settings.after_hours_fallback_forward_number) if settings else None)
+    route, forward_to, fallback_to, settings_forward_to = resolve_inbound_voice_route(ta, settings, pn, in_hours)
     timeout = (settings.ring_duration_seconds if settings else None) or 25
     record_attr = ' record="record-from-answer" recordingStatusCallback="/twilio/voice/recording"' if settings and settings.recording_enabled else ""
     g.voice_inbound_debug.update({
@@ -3810,24 +3880,16 @@ def edit_rule(rule_id):
 
     # Duplicate keyword check (same trigger type, different rule, active)
     trigger_type = f.get("trigger_type", rule.trigger_type)
-    if keywords and trigger_type in ("keyword_contains", "keyword_exact"):
-        for kw in keywords:
-            conflict = (
-                AutoReplyRule.query
-                .filter_by(company_id=company.id, trigger_type=trigger_type, is_active=True)
-                .filter(AutoReplyRule.id != rule_id)
-                .all()
-            )
-            for other in conflict:
-                if other.keywords and kw.lower() in [k.lower() for k in other.keywords]:
-                    logger.warning(
-                        "Edit rule %d: duplicate keyword '%s' conflicts with rule %d", rule_id, kw, other.id
-                    )
-                    return jsonify({
-                        "success": False,
-                        "error": f"Keyword '{kw}' already used in active rule \"{other.name}\".",
-                        "warning": True,
-                    }), 409
+    from services.auto_reply_rules import find_keyword_conflict
+    conflict = find_keyword_conflict(company.id, trigger_type, keywords, rule_id)
+    if conflict:
+        kw, other = conflict
+        logger.warning("Edit rule %d: duplicate keyword '%s' conflicts with rule %d", rule_id, kw, other.id)
+        return jsonify({
+            "success": False,
+            "error": f"Keyword '{kw}' already used in active rule \"{other.name}\".",
+            "warning": True,
+        }), 409
 
     active_days_raw = request.form.getlist("active_days")
     active_days = [int(d) for d in active_days_raw] if active_days_raw else None

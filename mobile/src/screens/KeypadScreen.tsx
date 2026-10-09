@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import { formatAsTyped, formatPhone, toE164 } from '../lib/phone';
-import { useController, useSession, useVoice } from '../state/hooks';
+import { useCallingNumber, useController, useSession, useVoice } from '../state/hooks';
 import { usePalette } from '../ui/theme';
 import { StatusBanner } from './StatusBanner';
 
@@ -17,7 +17,7 @@ export function KeypadScreen() {
   const voice = useVoice();
   const { me } = useSession();
   const [digits, setDigits] = useState('');
-  const number = me?.numbers[0];
+  const number = useCallingNumber();
 
   const tap = (k: string) => {
     Haptics.selectionAsync().catch(() => undefined);

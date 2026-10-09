@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
 import { ActivityIndicator, Pressable, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Notifications from 'expo-notifications';
@@ -17,12 +17,15 @@ import { MessagesScreen } from './screens/MessagesScreen';
 import type { RootStackParams } from './screens/navTypes';
 import { NewMessageScreen } from './screens/NewMessageScreen';
 import { NumbersAdminScreen } from './screens/NumbersAdminScreen';
+import { PhoneSettingsScreen } from './screens/PhoneSettingsScreen';
+import { RuleEditScreen } from './screens/RuleEditScreen';
+import { RulesScreen } from './screens/RulesScreen';
 import { RecentsScreen } from './screens/RecentsScreen';
 import { SettingsScreen } from './screens/SettingsScreen';
 import { SignInScreen } from './screens/SignInScreen';
 import { VoicemailScreen } from './screens/VoicemailScreen';
 import { useController, useSession, useSync } from './state/hooks';
-import { usePalette } from './ui/theme';
+import { usePalette, type Palette } from './ui/theme';
 
 const Stack = createNativeStackNavigator<RootStackParams>();
 const Tab = createBottomTabNavigator();
@@ -78,6 +81,9 @@ function SignedIn() {
         <Stack.Screen name="Settings" component={SettingsScreen} />
         <Stack.Screen name="Devices" component={DevicesScreen} options={{ title: 'Devices' }} />
         <Stack.Screen name="NumbersAdmin" component={NumbersAdminScreen} options={{ title: 'Numbers' }} />
+        <Stack.Screen name="PhoneSettings" component={PhoneSettingsScreen} options={{ title: 'Number' }} />
+        <Stack.Screen name="Rules" component={RulesScreen} options={{ title: 'Automatic replies and rules' }} />
+        <Stack.Screen name="RuleEdit" component={RuleEditScreen} options={{ title: 'Rule' }} />
       </Stack.Navigator>
       <CallScreen />
     </>
@@ -106,10 +112,17 @@ function useNotificationRouting(enabled: boolean) {
   }, [enabled]);
 }
 
+function navTheme(dark: boolean, p: Palette) {
+  const base = dark ? DarkTheme : DefaultTheme;
+  return { ...base, colors: { ...base.colors, primary: p.accent, background: p.bg, card: dark ? p.surface : base.colors.card, text: p.text, border: p.border } };
+}
+
 export default function App() {
   const c = useController();
   const session = useSession();
   const scheme = useColorScheme();
+  const palette = usePalette();
+  const theme = useMemo(() => navTheme(scheme === 'dark', palette), [scheme, palette]);
   useEffect(() => {
     void c.boot();
   }, [c]);
@@ -118,7 +131,7 @@ export default function App() {
   return (
     <SafeAreaProvider>
       <StatusBar style="auto" />
-      <NavigationContainer ref={navRef} theme={scheme === 'dark' ? DarkTheme : DefaultTheme}>
+      <NavigationContainer ref={navRef} theme={theme}>
         {session.status === 'booting' ? (
           <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}><ActivityIndicator /></View>
         ) : session.status === 'signed_out' ? (

@@ -1,13 +1,18 @@
 import React from 'react';
 import { Linking, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
-import { useController, useVoice } from '../state/hooks';
+import { formatPhone } from '../lib/phone';
+import { useController, useSession, useVoice } from '../state/hooks';
 import { usePalette } from '../ui/theme';
 import { voiceStatusText } from '../voice/statusText';
+import { routingSummary } from './routingText';
 
 export function StatusBanner() {
   const p = usePalette();
   const c = useController();
   const s = useVoice();
+  const { me } = useSession();
+  // A number set to forward (or voicemail) right now never rings this app, however "Ready" calling is.
+  const bypassed = (me?.numbers ?? []).filter((n) => n.call_routing && n.call_routing.now.destination !== 'app');
   const t = voiceStatusText(s, Platform.OS === 'ios' ? 'ios' : 'android');
   const dot = t.tone === 'ok' ? p.green : t.tone === 'working' ? p.accent : t.tone === 'warn' ? p.amber : p.muted;
   return (
@@ -17,6 +22,11 @@ export function StatusBanner() {
         <Text style={[styles.title, { color: p.text }]}>{t.title}</Text>
       </View>
       {t.detail ? <Text style={{ color: p.muted, marginTop: 4 }}>{t.detail}</Text> : null}
+      {bypassed.map((n) => (
+        <Text key={n.id} style={{ color: p.amber, marginTop: 6 }}>
+          {(me?.numbers.length ?? 0) > 1 ? `${formatPhone(n.phone_number)}: ` : ''}{routingSummary(n.call_routing).now}
+        </Text>
+      ))}
       {s.notice && !s.call && !s.invite ? (
         <View style={styles.notice}>
           <Text style={{ color: p.amber, flex: 1 }}>{s.notice.text}</Text>

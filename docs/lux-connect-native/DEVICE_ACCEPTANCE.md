@@ -115,3 +115,26 @@ No physical-device test has been run yet. Fill this in as tests are executed; do
 | # | Device / OS | Network | Build | Result | Notes |
 |---|---|---|---|---|---|
 | | | | | NOT RUN | |
+
+## Feature acceptance matrix (physical devices)
+
+Only results from a real handset count. Simulator or unit results stay NOT TESTED.
+
+| Feature | iPhone | Android |
+|---|---|---|
+| Incoming call (app open) | NOT TESTED | NOT TESTED |
+| Incoming call (locked / app closed) | NOT TESTED | NOT TESTED |
+| Outgoing call (chosen caller ID shown) | NOT TESTED | NOT TESTED |
+| Two-way audio, speaker, Bluetooth | NOT TESTED | NOT TESTED |
+| SMS receive / send | NOT TESTED | NOT TESTED |
+| MMS receive / send | NOT TESTED | NOT TESTED |
+| Voicemail (notification, playback) | NOT TESTED | NOT TESTED |
+| Push alerts (text, missed call) | NOT TESTED | NOT TESTED |
+| Background / suspended calls | NOT TESTED | NOT TESTED |
+| Cellular data only (Wi-Fi off) | NOT TESTED | NOT TESTED |
+| Call forwarding on: app shows bypass, phone does not ring, forward target rings | NOT TESTED | NOT TESTED |
+| Text forwarding + "reply +1… msg" from forwarding phone | NOT TESTED | NOT TESTED |
+| Auto reply (business / after hours); none after STOP | NOT TESTED | NOT TESTED |
+| Forward rule (keyword) delivers copy | NOT TESTED | NOT TESTED |
+| Caller ID picker (2 numbers) | NOT TESTED | NOT TESTED |
+| Six palettes, light + dark | NOT TESTED | NOT TESTED |

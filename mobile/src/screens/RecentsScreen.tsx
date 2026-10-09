@@ -2,7 +2,7 @@ import React, { useCallback, useState } from 'react';
 import { Alert, FlatList, RefreshControl, Text, View } from 'react-native';
 import type { CallRecord } from '../api/types';
 import { formatPhone } from '../lib/phone';
-import { useController, useSession, useSync } from '../state/hooks';
+import { useController, useCallingNumber, useSync } from '../state/hooks';
 import { Avatar, EmptyState, Row } from '../ui/components';
 import { usePalette } from '../ui/theme';
 import { relativeTime } from './time';
@@ -11,7 +11,7 @@ export function RecentsScreen() {
   const p = usePalette();
   const c = useController();
   const sync = useSync();
-  const { me } = useSession();
+  const callingNumber = useCallingNumber();
   const [refreshing, setRefreshing] = useState(false);
 
   const refresh = useCallback(async () => {
@@ -23,7 +23,7 @@ export function RecentsScreen() {
   const callBack = async (item: CallRecord) => {
     if (!item.is_read) c.api.markCallRead(item.id).catch(() => undefined);
     try {
-      await c.voice.placeCall(item.callback_target, { name: item.caller_name ?? undefined, phoneNumberId: me?.numbers[0]?.id });
+      await c.voice.placeCall(item.callback_target, { name: item.caller_name ?? undefined, phoneNumberId: callingNumber?.id });
     } catch (e) {
       Alert.alert('Can\u2019t call', (e as Error).message);
     }
