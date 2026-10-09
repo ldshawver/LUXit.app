@@ -85,6 +85,8 @@ Run this before the full checklist below, on the `staging-dev` build, once TEST_
 | 11 | Outgoing text | only with the allowlist mode or a staging number approved | delivered to the test phone from the business number |
 | 12 | Network change mid-call | turn Wi-Fi off during a call | "Reconnecting call…" then continues, or ends clearly |
 
+iOS P3/P4 also cover the early PushKit start (`src/voice/pushKitBootstrap.ts`, called from `index.ts` before sign-in or any request). Run P4 at least once on **cellular with poor signal** (or Network Link Conditioner "Very Bad Network"). It passes when CallKit rings within about 3 s even though the app's own requests are slow. Also check that no call ever rings twice and that the caller name (not `${caller_name}`) is shown.
+
 SMS (P10 real, P11) stays **NOT TESTED** until the staging SMS decision is made. Push results from the synthetic webhook count as push tests, not SMS tests.
 
 ## Physical-device checklist (run on staging builds)
