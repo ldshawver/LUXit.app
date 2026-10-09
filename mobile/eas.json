@@ -1,0 +1,29 @@
+{
+  "cli": { "version": ">= 16.0.0", "appVersionSource": "local" },
+  "build": {
+    "staging-dev": {
+      "developmentClient": true,
+      "distribution": "internal",
+      "env": { "APP_VARIANT": "staging", "APS_ENVIRONMENT": "development" }
+    },
+    "staging": {
+      "distribution": "internal",
+      "env": { "APP_VARIANT": "staging", "APS_ENVIRONMENT": "production" },
+      "android": { "buildType": "apk" }
+    },
+    "testflight-staging": {
+      "distribution": "store",
+      "env": { "APP_VARIANT": "staging", "APS_ENVIRONMENT": "production" },
+      "android": { "buildType": "app-bundle" }
+    },
+    "production": {
+      "distribution": "store",
+      "env": { "APP_VARIANT": "production", "APS_ENVIRONMENT": "production" },
+      "android": { "buildType": "app-bundle" }
+    }
+  },
+  "submit": {
+    "testflight-staging": { "ios": { "ascAppId": "SET_ME" }, "android": { "track": "internal" } },
+    "production": { "ios": { "ascAppId": "SET_ME" }, "android": { "track": "internal" } }
+  }
+}
