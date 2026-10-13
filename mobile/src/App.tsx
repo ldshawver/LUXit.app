@@ -23,7 +23,7 @@ import { RulesScreen } from './screens/RulesScreen';
 import { RecentsScreen } from './screens/RecentsScreen';
 import { SettingsScreen } from './screens/SettingsScreen';
 import { SignInScreen } from './screens/SignInScreen';
-import { StartupScreen, useReleaseSplashWhenReady } from './ui/StartupScreen';
+import { StartupOverlay, StartupScreen, useStartupPhase, useStartupSignals } from './ui/StartupScreen';
 import { VoicemailScreen } from './screens/VoicemailScreen';
 import { useController, useSession, useSync } from './state/hooks';
 import { usePalette, type Palette } from './ui/theme';
@@ -128,11 +128,13 @@ export default function App() {
     void c.boot();
   }, [c]);
   useNotificationRouting(session.status === 'signed_in');
-  useReleaseSplashWhenReady();
+  useStartupSignals();
+  const startup = useStartupPhase();
+  const onBlack = session.status === 'booting' || startup === 'native' || startup === 'animating';
 
   return (
     <SafeAreaProvider>
-      <StatusBar style={session.status === 'booting' ? 'light' : 'auto'} />
+      <StatusBar style={onBlack ? 'light' : 'auto'} />
       <NavigationContainer ref={navRef} theme={theme}>
         {session.status === 'booting' ? (
           <StartupScreen />
@@ -142,6 +144,7 @@ export default function App() {
           <SignedIn />
         )}
       </NavigationContainer>
+      <StartupOverlay />
     </SafeAreaProvider>
   );
 }
