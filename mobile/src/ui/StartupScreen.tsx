@@ -1,38 +1,26 @@
 import React, { useEffect, useRef, useState, useSyncExternalStore } from 'react';
-import { AccessibilityInfo, Animated, AppState, Easing, Image, StyleSheet, View } from 'react-native';
+import { AccessibilityInfo, Animated, AppState, Easing, Image as RNImage, StyleSheet, View } from 'react-native';
+import { Image } from 'expo-image';
+import * as Notifications from 'expo-notifications';
 import * as SplashScreen from 'expo-splash-screen';
 import { getController } from '../state/controller';
-import {
-  ANIMATION_MS, OVERLAY_FADE_MS, PULSE_GLOW, PULSE_SCALE, RING_TURN_DEG, SHIMMER_MS, SHIMMER_START_MS,
-  SPLASH_BACKGROUND, SPLASH_LOGO_WIDTH, createStartupSplash, hasCall, pulseSteps, type StartupPhase,
-} from './startupSplash';
+import { OVERLAY_FADE_MS, SPLASH_BACKGROUND, SPLASH_LOGO_WIDTH, createStartupSplash, hasCall, type StartupPhase } from './startupSplash';
 
 export const startupSplash = createStartupSplash(SplashScreen, undefined, (msg, extra) => console.log(`[splash] ${msg}`, extra ?? ''));
 
-// Layers of assets/splash-logo.png (scripts/startup-layers/build_layers.py):
-// at rest static-over-ring is pixel-identical to the native splash image.
-const RING = require('../../assets/startup/ring.png');
-const RING_BRIGHT = require('../../assets/startup/ring_bright.png');
-const STATIC = require('../../assets/startup/static.png');
-const GLINT = require('../../assets/startup/glint.png');
+// The supplied LUX animation, flattened onto black and looped
+// (scripts/startup-animation/build_animation.py). Its first frame is the
+// native splash image (LOGO), pixel for pixel.
+const ANIMATION = require('../../assets/startup/lux.webp');
 const LOGO = require('../../assets/splash-logo.png');
-const LAYERS_TO_LOAD = 3; // ring, ring_bright, static (glint is invisible at rest)
 
 const SIZE = SPLASH_LOGO_WIDTH;
-/** Soft shimmer edge: nested windows over the glint layer (half-width dp, opacity). */
-const SHIMMER_BANDS = [
-  { half: 13, opacity: 0.3 },
-  { half: 7, opacity: 0.3 },
-  { half: 3, opacity: 0.4 },
-];
-const SHIMMER_SKEW = '-18deg';
-const UNSKEW = '18deg';
 
 export function useStartupPhase(): StartupPhase {
   return useSyncExternalStore(startupSplash.subscribe, () => startupSplash.phase, () => startupSplash.phase);
 }
 
-/** Feeds boot and call state to the launch sequence (subscribes; never re-renders App). */
+/** Feeds boot, call and notification-tap state to the launch sequence (subscribes; never re-renders App). */
 export function useStartupSignals(): void {
   useEffect(() => {
     const c = getController();
@@ -43,9 +31,18 @@ export function useStartupSignals(): void {
     check();
     const offSession = c.subscribe(check);
     const offVoice = c.voice.subscribe(check);
+    // A tapped notification (cold launch or during the animation) skips the
+    // minimum display time; useNotificationRouting opens the thread underneath.
+    void Notifications.getLastNotificationResponseAsync()
+      .then((resp) => {
+        if (resp) startupSplash.expedite();
+      })
+      .catch(() => undefined);
+    const tapSub = Notifications.addNotificationResponseReceivedListener(() => startupSplash.expedite());
     return () => {
       offSession();
       offVoice();
+      tapSub.remove();
     };
   }, []);
 }
@@ -54,7 +51,7 @@ export function useStartupSignals(): void {
 export function StartupScreen() {
   return (
     <View style={styles.fill}>
-      <Image source={LOGO} style={styles.logo} resizeMode="contain" accessibilityLabel="LUX" />
+      <RNImage source={LOGO} style={styles.logo} resizeMode="contain" accessibilityLabel="LUX" />
     </View>
   );
 }
@@ -62,27 +59,31 @@ export function StartupScreen() {
 /** Above everything while the launch sequence needs it; unmounts at once for a call. */
 export function StartupOverlay() {
   const phase = useStartupPhase();
-  if (phase !== 'native' && phase !== 'animating') return null;
-  return <AnimatedLogo animate={phase === 'animating'} />;
+  if (phase !== 'native' && phase !== 'animating' && phase !== 'leaving') return null;
+  return <AnimatedLogo phase={phase} />;
 }
 
-function AnimatedLogo({ animate }: { animate: boolean }) {
-  const turn = useRef(new Animated.Value(0)).current;
-  const pulse = useRef(new Animated.Value(0)).current;
-  const sweep = useRef(new Animated.Value(0)).current;
+function AnimatedLogo({ phase }: { phase: 'native' | 'animating' | 'leaving' }) {
+  const image = useRef<Image>(null);
   const fade = useRef(new Animated.Value(1)).current;
-  const [fading, setFading] = useState(false);
-  const loaded = useRef(0);
+  const displayed = useRef(false);
+  const posterShown = useRef(false);
+  const [poster, setPoster] = useState(true);
   const reduceMotion = useRef<boolean | null>(null);
   const reported = useRef(false);
+  const started = useRef(false);
 
   const maybeReady = () => {
-    if (reported.current || loaded.current < LAYERS_TO_LOAD || reduceMotion.current === null) return;
+    if (reported.current || !displayed.current || !posterShown.current || reduceMotion.current === null) return;
     reported.current = true;
     startupSplash.overlayReady({ reduceMotion: reduceMotion.current, appState: AppState.currentState });
   };
-  const onLayerLoad = () => {
-    loaded.current += 1;
+  const onDisplay = () => {
+    displayed.current = true;
+    maybeReady();
+  };
+  const onPosterLoad = () => {
+    posterShown.current = true;
     maybeReady();
   };
 
@@ -100,70 +101,49 @@ function AnimatedLogo({ animate }: { animate: boolean }) {
     };
   }, []);
 
+  // Frame 0 is guaranteed at the hand-off on both platforms: a still poster of
+  // it (LOGO, the native splash image) covers the animated view, which is
+  // paused (autoplay off; Android's Glide may tick a frame before pausing).
+  // Once the native splash is gone, startAnimating() restarts from frame 0
+  // (Android) / plays on from the paused first frame (iOS), and only then is
+  // the poster removed. If it never starts, the poster stays: no blank frame.
   useEffect(() => {
-    if (!animate) return undefined;
-    const beats = pulseSteps();
-    let t = 0;
-    const pulseSeq: Animated.CompositeAnimation[] = [];
-    for (const s of beats) {
-      if (s.at > t) pulseSeq.push(Animated.delay(s.at - t));
-      pulseSeq.push(Animated.timing(pulse, {
-        toValue: s.level, duration: s.duration, useNativeDriver: true,
-        easing: s.kind === 'rise' ? Easing.out(Easing.quad) : Easing.in(Easing.quad),
-      }));
-      t = s.at + s.duration;
-    }
-    const run = Animated.sequence([
-      Animated.parallel([
-        Animated.timing(turn, { toValue: 1, duration: ANIMATION_MS, easing: Easing.bezier(0.33, 0, 0.2, 1), useNativeDriver: true }),
-        Animated.sequence(pulseSeq),
-        Animated.sequence([
-          Animated.delay(SHIMMER_START_MS),
-          Animated.timing(sweep, { toValue: 1, duration: SHIMMER_MS, easing: Easing.inOut(Easing.cubic), useNativeDriver: true }),
-        ]),
-      ]),
-      Animated.timing(fade, { toValue: 0, duration: OVERLAY_FADE_MS, easing: Easing.out(Easing.quad), useNativeDriver: true }),
-    ]);
-    const fadeAt = setTimeout(() => setFading(true), ANIMATION_MS);
+    if (phase === 'native' || started.current) return;
+    started.current = true;
+    Promise.resolve(image.current?.startAnimating())
+      .then(() => setPoster(false))
+      .catch((e) => console.log('[splash] startAnimating failed', String(e)));
+  }, [phase]);
+
+  useEffect(() => {
+    if (phase !== 'leaving') return undefined;
+    const run = Animated.timing(fade, { toValue: 0, duration: OVERLAY_FADE_MS, easing: Easing.out(Easing.quad), useNativeDriver: true });
     run.start(({ finished }) => {
       if (finished) startupSplash.animationFinished();
     });
-    return () => {
-      clearTimeout(fadeAt);
-      run.stop();
-    };
-  }, [animate, turn, pulse, sweep, fade]);
-
-  const ringTransform = [
-    { rotate: turn.interpolate({ inputRange: [0, 1], outputRange: ['0deg', `${RING_TURN_DEG}deg`] }) },
-    { scale: pulse.interpolate({ inputRange: [0, 1], outputRange: [1, 1 + PULSE_SCALE] }) },
-  ];
-  const glow = pulse.interpolate({ inputRange: [0, 1], outputRange: [0, PULSE_GLOW] });
+    return () => run.stop();
+  }, [phase, fade]);
 
   return (
     <Animated.View
       style={[StyleSheet.absoluteFill, styles.fill, { opacity: fade }]}
-      pointerEvents={fading ? 'none' : 'auto'}
+      pointerEvents={phase === 'leaving' ? 'none' : 'auto'}
       accessible
       accessibilityLabel="LUX"
     >
       <View style={styles.logo}>
-        <Animated.Image source={RING} style={[styles.layer, { transform: ringTransform }]} onLoad={onLayerLoad} fadeDuration={0} />
-        <Animated.Image source={RING_BRIGHT} style={[styles.layer, { opacity: glow, transform: ringTransform }]} onLoad={onLayerLoad} fadeDuration={0} />
-        <Image source={STATIC} style={styles.layer} onLoad={onLayerLoad} fadeDuration={0} />
-        {SHIMMER_BANDS.map((b) => {
-          // A skewed window slides across; the glint inside is counter-moved so it stays put.
-          const x = sweep.interpolate({ inputRange: [0, 1], outputRange: [-2 * b.half - SIZE * 0.2, SIZE * 1.2] });
-          const back = sweep.interpolate({ inputRange: [0, 1], outputRange: [2 * b.half + SIZE * 0.2, -SIZE * 1.2] });
-          return (
-            <Animated.View
-              key={b.half}
-              style={[styles.band, { width: 2 * b.half, opacity: b.opacity, transform: [{ translateX: x }, { skewX: SHIMMER_SKEW }] }]}
-            >
-              <Animated.Image source={GLINT} style={[styles.glint, { transform: [{ skewX: UNSKEW }, { translateX: back }] }]} fadeDuration={0} />
-            </Animated.View>
-          );
-        })}
+        <Image
+          ref={image}
+          source={ANIMATION}
+          style={styles.layer}
+          contentFit="contain"
+          autoplay={false}
+          transition={null}
+          priority="high"
+          onDisplay={onDisplay}
+          accessible={false}
+        />
+        {poster ? <RNImage source={LOGO} style={styles.layer} onLoad={onPosterLoad} fadeDuration={0} accessible={false} /> : null}
       </View>
     </Animated.View>
   );
@@ -173,6 +153,4 @@ const styles = StyleSheet.create({
   fill: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: SPLASH_BACKGROUND },
   logo: { width: SIZE, height: SIZE },
   layer: { position: 'absolute', top: 0, left: 0, width: SIZE, height: SIZE },
-  band: { position: 'absolute', top: 0, left: 0, height: SIZE, overflow: 'hidden' },
-  glint: { position: 'absolute', top: 0, left: 0, width: SIZE, height: SIZE },
 });

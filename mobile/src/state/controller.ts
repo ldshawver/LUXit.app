@@ -9,6 +9,7 @@ import { ApiClient } from '../api/http';
 import { classifyVoiceError, LuxApi } from '../api/endpoints';
 import type { Me } from '../api/types';
 import { getDeviceUid } from '../auth/deviceId';
+import { restoreStoredTokens } from '../auth/restoreSession';
 import { SecureTokenStore } from '../auth/secureTokenStore';
 import { Observable } from '../lib/emitter';
 import { Outbox } from '../messaging/outbox';
@@ -41,6 +42,7 @@ const SIGN_OUT_MESSAGES: Record<string, string> = {
   company_changed: 'Your company changed. Please sign in again.',
   refresh_expired: 'Please sign in again.',
 };
+const RESTORE_FAILED_MESSAGE = "Couldn't open your saved sign-in. Please sign in again.";
 
 /**
  * Owns every long-lived object. Created once per process; OS listeners
@@ -60,6 +62,8 @@ export class AppController extends Observable<SessionSnapshot> {
   private state: SessionSnapshot = { status: 'booting', me: null, signOutReason: null, online: true };
   private appState: AppStateStatus = AppState.currentState;
   private booted = false;
+  /** Boot could not read the stored sign-in; retried when the app comes to the foreground. */
+  private restoreFailed = false;
 
   constructor() {
     super();
@@ -105,12 +109,26 @@ export class AppController extends Observable<SessionSnapshot> {
     NetInfo.addEventListener((s) => this.onNetwork(Boolean(s.isConnected) && s.isInternetReachable !== false));
     await ensureNotificationChannels().catch(() => undefined);
     await this.prefs.load();
-    const tokens = await this.tokens.get();
-    if (!tokens) {
+    const restored = await restoreStoredTokens(this.tokens);
+    if (restored.kind === 'failed') {
+      console.log('[boot] stored sign-in unreadable', restored.error);
+      this.restoreFailed = true;
+      this.set({ status: 'signed_out', signOutReason: RESTORE_FAILED_MESSAGE });
+      return;
+    }
+    if (restored.kind === 'none') {
       this.set({ status: 'signed_out' });
       return;
     }
     this.set({ status: 'signed_in' });
+    await this.afterSignIn();
+  }
+
+  private async retryRestore(): Promise<void> {
+    const restored = await restoreStoredTokens(this.tokens);
+    if (restored.kind !== 'tokens' || !this.restoreFailed || this.state.status !== 'signed_out') return;
+    this.restoreFailed = false;
+    this.set({ status: 'signed_in', signOutReason: null });
     await this.afterSignIn();
   }
 
@@ -132,6 +150,7 @@ export class AppController extends Observable<SessionSnapshot> {
       { auth: false },
     );
     await this.tokens.set(res);
+    this.restoreFailed = false;
     this.set({ status: 'signed_in', signOutReason: null });
     await this.afterSignIn();
   }
@@ -205,6 +224,7 @@ export class AppController extends Observable<SessionSnapshot> {
     const wasActive = this.appState === 'active';
     this.appState = next;
     const active = next === 'active';
+    if (active && !wasActive && this.restoreFailed && this.state.status === 'signed_out') void this.retryRestore();
     if (this.state.status !== 'signed_in') return;
     this.sync.setForeground(active);
     if (active && !wasActive) {

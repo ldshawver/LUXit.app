@@ -1,9 +1,11 @@
-/* Launch sequence: static native splash -> (RN ready) animated overlay -> app.
- * Calls and background launches bypass it, Reduce Motion gets no animation,
- * nothing can leave the splash stuck, and native failures never throw. */
+/* Launch sequence: static native splash -> (RN ready) looping animation, shown
+ * for at least MIN_DISPLAY_MS and until boot is done -> fade into the app.
+ * Calls and background launches bypass it, notification taps skip the minimum,
+ * Reduce Motion gets no animation, nothing can leave the splash stuck, and
+ * native failures never throw. */
 import {
-  ANIMATION_MS, BEATS, BEAT_FALL_MS, BEAT_RISE_MS, READY_TIMEOUT_MS, SPLASH_FADE_MS, SPLASH_MAX_MS,
-  createStartupSplash, hasCall, pulseSteps, type SplashNative, type StartupPhase, type Timers,
+  ANIMATION_MAX_MS, MIN_DISPLAY_MS, READY_TIMEOUT_MS, SPLASH_FADE_MS, SPLASH_MAX_MS,
+  createStartupSplash, hasCall, type SplashNative, type StartupPhase, type Timers,
 } from '../src/ui/startupSplash';
 
 function fakes() {
@@ -48,22 +50,92 @@ describe('createStartupSplash', () => {
     expect(splash.phase).toBe('native');
   });
 
-  test('normal launch: overlay ready -> native splash dropped instantly -> animating -> done', () => {
-    const { calls, splash, phases } = fakes();
+  test('normal launch: overlay ready -> native splash dropped instantly -> loops until boot -> fades -> done', () => {
+    const { calls, splash, phases, advance } = fakes();
     splash.hold();
     splash.overlayReady(userLaunch);
     expect(calls.slice(-2)).toEqual(['options:0:false', 'hide']); // identical frame underneath: no fade
     expect(splash.phase).toBe('animating');
-    splash.bootDone(); // boot finishing does not cut the animation short
-    expect(splash.phase).toBe('animating');
+    splash.bootDone();
+    expect(splash.phase).toBe('animating'); // minimum display time not reached yet
+    advance(MIN_DISPLAY_MS);
+    expect(splash.phase).toBe('leaving');
     splash.animationFinished();
-    expect(phases).toEqual(['animating', 'done']);
+    expect(phases).toEqual(['animating', 'leaving', 'done']);
   });
 
-  test('the animation does not wait for boot (auth/navigation run underneath)', () => {
+  test('boot already done when the overlay is ready: still shown for the minimum', () => {
+    const { splash, phases, advance } = fakes();
+    splash.hold();
+    splash.bootDone();
+    expect(splash.phase).toBe('native'); // native splash until the overlay has drawn frame 0
+    splash.overlayReady(userLaunch);
+    expect(phases).toEqual(['animating']);
+    advance(MIN_DISPLAY_MS);
+    expect(phases).toEqual(['animating', 'leaving']);
+  });
+
+  test('minimum counts from the first animated frame, not from hold', () => {
+    const { splash, advance } = fakes();
+    splash.hold();
+    advance(1000); // JS + image load while the native splash shows
+    splash.overlayReady(userLaunch);
+    splash.bootDone();
+    advance(MIN_DISPLAY_MS - 1);
+    expect(splash.phase).toBe('animating');
+    advance(1);
+    expect(splash.phase).toBe('leaving');
+  });
+
+  test('keeps looping past the minimum while boot runs, then leaves as soon as it is done', () => {
+    const { splash, advance } = fakes();
+    splash.hold();
+    splash.overlayReady(userLaunch);
+    advance(MIN_DISPLAY_MS + 2000);
+    expect(splash.phase).toBe('animating');
+    splash.bootDone();
+    expect(splash.phase).toBe('leaving');
+  });
+
+  test('notification tap on a cold launch skips the minimum (leaves once boot is done)', () => {
+    const { splash, phases } = fakes();
+    splash.hold();
+    splash.expedite();
+    splash.bootDone();
+    splash.overlayReady(userLaunch);
+    expect(phases).toEqual(['animating', 'leaving']);
+  });
+
+  test('notification tap during the animation leaves at once if booted, else at boot', () => {
+    const booted = fakes();
+    booted.splash.hold();
+    booted.splash.overlayReady(userLaunch);
+    booted.splash.bootDone();
+    booted.splash.expedite();
+    expect(booted.splash.phase).toBe('leaving');
+
+    const booting = fakes();
+    booting.splash.hold();
+    booting.splash.overlayReady(userLaunch);
+    booting.splash.expedite();
+    expect(booting.splash.phase).toBe('animating'); // the app underneath is not ready yet
+    booting.splash.bootDone();
+    expect(booting.splash.phase).toBe('leaving');
+  });
+
+  test('expedite after the sequence is over changes nothing', () => {
+    const { splash } = fakes();
+    splash.hold();
+    splash.callStarted();
+    splash.expedite();
+    expect(splash.phase).toBe('done');
+  });
+
+  test('animationFinished only ends the fade, never a running loop', () => {
     const { splash } = fakes();
     splash.hold();
     splash.overlayReady(userLaunch);
+    splash.animationFinished();
     expect(splash.phase).toBe('animating');
   });
 
@@ -84,10 +156,15 @@ describe('createStartupSplash', () => {
     expect(native.hide).toHaveBeenCalledTimes(1);
   });
 
-  test.each(['native', 'animating'] as const)('a call during %s bypasses everything at once', (at) => {
-    const { native, splash, phases } = fakes();
+  test.each(['native', 'animating', 'leaving'] as const)('a call during %s bypasses everything at once', (at) => {
+    const { native, splash, phases, advance } = fakes();
     splash.hold();
-    if (at === 'animating') splash.overlayReady(userLaunch);
+    if (at !== 'native') splash.overlayReady(userLaunch);
+    if (at === 'leaving') {
+      splash.bootDone();
+      advance(MIN_DISPLAY_MS);
+    }
+    expect(splash.phase).toBe(at);
     splash.callStarted();
     expect(splash.phase).toBe('done');
     expect(phases[phases.length - 1]).toBe('done');
@@ -97,13 +174,13 @@ describe('createStartupSplash', () => {
     expect(splash.phase).toBe('done');
   });
 
-  test('Reduce Motion: no animation; native splash fades once boot is done', () => {
+  test('Reduce Motion: no animation and no minimum; native splash fades once boot is done', () => {
     const { native, splash, calls } = fakes();
     splash.hold();
     splash.overlayReady({ reduceMotion: true, appState: 'active' });
     expect(splash.phase).toBe('still');
     expect(native.hide).not.toHaveBeenCalled();
-    splash.bootDone();
+    splash.bootDone(); // well inside MIN_DISPLAY_MS
     expect(splash.phase).toBe('done');
     expect(calls).not.toContain('options:0:false'); // the configured fade, not a cut
   });
@@ -136,14 +213,27 @@ describe('createStartupSplash', () => {
     expect(splash.phase).toBe('done');
   });
 
-  test('timers cannot cut a running animation and are cleared when done', () => {
+  test('a stalled boot cannot trap the user: the animation fades at ANIMATION_MAX_MS', () => {
     const { splash, advance, pending } = fakes();
     splash.hold();
     splash.overlayReady(userLaunch);
-    advance(SPLASH_MAX_MS);
+    advance(ANIMATION_MAX_MS - 1);
     expect(splash.phase).toBe('animating');
+    advance(1);
+    expect(splash.phase).toBe('leaving'); // reveals whatever boot has reached
     splash.animationFinished();
+    expect(splash.phase).toBe('done');
     expect(pending.every((t) => t.cleared)).toBe(true);
+  });
+
+  test('phase changes are logged with time since hold', () => {
+    const log = jest.fn();
+    let t = 1000;
+    const s = createStartupSplash(fakes().native, fakes().timers, log, () => t);
+    s.hold();
+    t = 1240;
+    s.overlayReady(userLaunch);
+    expect(log).toHaveBeenCalledWith('animating +240ms');
   });
 
   test('native failures are logged, never thrown into startup', async () => {
@@ -158,7 +248,8 @@ describe('createStartupSplash', () => {
     expect(() => s.overlayReady(userLaunch)).not.toThrow();
     await Promise.resolve();
     expect(s.phase).toBe('animating');
-    expect(log).toHaveBeenCalledTimes(4); // setOptions x2, hide, preventAutoHide
+    const failures = log.mock.calls.filter(([msg]) => String(msg).includes('failed'));
+    expect(failures).toHaveLength(4); // setOptions x2, hide, preventAutoHide
   });
 });
 
@@ -167,20 +258,5 @@ describe('hasCall', () => {
     expect(hasCall({ invite: null, call: null })).toBe(false);
     expect(hasCall({ invite: { from: '+1' }, call: null })).toBe(true);
     expect(hasCall({ invite: null, call: { remote: '+1' } })).toBe(true);
-  });
-});
-
-describe('pulseSteps', () => {
-  const steps = pulseSteps();
-  test('contiguous, in order, and finished inside the animation', () => {
-    for (let i = 1; i < steps.length; i += 1) expect(steps[i]!.at).toBeGreaterThanOrEqual(steps[i - 1]!.at + steps[i - 1]!.duration);
-    const last = steps[steps.length - 1]!;
-    expect(last.at + last.duration).toBeLessThanOrEqual(ANIMATION_MS);
-    expect(last.level).toBe(0); // ring back at rest before the fade
-  });
-  test('every beat rises to its strength; a beat cut short decays only partway', () => {
-    expect(steps.filter((s) => s.kind === 'rise').map((s) => s.level)).toEqual(BEATS.map((b) => b.amp));
-    const short = pulseSteps([{ at: 0, amp: 1 }, { at: BEAT_RISE_MS + BEAT_FALL_MS / 2, amp: 0.5 }]);
-    expect(short[1]).toMatchObject({ kind: 'fall', duration: BEAT_FALL_MS / 2, level: 0.5 });
   });
 });

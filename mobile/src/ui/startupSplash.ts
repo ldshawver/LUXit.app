@@ -1,17 +1,23 @@
 /* Launch sequence. The static native splash (app.config.ts, expo-splash-screen)
  * is held from index.ts; once React Native has drawn the identical first frame
  * of the animated overlay (StartupScreen.tsx) the native splash is dropped
- * instantly and the overlay plays a ~2 s animation, then fades into the app.
+ * instantly and the animation loops until boot is done and it has shown for
+ * MIN_DISPLAY_MS, then fades into the app.
  *
- *   native     native splash up; overlay mounted underneath, loading layers
- *   animating  native splash gone; overlay animating above the app
+ *   native     native splash up; overlay mounted underneath, loading the animation
+ *   animating  native splash gone; animation looping above the app
+ *   leaving    boot done (+ minimum shown): animation keeps playing while it fades out
  *   still      Reduce Motion: native splash stays until boot is done, then fades
  *   done       nothing over the app
  *
+ * - Shown for at least MIN_DISPLAY_MS from its first frame on a normal cold
+ *   launch, and loops for as long as boot takes beyond that.
  * - Calls first: an invite/active call, or a launch into the background (a VoIP
  *   or FCM push woke the app), skips straight to "done".
- * - Never stuck: no overlay within READY_TIMEOUT_MS -> plain fade; MAX_MS caps
- *   the native splash whatever happens.
+ * - Notification taps are not delayed: expedite() drops the minimum, so the
+ *   tapped thread shows as soon as boot is done.
+ * - Never stuck: no overlay within READY_TIMEOUT_MS -> plain fade; SPLASH_MAX_MS
+ *   caps the native splash and ANIMATION_MAX_MS the animation whatever happens.
  * - Only overlays: PushKit/CallKit setup in index.ts runs before hold() and
  *   boot/auth/navigation run underneath, never waiting on it. */
 
@@ -21,17 +27,13 @@ export const SPLASH_LOGO_WIDTH = 150;
 export const SPLASH_FADE_MS = 250;
 export const READY_TIMEOUT_MS = 1500;
 export const SPLASH_MAX_MS = 3000;
-
-/** Overlay timeline (ms). */
-export const ANIMATION_MS = 2000;
+/** From the animation's first frame; normal cold launches only. */
+export const MIN_DISPLAY_MS = 2500;
+/** From hold(): the animation fades out even if boot never finishes. */
+export const ANIMATION_MAX_MS = 8000;
 export const OVERLAY_FADE_MS = 350;
-export const RING_TURN_DEG = 10;
-export const PULSE_SCALE = 0.035;
-export const PULSE_GLOW = 0.55;
-export const SHIMMER_START_MS = 450;
-export const SHIMMER_MS = 1000;
 
-export type StartupPhase = 'native' | 'animating' | 'still' | 'done';
+export type StartupPhase = 'native' | 'animating' | 'leaving' | 'still' | 'done';
 
 export interface SplashNative {
   preventAutoHideAsync(): Promise<unknown>;
@@ -61,6 +63,8 @@ export interface StartupSplash {
   bootDone(): void;
   /** A call invite or active call: get out of the way now. */
   callStarted(): void;
+  /** Launched or opened from a notification tap: leave as soon as boot is done. */
+  expedite(): void;
   /** The overlay finished its fade. */
   animationFinished(): void;
 }
@@ -74,17 +78,22 @@ export function createStartupSplash(
   native: SplashNative,
   timers: Timers = defaultTimers,
   log: (msg: string, extra?: unknown) => void = () => undefined,
+  now: () => number = Date.now,
 ): StartupSplash {
   let phase: StartupPhase = 'native';
   let held = false;
   let nativeHidden = false;
   let booted = false;
+  let minShown = false;
+  let expedited = false;
+  let heldAt = 0;
   const pending: unknown[] = [];
   const listeners = new Set<(p: StartupPhase) => void>();
 
   const set = (next: StartupPhase) => {
     if (phase === next) return;
     phase = next;
+    if (held) log(`${next} +${now() - heldAt}ms`);
     if (next === 'done') pending.splice(0).forEach((t) => timers.clearTimeout(t));
     for (const l of Array.from(listeners)) {
       try {
@@ -115,6 +124,10 @@ export function createStartupSplash(
     set('done');
   };
 
+  const maybeLeave = () => {
+    if (phase === 'animating' && booted && (minShown || expedited)) set('leaving');
+  };
+
   return {
     get phase() {
       return phase;
@@ -128,6 +141,7 @@ export function createStartupSplash(
     hold() {
       if (held || phase !== 'native') return;
       held = true;
+      heldAt = now();
       try {
         native.setOptions({ duration: SPLASH_FADE_MS, fade: true });
       } catch (e) {
@@ -140,6 +154,9 @@ export function createStartupSplash(
       pending.push(timers.setTimeout(() => {
         if (phase === 'native' || phase === 'still') finish(true);
       }, SPLASH_MAX_MS));
+      pending.push(timers.setTimeout(() => {
+        if (phase === 'animating') set('leaving'); // boot stalled: reveal whatever is underneath
+      }, ANIMATION_MAX_MS));
     },
     overlayReady({ reduceMotion, appState }) {
       if (phase !== 'native') return;
@@ -150,16 +167,26 @@ export function createStartupSplash(
       }
       hideNative(false); // overlay shows the identical frame: no visible change
       set('animating');
+      pending.push(timers.setTimeout(() => {
+        minShown = true;
+        maybeLeave();
+      }, MIN_DISPLAY_MS));
+      maybeLeave();
     },
     bootDone() {
       booted = true;
       if (phase === 'still') finish(true);
+      else maybeLeave();
     },
     callStarted() {
       if (phase !== 'done') finish(false);
     },
+    expedite() {
+      expedited = true;
+      maybeLeave();
+    },
     animationFinished() {
-      if (phase === 'animating') set('done');
+      if (phase === 'leaving') set('done');
     },
   };
 }
@@ -167,40 +194,4 @@ export function createStartupSplash(
 /** True when a call needs the screen. */
 export function hasCall(voice: { invite: unknown; call: unknown }): boolean {
   return voice.invite != null || voice.call != null;
-}
-
-/** One "beat" of the waveform pulse: rise to `amp` of full strength, then decay. */
-export interface PulseStep {
-  /** ms from the start of the animation to the start of this step */
-  at: number;
-  duration: number;
-  /** 0..1 strength at the end of this step */
-  level: number;
-  kind: 'rise' | 'fall';
-}
-
-/** Irregular, music-like beats; strength 0..1. Ends at rest well before ANIMATION_MS. */
-export const BEATS: ReadonlyArray<{ at: number; amp: number }> = [
-  { at: 120, amp: 1.0 },
-  { at: 430, amp: 0.55 },
-  { at: 650, amp: 0.85 },
-  { at: 980, amp: 0.45 },
-  { at: 1180, amp: 1.0 },
-  { at: 1500, amp: 0.6 },
-  { at: 1700, amp: 0.35 },
-];
-export const BEAT_RISE_MS = 70;
-export const BEAT_FALL_MS = 200;
-
-/** Beats -> contiguous rise/fall steps (a beat that arrives mid-decay starts from there). */
-export function pulseSteps(beats = BEATS): PulseStep[] {
-  const steps: PulseStep[] = [];
-  beats.forEach((b, i) => {
-    const next = beats[i + 1]?.at ?? Infinity;
-    steps.push({ at: b.at, duration: BEAT_RISE_MS, level: b.amp, kind: 'rise' });
-    const fallStart = b.at + BEAT_RISE_MS;
-    const fall = Math.max(0, Math.min(BEAT_FALL_MS, next - fallStart));
-    if (fall > 0) steps.push({ at: fallStart, duration: fall, level: fall === BEAT_FALL_MS ? 0 : b.amp * (1 - fall / BEAT_FALL_MS), kind: 'fall' });
-  });
-  return steps;
 }

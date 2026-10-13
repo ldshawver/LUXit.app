@@ -97,6 +97,9 @@ export default ({ config }: ConfigContext): ExpoConfig => {
         resizeMode: 'contain',
         dark: { backgroundColor: SPLASH_BACKGROUND, image: './assets/splash-logo.png' },
       }],
+      // Plays the launch animation (assets/startup/lux.webp). No AVIF anywhere
+      // in the app, so leave its decoder out of the iOS binary.
+      ['expo-image', { disableLibdav1d: true }],
       ['@twilio/voice-react-native-sdk', {
         apsEnvironment,
         microphoneUsageDescription: 'LUX Connect uses the microphone so the people you call can hear you.',

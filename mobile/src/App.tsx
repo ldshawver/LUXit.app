@@ -130,7 +130,7 @@ export default function App() {
   useNotificationRouting(session.status === 'signed_in');
   useStartupSignals();
   const startup = useStartupPhase();
-  const onBlack = session.status === 'booting' || startup === 'native' || startup === 'animating';
+  const onBlack = session.status === 'booting' || startup === 'native' || startup === 'animating' || startup === 'leaving';
 
   return (
     <SafeAreaProvider>

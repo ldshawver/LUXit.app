@@ -163,3 +163,25 @@ Only results from a real handset count. Simulator or unit results stay NOT TESTE
 | Forward rule (keyword) delivers copy | NOT TESTED | NOT TESTED |
 | Caller ID picker (2 numbers) | NOT TESTED | NOT TESTED |
 | Six palettes, light + dark | NOT TESTED | NOT TESTED |
+
+## Launch animation (physical devices)
+
+Native splash = frame 0 of `mobile/assets/startup/lux.webp` (same pixels). On a
+normal cold launch the animation shows for at least 2.5 s from its first frame,
+loops for as long as boot takes beyond that, then fades out over 350 ms. Metro
+logs `[splash] <phase> +<ms>` for each step, so read timings from the device log.
+
+| Case | Expected | iPhone | Android |
+|---|---|---|---|
+| Cold launch, signed in | black splash, then the animation starts at frame 0 with no jump or flash, plays ≥ 2.5 s, fades into Phone/Messages | NOT TESTED | NOT TESTED |
+| Cold launch, signed out | same, then a fade into Sign in | NOT TESTED | NOT TESTED |
+| First frame | the hand-off from the native splash is invisible; motion starts from the logo exactly as shown | NOT TESTED | NOT TESTED |
+| Warm launch (app in memory) | no animation; the app resumes where it was | NOT TESTED | NOT TESTED |
+| Android: Back out, then reopen (process alive) | system splash only, no animation, no blank screen | — | NOT TESTED |
+| Incoming call wakes a closed app | CallKit / call UI only; no animation (`done` logged immediately) | NOT TESTED | NOT TESTED |
+| Call arrives during the animation | the animation disappears at once; call screen shows | NOT TESTED | NOT TESTED |
+| Cold launch from a text/voicemail notification tap | no 2.5 s minimum: fades as soon as boot is done, straight into the tapped thread / tab | NOT TESTED | NOT TESTED |
+| Reduce Motion on (iOS: Settings > Accessibility > Motion; Android: Remove animations) | static logo only, no minimum, fades when ready | NOT TESTED | NOT TESTED |
+| Stored sign-in unreadable (hard to force; see log `[boot] stored sign-in unreadable`) | Sign in screen with "Couldn't open your saved sign-in…", never stuck on the logo; foregrounding later restores the session if the keychain is readable | NOT TESTED | NOT TESTED |
+| Small phone, large phone, tablet, landscape | logo centered, 150 dp, no shift at the hand-off | NOT TESTED | NOT TESTED |
+| Smoothness | no stutter, frozen frame or flicker while it plays, loops and fades | NOT TESTED | NOT TESTED |
