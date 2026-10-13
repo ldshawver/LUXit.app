@@ -110,7 +110,9 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       './plugins/withSingleFcmService',
       ['expo-image-picker', { photosPermission: 'LUX Connect lets you attach photos to text messages.' }],
       ['expo-build-properties', { android: { minSdkVersion: 26 }, ios: { deploymentTarget: '16.4' } }],
-      'expo-secure-store',
+      // Tokens are not stored behind biometrics; without this the plugin adds a
+      // boilerplate NSFaceIDUsageDescription for a feature the app never uses.
+      ['expo-secure-store', { faceIDPermission: false }],
     ],
     extra: {
       variant,
