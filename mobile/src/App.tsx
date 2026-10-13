@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef } from 'react';
-import { ActivityIndicator, Pressable, View } from 'react-native';
+import { Pressable, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Notifications from 'expo-notifications';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
@@ -23,6 +23,7 @@ import { RulesScreen } from './screens/RulesScreen';
 import { RecentsScreen } from './screens/RecentsScreen';
 import { SettingsScreen } from './screens/SettingsScreen';
 import { SignInScreen } from './screens/SignInScreen';
+import { StartupScreen, useReleaseSplashWhenReady } from './ui/StartupScreen';
 import { VoicemailScreen } from './screens/VoicemailScreen';
 import { useController, useSession, useSync } from './state/hooks';
 import { usePalette, type Palette } from './ui/theme';
@@ -127,13 +128,14 @@ export default function App() {
     void c.boot();
   }, [c]);
   useNotificationRouting(session.status === 'signed_in');
+  useReleaseSplashWhenReady();
 
   return (
     <SafeAreaProvider>
-      <StatusBar style="auto" />
+      <StatusBar style={session.status === 'booting' ? 'light' : 'auto'} />
       <NavigationContainer ref={navRef} theme={theme}>
         {session.status === 'booting' ? (
-          <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}><ActivityIndicator /></View>
+          <StartupScreen />
         ) : session.status === 'signed_out' ? (
           <SignInScreen />
         ) : (

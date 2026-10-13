@@ -74,6 +74,7 @@ describe('app entry (index.ts) with the real Twilio adapter', () => {
     jest.doMock('expo', () => ({ registerRootComponent: () => order.push('render') }), { virtual: true });
     // The App tree (controller, session restore, API) must not be needed for PushKit.
     jest.doMock('../src/App', () => ({ __esModule: true, default: () => null }));
+    jest.doMock('../src/ui/StartupScreen', () => ({ startupSplash: { hold: () => order.push('splash') } }));
     let adapter: any;
     jest.isolateModules(() => {
       require('../index');
@@ -87,6 +88,7 @@ describe('app entry (index.ts) with the real Twilio adapter', () => {
   test('iOS: PushKit is initialized at startup, with no sign-in or network, and the engine reuses it', async () => {
     const { order, voiceInstances, fetchSpy, adapter } = loadEntry('ios');
     expect(order[0]).toBe('callkit'); // started before the app renders
+    expect(order.slice(1)).toEqual(['splash', 'render']); // the launch splash never runs ahead of CallKit
     await flush();
     expect(order.filter((s) => s === 'registry')).toHaveLength(1);
     expect(order.indexOf('callkit')).toBeLessThan(order.indexOf('registry'));
@@ -105,6 +107,6 @@ describe('app entry (index.ts) with the real Twilio adapter', () => {
   test('Android: no PushKit work (Twilio FCM service is native)', async () => {
     const { order } = loadEntry('android');
     await flush();
-    expect(order).toEqual(['render']);
+    expect(order).toEqual(['splash', 'render']);
   });
 });

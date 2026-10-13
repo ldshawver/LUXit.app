@@ -31,6 +31,9 @@ const exportComplianceCode = process.env.ITS_ENCRYPTION_EXPORT_COMPLIANCE_CODE |
 const declaredNonExempt = ({ true: true, false: false } as Record<string, boolean>)[process.env.ITS_USES_NON_EXEMPT_ENCRYPTION ?? ''];
 const usesNonExemptEncryption = exportComplianceCode ? true : declaredNonExempt;
 
+/** Native splash and the in-app startup screen share it (src/ui/startupSplash.ts). */
+const SPLASH_BACKGROUND = '#000000';
+
 const variant = (process.env.APP_VARIANT ?? 'staging') as 'staging' | 'production';
 const apsEnvironment = (process.env.APS_ENVIRONMENT ?? 'development') as 'development' | 'production';
 
@@ -83,6 +86,17 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       blockedPermissions: ['android.permission.READ_CONTACTS', 'android.permission.READ_PHONE_STATE'],
     },
     plugins: [
+      // LUX logo centered on pure black, identical on iOS and Android (and in
+      // dark mode). 150 dp = the 450 px artwork at 3x, so it is never upscaled
+      // on iPhone and sits well inside Android 12+'s circular icon mask (192 dp
+      // of the 288 dp canvas). src/ui/startupSplash.ts hides it.
+      ['expo-splash-screen', {
+        backgroundColor: SPLASH_BACKGROUND,
+        image: './assets/splash-logo.png',
+        imageWidth: 150,
+        resizeMode: 'contain',
+        dark: { backgroundColor: SPLASH_BACKGROUND, image: './assets/splash-logo.png' },
+      }],
       ['@twilio/voice-react-native-sdk', {
         apsEnvironment,
         microphoneUsageDescription: 'LUX Connect uses the microphone so the people you call can hear you.',
