@@ -3,7 +3,7 @@ from urllib.parse import urlparse
 
 from flask import Blueprint, current_app, flash, redirect, render_template, request, url_for
 from flask_login import current_user, login_required, login_user, logout_user
-from extensions import csrf, db
+from extensions import csrf, db, limiter
 from jinja2 import TemplateNotFound
 from sqlalchemy import or_, text as db_text
 from sqlalchemy.exc import SQLAlchemyError
@@ -63,6 +63,7 @@ def no_cache_auth(response):
     return response
 
 @auth_bp.route("/login", methods=["GET", "POST"])
+@limiter.limit("10 per minute;50 per hour", methods=["POST"])
 @csrf.exempt
 def login():
     if current_user.is_authenticated:
@@ -237,6 +238,7 @@ def login():
 
 
 @auth_bp.route("/forgot-password", methods=["GET", "POST"])
+@limiter.limit("5 per 15 minutes", methods=["POST"])
 def forgot_password():
     # The reset link is only ever delivered to the account's email address and
     # the response is identical whether or not an account matched: rendering the
@@ -301,6 +303,7 @@ def _send_account_email(to_email, subject, html):
 
 
 @auth_bp.route("/reset-password/<token>", methods=["GET", "POST"])
+@limiter.limit("10 per hour", methods=["POST"])
 def reset_password(token):
     import datetime
     from extensions import db as _db
@@ -344,6 +347,7 @@ def reset_password(token):
 
 
 @auth_bp.route("/forgot-username", methods=["GET", "POST"])
+@limiter.limit("5 per 15 minutes", methods=["POST"])
 def forgot_username():
     # Usernames are emailed, never displayed: showing them let anyone map an
     # email address to its login name.

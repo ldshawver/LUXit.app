@@ -45,7 +45,8 @@
                         </div>
                         <div class="preview-content" style="background: #f8f9fa; padding: 20px;">
                             <div style="max-width: 600px; margin: 0 auto; background: white; border: 1px solid #dee2e6;">
-                                {{ rendered_html|safe }}
+                                {# Tenant-authored HTML: isolate it so its scripts can't run as the viewer. #}
+                                <iframe sandbox srcdoc="{{ template.html_content or '' }}" style="width:100%;min-height:600px;border:0;" title="Template preview"></iframe>
                             </div>
                         </div>
                     </div>

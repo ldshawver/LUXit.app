@@ -266,6 +266,12 @@ def create_app() -> Flask:
     )
 
     csrf.init_app(app)
+    from extensions import limiter
+    app.config.setdefault(
+        "RATELIMIT_ENABLED",
+        os.environ.get("FLASK_ENV") != "testing" or os.environ.get("LUXIT_RATELIMIT_IN_TESTS") == "1",
+    )
+    limiter.init_app(app)
 
     from flask_wtf.csrf import CSRFError
 
