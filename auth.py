@@ -238,9 +238,11 @@ def login():
 
 @auth_bp.route("/forgot-password", methods=["GET", "POST"])
 def forgot_password():
+    # The reset link is only ever delivered to the account's email address and
+    # the response is identical whether or not an account matched: rendering the
+    # link here let anyone take over any account (incl. platform admins), and a
+    # match/no-match message enumerates accounts.
     sent = False
-    not_found = False
-    reset_url = None
 
     if request.method == "POST":
         identifier = (request.form.get("identifier") or "").strip()
@@ -256,9 +258,10 @@ def forgot_password():
                         User.username == identifier.lower(),
                     )
                 ).first()
-                if user:
+                if user and user.email and getattr(user, "active", True):
                     token = secrets.token_urlsafe(32)
                     expires = datetime.datetime.utcnow() + datetime.timedelta(hours=2)
+                    PasswordResetToken.query.filter_by(user_id=user.id, used=False).update({"used": True})
                     prt = PasswordResetToken(
                         user_id=user.id,
                         token=token,
@@ -267,21 +270,34 @@ def forgot_password():
                     _db.session.add(prt)
                     _db.session.commit()
                     reset_url = url_for("auth.reset_password", token=token, _external=True)
-                    sent = True
-                else:
-                    not_found = True
+                    _send_account_email(
+                        user.email,
+                        "Reset your LUXit password",
+                        render_template("auth/email_password_reset.html", user=user, reset_url=reset_url),
+                    )
             except Exception as exc:
                 _db.session.rollback()
                 logger.error("Forgot password error: %s", exc)
-                not_found = True
+            sent = True
 
     return render_template(
         "auth/forgot_password.html",
         sent=sent,
-        not_found=not_found,
-        reset_url=reset_url,
         admin_email="luke@adiken.com",
     )
+
+
+def _send_account_email(to_email, subject, html):
+    """Deliver an account-security email. Never raises; logs no address."""
+    try:
+        from email_service import EmailService
+        ok = EmailService().send_email(to_email, subject, html)
+    except Exception as exc:
+        logger.error("Account email send failed: %s", type(exc).__name__)
+        ok = False
+    if not ok:
+        logger.error("Account email '%s' could not be delivered", subject)
+    return ok
 
 
 @auth_bp.route("/reset-password/<token>", methods=["GET", "POST"])
@@ -311,6 +327,9 @@ def reset_password(token):
                 user = db.session.get(User, prt.user_id)
                 if user:
                     user.password_hash = generate_password_hash(new_pw)
+                    # A reset means the old password may be known to someone
+                    # else: end every existing session for this account.
+                    user.session_revoked_at = datetime.datetime.utcnow()
                     prt.used = True
                     _db.session.commit()
                     success = True
@@ -326,9 +345,9 @@ def reset_password(token):
 
 @auth_bp.route("/forgot-username", methods=["GET", "POST"])
 def forgot_username():
-    ADMIN_EMAIL = "luke@adiken.com"
-    found_username = None
-    not_found = False
+    # Usernames are emailed, never displayed: showing them let anyone map an
+    # email address to its login name.
+    sent = False
 
     if request.method == "POST":
         email = (request.form.get("email") or "").strip().lower()
@@ -336,18 +355,20 @@ def forgot_username():
             from extensions import db as _db
             try:
                 user = User.query.filter(User.email == email).first()
-                if user:
-                    found_username = user.username
-                else:
-                    not_found = True
+                if user and getattr(user, "active", True):
+                    _send_account_email(
+                        user.email,
+                        "Your LUXit username",
+                        render_template("auth/email_forgot_username.html", user=user,
+                                        login_url=url_for("auth.login", _external=True)),
+                    )
             except SQLAlchemyError:
                 _db.session.rollback()
-                not_found = True
+            sent = True
 
     return render_template(
         "auth/forgot_username.html",
-        found_username=found_username,
-        not_found=not_found,
+        sent=sent,
         admin_email="luke@adiken.com",
     )
 

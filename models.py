@@ -332,11 +332,10 @@ class User(UserMixin, db.Model):
 
     @property
     def is_admin_user(self):
-        return (
-            self.is_admin
-            or self.segment == "admin"
-            or (self.tags and "admin" in self.tags.lower())
-        )
+        # Only the is_admin flag grants platform admin. segment/tags are
+        # self-editable profile fields (PUT /api/user/profile), so honoring
+        # "admin" there let any user promote themselves.
+        return bool(self.is_admin)
 
     # -------------------------
     # 🔑 DEFAULT COMPANY LOGIC

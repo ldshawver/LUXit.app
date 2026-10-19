@@ -406,6 +406,12 @@ def create_app() -> Flask:
         from diagnostics_service import is_diagnostics_admin, new_correlation_id, structured_log
         from error_logger import log_application_error
         from flask_login import current_user
+        # Discard the failed request's half-done writes first: log_application_error
+        # commits the shared session, which would otherwise persist them.
+        try:
+            db.session.rollback()
+        except Exception:
+            pass
         correlation_id = new_correlation_id()
         structured_log(
             level="fatal", service="app", message="Unhandled API error", error=error,

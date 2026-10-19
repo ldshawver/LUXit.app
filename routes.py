@@ -257,6 +257,9 @@ def _marketing_pages_allowed():
 
 
 
+from services.tenant_scope import tenant_get, tenant_get_or_404
+
+
 def _current_company_id():
     try:
         company = current_user.get_default_company() if hasattr(current_user, 'get_default_company') else None
@@ -901,7 +904,7 @@ def campaigns():
 def email_builder(campaign_id=None):
     from models import Campaign, EmailTemplate
     templates = EmailTemplate.query.all()
-    campaign = db.session.get(Campaign, campaign_id) if campaign_id else None
+    campaign = tenant_get(Campaign, campaign_id) if campaign_id else None
     return render_template('email_builder.html', campaign=campaign, templates=templates)
 
 @main_bp.route('/analytics')
@@ -2764,7 +2767,7 @@ def refresh_social_followers():
         account_id = request.form.get('account_id')
         if account_id:
             # Refresh specific account
-            account = db.session.get(SocialMediaAccount, account_id)
+            account = tenant_get(SocialMediaAccount, account_id)
             if account:
                 result = SocialMediaService.refresh_account_data(account)
                 if result.get('success'):
@@ -3338,7 +3341,7 @@ def create_automation():
 @login_required
 def edit_automation(id):
     """Edit automation workflow with visual builder"""
-    automation = Automation.query.get_or_404(id)
+    automation = tenant_get_or_404(Automation, id)
     
     if request.method == 'POST':
         try:
@@ -3393,7 +3396,7 @@ def edit_automation(id):
 def toggle_automation(id):
     """Enable/disable automation workflow"""
     try:
-        automation = Automation.query.get_or_404(id)
+        automation = tenant_get_or_404(Automation, id)
         automation.is_active = not automation.is_active
         db.session.commit()
         
@@ -3692,7 +3695,7 @@ def automation_analytics():
 def pause_automation(id):
     """Pause an automation workflow"""
     try:
-        automation = Automation.query.get_or_404(id)
+        automation = tenant_get_or_404(Automation, id)
         reason = request.form.get('reason', 'Manual pause')
         
         automation.pause(reason)
@@ -3709,7 +3712,7 @@ def pause_automation(id):
 def resume_automation(id):
     """Resume a paused automation workflow"""
     try:
-        automation = Automation.query.get_or_404(id)
+        automation = tenant_get_or_404(Automation, id)
         automation.resume()
         db.session.commit()
         
@@ -4135,7 +4138,7 @@ def ai_generate_sms():
 @login_required
 def sms_analytics(campaign_id):
     """View SMS campaign analytics"""
-    campaign = SMSCampaign.query.get_or_404(campaign_id)
+    campaign = tenant_get_or_404(SMSCampaign, campaign_id)
     recipients = SMSRecipient.query.filter_by(campaign_id=campaign_id).all()
 
     total = len(recipients)
@@ -4161,7 +4164,7 @@ def sms_analytics(campaign_id):
 @login_required
 def setup_non_opener_resend(campaign_id):
     """Set up automatic resend to non-openers"""
-    campaign = Campaign.query.get_or_404(campaign_id)
+    campaign = tenant_get_or_404(Campaign, campaign_id)
     
     if request.method == 'POST':
         try:
@@ -5207,7 +5210,7 @@ def seo_audit():
 def seo_audit_results(audit_id):
     """View audit results"""
     from models import SEOAudit
-    audit = SEOAudit.query.get_or_404(audit_id)
+    audit = tenant_get_or_404(SEOAudit, audit_id)
     return render_template('seo_audit_results.html', audit=audit)
 
 # ===== PHASE 3: EVENT ENHANCEMENTS =====
@@ -5958,28 +5961,28 @@ def api_calendar_update_event(event_id):
             return jsonify({'success': False, 'error': 'Start date required'}), 400
         
         if event_type == 'sms':
-            campaign = db.session.get(SMSCampaign, content_id)
+            campaign = tenant_get(SMSCampaign, content_id)
             if campaign:
                 campaign.scheduled_at = new_start_dt
                 db.session.commit()
                 return jsonify({'success': True, 'message': 'SMS campaign rescheduled'})
         
         elif event_type == 'social':
-            post = db.session.get(SocialPost, content_id)
+            post = tenant_get(SocialPost, content_id)
             if post:
                 post.scheduled_at = new_start_dt
                 db.session.commit()
                 return jsonify({'success': True, 'message': 'Social post rescheduled'})
         
         elif event_type == 'email':
-            campaign = db.session.get(Campaign, content_id)
+            campaign = tenant_get(Campaign, content_id)
             if campaign:
                 campaign.scheduled_at = new_start_dt
                 db.session.commit()
                 return jsonify({'success': True, 'message': 'Email campaign rescheduled'})
         
         elif event_type == 'custom':
-            event = db.session.get(CalendarEvent, content_id)
+            event = tenant_get(CalendarEvent, content_id)
             if event:
                 event.start_date = new_start_dt
                 if new_end:
@@ -6013,7 +6016,7 @@ def api_calendar_delete_event(event_id):
             return jsonify({'success': False, 'error': 'Can only delete custom events'}), 400
         
         content_id = int(parts[1])
-        event = db.session.get(CalendarEvent, content_id)
+        event = tenant_get(CalendarEvent, content_id)
         
         if not event:
             return jsonify({'success': False, 'error': 'Event not found'}), 404
@@ -6043,7 +6046,7 @@ def api_calendar_get_event(event_id):
         content_id = int(parts[1])
         
         if event_type == 'sms':
-            campaign = db.session.get(SMSCampaign, content_id)
+            campaign = tenant_get(SMSCampaign, content_id)
             if campaign:
                 return jsonify({
                     'success': True,
@@ -6059,7 +6062,7 @@ def api_calendar_get_event(event_id):
                 })
         
         elif event_type == 'social':
-            post = db.session.get(SocialPost, content_id)
+            post = tenant_get(SocialPost, content_id)
             if post:
                 return jsonify({
                     'success': True,
@@ -6076,7 +6079,7 @@ def api_calendar_get_event(event_id):
                 })
         
         elif event_type == 'email':
-            campaign = db.session.get(Campaign, content_id)
+            campaign = tenant_get(Campaign, content_id)
             if campaign:
                 return jsonify({
                     'success': True,
@@ -6092,7 +6095,7 @@ def api_calendar_get_event(event_id):
                 })
         
         elif event_type == 'custom':
-            event = db.session.get(CalendarEvent, content_id)
+            event = tenant_get(CalendarEvent, content_id)
             if event:
                 return jsonify({'success': True, 'event': event.to_dict()})
         
@@ -6643,24 +6646,50 @@ def edit_user(user_id):
         if not UserCompanyAccess.query.filter_by(user_id=user.id, company_id=company.id).first():
             flash('Access denied for this tenant user.', 'danger')
             return redirect(url_for('main.manage_users'))
+        # A tenant admin must not change the identity of a platform admin or of
+        # someone who also belongs to another tenant: changing their email and
+        # then requesting a password reset would take over that account.
+        other_tenant = UserCompanyAccess.query.filter(
+            UserCompanyAccess.user_id == user.id,
+            UserCompanyAccess.company_id != company.id,
+            UserCompanyAccess.is_active.is_(True),
+        ).first()
+        if user.is_admin or other_tenant:
+            flash('This user is managed outside your workspace and cannot be edited here.', 'danger')
+            return redirect(url_for('main.manage_users'))
+    acc_for_company = UserCompanyAccess.query.filter_by(user_id=user.id, company_id=company.id).first() if company else None
+    role_ctx = {
+        'current_role': acc_for_company.normalized_role if acc_for_company else None,
+        'can_assign_owner': current_user.is_admin or bool(company and current_user.get_company_role(company.id) == 'owner'),
+    }
     if request.method == 'POST':
+        requested_role = request.form.get('role') or None
+        if requested_role:
+            requested_role = UserCompanyAccess.normalize_role(requested_role)
+            assignable = ('owner', 'admin', 'manager', 'editor', 'viewer', 'staff', 'inbox_only')
+            if requested_role not in assignable or (
+                requested_role == 'owner' and not current_user.is_admin
+                and not (company and current_user.get_company_role(company.id) == 'owner')
+            ):
+                flash('That role cannot be assigned.', 'danger')
+                return render_template('edit_user.html', user=user, **role_ctx)
         user.username = request.form.get('username', user.username)
         user.email = request.form.get('email', user.email)
         user.first_name = request.form.get('first_name', '')
         user.last_name = request.form.get('last_name', '')
-        requested_role = request.form.get('role', user.role)
-        user.role = requested_role
-        if current_user.is_admin:
+        # The checkbox is not rendered on your own record, so an absent field
+        # there must not be read as "revoke" (it would demote the admin).
+        if current_user.is_admin and user.id != current_user.id:
             user.is_admin = request.form.get('is_admin') == 'on'
         if company:
             acc = UserCompanyAccess.query.filter_by(user_id=user.id, company_id=company.id).first()
             if acc and requested_role:
-                acc.role = UserCompanyAccess.normalize_role(requested_role)
+                acc.role = requested_role
         user.updated_at = datetime.now()
         db.session.commit()
         flash(f'User {user.username} updated successfully!', 'success')
         return redirect(url_for('main.manage_users'))
-    return render_template('edit_user.html', user=user)
+    return render_template('edit_user.html', user=user, **role_ctx)
 
 @main_bp.route('/user/delete/<int:user_id>', methods=['POST'])
 @login_required
@@ -6742,12 +6771,22 @@ def update_user_access(user_id):
             acc = UserCompanyAccess(user_id=target.id, company_id=company.id, role='viewer')
             db.session.add(acc)
 
+        if not current_user.is_admin:
+            # Manage-users is not a licence to escalate: no editing your own grant,
+            # no touching platform admins, and only owners create or alter owners.
+            is_owner = current_user.get_company_role(company.id) == 'owner'
+            if target.id == current_user.id or target.is_admin:
+                return jsonify({'success': False, 'error': 'You cannot change this user\'s access.'}), 403
+            if acc.normalized_role == 'owner' and not is_owner:
+                return jsonify({'success': False, 'error': 'Only an owner can change an owner.'}), 403
         if 'role' in payload:
             new_role = payload['role']
             new_role = UserCompanyAccess.normalize_role(new_role)
             valid_roles = ('owner', 'admin', 'manager', 'editor', 'viewer', 'staff', 'inbox_only')
             if new_role not in valid_roles:
                 return jsonify({'success': False, 'error': f'Invalid role. Choose from: {", ".join(valid_roles)}'}), 400
+            if new_role == 'owner' and not current_user.is_admin and current_user.get_company_role(company.id) != 'owner':
+                return jsonify({'success': False, 'error': 'Only an owner can grant the owner role.'}), 403
             acc.role = new_role
         if 'can_access_mobile_inbox' in payload:
             acc.can_access_mobile_inbox = bool(payload['can_access_mobile_inbox'])
@@ -7594,7 +7633,7 @@ def crm_dashboard():
 def deal_detail(deal_id):
     """View individual deal"""
     from models import Deal, DealActivity
-    deal = Deal.query.get_or_404(deal_id)
+    deal = tenant_get_or_404(Deal, deal_id)
     activities = DealActivity.query.filter_by(deal_id=deal_id).order_by(DealActivity.activity_date.desc()).all()
     return render_template('deal_detail.html', deal=deal, activities=activities)
 
@@ -7984,10 +8023,15 @@ def lux_crm():
     """Unified LUX CRM with all features - Action-oriented coaching CRM"""
     from datetime import timedelta
     company = current_user.get_default_company()
+    if not company:
+        flash('Choose a workspace first.', 'warning')
+        return redirect(url_for('main.dashboard'))
     
     deals = Deal.query.filter_by(company_id=company.id).all()
-    all_contacts = Contact.query.filter_by(company_id=segment.company_id).all()
-    lead_scores = LeadScore.query.all()
+    all_contacts = Contact.query.filter_by(company_id=company.id).all()
+    # LeadScore has no company column; scope it through its contact.
+    lead_scores = LeadScore.query.join(Contact, LeadScore.contact_id == Contact.id).filter(
+        Contact.company_id == company.id).all()
     personalization_rules = PersonalizationRule.query.filter_by(company_id=company.id).all()
     keywords = KeywordResearch.query.filter_by(company_id=company.id).all()
     
@@ -9139,7 +9183,7 @@ def blog_create():
 @login_required
 def blog_edit(post_id):
     """Edit a blog post"""
-    post = BlogPost.query.get_or_404(post_id)
+    post = tenant_get_or_404(BlogPost, post_id)
     
     if request.method == 'POST':
         post.title = request.form.get('title', '')
@@ -9298,7 +9342,7 @@ def update_contact_profile(contact_id):
 @login_required
 def add_contact_activity_api(contact_id):
     """Add a new activity for a contact via API"""
-    contact = Contact.query.get_or_404(contact_id)
+    contact = tenant_get_or_404(Contact, contact_id)
     current_company = current_user.get_default_company()
     
     try:
@@ -9344,7 +9388,7 @@ def add_contact_activity_api(contact_id):
 @login_required
 def contact_activities(contact_id):
     """View all activities for a contact"""
-    contact = Contact.query.get_or_404(contact_id)
+    contact = tenant_get_or_404(Contact, contact_id)
     activities = ContactActivity.query.filter_by(contact_id=contact_id).order_by(ContactActivity.created_at.desc()).all()
     return render_template('contact_activities.html', contact=contact, activities=activities)
 
@@ -9352,7 +9396,7 @@ def contact_activities(contact_id):
 @login_required
 def add_contact_activity(contact_id):
     """Add a new activity for a contact"""
-    contact = Contact.query.get_or_404(contact_id)
+    contact = tenant_get_or_404(Contact, contact_id)
     current_company = current_user.get_default_company()
     
     activity = ContactActivity()
@@ -9660,7 +9704,7 @@ def get_event_providers():
 def delete_automation(id):
     """Delete an automation"""
     try:
-        automation = Automation.query.get_or_404(id)
+        automation = tenant_get_or_404(Automation, id)
         db.session.delete(automation)
         db.session.commit()
         return jsonify({'success': True, 'message': 'Automation deleted'})
@@ -10904,7 +10948,7 @@ def edit_campaign(campaign_id):
     campaign = None
     try:
         if Campaign is not None:
-            campaign = db.session.get(Campaign, campaign_id)
+            campaign = tenant_get(Campaign, campaign_id)
     except Exception:
         pass
     if campaign is None:
@@ -10936,7 +10980,7 @@ def campaign_detail(campaign_id):
     campaign = None
     try:
         if Campaign is not None:
-            campaign = db.session.get(Campaign, campaign_id)
+            campaign = tenant_get(Campaign, campaign_id)
     except Exception:
         pass
     if campaign is None:
@@ -10951,7 +10995,7 @@ def preview_campaign(campaign_id):
     campaign = None
     try:
         if Campaign is not None:
-            campaign = db.session.get(Campaign, campaign_id)
+            campaign = tenant_get(Campaign, campaign_id)
     except Exception:
         pass
     if campaign is None:
@@ -10965,7 +11009,7 @@ def preview_campaign(campaign_id):
 def send_campaign(campaign_id):
     try:
         if Campaign is not None:
-            campaign = db.session.get(Campaign, campaign_id)
+            campaign = tenant_get(Campaign, campaign_id)
             if campaign:
                 campaign.status = 'sending'
                 db.session.commit()
@@ -11682,8 +11726,17 @@ def initialize_system():
 @main_bp.route('/user/add', methods=['GET', 'POST'])
 @login_required
 def add_user():
-    """Add a new user"""
+    """Add a user to the current workspace (platform admin or manage-users only)."""
+    from services.comms_permissions import can_manage_users
+    company = current_user.get_default_company()
+    if not current_user.is_admin and (not company or not can_manage_users(current_user, company.id)):
+        flash('Access denied. You need owner or manage-users permission.', 'danger')
+        return redirect(url_for('main.dashboard'))
     if request.method == 'POST':
+        if company and not company.can_add_team_member():
+            flash(f'Team seat limit reached ({company.max_team_members}). Upgrade your plan '
+                  f'or add accounts at /app/billing before adding more users.', 'error')
+            return redirect(url_for('main.manage_users'))
         try:
             username = request.form.get('username', '').strip()
             email = request.form.get('email', '').strip()
@@ -11704,7 +11757,6 @@ def add_user():
 
             # Auto-link new users to the current admin's default company so
             # they don't end up as orphan accounts with no tenant context.
-            company = current_user.get_default_company()
             if company:
                 if not user.default_company_id:
                     user.default_company_id = company.id

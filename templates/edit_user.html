@@ -44,16 +44,23 @@
                         <input type="tel" class="form-control" id="phone" name="phone" value="{{ user.phone or '' }}">
                     </div>
                     
+                    {# Preselect the real workspace role: with nothing selected the browser
+                       submits the first option and every save demoted the user. #}
+                    {% if current_role %}
                     <div class="mb-3">
-                        <label for="role" class="form-label">Role</label>
+                        <label for="role" class="form-label">Role in this workspace</label>
                         <select class="form-select" id="role" name="role">
-                            <option value="user" {% if user.role == 'user' %}selected{% endif %}>User</option>
-                            <option value="manager" {% if user.role == 'manager' %}selected{% endif %}>Manager</option>
-                            <option value="admin" {% if user.role == 'admin' %}selected{% endif %}>Admin</option>
+                            {% set roles = [('viewer','Viewer'),('inbox_only','Inbox only'),('staff','Staff'),('editor','Editor'),('manager','Manager'),('admin','Admin')] %}
+                            {% if can_assign_owner or current_role == 'owner' %}{% set roles = roles + [('owner','Owner')] %}{% endif %}
+                            {% for value, label in roles %}
+                            <option value="{{ value }}" {% if current_role == value %}selected{% endif %}>{{ label }}</option>
+                            {% endfor %}
                         </select>
                     </div>
+                    {% endif %}
                     
-                    {% if user.id != current_user.id %}
+                    {% if not current_user.is_admin %}
+                    {% elif user.id != current_user.id %}
                     <div class="mb-3 form-check">
                         <input type="checkbox" class="form-check-input" id="is_admin" name="is_admin"
                                {% if user.is_admin %}checked{% endif %}>

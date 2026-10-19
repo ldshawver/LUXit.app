@@ -30,7 +30,7 @@ import os
 from datetime import datetime, timedelta, timezone
 
 import requests
-from flask import Blueprint, abort, flash, jsonify, redirect, render_template, request, url_for
+from flask import Blueprint, abort, current_app, flash, jsonify, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
 from sqlalchemy.exc import IntegrityError
 
@@ -39,6 +39,16 @@ from extensions import csrf, db
 logger = logging.getLogger(__name__)
 
 saas_bp = Blueprint("saas", __name__, url_prefix="/saas")
+
+
+@saas_bp.before_request
+def _platform_admin_only():
+    # Every /saas page reads or edits all tenants' accounts, licenses and billing
+    # state, so it is the platform operator's console, not a tenant feature.
+    if not current_user.is_authenticated:
+        return current_app.login_manager.unauthorized()
+    if not getattr(current_user, "is_admin", False):
+        abort(403)
 
 # ---------------------------------------------------------------------------
 # Default onboarding checklist applied to every new project

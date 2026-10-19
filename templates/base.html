@@ -634,7 +634,7 @@
                 </div>
 
                 {# Platform Admin — SaaS + Platform tools, admin-only, always shown at bottom #}
-                {% if current_user.is_admin or _user_is_company_admin %}
+                {% if current_user.is_admin %}
                 <div class="sidebar-section">
                     <p class="sidebar-section-label">Platform</p>
                     <a href="{{ url_for('saas.dashboard') }}" class="sidebar-nav-item{% if _p.startswith('/saas') %} active{% endif %}">

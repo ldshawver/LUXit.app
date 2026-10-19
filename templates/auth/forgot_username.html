@@ -141,26 +141,21 @@
       </div>
 
       <h1>Forgot Username</h1>
-      <p class="sub">Enter the email address associated with your account and we'll look up your username.</p>
+      <p class="sub">Enter the email address associated with your account and we'll email you your username.</p>
 
-      {% if found_username %}
+      {% if sent %}
       <div class="result-box result-found">
-        Your username is:<strong>{{ found_username }}</strong>
+        If an account uses that email address, we've emailed its username there.
         <a href="{{ url_for('auth.login') }}" style="display:inline-block;margin-top:12px;color:#00e5ff;font-size:0.85rem;text-decoration:none;">← Back to Sign In</a>
-      </div>
-      {% elif not_found %}
-      <div class="result-box result-notfound">
-        No account was found with that email address. Please contact the administrator at
-        <a href="mailto:{{ admin_email }}">{{ admin_email }}</a> for assistance.
       </div>
       {% endif %}
 
-      {% if not found_username %}
+      {% if not sent %}
       <form method="POST">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <label for="email">Email Address</label>
         <input id="email" name="email" type="email" autocomplete="email" placeholder="your@email.com" required>
-        <button type="submit">Look Up Username</button>
+        <button type="submit">Email My Username</button>
       </form>
       {% endif %}
 

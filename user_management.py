@@ -62,78 +62,10 @@ def manage_users():
 @user_bp.route('/add-user', methods=['GET', 'POST'])
 @login_required
 def add_user():
-    """Add a new user"""
-    if request.method == 'POST':
-        username = request.form.get('username', '').strip()
-        email = request.form.get('email', '').strip()
-        password = request.form.get('password', '')
-        confirm_password = request.form.get('confirm_password', '')
-        is_admin = bool(request.form.get('is_admin'))
-        
-        if not all([username, email, password, confirm_password]):
-            flash('All fields are required', 'error')
-            return render_template('add_user.html')
-        
-        # Validate email
-        if not validate_email(email):
-            flash('Invalid email format', 'error')
-            return render_template('add_user.html')
-        
-        # Validate password
-        if len(password) < 6:
-            flash('Password must be at least 6 characters long', 'error')
-            return render_template('add_user.html')
-        
-        if password != confirm_password:
-            flash('Passwords do not match', 'error')
-            return render_template('add_user.html')
-        
-        # Check if user already exists
-        if User.query.filter_by(username=username).first():
-            flash('Username already exists', 'error')
-            return render_template('add_user.html')
-        
-        if User.query.filter_by(email=email).first():
-            flash('Email already exists', 'error')
-            return render_template('add_user.html')
-
-        # Enforce billing tier seat limit when the current admin is
-        # operating within a billed company context.
-        if current_user.is_authenticated and getattr(current_user, "default_company_id", None):
-            from models import Company
-            home_company = db.session.get(Company, current_user.default_company_id)
-            if home_company and not home_company.can_add_team_member():
-                limit = home_company.max_team_members
-                flash(
-                    f'Team seat limit reached ({limit}). Upgrade your plan or '
-                    f'add accounts at /app/billing before adding more users.',
-                    'error',
-                )
-                return redirect(url_for('user.manage_users'))
-
-        # Create new user
-        user = User()
-        user.username = username
-        user.email = email
-        user.password_hash = generate_password_hash(password)
-        user.is_admin = is_admin
-        if current_user.is_authenticated and getattr(current_user, "default_company_id", None):
-            user.default_company_id = current_user.default_company_id
-        
-        db.session.add(user)
-        try:
-            db.session.commit()
-        except Exception as exc:
-            db.session.rollback()
-            import logging as _log
-            _log.getLogger(__name__).error("add_user commit failed: %s", exc)
-            flash('Error creating user — please try again.', 'error')
-            return render_template('add_user.html')
-
-        flash(f'User "{username}" created successfully', 'success')
-        return redirect(url_for('user.manage_users'))
-    
-    return render_template('add_user.html')
+    """DEPRECATED unguarded duplicate. It let any signed-in user create a platform
+    admin (is_admin from the form). Forward to the canonical tenant-scoped route,
+    which checks manage-users permission and seat limits. 307 preserves the POST."""
+    return redirect(url_for('main.add_user'), code=307)
 
 @user_bp.route('/delete-user/<int:user_id>', methods=['POST'])
 @login_required
@@ -148,50 +80,7 @@ def delete_user(user_id):
 @user_bp.route('/edit-user/<int:user_id>', methods=['GET', 'POST'])
 @login_required
 def edit_user(user_id):
-    """Edit user details"""
-    user = User.query.get_or_404(user_id)
-    
-    if request.method == 'POST':
-        username = request.form.get('username', '').strip()
-        email = request.form.get('email', '').strip()
-        new_password = request.form.get('new_password', '')
-        is_admin = bool(request.form.get('is_admin'))
-        
-        if not all([username, email]):
-            flash('Username and email are required', 'error')
-            return render_template('edit_user.html', user=user)
-        
-        # Validate email
-        if not validate_email(email):
-            flash('Invalid email format', 'error')
-            return render_template('edit_user.html', user=user)
-        
-        # Check for duplicates (excluding current user)
-        existing_username = User.query.filter(User.username == username, User.id != user_id).first()
-        if existing_username:
-            flash('Username already exists', 'error')
-            return render_template('edit_user.html', user=user)
-        
-        existing_email = User.query.filter(User.email == email, User.id != user_id).first()
-        if existing_email:
-            flash('Email already exists', 'error')
-            return render_template('edit_user.html', user=user)
-        
-        # Update user details
-        user.username = username
-        user.email = email
-        user.is_admin = is_admin
-        
-        # Update password if provided
-        if new_password:
-            if len(new_password) < 6:
-                flash('Password must be at least 6 characters long', 'error')
-                return render_template('edit_user.html', user=user)
-            user.password_hash = generate_password_hash(new_password)
-        
-        db.session.commit()
-        
-        flash(f'User "{username}" updated successfully', 'success')
-        return redirect(url_for('user.manage_users'))
-    
-    return render_template('edit_user.html', user=user)
+    """DEPRECATED unguarded duplicate. It let any signed-in user edit any user in any
+    tenant (password, is_admin). Forward to the canonical permission-checked route.
+    307 preserves the POST + body."""
+    return redirect(url_for('main.edit_user', user_id=user_id), code=307)
