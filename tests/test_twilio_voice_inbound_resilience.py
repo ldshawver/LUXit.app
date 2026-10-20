@@ -71,7 +71,8 @@ def test_voice_inbound_during_hours_forward_returns_twiml(voice_app, monkeypatch
     assert resp.status_code == 200
     assert resp.content_type.startswith("text/xml")
     assert "<Dial" in body
-    assert "<Number>+12792860000</Number>" in body
+    assert 'method="POST">+12792860000</Number>' in body
+    assert "/twilio/voice/forward-screen?" in body
     assert "InFailedSqlTransaction" not in body
     with app.app_context():
         log = TwilioCallLog.query.filter_by(twilio_sid="TEST_FORWARD_DEBUG_005").one()

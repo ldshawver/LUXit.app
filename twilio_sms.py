@@ -31,6 +31,7 @@ import os
 import re
 import html
 from datetime import datetime, timezone, timedelta
+from urllib.parse import urlencode
 from zoneinfo import ZoneInfo
 
 REQUIRED_AFTER_HOURS_SMS_COPY = "Thanks for reaching out. Our business hours are daily from 2 PM to 2 AM. We’ll respond as soon as we’re back online."
@@ -66,6 +67,8 @@ def _guard_sms_feature():
         "/twilio/sms/status",
         "/twilio/voice/inbound",
         "/twilio/voice/no-answer",
+        "/twilio/voice/forward-screen",
+        "/twilio/voice/forward-accept",
         "/twilio/voice/recording",
         "/twilio/voice/status",
         "/twilio/voice/pwa-outbound",
@@ -2270,20 +2273,33 @@ def inbound_call():
         return _voice_inbound_safe_fallback_twiml(ctx), 200, {"Content-Type": "text/xml"}
 
 
+def _forward_dial_twiml(numbers, *, caller_id, timeout, to_number, call_log_id, record_attr=""):
+    """<Dial> to outside phones. Every leg is screened before it is connected
+    (voice_forward_screen), so a carrier voicemail answering the cell cannot
+    take the call; the screened=1 action lets voice_no_answer tell the two apart."""
+    screen_qs = urlencode({"to": to_number or "", "log": call_log_id or ""})
+    screen_url = html.escape(f"/twilio/voice/forward-screen?{screen_qs}", quote=True)
+    numbers_xml = "".join(f'\n    <Number url="{screen_url}" method="POST">{html.escape(n, quote=True)}</Number>' for n in numbers)
+    return (
+        f'<?xml version="1.0" encoding="UTF-8"?>\n'
+        f"<Response>\n"
+        f'  <Dial callerId="{html.escape(caller_id or "", quote=True)}" timeout="{timeout}" action="/twilio/voice/no-answer?to={html.escape(to_number or "", quote=True)}&amp;screened=1" method="POST"{record_attr}>'
+        f"{numbers_xml}\n"
+        f"  </Dial>\n"
+        f"</Response>"
+    )
+
+
 def _voice_inbound_safe_fallback_twiml(ctx=None):
     ctx = ctx or {}
     forward_to = ctx.get("forward_to")
-    to_number = html.escape(ctx.get("to_number") or "", quote=True)
-    caller_id = html.escape(ctx.get("caller_id") or ctx.get("to_number") or "", quote=True)
-    if forward_to:
-        safe_forward = html.escape(forward_to, quote=True)
-        return (
-            '<?xml version="1.0" encoding="UTF-8"?>\n'
-            '<Response>\n'
-            f'  <Dial callerId="{caller_id}" timeout="25" action="/twilio/voice/no-answer?to={to_number}" method="POST">\n'
-            f'    <Number>{safe_forward}</Number>\n'
-            '  </Dial>\n'
-            '</Response>'
+    if forward_to and ctx.get("call_log_id"):
+        # Same screened forward as the normal path; without a call log the
+        # screen cannot record acceptance, so that case takes voicemail below.
+        from services.call_forwarding import forward_caller_id
+        return _forward_dial_twiml(
+            [forward_to], caller_id=forward_caller_id(ctx.get("from_number"), ctx.get("caller_id") or ctx.get("to_number") or ""),
+            timeout=25, to_number=ctx.get("to_number"), call_log_id=ctx["call_log_id"],
         )
     return (
         '<?xml version="1.0" encoding="UTF-8"?>\n'
@@ -2366,6 +2382,7 @@ def _inbound_call_impl():
     else:
         log = existing
     if log:
+        g.voice_inbound_debug["call_log_id"] = log.id
         evt = CallEvent.query.filter_by(call_log_id=log.id, event_type="incoming", provider_event_id=call_sid).first()
         if not evt:
             db.session.add(CallEvent(call_log_id=log.id, event_type="incoming", provider_event_id=call_sid, payload=dict(data)))
@@ -2469,37 +2486,49 @@ def _inbound_call_impl():
         or configured_call_forward_to
     )
     fallback_to = ((settings.fallback_forward_number if in_hours else settings.after_hours_fallback_forward_number) if settings else None)
+    if route == "forward":
+        # Forwarding needs an enabled switch AND at least one safe target
+        # (services/call_forwarding.py: E.164, never one of our own numbers).
+        # Otherwise the call takes the unconfigured route for this period --
+        # the app in business hours, LUXit voicemail after hours -- so turning
+        # the switch off stops forwarding on the very next call.
+        from services.call_forwarding import forward_targets, is_forward_loop
+        forwarding_on = bool(settings_forward_to or ta.voice_forwarding_enabled or getattr(ta, "call_forwarding_enabled", False))
+        forward_numbers = forward_targets([forward_to, fallback_to]) if forwarding_on else []
+        if forward_numbers and is_forward_loop(from_number, data.get("ForwardedFrom"), forward_numbers):
+            forward_numbers = []
+            forwarding_on = "loop"
+        if not forward_numbers:
+            logger.warning("Voice inbound: forward route not used (%s), using the default route company_id=%s in_hours=%s",
+                           {True: "no safe forward target", False: "forwarding switched off", "loop": "call is already forwarded"}[forwarding_on],
+                           ta.company_id, in_hours)
+            route = None
     timeout = (settings.ring_duration_seconds if settings else None) or 25
     record_attr = ' record="record-from-answer" recordingStatusCallback="/twilio/voice/recording"' if settings and settings.recording_enabled else ""
     g.voice_inbound_debug.update({
         "route_decision": route or ("ring_pwa" if in_hours else "voicemail"),
-        "forward_to": forward_to,
+        # The exception fallback dials this, so only a vetted target goes here.
+        "forward_to": forward_numbers[0] if route == "forward" else None,
         "in_hours": in_hours,
     })
 
-    def _dial_twiml(number, fallback=None):
-        caller_id = ta.from_phone or to_number
+    def _dial_twiml(numbers):
+        from services.call_forwarding import forward_caller_id
+        caller_id = forward_caller_id(from_number, ta.from_phone or to_number)
         if log:
             log.status = "forwarded"
-            log.forwarded_to_number = number
+            log.forwarded_to_number = numbers[0]
             log.forwarded = True
-            log.forwarded_to = number
+            log.forwarded_to = numbers[0]
             log.final_status = "forwarded"
             db.session.commit()
-        fallback_xml = f"<Number>{fallback}</Number>" if fallback else ""
-        return (
-            f'<?xml version="1.0" encoding="UTF-8"?>\n'
-            f"<Response>\n"
-            f'  <Dial callerId="{caller_id}" timeout="{timeout}" action="/twilio/voice/no-answer?to={html.escape(to_number or "", quote=True)}" method="POST"{record_attr}>\n'
-            f"    <Number>{number}</Number>{fallback_xml}\n"
-            f"  </Dial>\n"
-            f"</Response>"
-        )
+        return _forward_dial_twiml(numbers, caller_id=caller_id, timeout=timeout, to_number=to_number,
+                                   call_log_id=log.id if log else None, record_attr=record_attr)
 
-    if route == "forward" and forward_to and (settings_forward_to or ta.voice_forwarding_enabled or getattr(ta, "call_forwarding_enabled", False)):
+    if route == "forward":
         # Explicit per-line call forwarding wins over browser ringing. This
         # applies only to voice webhooks; SMS routing never reads these fields.
-        twiml = _dial_twiml(forward_to, fallback_to)
+        twiml = _dial_twiml(forward_numbers)
     elif route == "ring_pwa" or (in_hours and route is None):
         # Explicit route == "ring_pwa" rings the PWA regardless of business
         # hours -- an operator who sets after_hours_route=ring_pwa wants
@@ -2617,8 +2646,6 @@ def _inbound_call_impl():
                 '  </Dial>\n'
                 '</Response>'
             )
-    elif route == "forward" and forward_to:
-        twiml = _dial_twiml(forward_to, fallback_to)
     elif route == "voicemail":
         twiml = _voicemail_twiml(after_hours=not in_hours)
     elif not in_hours and ta.after_hours_voicemail_enabled:
@@ -2643,6 +2670,81 @@ def _inbound_call_impl():
     except Exception:
         pass
     return twiml, 200, {"Content-Type": "text/xml"}
+
+
+_HANGUP_TWIML = '<?xml version="1.0" encoding="UTF-8"?>\n<Response>\n  <Hangup/>\n</Response>'
+
+
+def _forward_screen_context():
+    """(ta, call log) for a screened forward leg, or (None, None) when the
+    request is not a valid Twilio request for a call on that business number.
+    The query string carries the business number and call log id; Twilio
+    signs the full URL, so it cannot be altered."""
+    from models import TwilioCallLog
+    pn, ta = _resolve_number(request.args.get("to", ""))
+    if not ta:
+        return None, None
+    ta = _effective_twilio_config(ta, pn)
+    if not _validate_twilio_signature(ta, request.full_path.rstrip("?")):
+        return None, None
+    try:
+        log = db.session.get(TwilioCallLog, int(request.args.get("log") or 0))
+    except (TypeError, ValueError):
+        log = None
+    if not log or log.company_id != ta.company_id or log.twilio_sid != request.form.get("ParentCallSid"):
+        return ta, None
+    return ta, log
+
+
+def _forward_was_accepted(call_sid):
+    from models import CallEvent, TwilioCallLog
+    from services.call_forwarding import FORWARD_ACCEPTED_EVENT
+    log = TwilioCallLog.query.filter_by(twilio_sid=call_sid).first() if call_sid else None
+    return bool(log and CallEvent.query.filter_by(call_log_id=log.id, event_type=FORWARD_ACCEPTED_EVENT).first())
+
+
+@twilio_bp.route("/voice/forward-screen", methods=["POST"])
+@csrf.exempt
+def voice_forward_screen():
+    """<Number url> of a forwarded leg: played to whoever answers the forward
+    phone, before the caller is connected. No key press -> that leg hangs up."""
+    ta, log = _forward_screen_context()
+    if not log:
+        return _HANGUP_TWIML, 200, {"Content-Type": "text/xml"}
+    from models import TwilioPhoneNumber
+    pn = db.session.get(TwilioPhoneNumber, log.phone_number_id) if log.phone_number_id else None
+    line = html.escape(getattr(pn, "friendly_name", None) or "your business line", quote=False)
+    action = html.escape(f"/twilio/voice/forward-accept?{request.query_string.decode()}", quote=True)
+    twiml = (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<Response>\n'
+        f'  <Gather numDigits="1" timeout="8" action="{action}" method="POST">\n'
+        f'    <Say>Call for {line}. Press 1 to accept.</Say>\n'
+        '  </Gather>\n'
+        '  <Hangup/>\n'
+        '</Response>'
+    )
+    return twiml, 200, {"Content-Type": "text/xml"}
+
+
+@twilio_bp.route("/voice/forward-accept", methods=["POST"])
+@csrf.exempt
+def voice_forward_accept():
+    """Gather action of the forward screen: 1 connects the caller (empty
+    TwiML ends the screen) and records who accepted; anything else hangs up."""
+    from models import CallEvent
+    from services.call_forwarding import FORWARD_ACCEPTED_EVENT
+    ta, log = _forward_screen_context()
+    if not log or request.form.get("Digits") != "1":
+        return _HANGUP_TWIML, 200, {"Content-Type": "text/xml"}
+    leg_sid = request.form.get("CallSid", "")
+    if not CallEvent.query.filter_by(call_log_id=log.id, event_type=FORWARD_ACCEPTED_EVENT, provider_event_id=leg_sid).first():
+        db.session.add(CallEvent(call_log_id=log.id, event_type=FORWARD_ACCEPTED_EVENT, provider_event_id=leg_sid,
+                                 payload={"forwarded_to": request.form.get("To", "")}))
+        log.answered_at = log.answered_at or datetime.utcnow()
+        db.session.commit()
+    logger.info("Voice forward accepted: call_log_id=%s leg=%s", log.id, leg_sid)
+    return '<?xml version="1.0" encoding="UTF-8"?>\n<Response></Response>', 200, {"Content-Type": "text/xml"}
 
 
 @twilio_bp.route("/voice/no-answer", methods=["POST"])
@@ -2672,6 +2774,14 @@ def voice_no_answer():
     # line hears the greeting and gets recorded (prod smoke 2026-08-30: browser
     # hung up an answered call, the PSTN caller then heard the voicemail
     # greeting). Only genuinely unconnected outcomes go to voicemail.
+    # A screened forward (services/call_forwarding.py) counts as answered only
+    # when a person pressed 1. A carrier voicemail that picked up the cell
+    # never did, so that call still reaches LUXit voicemail below.
+    if str(dial_status).lower() in ("completed", "answered") and request.args.get("screened") == "1" \
+            and not _forward_was_accepted(call_sid):
+        logger.info("Voice no-answer: forwarded leg answered but not accepted (dial_status=%s) sid=%s -> voicemail",
+                    dial_status, call_sid)
+        dial_status = "no-answer"
     if str(dial_status).lower() in ("completed", "answered"):
         if call_sid:
             log = TwilioCallLog.query.filter_by(twilio_sid=call_sid).first()
