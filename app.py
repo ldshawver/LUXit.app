@@ -274,13 +274,18 @@ def create_app() -> Flask:
     limiter.init_app(app)
 
     from flask_wtf.csrf import CSRFError
+    from diagnostics_service import install_log_redaction, redact_path
+
+    # Bearer-link secrets (reset-password tokens etc.) must not reach any log
+    # handler, whoever writes the record.
+    install_log_redaction()
 
     @app.errorhandler(CSRFError)
     def handle_csrf_error(e):
         from flask import flash as _flash, redirect as _redirect, request as _req, url_for as _url
         logging.getLogger(__name__).warning(
             "CSRF validation failed path=%s request_id=%s reason=%s",
-            _req.path,
+            redact_path(_req.path),
             _req.headers.get("X-Request-ID"),
             getattr(e, "description", "csrf_error"),
         )

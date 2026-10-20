@@ -183,6 +183,8 @@
 
     {% block scripts %}{% endblock %}
 
+    {% if current_user.is_authenticated %}
     {% include 'chatbot_widget.html' %}
+    {% endif %}
 </body>
 </html>

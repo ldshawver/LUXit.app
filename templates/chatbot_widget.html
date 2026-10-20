@@ -478,10 +478,12 @@
     showTypingIndicator();
     
     try {
+      const csrfMeta = document.querySelector('meta[name="csrf-token"]');
       const response = await fetch('/chatbot/send', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'X-CSRFToken': csrfMeta ? csrfMeta.content : '',
         },
         body: JSON.stringify({ message: message })
       });

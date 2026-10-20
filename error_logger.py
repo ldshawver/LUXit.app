@@ -139,6 +139,8 @@ def log_application_error(error_type, error_message, endpoint='unknown', method=
                          user_id=None, severity='error', error_stack=None):
     """Log an application error to the database"""
     try:
+        from diagnostics_service import redact
+        error_message, endpoint, error_stack = redact(error_message), redact(endpoint), redact(error_stack)
         error_log = ErrorLog(
             error_type=error_type,
             error_message=error_message,

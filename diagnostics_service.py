@@ -19,6 +19,39 @@ SSN_RE = re.compile(r"\b\d{3}-?\d{2}-?\d{4}\b")
 EIN_RE = re.compile(r"\b\d{2}-\d{7}\b")
 BANK_RE = re.compile(r"\b(?:\d[ -]*?){10,17}\b")
 KEYVAL_RE = re.compile(r"(?i)(password|passwd|secret|api[_-]?key|github[_-]?token|token|authorization|cookie|session|jwt|refresh[_-]?token|access[_-]?token)\s*[:=]\s*[^\s,;&]+")
+# Routes whose last path segment is a bearer secret (reset link, hosted consent
+# link, data-deletion status code). Anyone holding the URL can use it, so it must
+# never reach a log, an error record or an AI prompt.
+SECRET_PATH_RE = re.compile(r"(/+(?:auth/+reset-password|promo-optin|data-deletion/+status)/+)[^/?#\s\"'<>]+")
+
+
+def redact_path(path):
+    """Replace the secret segment of a bearer-link path; other paths pass through."""
+    if not isinstance(path, str):
+        return path
+    return SECRET_PATH_RE.sub(lambda m: m.group(1) + SECRET, path)
+
+
+class SecretPathRedactionFilter(logging.Filter):
+    """Logging filter that removes bearer-link secrets from every formatted record."""
+
+    def filter(self, record):
+        try:
+            msg = record.getMessage()
+        except Exception:
+            return True
+        clean = redact_path(msg)
+        if clean != msg:
+            record.msg, record.args = clean, ()
+        return True
+
+
+def install_log_redaction(loggers=("", "gunicorn.error", "werkzeug")):
+    """Attach SecretPathRedactionFilter to the handlers of the given loggers (idempotent)."""
+    for name in loggers:
+        for handler in logging.getLogger(name).handlers:
+            if not any(isinstance(f, SecretPathRedactionFilter) for f in handler.filters):
+                handler.addFilter(SecretPathRedactionFilter())
 
 
 def _writable(p: Path) -> bool:
@@ -64,7 +97,8 @@ def redact(value):
         return out
     if isinstance(value, list): return [redact(v) for v in value]
     if not isinstance(value, str): return value
-    s = KEYVAL_RE.sub(lambda m: f"{m.group(1)}={SECRET}", value)
+    s = redact_path(value)
+    s = KEYVAL_RE.sub(lambda m: f"{m.group(1)}={SECRET}", s)
     s = JWT_RE.sub(SECRET, s)
     s = SSN_RE.sub(PII, s)
     s = EIN_RE.sub(PII, s)
@@ -114,10 +148,10 @@ def structured_log(level="info", service="app", message="", error=None, metadata
 
 
 def is_diagnostics_admin(user) -> bool:
-    if not getattr(user, "is_authenticated", False): return False
-    roles = {str(getattr(user, "role", "") or "").lower(), str(getattr(user, "segment", "") or "").lower()}
-    tags = str(getattr(user, "tags", "") or "").lower()
-    return bool(getattr(user, "is_admin", False) or roles & {"platform_owner","super_admin","system_admin"} or any(r in tags for r in ["platform_owner","super_admin","system_admin"]))
+    # Only the server-controlled platform flag counts. segment/tags are
+    # self-editable profile fields (PUT /api/user/profile), so they must not
+    # grant cross-tenant diagnostics.
+    return bool(getattr(user, "is_authenticated", False) and getattr(user, "is_admin", False) is True)
 
 
 def read_logs(service="error", level=None, search=None, limit=200, correlation_id=None):

@@ -7054,25 +7054,67 @@ def save_company_settings(company_id):
         logger.error(f"Save settings error: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
+# Fields of an ErrorLog record that may go into an AI prompt. Messages and stacks
+# are left out: they can carry customer data, tokens or connection strings.
+_CHATBOT_ERROR_FIELDS = ('type', 'endpoint', 'method', 'severity', 'created_at')
+
+
+def _chatbot_admin_diagnostics(action):
+    """Allowlisted, non-sensitive diagnostics for a platform admin's chatbot prompt.
+
+    Raw server, nginx and database logs never leave the host: for 'diagnose' only
+    the names of the error categories found in them are included.
+    """
+    from diagnostics_service import redact_path
+    context = {}
+    try:
+        health = ApplicationDiagnostics.get_system_health()
+        context['system_health'] = health.get('status', 'unknown')
+        context['recent_errors_1h'] = health.get('recent_errors_1h', 0)
+        context['unresolved_errors'] = health.get('unresolved_errors', 0)
+        context['recent_error_examples'] = [
+            {k: redact_path(e.get(k)) for k in _CHATBOT_ERROR_FIELDS}
+            for e in ApplicationDiagnostics.get_recent_errors(hours=24, limit=3)
+        ]
+    except Exception as diag_error:
+        logger.warning(f"Could not retrieve diagnostics: {type(diag_error).__name__}")
+    if action == 'diagnose':
+        try:
+            categories = LogReader.analyze_logs_for_errors(LogReader.get_all_logs(lines=30))
+            context['log_error_categories'] = sorted(categories)
+        except Exception as log_error:
+            logger.warning(f"Could not analyze server logs: {type(log_error).__name__}")
+    return context
+
+
 @main_bp.route('/chatbot/send', methods=['POST'])
-@csrf.exempt
 def chatbot_send_with_auto_fix():
     """Send message to AI chatbot and get response with error diagnostics
-    
-    Supports actions:
+
+    Requires a signed-in user and a valid CSRF token. Supports actions:
     - action='message': Regular chat (default)
-    - action='diagnose': Read server logs and analyze for issues
+    - action='diagnose': platform admins only; adds a summary of server log error categories
+
+    System diagnostics and auto-repair are platform-admin only (server-side is_admin flag).
     """
+    if not current_user.is_authenticated:
+        return jsonify({'error': 'Authentication required'}), 401
     try:
         from openai import OpenAI
-        
-        data = request.get_json()
+        from diagnostics_service import is_diagnostics_admin, redact
+
+        is_platform_admin = is_diagnostics_admin(current_user)
+        data = request.get_json(silent=True) or {}
         user_message = data.get('message', '')
         action = data.get('action', 'message')  # 'message' or 'diagnose'
-        
-        if not user_message:
+
+        if action not in ('message', 'diagnose'):
+            return jsonify({'error': 'Unknown action'}), 400
+        if action == 'diagnose' and not is_platform_admin:
+            return jsonify({'error': 'Diagnostics are restricted to platform administrators'}), 403
+        if not isinstance(user_message, str) or not user_message:
             return jsonify({'error': 'Message is required'}), 400
-        
+
         # Retrieve API key via central resolver (DB-first, env fallback inside resolver)
         try:
             from services.provider_config import get_provider_config as _gpc
@@ -7090,46 +7132,17 @@ def chatbot_send_with_auto_fix():
                 severity='critical'
             )
             return jsonify({'error': error_msg}), 500
-        
-        # Get current system diagnostics for context
-        diagnostics_context = ""
-        try:
-            recent_errors = ApplicationDiagnostics.get_recent_errors(hours=24, limit=5)
-            health = ApplicationDiagnostics.get_system_health()
+
+        diagnostics_context = "\n(System diagnostics are available to platform administrators only.)"
+        auto_repair_context = ""
+        repair_instructions = ""
+        if is_platform_admin:
             diagnostics_context = f"""
 
-SYSTEM DIAGNOSTICS (Database):
-- System Health: {health.get('status', 'unknown')}
-- Recent Errors (1h): {health.get('recent_errors_1h', 0)}
-- Unresolved Issues: {health.get('unresolved_errors', 0)}
-
-Recent Database Error Examples:
-{json.dumps(recent_errors[:3], indent=2) if recent_errors else 'No recent errors'}
+SYSTEM DIAGNOSTICS (allowlisted summary):
+{json.dumps(_chatbot_admin_diagnostics(action), indent=2, default=str)}
 """
-        except Exception as diag_error:
-            logger.warning(f"Could not retrieve diagnostics: {diag_error}")
-            diagnostics_context = "\n(Database diagnostics unavailable)"
-        
-        # Read server logs if diagnose action is requested
-        server_logs_context = ""
-        auto_repair_context = ""
-        if action == 'diagnose':
-            try:
-                all_logs = LogReader.get_all_logs(lines=30)
-                server_logs_context = f"""
-
-SERVER LOGS (from VPS):
-{LogReader.format_logs_for_ai(all_logs)}
-
-QUICK ERROR PATTERNS:
-{json.dumps(LogReader.analyze_logs_for_errors(all_logs), indent=2)}
-"""
-            except Exception as log_error:
-                logger.warning(f"Could not read server logs: {log_error}")
-                server_logs_context = "\n(Server logs unavailable)"
-        
-        # Add auto-repair capability to system prompt
-        auto_repair_context = """
+            auto_repair_context = """
 
 SPECIAL CAPABILITIES - AUTO-REPAIR:
 You can trigger automated error repair by responding with:
@@ -7142,7 +7155,14 @@ This will:
 5. Return a detailed report
 
 To use this, when appropriate, include "ACTION: REPAIR_ERRORS" in your response."""
-        
+            repair_instructions = """
+
+When users ask you to fix errors, resolve issues, or test the system:
+1) Analyze what the user is asking
+2) If appropriate, suggest running automatic repairs
+3) You can't directly run repairs, but your response can trigger them by including "ACTION: REPAIR_ERRORS"
+4) The system will see this action and execute auto-repair automatically"""
+
         # Initialize OpenAI client with explicit error handling
         try:
             client = OpenAI(api_key=api_key)
@@ -7156,7 +7176,7 @@ To use this, when appropriate, include "ACTION: REPAIR_ERRORS" in your response.
                 severity='error'
             )
             return jsonify({'error': 'Failed to initialize AI service'}), 500
-        
+
         # Make API call with explicit error handling
         try:
             system_prompt = f"""You are LUX Self-Heal Orchestrator, a senior SRE + full-stack engineer for a Flask web app.
@@ -7208,7 +7228,6 @@ F) Log entry text for audit
 
 Current System Context:
 {diagnostics_context}
-{server_logs_context}
 {auto_repair_context}
 
 When asked to Fix App Now:
@@ -7216,13 +7235,7 @@ When asked to Fix App Now:
 - Crawl key routes
 - Run mobile viewport checks for critical pages
 - Apply safe fixes automatically
-- Queue sensitive fixes for approval with clear one-click decisions
-
-When users ask you to fix errors, resolve issues, or test the system:
-1) Analyze what the user is asking
-2) If appropriate, suggest running automatic repairs
-3) You can't directly run repairs, but your response can trigger them by including "ACTION: REPAIR_ERRORS"
-4) The system will see this action and execute auto-repair automatically"""
+- Queue sensitive fixes for approval with clear one-click decisions{repair_instructions}"""
             
             response = client.chat.completions.create(
                 model="gpt-4o",
@@ -7234,23 +7247,23 @@ When users ask you to fix errors, resolve issues, or test the system:
                 max_tokens=2000
             )
             
-            bot_message = response.choices[0].message.content
-            
-            # Check if auto-repair should be triggered
-            trigger_repair = 'ACTION: REPAIR_ERRORS' in bot_message
+            bot_message = response.choices[0].message.content or ''
+
+            # Auto-repair runs only for a platform admin; for anyone else the
+            # marker is just text the model (or a prompt injection) produced.
+            trigger_repair = is_platform_admin and 'ACTION: REPAIR_ERRORS' in bot_message
+            bot_message = redact(bot_message.replace('ACTION: REPAIR_ERRORS', '').strip())
             repair_results = None
             if trigger_repair:
                 try:
-                    repair_results = AutoRepairService.execute_auto_repair()
-                    # Clean up the action from the response
-                    bot_message = bot_message.replace('ACTION: REPAIR_ERRORS', '').strip()
+                    repair_results = redact(AutoRepairService.execute_auto_repair())
                 except Exception as repair_error:
                     logger.warning(f"Auto-repair trigger failed: {repair_error}")
-            
+
             return jsonify({
                 'response': bot_message,
                 'action': action,
-                'has_logs': bool(server_logs_context),
+                'has_logs': is_platform_admin and action == 'diagnose',
                 'auto_repair_triggered': trigger_repair,
                 'repair_results': repair_results
             })
