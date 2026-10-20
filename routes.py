@@ -4679,11 +4679,14 @@ def create_event():
 def view_event(event_id):
     """View event details and registrations"""
     event = Event.query.get_or_404(event_id)
-    registrations = EventRegistration.query.filter_by(event_id=event_id).all()
+    # Event has no company_id; list only registrants who are this tenant's contacts.
+    registrations = EventRegistration.query.join(Contact, Contact.id == EventRegistration.contact_id).filter(
+        EventRegistration.event_id == event_id, Contact.company_id == _current_company_id()
+    ).all()
     
     # Get contacts for registrations
     for reg in registrations:
-        reg.contact = db.session.get(Contact, reg.contact_id)
+        reg.contact = tenant_get(Contact, reg.contact_id)
     
     return render_template('view_event.html', event=event, registrations=registrations)
 
@@ -7643,11 +7646,9 @@ def deal_detail(deal_id):
 def lead_scoring():
     """Lead scoring and nurturing"""
     from models import Contact, LeadScore
-    company = current_user.get_default_company()
-    
     contacts_with_scores = db.session.query(Contact, LeadScore).outerjoin(
         LeadScore, Contact.id == LeadScore.contact_id
-    ).filter(Contact.is_active == True).all()
+    ).filter(Contact.is_active == True, Contact.company_id == _current_company_id()).all()
     
     return render_template('lead_scoring.html', contacts_with_scores=contacts_with_scores)
 
@@ -9436,6 +9437,7 @@ def add_contact_activity(contact_id):
 @login_required
 def get_contact_activities_api(contact_id):
     """API to get contact activities"""
+    tenant_get_or_404(Contact, contact_id)
     activities = ContactActivity.query.filter_by(contact_id=contact_id).order_by(ContactActivity.created_at.desc()).all()
     return jsonify({
         'success': True,
@@ -10319,6 +10321,9 @@ except ImportError as exc:
 @login_required
 def sync_subscribers():
     """Run full bidirectional sync between contacts and subscribers"""
+    # Spans every tenant's contacts.
+    if not current_user.is_admin:
+        return jsonify({'success': False, 'error': 'Forbidden'}), 403
     try:
         result = SubscriberSyncService.full_sync()
         return jsonify(result)
@@ -10330,6 +10335,9 @@ def sync_subscribers():
 @login_required
 def sync_contacts_to_subscribers():
     """Sync newsletter contacts to become subscribers"""
+    # Spans every tenant's contacts.
+    if not current_user.is_admin:
+        return jsonify({'success': False, 'error': 'Forbidden'}), 403
     try:
         result = SubscriberSyncService.sync_contacts_to_subscribers()
         return jsonify(result)
@@ -10341,6 +10349,9 @@ def sync_contacts_to_subscribers():
 @login_required
 def get_subscriber_stats():
     """Get subscriber statistics"""
+    # Spans every tenant's contacts.
+    if not current_user.is_admin:
+        return jsonify({'success': False, 'error': 'Forbidden'}), 403
     try:
         result = SubscriberSyncService.get_subscriber_stats()
         return jsonify(result)
@@ -10352,6 +10363,9 @@ def get_subscriber_stats():
 @login_required
 def get_subscribers():
     """Get all subscribers with pagination"""
+    # Spans every tenant's contacts.
+    if not current_user.is_admin:
+        return jsonify({'success': False, 'error': 'Forbidden'}), 403
     try:
         page = request.args.get('page', 1, type=int)
         per_page = request.args.get('per_page', 50, type=int)
@@ -10365,6 +10379,7 @@ def get_subscribers():
 @login_required
 def subscribe_contact(contact_id):
     """Subscribe a contact to the newsletter"""
+    tenant_get_or_404(Contact, contact_id)
     try:
         source = request.json.get('source', 'manual') if request.is_json else 'manual'
         result = SubscriberSyncService.subscribe_contact(contact_id, source)
@@ -10377,6 +10392,7 @@ def subscribe_contact(contact_id):
 @login_required
 def unsubscribe_contact(contact_id):
     """Unsubscribe a contact from the newsletter"""
+    tenant_get_or_404(Contact, contact_id)
     try:
         result = SubscriberSyncService.unsubscribe_contact(contact_id)
         return jsonify(result)
@@ -10384,13 +10400,22 @@ def unsubscribe_contact(contact_id):
         logger.error(f"Unsubscribe contact error: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
+def _own_contact_ids(contact_ids):
+    """Drop ids that are not contacts of the caller's company."""
+    company_id = _current_company_id()
+    ids = [int(i) for i in (contact_ids or []) if isinstance(i, int) or str(i).isdigit()]
+    if company_id is None or not ids:
+        return []
+    rows = Contact.query.with_entities(Contact.id).filter(Contact.id.in_(ids), Contact.company_id == company_id).all()
+    return [r.id for r in rows]
+
 @main_bp.route('/api/contacts/bulk-subscribe', methods=['POST'])
 @login_required
 def bulk_subscribe_contacts():
     """Subscribe multiple contacts at once"""
     try:
         data = request.get_json()
-        contact_ids = data.get('contact_ids', [])
+        contact_ids = _own_contact_ids(data.get('contact_ids', []))
         source = data.get('source', 'bulk')
         result = SubscriberSyncService.bulk_subscribe(contact_ids, source)
         return jsonify(result)
@@ -10404,7 +10429,7 @@ def bulk_unsubscribe_contacts():
     """Unsubscribe multiple contacts at once"""
     try:
         data = request.get_json()
-        contact_ids = data.get('contact_ids', [])
+        contact_ids = _own_contact_ids(data.get('contact_ids', []))
         result = SubscriberSyncService.bulk_unsubscribe(contact_ids)
         return jsonify(result)
     except Exception as e:
