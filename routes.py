@@ -132,6 +132,34 @@ from extensions import db
 
 main_bp = Blueprint('main', __name__)
 
+# Agents that read the host (logs, source, runtime state) or apply code fixes.
+# They are platform tooling, not tenant features.
+PLATFORM_ONLY_AGENTS = frozenset({'app_intelligence'})
+
+
+def _is_platform_admin():
+    from diagnostics_service import is_diagnostics_admin
+    return is_diagnostics_admin(current_user)
+
+
+def _deny_platform_route():
+    from diagnostics_service import structured_log
+    structured_log(level="warn", service="security", message="Blocked platform-admin route",
+                   userId=getattr(current_user, "id", None), metadata={"endpoint": request.endpoint})
+    return jsonify({'success': False, 'error': 'Forbidden'}), 403
+
+
+def platform_admin_required(view):
+    """Platform-admin only (server-side User.is_admin). Request data is never consulted."""
+    from functools import wraps
+
+    @wraps(view)
+    def wrapped(*args, **kwargs):
+        if not _is_platform_admin():
+            return _deny_platform_route()
+        return view(*args, **kwargs)
+    return wrapped
+
 
 @main_bp.before_request
 def _licensed_feature_route_gate():
@@ -1048,6 +1076,9 @@ def execute_agent_task(agent_type):
     """Manually execute an agent task"""
     from agent_scheduler import get_agent_scheduler
     
+    if agent_type in PLATFORM_ONLY_AGENTS and not _is_platform_admin():
+        return _deny_platform_route()
+
     scheduler = get_agent_scheduler()
     agent = scheduler.agents.get(agent_type)
     
@@ -6233,6 +6264,7 @@ def chatbot():
 
 @main_bp.route('/api/diagnostics/errors', methods=['GET'])
 @login_required
+@platform_admin_required
 def get_recent_errors():
     """Get recent application errors for chatbot analysis"""
     try:
@@ -6245,6 +6277,7 @@ def get_recent_errors():
 
 @main_bp.route('/api/diagnostics/health', methods=['GET'])
 @login_required
+@platform_admin_required
 def get_system_health():
     """Get system health status for chatbot analysis"""
     try:
@@ -6256,6 +6289,7 @@ def get_system_health():
 
 @main_bp.route('/api/auto-repair/start', methods=['POST'])
 @login_required
+@platform_admin_required
 def start_auto_repair():
     """Start automated error repair and resolution testing"""
     try:
@@ -6268,6 +6302,7 @@ def start_auto_repair():
 
 @main_bp.route('/api/auto-repair/clear', methods=['POST'])
 @login_required
+@platform_admin_required
 def clear_resolved_errors():
     """Clear resolved errors from the log"""
     try:
@@ -6280,6 +6315,7 @@ def clear_resolved_errors():
 
 @main_bp.route('/api/system/diagnosis', methods=['GET'])
 @login_required
+@platform_admin_required
 def system_diagnosis():
     """Comprehensive system diagnosis for all error types"""
     try:
@@ -6291,6 +6327,7 @@ def system_diagnosis():
 
 @main_bp.route('/api/system/health', methods=['GET'])
 @login_required
+@platform_admin_required
 def system_health():
     """Check system health and resource usage"""
     try:
@@ -6302,6 +6339,7 @@ def system_health():
 
 @main_bp.route('/api/system/validate-openai', methods=['GET'])
 @login_required
+@platform_admin_required
 def validate_openai():
     """Validate OpenAI API key configuration"""
     try:
@@ -6313,6 +6351,7 @@ def validate_openai():
 
 @main_bp.route('/api/system/endpoint-check', methods=['GET'])
 @login_required
+@platform_admin_required
 def endpoint_check():
     """Check for 404 errors on key endpoints"""
     try:
@@ -6324,6 +6363,7 @@ def endpoint_check():
 
 @main_bp.route('/api/ai-fixer/auto-fix-all', methods=['POST'])
 @login_required
+@platform_admin_required
 def ai_auto_fix_all():
     """AI-powered: Automatically fix ALL errors"""
     try:
@@ -6335,6 +6375,7 @@ def ai_auto_fix_all():
 
 @main_bp.route('/api/ai-fixer/fix-error/<int:error_id>', methods=['POST'])
 @login_required
+@platform_admin_required
 def ai_fix_single_error(error_id):
     """AI-powered: Fix a specific error by ID"""
     try:
@@ -6360,6 +6401,7 @@ def ai_fix_single_error(error_id):
 
 @main_bp.route('/api/ai-fixer/codebase-structure', methods=['GET'])
 @login_required
+@platform_admin_required
 def get_codebase_structure():
     """Get codebase structure for AI context"""
     try:
@@ -6371,6 +6413,7 @@ def get_codebase_structure():
 
 @main_bp.route('/api/ai/execute-action', methods=['POST'])
 @login_required
+@platform_admin_required
 def execute_ai_action():
     """Execute AI actions immediately (not just recommend)"""
     try:
@@ -8271,6 +8314,9 @@ def get_agent_performance(agent_type):
 def trigger_agent_task(agent_type):
     """Manually trigger an agent task"""
     from agent_scheduler import get_agent_scheduler
+
+    if agent_type in PLATFORM_ONLY_AGENTS and not _is_platform_admin():
+        return _deny_platform_route()
     
     data = request.get_json()
     task_data = data.get('task_data', {})
@@ -8309,6 +8355,7 @@ def trigger_agent_task(agent_type):
 
 @main_bp.route('/agent/diagnostics', methods=['GET'])
 @login_required
+@platform_admin_required
 def get_agent_diagnostics():
     """Get live agent diagnostics and error logs"""
     from agent_scheduler import get_agent_scheduler
@@ -8345,6 +8392,7 @@ def get_agent_diagnostics():
 
 @main_bp.route('/agent/fix-issues', methods=['POST'])
 @login_required
+@platform_admin_required
 def trigger_agent_fix():
     """Manually trigger agent to scan and fix all issues"""
     from agent_scheduler import get_agent_scheduler

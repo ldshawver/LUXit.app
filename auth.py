@@ -490,11 +490,13 @@ def debug_session():
     from flask_login import current_user
     from models import User
 
-    is_dev = os.environ.get("FLASK_ENV") == "development" or os.environ.get("REPLIT_DEPLOYMENT") or os.environ.get("REPL_ID")
-    remote_addr = request.headers.get("X-Forwarded-For", request.remote_addr or "").split(",")[0].strip()
-    is_local = remote_addr in ("127.0.0.1", "::1", "localhost")
+    from diagnostics_service import is_diagnostics_admin
 
-    if not is_dev and not is_local:
+    # X-Forwarded-For is client-controlled and behind nginx remote_addr is
+    # always loopback, so neither can prove a local caller.
+    is_dev = os.environ.get("FLASK_ENV") == "development" or os.environ.get("REPLIT_DEPLOYMENT") or os.environ.get("REPL_ID")
+
+    if not is_dev and not is_diagnostics_admin(current_user):
         abort(404)
 
     try:
@@ -514,7 +516,6 @@ def debug_session():
             'scheme': request.environ.get('wsgi.url_scheme'),
             'forwarded_proto': request.headers.get('X-Forwarded-Proto'),
             'cookie_names': [c for c in request.cookies],
-            'secret_key_prefix': str(current_app.secret_key)[:8] + '...' if current_app.secret_key else None,
         })
     except Exception as exc:
         return jsonify({'error': str(exc)}), 500

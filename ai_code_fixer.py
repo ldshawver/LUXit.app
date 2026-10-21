@@ -5,9 +5,7 @@ Directly modifies app code to resolve errors, add features, upgrade functionalit
 import logging
 import os
 import json
-import re
 from datetime import datetime
-from pathlib import Path
 from extensions import db
 from error_logger import ErrorLog
 
@@ -262,40 +260,6 @@ class AICodeFixer:
             results['db_error'] = str(e)
         
         return results
-    
-    @staticmethod
-    def write_code_fix(filename, function_name, fix_code):
-        """Write code fix directly to file"""
-        try:
-            filepath = Path(filename)
-            if not filepath.exists():
-                return {'success': False, 'error': f'File not found: {filename}'}
-            
-            with open(filepath, 'r') as f:
-                content = f.read()
-            
-            # Find and replace the function
-            pattern = rf'(def {function_name}\([^)]*\):.*?)(?=\ndef |\nclass |\Z)'
-            
-            if re.search(pattern, content, re.DOTALL):
-                updated_content = re.sub(pattern, fix_code + '\n\n', content, flags=re.DOTALL)
-                
-                with open(filepath, 'w') as f:
-                    f.write(updated_content)
-                
-                return {
-                    'success': True,
-                    'file': filename,
-                    'function': function_name,
-                    'message': 'Code fix applied successfully'
-                }
-            else:
-                return {
-                    'success': False,
-                    'error': f'Function {function_name} not found in {filename}'
-                }
-        except Exception as e:
-            return {'success': False, 'error': str(e)}
     
     @staticmethod
     def generate_and_apply_fix(error_type, error_details):
