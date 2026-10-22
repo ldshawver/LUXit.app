@@ -39,16 +39,21 @@ _FALLBACK_DEDUP_WINDOW_SECONDS = 8
 
 
 def derive_fallback_key(user_id: int | None, conversation_id: int, body: str,
-                        window_seconds: int = _FALLBACK_DEDUP_WINDOW_SECONDS) -> str:
+                        window_seconds: int = _FALLBACK_DEDUP_WINDOW_SECONDS,
+                        media_urls: list[str] | None = None) -> str:
     bucket = int(time.time() // max(1, window_seconds))
-    material = "\x1f".join((str(user_id or ""), str(conversation_id), body, str(bucket)))
+    parts = [str(user_id or ""), str(conversation_id), body, str(bucket)]
+    if media_urls:
+        parts.extend(media_urls)
+    material = "\x1f".join(parts)
     return "auto:" + hashlib.sha256(material.encode()).hexdigest()
 
 
 def send_with_idempotency(*, company_id: int, user_id: int | None, conversation_id: int,
                           body: str, twilio_account, to_number: str | None = None,
                           is_auto_reply: bool = False, rule_id: int | None = None,
-                          idempotency_key: str | None = None) -> dict:
+                          idempotency_key: str | None = None,
+                          media_urls: list[str] | None = None) -> dict:
     """Send exactly once for a given ``(company_id, idempotency_key)``.
 
     ``idempotency_key`` should be client-supplied (stable across a retry of
@@ -56,7 +61,7 @@ def send_with_idempotency(*, company_id: int, user_id: int | None, conversation_
     key is derived from (user, conversation, body) so accidental duplicates
     still collapse.
     """
-    key = idempotency_key or derive_fallback_key(user_id, conversation_id, body)
+    key = idempotency_key or derive_fallback_key(user_id, conversation_id, body, media_urls=media_urls)
 
     record = SmsSendIdempotencyRecord(
         company_id=company_id, user_id=user_id, conversation_id=conversation_id,
@@ -92,6 +97,7 @@ def send_with_idempotency(*, company_id: int, user_id: int | None, conversation_
     result = sendConversationSms(
         conversation_id, body, to_number=to_number, twilio_account=twilio_account,
         is_auto_reply=is_auto_reply, rule_id=rule_id,
+        **({"media_urls": media_urls} if media_urls else {}),
     )
 
     record = SmsSendIdempotencyRecord.query.filter_by(id=record.id).one()

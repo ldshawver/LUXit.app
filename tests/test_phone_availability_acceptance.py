@@ -36,6 +36,7 @@ from services.phone_availability import is_available, set_availability
 
 INBOX_PWA = (Path(__file__).resolve().parents[1] / "inbox_pwa.py").read_text()
 TWILIO_SMS = (Path(__file__).resolve().parents[1] / "twilio_sms.py").read_text()
+ENGINE_JS = (Path(__file__).resolve().parents[1] / "static" / "js" / "lux-voice.js").read_text()
 
 
 @pytest.fixture
@@ -232,12 +233,14 @@ def test_stop_compliance_path_never_consults_availability(ctx):
 def test_client_suppresses_incoming_call_ui_and_sound_while_away(ctx):
     # Point 5: an AWAY client must not paint the incoming-call UI or play the
     # ring — the SSE incoming_call handler is guarded by !isAway().
-    html = (Path(__file__).resolve().parents[1] / "templates/inbox_pwa/calls.html").read_text()
-    assert "data.type === 'incoming_call' && !isAway()" in html
-    # and the registration path is inert while Away (shouldRegisterVoice gate +
-    # initVoice throws PHONE_AWAY before any token mint / Device.register()).
-    assert "function shouldRegisterVoice() {\n  return receiveCalls.enabled && !isAway()" in html
-    assert "if (isAway()) {" in html and "voiceCode: 'PHONE_AWAY'" in html
+    # Phone P0: while Away the persistent Voice service holds no Device at all
+    # (torn down before any token mint), so the SDK can neither present the
+    # call nor play its ringtone; the SSE chime path is also Away-guarded.
+    e = ENGINE_JS
+    assert "function shouldRegister() { return st.receiveCalls && st.availability !== 'away'" in e
+    assert "goQuiet('away'" in e
+    index = (Path(__file__).resolve().parents[1] / "templates/inbox_pwa/index.html").read_text()
+    assert "if (isCommsAway() && _ATTENTION_SSE.includes(data.type)) return;" in index
 
 
 def test_availability_service_only_reads_membership_not_consent(ctx):

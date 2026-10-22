@@ -32,11 +32,30 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 CALLS = ROOT / "templates" / "inbox_pwa" / "calls.html"
+ENGINE = ROOT / "static" / "js" / "lux-voice.js"
 
 
 @pytest.fixture(scope="module")
 def html():
     return CALLS.read_text()
+
+
+@pytest.fixture(scope="module")
+def engine():
+    """Phone P0 (2026-09-28): readiness now lives in the persistent Voice
+    service (browserEnv().sdkReady), shared by every PWA page."""
+    return ENGINE.read_text()
+
+
+def _fn(src, header):
+    i = src.index(header)
+    j = src.index("{", i)
+    depth = 0
+    for k in range(j, len(src)):
+        depth += {"{": 1, "}": -1}.get(src[k], 0)
+        if depth == 0:
+            return src[j:k + 1]
+    raise AssertionError(header)
 
 
 def test_sdk_script_tag_is_identifiable_and_still_deferred(html):
@@ -45,74 +64,57 @@ def test_sdk_script_tag_is_identifiable_and_still_deferred(html):
     assert "defer" in tag  # must not become blocking
 
 
-def test_readiness_promise_settles_from_real_script_events_only(html):
-    block = re.search(
-        r"const voiceSdkScriptEl = document\.querySelector\('script\[src\^=\"/static/vendor/twilio-voice-sdk/\"\]'\);\n"
-        r"const voiceSdkReady = new Promise\(\(resolve, reject\) => \{(.*?)\n\}\);\n",
-        html, re.S,
-    )
-    assert block, "voiceSdkReady promise not found"
-    body = block.group(1)
-    assert "voiceSdkScriptEl.addEventListener('load'" in body
-    assert "voiceSdkScriptEl.addEventListener('error'" in body
-    assert "{once: true}" in body
-    # no polling anywhere in the readiness contract
-    assert "setInterval" not in block.group(0)
+def test_readiness_promise_settles_from_real_script_events_only(engine):
+    body = _fn(engine, "sdkReady() {")
+    assert "querySelector('script[src*=\"/twilio-voice-sdk/\"]')" in engine
+    assert "el.addEventListener('load', done, { once: true });" in body
+    assert "el.addEventListener('error', done, { once: true });" in body
+    assert "setInterval" not in body
 
 
-def test_waitforvoicesdk_is_bounded_not_a_blind_poll(html):
-    fn = re.search(r"async function waitForVoiceSdk\(\) \{(.*?)\n\}\n", html, re.S)
-    assert fn, "waitForVoiceSdk() not found"
-    body = fn.group(1)
-    assert "voiceSdkReady" in body               # awaits the shared, single-settlement promise
-    assert "setInterval" not in body              # never a polling loop
-    assert "setTimeout(() => reject" in body, "must be bounded (timeout), not an unbounded wait"
-    assert "voiceCode: 'SDK_MISSING'" in body      # uniform failure code, unchanged from before the fix
+def test_waitforvoicesdk_is_bounded_not_a_blind_poll(engine):
+    body = _fn(engine, "sdkReady() {")
+    assert "SDK_LOAD_TIMEOUT_MS" in body and "voiceCode: 'SDK_MISSING'" in body
+    assert "setInterval" not in body
 
 
-def test_already_loaded_sdk_is_a_zero_cost_fast_path(html):
-    fn = re.search(r"async function waitForVoiceSdk\(\) \{(.*?)\n\}\n", html, re.S).group(1)
-    # first statement is a synchronous short-circuit — no awaited work when the
-    # SDK is already present (the overwhelmingly common case, and the exact
-    # path a bfcache restore takes since the script never re-executes there)
-    first_stmt = fn.strip().splitlines()[0].strip()
-    assert first_stmt == "if (voiceSdkCtor()) return true;"
+def test_already_loaded_sdk_is_a_zero_cost_fast_path(engine):
+    first_stmt = _fn(engine, "sdkReady() {").strip("{} \n").splitlines()[0].strip()
+    assert first_stmt == "if (this.deviceCtor()) return Promise.resolve(true);"
 
 
-def test_initvoice_awaits_readiness_before_touching_the_constructor(html):
-    iife = re.search(r"voice\.initPromise = \(async \(\) => \{\n    try \{(.*?)\n    \} catch", html, re.S).group(1)
-    i_wait = iife.index("await waitForVoiceSdk();")
-    i_ctor = iife.index("voiceSdkCtor()")
-    i_token = iife.index("readVoiceToken()")
-    assert i_wait < i_ctor < i_token, "must wait for the SDK before reading the constructor or minting a token"
-    # the old one-shot throw-if-missing check is gone from this call site —
-    # waitForVoiceSdk() is now the single source of the SDK_MISSING error here
-    assert "if (!Device) throw" not in iife
+def test_initvoice_awaits_readiness_before_touching_the_constructor(engine):
+    body = _fn(engine, "function ensureRegistered(reason, o)")
+    assert body.index("await env.sdkReady();") < body.index("await getToken(") < body.index("buildDevice(tok.token)")
 
 
-def test_sdk_missing_is_still_terminal_no_regression_to_retry_policy(html):
-    # unchanged from before the fix: one failed wait still requires explicit
-    # Retry / reload, it must not auto-hammer the endpoint in a loop
-    terminal = re.search(r"const VOICE_TERMINAL_CODES = new Set\(\[(.*?)\]\);", html, re.S).group(1)
-    assert "'SDK_MISSING'" in terminal
+def test_sdk_missing_retries_are_bounded_not_a_loop(engine):
+    """Policy change (Phone P0): SDK_MISSING was terminal (explicit Retry only).
+    A deferred script that failed on flaky cellular should not permanently
+    disable Phone on that page, so it is now transient — but automatic retries
+    are capped (MAX_AUTO_ATTEMPTS) with exponential backoff + jitter."""
+    terminal = re.search(r"const TERMINAL_CODES = new Set\(\[(.*?)\]\);", engine, re.S).group(1)
+    assert "'SDK_MISSING'" not in terminal
+    assert "st.attempts >= MAX_AUTO_ATTEMPTS" in _fn(engine, "function scheduleRecovery(reason, o)")
 
 
-def test_single_flight_and_lifecycle_hooks_unchanged(html):
-    # the fix lives entirely inside the existing single-flighted initPromise —
-    # confirms we did not introduce a second init path or duplicate registration
-    assert html.count("voice.initPromise = (async () => {") == 1
-    assert "if (voice.initPromise) return voice.initPromise;" in html
-    assert "window.addEventListener('pagehide', cleanupVoice);" in html
-    assert "window.addEventListener('pageshow', (e) => { if (e.persisted) resyncVoiceUi(true); });" in html
-    assert "voice.device.on('tokenWillExpire'" in html
+def test_single_flight_and_lifecycle_hooks_unchanged(engine):
+    assert engine.count("st.inflight = (async () => {") == 1
+    assert "if (st.inflight) return st.inflight;" in engine
+    attach = _fn(engine, "function attach()")
+    assert "w.addEventListener('pagehide', onPageHide);" in attach
+    assert "w.addEventListener('pageshow', onPageShow);" in attach
+    assert "d.on('tokenWillExpire'" in engine
 
 
-def test_mic_permission_states_remain_distinct_from_sdk_missing(html):
-    # Phase 4 guard: this fix must not blur SDK_MISSING into MICROPHONE_BLOCKED
-    # or vice versa — both already existed pre-fix and must still be separate
-    # terminal codes with separate user-facing copy.
-    terminal = re.search(r"const VOICE_TERMINAL_CODES = new Set\(\[(.*?)\]\);", html, re.S).group(1)
-    assert "'MICROPHONE_BLOCKED'" in terminal
-    messages = re.search(r"const messages = \{(.*?)\n      \};", html, re.S).group(1)
-    assert "SDK_MISSING:" in messages and "MICROPHONE_BLOCKED:" in messages
-    assert messages.split("SDK_MISSING:")[1].split("\n")[0] != messages.split("MICROPHONE_BLOCKED:")[1].split("\n")[0]
+def test_mic_permission_is_not_part_of_registration(engine):
+    """Policy change (Phone P0): iOS rejects getUserMedia outside a user
+    gesture (prod MICROPHONE_BLOCKED x9), and receiving calls doesn't need the
+    mic until answer. The mic is requested only in accept()/placeCall(); a
+    blocked mic surfaces a distinct message there and never blocks
+    registration. SDK_MISSING keeps its own distinct copy."""
+    assert "ensureMic" not in _fn(engine, "function ensureRegistered(reason, o)")
+    assert "MICROPHONE_BLOCKED" not in re.search(r"const TERMINAL_CODES = new Set\(\[(.*?)\]\);", engine, re.S).group(1)
+    assert "kind: 'mic-blocked', context: 'answer'" in _fn(engine, "async function accept()")
+    assert "Microphone is blocked" in engine and "MIC_HELP" in engine
+    assert "SDK_MISSING: 'Calling SDK failed to load." in engine

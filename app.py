@@ -511,6 +511,17 @@ def create_app() -> Flask:
         print("✓ PWA Inbox loaded: /app/inbox (session-auth, CSRF-protected)")
     except Exception as exc:
         app.logger.warning("Failed to register inbox_pwa blueprint: %s", exc, exc_info=True)
+    try:
+        # LUX Connect native app API. Bearer-token only: the cookie session is
+        # never read or written under /api/mobile/v1, so CSRF (a cookie-riding
+        # attack) does not apply and the blueprint is exempted as a whole.
+        from mobile_api import mobile_api_bp, mobile_media_public_bp
+        app.register_blueprint(mobile_api_bp)
+        app.register_blueprint(mobile_media_public_bp)
+        csrf.exempt(mobile_api_bp)
+        print("✓ LUX Connect native API loaded: /api/mobile/v1 (bearer-only)")
+    except Exception as exc:
+        app.logger.warning("Failed to register mobile_api blueprint: %s", exc, exc_info=True)
     # Stripe webhook deliveries from Stripe's edge servers never carry a
     # session cookie/CSRF token; only that single endpoint is exempted
     # (see @csrf.exempt on stripe_webhook in saas_mgmt.py) and it verifies

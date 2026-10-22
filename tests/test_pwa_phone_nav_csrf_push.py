@@ -24,6 +24,8 @@ from models import (
 )
 
 ROOT = Path(__file__).resolve().parents[1]
+ENGINE_JS = (Path(__file__).resolve().parents[1] / "static" / "js" / "lux-voice.js").read_text()
+
 NAV = ROOT / "templates" / "inbox_pwa" / "_bottom_nav.html"
 CALLS = ROOT / "templates" / "inbox_pwa" / "calls.html"
 
@@ -94,17 +96,19 @@ def test_dialer_has_number_display_and_backspace_and_call_control():
 
 def test_dialer_preserves_mute_hangup_callerid_and_wifi_registration():
     html = CALLS.read_text()
-    assert 'id="btnMute"' in html and "function toggleMute(" in html
-    assert 'id="btnHangup"' in html and "function endCall(" in html
+    # In-call controls moved to the shared full-screen call screen (every page):
+    # large persistent End, Mute/Unmute, Keypad (DTMF), Audio where supported.
+    assert "LuxVoice.mountOverlay(voiceEngine" in html and "function endCall(" in html
+    assert 'data-lv-act="hangup" aria-label="End call"' in ENGINE_JS
+    assert 'data-lv-act="mute"' in ENGINE_JS and 'data-lv-act="keypad"' in ENGINE_JS and 'data-lv-act="audio"' in ENGINE_JS
+    assert "engine.sendDigits(d)" in ENGINE_JS
     assert 'id="callerId"' in html
     assert 'id="receiveCallsToggle"' in html and "async function setReceiveCalls(" in html
-    assert 'id="enableVoice"' in html and "async function startVoiceRegistration(" in html
+    assert 'id="enableVoice"' in html and "function retryVoiceRegistration()" in html
     assert 'id="micStatus"' in html
-    # single Twilio Device — still guarded, still one constructor call
-    assert html.count("new Device(") == 1
-    # single-Device guard, strengthened by the single-active-voice-client repair
-    # (see tests/test_pwa_voice_single_active_client.py)
-    assert "if (voice.registered && voice.device && voice.deviceState === 'registered') return voice.device;" in html
+    # single Twilio Device — one constructor call, owned by the Voice service
+    assert "new Device(" not in html and ENGINE_JS.count("new Device(") == 1
+    assert "if (isRegistered() && !o.forceToken)" in ENGINE_JS
 
 
 def test_dialer_uses_theme_tokens_not_a_hardcoded_accent():
@@ -115,7 +119,9 @@ def test_dialer_uses_theme_tokens_not_a_hardcoded_accent():
     # themed via the canonical palette tokens
     assert "var(--pwa-primary)" in dialer_css
     assert "var(--pwa-success)" in dialer_css   # semantic call colour
-    assert "var(--pwa-danger)" in dialer_css    # semantic hang-up colour
+    # hang-up red now lives on the shared call screen; the status pill keeps
+    # the semantic danger token for the error phase
+    assert "var(--pwa-danger)" in html
     # no raw brand hex slipped into the dialer rules (contrast #fff / shade #000 ok)
     stray = [h for h in re.findall(r"#[0-9a-fA-F]{3,8}\b", dialer_css)
              if h.lower() not in ("#fff", "#000", "#ffffff", "#000000")]
@@ -314,9 +320,8 @@ def test_voice_token_reports_outbound_enabled_with_twiml_app(app):
 
 
 def test_calls_template_guards_outbound_call_button():
-    html = CALLS.read_text()
-    assert "voice.outboundEnabled = body.outbound_enabled;" in html
-    assert "if (voice.outboundEnabled === false) {" in html
+    assert "outbound_enabled: tok.outbound_enabled" in ENGINE_JS
+    assert "if (st.tokenInfo && st.tokenInfo.outbound_enabled === false) throw" in ENGINE_JS
 
 
 # --------------------------------------------------------------------------- #

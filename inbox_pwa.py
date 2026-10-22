@@ -567,11 +567,18 @@ def _proxied_message_media_url(message_id: int, index: int) -> str:
     return f"/api/inbox/messages/{message_id}/media/{index}"
 
 
+_MOBILE_MEDIA_PATH_RE = re.compile(r"^https?://[^/]+/mobile-media/([A-Za-z0-9_-]{20,100})$")
+
+
 def _safe_message_media_urls(m):
     safe = []
     for idx, url in enumerate(m.media_urls or []):
         if _is_twilio_protected_url(url):
             safe.append(_proxied_message_media_url(m.id, idx))
+        elif _MOBILE_MEDIA_PATH_RE.match(url or ""):
+            # LUX Connect app upload: the public URL only works while Twilio
+            # fetches it; readers go through the authenticated route.
+            safe.append(f"/api/inbox/media-uploads/{_MOBILE_MEDIA_PATH_RE.match(url).group(1)}")
         else:
             safe.append(url)
     return safe
@@ -620,6 +627,11 @@ def pwa_index():
         or os.environ.get("RENDER_GIT_COMMIT")
         or "20260908-lux-connect-2"
     )
+    try:
+        from services.receive_calls import receive_calls_enabled
+        receive_calls = receive_calls_enabled(user.id, company.id)
+    except Exception:
+        receive_calls = True
     return render_template(
         "inbox_pwa/index.html",
         user=user,
@@ -627,6 +639,7 @@ def pwa_index():
         vapid_public=vapid_public,
         vapid_missing=vapid_missing,
         pwa_version=pwa_version,
+        receive_calls=receive_calls,
     )
 
 
@@ -1422,6 +1435,14 @@ def _normalize_e164(value):
         return "+" + digits
     return None
 
+def phone_settings_editable(user, company_id: int) -> bool:
+    """Who may change a number's routing, forwarding and automatic replies."""
+    from services.comms_permissions import can_manage_users, normalize_role, user_access_for_company
+    acc = user_access_for_company(user, company_id)
+    role = normalize_role(getattr(acc, "role", None)) if acc else "viewer"
+    return bool(can_manage_users(user, company_id) or role in {"owner", "admin"} or getattr(user, "is_admin", False))
+
+
 @inbox_pwa_bp.route("/api/phone/numbers/<int:number_id>/settings", methods=["GET", "PUT"])
 def api_phone_number_settings(number_id):
     user = _require_auth()
@@ -1431,13 +1452,24 @@ def api_phone_number_settings(number_id):
     pn = TwilioPhoneNumber.query.filter_by(id=number_id, company_id=company.id, is_active=True).first_or_404()
     if pn.phone_number not in accessible_phone_numbers(user, company.id):
         abort(404)
-    acc = user_access_for_company(user, company.id)
-    role = normalize_role(getattr(acc, "role", None)) if acc else "viewer"
-    editable = can_manage_users(user, company.id) or role in {"owner", "admin"} or getattr(user, "is_admin", False)
+    editable = phone_settings_editable(user, company.id)
     if request.method == "PUT":
         if not editable:
             return jsonify({"success": False, "error": "Permission denied."}), 403
         data = request.get_json() or {}
+        if "sms_forward_to" in data:
+            raw = (data.get("sms_forward_to") or "").strip()
+            if raw:
+                normalized = _normalize_e164(raw)
+                if normalized is None:
+                    return jsonify({"success": False, "error": "Forwarding number must be E.164 (for example +15551234567)."}), 400
+                data["sms_forward_to"] = normalized
+            else:
+                data["sms_forward_to"] = None
+        own_numbers = {n.phone_number for n in TwilioPhoneNumber.query.filter_by(company_id=company.id).all()}
+        for fwd_key in ("sms_forward_to", "call_forwarding_number", "call_forward_to"):
+            if data.get(fwd_key) and data[fwd_key] in own_numbers:
+                return jsonify({"success": False, "error": "Forwarding cannot point at one of this account's own numbers."}), 400
         allowed = {
             "business_hours", "timezone", "during_hours_route", "after_hours_route",
             "sms_forward_to", "sms_forwarding_enabled", "auto_reply_enabled", "number_auto_reply_text",
@@ -1689,11 +1721,24 @@ def api_phone_voice_client_error():
     return jsonify({"success": True})
 
 
-@inbox_pwa_bp.route("/api/phone/voice-token")
-def api_phone_voice_token():
-    """Issue a Twilio Voice SDK access token for an authorized PWA user."""
-    user = _require_auth()
-    company = _require_company(user)
+class VoiceGate:
+    """Result of the shared Voice authorization gate (PWA and native app)."""
+    __slots__ = ("allowed_numbers", "account_sid", "api_key", "api_secret")
+
+    def __init__(self, allowed_numbers, account_sid, api_key, api_secret):
+        self.allowed_numbers = allowed_numbers
+        self.account_sid = account_sid
+        self.api_key = api_key
+        self.api_secret = api_secret
+
+
+def _voice_token_gate(user, company):
+    """Every check that must pass before ANY Voice token is minted.
+
+    Returns ``(VoiceGate, None)`` or ``(None, (response, status))``. Shared by
+    the PWA token endpoint and the native app token endpoint so the two can
+    never drift apart.
+    """
     from models import PhoneNumberUserPermission, TwilioAccount, TwilioPhoneNumber
     from services.comms_permissions import accessible_phone_numbers
     from services.phone_availability import is_available
@@ -1705,24 +1750,24 @@ def api_phone_voice_token():
     # preference and is not cleared by returning Available.
     if not receive_calls_enabled(user.id, company.id):
         logger.info("Voice token denied: receive_calls is off", extra={"user_id": user.id, "company_id": company.id})
-        return jsonify({
+        return None, (jsonify({
             "success": False, "code": "CALLING_DISABLED",
             "error": "Receive Calls is turned off for you in this company.",
-        }), 403
+        }), 403)
 
     # Phone Availability gate — an AWAY user must fail BEFORE a token is minted
     # or a Twilio.Device is registered.
     if not is_available(user.id, company.id):
         logger.info("Voice token denied: user is Away", extra={"user_id": user.id, "company_id": company.id})
-        return jsonify({
+        return None, (jsonify({
             "success": False, "code": "PHONE_AWAY",
             "error": "You're Away. Phone calls and communication notifications are paused.",
-        }), 403
+        }), 403)
 
     allowed_numbers = accessible_phone_numbers(user, company.id)
     if not allowed_numbers:
         logger.info("Voice token denied: no assigned calling number", extra={"user_id": user.id, "company_id": company.id})
-        return jsonify({"success": False, "code": "NO_ASSIGNED_NUMBER", "error": "No calling number assigned"}), 403
+        return None, (jsonify({"success": False, "code": "NO_ASSIGNED_NUMBER", "error": "No calling number assigned"}), 403)
 
     callable_numbers = [
         p.phone_number.phone_number for p in PhoneNumberUserPermission.query
@@ -1741,7 +1786,7 @@ def api_phone_voice_token():
         allowed_numbers = [n for n in allowed_numbers if n in set(callable_numbers)]
     if not allowed_numbers:
         logger.info("Voice token denied: user lacks call permission", extra={"user_id": user.id, "company_id": company.id})
-        return jsonify({"success": False, "code": "NO_ASSIGNED_NUMBER", "error": "No calling number assigned"}), 403
+        return None, (jsonify({"success": False, "code": "NO_ASSIGNED_NUMBER", "error": "No calling number assigned"}), 403)
 
     ta = TwilioAccount.query.filter_by(company_id=company.id).first()
     account_sid = (
@@ -1752,11 +1797,24 @@ def api_phone_voice_token():
     api_secret = os.environ.get("TWILIO_API_SECRET")
     if not account_sid or not api_key or not api_secret:
         logger.error("Voice token failed: Twilio Voice SDK credentials are not configured", extra={"user_id": user.id, "company_id": company.id})
-        return jsonify({
+        return None, (jsonify({
             "success": False,
             "code": "TOKEN_ENDPOINT_FAILED",
             "error": "Twilio Voice SDK credentials are not configured. Set TWILIO_ACCOUNT_SID, TWILIO_API_KEY, and TWILIO_API_SECRET.",
-        }), 503
+        }), 503)
+    return VoiceGate(allowed_numbers, account_sid, api_key, api_secret), None
+
+
+@inbox_pwa_bp.route("/api/phone/voice-token")
+def api_phone_voice_token():
+    """Issue a Twilio Voice SDK access token for an authorized PWA user."""
+    user = _require_auth()
+    company = _require_company(user)
+    gate, denied = _voice_token_gate(user, company)
+    if denied:
+        return denied
+    allowed_numbers = gate.allowed_numbers
+    account_sid, api_key, api_secret = gate.account_sid, gate.api_key, gate.api_secret
     try:
         from twilio.jwt.access_token import AccessToken
         from twilio.jwt.access_token.grants import VoiceGrant
@@ -1973,6 +2031,21 @@ def list_messages():
         .limit(limit)
         .all())
     return jsonify({"success": True, "messages": [_msg_to_dict(m) for m in rows], "total": len(rows)})
+
+
+@inbox_pwa_bp.route("/api/inbox/media-uploads/<token>")
+def api_inbox_media_upload(token):
+    """Attachment sent from the LUX Connect app, readable by the same tenant."""
+    user = _require_auth()
+    company = _require_company(user)
+    denied = _require_pwa_communications_access(user, company)
+    if denied:
+        return denied
+    from models import MobileMediaUpload
+    up = MobileMediaUpload.query.filter_by(public_token=token, company_id=company.id).first()
+    if not up or up.expires_at < datetime.utcnow():
+        abort(404)
+    return Response(up.data, mimetype=up.content_type, headers={"Cache-Control": "private, max-age=86400"})
 
 
 @inbox_pwa_bp.route("/api/inbox/messages/<int:message_id>/media/<int:media_index>")
@@ -2844,6 +2917,18 @@ def send_pwa_push_notification(company_id: int, *, user_ids, title: str, body: s
         })
         total += result.get("sent", 0)
         errors.extend(result.get("errors", []))
+        if not device_key:
+            # Same per-user decision (Away, quiet hours, alert preferences)
+            # fans out to the user's LUX Connect native devices as well.
+            try:
+                from services.native_push import queue_for_user
+                queue_for_user(
+                    company_id, user.id, title=title, body=body, link=link,
+                    event_type=decision["event_type"], badge=badge_count,
+                    silent=bool(decision["silent"]), phone_number_id=phone_number_id,
+                )
+            except Exception:
+                logger.exception("Native push enqueue failed", extra={"user_id": user.id, "company_id": company_id})
     return {"sent": total, "errors": errors, "debug": debug}
 
 

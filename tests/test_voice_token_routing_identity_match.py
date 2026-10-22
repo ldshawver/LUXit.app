@@ -47,6 +47,8 @@ from services.receive_calls import set_receive_calls
 from services.phone_availability import set_availability
 
 ROOT = Path(__file__).resolve().parents[1]
+ENGINE_JS = (Path(__file__).resolve().parents[1] / "static" / "js" / "lux-voice.js").read_text()
+
 CALLS_HTML = (ROOT / "templates/inbox_pwa/calls.html").read_text()
 
 
@@ -278,27 +280,21 @@ def test_cross_tenant_device_key_never_bypasses(app, monkeypatch):
 # ══════════════════════════════════════════════════════════════════════════ #
 
 def test_10_11_12_client_retry_guard_contract():
-    h = CALLS_HTML
-    # single-flight preserved
-    assert "if (voice.initPromise) return voice.initPromise;" in h
-    # a recorded failure gates automatic retries; terminal => never auto-retry
-    assert "voice.failure = { code, terminal, at: Date.now() };" in h
-    assert "const VOICE_TERMINAL_CODES = new Set([" in h
-    assert "if (voice.failure && voice.failure.terminal) { showRetryAffordance(); return; }" in h
-    # bounded backoff for transient failures
-    assert "Math.min(2000 * (2 ** (voice.backoffStep - 1)), 60000)" in h
-    # visibilitychange / pageshow must NOT storm after a failure
-    resync = h.split("function resyncVoiceUi(")[1].split("\nwindow.addEventListener('pageshow'")[0]
-    assert "voice.failure && (voice.failure.terminal || (voice.nextAttemptAt && Date.now() < voice.nextAttemptAt))" in resync
-    assert "showRetryAffordance();" in resync
-    # explicit Retry force-bypasses the guard
-    retry = h.split("function retryVoiceRegistration()")[1].split("\n}\n")[0]
-    assert "clearVoiceFailure();" in retry
-    assert "startVoiceRegistration({ force: true })" in retry
-    # a material authoritative state change may force one controlled retry
-    assert "applyReceiveCalls(data.receive_calls, { force: true })" in h
-    assert "applyPhoneAvailability(data.state, { force: true })" in h
-    # bootstrap still a single chained load (single-flight + guard collapse the double trigger)
-    assert "loadReceiveCalls().then(loadPhoneAvailability)" in h
-    # success clears the failure/backoff state
-    assert h.split("voice.device.on('registered', () => {")[1].split("\n")[1].strip() == "clearVoiceFailure();"
+    # Phone P0: the retry guard lives in the persistent Voice service.
+    e = ENGINE_JS
+    assert "if (st.inflight) return st.inflight;" in e                      # single-flight
+    assert "st.failure = { code, terminal };" in e
+    assert "const TERMINAL_CODES = new Set([" in e
+    sr = e.split("function scheduleRecovery(reason, o)")[1].split("\n    }\n")[0]
+    assert "if (st.failure && st.failure.terminal) return;" in sr           # terminal => never auto-retry
+    assert "st.attempts >= MAX_AUTO_ATTEMPTS" in sr                         # bounded
+    assert "Math.min(BACKOFF_BASE_MS * 2 ** attempt, BACKOFF_CAP_MS)" in e   # exponential, capped
+    vis = e.split("function onVisible()")[1].split("\n    }\n")[0]
+    assert "if (st.failure && st.failure.terminal) return;" in vis          # resume cannot storm
+    assert "if (st.recoveryTimer || st.inflight) return;" in vis
+    retry = e.split("function retry()")[1].split("\n    }\n")[0]
+    assert "st.failure = null; st.attempts = 0;" in retry and "converge({ force: true })" in retry
+    assert "applyReceiveCalls(data.receive_calls, { force: true })" in e
+    assert "applyAvailability(data.state, { force: true })" in e
+    reg = e.split("d.on('registered', () => {")[1].split("\n      });")[0]
+    assert "st.attempts = 0;" in reg and "st.failure = null;" in reg
