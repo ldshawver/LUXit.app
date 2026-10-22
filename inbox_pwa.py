@@ -1451,6 +1451,9 @@ def api_phone_number_settings(number_id):
             normalized = _normalize_e164(data.get("call_forwarding_number") or data.get("call_forward_to"))
             if normalized is None:
                 return jsonify({"success": False, "error": "Forwarding number must be E.164 (for example +15551234567)."}), 400
+            from services.call_forwarding import is_own_number
+            if normalized and is_own_number(normalized):
+                return jsonify({"success": False, "error": "Calls cannot be forwarded to a LUXit number (it would loop)."}), 400
             data["call_forwarding_number"] = normalized
             data["call_forward_to"] = normalized
         for key in allowed:
@@ -1514,7 +1517,23 @@ def api_phone_settings():
         db.session.add(settings)
         db.session.commit()
     if request.method == "PUT":
+        # Company call routing (incl. where calls are forwarded) is an admin
+        # setting, same rule as the per-number settings.
+        from services.comms_permissions import can_manage_users, normalize_role, user_access_for_company
+        acc = user_access_for_company(user, company.id)
+        role = normalize_role(getattr(acc, "role", None)) if acc else "viewer"
+        if not (can_manage_users(user, company.id) or role in {"owner", "admin"} or getattr(user, "is_admin", False)):
+            return jsonify({"success": False, "error": "Permission denied."}), 403
         data = request.get_json() or {}
+        from services.call_forwarding import is_own_number
+        for key in ("forward_number", "fallback_forward_number", "after_hours_forward_number", "after_hours_fallback_forward_number"):
+            value = _normalize_e164(data.get(key)) if key in data else ""
+            if value is None:
+                return jsonify({"success": False, "error": "Forwarding number must be E.164 (for example +15551234567)."}), 400
+            if value and is_own_number(value):
+                return jsonify({"success": False, "error": "Calls cannot be forwarded to a LUXit number (it would loop)."}), 400
+            if key in data:
+                data[key] = value or None
         allowed = set(_settings_to_dict(settings).keys())
         for key in allowed:
             if key in data:
