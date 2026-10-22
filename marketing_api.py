@@ -1019,36 +1019,39 @@ def api_segment_audience_preview(sid):
     from types import SimpleNamespace
     from services.contact_audience import resolve_sms_campaign_recipients
 
-from services.sms_consent_purpose import normalize_campaign_purpose
+    from services.sms_consent_purpose import normalize_campaign_purpose
 
-s = _segment_or_404(sid)
-purpose = normalize_campaign_purpose(request.args.get("purpose"))
-probe = SimpleNamespace(
-    company_id=s.company_id,
-    segment=None,
-    id=None,
-    audience_filter={
-        "selected_tag_ids": [s.id],
-        "campaign_purpose": purpose,
-    },
-)
+    s = _segment_or_404(sid)
+    purpose = normalize_campaign_purpose(request.args.get("purpose"))
+    probe = SimpleNamespace(
+        company_id=s.company_id,
+        segment=None,
+        id=None,
+        audience_filter={
+            "selected_tag_ids": [s.id],
+            "campaign_purpose": purpose,
+        },
+    )
 
     try:
         counts = resolve_sms_campaign_recipients(probe)["counts"]
     except ValueError as exc:
-        # e.g. a contact_tag / automation_rule anchor segment is not a
-        # marketing-eligible audience -- fail closed, don't guess.
+        # Fail closed when the segment cannot be used as an SMS audience.
         return jsonify({"success": False, "error": str(exc)}), 422
+
     return jsonify({
         "success": True,
-
         "selected_campaign_purpose": counts["campaign_purpose"],
         "total_customer_segment": counts["matching_contacts"],
         "segment_members": counts["matching_contacts"],
         "unique_valid_phones": counts["unique_phone_numbers"],
         "duplicate_phone_exclusions": counts["duplicate_phone_numbers"],
-        "invalid_or_missing_phone": counts["missing_phone_numbers"] + counts["invalid_phone_numbers"],
-        "stop_suppressed": counts["opted_out_contacts"] + counts["archived_or_suppressed"],
+        "invalid_or_missing_phone": (
+            counts["missing_phone_numbers"] + counts["invalid_phone_numbers"]
+        ),
+        "stop_suppressed": (
+            counts["opted_out_contacts"] + counts["archived_or_suppressed"]
+        ),
         "no_affirmative_consent": counts["missing_sms_consent"],
         # Purpose-specific eligibility counts; STOP/suppression excluded.
         "conversational_followup_eligible": counts["conversational_eligible"],
