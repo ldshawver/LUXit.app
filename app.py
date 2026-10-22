@@ -458,6 +458,11 @@ def create_app() -> Flask:
     app.register_blueprint(marketing_api_bp)
     app.register_blueprint(segment_api_bp)
     try:
+        from promo_optin_public import promo_optin_public_bp
+        app.register_blueprint(promo_optin_public_bp)
+    except Exception as exc:
+        app.logger.warning("Failed to register promo_optin_public blueprint: %s", exc)
+    try:
         from feedback import feedback_bp
         app.register_blueprint(feedback_bp)
     except Exception as exc:
@@ -482,22 +487,22 @@ def create_app() -> Flask:
     try:
         from inbox_pwa import inbox_pwa_bp
         app.register_blueprint(inbox_pwa_bp)
-        # The PWA inbox API endpoints are all session-authenticated via
-        # _require_auth().  The service worker caches the page HTML, which
-        # means the CSRF token baked into the page can expire before the
-        # cached copy is refreshed.  Session auth is sufficient here.
-        csrf.exempt(inbox_pwa_bp)
-        print("✓ PWA Inbox loaded: /app/inbox (CSRF-exempt, session-auth)")
+        # Session-authenticated like the rest of the app; CSRF stays enabled
+        # (WTF_CSRF_TIME_LIMIT=None above means the page-rendered token never
+        # expires). The one route a service worker calls without page context
+        # (/api/pwa/push/receipt) is exempted individually in inbox_pwa.py.
+        print("✓ PWA Inbox loaded: /app/inbox (session-auth, CSRF-protected)")
     except Exception as exc:
-        app.logger.warning("Failed to register inbox_pwa blueprint: %s", exc)
-    # Stripe webhook deliveries from Stripe's edge servers will never carry
-    # a CSRF token; the billing endpoints accept JSON from a Fetch call that
-    # likewise does not include the form CSRF cookie. Both routes have their
-    # own auth/signature/allowlist controls, so we exempt the whole blueprint.
-    csrf.exempt(stripe_webhook_bp)
-    print("✓ SaaS Command Center routes loaded: /saas, /api/stripe/webhook (CSRF-exempt)")
+        app.logger.warning("Failed to register inbox_pwa blueprint: %s", exc, exc_info=True)
+    # Stripe webhook deliveries from Stripe's edge servers never carry a
+    # session cookie/CSRF token; only that single endpoint is exempted
+    # (see @csrf.exempt on stripe_webhook in saas_mgmt.py) and it verifies
+    # the Stripe-Signature header instead. The checkout/portal/usage routes
+    # in this blueprint are session-authenticated Fetch calls from logged-in
+    # admins and stay CSRF-protected.
+    print("✓ SaaS Command Center routes loaded: /saas, /api/stripe/webhook (webhook CSRF-exempt; billing endpoints CSRF-protected)")
 
-    @app.get("/login")
+    @app.route("/login", methods=["GET", "POST"])
     def login_alias():
         """Public login alias used by deploy smoke tests and legacy links."""
         return auth_login()
@@ -553,72 +558,45 @@ def create_app() -> Flask:
             if os.environ.get("DOCUMENSO_REQUIRED", "").lower() in {"1", "true", "yes"}:
                 raise
 
-        # Self-heal guard: ensure at least one company exists and users are linked.
-        # This prevents post-sync "no company" outages when ops scripts were skipped.
+        # ── Startup tenant-context reconciliation ───────────────────────────
+        # Repairs ONLY internally inconsistent records where the correct tenant
+        # relationship is already authoritative (an access row that is missing
+        # its is_default flag, a default_company_id that names one of the user's
+        # own companies, etc.). It must NEVER infer tenant membership from
+        # company ordering, "the lowest / oldest / only active company", or
+        # Company.query.first() — doing so cross-binds unrelated tenants in a
+        # multi-tenant deployment. Users with no authoritative membership are
+        # left unbound; the app renders an onboarding / no-company state for
+        # them. No fallback company is created or reactivated here.
         try:
-            from models import Company, User, UserCompanyAccess
+            from models import User
 
             changed = 0
-            company = Company.query.filter_by(is_active=True).order_by(Company.id.asc()).first()
-            if not company:
-                company = Company.query.order_by(Company.id.asc()).first()
-                if company:
-                    company.is_active = True
-                    logging.warning(
-                        "Startup self-heal reactivated fallback company '%s' (id=%s)",
-                        company.name,
-                        company.id,
-                    )
-                    changed += 1
-
-            if not company:
-                company = Company(
-                    name="LUXit Marketing",
-                    is_active=True,
-                    billing_tier="professional",
-                    billing_status="active",
-                    subscription_tier="professional",
-                    onboarding_status="complete",
-                )
-                db.session.add(company)
-                db.session.flush()
-                logging.warning(
-                    "Startup self-heal created fallback company '%s' (id=%s)",
-                    company.name,
-                    company.id,
-                )
-                changed += 1
-
             for user in User.query.all():
-                if user.is_admin:
-                    if user.ensure_default_company_context():
+                try:
+                    before = user.default_company_id
+                    user.ensure_default_company_context()
+                    if user.default_company_id != before:
                         changed += 1
-                    continue
-
-                acc = UserCompanyAccess.query.filter_by(
-                    user_id=user.id, company_id=company.id
-                ).first()
-                if not acc:
-                    acc = UserCompanyAccess(
-                        user_id=user.id,
-                        company_id=company.id,
-                        role="viewer",
-                        is_default=True,
-                        can_access_full_app=True,
-                        can_access_mobile_inbox=False,
+                except Exception as _user_exc:
+                    # One bad user must never block application startup.
+                    db.session.rollback()
+                    logging.warning(
+                        "Startup tenant-context: skipped user %s (%s)",
+                        getattr(user, "id", "?"),
+                        _user_exc,
                     )
-                    db.session.add(acc)
-                    changed += 1
-                if not user.default_company_id:
-                    user.default_company_id = company.id
-                    changed += 1
-
             if changed:
-                db.session.commit()
-                logging.warning("Startup self-heal updated %s user/company links.", changed)
+                logging.warning(
+                    "Startup tenant-context reconciled %s user default(s).",
+                    changed,
+                )
         except Exception as _self_heal_exc:
             db.session.rollback()
-            logging.warning("Startup self-heal skipped due to error: %s", _self_heal_exc)
+            logging.warning(
+                "Startup tenant-context reconciliation skipped due to error: %s",
+                _self_heal_exc,
+            )
 
         # ── Auto-backfill provider credentials (incremental, every cold start) ─
         # Compares every env var in the CREDENTIALS map against existing DB rows.

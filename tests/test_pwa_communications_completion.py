@@ -402,13 +402,17 @@ def test_pwa_badge_count_endpoint_is_user_and_company_scoped(pwa_app):
         vm_call = TwilioCallLog(company_id=ids["company"], phone_number_id=ids["line"], twilio_sid="CAvoice", direction="inbound", from_number="+14155550004", to_number="+15550001000", status="voicemail", is_read=False)
         db.session.add_all([conv, hidden_conv, call, vm_call]); db.session.flush()
         vm = VoiceVoicemailMessage(company_id=ids["company"], call_log_id=vm_call.id, phone_number_id=ids["line"], recording_url="https://example.test/vm.mp3", is_read=False)
-        note = Notification(user_id=ids["staff"], company_id=ids["company"], event_type="missed_call", title="Pending", message="Pending", is_read=False)
+        # Non-communications notification (e.g. an admin/system alert) -- a
+        # "missed_call"/"incoming_sms"/etc. event_type here would already be
+        # reflected in missedCalls/smsUnread above, so it must stay excluded
+        # from this generic counter or it gets double-counted.
+        note = Notification(user_id=ids["staff"], company_id=ids["company"], event_type="system", title="Pending", message="Pending", is_read=False)
         db.session.add_all([vm, note]); db.session.commit()
         call_id = call.id
         conv_id = conv.id
     login(client, ids["staff"])
     data = client.get("/api/pwa/badge-count").get_json()
-    assert data == {"count": 4, "smsUnread": 1, "missedCalls": 1, "voicemails": 1, "notifications": 1}
+    assert data == {"count": 4, "smsUnread": 1, "missedCalls": 1, "voicemails": 1, "notifications": 1, "effectiveBadge": 3}
     client.patch(f"/api/inbox/conversations/{conv_id}/read", json={"is_read": True})
     client.post(f"/api/calls/{call_id}/mark-read")
     data = client.get("/api/pwa/badge-count").get_json()
@@ -560,7 +564,7 @@ def test_pwa_sound_forwarding_autoreply_static_requirements():
     html = open("templates/inbox_pwa/index.html", encoding="utf-8").read()
     nav = open("templates/inbox_pwa/_bottom_nav.html", encoding="utf-8").read()
     migration = open("migrations/20260705_pwa_sound_forwarding_autoreply.sql", encoding="utf-8").read()
-    assert "20260710-push-receipt-ack" in sw
+    assert "20260908-lux-connect" in sw
     assert "silent:  false" in sw
     assert "renotify: data.renotify !== false" in sw
     assert "[200, 100, 200]" in sw
@@ -1198,7 +1202,7 @@ def test_push_receipt_endpoint_records_redacted_service_worker_delivery_state(pw
     receipt = client.post("/api/pwa/push/receipt", json={
         "stage": "displayed",
         "received_at": "2026-07-10T13:30:00.000Z",
-        "sw_version": "20260710-push-receipt-ack",
+        "sw_version": "20260908-lux-connect",
         "event_type": "push_test",
         "tag": "push-test",
         "silent": False,
@@ -1219,10 +1223,219 @@ def test_push_receipt_endpoint_records_redacted_service_worker_delivery_state(pw
     assert debug.status_code == 200
     payload = debug.get_json()
     assert payload["latest_push_receipt"]["stage"] == "displayed"
-    assert payload["latest_push_receipt"]["sw_version"] == "20260710-push-receipt-ack"
+    assert payload["latest_push_receipt"]["sw_version"] == "20260908-lux-connect"
     assert payload["latest_push_receipt"]["silent"] is False
     assert payload["latest_push_receipt"]["renotify"] is True
     assert payload["latest_push_receipt"]["vibrate"] == [200, 100, 200]
     assert "endpoint_redacted" not in payload["latest_push_receipt"]
     serialized = str(payload["push_receipts"])
     assert "key" not in serialized and "auth" not in serialized
+
+
+# ── Regression coverage: PWA badge must not double-count communications ──────
+#
+# /api/pwa/badge-count used to sum smsUnread (from TwilioConversation.is_read)
+# *and* a raw count of all unread Notification rows, including the
+# "incoming_sms"/"missed_call"/"voicemail" rows that _fire_push_notification()
+# and friends already create for those same events. Every unread SMS was
+# therefore counted twice. The fix filters the generic notifications count
+# through NOTIFICATION_COMMUNICATIONS_EVENT_TYPES, the same constant the main
+# LUX dashboard bell (routes.py) already uses to keep the two surfaces apart.
+
+def test_pwa_badge_does_not_double_count_incoming_sms_notifications(pwa_app):
+    """A: 3 unread SMS + their incoming_sms Notification rows => badge 3, not 6."""
+    app, client, ids = pwa_app
+    with app.app_context():
+        convs = [
+            TwilioConversation(
+                company_id=ids["company"], phone_number_id=ids["line"],
+                from_number=f"+141555590{10 + i}", to_number="+15550001000",
+                is_read=False, last_message_preview="Hi",
+            )
+            for i in range(3)
+        ]
+        db.session.add_all(convs); db.session.flush()
+        for i in range(3):
+            db.session.add(Notification(
+                user_id=ids["staff"], company_id=ids["company"],
+                event_type="incoming_sms", category="communications",
+                title=f"New message {i}", message="Hi", is_read=False,
+            ))
+        db.session.commit()
+    login(client, ids["staff"])
+    data = client.get("/api/pwa/badge-count").get_json()
+    assert data["smsUnread"] == 3
+    assert data["notifications"] == 0
+    assert data["count"] == 3
+
+
+def test_pwa_badge_counts_unread_sms_plus_unrelated_notification(pwa_app):
+    """B: SMS + a legitimate non-communications notification => sum of both."""
+    app, client, ids = pwa_app
+    with app.app_context():
+        conv = TwilioConversation(
+            company_id=ids["company"], phone_number_id=ids["line"],
+            from_number="+14155559020", to_number="+15550001000",
+            is_read=False, last_message_preview="Hi",
+        )
+        db.session.add(conv); db.session.flush()
+        db.session.add(Notification(
+            user_id=ids["staff"], company_id=ids["company"],
+            event_type="team", category="team",
+            title="Teammate added you", message="...", is_read=False,
+        ))
+        db.session.commit()
+    login(client, ids["staff"])
+    data = client.get("/api/pwa/badge-count").get_json()
+    assert data["smsUnread"] == 1
+    assert data["notifications"] == 1
+    assert data["count"] == 2
+
+
+def test_pwa_badge_sms_unread_decrements_when_conversation_marked_read(pwa_app):
+    """C: marking a conversation read decrements the SMS badge correctly."""
+    app, client, ids = pwa_app
+    with app.app_context():
+        conv1 = TwilioConversation(
+            company_id=ids["company"], phone_number_id=ids["line"],
+            from_number="+14155559021", to_number="+15550001000",
+            is_read=False, last_message_preview="Hi",
+        )
+        conv2 = TwilioConversation(
+            company_id=ids["company"], phone_number_id=ids["line"],
+            from_number="+14155559022", to_number="+15550001000",
+            is_read=False, last_message_preview="Hi",
+        )
+        db.session.add_all([conv1, conv2]); db.session.commit()
+        conv1_id = conv1.id
+    login(client, ids["staff"])
+    data = client.get("/api/pwa/badge-count").get_json()
+    assert data["smsUnread"] == 2
+    resp = client.patch(f"/api/inbox/conversations/{conv1_id}/read", json={"is_read": True})
+    assert resp.status_code == 200
+    data = client.get("/api/pwa/badge-count").get_json()
+    assert data["smsUnread"] == 1
+    assert data["count"] == 1
+
+
+def test_pwa_notifications_mark_all_read_clears_notifications_component(pwa_app):
+    """D: mark-all-read clears the notifications badge component without
+    touching the independently-tracked SMS-unread count."""
+    app, client, ids = pwa_app
+    with app.app_context():
+        conv = TwilioConversation(
+            company_id=ids["company"], phone_number_id=ids["line"],
+            from_number="+14155559023", to_number="+15550001000",
+            is_read=False, last_message_preview="Hi",
+        )
+        db.session.add(conv); db.session.flush()
+        db.session.add_all([
+            Notification(user_id=ids["staff"], company_id=ids["company"], event_type="system", title="A", message="a", is_read=False),
+            Notification(user_id=ids["staff"], company_id=ids["company"], event_type="team", title="B", message="b", is_read=False),
+        ])
+        db.session.commit()
+    login(client, ids["staff"])
+    data = client.get("/api/pwa/badge-count").get_json()
+    assert data["notifications"] == 2
+    assert data["smsUnread"] == 1
+    resp = client.post("/api/pwa/notifications/read", json={"notification_id": "all"})
+    assert resp.status_code == 200
+    assert resp.get_json()["updated"] == 2
+    data = client.get("/api/pwa/badge-count").get_json()
+    assert data["notifications"] == 0
+    assert data["smsUnread"] == 1
+    assert data["count"] == 1
+
+
+def test_dashboard_notification_count_excludes_communications_events(pwa_app):
+    """E: the main LUX dashboard bell keeps excluding communications events."""
+    app, client, ids = pwa_app
+    with app.app_context():
+        db.session.add_all([
+            Notification(user_id=ids["admin"], company_id=ids["company"], event_type="incoming_sms", title="New message", message="Hi", is_read=False),
+            Notification(user_id=ids["admin"], company_id=ids["company"], event_type="voicemail", title="New voicemail", message="Hi", is_read=False),
+            Notification(user_id=ids["admin"], company_id=ids["company"], event_type="system", title="System alert", message="Something happened", is_read=False),
+        ])
+        db.session.commit()
+    login(client, ids["admin"])
+    resp = client.get("/notifications")
+    assert resp.status_code == 200
+    html = resp.get_data(as_text=True)
+    assert ">1 unread<" in html
+    assert ">3 unread<" not in html
+
+
+def test_pwa_badge_and_dashboard_notification_count_measure_different_things(pwa_app):
+    """F: the PWA badge and the dashboard bell must not collapse onto the same
+    number just because they share a filter constant -- an unread SMS should
+    move the badge but never the dashboard bell."""
+    app, client, ids = pwa_app
+    with app.app_context():
+        conv = TwilioConversation(
+            company_id=ids["company"], phone_number_id=ids["line"],
+            from_number="+14155559024", to_number="+15550001000",
+            is_read=False, last_message_preview="Hi",
+        )
+        db.session.add(conv); db.session.flush()
+        db.session.add(Notification(
+            user_id=ids["admin"], company_id=ids["company"],
+            event_type="system", title="Alert", message="Something happened", is_read=False,
+        ))
+        db.session.commit()
+    login(client, ids["admin"])
+    badge = client.get("/api/pwa/badge-count").get_json()
+    assert badge["count"] == 2  # 1 unread SMS + 1 system notification
+
+    resp = client.get("/notifications")
+    html = resp.get_data(as_text=True)
+    assert ">1 unread<" in html  # dashboard bell only ever sees the system notification
+    assert ">2 unread<" not in html
+
+
+def test_effective_badge_is_texts_plus_missed_calls_plus_voicemails_never_system_notifications(pwa_app):
+    """The OS/app-icon badge (`effectiveBadge`) must equal exactly
+    unread_texts + unseen_missed_calls + unheard_voicemails and must never
+    include generic/system Notification rows, even though the broader
+    dashboard `count` field intentionally does."""
+    app, client, ids = pwa_app
+    with app.app_context():
+        conv = TwilioConversation(company_id=ids["company"], phone_number_id=ids["line"], from_number="+14155559030", to_number="+15550001000", is_read=False, last_message_preview="Hi")
+        call = TwilioCallLog(company_id=ids["company"], phone_number_id=ids["line"], twilio_sid="CAeffmissed", direction="inbound", from_number="+14155559031", to_number="+15550001000", status="missed", is_read=False)
+        vm_call = TwilioCallLog(company_id=ids["company"], phone_number_id=ids["line"], twilio_sid="CAeffvoice", direction="inbound", from_number="+14155559032", to_number="+15550001000", status="voicemail", is_read=False)
+        db.session.add_all([conv, call, vm_call]); db.session.flush()
+        vm = VoiceVoicemailMessage(company_id=ids["company"], call_log_id=vm_call.id, phone_number_id=ids["line"], recording_url="https://example.test/vm.mp3", is_read=False)
+        note = Notification(user_id=ids["staff"], company_id=ids["company"], event_type="system", title="Pending", message="Pending", is_read=False)
+        db.session.add_all([vm, note]); db.session.commit()
+        conv_id, call_id = conv.id, call.id
+    login(client, ids["staff"])
+    data = client.get("/api/pwa/badge-count").get_json()
+    assert data["smsUnread"] == 1 and data["missedCalls"] == 1 and data["voicemails"] == 1
+    assert data["notifications"] == 1
+    assert data["count"] == 4  # broader dashboard total still includes the system notification
+    assert data["effectiveBadge"] == 3  # the actual OS badge never does
+
+    # Clearing each component decrements effectiveBadge; the system
+    # notification never contributed to it, so it stays 3 until each real
+    # communication is cleared, then reaches 0.
+    client.patch(f"/api/inbox/conversations/{conv_id}/read", json={"is_read": True})
+    assert client.get("/api/pwa/badge-count").get_json()["effectiveBadge"] == 2
+    client.post(f"/api/calls/{call_id}/mark-read")
+    data = client.get("/api/pwa/badge-count").get_json()
+    assert data["effectiveBadge"] == 1
+    assert data["notifications"] == 1  # the system notification is still there, untouched
+
+
+def test_calls_html_marks_voicemail_listened_via_canonical_player():
+    """Static text-contract check (no headless browser in this sandbox, same
+    approach as the voice single-active-client suite): the voicemail <audio>
+    element must call markRead on natural playback completion, so listening
+    through the canonical player -- not just an explicit button tap --
+    clears the badge. Must not fire on every render/replay of an
+    already-read voicemail (idempotent: only when call.is_read is false)."""
+    import pathlib
+    html = pathlib.Path(__file__).parent.parent.joinpath("templates/inbox_pwa/calls.html").read_text()
+    i_audio = html.index("audio.src = `/api/calls/")
+    i_ended = html.index("addEventListener('ended'", i_audio)
+    snippet = html[i_ended:i_ended + 200]
+    assert "markRead(call.id, true)" in snippet
+    assert "!call.is_read" in snippet
