@@ -42,6 +42,7 @@ from flask import (
 )
 from flask_login import current_user, login_required
 from werkzeug.exceptions import HTTPException
+from sqlalchemy import text
 
 from extensions import db, csrf
 
@@ -67,6 +68,9 @@ def _guard_sms_feature():
         "/twilio/voice/no-answer",
         "/twilio/voice/recording",
         "/twilio/voice/status",
+        "/twilio/voice/pwa-outbound",
+        "/twilio/voice/pwa-outbound-complete",
+        "/twilio/fallback",
     }
     if request.path in _WEBHOOK_PATHS or request.path.startswith("/twilio/google-contacts/"):
         return None
@@ -317,10 +321,18 @@ def _seed_phone_numbers_from_accounts():
 
 
 def _build_client(ta):
-    """Create a Twilio REST client from a TwilioAccount record."""
+    """Create a Twilio REST client from a TwilioAccount record.
+
+    Routed through services.twilio_gate so LUXIT_TWILIO_MODE=disabled
+    blocks the send at this single shared boundary rather than needing a
+    check at every caller.
+    """
     try:
-        from twilio.rest import Client
-        return Client(ta.get_account_sid(), ta.get_auth_token())
+        from services.twilio_gate import get_twilio_client
+        return get_twilio_client(
+            ta.get_account_sid(), ta.get_auth_token(),
+            boundary="twilio_sms._build_client",
+        )
     except Exception as exc:
         logger.error("Twilio client error: %s", exc)
         return None
@@ -549,11 +561,13 @@ def _can_send_call_auto_sms(company_id: int, to_number: str, *, cooldown_hours: 
 
 
 def _get_or_create_conversation(
-    company_id: int, from_number: str, to_number: str, phone_number_id: int = None
+    company_id: int, from_number: str, to_number: str, phone_number_id: int = None,
+    *, create_contact: bool = True,
 ):
     from models import TwilioConversation
     from services.contact_audience import upsert_contact_from_source
-    from services.google_contacts import normalize_phone, _all_forms, lookup_contact_name
+    from services.google_contacts import normalize_phone, _all_forms
+    from services.contact_resolver import resolve_contact_identity
 
     forms = _all_forms(from_number)
     to_forms = [value for value in {_normalize_e164(to_number), to_number} if value]
@@ -571,32 +585,27 @@ def _get_or_create_conversation(
         conv = conv_query.first()
 
     contact = None
-    try:
+    contact_name = contact_source = None
+    if create_contact:
         contact = upsert_contact_from_source(
             company_id,
             phone=from_number,
-            tags=["MyOrder Customer"],
-            source_channel="sms",
+            source_channel="inbound_sms",
             source_phone_number=to_number,
             source_provider="twilio",
             source_context="inbound_message",
         )
-    except Exception:
-        # CRM enrichment must not prevent the durable conversation/message.
-        db.session.rollback()
-        logger.exception(
-            "Inbound SMS downstream failure category=contact_upsert company_id=%s",
+        resolved = resolve_contact_identity(
             company_id,
+            phone=from_number,
+            contact_id=contact.id,
+            allow_enrichment=True,
         )
-
-    contact_name, contact_source = lookup_contact_name(company_id, from_number)
-    if contact and not contact_name:
         contact_name = (
-            getattr(contact, "name", None)
-            or f"{getattr(contact, 'first_name', '') or ''} {getattr(contact, 'last_name', '') or ''}".strip()
-            or None
+            None if resolved.safe_display_name == "Name needed"
+            else resolved.safe_display_name
         )
-        contact_source = contact.source or "crm"
+        contact_source = resolved.name_source
 
     if not conv:
         norm = normalize_phone(from_number)
@@ -622,6 +631,11 @@ def _get_or_create_conversation(
         if contact_name and conv.contact_name != contact_name:
             conv.contact_name = contact_name
             conv.contact_source = contact_source
+        elif not contact_name and conv.contact_source not in {
+            "customer_confirmed", "pwa_verified", "manual", "google_contacts",
+        }:
+            conv.contact_name = None
+            conv.contact_source = None
         normalized_to = _normalize_e164(to_number) or to_number
         if normalized_to and conv.to_number != normalized_to:
             conv.to_number = normalized_to
@@ -645,7 +659,10 @@ def resolve_sms_sender(inbound_message) -> str:
 def sendConversationSms(conversation_id: int, message: str, *,
                         to_number: str = None, twilio_account=None,
                         is_auto_reply: bool = False, rule_id: int = None,
-                        persist_record: bool = True) -> dict:
+                        persist_record: bool = True,
+                        effect_type: str | None = None,
+                        idempotency_key: str | None = None,
+                        bypass_outbox: bool = False) -> dict:
     """Single entry point for all conversational SMS sends.
 
     Every outbound reply/forward/auto-reply resolves its sender from the
@@ -657,6 +674,37 @@ def sendConversationSms(conversation_id: int, message: str, *,
     conv = db.session.get(TwilioConversation, conversation_id) if conversation_id else None
     if not conv:
         return {"success": False, "error": "Conversation is required for SMS send."}
+    if conv.is_opted_out:
+        # Single entry point for every conversational send: a STOP'd/opted-out
+        # conversation is blocked here so no caller path (manual reply, auto-
+        # reply, campaign follow-up) can accidentally text a suppressed
+        # contact. Automated paths already pre-check this before calling in;
+        # this is the backstop for the manual PWA/desktop send routes, which
+        # previously had no opt-out check at all.
+        logger.warning("Outbound SMS blocked: conversation %s is opted out (STOP).", conv.id)
+        return {"success": False, "error": "This contact has replied STOP and cannot be sent SMS.",
+                "error_code": "recipient_opted_out"}
+    if (
+        not bypass_outbox
+        and has_request_context()
+        and getattr(g, "sms_outbox_inbound_message_id", None)
+    ):
+        from services.sms_outbox import enqueue_sms_intent
+        intent = enqueue_sms_intent(
+            inbound_message_id=g.sms_outbox_inbound_message_id,
+            company_id=conv.company_id,
+            conversation_id=conv.id,
+            effect_type=effect_type or (
+                f"rule_reply:{rule_id}" if rule_id else
+                ("auto_reply" if is_auto_reply else "conversation_reply")
+            ),
+            to_number=to_number,
+            body=_sanitize_body(message),
+            is_auto_reply=is_auto_reply,
+            rule_id=rule_id,
+            idempotency_key=idempotency_key,
+        )
+        return {"success": True, "queued": True, "intent_id": intent.id, "status": intent.status}
     ta = twilio_account or _get_twilio_account(conv.company_id)
     if not ta:
         return {"success": False, "error": "Twilio account is not configured for this conversation."}
@@ -720,30 +768,34 @@ def sendConversationSms(conversation_id: int, message: str, *,
             })
         except Exception:
             pass
-        return {"success": True, "sid": msg.sid, "status": "sent", "provider_status": provider_status}
+        return {
+            "success": True, "sid": msg.sid, "status": "sent",
+            "provider_status": provider_status, "from_number": canonical_sender,
+        }
     except Exception as exc:
         logger.error(
             "SMS send error: code=%s status=%s — %s",
             getattr(exc, "code", None), getattr(exc, "status", None), exc,
         )
-        try:
-            failed_record = TwilioMessage(
-                conversation_id=conversation_id,
-                company_id=ta.company_id,
-                twilio_sid=None,
-                direction="outbound",
-                from_number=canonical_sender if "canonical_sender" in locals() else None,
-                to_number=to_number,
-                body=body,
-                status="failed",
-                error_message=str(exc),
-                is_auto_reply=is_auto_reply,
-                rule_id=rule_id,
-            )
-            db.session.add(failed_record)
-            db.session.commit()
-        except Exception:
-            db.session.rollback()
+        if persist_record:
+            try:
+                failed_record = TwilioMessage(
+                    conversation_id=conversation_id,
+                    company_id=ta.company_id,
+                    twilio_sid=None,
+                    direction="outbound",
+                    from_number=canonical_sender if "canonical_sender" in locals() else None,
+                    to_number=to_number,
+                    body=body,
+                    status="failed",
+                    error_message=str(exc),
+                    is_auto_reply=is_auto_reply,
+                    rule_id=rule_id,
+                )
+                db.session.add(failed_record)
+                db.session.commit()
+            except Exception:
+                db.session.rollback()
         try:
             from services.posthog_client import track_event
             track_event(f"company_{ta.company_id}", 'sms_failed', {
@@ -756,7 +808,17 @@ def sendConversationSms(conversation_id: int, message: str, *,
         except Exception:
             pass
         from services.twilio_error_handler import twilio_friendly_error
-        return {"success": False, "error": twilio_friendly_error(exc)}
+        http_status = getattr(exc, "status", None)
+        delivery_class = (
+            "retryable" if http_status == 429 or (http_status and http_status >= 500)
+            else ("terminal" if http_status and 400 <= http_status < 500 else "ambiguous")
+        )
+        return {
+            "success": False,
+            "error": twilio_friendly_error(exc),
+            "error_code": str(getattr(exc, "code", None) or type(exc).__name__),
+            "delivery_class": delivery_class,
+        }
 
 
 def _match_keywords(body: str, keywords: list, match_type: str) -> bool:
@@ -803,17 +865,17 @@ def _write_sms_compliance_audit(company_id, action, phone_number, keyword, conta
         logger.exception("Failed to write SMS compliance audit log")
 
 def _update_contact_sms_consent(company_id, phone_number, opted_in, source):
-    from models import Contact
-    from services.google_contacts import _all_forms
-    contact = None
-    for form in _all_forms(phone_number):
-        contact = Contact.query.filter_by(company_id=company_id, phone=form, is_active=True).first()
-        if contact:
-            break
+    # Resolve through the single canonical, tenant-scoped, normalized_phone-based
+    # lookup (services.sms_keyword_engine.find_contact) instead of guessing raw
+    # Contact.phone string forms -- see that function's docstring for why the
+    # old approach could silently miss an existing contact.
+    from services.sms_keyword_engine import find_contact
+    contact = find_contact(company_id, phone_number)
     if contact:
         now = datetime.utcnow()
         contact.sms_marketing_opt_in = bool(opted_in)
         contact.sms_consent_status = "opted_in" if opted_in else "opted_out"
+        contact.sms_opted_out = not bool(opted_in)
         if opted_in:
             contact.sms_marketing_opt_in_at = now
             contact.sms_marketing_opt_in_source = source
@@ -1146,7 +1208,6 @@ def _capture_lead(conv, body: str, company_id: int):
     contact = upsert_contact_from_source(
         company_id,
         phone=conv.from_number,
-        full_name=conv.contact_name,
         tags=["new-lead"],
         source_channel="sms",
         source_phone_number=inbound_to,
@@ -1237,6 +1298,53 @@ def _seed_default_hours(company_id: int):
 # Public webhook endpoints
 # ---------------------------------------------------------------------------
 
+def _lock_inbound_sid(company_id: int, message_sid: str) -> None:
+    """Serialize SID reservation before any contact or message side effect."""
+    if db.session.get_bind().dialect.name != "postgresql":
+        return
+    digest = hashlib.sha256(f"inbound:{company_id}:{message_sid}".encode()).digest()[:8]
+    key = int.from_bytes(digest, byteorder="big", signed=True)
+    db.session.execute(text("SELECT pg_advisory_xact_lock(:key)"), {"key": key})
+
+
+def _set_inbound_processing_state(message_id: int, status: str, error_code: str | None = None):
+    from models import TwilioMessage
+    row = db.session.get(TwilioMessage, message_id)
+    if not row:
+        return None
+    row.processing_status = status
+    row.processing_error_code = error_code
+    if status == "completed":
+        row.processed_at = datetime.utcnow()
+    return row
+
+
+def _deliver_and_finalize_inbound(message_id: int, twilio_account) -> tuple[bool, str]:
+    """Commit intents, deliver them without locks, then finalize the inbound SID."""
+    from models import TwilioMessage
+    from services.sms_outbox import deliver_inbound_intents
+
+    row = _set_inbound_processing_state(message_id, "outbound_pending")
+    db.session.commit()
+    delivery = deliver_inbound_intents(message_id, twilio_account=twilio_account)
+    row = db.session.get(TwilioMessage, message_id)
+    if delivery["all_delivered"]:
+        row.processing_status = "completed"
+        row.processing_error_code = None
+        row.processed_at = datetime.utcnow()
+        success, status = True, "completed"
+    elif delivery["has_retryable"]:
+        row.processing_status = "failed_retryable"
+        row.processing_error_code = "outbound_delivery_retryable"
+        success, status = False, "failed_retryable"
+    else:
+        row.processing_status = "failed_terminal"
+        row.processing_error_code = "outbound_delivery_unresolved"
+        success, status = False, "failed_terminal"
+    db.session.commit()
+    return success, status
+
+
 @twilio_bp.route("/sms", methods=["POST"])
 @twilio_bp.route("/sms/inbound", methods=["POST"])
 @csrf.exempt
@@ -1252,7 +1360,7 @@ def inbound_sms():
       4. Handle STOP / START / HELP system keywords (always, regardless of rules)
       5. Run auto-reply rule engine for all other messages
     """
-    from models import TwilioConversation, TwilioMessage
+    from models import Contact, TwilioConversation, TwilioMessage
 
     correlation_id = getattr(g, "request_id", request.headers.get("X-Request-ID", "-"))
     if not (request.mimetype or "").startswith(("application/x-www-form-urlencoded", "multipart/form-data")):
@@ -1311,6 +1419,39 @@ def inbound_sms():
         )
         abort(403)
 
+    # Serialize and classify the SID before contact creation, enrichment,
+    # tagging, or response generation. Failed reservations are retryable.
+    _lock_inbound_sid(ta.company_id, twilio_sid)
+    existing_message = (
+        TwilioMessage.query.filter_by(twilio_sid=twilio_sid)
+        .with_for_update()
+        .populate_existing()
+        .first()
+    )
+    if existing_message and existing_message.processing_status == "completed":
+        response_body = existing_message.response_body
+        db.session.rollback()
+        return response_body or '<Response></Response>', 200, {"Content-Type": "text/xml"}
+    if existing_message and existing_message.processing_status in {
+        "outbound_pending", "failed_retryable",
+    }:
+        existing_id = existing_message.id
+        db.session.commit()
+        delivered, status = _deliver_and_finalize_inbound(existing_id, ta)
+        return '<Response></Response>', (200 if delivered or status == "failed_terminal" else 500), {"Content-Type": "text/xml"}
+    if existing_message and existing_message.processing_status == "failed_terminal":
+        db.session.rollback()
+        return '<Response></Response>', 200, {"Content-Type": "text/xml"}
+    if existing_message and existing_message.processing_status == "processing":
+        started = existing_message.processing_started_at or existing_message.created_at
+        if started and started > datetime.utcnow() - timedelta(minutes=5):
+            db.session.rollback()
+            return '<Response></Response>', 500, {"Content-Type": "text/xml"}
+        existing_message.processing_status = "failed"
+        existing_message.processing_error_code = "stale_processing_reservation"
+        db.session.commit()
+        _lock_inbound_sid(ta.company_id, twilio_sid)
+
     # ── 2b. Owner reply relay ──────────────────────────────────────────────
     # All messages FROM the forwarding number are relay commands — never
     # treat them as customer inbound messages.
@@ -1321,6 +1462,37 @@ def inbound_sms():
     #   r <message>                    → send to most-recent customer
     if ta.sms_forward_to and from_number == ta.sms_forward_to:
         company_name = ta.company.name if ta.company else "LUXit"
+        admin_conv = _get_or_create_conversation(
+            ta.company_id, ta.sms_forward_to, to_number,
+            getattr(pn, "id", None), create_contact=False,
+        )
+        relay_receipt = existing_message or TwilioMessage(
+            conversation_id=admin_conv.id,
+            company_id=ta.company_id,
+            twilio_sid=twilio_sid,
+            direction="inbound",
+            from_number=from_number,
+            to_number=to_number,
+            body=body,
+            status="received",
+            raw_payload=dict(data),
+            processing_status="processing",
+            processing_attempts=1,
+            processing_started_at=datetime.utcnow(),
+        )
+        if not existing_message:
+            db.session.add(relay_receipt)
+        else:
+            relay_receipt.processing_status = "processing"
+            relay_receipt.processing_attempts = (relay_receipt.processing_attempts or 0) + 1
+        db.session.commit()
+        g.sms_outbox_inbound_message_id = relay_receipt.id
+
+        def _owner_outbox_response():
+            delivered, status = _deliver_and_finalize_inbound(relay_receipt.id, ta)
+            return '<Response></Response>', (
+                200 if delivered or status == "failed_terminal" else 500
+            ), {"Content-Type": "text/xml"}
 
         # reply +1XXX message  OR  r +1XXX message
         relay_match = re.match(
@@ -1331,20 +1503,19 @@ def inbound_sms():
             if not target_number.startswith("+"):
                 target_number = "+" + target_number
             relay_body = relay_match.group(2).strip()
-            admin_conv = _get_or_create_conversation(ta.company_id, ta.sms_forward_to, to_number, getattr(pn, "id", None))
             if not relay_body:
                 logger.warning("Owner relay: empty message body to %s — ignored", target_number)
-                sendConversationSms(admin_conv.id, f"[{company_name}] Reply not sent — message was empty.", twilio_account=ta)
-                return '<Response></Response>', 200, {"Content-Type": "text/xml"}
+                sendConversationSms(admin_conv.id, f"[{company_name}] Reply not sent — message was empty.", twilio_account=ta, effect_type="owner_relay_validation")
+                return _owner_outbox_response()
             target_conv = _get_or_create_conversation(ta.company_id, target_number, to_number)
-            result = sendConversationSms(target_conv.id, relay_body, twilio_account=ta, to_number=target_number)
+            result = sendConversationSms(target_conv.id, relay_body, twilio_account=ta, to_number=target_number, effect_type="owner_relay")
             logger.info(
                 "Owner relay: %s → %s (success=%s err=%s)",
                 from_number, target_number, result.get("success"), result.get("error")
             )
             if not result.get("success"):
-                sendConversationSms(admin_conv.id, f"[{company_name}] Failed to send to {target_number}: {result.get('error')}", twilio_account=ta)
-            return '<Response></Response>', 200, {"Content-Type": "text/xml"}
+                sendConversationSms(admin_conv.id, f"[{company_name}] Failed to send to {target_number}: {result.get('error')}", twilio_account=ta, effect_type="owner_relay_failure")
+            return _owner_outbox_response()
 
         # r <message> — reply to the most recent customer conversation
         r_match = re.match(r'^r\s+(.+)$', body.strip(), re.IGNORECASE | re.DOTALL)
@@ -1360,19 +1531,17 @@ def inbound_sms():
                 .first()
             )
             if last_conv:
-                result = sendConversationSms(last_conv.id, relay_body, twilio_account=ta)
+                result = sendConversationSms(last_conv.id, relay_body, twilio_account=ta, effect_type="owner_recent_relay")
                 logger.info(
                     "Owner 'r' relay → %s (success=%s err=%s)",
                     last_conv.from_number, result.get("success"), result.get("error"),
                 )
                 if not result.get("success"):
-                    admin_conv = _get_or_create_conversation(ta.company_id, ta.sms_forward_to, to_number, getattr(pn, "id", None))
-                    sendConversationSms(admin_conv.id, f"[{company_name}] Failed to reply to {last_conv.from_number}: {result.get('error')}", twilio_account=ta)
+                    sendConversationSms(admin_conv.id, f"[{company_name}] Failed to reply to {last_conv.from_number}: {result.get('error')}", twilio_account=ta, effect_type="owner_recent_relay_failure")
             else:
                 logger.warning("Owner 'r' relay: no recent conversation found")
-                admin_conv = _get_or_create_conversation(ta.company_id, ta.sms_forward_to, to_number, getattr(pn, "id", None))
-                sendConversationSms(admin_conv.id, f"[{company_name}] No recent customer conversation found to reply to.", twilio_account=ta)
-            return '<Response></Response>', 200, {"Content-Type": "text/xml"}
+                sendConversationSms(admin_conv.id, f"[{company_name}] No recent customer conversation found to reply to.", twilio_account=ta, effect_type="owner_recent_relay_missing")
+            return _owner_outbox_response()
 
         # Unrecognised command — send help back to admin
         logger.info(
@@ -1387,68 +1556,109 @@ def inbound_sms():
             f"r +1XXXXXXXXXX your message\n"
             f"  → Shorthand reply to specific customer"
         )
-        admin_conv = _get_or_create_conversation(ta.company_id, ta.sms_forward_to, to_number, getattr(pn, "id", None))
-        sendConversationSms(admin_conv.id, help_msg, twilio_account=ta)
-        return '<Response></Response>', 200, {"Content-Type": "text/xml"}
+        sendConversationSms(admin_conv.id, help_msg, twilio_account=ta, effect_type="owner_relay_help")
+        return _owner_outbox_response()
 
     message_persisted = False
+    msg_record_id = None
     try:
-        # ── 3a. Get or create conversation thread ──────────────────────────
-        conv = _get_or_create_conversation(
-            ta.company_id, from_number, to_number, getattr(pn, "id", None)
-        )
-
-        # Idempotency: skip if already processed
-        if twilio_sid and TwilioMessage.query.filter_by(twilio_sid=twilio_sid).first():
-            return '<Response></Response>', 200, {"Content-Type": "text/xml"}
-
         # Collect media URLs
         media_urls = [data.get(f"MediaUrl{i}") for i in range(num_media)
                       if data.get(f"MediaUrl{i}")]
 
-        # ── 3b. Save the inbound message ───────────────────────────────────
-        msg_record = TwilioMessage(
-            conversation_id=conv.id,
-            company_id=ta.company_id,
-            twilio_sid=twilio_sid,
-            direction="inbound",
-            from_number=from_number,
-            to_number=to_number,
-            body=body,
-            status="received",
-            media_urls=media_urls or None,
-            raw_payload=dict(data),
-        )
-        db.session.add(msg_record)
-
-        # Update conversation metadata
-        conv.is_read              = False
-        conv.last_message_at      = datetime.utcnow()
-        conv.last_message_preview = body[:200] if body else "(media)"
-        conv.message_count        = (conv.message_count or 0) + 1
+        if existing_message:
+            if existing_message.company_id != ta.company_id:
+                raise ValueError("MessageSid belongs to another tenant")
+            conv = db.session.get(TwilioConversation, existing_message.conversation_id)
+            msg_record = existing_message
+            msg_record.processing_status = "processing"
+            msg_record.processing_error_code = None
+            msg_record.processing_started_at = datetime.utcnow()
+            msg_record.processing_attempts = (msg_record.processing_attempts or 0) + 1
+        else:
+            # Reserve the SID with a conversation shell; contact creation and
+            # all identity/tag mutations happen after this durable reservation.
+            conv = _get_or_create_conversation(
+                ta.company_id, from_number, to_number, getattr(pn, "id", None),
+                create_contact=False,
+            )
+            msg_record = TwilioMessage(
+                conversation_id=conv.id,
+                company_id=ta.company_id,
+                twilio_sid=twilio_sid,
+                direction="inbound",
+                from_number=from_number,
+                to_number=to_number,
+                body=body,
+                status="received",
+                media_urls=media_urls or None,
+                raw_payload=dict(data),
+                processing_status="processing",
+                processing_attempts=1,
+                processing_started_at=datetime.utcnow(),
+            )
+            db.session.add(msg_record)
+            conv.is_read = False
+            conv.last_message_at = datetime.utcnow()
+            conv.last_message_preview = body[:200] if body else "(media)"
+            conv.message_count = (conv.message_count or 0) + 1
         db.session.commit()
         message_persisted = True
+        msg_record_id = msg_record.id
+        g.sms_outbox_inbound_message_id = msg_record_id
+
+        # Contact/source/tag work starts only after a unique SID reservation.
+        conv = _get_or_create_conversation(
+            ta.company_id, from_number, to_number, getattr(pn, "id", None),
+            create_contact=True,
+        )
         logger.info(
             "Inbound SMS persisted correlation_id=%s sid=%s company_id=%s conversation_id=%s "
             "status=persisted category=message",
             correlation_id, twilio_sid, ta.company_id, conv.id,
         )
 
-        # This optional integration is invoked only after signature validation
-        # and durable acceptance. Its own durable state isolates Twilio from
-        # Tuya network availability and MessageSid retries.
+        # CRM classification is isolated from auto-reply and compliance
+        # processing.  The persisted SID is the event idempotency key, and the
+        # count spans every conversation attached to the canonical contact.
         try:
-            from services.tuya_notification import accept_inbound
-            accept_inbound(
-                ta.company_id, twilio_sid, _normalize_e164(to_number),
-                customer_phone=from_number,
+            from models import TwilioConversation
+            from services.crm_automation import (
+                FIRST_INBOUND_TRIGGER, dispatch_event, ensure_my_order_automation,
             )
+            first_inbound_message_id = (
+                db.session.query(db.func.min(TwilioMessage.id))
+                .join(TwilioConversation, TwilioConversation.id == TwilioMessage.conversation_id)
+                .filter(
+                    TwilioMessage.company_id == ta.company_id,
+                    TwilioMessage.direction == "inbound",
+                    TwilioConversation.contact_id == conv.contact_id,
+                )
+                .scalar()
+            )
+            is_first_inbound = bool(conv.contact_id and first_inbound_message_id == msg_record.id)
+            ensure_my_order_automation(ta.company_id, create_missing=True)
+            dispatch_event(
+                ta.company_id, conv.contact_id, FIRST_INBOUND_TRIGGER,
+                f"twilio:{twilio_sid}", direction="inbound", channel="sms",
+                first_inbound_sms=is_first_inbound, message_sid=twilio_sid,
+                conversation_id=conv.id,
+            )
+            db.session.commit()
         except Exception:
             db.session.rollback()
             logger.exception(
-                "Tuya notification acceptance failed sid=%s company_id=%s; inbound remains persisted",
+                "CRM first-inbound automation failed sid=%s company_id=%s; auto-reply processing continues",
                 twilio_sid, ta.company_id,
             )
+
+        # NOTE: Tuya inbound acceptance is intentionally NOT invoked here.
+        # It is invoked once, later in this function, only after
+        # _deliver_and_finalize_inbound() completes (see the "Optional
+        # external integration" block below) so that Tuya notifications
+        # aren't triggered ahead of the durable delivery/finalize step.
+        # accept_inbound() is idempotent per Twilio MessageSid, so a second
+        # call would have been harmless, but only one call site should exist.
 
         # ── 4. System-level keyword handling ──────────────────────────────
         # These always fire and return a TwiML reply immediately.
@@ -1464,11 +1674,75 @@ def inbound_sms():
                 mark_opt_out(ta.company_id, from_number, conv)
             except Exception as opt_exc:
                 logger.warning("Campaign opt-out sync failed: %s", opt_exc)
+            try:
+                # STOP precedence: cancel any pending promotional opt-in request
+                # so a later stale YES can never revive it.
+                from services.promotional_optin import cancel_pending_for_phone
+                cancel_pending_for_phone(ta.company_id, from_number, reason="stop")
+            except Exception as promo_exc:
+                logger.warning("Promotional solicitation STOP-cancel failed: %s", promo_exc)
+            reply_tuple = _twiml_message(_STOP_REPLY)
+            completed = _set_inbound_processing_state(msg_record_id, "completed")
+            completed.response_body = reply_tuple[0]
             db.session.commit()
             logger.info("Opt-out keyword received: company_id=%s phone_last4=%s", ta.company_id, from_number[-4:])
-            return _twiml_message(_STOP_REPLY)
+            return reply_tuple
 
-        if kw in _START_KEYWORDS:
+        _kw_contact = db.session.get(Contact, conv.contact_id) if conv.contact_id else None
+        active_identity_confirmation = bool(
+            getattr(_kw_contact, "identity_status", None) == "awaiting_confirmation"
+        )
+
+        # ── 4a. Contextual promotional opt-in ────────────────────────────────
+        # A YES only creates promotional consent when it answers a pending,
+        # operator-approved promotional opt-in solicitation for this tenant /
+        # canonical phone / business number. Idempotent on the inbound SID.
+        # A YES with no pending solicitation is NOT handled here -- it falls
+        # through to normal keyword / identity / auto-reply processing.
+        promo_yes_kw = None
+        if not active_identity_confirmation:
+            try:
+                from services.promotional_optin import normalize_yes_keyword
+                promo_yes_kw = normalize_yes_keyword(body)
+            except Exception:
+                promo_yes_kw = None
+        if promo_yes_kw:
+            try:
+                from services.promotional_optin import record_contextual_yes
+                promo_outcome = record_contextual_yes(
+                    ta.company_id, from_number, to_number, twilio_sid,
+                    keyword=promo_yes_kw, received_at=datetime.utcnow(),
+                )
+            except Exception as promo_exc:
+                db.session.rollback()
+                logger.warning("Contextual promotional YES failed: %s", promo_exc)
+                promo_outcome = {"matched": False}
+            if promo_outcome.get("matched"):
+                reply_body = promo_outcome.get("reply")
+                reply_tuple = _twiml_message(reply_body) if reply_body else ('<Response></Response>', 200, {"Content-Type": "text/xml"})
+                completed = _set_inbound_processing_state(msg_record_id, "completed")
+                completed.response_body = reply_tuple[0]
+                db.session.commit()
+                logger.info(
+                    "Promotional opt-in YES: company_id=%s granted=%s duplicate=%s suppressed=%s",
+                    ta.company_id, promo_outcome.get("granted"),
+                    promo_outcome.get("duplicate"), promo_outcome.get("suppressed"),
+                )
+                return reply_tuple
+
+        # A bare, non-contextual "yes" must not become a promotional opt-in.
+        # It still works as a re-subscribe keyword for a contact who is
+        # currently opted out (matches the CTIA START/YES/UNSTOP resume
+        # contract); for anyone else it is treated as an ordinary inbound
+        # message below.
+        _yes_is_resubscribe = (
+            kw == "yes" and (
+                conv.is_opted_out
+                or bool(getattr(_kw_contact, "sms_opted_out", False))
+                or getattr(_kw_contact, "sms_opt_out_at", None) is not None
+            )
+        )
+        if kw in _START_KEYWORDS and (kw != "yes" or _yes_is_resubscribe) and not (kw == "yes" and active_identity_confirmation):
             conv.is_opted_out  = False
             conv.sms_opt_in_at = datetime.utcnow()
             conv.sms_opt_out_at = None
@@ -1479,15 +1753,21 @@ def inbound_sms():
                 mark_opt_in(ta.company_id, from_number, conv)
             except Exception as opt_exc:
                 logger.warning("Campaign opt-in sync failed: %s", opt_exc)
+            reply_tuple = _twiml_message(_START_REPLY)
+            completed = _set_inbound_processing_state(msg_record_id, "completed")
+            completed.response_body = reply_tuple[0]
             db.session.commit()
             logger.info("Opt-in keyword received: company_id=%s phone_last4=%s", ta.company_id, from_number[-4:])
-            return _twiml_message(_START_REPLY)
+            return reply_tuple
 
         if kw in {"help", "info"}:
             _write_sms_compliance_audit(ta.company_id, "help", from_number, kw, conv.contact_id, conv.id)
+            reply_tuple = _twiml_message(_HELP_REPLY)
+            completed = _set_inbound_processing_state(msg_record_id, "completed")
+            completed.response_body = reply_tuple[0]
             db.session.commit()
             logger.info("HELP/INFO received: company_id=%s phone_last4=%s", ta.company_id, from_number[-4:])
-            return _twiml_message(_HELP_REPLY)
+            return reply_tuple
 
         # Identity collection happens only after the inbound message has been
         # durably committed and compliance keywords have taken precedence.
@@ -1495,7 +1775,7 @@ def inbound_sms():
         try:
             from models import Contact
             from services.contact_identity import (
-                IDENTITY_PROMPT, apply_cached_google_match,
+                apply_cached_google_match, begin_identity_collection,
                 process_identity_message, should_request_identity,
             )
             contact = db.session.get(Contact, conv.contact_id) if conv.contact_id else None
@@ -1503,27 +1783,27 @@ def inbound_sms():
                 match_status = apply_cached_google_match(contact)
                 outcome = process_identity_message(contact, conv, body, twilio_sid)
                 reply = outcome.get("reply")
-                if not reply and outcome.get("missing") and contact.identity_requested_at:
-                    reply = "Please include " + " and ".join(outcome["missing"]) + "."
                 if not reply and match_status != "matched" and should_request_identity(contact):
-                    contact.identity_status = "pending_identity"
-                    contact.identity_requested_at = datetime.utcnow()
-                    contact.identity_request_count = (contact.identity_request_count or 0) + 1
-                    reply = IDENTITY_PROMPT
+                    reply = begin_identity_collection(contact, twilio_sid)
                 db.session.commit()
                 if reply:
-                    result = sendConversationSms(conv.id, reply, twilio_account=ta, is_auto_reply=True)
+                    result = sendConversationSms(conv.id, reply, twilio_account=ta, is_auto_reply=True, effect_type="identity_reply")
                     identity_reply_sent = bool(result.get("success"))
                     if identity_reply_sent:
                         msg_record.auto_responded = True
                         db.session.commit()
         except Exception:
             db.session.rollback()
+            _set_inbound_processing_state(
+                msg_record_id, "failed", "identity_processing_failed"
+            )
+            db.session.commit()
             logger.exception(
                 "Inbound SMS downstream failure correlation_id=%s sid=%s company_id=%s "
-                "status=persisted category=identity_enrichment",
+                "status=retryable category=identity_enrichment",
                 correlation_id, twilio_sid, ta.company_id,
             )
+            return '<Response></Response>', 500, {"Content-Type": "text/xml"}
 
         # ── 5. SMS forwarding — always runs before auto-reply so exceptions
         #       in rule processing can never suppress the forward ────────────
@@ -1543,7 +1823,7 @@ def inbound_sms():
                     f"Reply using:\n"
                     f"reply {from_number} your message"
                 )
-                sendConversationSms(conv.id, fwd_body, twilio_account=ta, to_number=ta.sms_forward_to)
+                sendConversationSms(conv.id, fwd_body, twilio_account=ta, to_number=ta.sms_forward_to, effect_type="inbound_forward")
                 logger.info(
                     "SMS forwarded: customer=%s → admin=%s company=%s",
                     from_number, ta.sms_forward_to, company_name,
@@ -1552,6 +1832,7 @@ def inbound_sms():
                 logger.warning("SMS forward failed: %s", fwd_exc)
 
         # ── 5b. Campaign keyword/auto-reply engine ────────────────────────
+        campaign_reply_sent = False
         try:
             from services.sms_keyword_engine import (
                 attribute_inbound_reply,
@@ -1560,7 +1841,8 @@ def inbound_sms():
             attribute_inbound_reply(ta.company_id, from_number, body, conv.id)
             campaign_reply = process_keyword_rules(ta.company_id, body, conv, ta)
             if campaign_reply and not identity_reply_sent:
-                sendConversationSms(conv.id, campaign_reply, twilio_account=ta, is_auto_reply=True)
+                result = sendConversationSms(conv.id, campaign_reply, twilio_account=ta, is_auto_reply=True, effect_type="campaign_reply")
+                campaign_reply_sent = bool(result.get("success"))
         except Exception as campaign_rule_exc:
             logger.exception("Error in campaign SMS keyword engine: %s", campaign_rule_exc)
 
@@ -1570,8 +1852,11 @@ def inbound_sms():
             # Auto-capture/update CRM contact for every non-system inbound SMS.
             _capture_lead(conv, body, ta.company_id)
 
-            # Run rules only if not opted out
-            if not identity_reply_sent and not conv.is_opted_out and getattr(ta, "auto_reply_enabled", True):
+            # Run rules only if no higher-precedence reply (identity collection or
+            # the campaign/keyword engine) has already answered this message, and
+            # not opted out. This keeps one inbound SMS from generating two
+            # independent auto-replies.
+            if not identity_reply_sent and not campaign_reply_sent and not conv.is_opted_out and getattr(ta, "auto_reply_enabled", True):
                 auto_reply_sent = _apply_auto_reply_rules(conv, body, ta)
         except Exception as rule_exc:
             logger.exception("Error in auto-reply rule engine: %s", rule_exc)
@@ -1582,7 +1867,34 @@ def inbound_sms():
         # Clear first-contact flag after first processed message
         if conv.is_first_contact:
             conv.is_first_contact = False
-            db.session.commit()
+        db.session.commit()
+
+        # ── 7. Inbound-awareness side effects ────────────────────────────
+        # Runs exactly once, immediately after the inbound message above is
+        # durably persisted and committed -- independent of whether the
+        # optional outbound auto-reply below succeeds, fails, or needs a
+        # retry. A failed or delayed auto-reply must never suppress
+        # awareness of an inbound message that was already accepted.
+        #
+        # This only runs on the first-time processing pass for a given
+        # MessageSid: the retry short-circuits near the top of this function
+        # (existing_message.processing_status in {"completed",
+        # "outbound_pending", "failed_retryable", "failed_terminal"}) return
+        # before reaching this point, so a Twilio webhook retry of the same
+        # SID cannot re-fire it. Its unique event/message SID also makes each
+        # sub-call individually idempotent if it ever were re-invoked.
+        try:
+            from services.tuya_notification import accept_inbound
+            accept_inbound(
+                ta.company_id, twilio_sid, _normalize_e164(to_number),
+                customer_phone=from_number,
+            )
+        except Exception:
+            db.session.rollback()
+            logger.exception(
+                "Tuya notification acceptance failed sid=%s company_id=%s",
+                twilio_sid, ta.company_id,
+            )
 
         # PostHog — sms_received (safe metadata only, no message body)
         try:
@@ -1628,6 +1940,17 @@ def inbound_sms():
                 correlation_id, twilio_sid, ta.company_id,
             )
 
+        # ── 8. Deliver any queued outbound auto-reply/identity/campaign SMS ─
+        delivered, delivery_status = _deliver_and_finalize_inbound(msg_record_id, ta)
+        if not delivered:
+            logger.warning(
+                "Inbound outbound effects unresolved sid=%s status=%s",
+                twilio_sid, delivery_status,
+            )
+            if delivery_status == "failed_retryable":
+                return '<Response></Response>', 500, {"Content-Type": "text/xml"}
+            return '<Response></Response>', 200, {"Content-Type": "text/xml"}
+
     except Exception as exc:
         if not message_persisted:
             db.session.rollback()
@@ -1638,9 +1961,16 @@ def inbound_sms():
             return '<Response></Response>', 500, {"Content-Type": "text/xml"}
         logger.exception(
             "Inbound SMS downstream failure correlation_id=%s sid=%s company_id=%s "
-            "status=persisted category=post_persistence",
+            "status=retryable category=post_persistence",
             correlation_id, twilio_sid, ta.company_id,
         )
+        db.session.rollback()
+        if msg_record_id:
+            _set_inbound_processing_state(
+                msg_record_id, "failed", "post_persistence_failure"
+            )
+            db.session.commit()
+        return '<Response></Response>', 500, {"Content-Type": "text/xml"}
 
     return '<Response></Response>', 200, {"Content-Type": "text/xml"}
 
@@ -1674,6 +2004,14 @@ def sms_status():
         if not _validate_twilio_signature(ta, "/twilio/sms/status"):
             abort(403)
         if msg:
+            from services.sms_status import is_forward_status_transition
+            if not is_forward_status_transition(msg.status, status):
+                logger.info(
+                    "SMS status: dropped out-of-order/late callback sid=%s current=%s incoming=%s",
+                    sid, msg.status, status,
+                )
+                msg = None
+        if msg:
             msg.status         = status
             msg.error_code     = error_code
             msg.error_message  = error_msg
@@ -1698,6 +2036,14 @@ def sms_status():
         except Exception as campaign_status_exc:
             db.session.rollback()
             logger.warning("Campaign delivery status sync failed: %s", campaign_status_exc)
+
+        try:
+            from services.promotional_optin import sync_solicitation_delivery_status
+            if sync_solicitation_delivery_status(sid, status, error_msg or error_code):
+                db.session.commit()
+        except Exception as promo_status_exc:
+            db.session.rollback()
+            logger.warning("Promotional opt-in solicitation delivery status sync failed: %s", promo_status_exc)
 
     return "", 204
 
@@ -1726,6 +2072,161 @@ def outbound_call_twiml():
         "</Response>"
     )
     return twiml, 200, {"Content-Type": "text/xml"}
+
+
+def _pwa_outbound_fail_twiml(message: str):
+    return (
+        '<?xml version="1.0" encoding="UTF-8"?>\n<Response>\n'
+        f'  <Say voice="Polly.Joanna">{html.escape(message)}</Say>\n'
+        '  <Hangup/>\n</Response>'
+    ), 200, {"Content-Type": "text/xml"}
+
+
+@twilio_bp.route("/voice/pwa-outbound", methods=["POST"])
+@csrf.exempt
+def pwa_outbound_twiml():
+    """TwiML App VoiceUrl for browser-originated (Twilio Voice SDK) outbound calls.
+
+    A registered Twilio.Device calls ``device.connect({params:{To, phone_number_id}})``.
+    Twilio then POSTs here with ``From = client:<voice identity>``. The caller ID
+    is resolved SERVER-SIDE from the *verified* Client identity — the browser
+    never chooses it, and an unauthorized / unverifiable identity is hung up
+    rather than dialed.
+    """
+    from models import CallEvent, TwilioCallLog, TwilioPhoneNumber, User
+    from services.phone_identity import pwa_voice_identity
+    from services.comms_permissions import accessible_phone_numbers
+
+    data = request.values
+    call_sid = (data.get("CallSid") or "").strip()
+    frm = (data.get("From") or "").strip()
+    to_raw = (data.get("To") or data.get("PhoneNumber") or "").strip()
+    requested_pn_id = (data.get("phone_number_id") or "").strip()
+
+    identity = frm[7:] if frm.startswith("client:") else frm
+    m = re.match(r"^luxit_c(\d+)_u(\d+)_[0-9a-f]{16}$", identity)
+    if not m:
+        logger.warning("pwa-outbound: unrecognized client identity sid=%s", call_sid)
+        return _pwa_outbound_fail_twiml("This call could not be authorized. Goodbye.")
+    company_id, user_id = int(m.group(1)), int(m.group(2))
+    if pwa_voice_identity(company_id, user_id) != identity:
+        logger.warning(
+            "pwa-outbound: identity signature mismatch company_id=%s user_id=%s sid=%s",
+            company_id, user_id, call_sid,
+        )
+        return _pwa_outbound_fail_twiml("This call could not be authorized. Goodbye.")
+
+    user = db.session.get(User, user_id)
+    if not user or not getattr(user, "active", True):
+        return _pwa_outbound_fail_twiml("This call could not be authorized. Goodbye.")
+
+    allowed = accessible_phone_numbers(user, company_id)
+    if not allowed:
+        return _pwa_outbound_fail_twiml("No calling number is assigned to your account. Goodbye.")
+
+    caller_id = None
+    if requested_pn_id.isdigit():
+        pn = db.session.get(TwilioPhoneNumber, int(requested_pn_id))
+        if pn and pn.company_id == company_id and pn.is_active and pn.phone_number in allowed:
+            caller_id = pn.phone_number
+    if not caller_id:
+        caller_id = allowed[0]
+
+    digits = re.sub(r"[^\d]", "", to_raw)
+    if not digits:
+        return _pwa_outbound_fail_twiml("No destination number was provided. Goodbye.")
+    if to_raw.startswith("+"):
+        to_number = "+" + digits
+    elif len(digits) == 10:
+        to_number = "+1" + digits
+    else:
+        to_number = "+" + digits
+
+    # Outbound call history — idempotent on CallSid so a Twilio retry never dupes.
+    if call_sid and not TwilioCallLog.query.filter_by(twilio_sid=call_sid).first():
+        pn_row = TwilioPhoneNumber.query.filter_by(
+            company_id=company_id, phone_number=caller_id, is_active=True
+        ).first()
+        try:
+            log = TwilioCallLog(
+                company_id=company_id,
+                phone_number_id=getattr(pn_row, "id", None),
+                twilio_sid=call_sid,
+                direction="outbound",
+                from_number=caller_id,
+                to_number=to_number,
+                status="initiated",
+                assigned_user_id=user_id,
+                answered_by_user_id=user_id,
+                transcription_status="not_requested",
+                raw_payload=dict(data),
+            )
+            db.session.add(log)
+            db.session.flush()
+            db.session.add(CallEvent(
+                call_log_id=log.id, event_type="outbound",
+                provider_event_id=call_sid, payload=dict(data),
+            ))
+            db.session.commit()
+        except Exception as exc:
+            db.session.rollback()
+            logger.warning("pwa-outbound: call log insert failed sid=%s: %s", call_sid, exc)
+
+    logger.info(
+        "pwa-outbound: company_id=%s user_id=%s callerId=%s dest=***%s sid=%s",
+        company_id, user_id, caller_id, to_number[-4:], call_sid,
+    )
+    safe_to = html.escape(to_number, quote=True)
+    safe_cid = html.escape(caller_id, quote=True)
+    twiml = (
+        '<?xml version="1.0" encoding="UTF-8"?>\n<Response>\n'
+        f'  <Dial callerId="{safe_cid}" timeout="30" answerOnBridge="true" '
+        f'action="/twilio/voice/pwa-outbound-complete" method="POST">\n'
+        f'    <Number>{safe_to}</Number>\n'
+        '  </Dial>\n'
+        '</Response>'
+    )
+    return twiml, 200, {"Content-Type": "text/xml"}
+
+
+@twilio_bp.route("/voice/pwa-outbound-complete", methods=["POST"])
+@csrf.exempt
+def pwa_outbound_complete_twiml():
+    """<Dial action> target for browser outbound calls — finalize the call log."""
+    from models import TwilioCallLog
+
+    data = request.values
+    call_sid = (data.get("CallSid") or "").strip()
+    dial_status = (data.get("DialCallStatus") or "").strip()
+    try:
+        dial_dur = int(data.get("DialCallDuration") or 0)
+    except (TypeError, ValueError):
+        dial_dur = 0
+
+    if call_sid:
+        log = TwilioCallLog.query.filter_by(twilio_sid=call_sid).first()
+        if log:
+            log.status = dial_status or log.status
+            if dial_status == "completed":
+                log.status = "completed"
+                log.ended_at = datetime.utcnow()
+            elif dial_status in ("no-answer", "busy", "failed", "canceled"):
+                log.status = dial_status
+            if dial_dur:
+                log.duration = dial_dur
+                if not log.answered_at:
+                    log.answered_at = datetime.utcnow()
+            try:
+                db.session.commit()
+            except Exception as exc:
+                db.session.rollback()
+                logger.warning("pwa-outbound-complete: commit failed sid=%s: %s", call_sid, exc)
+
+    return (
+        '<?xml version="1.0" encoding="UTF-8"?>\n<Response>\n'
+        '  <Say voice="Polly.Joanna">The call has ended. Goodbye.</Say>\n'
+        '  <Hangup/>\n</Response>'
+    ), 200, {"Content-Type": "text/xml"}
 
 
 @twilio_bp.route("/voice/inbound", methods=["POST"])
@@ -1915,18 +2416,37 @@ def _inbound_call_impl():
             f"</Response>"
         )
 
-    number_route = getattr(ta, "during_hours_route", None) if in_hours else getattr(ta, "after_hours_route", None)
-    settings_route = (settings.during_hours_route if settings and in_hours else settings.after_hours_route if settings else None)
-    # Treat model defaults as unset so tenant PhoneSettings keep routing calls unless
-    # the selected phone number has a non-default explicit route.
-    if settings_route and number_route in (None, "", "ring_pwa") and settings_route != number_route:
-        route = settings_route
+    if in_hours:
+        # Daytime precedence is unchanged: the tenant-wide PhoneSettings route
+        # keeps routing calls unless the selected number carries a non-default
+        # explicit route ("forward" / "voicemail" / ...). The number-model
+        # default is "ring_pwa", so a stored "ring_pwa" is treated as "not
+        # configured" here and does not shadow a company-level "forward".
+        number_route = (getattr(ta, "during_hours_route", None) or "").strip() or None
+        settings_route = (settings.during_hours_route if settings else None)
+        settings_route = (settings_route or "").strip() or None
+        if settings_route and number_route in (None, "ring_pwa") and settings_route != number_route:
+            route = settings_route
+        else:
+            route = number_route or settings_route
     else:
+        # After-hours: an explicit per-number after_hours_route WINS over the
+        # tenant PhoneSettings route. The number-model default here is
+        # "voicemail", so a stored "ring_pwa" / "forward" is unambiguously a
+        # deliberate operator choice -- it must not be demoted to the company
+        # route (prod defect 2026-09-08: +19165989519 after_hours_route=ring_pwa
+        # was overridden by PhoneSettings after_hours_route=voicemail, so an
+        # after-hours call fell to voicemail and the PWA never rang). A number
+        # with no route of its own falls back to the company route.
+        number_route = (getattr(ta, "after_hours_route", None) or "").strip() or None
+        settings_route = (settings.after_hours_route if settings else None)
+        settings_route = (settings_route or "").strip() or None
         route = number_route or settings_route
     configured_call_forward_to = getattr(ta, "call_forwarding_number", None) or getattr(ta, "call_forward_to", None)
+    settings_forward_to = ((settings.forward_number if in_hours else settings.after_hours_forward_number) if settings else None)
     forward_to = (
-        (configured_call_forward_to if pn else None)
-        or ((settings.forward_number if in_hours else settings.after_hours_forward_number) if settings else None)
+        (configured_call_forward_to if pn else settings_forward_to)
+        or settings_forward_to
         or configured_call_forward_to
     )
     fallback_to = ((settings.fallback_forward_number if in_hours else settings.after_hours_fallback_forward_number) if settings else None)
@@ -1957,11 +2477,16 @@ def _inbound_call_impl():
             f"</Response>"
         )
 
-    if in_hours and configured_call_forward_to and (ta.voice_forwarding_enabled or getattr(ta, "call_forwarding_enabled", False)):
+    if route == "forward" and forward_to and (settings_forward_to or ta.voice_forwarding_enabled or getattr(ta, "call_forwarding_enabled", False)):
         # Explicit per-line call forwarding wins over browser ringing. This
         # applies only to voice webhooks; SMS routing never reads these fields.
-        twiml = _dial_twiml(configured_call_forward_to)
-    elif in_hours and (route in (None, "ring_pwa")):
+        twiml = _dial_twiml(forward_to, fallback_to)
+    elif route == "ring_pwa" or (in_hours and route is None):
+        # Explicit route == "ring_pwa" rings the PWA regardless of business
+        # hours -- an operator who sets after_hours_route=ring_pwa wants
+        # after-hours calls to reach the browser, not voicemail. The IMPLICIT
+        # daytime default (route is None) stays gated on in_hours so an
+        # unconfigured number still falls through to voicemail after hours.
         if log:
             log.status = "ringing"
             db.session.commit()
@@ -1987,23 +2512,92 @@ def _inbound_call_impl():
         except Exception as exc:
             logger.debug("PWA incoming call event failed: %s", exc)
         caller_id = ta.from_phone or to_number
-        client_identity = _pwa_voice_identity(ta.company_id)
+        client_identities = []
+        approved_devices = []
+        _routing_targets_configured = False
+        try:
+            from models import Company, PWADevice, User
+            from services.phone_identity import pwa_voice_identity
+            from services.phone_availability import available_user_ids
+            from services.receive_calls import receive_calls_user_ids
+
+            company_row = db.session.get(Company, ta.company_id)
+            require_approved_devices = bool(getattr(company_row, "require_approved_pwa_devices", False))
+            # Server is the authority on who receives a routed call: the AND of
+            # Receive Calls ON and 'available' for this tenant. A stale/malicious
+            # client that registered a Twilio.Device cannot make an excluded user
+            # ring — its identity is simply never placed in the <Dial>.
+            eligible = receive_calls_user_ids(ta.company_id) & available_user_ids(ta.company_id)
+
+            if require_approved_devices:
+                # Device approval is an authorization requirement: ring only an
+                # approved + active device whose user is eligible. The identity
+                # is device-scoped and matches the token minted for that device.
+                approved_devices = [
+                    device for device in PWADevice.query.filter_by(
+                        company_id=ta.company_id,
+                        approved_status="approved",
+                        lifecycle_status="active",
+                    ).all()
+                    if not (device.phone_number_id and pn and device.phone_number_id != pn.id)
+                ]
+                _routing_targets_configured = bool(approved_devices)
+                client_identities = [
+                    pwa_voice_identity(ta.company_id, device.user_id, device.device_key)
+                    for device in approved_devices
+                    if device.user_id is None or device.user_id in eligible
+                ]
+            else:
+                # Device approval is NOT an authorization requirement. Ring every
+                # eligible user on their per-user, non-device Voice identity —
+                # exactly the identity /api/phone/voice-token mints for them —
+                # independent of any PWADevice row. A stale / pending / missing
+                # device_key must not drop an otherwise-eligible user from
+                # routing, and a first-ever call (no device row yet) must not
+                # fall straight to voicemail.
+                _routing_targets_configured = bool(eligible)
+                for uid in sorted(u for u in eligible if u is not None):
+                    user_row = db.session.get(User, uid)
+                    if not user_row or not getattr(user_row, "active", True):
+                        continue
+                    client_identities.append(pwa_voice_identity(ta.company_id, uid))
+        except Exception:
+            logger.exception("Unable to resolve eligible PWA voice devices", extra={"company_id": ta.company_id})
+        if not client_identities:
+            # No identity to ring. Either nobody is configured/reachable, or
+            # (approval required) no approved+active device exists. Every path
+            # that could mint a Voice token is per-user or per-device — no client
+            # ever holds a bare company-scoped identity — so there is nothing to
+            # dial. Fail closed to the business voicemail flow; the call is never
+            # silently lost.
+            _routing_targets_reason = "configured but unreachable" if _routing_targets_configured else "none configured"
+            logger.info("Voice inbound: no PWA client to ring (%s), routing to voicemail company_id=%s",
+                        _routing_targets_reason, ta.company_id)
+            twiml = _voicemail_twiml(after_hours=not in_hours)
+            _ring_pwa_twiml_done = True
+        else:
+            _ring_pwa_twiml_done = False
         safe_from = html.escape(from_number or "", quote=True)
         safe_caller = html.escape(caller_name or from_number or "", quote=True)
         safe_caller_id = html.escape(caller_id or "", quote=True)
-        twiml = (
-            '<?xml version="1.0" encoding="UTF-8"?>\n'
-            '<Response>\n'
-            f'  <Dial callerId="{safe_caller_id}" timeout="{timeout}" action="/twilio/voice/no-answer?to={html.escape(to_number or "", quote=True)}" method="POST"{record_attr}>\n'
-            '    <Client>\n'
-            f'      <Identity>{client_identity}</Identity>\n'
-            f'      <Parameter name="call_log_id" value="{log.id if log else ""}"/>\n'
-            f'      <Parameter name="from_number" value="{safe_from}"/>\n'
-            f'      <Parameter name="caller_name" value="{safe_caller}"/>\n'
-            '    </Client>\n'
-            '  </Dial>\n'
-            '</Response>'
-        )
+        if not locals().get("_ring_pwa_twiml_done"):
+            clients_twiml = "".join(
+                '    <Client>\n'
+                f'      <Identity>{identity}</Identity>\n'
+                f'      <Parameter name="call_log_id" value="{log.id if log else ""}"/>\n'
+                f'      <Parameter name="from_number" value="{safe_from}"/>\n'
+                f'      <Parameter name="caller_name" value="{safe_caller}"/>\n'
+                '    </Client>\n'
+                for identity in client_identities
+            )
+            twiml = (
+                '<?xml version="1.0" encoding="UTF-8"?>\n'
+                '<Response>\n'
+                f'  <Dial callerId="{safe_caller_id}" timeout="{timeout}" action="/twilio/voice/no-answer?to={html.escape(to_number or "", quote=True)}" method="POST"{record_attr}>\n'
+                f'{clients_twiml}'
+                '  </Dial>\n'
+                '</Response>'
+            )
     elif route == "forward" and forward_to:
         twiml = _dial_twiml(forward_to, fallback_to)
     elif route == "voicemail":
@@ -2048,9 +2642,28 @@ def voice_no_answer():
 
     pn, ta = _resolve_number(to_number)
     ta = _effective_twilio_config(ta, pn)
+    if not hasattr(g, "voice_inbound_debug"):
+        g.voice_inbound_debug = {}
     g.voice_inbound_debug.update({"company_id": getattr(ta, "company_id", None), "caller_id": getattr(ta, "from_phone", None) or to_number}) if ta else None
 
     logger.info("Voice no-answer: sid=%s dial_status=%s", call_sid, dial_status)
+
+    # A call that was actually ANSWERED and then ended (either party hung up)
+    # must NOT fall through to voicemail -- otherwise the party still on the
+    # line hears the greeting and gets recorded (prod smoke 2026-08-30: browser
+    # hung up an answered call, the PSTN caller then heard the voicemail
+    # greeting). Only genuinely unconnected outcomes go to voicemail.
+    if str(dial_status).lower() in ("completed", "answered"):
+        if call_sid:
+            log = TwilioCallLog.query.filter_by(twilio_sid=call_sid).first()
+            if log and (log.status or "") not in ("no-answer", "voicemail", "missed"):
+                log.status = log.status or "completed"
+                db.session.commit()
+        logger.info("Voice no-answer: answered call ended (dial_status=%s) sid=%s -> hangup",
+                    dial_status, call_sid)
+        return (
+            '<?xml version="1.0" encoding="UTF-8"?>\n<Response>\n  <Hangup/>\n</Response>'
+        ), 200, {"Content-Type": "text/xml"}
 
     # Update call log
     if call_sid:
@@ -2100,13 +2713,35 @@ def voice_no_answer():
         f'<?xml version="1.0" encoding="UTF-8"?>\n'
         f"<Response>\n"
         f"  {greeting_xml}\n"
-        f'  <Record maxLength="180" playBeep="true"\n'
+        f'  <Record maxLength="180" timeout="5" playBeep="true" trim="trim-silence"\n'
+        f'          action="/twilio/voice/recording-complete" method="POST"\n'
         f'          recordingStatusCallback="/twilio/voice/recording"\n'
         f'          recordingStatusCallbackMethod="POST" />\n'
         f"  <Say>We did not receive a recording. Goodbye.</Say>\n"
         f"</Response>"
     )
     return twiml, 200, {"Content-Type": "text/xml"}
+
+
+@twilio_bp.route("/voice/recording-complete", methods=["POST"])
+@csrf.exempt
+def voice_recording_complete():
+    """Terminal <Record> action for the voicemail flow.
+
+    Without an explicit `action`, Twilio re-requests the serving URL
+    (/twilio/voice/no-answer) once the recording finishes -- which re-runs the
+    no-answer handler and re-serves the greeting + <Record>, looping the
+    voicemail prompt (staging smoke 2026-08-30: caller never heard a clean
+    greeting, only a 2s fragment was captured, no-answer POSTed twice for one
+    call). Pointing <Record action> here ends the call cleanly instead.
+    """
+    call_sid = request.form.get("CallSid", "")
+    logger.info("Voicemail recording finished: sid=%s dur=%s digits=%s",
+                call_sid, request.form.get("RecordingDuration"), request.form.get("Digits"))
+    return (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        "<Response>\n  <Say>Thank you. Your message has been received. Goodbye.</Say>\n  <Hangup/>\n</Response>"
+    ), 200, {"Content-Type": "text/xml"}
 
 
 @twilio_bp.route("/voice/recording", methods=["POST"])
@@ -2340,19 +2975,40 @@ def comms_device_action(device_id):
         device.approved_status = "approved"
         device.approved_at = now
         device.approved_by_user_id = current_user.id
+        device.lifecycle_status = "active" if device.push_enabled else "pending"
         flash("Device approved.", "success")
-    elif action in {"revoke", "block"}:
+    elif action in {"revoke", "block", "disable"}:
         device.approved_status = "revoked"
         device.revoked_at = now
         device.revoked_by_user_id = current_user.id
         device.push_enabled = False
-        flash("Device revoked.", "success")
+        device.lifecycle_status = "disabled"
+        device.disabled_at = now
+        from models import PushSubscription
+        PushSubscription.query.filter_by(company_id=company.id, user_id=device.user_id, device_key=device.device_key).update({"is_active": False, "updated_at": now})
+        flash("Device disabled.", "success")
     elif action == "rename":
         device.device_name = (request.form.get("device_name") or device.device_name or "PWA Device")[:120]
         flash("Device renamed.", "success")
+    elif action == "remove":
+        from models import PushSubscription
+        PushSubscription.query.filter_by(company_id=company.id, user_id=device.user_id, device_key=device.device_key).delete(synchronize_session=False)
+        db.session.delete(device)
+        flash("Device removed.", "success")
+    elif action == "test":
+        if device.lifecycle_status != "active" or not device.push_enabled:
+            flash("Only active devices can receive a test notification.", "warning")
+            return redirect(url_for("twilio.comms_hub", tab="devices"))
+        from inbox_pwa import send_pwa_push_notification
+        result = send_pwa_push_notification(
+            company.id, user_ids=[device.user_id], device_key=device.device_key,
+            title="LUXit Communications", body="Test notification delivered through the production push service.",
+            link="/app/inbox", tag="device-test", event_type="push_test",
+        )
+        flash("Test notification sent." if result.get("sent") else "Test notification was not accepted by the push provider.", "success" if result.get("sent") else "warning")
     else:
         abort(400)
-    db.session.add(MarketingAuditLog(company_id=company.id, created_by_user_id=current_user.id, entity_type="pwa_device", entity_id=device.id, action=f"pwa_device_{action}", details={"device_key": device.device_key, "user_id": device.user_id}))
+    db.session.add(MarketingAuditLog(company_id=company.id, created_by_user_id=current_user.id, entity_type="pwa_device", entity_id=device.id, action=f"pwa_device_{action}", details={"user_id": device.user_id}))
     db.session.commit()
     return redirect(url_for("twilio.comms_hub", tab="devices"))
 
@@ -2377,7 +3033,7 @@ def comms_device_settings():
 def comms_hub():
     """Communications Hub — tabbed wrapper for SMS, Calls, Voicemail, Contacts, etc."""
     from flask_login import current_user
-    from models import TwilioConversation, TwilioCallLog, TwilioPhoneNumber, UserCompanyAccess, User, AutoReplyRule, VoiceVoicemailMessage, MarketingAuditLog
+    from models import Contact, TwilioConversation, TwilioCallLog, TwilioPhoneNumber, UserCompanyAccess, User, AutoReplyRule, VoiceVoicemailMessage, MarketingAuditLog
 
     company = _get_company()
     if not company:
@@ -2413,6 +3069,15 @@ def comms_hub():
             )
         )
     conversations = q.order_by(TwilioConversation.last_message_at.desc()).limit(100).all()
+    from services.contact_resolver import resolve_contact_identity
+    conversation_resolutions = {}
+    for conv in conversations:
+        resolved = resolve_contact_identity(company.id, phone=conv.from_number, contact_id=conv.contact_id, allow_enrichment=True)
+        conversation_resolutions[conv.id] = resolved
+        if resolved.canonical_contact_id and not conv.contact_id:
+            conv.contact_id = resolved.canonical_contact_id
+        if resolved.safe_display_name != "Name needed":
+            conv.contact_name = resolved.safe_display_name
     unread_count  = TwilioConversation.query.filter_by(company_id=company.id, is_read=False).count()
 
     # ── Call log data ─────────────────────────────────────────────────────
@@ -2428,6 +3093,12 @@ def comms_hub():
         missed_calls_count = TwilioCallLog.query.filter_by(
             company_id=company.id, status="no-answer"
         ).count()
+        for call in calls:
+            lookup_phone = call.from_number if call.direction == "inbound" else call.to_number
+            resolved = resolve_contact_identity(company.id, phone=lookup_phone, contact_id=getattr(call, "contact_id", None), allow_enrichment=True)
+            if resolved.safe_display_name != "Name needed":
+                call.caller_name = resolved.safe_display_name
+        db.session.commit()
     except Exception:
         pass
 
@@ -2435,6 +3106,8 @@ def comms_hub():
     gc_connected = False
     gc_last_sync = None
     gc_contacts  = 0
+    gc_status = "disconnected"
+    gc_last_error = None
     try:
         from services.google_contacts import get_token
         tok = get_token(current_user.id)
@@ -2442,6 +3115,8 @@ def comms_hub():
             gc_connected = True
             gc_contacts  = tok.contacts_synced or 0
             gc_last_sync = tok.last_sync_at.strftime("%-d %b %H:%M") if tok.last_sync_at else None
+            gc_status = getattr(tok, "last_sync_status", None) or "connected"
+            gc_last_error = getattr(tok, "sync_error", None)
     except Exception:
         pass
 
@@ -2546,11 +3221,18 @@ def comms_hub():
         except Exception as exc:
             logger.warning("Could not preview contact dedupe: %s", exc)
 
+    approval_contacts = []
+    if tab == "identity_review":
+        approval_contacts = Contact.query.filter(
+            Contact.company_id == company.id, Contact.is_active.is_(True),
+            db.or_(Contact.identity_conflict_status != "none", Contact.approval_status == "review_required"),
+        ).order_by(Contact.created_at.asc()).limit(200).all()
     return render_template(
         "twilio/comms_hub.html",
         tab=tab,
         company=company,
         conversations=conversations,
+        conversation_resolutions=conversation_resolutions,
         unread_count=unread_count,
         ta=ta,
         status_filter=status_filter,
@@ -2560,6 +3242,8 @@ def comms_hub():
         gc_connected=gc_connected,
         gc_last_sync=gc_last_sync,
         gc_contacts=gc_contacts,
+        gc_status=gc_status,
+        gc_last_error=gc_last_error,
         is_admin=is_admin,
         can_admin_tuya=can_admin_tuya,
         tuya=tuya,
@@ -2575,7 +3259,37 @@ def comms_hub():
         activity=activity,
         devices=devices,
         dedupe_preview=dedupe_preview,
+        approval_contacts=approval_contacts,
     )
+
+
+@twilio_bp.route("/comms/contacts/<int:contact_id>/identity-review", methods=["POST"])
+@login_required
+def comms_identity_review(contact_id):
+    from models import Contact, MarketingAuditLog
+    from services.comms_permissions import can_manage_users
+    from services.contact_audience import add_contact_tag
+    company = _get_company()
+    if not company: abort(404)
+    if not can_manage_users(current_user, company.id): abort(403)
+    contact = Contact.query.filter_by(id=contact_id, company_id=company.id, is_active=True).first_or_404()
+    action = request.form.get("action")
+    if action not in {"approve", "reject"}: abort(400)
+    now = datetime.utcnow()
+    if action == "approve":
+        contact.approval_status, contact.approved_at = "approved", contact.approved_at or now
+        contact.approved_by_user_id, contact.approval_source = current_user.id, "communications_hub"
+        contact.approval_rejected_at, contact.identity_conflict_status = None, "none"
+        if contact.identity_status == "awaiting_confirmation" and contact.pending_first_name and contact.pending_last_name and contact.pending_email:
+            contact.identity_status = "confirmed"
+        add_contact_tag(contact, "Approved Contact")
+    else:
+        contact.approval_status, contact.approval_rejected_at = "rejected", now
+    db.session.add(MarketingAuditLog(company_id=company.id, created_by_user_id=current_user.id,
+        entity_type="contact", entity_id=contact.id, action=f"identity_{action}", details={"conflict_status": contact.identity_conflict_status}))
+    db.session.commit()
+    flash(f"Identity {action}d.", "success")
+    return redirect(url_for("twilio.comms_hub", tab="identity_review"))
 
 
 @twilio_bp.route("/comms/tuya-notifications")
@@ -2791,11 +3505,14 @@ def conversation(conv_id):
         db.session.commit()
 
     messages = conv.messages.order_by(db.text("twilio_message.created_at")).all()
+    from services.contact_resolver import resolve_contact_identity
+    contact_resolution = resolve_contact_identity(company.id, phone=conv.from_number, contact_id=conv.contact_id, allow_enrichment=True)
     return render_template(
         "twilio/conversation.html",
         conv=conv,
         messages=messages,
         ta=ta,
+        contact_resolution=contact_resolution,
     )
 
 
@@ -2827,13 +3544,18 @@ def send_message():
     if not conv:
         conv = _get_or_create_conversation(company.id, to_number, ta.from_phone or "")
 
-    result = sendConversationSms(conv.id, body, twilio_account=ta, to_number=to_number)
-    if result.get("success"):
+    from services.sms_send_idempotency import send_with_idempotency
+    result = send_with_idempotency(
+        company_id=company.id, user_id=current_user.id, conversation_id=conv.id,
+        to_number=to_number, body=body, twilio_account=ta,
+        idempotency_key=payload.get("idempotency_key"),
+    )
+    if result.get("success") and not result.get("idempotent"):
         conv.last_message_at      = datetime.utcnow()
         conv.last_message_preview = f"You: {body[:150]}"
         conv.message_count        = (conv.message_count or 0) + 1
         db.session.commit()
-    else:
+    elif not result.get("success"):
         logger.error("/twilio/send failed company=%s conv=%s to=%s error=%s", company.id, conv.id, to_number, result.get("error"))
     return jsonify(result)
 
@@ -2876,12 +3598,20 @@ def upload_voicemail():
 
 
 @twilio_bp.route("/fallback", methods=["GET", "POST"])
+@csrf.exempt
 def twilio_fallback():
     """
     Twilio calls this URL when the primary SMS or Voice webhook fails to respond.
     Returns a valid TwiML response so the call/message is handled gracefully,
     logs the failure so it appears in the error dashboard, and never returns
     a non-2xx status (which would cause Twilio to retry and double-log).
+
+    CSRF-exempt like every other Twilio server-to-server webhook route: Twilio
+    POSTs here with no session/CSRF token, so without the exemption Flask-WTF
+    raised CSRFError -> the app's handler 302-redirected -> Twilio followed with
+    a GET to the POST-only /twilio/voice/inbound -> 405, and the caller got an
+    unrecoverable failure (prod 2026-09-08). GET is accepted too so a stray
+    redirect-follow can never 405-loop.
     """
     try:
         from flask import request as _req
@@ -2889,24 +3619,14 @@ def twilio_fallback():
         error_url  = _req.values.get("ErrorUrl", "")
         call_sid   = _req.values.get("CallSid")
         msg_sid    = _req.values.get("MessageSid")
+        # ErrorCode / ErrorUrl / CallSid / MessageSid are Twilio-supplied and
+        # carry no secrets. This log line is the durable record of a primary
+        # webhook failure; keep the handler itself dependency-free so it can
+        # never be the thing that fails.
         logger.error(
             "Twilio fallback triggered: ErrorCode=%s ErrorUrl=%s CallSid=%s MessageSid=%s",
             error_code, error_url, call_sid, msg_sid,
         )
-        # Try to log to the error dashboard
-        try:
-            from models import AppError
-            from extensions import db as _db
-            _db.session.add(AppError(
-                error_type="TwilioFallback",
-                error_message=f"Primary webhook failed (ErrorCode {error_code}). URL: {error_url}",
-                severity="high",
-                source="twilio_fallback",
-                context=dict(_req.values),
-            ))
-            _db.session.commit()
-        except Exception:
-            pass
     except Exception as log_exc:
         logger.warning("Fallback logging error: %s", log_exc)
 
@@ -2942,8 +3662,8 @@ def _auto_configure_twilio_webhook(ta):
         status_url   = f"{base}/twilio/sms/status"
         sms_fallback = ta.sms_fallback_url or f"{base}/twilio/fallback"
 
-        from twilio.rest import Client
-        client = Client(sid, token)
+        from services.twilio_gate import get_twilio_client
+        client = get_twilio_client(sid, token, boundary="twilio_sms._auto_configure_twilio_webhook")
         client.messaging.v1.services(ta.messaging_service_sid).update(
             inbound_request_url=inbound_url,
             inbound_method="POST",

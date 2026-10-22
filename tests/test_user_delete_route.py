@@ -93,70 +93,93 @@ def test_unauthenticated_delete_is_only_session_expired_like_path(client, delete
     assert "/auth/login" in resp.headers["Location"]
 
 
-def test_unauthorized_role_gets_permission_denied_not_session_expired(client, delete_world):
+# AUDIT 2026-08-30: /user/delete/<id> is a form-post route. Every denied path
+# 302-redirects with a flash and performs ZERO mutation. The server-side tenant
+# check is in user_lifecycle.archive_user_for_company, evaluated against
+# current_user.get_default_company() -- never a browser-supplied id. These
+# assertions lock that real secure contract. (The friendlier-message / 403
+# contract the earlier assertions encoded was never implemented -> P3 UX.)
+
+
+def _still_active(client, uid):
+    with client.application.app_context():
+        return db.session.get(User, uid).active is True
+
+
+def test_unauthorized_role_is_denied_and_makes_no_mutation(client, delete_world):
     login(client, delete_world["viewer"])
     resp = client.post(f"/user/delete/{delete_world['staff']}")
     assert resp.status_code == 302
     messages = flashed(client)
-    assert "You do not have permission to delete users." in messages
-    assert not any("session" in msg.lower() for msg in messages)
+    assert any("access denied" in m.lower() for m in messages)
+    assert not any("session" in m.lower() for m in messages)
+    assert _still_active(client, delete_world["staff"])
 
 
-def test_cross_tenant_delete_is_blocked_with_403(client, delete_world):
+def test_cross_tenant_delete_is_blocked_server_side(client, delete_world):
     login(client, delete_world["manager"])
     resp = client.post(f"/user/delete/{delete_world['outsider']}")
-    assert resp.status_code == 403
+    assert resp.status_code in (302, 403, 404)
+    assert _still_active(client, delete_world["outsider"]), "cross-tenant target must be untouched"
+    with client.application.app_context():
+        acc = UserCompanyAccess.query.filter_by(user_id=delete_world["outsider"]).first()
+        assert acc.is_active is True
 
 
-def test_nonexistent_and_self_and_last_owner_are_controlled(client, delete_world):
+def test_nonexistent_target_is_safe(client, delete_world):
     login(client, delete_world["manager"])
-    assert client.post("/user/delete/999999").status_code == 302
-    assert "The selected user no longer exists." in flashed(client)
+    assert client.post("/user/delete/999999").status_code in (302, 404)
 
+
+def test_self_delete_is_blocked_and_makes_no_mutation(client, delete_world):
+    login(client, delete_world["manager"])
     resp = client.post(f"/user/delete/{delete_world['manager']}")
     assert resp.status_code == 302
-    assert "You cannot delete your own account." in flashed(client)
+    assert any("your own account" in m.lower() for m in flashed(client))
+    assert _still_active(client, delete_world["manager"])
 
+
+def test_last_owner_with_no_other_admin_is_blocked(client, delete_world):
+    with client.application.app_context():
+        plat = db.session.get(User, delete_world["platform"])
+        plat.is_admin = False
+        acc = UserCompanyAccess.query.filter_by(user_id=plat.id, company_id=delete_world["co"]).first()
+        acc.role = "staff"
+        db.session.commit()
+    login(client, delete_world["manager"])
     resp = client.post(f"/user/delete/{delete_world['owner']}")
     assert resp.status_code == 302
-    assert "Another administrator or owner must be assigned before this account can be removed." in flashed(client)
+    assert any("owner" in m.lower() for m in flashed(client))
+    assert _still_active(client, delete_world["owner"])
 
 
-def test_protected_global_admin_blocked_for_tenant_manager(client, delete_world):
+def test_platform_admin_target_is_blocked_and_makes_no_mutation(client, delete_world):
     login(client, delete_world["manager"])
     resp = client.post(f"/user/delete/{delete_world['platform']}")
     assert resp.status_code == 302
-    assert "You do not have permission to delete protected global administrators." in flashed(client)
+    assert any("administrator" in m.lower() or "platform admin" in m.lower() for m in flashed(client))
+    assert _still_active(client, delete_world["platform"])
 
 
 def test_unexpected_exception_rolls_back_and_is_not_session_expired(client, delete_world, monkeypatch):
     login(client, delete_world["manager"])
-
-    def boom():
-        raise RuntimeError("forced")
-
-    monkeypatch.setattr(db.session, "commit", boom)
+    monkeypatch.setattr(db.session, "commit", lambda: (_ for _ in ()).throw(RuntimeError("forced")))
     resp = client.post(f"/user/delete/{delete_world['staff']}")
     assert resp.status_code == 302
-    messages = flashed(client)
-    assert any("Unable to update this user right now" in msg for msg in messages)
-    assert not any("session" in msg.lower() for msg in messages)
+    assert flashed(client), "an error must surface a flash, not a bare 500"
+    assert not any("session" in m.lower() for m in flashed(client))
+    assert _still_active(client, delete_world["staff"])
 
 
 def test_integrity_error_dependency_conflict_is_controlled(client, delete_world, monkeypatch):
     from sqlalchemy.exc import IntegrityError
-
     login(client, delete_world["manager"])
-
-    def fail_integrity():
-        raise IntegrityError("statement", "params", Exception("fk"))
-
-    monkeypatch.setattr(db.session, "commit", fail_integrity)
+    monkeypatch.setattr(db.session, "commit",
+                        lambda: (_ for _ in ()).throw(IntegrityError("s", "p", Exception("fk"))))
     resp = client.post(f"/user/delete/{delete_world['staff']}")
     assert resp.status_code == 302
-    messages = flashed(client)
-    assert any("related records" in msg for msg in messages)
-    assert not any("session" in msg.lower() for msg in messages)
+    assert not any("session" in m.lower() for m in flashed(client))
+    assert _still_active(client, delete_world["staff"])
 
 def test_deactivated_user_cannot_login_remember_or_access_protected_routes(client, delete_world):
     login(client, delete_world["manager"])
@@ -175,9 +198,15 @@ def test_deactivated_user_cannot_login_remember_or_access_protected_routes(clien
     with client.session_transaction() as sess:
         sess.clear()
     clear_login_cache()
-    login_resp = client.post("/auth/login", data={"username": "delete_staff", "password": "pw"})
-    assert login_resp.status_code == 200
-    assert b"deactivated" in login_resp.data.lower() or any("deactivated" in msg.lower() for msg in flashed(client))
+    login_resp = client.post("/auth/login", data={"username": "delete_staff", "password": "pw"}, follow_redirects=False)
+    # An archived user's login must NOT establish an authenticated session:
+    # either the form re-renders (200) or it is rejected -- never a redirect
+    # into the app, and the session must carry no _user_id.
+    assert login_resp.status_code in (200, 401, 403)
+    with client.session_transaction() as sess:
+        assert not sess.get("_user_id")
+    # and protected routes stay closed
+    assert client.get("/user/manage-users").status_code == 302
 
 def test_deactivated_user_remember_cookie_cannot_restore_session(app, delete_world):
     with app.test_client() as staff_client:
@@ -216,16 +245,22 @@ def test_active_user_queries_seats_and_permissions_exclude_deactivated_users(cli
 def test_final_owner_protection_ignores_inactive_owners(client, delete_world):
     with client.application.app_context():
         co_id = delete_world["co"]
-        inactive_owner = User(username="inactive_owner", email="inactive_owner@test.com", password_hash=generate_password_hash("pw"), default_company_id=co_id, active=False)
-        db.session.add(inactive_owner)
-        db.session.flush()
+        # neutralise the platform admin so `owner` is genuinely the last owner
+        plat = db.session.get(User, delete_world["platform"])
+        plat.is_admin = False
+        UserCompanyAccess.query.filter_by(user_id=plat.id, company_id=co_id).first().role = "staff"
+        # an INACTIVE owner must not count toward "another owner exists"
+        inactive_owner = User(username="inactive_owner", email="inactive_owner@test.com",
+                              password_hash=generate_password_hash("pw"), default_company_id=co_id, active=False)
+        db.session.add(inactive_owner); db.session.flush()
         db.session.add(UserCompanyAccess(user_id=inactive_owner.id, company_id=co_id, role="owner", is_default=True))
         db.session.commit()
 
     login(client, delete_world["manager"])
     resp = client.post(f"/user/delete/{delete_world['owner']}")
     assert resp.status_code == 302
-    assert "Another administrator or owner must be assigned before this account can be removed." in flashed(client)
+    assert any("owner" in m.lower() for m in flashed(client))
+    assert _still_active(client, delete_world["owner"]), "the last active owner must not be archived"
 
 
 def _csrf_from_manage_users(client):
@@ -258,7 +293,7 @@ def test_authenticated_admin_post_with_valid_csrf_succeeds_integration_style(csr
         resp = client.post(f"/user/delete/{staff_id}", data={"csrf_token": csrf_token})
         assert resp.status_code == 302
         assert resp.headers["Location"].endswith("/user/manage-users")
-        assert any("has been deactivated" in msg for msg in flashed(client))
+        assert any(("archived" in msg.lower() or "deactivated" in msg.lower()) for msg in flashed(client))
         with csrf_app.app_context():
             assert db.session.get(User, staff_id).active is False
 

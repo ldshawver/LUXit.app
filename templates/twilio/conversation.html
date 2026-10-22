@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}{{ conv.contact_name or conv.from_number }} — SMS Inbox{% endblock %}
+{% block title %}{{ contact_resolution.safe_display_name }} — SMS Inbox{% endblock %}
 
 {% block content %}
 <div class="container-fluid py-3" style="max-width:860px;">
@@ -10,7 +10,8 @@
       <i data-feather="arrow-left" style="width:13px;height:13px;"></i>
     </a>
     <div>
-      <h5 class="mb-0 fw-bold">{{ conv.contact_name or conv.from_number }}</h5>
+      <h5 class="mb-0 fw-bold">{{ contact_resolution.safe_display_name }}</h5>
+      {% if contact_resolution.masked_phone %}<small class="text-muted">{{ contact_resolution.masked_phone }}</small>{% endif %}
       <small class="text-muted">
         {{ conv.from_number }}
         {% if conv.is_opted_out %} · <span class="text-danger">Opted Out</span>{% endif %}

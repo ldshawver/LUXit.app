@@ -89,7 +89,7 @@
   const params = new URLSearchParams(location.search);
   const path = location.pathname;
   let active = 'messages';
-  if (path.includes('/dial-pad') || params.has('keypad')) active = 'keypad';
+  if (path.includes('/dial-pad') || path.includes('/phone') || params.has('keypad')) active = 'keypad';
   else if (path.includes('/recents') || path.includes('/calls') || path.includes('/voicemail')) active = 'recents';
   else if (path.includes('/settings') || path.includes('/favorites') || path.includes('/contacts') || path.includes('/greetings') || params.has('settings')) active = 'settings';
   const messageItem = document.querySelector('[data-pwa-nav="messages"]');

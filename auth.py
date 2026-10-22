@@ -9,7 +9,7 @@ from sqlalchemy import or_, text as db_text
 from sqlalchemy.exc import SQLAlchemyError
 from werkzeug.security import check_password_hash
 
-from models import User
+from models import Company, User
 
 logger = logging.getLogger(__name__)
 
@@ -398,11 +398,13 @@ def register():
 
             company_id = None
             if company_name:
-                result = _db.session.execute(
-                    db_text("INSERT INTO company (name, is_active) VALUES (:n, TRUE) RETURNING id"),
-                    {"n": company_name},
-                )
-                company_id = result.fetchone()[0]
+                # Create via the ORM so the canonical Company model column
+                # defaults are applied — a raw INSERT skips them and trips the
+                # NOT NULL columns that only carry a Python-side default.
+                company = Company(name=company_name, is_active=True)
+                _db.session.add(company)
+                _db.session.flush()
+                company_id = company.id
 
             user = User(
                 username=username,

@@ -1,6 +1,7 @@
 import csv
 import io
 import base64
+import hmac
 import logging
 import os
 import uuid
@@ -10,6 +11,7 @@ from flask_login import login_required, current_user
 from sqlalchemy import or_, case, text, func
 from sqlalchemy.exc import IntegrityError
 from extensions import db, csrf
+from services.contact_consent import has_explicit_email_opt_out
 try:
     from models import (
         Contact, Campaign, EmailTemplate, CampaignRecipient, EmailTracking,
@@ -179,7 +181,7 @@ def inject_company_context():
             current_company = None
 
         try:
-            from models import UserQuickLink, ActivityLog, Contact, Campaign, SMSCampaign, Notification, InboxMessage
+            from models import UserQuickLink, ActivityLog, Contact, Campaign, SMSCampaign, Notification, InboxMessage, NOTIFICATION_COMMUNICATIONS_EVENT_TYPES
             user_quick_links = UserQuickLink.query.filter_by(user_id=current_user.id).order_by(UserQuickLink.position).all()
             recent_activities = ActivityLog.query.filter_by(user_id=current_user.id).order_by(ActivityLog.created_at.desc()).limit(5).all()
 
@@ -187,7 +189,11 @@ def inject_company_context():
             usage_contacts = Contact.query.filter_by(company_id=company_id).count() if company_id else 0
             usage_emails = Campaign.query.filter_by(company_id=company_id, status='sent').count() if company_id else 0
             usage_sms = SMSCampaign.query.filter_by(company_id=company_id, status='sent').count() if company_id else 0
-            unread_notifications = Notification.query.filter_by(user_id=current_user.id, is_read=False).count()
+            # Ordinary inbound SMS/call/voicemail notifications belong to the PWA's
+            # own notification state, not the main dashboard's notification bell.
+            unread_notifications = Notification.query.filter_by(user_id=current_user.id, is_read=False).filter(
+                Notification.event_type.notin_(NOTIFICATION_COMMUNICATIONS_EVENT_TYPES)
+            ).count()
             unread_inbox = InboxMessage.query.filter_by(user_id=current_user.id, is_read=False).count()
         except Exception:
             user_quick_links = []
@@ -2078,12 +2084,67 @@ def contacts():
         )
         from models import Opportunity
         opp_values = dict(db.session.query(Opportunity.contact_id, db.func.coalesce(db.func.sum(Opportunity.estimated_value), 0)).filter(Opportunity.company_id == company_id, Opportunity.status == 'open').group_by(Opportunity.contact_id).all()) if company_id else {}
-        return render_template('contacts.html', contacts=contacts, search=search, show_archived=show_archived, opp_values=opp_values)
+        from services.contact_resolver import resolve_contact_identity
+        contact_resolutions = {c.id: resolve_contact_identity(company_id, contact_id=c.id, allow_enrichment=True) for c in contacts.items}
+        db.session.commit()
+        return render_template('contacts.html', contacts=contacts, search=search, show_archived=show_archived, opp_values=opp_values, contact_resolutions=contact_resolutions)
     except Exception:
         request_id = getattr(g, "request_id", None) or request.headers.get("X-Request-ID") or "unavailable"
         db.session.rollback()
         logger.exception("GET /contacts failed request_id=%s company_id=%s", request_id, company_id)
         return render_template("safe_error.html", request_id=request_id, message="Audience could not be loaded. Please try again or contact support with the request ID."), 500
+
+
+def _require_shared_secret_auth(*, env_var):
+    """Mandatory shared-secret authentication for csrf-exempt machine webhooks.
+
+    Fail-closed. Returns a Flask ``(response, status)`` tuple that the caller
+    MUST return immediately when the request is not authenticated; returns
+    ``None`` only when a valid credential was presented.
+
+    Contract:
+    - The server-side secret is read from ``env_var``. A missing/blank secret
+      is a configuration error and is rejected (503) -- it is never treated as
+      "auth disabled" or "allow".
+    - Authentication is unconditional. A request with no ``Authorization``
+      header, or a malformed one, is rejected (401) *before* any side effect.
+    - The presented credential is accepted from either
+      ``Authorization: Bearer <token>`` or HTTP Basic (the password field), and
+      compared to the expected secret in constant time.
+    """
+    expected = (os.environ.get(env_var) or "").strip()
+    if not expected:
+        logger.error(
+            "webhook auth misconfigured: %s is not set (path=%s) -- rejecting",
+            env_var, request.path,
+        )
+        return jsonify({
+            'success': False,
+            'error': 'Webhook authentication is not configured',
+        }), 503
+
+    provided = ''
+    header = request.headers.get('Authorization', '') or ''
+    if header[:7].lower() == 'bearer ':
+        provided = header[7:].strip()
+    else:
+        auth = request.authorization
+        if auth and (auth.type or '').lower() == 'basic':
+            provided = auth.password or ''
+
+    if not provided:
+        return jsonify({
+            'success': False,
+            'error': 'Authentication required',
+        }), 401
+
+    if not hmac.compare_digest(provided, expected):
+        return jsonify({
+            'success': False,
+            'error': 'Invalid credentials',
+        }), 401
+
+    return None
 
 
 def _trusted_public_company_id():
@@ -2122,10 +2183,9 @@ def _resolve_contact_from_route(company_id, *, email=None, phone=None, first_nam
     if segment:
         contact.segment = segment
     if tags:
-        existing = {t.strip() for t in (contact.tags or '').split(',') if t.strip()}
+        from services.contact_audience import add_contact_tag
         for tag in [t.strip() for t in str(tags).split(',') if t.strip()]:
-            existing.add(tag)
-        contact.tags = ','.join(sorted(existing))
+            add_contact_tag(contact, tag, source=source)
     return contact
 
 
@@ -2294,35 +2354,34 @@ def billing_cancel():
 @main_bp.route('/segments/<int:segment_id>/refresh', methods=['POST'])
 @login_required
 def refresh_segment(segment_id):
-    """Refresh/recompile a segment to update its members"""
+    """Refresh a dynamic segment's membership via the canonical segment engine.
+
+    Delta-based and atomic: computes desired membership first, and only
+    commits additions/removals if that computation succeeds. Never deletes
+    existing membership before evaluation -- see services/segment_engine.py.
+    """
+    from services.segment_engine import refresh as engine_refresh
+
     segment = Segment.query.filter_by(id=segment_id, company_id=getattr(current_user, "default_company_id", None)).first_or_404()
-    
+
     try:
-        SegmentMember.query.filter_by(segment_id=segment_id, is_excluded=False).delete()
-        
-        contacts = Contact.query.filter_by(company_id=segment.company_id).all()
-        matched = 0
-        
-        for contact in contacts:
-            if segment.segment_type == 'newsletter' and 'newsletter' in (contact.tags or ''):
-                member = SegmentMember(segment_id=segment_id, contact_id=contact.id, source="dynamic_rule")
-                db.session.add(member)
-                matched += 1
-            elif segment.segment_type == 'all':
-                member = SegmentMember(segment_id=segment_id, contact_id=contact.id, source="dynamic_rule")
-                db.session.add(member)
-                matched += 1
-        
-        segment.member_count = matched
-        segment.last_updated = datetime.utcnow()
-        db.session.commit()
-        
-        flash(f'Segment refreshed! {matched} contacts matched.', 'success')
+        result = engine_refresh(segment, actor_user_id=current_user.id)
+        if result.error:
+            db.session.rollback()
+            flash(f'Segment not refreshed -- invalid condition: {result.error}', 'error')
+        elif result.skipped_reason:
+            flash(f'Segment not refreshed: {result.skipped_reason}', 'info')
+        else:
+            db.session.commit()
+            flash(
+                f'Segment refreshed! +{len(result.additions)} / -{len(result.removals)} '
+                f'({len(result.desired_member_ids)} total members).', 'success',
+            )
     except Exception as e:
         logger.error(f"Error refreshing segment: {e}")
         db.session.rollback()
         flash('Error refreshing segment', 'error')
-    
+
     return redirect(url_for('main.segments'))
 
 
@@ -2334,8 +2393,8 @@ def _segment_detail_metrics(segment):
     active_members = [m for m in memberships if not m.removed_at and not m.is_excluded]
     excluded_members = [m for m in memberships if m.is_excluded]
     contacts = [m.contact for m in active_members if m.contact and m.contact.company_id == segment.company_id]
-    suppressed = [c for c in contacts if c.do_not_market or c.do_not_email or c.do_not_sms or c.email_unsubscribed or c.sms_opted_out or c.sms_opt_out_at or not c.is_subscribed]
-    email_eligible = [c for c in contacts if c.email and not c.do_not_market and not c.do_not_email and not c.email_unsubscribed and c.is_subscribed]
+    suppressed = [c for c in contacts if c.do_not_market or has_explicit_email_opt_out(c) or c.do_not_sms or c.sms_opted_out or c.sms_opt_out_at]
+    email_eligible = [c for c in contacts if c.email and not c.do_not_market and not has_explicit_email_opt_out(c)]
     sms_eligible = [c for c in contacts if c.phone and not c.do_not_market and not c.do_not_sms and not c.sms_opted_out and not c.sms_opt_out_at]
     return {
         "total_contacts": len(contacts),
@@ -2343,7 +2402,7 @@ def _segment_detail_metrics(segment):
         "suppressed_contacts": len(suppressed),
         "email_eligible": len(email_eligible),
         "sms_eligible": len(sms_eligible),
-        "email_unsubscribed": sum(1 for c in contacts if c.email_unsubscribed or not c.is_subscribed),
+        "email_unsubscribed": sum(1 for c in contacts if has_explicit_email_opt_out(c)),
         "sms_opted_out": sum(1 for c in contacts if c.sms_opted_out or c.sms_opt_out_at),
         "last_refreshed": segment.updated_at,
         "added_today": sum(1 for m in memberships if m.added_at and m.added_at.date() == today),
@@ -2448,15 +2507,26 @@ def create_segment():
         segment.match_mode = request.form.get("match_mode", "all")
         segment.triggers = json.loads(request.form.get("triggers") or "[]")
         segment.actions = json.loads(request.form.get("actions") or "[]")
+        if segment.segment_type == "automation_rule":
+            from services.crm_automation import validate_definition
+            validate_definition(segment.triggers, segment.conditions, segment.actions, segment.match_mode)
+        elif segment_type in ("custom", "behavioral", "newsletter") and is_dynamic:
+            from services.segment_engine import validate_conditions
+            validate_conditions(segment.conditions, segment.match_mode)
         segment.is_dynamic = is_dynamic
-        
+
         db.session.add(segment)
         db.session.commit()
-        
+
         flash('Segment created successfully!', 'success')
         return redirect(url_for('main.segments'))
-        
+
     except Exception as e:
+        from services.crm_automation import AutomationContractError
+        from services.segment_engine import SegmentConditionError
+        if isinstance(e, (AutomationContractError, SegmentConditionError)):
+            flash(f'Segment not created -- invalid condition: {e}', 'error')
+            return redirect(url_for('main.segments'))
         logger.error(f"Error creating segment: {e}")
         flash('Error creating segment', 'error')
         return redirect(url_for('main.segments'))
@@ -6524,12 +6594,37 @@ def manage_users():
             for user in users:
                 restoration_by_user[user.id] = restoration_eligible(user, company.id)
 
+        # Per-user communication state for the tenant Team view: availability
+        # (Available / Away) and Receive Calls, with provenance. Tenant-scoped;
+        # a platform admin with no company context gets an empty map.
+        comms_by_user = {}
+        can_manage_comms = False
+        if company:
+            try:
+                from services.phone_availability import team_availability, can_admin_manage
+                from services.receive_calls import team_receive_calls
+                can_manage_comms = can_admin_manage(current_user, company.id)
+                for row in team_availability(company.id):
+                    comms_by_user.setdefault(row["user_id"], {}).update({
+                        "availability": row.get("state"),
+                        "availability_changed_at": row.get("changed_at"),
+                        "availability_changed_by": row.get("changed_by_name"),
+                        "availability_source": row.get("source"),
+                    })
+                for row in team_receive_calls(company.id):
+                    comms_by_user.setdefault(row["user_id"], {})["receive_calls"] = row.get("receive_calls")
+            except Exception:
+                logger.exception("manage_users: comms state load failed")
+
         return render_template(
             'manage_users.html',
             users=users,
             access_by_user=access_by_user,
             show_archived=show_archived,
             restoration_by_user=restoration_by_user,
+            comms_by_user=comms_by_user,
+            can_manage_comms=can_manage_comms,
+            current_company=company,
         )
     except Exception as e:
         logger.error("manage_users error: %s", e)
@@ -6578,7 +6673,10 @@ def delete_user(user_id):
     from services.comms_permissions import can_manage_users
     from services.user_lifecycle import archive_user_for_company
     company = current_user.get_default_company()
-    if not current_user.is_admin and (not company or not can_manage_users(current_user, company.id)):
+    if not company:
+        flash('Select a company context before removing a user.', 'danger')
+        return redirect(url_for('main.manage_users'))
+    if not current_user.is_admin and not can_manage_users(current_user, company.id):
         flash('Access denied.', 'danger')
         return redirect(url_for('main.dashboard'))
     user = User.query.get_or_404(user_id)
@@ -6601,7 +6699,10 @@ def restore_user(user_id):
     from services.comms_permissions import can_manage_users
     from services.user_lifecycle import restore_user_for_company
     company = current_user.get_default_company()
-    if not current_user.is_admin and (not company or not can_manage_users(current_user, company.id)):
+    if not company:
+        flash('Select a company context before restoring a user.', 'danger')
+        return redirect(url_for('main.manage_users', archived='1'))
+    if not current_user.is_admin and not can_manage_users(current_user, company.id):
         flash('Access denied.', 'danger')
         return redirect(url_for('main.dashboard'))
     user = User.query.get_or_404(user_id)
@@ -8442,8 +8543,16 @@ def import_forminator_newsletter():
     return render_template('import_forminator.html')
 
 @main_bp.route('/admin/forminator-webhook', methods=['POST'])
+@csrf.exempt
 def forminator_webhook():
-    """Webhook endpoint for Forminator form submissions (form ID 3482)"""
+    """Webhook endpoint for Forminator form submissions (form ID 3482).
+
+    Machine-to-machine: shared-secret auth is mandatory and fail-closed
+    (``FORMINATOR_WEBHOOK_TOKEN``). See ``_require_shared_secret_auth``.
+    """
+    auth_error = _require_shared_secret_auth(env_var='FORMINATOR_WEBHOOK_TOKEN')
+    if auth_error is not None:
+        return auth_error
     try:
         data = request.get_json()
         form_id = data.get('form_id')
@@ -8557,8 +8666,16 @@ def import_wordpress_users():
     return render_template('import_wordpress.html')
 
 @main_bp.route('/admin/wordpress-webhook', methods=['POST'])
+@csrf.exempt
 def wordpress_webhook():
-    """Webhook for WordPress new user registration"""
+    """Webhook for WordPress new user registration.
+
+    Machine-to-machine: shared-secret auth is mandatory and fail-closed
+    (``WORDPRESS_WEBHOOK_TOKEN``). See ``_require_shared_secret_auth``.
+    """
+    auth_error = _require_shared_secret_auth(env_var='WORDPRESS_WEBHOOK_TOKEN')
+    if auth_error is not None:
+        return auth_error
     try:
         data = request.get_json()
         email = data.get('email')
@@ -8725,21 +8842,21 @@ def view_wordpress_imports():
 @csrf.exempt
 def zapier_contact_webhook():
     """
-    Public API endpoint for Zapier webhook integration
+    Machine-to-machine webhook for Zapier contact intake.
     Receives: email, name, phone, source (flexible payload)
-    Validates, checks duplicates, inserts/updates contact
-    Supports basic auth: luke|Wow548302!
+    Validates, checks duplicates, inserts/updates contact.
+
+    Authentication is mandatory and fail-closed: the caller must present the
+    shared secret from ``ZAPIER_WEBHOOK_TOKEN`` via ``Authorization: Bearer``
+    or HTTP Basic (password field). See ``_require_shared_secret_auth``.
     """
+    # Authenticate BEFORE reading the body or touching the database. A rejected
+    # request must cause zero mutation.
+    auth_error = _require_shared_secret_auth(env_var='ZAPIER_WEBHOOK_TOKEN')
+    if auth_error is not None:
+        return auth_error
+
     try:
-        # Validate basic auth if provided
-        auth = request.authorization
-        if auth:
-            if auth.username != 'luke' or auth.password != 'Wow548302!':
-                return jsonify({
-                    'success': False,
-                    'error': 'Invalid credentials'
-                }), 401
-        
         data = request.get_json()
         
         if not data:
@@ -8955,14 +9072,15 @@ def get_deal_json(deal_id):
 def get_contact(contact_id):
     """Get contact details via API"""
     try:
-        contact = db.session.get(Contact, contact_id)
+        company_id = getattr(current_user, 'default_company_id', None)
+        contact = Contact.query.filter_by(id=contact_id, company_id=company_id).first()
         if not contact:
             return jsonify({'error': 'Contact not found'}), 404
         return jsonify({
             'id': contact.id,
             'first_name': contact.first_name or '',
             'last_name': contact.last_name or '',
-            'full_name': contact.full_name,
+            'full_name': f"{contact.first_name or ''} {contact.last_name or ''}".strip(),
             'email': contact.email or '',
             'phone': contact.phone or '',
             'company': contact.company or '',
@@ -9080,7 +9198,8 @@ def generate_blog_content():
 @login_required
 def customer_profile(contact_id):
     """View and edit customer profile with engagement tracking"""
-    contact = Contact.query.get_or_404(contact_id)
+    company_id = getattr(current_user, "default_company_id", None)
+    contact = Contact.query.filter_by(id=contact_id, company_id=company_id).first_or_404()
     activities = ContactActivity.query.filter_by(contact_id=contact_id).order_by(ContactActivity.created_at.desc()).limit(50).all()
     
     stats = {
@@ -9113,40 +9232,45 @@ def customer_profile(contact_id):
 @login_required
 def update_contact_profile(contact_id):
     """Update contact profile via API"""
-    contact = Contact.query.get_or_404(contact_id)
-    
+    company_id = getattr(current_user, 'default_company_id', None)
+    contact = Contact.query.filter_by(id=contact_id, company_id=company_id).first()
+    if not contact:
+        return jsonify({'success': False, 'error': 'Contact not found'}), 404
+
     try:
         form = request.form
-        
-        if form.get('first_name') is not None:
-            contact.first_name = form.get('first_name').strip() or contact.first_name
-        if form.get('last_name') is not None:
-            contact.last_name = form.get('last_name').strip() or contact.last_name
-        if form.get('email') is not None:
-            email = form.get('email').strip()
-            if email:
-                contact.email = email
-        if form.get('phone') is not None:
-            contact.phone = form.get('phone').strip() or None
-        if form.get('company') is not None:
-            contact.company = form.get('company').strip() or None
-        if form.get('website') is not None:
-            contact.website = form.get('website').strip() or None
-        if form.get('address') is not None:
-            contact.address = form.get('address').strip() or None
-        if form.get('city') is not None:
-            contact.city = form.get('city').strip() or None
-        if form.get('state') is not None:
-            contact.state = form.get('state').strip() or None
-        if form.get('zip_code') is not None:
-            contact.zip_code = form.get('zip_code').strip() or None
+
+        # Core identity fields (name/phone/email/company/tags) go through the
+        # canonical, tenant-scoped update service shared with the PWA, so
+        # normalization, conflict detection, and identity-trust promotion are
+        # consistent no matter which surface made the edit.
+        identity_fields = {
+            key: form.get(key) for key in ('first_name', 'last_name', 'phone', 'email', 'company', 'tags')
+            if form.get(key) is not None
+        }
+        if identity_fields:
+            from services.contact_profile import update_contact_fields, ContactConflictError
+            try:
+                update_contact_fields(
+                    contact, company_id=company_id, fields=identity_fields,
+                    source="manual", actor_user_id=current_user.id,
+                )
+            except ContactConflictError as exc:
+                db.session.rollback()
+                return jsonify({'success': False, 'error': 'contact_identity_conflict',
+                                 'field': exc.field, 'message': exc.message}), 409
+            except ValueError as exc:
+                db.session.rollback()
+                return jsonify({'success': False, 'error': 'invalid_input', 'message': str(exc)}), 400
+
+        # website/address/city/state/zip_code/notes have no backing Contact
+        # columns (pre-existing; assignments to them are silently discarded)
+        # and segment/lead_score are CRM-only fields with no identity/conflict
+        # implications, so they stay on the desktop route rather than moving
+        # into the shared identity service.
         if form.get('segment') is not None:
             contact.segment = form.get('segment').strip() or contact.segment
-        if form.get('tags') is not None:
-            contact.tags = form.get('tags').strip() or None
-        if form.get('notes') is not None:
-            contact.notes = form.get('notes').strip() or None
-        
+
         lead_score_str = form.get('lead_score', '').strip()
         if lead_score_str:
             try:
@@ -9157,7 +9281,16 @@ def update_contact_profile(contact_id):
         
         contact.updated_at = datetime.utcnow()
         db.session.commit()
-        
+
+        # Notify any already-open PWA conversation/contact view for this
+        # contact so a desktop CRM edit reaches it without a reload. Not an
+        # "attention" event -- always delivered regardless of Away status.
+        try:
+            from inbox_pwa import _push_sse_event
+            _push_sse_event(company_id, "contact_updated", {"contact_id": contact.id})
+        except Exception:
+            logger.warning("contact_updated SSE push failed for contact %s", contact_id, exc_info=True)
+
         return jsonify({'success': True, 'message': 'Profile updated successfully'})
     except Exception as e:
         db.session.rollback()
@@ -10976,15 +11109,16 @@ def import_contacts():
     if request.method == 'POST':
         try:
             file = request.files.get('file')
-            if file and file.filename.endswith('.csv'):
+            if file and file.filename.lower().endswith(('.csv', '.vcf', '.vcard')):
                 company_id = getattr(current_user, 'default_company_id', None)
                 from services.contact_audience import import_contacts as import_contact_file
-                result = import_contact_file(company_id, file.stream.read(), file.filename, source_provider='csv_import', tenant_id=company_id)
+                is_ios = file.filename.lower().endswith(('.vcf', '.vcard')) or request.form.get('source_provider') == 'ios_contacts'
+                result = import_contact_file(company_id, file.stream.read(), file.filename, source_provider='ios_contacts' if is_ios else 'csv_import', tenant_id=company_id)
                 count = result.get('success_count', 0)
                 db.session.commit()
                 flash(f'Successfully imported {count} contacts!', 'success')
             else:
-                flash('Please upload a valid CSV file.', 'danger')
+                flash('Please upload a valid CSV or exported iPhone/iCloud vCard file.', 'danger')
         except Exception as e:
             db.session.rollback()
             flash(f'Error importing contacts: {str(e)}', 'danger')
@@ -11605,26 +11739,34 @@ def add_user():
 @main_bp.route('/notifications')
 @login_required
 def notifications_page():
-    from models import Notification
+    from models import Notification, NOTIFICATION_COMMUNICATIONS_EVENT_TYPES
     page = request.args.get('page', 1, type=int)
     filter_type = request.args.get('filter', 'all')
-    query = Notification.query.filter_by(user_id=current_user.id).order_by(Notification.created_at.desc())
+    # The main dashboard notification center excludes ordinary SMS/call/voicemail
+    # notifications -- those live in the PWA's own notification state.
+    query = Notification.query.filter_by(user_id=current_user.id).filter(
+        Notification.event_type.notin_(NOTIFICATION_COMMUNICATIONS_EVENT_TYPES)
+    ).order_by(Notification.created_at.desc())
     if filter_type == 'unread':
         query = query.filter_by(is_read=False)
     elif filter_type in ('system', 'campaign', 'automation', 'contact', 'team'):
         query = query.filter_by(category=filter_type)
     notifications = query.paginate(page=page, per_page=30, error_out=False)
-    unread_count = Notification.query.filter_by(user_id=current_user.id, is_read=False).count()
+    unread_count = Notification.query.filter_by(user_id=current_user.id, is_read=False).filter(
+        Notification.event_type.notin_(NOTIFICATION_COMMUNICATIONS_EVENT_TYPES)
+    ).count()
     return render_template('notifications.html', notifications=notifications, unread_count=unread_count, filter_type=filter_type)
 
 
 @main_bp.route('/notifications/mark-read', methods=['POST'])
 @login_required
 def mark_notification_read():
-    from models import Notification
+    from models import Notification, NOTIFICATION_COMMUNICATIONS_EVENT_TYPES
     notif_id = request.form.get('notification_id')
     if notif_id == 'all':
-        Notification.query.filter_by(user_id=current_user.id, is_read=False).update({'is_read': True})
+        Notification.query.filter_by(user_id=current_user.id, is_read=False).filter(
+            Notification.event_type.notin_(NOTIFICATION_COMMUNICATIONS_EVENT_TYPES)
+        ).update({'is_read': True}, synchronize_session=False)
     else:
         notif = Notification.query.filter_by(id=notif_id, user_id=current_user.id).first()
         if notif:
@@ -11636,10 +11778,12 @@ def mark_notification_read():
 @main_bp.route('/notifications/delete', methods=['POST'])
 @login_required
 def delete_notification():
-    from models import Notification
+    from models import Notification, NOTIFICATION_COMMUNICATIONS_EVENT_TYPES
     notif_id = request.form.get('notification_id')
     if notif_id == 'all':
-        Notification.query.filter_by(user_id=current_user.id).delete()
+        Notification.query.filter_by(user_id=current_user.id).filter(
+            Notification.event_type.notin_(NOTIFICATION_COMMUNICATIONS_EVENT_TYPES)
+        ).delete(synchronize_session=False)
     else:
         notif = Notification.query.filter_by(id=notif_id, user_id=current_user.id).first()
         if notif:

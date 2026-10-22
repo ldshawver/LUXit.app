@@ -1,4 +1,7 @@
+import json
+import socket
 from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
 
 import pytest
 from twilio.request_validator import RequestValidator
@@ -11,17 +14,47 @@ from models import (
     TuyaNotificationActivation,
     TuyaNotificationEvent,
     TuyaNotificationWorkerHeartbeat,
+    SMSOutboundAttempt,
+    SMSOutboundIntent,
     TwilioAccount,
     TwilioMessage,
     TwilioPhoneNumber,
     User,
     UserCompanyAccess,
 )
-from services.tuya_client import TuyaError
+from services.tuya_client import TuyaClient, TuyaConfig, TuyaError
 import services.tuya_notification as notification
 
 DESTINATION = "+19165989519"
 OTHER_DESTINATION = "+15550001111"
+
+
+@pytest.fixture(autouse=True)
+def prevent_provider_network(monkeypatch):
+    import twilio_sms
+
+    sent = []
+
+    def unexpected_network(*args, **kwargs):
+        raise AssertionError("Unexpected provider network access attempted")
+
+    class FakeMessages:
+        def create(self, **kwargs):
+            sent.append(kwargs)
+            return SimpleNamespace(
+                sid=f"SM_TEST_OUTBOUND_{len(sent)}",
+                status="queued",
+            )
+
+    monkeypatch.setattr(
+        twilio_sms,
+        "_build_client",
+        lambda account: SimpleNamespace(messages=FakeMessages()),
+    )
+    monkeypatch.setattr(socket, "getaddrinfo", unexpected_network)
+    monkeypatch.setattr(socket, "create_connection", unexpected_network)
+    monkeypatch.setattr(socket.socket, "connect", unexpected_network)
+    return sent
 
 
 @pytest.fixture
@@ -30,7 +63,7 @@ def app(monkeypatch):
         "TUYA_NOTIFICATION_ENABLED": "true",
         "TUYA_ACCESS_ID": "test-access-id",
         "TUYA_ACCESS_SECRET": "test-access-secret",
-        "TUYA_NOTIFICATION_DEVICE_ID": "test-device-id",
+        "TUYA_NOTIFICATION_DEVICE_ID": "test-device-123",
         "TUYA_NOTIFICATION_PHONE": DESTINATION,
         "TUYA_NOTIFICATION_DURATION_SECONDS": "60",
         "TWILIO_STRICT_SIGNATURE": "true",
@@ -185,7 +218,9 @@ def signed_post(client, payload, *, valid=True):
     )
 
 
-def test_signed_inbound_matches_to_and_persists_one_event(client, world):
+def test_signed_inbound_matches_to_and_persists_one_event(
+    client, world, prevent_provider_network
+):
     response = signed_post(
         client, inbound_payload("SM_TUYA_1", from_number=DESTINATION)
     )
@@ -204,6 +239,22 @@ def test_signed_inbound_matches_to_and_persists_one_event(client, world):
         .one()
         .desired_state
     )
+    intent = SMSOutboundIntent.query.filter_by(
+        inbound_message_id=TwilioMessage.query.filter_by(
+            twilio_sid="SM_TUYA_1", direction="inbound"
+        ).one().id,
+        effect_type="identity_reply",
+    ).one()
+    attempt = SMSOutboundAttempt.query.filter_by(intent_id=intent.id).one()
+    assert intent.status == "delivered"
+    assert attempt.provider_status == "queued"
+    assert len(prevent_provider_network) == 1
+    assert intent.body
+    assert prevent_provider_network[0] == {
+        "body": intent.body,
+        "to": DESTINATION,
+        "from_": DESTINATION,
+    }
 
 
 def test_invalid_signature_and_other_destination_do_not_trigger(client, world):
@@ -258,6 +309,77 @@ def test_duplicate_and_new_message_deadlines(world, monkeypatch):
         TuyaNotificationEvent.query.filter_by(company_id=world["company_a"]).count()
         == 2
     )
+
+
+def test_reconciliation_sends_on_then_off_after_one_minute(world, monkeypatch):
+    start = datetime(2026, 1, 1, tzinfo=timezone.utc)
+
+    class Response:
+        def __init__(self, payload):
+            self.payload = payload
+
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return self.payload
+
+    class Session:
+        def __init__(self):
+            self.calls = []
+            self.responses = iter(
+                [
+                    Response(
+                        {
+                            "success": True,
+                            "result": {
+                                "access_token": "test-token",
+                                "expire_time": 100,
+                            },
+                        }
+                    ),
+                    Response({"success": True, "result": True}),
+                    Response({"success": True, "result": True}),
+                ]
+            )
+
+        def request(self, method, url, **kwargs):
+            self.calls.append((method, url, kwargs))
+            return next(self.responses)
+
+    session = Session()
+    client = TuyaClient(
+        TuyaConfig(
+            "https://openapi.tuyaus.com",
+            "test-access-id",
+            "test-access-secret",
+            "test-device-123",
+            "switch_1",
+            3,
+        ),
+        session=session,
+        clock=lambda: start.timestamp(),
+    )
+    monkeypatch.setattr(notification, "get_client", lambda **kwargs: client)
+
+    assert notification.queue_pulse(
+        world["company_a"], "SM_ONE_MINUTE_PULSE", "inbound_sms", now=start
+    )
+    notification.reconcile(start)
+    notification.reconcile(start + timedelta(seconds=60))
+
+    expected_url = (
+        "https://openapi.tuyaus.com/v1.0/iot-03/devices/test-device-123/commands"
+    )
+    post_calls = [call for call in session.calls if call[0] == "POST"]
+    assert len(post_calls) == 2
+    for call, expected_value in zip(post_calls, (True, False)):
+        method, url, request = call
+        assert method == "POST"
+        assert url == expected_url
+        assert json.loads(request["data"]) == {
+            "commands": [{"code": "switch_1", "value": expected_value}]
+        }
 
 
 def test_old_and_final_off_and_expired_on_are_safe(world, monkeypatch):

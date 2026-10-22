@@ -79,12 +79,17 @@ def test_manual_add_remove_and_bulk_contacts(client, tenant_user):
 
 
 def test_permanent_exclusion_prevents_dynamic_readd(client, tenant_user):
+    """GET /segments/<id>/contacts is read-only (services/segment_engine.py's
+    design contract: GET must never mutate); membership recomputation is an
+    explicit POST /refresh call."""
     _, company = tenant_user
     contact = Contact(company_id=company.id, email="vip@example.com", tags="vip", is_active=True)
     seg = Segment(company_id=company.id, name="Dynamic", is_dynamic=True, conditions=[{"field": "tag", "value": "vip"}])
     db.session.add_all([contact, seg]); db.session.commit()
+    assert client.post(f"/api/segments/{seg.id}/refresh").status_code == 200
     assert len(client.get(f"/api/segments/{seg.id}/contacts").get_json()["contacts"]) == 1
     assert client.post(f"/api/segments/{seg.id}/contacts/{contact.id}/exclude", json={"reason": "requested"}).status_code == 200
+    assert client.post(f"/api/segments/{seg.id}/refresh").status_code == 200
     assert len(client.get(f"/api/segments/{seg.id}/contacts").get_json()["contacts"]) == 0
 
 

@@ -1,5 +1,6 @@
 import os
 from datetime import datetime, timezone
+from types import SimpleNamespace
 
 import pytest
 
@@ -90,6 +91,72 @@ def post_incoming(client, to="+15550001000", sid="CAin", **extra):
     payload = {"From": "+15551112222", "To": to, "CallSid": sid, "CallStatus": "ringing"}
     payload.update(extra)
     return client.post("/api/twilio/voice/incoming", data=payload)
+
+
+def disable_identity_collection(monkeypatch):
+    # These routing tests predate contact identity collection and are not
+    # intended to assert its prompt. Keep that independent workflow from
+    # consuming the single auto-reply slot under test.
+    monkeypatch.setattr("services.contact_identity.apply_cached_google_match", lambda contact: "unmatched")
+    monkeypatch.setattr("services.contact_identity.process_identity_message", lambda *args, **kwargs: {"reply": None})
+    monkeypatch.setattr("services.contact_identity.should_request_identity", lambda contact: False)
+
+
+def capture_conversation_sms(monkeypatch, sent, formatter):
+    """Capture the canonical conversation sender without calling Twilio."""
+    disable_identity_collection(monkeypatch)
+
+    def fake_send(conversation_id, body, **kwargs):
+        conv = db.session.get(TwilioConversation, conversation_id)
+        sent.append(formatter(conv, body, kwargs))
+        return {"success": True, "sid": "SMtest"}
+
+    monkeypatch.setattr("twilio_sms.sendConversationSms", fake_send)
+
+
+def stub_conversation_sms(monkeypatch):
+    capture_conversation_sms(monkeypatch, [], lambda conv, body, kwargs: None)
+
+
+def stub_twilio_sms_client(monkeypatch):
+    """Prevent unit tests from ever reaching the Twilio network."""
+    messages = SimpleNamespace(create=lambda **kwargs: SimpleNamespace(sid="SMtest", status="queued"))
+    monkeypatch.setattr("twilio_sms._build_client", lambda account: SimpleNamespace(messages=messages))
+
+
+def track_awareness_calls(monkeypatch):
+    """Record every call to the inbound-awareness side effects (Tuya, SSE,
+    Web Push) so tests can assert they fire exactly once per inbound message,
+    independent of outbound auto-reply delivery outcome or webhook retries.
+
+    Wraps (rather than replaces) the real functions so the actual
+    Notification row still gets created -- callers can assert on both the
+    call count and the persisted Notification state.
+    """
+    import inbox_pwa
+    import services.tuya_notification as tuya_notification
+
+    calls = {"push": [], "sse": [], "tuya": []}
+    real_push = inbox_pwa._fire_push_notification
+    real_sse = inbox_pwa._push_sse_event
+    real_tuya = tuya_notification.accept_inbound
+
+    def fake_push(*a, **k):
+        calls["push"].append((a, k))
+        return real_push(*a, **k)
+
+    def fake_sse(*a, **k):
+        calls["sse"].append((a, k))
+        return real_sse(*a, **k)
+
+    def fake_tuya(*a, **k):
+        calls["tuya"].append((a, k))
+        return real_tuya(*a, **k)
+
+    monkeypatch.setattr("inbox_pwa._fire_push_notification", fake_push)
+    monkeypatch.setattr("inbox_pwa._push_sse_event", fake_sse)
+    monkeypatch.setattr("services.tuya_notification.accept_inbound", fake_tuya)
+    return calls
 
 
 def test_business_hours_route_rings_pwa_with_client_twiml(app, client, world):
@@ -259,12 +326,15 @@ def test_tenant_pwa_identity_is_scoped_to_called_number(app, client, world):
         save_settings(world["co_a"], during_hours_route="ring_pwa")
         save_settings(world["co_b"], during_hours_route="ring_pwa")
         from services.phone_identity import pwa_voice_identity
-        a_identity = pwa_voice_identity(world["co_a"]).encode()
-        b_identity = pwa_voice_identity(world["co_b"]).encode()
+        # approval disabled -> ring_pwa targets the per-user, non-device identity
+        # (the exact one /api/phone/voice-token mints for that user).
+        a_identity = pwa_voice_identity(world["co_a"], world["alice"]).encode()
+        b_identity = pwa_voice_identity(world["co_b"], world["bob"]).encode()
     resp = post_incoming(client, to="+15550002000", sid="CAbtenant")
     assert resp.status_code == 200
     assert b_identity in resp.data
     assert a_identity not in resp.data
+    assert b"luxit_c%d_" % world["co_a"] not in resp.data   # tenant A identity never leaks into tenant B's call
 
 
 def test_call_action_idempotency_does_not_duplicate_audit_rows(client, app, world):
@@ -282,7 +352,7 @@ def test_call_action_idempotency_does_not_duplicate_audit_rows(client, app, worl
 
 def test_after_hours_sms_auto_reply_respects_opt_out_and_cooldown(app, client, world, monkeypatch):
     sent = []
-    monkeypatch.setattr("twilio_sms._send_sms", lambda ta, to, body: sent.append((to, body)) or {"success": True})
+    capture_conversation_sms(monkeypatch, sent, lambda conv, body, kw: (conv.from_number, body))
     with app.app_context():
         save_settings(
             world["co_a"],
@@ -304,7 +374,7 @@ def test_after_hours_sms_auto_reply_respects_opt_out_and_cooldown(app, client, w
 
 def test_missed_call_sms_only_sends_when_enabled(app, client, world, monkeypatch):
     sent = []
-    monkeypatch.setattr("twilio_sms._send_sms", lambda ta, to, body: sent.append((to, body)) or {"success": True})
+    capture_conversation_sms(monkeypatch, sent, lambda conv, body, kw: (conv.from_number, body))
     with app.app_context():
         save_settings(world["co_a"], missed_call_sms_enabled=False, missed_call_sms_body="Missed you")
         log = TwilioCallLog(company_id=world["co_a"], twilio_sid="CAnoanswer", direction="inbound", status="ringing", from_number="+15551112222", to_number="+15550001000")
@@ -573,7 +643,7 @@ def add_phone_number(company_id, number, **overrides):
 
 def test_inbound_sms_uses_company_a_number_business_hours_and_auto_reply(app, client, world, monkeypatch):
     sent = []
-    monkeypatch.setattr("twilio_sms._send_sms", lambda ta, to, body, **kw: sent.append((ta.company_id, ta.from_phone, to, body)) or {"success": True})
+    capture_conversation_sms(monkeypatch, sent, lambda conv, body, kw: (conv.company_id, conv.to_number, conv.from_number, body))
     with app.app_context():
         save_settings(world["co_a"], business_hours={str(i): {"is_open": False} for i in range(7)})
         save_settings(world["co_b"], business_hours={str(i): {"is_open": True, "open": "00:00", "close": "23:59"} for i in range(7)})
@@ -586,12 +656,12 @@ def test_inbound_sms_uses_company_a_number_business_hours_and_auto_reply(app, cl
     resp = client.post("/twilio/sms/inbound", data={"From": "+15551110001", "To": "+15550001000", "Body": "hello", "MessageSid": "SMA"})
 
     assert resp.status_code == 200
-    assert sent == [(world["co_a"], "+15550001000", "+15551110001", "Company A after-hours SMS")]
+    assert sent == [(world["co_a"], "+15550001000", "+15551110001", "fallback A")]
 
 
 def test_inbound_sms_uses_company_b_number_business_hours_and_auto_reply(app, client, world, monkeypatch):
     sent = []
-    monkeypatch.setattr("twilio_sms._send_sms", lambda ta, to, body, **kw: sent.append((ta.company_id, ta.from_phone, to, body)) or {"success": True})
+    capture_conversation_sms(monkeypatch, sent, lambda conv, body, kw: (conv.company_id, conv.to_number, conv.from_number, body))
     with app.app_context():
         save_settings(world["co_a"], business_hours={str(i): {"is_open": True, "open": "00:00", "close": "23:59"} for i in range(7)})
         save_settings(world["co_b"], business_hours={str(i): {"is_open": False} for i in range(7)})
@@ -604,12 +674,12 @@ def test_inbound_sms_uses_company_b_number_business_hours_and_auto_reply(app, cl
     resp = client.post("/twilio/sms/inbound", data={"From": "+15551110002", "To": "+1 (555) 000-2000", "Body": "hello", "MessageSid": "SMB"})
 
     assert resp.status_code == 200
-    assert sent == [(world["co_b"], "+15550002000", "+15551110002", "Company B after-hours SMS")]
+    assert sent == [(world["co_b"], "+15550002000", "+15551110002", "fallback B")]
 
 
 def test_company_a_after_hours_does_not_affect_company_b_open_number(app, client, world, monkeypatch):
     sent = []
-    monkeypatch.setattr("twilio_sms._send_sms", lambda ta, to, body, **kw: sent.append((ta.company_id, body)) or {"success": True})
+    capture_conversation_sms(monkeypatch, sent, lambda conv, body, kw: (conv.company_id, body))
     with app.app_context():
         save_settings(world["co_a"], business_hours={str(i): {"is_open": False} for i in range(7)})
         save_settings(world["co_b"], business_hours={str(i): {"is_open": True, "open": "00:00", "close": "23:59"} for i in range(7)})
@@ -623,6 +693,324 @@ def test_company_a_after_hours_does_not_affect_company_b_open_number(app, client
 
     assert resp.status_code == 200
     assert sent == []
+
+
+def test_inbound_sms_notification_awareness_does_not_depend_on_auto_reply_delivery(app, client, world, monkeypatch):
+    """Regression for the notification-delivery coupling found during the
+    LUXit Development acceptance run: an inbound SMS that is durably
+    persisted and linked to its conversation/contact must still make the
+    agent aware of it (unread state + a communications Notification row)
+    even when the *optional* outbound auto-reply fails to send.
+
+    Fixed by moving the Tuya/PostHog/push-notification block ahead of
+    _deliver_and_finalize_inbound() in twilio_sms.inbound_sms, so it runs
+    unconditionally right after the inbound message is persisted and
+    committed, independent of whether the auto-reply delivery that follows
+    succeeds, fails, or needs a retry.
+    """
+    from models import Notification
+
+    class _FailingTwilioError(Exception):
+        status = 400
+        code = "21211"
+
+    def _failing_client(_account):
+        def _raise(**kwargs):
+            raise _FailingTwilioError("Invalid 'To' Phone Number")
+        return SimpleNamespace(messages=SimpleNamespace(create=_raise))
+
+    monkeypatch.setattr("twilio_sms._build_client", _failing_client)
+    disable_identity_collection(monkeypatch)
+
+    with app.app_context():
+        save_settings(world["co_a"], business_hours={str(i): {"is_open": False} for i in range(7)})
+        add_phone_number(world["co_a"], "+15550001000", after_hours_text="Company A after-hours SMS")
+        db.session.add(AutoReplyRule(company_id=world["co_a"], name="A after hours", trigger_type="after_hours", action="reply", response="fallback A", is_active=True))
+        db.session.commit()
+
+    resp = client.post("/twilio/sms/inbound", data={"From": "+15551110099", "To": "+15550001000", "Body": "hello", "MessageSid": "SMCOUPLING"})
+    assert resp.status_code == 200
+
+    with app.app_context():
+        msg = TwilioMessage.query.filter_by(twilio_sid="SMCOUPLING").first()
+        assert msg is not None, "inbound message must persist even if the auto-reply fails to send"
+        assert msg.processing_status == "failed_terminal"
+        conv = db.session.get(TwilioConversation, msg.conversation_id)
+        assert conv.is_read is False
+
+        note = Notification.query.filter_by(company_id=world["co_a"], event_type="incoming_sms").first()
+        assert note is not None, (
+            "inbound SMS notification/push awareness must not depend on "
+            "whether the outbound auto-reply succeeded (notification-delivery coupling bug)"
+        )
+
+
+def test_inbound_sms_awareness_fires_once_on_successful_auto_reply(app, client, world, monkeypatch):
+    """A: persisted inbound + successful auto-reply -> awareness exactly once."""
+    from models import Notification
+
+    calls = track_awareness_calls(monkeypatch)
+    stub_twilio_sms_client(monkeypatch)
+    disable_identity_collection(monkeypatch)
+
+    with app.app_context():
+        save_settings(world["co_a"], business_hours={str(i): {"is_open": False} for i in range(7)})
+        add_phone_number(world["co_a"], "+15550001000", after_hours_text="Company A after-hours SMS")
+        db.session.add(AutoReplyRule(company_id=world["co_a"], name="A after hours", trigger_type="after_hours", action="reply", response="fallback A", is_active=True))
+        db.session.commit()
+
+    resp = client.post("/twilio/sms/inbound", data={"From": "+15551110100", "To": "+15550001000", "Body": "hello", "MessageSid": "SMSUCCESS1"})
+    assert resp.status_code == 200
+    assert len(calls["push"]) == 1
+    assert len(calls["sse"]) == 1
+
+    with app.app_context():
+        msg = TwilioMessage.query.filter_by(twilio_sid="SMSUCCESS1").first()
+        assert msg.processing_status == "completed"
+        assert Notification.query.filter_by(company_id=world["co_a"], event_type="incoming_sms").count() == 1
+
+
+def test_inbound_sms_awareness_fires_exactly_once_on_failed_auto_reply(app, client, world, monkeypatch):
+    """B: persisted inbound + failed (terminal) auto-reply -> awareness still exactly once."""
+    from models import Notification
+
+    calls = track_awareness_calls(monkeypatch)
+    disable_identity_collection(monkeypatch)
+
+    class _FailingTwilioError(Exception):
+        status = 400
+        code = "21211"
+
+    def _failing_client(_account):
+        def _raise(**kwargs):
+            raise _FailingTwilioError("Invalid 'To' Phone Number")
+        return SimpleNamespace(messages=SimpleNamespace(create=_raise))
+
+    monkeypatch.setattr("twilio_sms._build_client", _failing_client)
+
+    with app.app_context():
+        save_settings(world["co_a"], business_hours={str(i): {"is_open": False} for i in range(7)})
+        add_phone_number(world["co_a"], "+15550001000", after_hours_text="Company A after-hours SMS")
+        db.session.add(AutoReplyRule(company_id=world["co_a"], name="A after hours", trigger_type="after_hours", action="reply", response="fallback A", is_active=True))
+        db.session.commit()
+
+    resp = client.post("/twilio/sms/inbound", data={"From": "+15551110101", "To": "+15550001000", "Body": "hello", "MessageSid": "SMFAIL1"})
+    assert resp.status_code == 200
+    assert len(calls["push"]) == 1
+    assert len(calls["sse"]) == 1
+
+    with app.app_context():
+        msg = TwilioMessage.query.filter_by(twilio_sid="SMFAIL1").first()
+        assert msg.processing_status == "failed_terminal"
+        assert Notification.query.filter_by(company_id=world["co_a"], event_type="incoming_sms").count() == 1
+
+
+def test_inbound_sms_awareness_fires_once_when_outbound_is_retryable(app, client, world, monkeypatch):
+    """C: persisted inbound + retryable outbound condition -> awareness exactly once,
+    and the response is 500 so Twilio knows to retry the *delivery*, not the awareness."""
+    from models import Notification
+
+    calls = track_awareness_calls(monkeypatch)
+    disable_identity_collection(monkeypatch)
+
+    class _RetryableTwilioError(Exception):
+        status = 500
+        code = "20500"
+
+    def _retryable_client(_account):
+        def _raise(**kwargs):
+            raise _RetryableTwilioError("Twilio internal error")
+        return SimpleNamespace(messages=SimpleNamespace(create=_raise))
+
+    monkeypatch.setattr("twilio_sms._build_client", _retryable_client)
+
+    with app.app_context():
+        save_settings(world["co_a"], business_hours={str(i): {"is_open": False} for i in range(7)})
+        add_phone_number(world["co_a"], "+15550001000", after_hours_text="Company A after-hours SMS")
+        db.session.add(AutoReplyRule(company_id=world["co_a"], name="A after hours", trigger_type="after_hours", action="reply", response="fallback A", is_active=True))
+        db.session.commit()
+
+    resp = client.post("/twilio/sms/inbound", data={"From": "+15551110102", "To": "+15550001000", "Body": "hello", "MessageSid": "SMRETRY1"})
+    assert resp.status_code == 500
+    assert len(calls["push"]) == 1
+    assert len(calls["sse"]) == 1
+
+    with app.app_context():
+        msg = TwilioMessage.query.filter_by(twilio_sid="SMRETRY1").first()
+        assert msg.processing_status == "failed_retryable"
+        assert Notification.query.filter_by(company_id=world["co_a"], event_type="incoming_sms").count() == 1
+
+
+def test_inbound_sms_retry_of_same_message_sid_does_not_duplicate_awareness(app, client, world, monkeypatch):
+    """D: a Twilio webhook retry of the same MessageSid (after a retryable
+    outbound failure that resolves on the retry) must not fire the
+    Notification/Web-Push/SSE awareness a second time."""
+    from models import Notification
+
+    calls = track_awareness_calls(monkeypatch)
+    disable_identity_collection(monkeypatch)
+
+    attempt = {"n": 0}
+
+    class _RetryableTwilioError(Exception):
+        status = 500
+        code = "20500"
+
+    def _client_factory(_account):
+        attempt["n"] += 1
+        if attempt["n"] == 1:
+            def _raise(**kwargs):
+                raise _RetryableTwilioError("Twilio internal error")
+            return SimpleNamespace(messages=SimpleNamespace(create=_raise))
+        return SimpleNamespace(messages=SimpleNamespace(create=lambda **kwargs: SimpleNamespace(sid="SMtest", status="queued")))
+
+    monkeypatch.setattr("twilio_sms._build_client", _client_factory)
+
+    with app.app_context():
+        save_settings(world["co_a"], business_hours={str(i): {"is_open": False} for i in range(7)})
+        add_phone_number(world["co_a"], "+15550001000", after_hours_text="Company A after-hours SMS")
+        db.session.add(AutoReplyRule(company_id=world["co_a"], name="A after hours", trigger_type="after_hours", action="reply", response="fallback A", is_active=True))
+        db.session.commit()
+
+    first = client.post("/twilio/sms/inbound", data={"From": "+15551110103", "To": "+15550001000", "Body": "hello", "MessageSid": "SMRETRY2"})
+    assert first.status_code == 500
+    assert len(calls["push"]) == 1
+    assert len(calls["sse"]) == 1
+
+    # Twilio retries the identical webhook (same MessageSid) after the 500.
+    second = client.post("/twilio/sms/inbound", data={"From": "+15551110103", "To": "+15550001000", "Body": "hello", "MessageSid": "SMRETRY2"})
+    assert second.status_code == 200
+
+    assert len(calls["push"]) == 1, "webhook retry must not re-fire Web Push"
+    assert len(calls["sse"]) == 1, "webhook retry must not re-fire SSE"
+
+    with app.app_context():
+        msg = TwilioMessage.query.filter_by(twilio_sid="SMRETRY2").first()
+        assert msg.processing_status == "completed"
+        assert Notification.query.filter_by(company_id=world["co_a"], event_type="incoming_sms").count() == 1, (
+            "webhook retry must not create a duplicate Notification row"
+        )
+
+
+def test_stop_start_help_unaffected_by_awareness_reordering(app, client, world, monkeypatch):
+    """F: STOP/START/HELP keep their synchronous-TwiML precedence and
+    behavior, untouched by the awareness-block reorder."""
+    disable_identity_collection(monkeypatch)
+    with app.app_context():
+        save_settings(world["co_a"], business_hours={str(i): {"is_open": True, "open": "00:00", "close": "23:59"} for i in range(7)})
+        add_phone_number(world["co_a"], "+15550001000")
+        db.session.commit()
+
+    stop_resp = client.post("/twilio/sms/inbound", data={"From": "+15551110104", "To": "+15550001000", "Body": "STOP", "MessageSid": "SMSTOPX"})
+    assert stop_resp.status_code == 200
+    assert b"unsubscribed" in stop_resp.data.lower()
+
+    start_resp = client.post("/twilio/sms/inbound", data={"From": "+15551110104", "To": "+15550001000", "Body": "START", "MessageSid": "SMSTARTX"})
+    assert start_resp.status_code == 200
+    assert b"subscribed" in start_resp.data.lower()
+
+    help_resp = client.post("/twilio/sms/inbound", data={"From": "+15551110104", "To": "+15550001000", "Body": "HELP", "MessageSid": "SMHELPX"})
+    assert help_resp.status_code == 200
+    assert b"stop to opt out" in help_resp.data.lower()
+
+    with app.app_context():
+        conv = TwilioConversation.query.filter_by(company_id=world["co_a"], from_number="+15551110104").first()
+        assert conv.is_opted_out is False  # STOP then START nets to opted back in
+
+
+def test_badge_count_still_correct_after_awareness_reordering(app, client, world, monkeypatch):
+    """G: the PWA badge fix and the notification-delivery-coupling fix
+    compose correctly -- a failed auto-reply now produces exactly one
+    incoming_sms Notification row (previously zero), and the badge still
+    counts that unread SMS exactly once, not twice."""
+    disable_identity_collection(monkeypatch)
+
+    class _FailingTwilioError(Exception):
+        status = 400
+        code = "21211"
+
+    def _failing_client(_account):
+        def _raise(**kwargs):
+            raise _FailingTwilioError("Invalid 'To' Phone Number")
+        return SimpleNamespace(messages=SimpleNamespace(create=_raise))
+
+    monkeypatch.setattr("twilio_sms._build_client", _failing_client)
+
+    with app.app_context():
+        save_settings(world["co_a"], business_hours={str(i): {"is_open": False} for i in range(7)})
+        add_phone_number(world["co_a"], "+15550001000", after_hours_text="Company A after-hours SMS")
+        db.session.add(AutoReplyRule(company_id=world["co_a"], name="A after hours", trigger_type="after_hours", action="reply", response="fallback A", is_active=True))
+        db.session.commit()
+
+    resp = client.post("/twilio/sms/inbound", data={"From": "+15551110105", "To": "+15550001000", "Body": "hello", "MessageSid": "SMBADGE1"})
+    assert resp.status_code == 200
+
+    login(client, world["alice"])
+    data = client.get("/api/pwa/badge-count").get_json()
+    assert data["smsUnread"] == 1
+    assert data["notifications"] == 0  # incoming_sms rows are excluded from this counter
+    assert data["count"] == 1  # not 2 -- proves the two fixes compose without double-counting
+
+
+def test_disabled_twilio_mode_blocks_send_but_inbound_processing_still_works(app, client, world, monkeypatch):
+    """Twilio safety gate, A+B+C: with LUXIT_TWILIO_MODE=disabled, the
+    outbound auto-reply send is blocked at the centralized gate (A), the
+    inbound webhook still returns successfully and persists the message
+    (B), and the notification-delivery-coupling fix still makes the agent
+    aware of the message even though the send was blocked (C)."""
+    from models import Notification
+
+    monkeypatch.setenv("LUXIT_TWILIO_MODE", "disabled")
+    calls = track_awareness_calls(monkeypatch)
+    disable_identity_collection(monkeypatch)
+
+    with app.app_context():
+        save_settings(world["co_a"], business_hours={str(i): {"is_open": False} for i in range(7)})
+        add_phone_number(world["co_a"], "+15550001000", after_hours_text="Company A after-hours SMS")
+        db.session.add(AutoReplyRule(company_id=world["co_a"], name="A after hours", trigger_type="after_hours", action="reply", response="fallback A", is_active=True))
+        db.session.commit()
+
+    resp = client.post("/twilio/sms/inbound", data={"From": "+15551110106", "To": "+15550001000", "Body": "hello", "MessageSid": "SMGATE1"})
+    assert resp.status_code == 200  # the blocked send classifies as terminal (400-499), not retryable
+
+    assert len(calls["push"]) == 1
+    assert len(calls["sse"]) == 1
+
+    with app.app_context():
+        msg = TwilioMessage.query.filter_by(twilio_sid="SMGATE1").first()
+        assert msg is not None, "inbound message must persist while sends are disabled"
+        assert msg.processing_status == "failed_terminal"
+        conv = db.session.get(TwilioConversation, msg.conversation_id)
+        assert conv.is_read is False
+
+        outbound = TwilioMessage.query.filter_by(conversation_id=conv.id, direction="outbound").all()
+        assert outbound == [], "no outbound TwilioMessage record should exist -- the send never reached Twilio"
+
+        assert Notification.query.filter_by(company_id=world["co_a"], event_type="incoming_sms").count() == 1
+
+
+def test_stop_start_help_unaffected_by_disabled_twilio_mode(app, client, world, monkeypatch):
+    """Twilio safety gate, F: STOP/START/HELP use a synchronous TwiML reply
+    that never touches the Twilio REST client, so they must behave
+    identically whether LUXIT_TWILIO_MODE is disabled or live."""
+    monkeypatch.setenv("LUXIT_TWILIO_MODE", "disabled")
+    disable_identity_collection(monkeypatch)
+    with app.app_context():
+        save_settings(world["co_a"], business_hours={str(i): {"is_open": True, "open": "00:00", "close": "23:59"} for i in range(7)})
+        add_phone_number(world["co_a"], "+15550001000")
+        db.session.commit()
+
+    stop_resp = client.post("/twilio/sms/inbound", data={"From": "+15551110107", "To": "+15550001000", "Body": "STOP", "MessageSid": "SMSTOPGATE"})
+    assert stop_resp.status_code == 200
+    assert b"unsubscribed" in stop_resp.data.lower()
+
+    start_resp = client.post("/twilio/sms/inbound", data={"From": "+15551110107", "To": "+15550001000", "Body": "START", "MessageSid": "SMSTARTGATE"})
+    assert start_resp.status_code == 200
+    assert b"subscribed" in start_resp.data.lower()
+
+    help_resp = client.post("/twilio/sms/inbound", data={"From": "+15551110107", "To": "+15550001000", "Body": "HELP", "MessageSid": "SMHELPGATE"})
+    assert help_resp.status_code == 200
+    assert b"stop to opt out" in help_resp.data.lower()
 
 
 def test_inbound_voice_voicemail_greeting_is_selected_by_to_number_company(app, client, world):
@@ -657,7 +1045,7 @@ def test_inbound_voice_forwarding_number_is_selected_by_to_number_company(app, c
 
 
 def test_inbound_sms_conversation_is_assigned_to_to_number_company(app, client, world, monkeypatch):
-    monkeypatch.setattr("twilio_sms._send_sms", lambda *args, **kwargs: {"success": True})
+    stub_conversation_sms(monkeypatch)
     with app.app_context():
         add_phone_number(world["co_a"], "+15550001000")
         add_phone_number(world["co_b"], "+15550002000")
@@ -673,7 +1061,7 @@ def test_inbound_sms_conversation_is_assigned_to_to_number_company(app, client, 
 
 
 def test_inbound_sms_to_formatted_number_variants_routes_by_to_number(app, client, world, monkeypatch):
-    monkeypatch.setattr("twilio_sms._send_sms", lambda *args, **kwargs: {"success": True})
+    stub_conversation_sms(monkeypatch)
     with app.app_context():
         pn = add_phone_number(world["co_a"], "(916) 598-9519", friendly_name="Sacramento")
         db.session.commit()
@@ -697,7 +1085,7 @@ def test_inbound_sms_to_formatted_number_variants_routes_by_to_number(app, clien
 
 
 def test_messaging_service_inbound_routes_by_to_number_before_service_sid(app, client, world, monkeypatch):
-    monkeypatch.setattr("twilio_sms._send_sms", lambda *args, **kwargs: {"success": True})
+    stub_conversation_sms(monkeypatch)
     with app.app_context():
         account_a = TwilioAccount.query.filter_by(company_id=world["co_a"]).one()
         account_b = TwilioAccount.query.filter_by(company_id=world["co_b"]).one()
@@ -723,7 +1111,7 @@ def test_messaging_service_inbound_routes_by_to_number_before_service_sid(app, c
 
 
 def test_inbound_sms_visibility_respects_number_permissions(app, client, world, monkeypatch):
-    monkeypatch.setattr("twilio_sms._send_sms", lambda *args, **kwargs: {"success": True})
+    stub_conversation_sms(monkeypatch)
     with app.app_context():
         pn_allowed = add_phone_number(world["co_a"], "+19165989519", friendly_name="Allowed")
         pn_denied = add_phone_number(world["co_a"], "+19165550000", friendly_name="Denied")
@@ -854,7 +1242,7 @@ def test_disabled_calling_methods_are_blocked_per_number(client, app, world):
     login(client, world["alice"])
     browser = client.post("/api/inbox/call/dial", json={"to": "+15559990000", "selected_number": "+15550001000", "calling_method": "browser"})
     assert browser.status_code == 403
-    assert "Browser/WiFi calling is disabled" in browser.get_json()["error"]
+    assert "Browser calling is disabled" in browser.get_json()["error"]
     cell = client.post("/api/inbox/call/dial", json={"to": "+15559990000", "selected_number": "+15550001000", "calling_method": "cell_callback"})
     assert cell.status_code == 403
     assert "Cell callback calling is disabled" in cell.get_json()["error"]
@@ -1043,7 +1431,7 @@ def test_number_settings_save_greeting_and_auto_reply_messages(app, client, worl
 
 def test_per_number_business_and_after_hours_auto_replies_work_without_rules(app, client, world, monkeypatch):
     sent = []
-    monkeypatch.setattr("twilio_sms._send_sms", lambda ta, to, body, **kw: sent.append((ta.company_id, ta.from_phone, to, body, kw.get("is_auto_reply"))) or {"success": True})
+    capture_conversation_sms(monkeypatch, sent, lambda conv, body, kw: (conv.company_id, conv.to_number, conv.from_number, body, kw.get("is_auto_reply")))
     with app.app_context():
         add_phone_number(
             world["co_a"],
@@ -1091,6 +1479,38 @@ def test_cross_midnight_business_hours_two_pm_to_two_am(app, world):
             assert twilio_sms._is_business_hours(world["co_a"], at_time=at_utc.replace(tzinfo=timezone.utc), phone_config=pn) is expected
 
 
+def test_sms_keyword_engine_delegates_to_tz_aware_business_hours(app, world):
+    """Regression test for the after-hours-during-business-hours bug.
+
+    services.sms_keyword_engine used to have its own naive-UTC, no-wraparound
+    _is_business_hours() (hardcoded 9-5 Mon-Fri) that disagreed with the
+    correct twilio_sms._is_business_hours() used elsewhere, so campaign/
+    keyword after-hours replies could fire during real business hours. It now
+    delegates to the same tz-aware implementation; this proves that holds for
+    the same midnight-crossing 2 PM-2 AM America/New_York schedule used above.
+    """
+    from services import sms_keyword_engine
+    with app.app_context():
+        pn = TwilioPhoneNumber(
+            company_id=world["co_a"],
+            phone_number="+15550003334",
+            timezone="America/New_York",
+            business_hours={str(i): {"is_open": True, "open": "14:00", "close": "02:00"} for i in range(7)},
+        )
+        db.session.add(pn); db.session.commit()
+        cases = [
+            (datetime(2026, 6, 22, 15, 0), False),  # 11 AM ET -- must NOT look like business hours
+            (datetime(2026, 6, 22, 18, 0), True),   # 2 PM ET -- opening minute
+            (datetime(2026, 6, 23, 3, 0), True),    # 11 PM ET
+            (datetime(2026, 6, 23, 5, 59), True),   # 1:59 AM ET -- still open (crossed midnight)
+            (datetime(2026, 6, 23, 6, 0), False),   # 2 AM ET -- closing minute
+        ]
+        for at_utc, expected in cases:
+            assert sms_keyword_engine._is_business_hours(
+                world["co_a"], phone_config=pn, at=at_utc.replace(tzinfo=timezone.utc)
+            ) is expected
+
+
 def test_number_after_hours_copy_alias_persists_and_reloads(client, app, world):
     login(client, world["alice"])
     required = "Thanks for reaching out. Our business hours are daily from 2 PM to 2 AM. We’ll respond as soon as we’re back online."
@@ -1115,7 +1535,8 @@ def test_after_hours_auto_reply_fallback_creates_outbound_and_marks_inbound(app,
         db.session.add(pn); db.session.commit()
     monkeypatch.setattr(twilio_sms, "_validate_twilio_signature", lambda *a, **k: True)
     monkeypatch.setattr(twilio_sms, "_is_business_hours", lambda *a, **k: False)
-    monkeypatch.setattr(twilio_sms, "_build_client", lambda ta: object())
+    stub_twilio_sms_client(monkeypatch)
+    disable_identity_collection(monkeypatch)
     resp = client.post("/twilio/sms/inbound", data={"From": "+15551112222", "To": "+15550005555", "Body": "hello", "MessageSid": "SMINAH1"})
     assert resp.status_code == 200
     with app.app_context():
@@ -1183,9 +1604,77 @@ def test_pwa_device_approval_disabled_allows_registered_device(client, app, worl
     assert ok.status_code == 200
 
 
+def test_comms_device_controls_are_tenant_scoped_and_disable_subscriptions(client, app, world):
+    from models import PushSubscription
+    with app.app_context():
+        db.session.get(User, world["alice"]).is_admin = True
+        own = PWADevice(company_id=world["co_a"], user_id=world["alice"], device_key="own-device", device_name="Own", approved_status="approved", lifecycle_status="active", push_enabled=True)
+        foreign = PWADevice(company_id=world["co_b"], user_id=world["bob"], device_key="foreign-device", device_name="Foreign", approved_status="approved", lifecycle_status="active", push_enabled=True)
+        db.session.add_all([own, foreign]); db.session.flush()
+        db.session.add(PushSubscription(company_id=world["co_a"], user_id=world["alice"], device_key="own-device", endpoint="https://push.test/own", p256dh="p", auth_key="a", is_active=True))
+        db.session.commit(); own_id, foreign_id = own.id, foreign.id
+    login(client, world["alice"])
+    assert client.post(f"/twilio/comms/devices/{foreign_id}", data={"action": "disable"}).status_code == 404
+    disabled = client.post(f"/twilio/comms/devices/{own_id}", data={"action": "disable"})
+    assert disabled.status_code == 302
+    with app.app_context():
+        own = db.session.get(PWADevice, own_id)
+        assert own.lifecycle_status == "disabled"
+        assert own.push_enabled is False
+        assert PushSubscription.query.filter_by(device_key="own-device", is_active=True).count() == 0
+
+
+def test_comms_device_lifecycle_rename_remove_and_safe_failures(client, app, world):
+    """Item 3 device-lifecycle matrix: rename, remove, cross-tenant denial,
+    unknown action, and malformed / nonexistent id safe failure."""
+    from models import MarketingAuditLog
+    with app.app_context():
+        db.session.get(User, world["alice"]).is_admin = True
+        dev = PWADevice(company_id=world["co_a"], user_id=world["alice"], device_key="lifecycle-dev", device_name="Old Name", approved_status="approved", lifecycle_status="active", push_enabled=True)
+        foreign = PWADevice(company_id=world["co_b"], user_id=world["bob"], device_key="foreign-lifecycle", device_name="Foreign", approved_status="approved")
+        db.session.add_all([dev, foreign]); db.session.commit()
+        dev_id, foreign_id = dev.id, foreign.id
+
+    login(client, world["alice"])
+    # rename
+    assert client.post(f"/twilio/comms/devices/{dev_id}", data={"action": "rename", "device_name": "New Name"}).status_code == 302
+    with app.app_context():
+        assert db.session.get(PWADevice, dev_id).device_name == "New Name"
+    # cross-tenant target -> 404, not mutated
+    assert client.post(f"/twilio/comms/devices/{foreign_id}", data={"action": "rename", "device_name": "X"}).status_code == 404
+    with app.app_context():
+        assert db.session.get(PWADevice, foreign_id).device_name == "Foreign"
+    # nonexistent id -> 404 safe failure
+    assert client.post("/twilio/comms/devices/98765432", data={"action": "disable"}).status_code == 404
+    # unknown action -> 400
+    assert client.post(f"/twilio/comms/devices/{dev_id}", data={"action": "explode"}).status_code == 400
+    # remove
+    assert client.post(f"/twilio/comms/devices/{dev_id}", data={"action": "remove"}).status_code == 302
+    with app.app_context():
+        assert db.session.get(PWADevice, dev_id) is None
+        assert MarketingAuditLog.query.filter_by(company_id=world["co_a"], entity_type="pwa_device", action="pwa_device_remove").count() == 1
+
+
+def test_comms_device_action_denied_for_non_admin_user(client, app, world):
+    """An ordinary tenant member (no manage-users capability) cannot mutate a
+    PWA device."""
+    with app.app_context():
+        plain = User(username="phone_plain2", email="phone_plain2@test.com", password_hash="x", default_company_id=world["co_a"])
+        db.session.add(plain); db.session.flush()
+        db.session.add(UserCompanyAccess(user_id=plain.id, company_id=world["co_a"], role="viewer", is_default=True, is_active=True))
+        dev = PWADevice(company_id=world["co_a"], user_id=world["alice"], device_key="plain-dev", device_name="D", approved_status="approved")
+        db.session.add(dev); db.session.commit()
+        dev_id, plain_id = dev.id, plain.id
+    login(client, plain_id)
+    assert client.post(f"/twilio/comms/devices/{dev_id}", data={"action": "rename", "device_name": "Nope"}).status_code == 403
+    with app.app_context():
+        assert db.session.get(PWADevice, dev_id).device_name == "D"
+
+
 def test_resolve_sms_sender_and_send_sms_use_inbound_to_number_not_messaging_service(app, world, monkeypatch):
     import twilio_sms
     monkeypatch.setattr("services.license_service.has_feature", lambda *a, **k: True)
+    stub_twilio_sms_client(monkeypatch)
     with app.app_context():
         ta = TwilioAccount.query.filter_by(company_id=world["co_a"]).first()
         ta.messaging_service_sid = "MG_should_not_be_used_for_replies"
@@ -1264,7 +1753,7 @@ def test_auto_replies_editor_surfaces_canonical_after_hours_message_used_by_inbo
     desired = "Thanks for reaching out. Our business hours are daily from 2 PM to 2 AM. We’ll respond as soon as we’re back online."
     updated = "Thanks for reaching out. Our business hours are daily from 2 PM to 2 AM. We’ll respond as soon as we’re back online."
     sent = []
-    monkeypatch.setattr("twilio_sms.sendConversationSms", lambda conv_id, message, **kw: sent.append(message) or {"success": True})
+    capture_conversation_sms(monkeypatch, sent, lambda conv, message, kw: message)
 
     with app.app_context():
         save_settings(world["co_a"], business_hours={str(i): {"is_open": False} for i in range(7)})
@@ -1310,7 +1799,7 @@ def test_auto_replies_editor_surfaces_canonical_after_hours_message_used_by_inbo
 
 def test_company_wide_after_hours_rule_is_labeled_and_used_for_selected_number(app, client, world, monkeypatch):
     sent = []
-    monkeypatch.setattr("twilio_sms.sendConversationSms", lambda conv_id, message, **kw: sent.append(message) or {"success": True})
+    capture_conversation_sms(monkeypatch, sent, lambda conv, message, kw: message)
     with app.app_context():
         save_settings(world["co_a"], business_hours={str(i): {"is_open": False} for i in range(7)})
         pn = add_phone_number(world["co_a"], "+15550001000")

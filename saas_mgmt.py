@@ -34,7 +34,7 @@ from flask import Blueprint, abort, flash, jsonify, redirect, render_template, r
 from flask_login import current_user, login_required
 from sqlalchemy.exc import IntegrityError
 
-from extensions import db
+from extensions import csrf, db
 
 logger = logging.getLogger(__name__)
 
@@ -650,6 +650,9 @@ def report_contact_usage_endpoint():
 
 
 @stripe_webhook_bp.route("/api/stripe/webhook", methods=["POST"])
+@csrf.exempt
+# Stripe's servers carry no session cookie/CSRF token; authenticity
+# is verified below via the Stripe-Signature HMAC instead.
 def stripe_webhook():
     """Stripe webhook receiver.
 

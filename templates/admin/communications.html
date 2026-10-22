@@ -16,6 +16,7 @@
 
   <ul class="nav nav-pills mb-3" id="adminCommsTabs" role="tablist">
     <li class="nav-item"><button class="nav-link active" data-bs-toggle="pill" data-bs-target="#sms-settings" type="button">SMS Settings</button></li>
+    <li class="nav-item"><button class="nav-link" data-bs-toggle="pill" data-bs-target="#availability" type="button">Availability</button></li>
     <li class="nav-item"><button class="nav-link" data-bs-toggle="pill" data-bs-target="#sms-campaigns" type="button">SMS Campaigns</button></li>
     <li class="nav-item"><button class="nav-link" data-bs-toggle="pill" data-bs-target="#call-settings" type="button">Call Settings</button></li>
     <li class="nav-item"><button class="nav-link" data-bs-toggle="pill" data-bs-target="#call-logs" type="button">Call Logs</button></li>
@@ -63,6 +64,37 @@
           </div></div>
         </div>
       </div>
+    </section>
+
+    <section class="tab-pane fade" id="availability">
+      <div class="card"><div class="card-body">
+        <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap mb-2">
+          <div>
+            <h5 class="mb-1">Communication Availability</h5>
+            <p class="text-muted small mb-0" style="max-width:640px;">
+              <strong>Available</strong> — the user receives shared calls, messages and communication notifications.
+              <strong>Away</strong> — shared calls, message notifications, sounds and badges are paused for that user on every device;
+              incoming calls and messages still arrive, persist, and appear in the shared inbox history, and calls follow the
+              configured fallback/voicemail path. Away is not account disablement and never changes role, access, or customer consent.
+            </p>
+          </div>
+          <div class="d-flex gap-2 flex-wrap">
+            <button class="btn btn-outline-success btn-sm" id="availSetAllAvailable" type="button">Set All Available</button>
+            <button class="btn btn-outline-warning btn-sm" id="availSetAllAway" type="button">Set All Away</button>
+          </div>
+        </div>
+        <div id="availStatus" class="small mb-2"></div>
+        <div class="table-responsive">
+          <table class="table table-sm align-middle">
+            <thead><tr>
+              <th>User</th><th>Role</th><th>Communication Availability</th><th>Last changed</th><th>Changed by</th><th class="text-end">Actions</th>
+            </tr></thead>
+            <tbody id="availTeamBody">
+              <tr><td colspan="6" class="text-muted">Loading…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div></div>
     </section>
 
     <section class="tab-pane fade" id="sms-campaigns">
@@ -140,6 +172,72 @@ function collectPhoneSettings(form){const fd=new FormData(form);const data={};fo
 async function savePhoneSettings(form,statusId){const el=document.getElementById(statusId);el.textContent='Saving…';const current=await fetch('/api/phone/settings',{credentials:'same-origin'}).then(r=>r.json()).catch(()=>({}));const payload=Object.assign({},current,collectPhoneSettings(form));const r=await fetch('/api/phone/settings',{method:'PUT',credentials:'same-origin',headers:{'Content-Type':'application/json','X-CSRFToken':csrfToken},body:JSON.stringify(payload)});el.textContent=r.ok?'Saved.':'Save failed.';el.className='small ms-2 '+(r.ok?'text-success':'text-danger');}
 const phoneForms={smsPhoneSettingsForm:'smsSettingsStatus',callPhoneSettingsForm:'callSettingsStatus',mediaPhoneSettingsForm:'mediaSettingsStatus'};Object.entries(phoneForms).forEach(([id,statusId])=>{const form=document.getElementById(id);if(form)form.addEventListener('submit',(e)=>{e.preventDefault();savePhoneSettings(form,statusId);});});
 document.querySelectorAll('[data-call-action]').forEach((btn)=>btn.addEventListener('click',async()=>{const action=btn.dataset.callAction;const id=btn.dataset.callId;const r=await fetch(`/api/calls/${id}/${action}`,{method:'POST',credentials:'same-origin',headers:{'X-CSRFToken':csrfToken}});btn.textContent=r.ok?'Done':'Failed';}));
+
+/* ── Communication Availability admin panel ─────────────────────────────── */
+(function(){
+  const body = document.getElementById('availTeamBody');
+  const statusEl = document.getElementById('availStatus');
+  if (!body) return;
+  const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  const fmt = (iso) => { if (!iso) return '—'; try { return new Date(iso).toLocaleString(); } catch(_) { return iso; } };
+  function setStatus(msg, ok){ statusEl.textContent = msg || ''; statusEl.className = 'small mb-2 ' + (ok === false ? 'text-danger' : (ok ? 'text-success' : 'text-muted')); }
+  function render(team){
+    if (!team || !team.length){ body.innerHTML = '<tr><td colspan="6" class="text-muted">No users.</td></tr>'; return; }
+    body.innerHTML = team.map((u) => {
+      const away = u.state === 'away';
+      const badge = away ? '<span class="badge bg-warning text-dark">Away</span>' : '<span class="badge bg-success">Available</span>';
+      const next = away ? 'available' : 'away';
+      const label = away ? 'Set Available' : 'Set Away';
+      const cls = away ? 'btn-outline-success' : 'btn-outline-warning';
+      return `<tr>
+        <td>${esc(u.name)}</td><td class="text-capitalize">${esc(u.role || '')}</td>
+        <td>${badge}</td><td class="small text-muted">${fmt(u.changed_at)}</td>
+        <td class="small text-muted">${esc(u.changed_by_name || '—')}</td>
+        <td class="text-end"><button class="btn ${cls} btn-sm" data-avail-user="${u.user_id}" data-avail-next="${next}">${label}</button></td>
+      </tr>`;
+    }).join('');
+  }
+  async function load(){
+    try {
+      const r = await fetch('/api/phone/availability/team', { credentials:'same-origin' });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok || !d.success){ setStatus(d.error || 'Could not load availability.', false); return; }
+      render(d.team); setStatus('');
+    } catch(_) { setStatus('Could not load availability.', false); }
+  }
+  async function setOne(userId, next){
+    setStatus('Updating…');
+    const r = await fetch('/api/phone/availability/user/' + userId, {
+      method:'PUT', credentials:'same-origin',
+      headers:{'Content-Type':'application/json','X-CSRFToken':csrfToken},
+      body: JSON.stringify({ state: next }),
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok || !d.success){ setStatus(d.error || 'Update failed.', false); return; }
+    load();
+  }
+  async function setAll(next){
+    if (next === 'away' && !window.confirm('Set all users Away?\n\nIncoming messages will continue to be stored and calls will follow the configured fallback/voicemail path, but no users will receive live communications.')) return;
+    setStatus('Updating all users…');
+    const r = await fetch('/api/phone/availability/team', {
+      method:'PUT', credentials:'same-origin',
+      headers:{'Content-Type':'application/json','X-CSRFToken':csrfToken},
+      body: JSON.stringify(next === 'away' ? { state:'away', confirm:true } : { state:'available' }),
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok || !d.success){ setStatus(d.error || 'Bulk update failed.', false); return; }
+    setStatus((d.updated || 0) + ' user(s) set ' + next + '.', true);
+    render(d.team);
+  }
+  body.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-avail-user]');
+    if (btn) setOne(btn.dataset.availUser, btn.dataset.availNext);
+  });
+  document.getElementById('availSetAllAvailable')?.addEventListener('click', () => setAll('available'));
+  document.getElementById('availSetAllAway')?.addEventListener('click', () => setAll('away'));
+  document.querySelector('[data-bs-target="#availability"]')?.addEventListener('shown.bs.tab', load, { once:true });
+  load();
+})();
 if(window.feather) feather.replace();
 </script>
 {% endblock %}

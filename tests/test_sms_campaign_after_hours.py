@@ -287,7 +287,16 @@ def test_bulk_sms_prefers_tenant_twilio_config(app_client, monkeypatch):
         ta.set_auth_token("token")
         db.session.add(ta)
         db.session.commit()
-        monkeypatch.setattr("services.sms_service.Client", FakeClient)
+        # services.sms_service now constructs its Twilio client through the
+        # centralized services.twilio_gate.get_twilio_client() boundary,
+        # which does its own local `from twilio.rest import Client` --
+        # patch that name directly rather than services.sms_service.Client
+        # (no longer referenced), and opt into "live" mode so the gate
+        # actually reaches it (LUXIT_TWILIO_MODE defaults to "disabled"
+        # outside Production). FakeClient never touches the network.
+        import twilio.rest
+        monkeypatch.setattr(twilio.rest, "Client", FakeClient)
+        monkeypatch.setenv("LUXIT_TWILIO_MODE", "live")
         result = SMSService.send_sms("+15550000123", "Tenant send", company_id=company.id)
         assert result["success"] is True
         assert created["messaging_service_sid"] == "MG_TENANT"
@@ -320,7 +329,7 @@ def test_inbound_myorder_first_contact_creates_tagged_contact(app_client):
         db.session.commit()
         twilio_sms._capture_lead(conv, "hello", company.id)
         contact = Contact.query.filter_by(company_id=company.id, phone="+15551230002").one()
-        assert "MyOrder Customer" in contact.tags
+        assert "My Order Customer" in contact.tags
         assert contact.source == "sms_inbound"
         assert contact.source_detail == "Inbound SMS to +19165989519 from +15551230002"
         assert contact.source_added_at is not None
@@ -340,7 +349,7 @@ def test_duplicate_contacts_merge_weekly_job_preserves_info(app_client):
         kept = Contact.query.filter_by(company_id=company.id, is_active=True).one()
         assert kept.first_name == "First"
         assert kept.last_name == "Last"
-        assert "Newsletter" in kept.tags and "MyOrder Customer" in kept.tags
+        assert "Newsletter" in kept.tags and "My Order Customer" in kept.tags
         assert "Subscribed to newsletter" in kept.source_detail
         assert "Inbound SMS to +19165989519" in kept.source_detail
 

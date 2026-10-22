@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 from email.utils import parseaddr
 import re
 
-from sqlalchemy import or_, func
+from sqlalchemy import func
 
 from extensions import db
 from models import Contact, ContactEmailAddress, ContactPhoneNumber, ContactSourceEvent, ContactTask, Opportunity
@@ -13,7 +13,7 @@ from services.phone_normalization import normalize_phone
 
 CONTROLLED_SOURCES = {
     "twilio_inbound_sms", "twilio_inbound_call", "twilio_outbound_sms", "twilio_outbound_call",
-    "myorder_customer", "website_form", "manual_entry", "csv_import", "google_contacts", "api",
+    "myorder_customer", "website_form", "manual_entry", "csv_import", "ios_import", "google_contacts", "inbound_sms", "api",
     "referral", "campaign", "contract", "invoice", "unknown", "legacy",
 }
 PLACEHOLDER_NAMES = {"unknown", "caller", "new contact", "new caller", "no name", "n/a", "na"}
@@ -25,11 +25,9 @@ def normalize_email(value: str | None) -> str:
 
 
 def meaningful_name(contact: Contact | None = None, name: str | None = None) -> bool:
-    raw = (name if name is not None else (getattr(contact, "name", None) or getattr(contact, "display_name", None) or "")).strip()
-    if not raw or raw.lower() in PLACEHOLDER_NAMES:
-        return False
-    digits = re.sub(r"\D", "", raw)
-    return len(digits) < 7
+    from services.contact_resolver import safe_name
+    raw = name if name is not None else (getattr(contact, "display_name", None) or getattr(contact, "name", None))
+    return bool(safe_name(raw, getattr(contact, "normalized_phone", None) or getattr(contact, "phone", None)))
 
 
 def apply_source_attribution(contact: Contact, source: str, *, detail: str | None = None, campaign: str | None = None,
@@ -56,6 +54,13 @@ def apply_source_attribution(contact: Contact, source: str, *, detail: str | Non
     contact.source_detail = contact.source_detail or detail
     contact.source_added_at = contact.source_added_at or now
     contact.source_added_by_user_id = contact.source_added_by_user_id or user_id
+    if source == "ios_import":
+        existing = ContactSourceEvent.query.filter_by(
+            company_id=contact.company_id, contact_id=contact.id, source=source,
+            source_detail=detail, event_type=event_type,
+        ).first()
+        if existing:
+            return existing
     evt = ContactSourceEvent(company_id=contact.company_id, contact_id=contact.id, source=source, source_detail=detail,
                              campaign=campaign, source_url=url, referrer=referrer, event_type=event_type,
                              event_at=now, event_metadata=metadata or {}, created_by_user_id=user_id)
@@ -79,7 +84,11 @@ def sync_contact_points(contact: Contact, phone: str | None, email: str | None, 
         contact.primary_email = contact.primary_email or email.strip()
         contact.email = contact.email or email.strip()
         contact.normalized_email = contact.normalized_email or norm_email
-        exists = ContactEmailAddress.query.filter_by(company_id=contact.company_id, contact_id=contact.id, normalized_value=norm_email).first()
+        exists = ContactEmailAddress.query.filter(
+            ContactEmailAddress.company_id == contact.company_id,
+            ContactEmailAddress.contact_id == contact.id,
+            func.lower(func.trim(ContactEmailAddress.normalized_value)) == norm_email,
+        ).first()
         if not exists:
             db.session.add(ContactEmailAddress(company_id=contact.company_id, contact_id=contact.id, original_value=email.strip(), normalized_value=norm_email, is_primary=not bool(contact.email_addresses.count()), source=source))
 
@@ -87,18 +96,21 @@ def sync_contact_points(contact: Contact, phone: str | None, email: str | None, 
 def resolve_contact(company_id: int, *, phone: str | None = None, email: str | None = None, proposed_name: str | None = None,
                     first_name: str | None = None, last_name: str | None = None, business_name: str | None = None,
                     source: str = "unknown", detail: str | None = None, tenant_id: int | None = None,
-                    user_id: int | None = None, metadata: dict | None = None) -> Contact:
-    phone_result = normalize_phone(phone)
-    norm_email = normalize_email(email)
-    q = Contact.query.filter(Contact.company_id == company_id, Contact.is_active.is_(True))
-    contact = None
-    if phone_result.normalized:
-        contact = q.filter(Contact.normalized_phone == phone_result.normalized).first()
-    if not contact and norm_email:
-        contact = q.filter(or_(Contact.normalized_email == norm_email, func.lower(Contact.email) == norm_email)).first()
-    if not contact:
-        contact = Contact(company_id=company_id, tenant_id=tenant_id or company_id, is_active=True, status="active", created_at=datetime.utcnow(), created_by_user_id=user_id)
-        db.session.add(contact); db.session.flush()
+                    user_id: int | None = None, metadata: dict | None = None, provider_id: str | None = None) -> Contact:
+    from services.contact_resolver import resolve_or_create_contact
+    resolution = resolve_or_create_contact(
+        company_id, phone=phone, email=email, provider_id=provider_id, tenant_id=tenant_id, user_id=user_id,
+    )
+    contact = resolution.contact
+    # Transient (non-persisted) marker so callers that need to know whether a
+    # new row was actually created -- vs. an existing contact being resolved
+    # and enriched -- don't have to re-derive it (e.g. so a caller never
+    # weakens an *existing* contact's subscription/consent flags under the
+    # assumption it just made a fresh row).
+    contact._resolver_created = resolution.created
+    contact._resolver_outcome = resolution.outcome
+    if resolution.created:
+        contact.status = contact.status or "active"
     if proposed_name and not meaningful_name(contact):
         contact.name = proposed_name.strip(); contact.display_name = proposed_name.strip(); contact.name_source = "user"
     if first_name and not contact.first_name: contact.first_name = first_name.strip()

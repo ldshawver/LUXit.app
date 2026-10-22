@@ -4,9 +4,11 @@ import pytest
 from app import create_app
 from extensions import db
 from models import (
-    Company, Contact, MarketingAuditLog, SMSCampaign, SMSKeywordRule, SMSRecipient,
-    SocialPost, TwilioAccount, TwilioConversation, TwilioMessage, User, user_company,
+    Company, Contact, ContactEmailAddress, ContactSourceEvent, IntegrationAuditLog, MarketingAuditLog,
+    SMSCampaign, SMSKeywordRule, SMSRecipient, SocialPost, TwilioAccount,
+    TwilioConversation, TwilioMessage, User, user_company,
 )
+from services.sms_service import SMSService
 
 
 @pytest.fixture
@@ -162,7 +164,7 @@ def test_twilio_delivery_webhook_updates_sms_campaign_recipient(client, tenant_u
 def test_inbound_stop_marks_contact_and_blocks_future_preview(client, tenant_user):
     _, company = tenant_user
     _twilio_account(company)
-    contact = Contact(company_id=company.id, phone="+15550000009", tags="sms_consent", is_active=True, is_subscribed=True, segment="vip")
+    contact = Contact(company_id=company.id, phone="+14155550109", normalized_phone="+14155550109", tags="sms_consent", is_active=True, is_subscribed=True, segment="vip")
     campaign = SMSCampaign(company_id=company.id, name="STOP Test", message="Offer Reply STOP to opt out.", segment="vip", status="sent")
     db.session.add_all([contact, campaign])
     db.session.flush()
@@ -177,6 +179,64 @@ def test_inbound_stop_marks_contact_and_blocks_future_preview(client, tenant_use
 
     preview = client.post(f"/api/marketing/sms-campaigns/{campaign.id}/preview").get_json()
     assert preview["recipients_selected"] == 0
+
+
+def test_inbound_stop_resolves_via_normalized_phone_when_contact_phone_is_formatted(client, tenant_user):
+    """Direct reproduction of the release blocker through the real inbound
+    webhook: Contact.phone is a human-formatted display string that does not
+    match the E.164 value Twilio sends in `From`. Resolution must go through
+    normalized_phone, not a string match against Contact.phone.
+    """
+    _, company = tenant_user
+    _twilio_account(company)
+    contact = Contact(company_id=company.id, phone="(202) 555-0101", normalized_phone="+12025550101", tags="sms_consent", is_active=True, is_subscribed=True, segment="vip")
+    campaign = SMSCampaign(company_id=company.id, name="STOP Formatted Test", message="Offer Reply STOP to opt out.", segment="vip", status="sent")
+    db.session.add_all([contact, campaign])
+    db.session.flush()
+    db.session.add(SMSRecipient(company_id=company.id, campaign_id=campaign.id, contact_id=contact.id, status="sent"))
+    db.session.commit()
+
+    response = client.post("/twilio/sms/inbound", data={"From": "+12025550101", "To": "+15559999999", "Body": "STOP", "MessageSid": "SMSTOPFORMATTED"})
+    assert response.status_code == 200
+    db.session.refresh(contact)
+    assert contact.is_subscribed is False
+    assert contact.sms_consent_status == "opted_out"
+    assert "sms_opt_out" in (contact.tags or "")
+    assert contact.phone == "(202) 555-0101"  # display field is untouched
+
+    conversation = TwilioConversation.query.filter_by(company_id=company.id, contact_id=contact.id).first()
+    assert conversation is not None and conversation.is_opted_out is True
+
+    preview = client.post(f"/api/marketing/sms-campaigns/{campaign.id}/preview").get_json()
+    assert preview["recipients_selected"] == 0
+
+    # Prove exclusion at the canonical server-side materialization resolver
+    # (the same SMSService.add_recipients used by campaign creation/send),
+    # not just the preview endpoint's display filter.
+    second_campaign = SMSCampaign(company_id=company.id, name="STOP Formatted Test 2", message="Book now.", segment="vip", status="draft")
+    db.session.add(second_campaign)
+    db.session.flush()
+    SMSService.add_recipients(second_campaign.id, [contact.id])
+    assert SMSRecipient.query.filter_by(campaign_id=second_campaign.id).count() == 0
+
+
+def test_duplicate_stop_message_sid_is_processed_once(client, tenant_user):
+    _, company = tenant_user
+    _twilio_account(company)
+    contact = Contact(company_id=company.id, phone="(415) 555-0199", normalized_phone="+14155550199", tags="sms_consent", is_active=True, is_subscribed=True, segment="vip")
+    db.session.add(contact)
+    db.session.commit()
+    payload = {"From": "+14155550199", "To": "+15559999999", "Body": "STOP", "MessageSid": "SMDUPSTOP"}
+
+    first = client.post("/twilio/sms/inbound", data=payload)
+    duplicate = client.post("/twilio/sms/inbound", data=payload)
+
+    assert first.status_code == duplicate.status_code == 200
+    assert TwilioMessage.query.filter_by(twilio_sid="SMDUPSTOP").count() == 1
+    assert IntegrationAuditLog.query.filter_by(company_id=company.id, service_slug="sms_compliance", action="opt_out").count() == 1
+    db.session.refresh(contact)
+    assert contact.sms_consent_status == "opted_out"
+    assert contact.is_subscribed is False
 
 
 def test_keyword_rule_triggers_reply_tags_contact_and_audits(client, tenant_user):
@@ -207,7 +267,7 @@ def test_keyword_rule_triggers_reply_tags_contact_and_audits(client, tenant_user
 def test_inbound_reply_attaches_to_latest_campaign_recipient(client, tenant_user):
     _, company = tenant_user
     _twilio_account(company)
-    contact = Contact(company_id=company.id, phone="+15550000011", tags="sms_consent", is_active=True, is_subscribed=True, segment="vip")
+    contact = Contact(company_id=company.id, phone="+14155550111", normalized_phone="+14155550111", tags="sms_consent", is_active=True, is_subscribed=True, segment="vip")
     campaign = SMSCampaign(company_id=company.id, name="Reply Test", message="Reply BOOK", segment="vip", status="sent")
     db.session.add_all([contact, campaign])
     db.session.flush()
@@ -302,7 +362,7 @@ def test_inbound_sms_is_idempotent_creates_tagged_contact_and_survives_push_fail
     message = TwilioMessage.query.filter_by(twilio_sid="SMIDEMPOTENT").one()
     assert message.company_id == company.id
     contact = Contact.query.filter_by(company_id=company.id, normalized_phone="+14155550123").one()
-    assert "MyOrder Customer" in (contact.tags or "")
+    assert "My Order Customer" in (contact.tags or "")
     assert message.conversation.contact_id == contact.id
 
 
@@ -313,6 +373,12 @@ def test_inbound_sms_reuses_existing_normalized_contact(client, tenant_user):
         company_id=company.id,
         phone="(415) 555-0124",
         normalized_phone="+14155550124",
+        first_name="Actual",
+        last_name="Customer",
+        name="Actual Customer",
+        display_name="Actual Customer",
+        identity_status="confirmed",
+        name_verification_level="verified",
         is_active=True,
     )
     db.session.add(existing)
@@ -329,6 +395,101 @@ def test_inbound_sms_reuses_existing_normalized_contact(client, tenant_user):
     assert Contact.query.filter_by(company_id=company.id).count() == 1
     message = TwilioMessage.query.filter_by(twilio_sid="SMEXISTINGNORMALIZED").one()
     assert message.conversation.contact_id == existing.id
+    db.session.refresh(existing)
+    assert (existing.first_name, existing.last_name, existing.name, existing.display_name) == (
+        "Actual", "Customer", "Actual Customer", "Actual Customer"
+    )
+
+
+def test_duplicate_normal_inbound_is_persisted_once_and_never_used_as_name(client, tenant_user, monkeypatch):
+    _, company = tenant_user
+    _twilio_account(company)
+    monkeypatch.setattr("twilio_sms.sendConversationSms", lambda *args, **kwargs: {"success": True, "sid": "SM-reply"})
+    monkeypatch.setattr("inbox_pwa._fire_push_notification", lambda *args, **kwargs: None)
+    payload = {
+        "From": "+14155550127",
+        "To": "+15559999999",
+        "Body": "Please send appointment details",
+        "MessageSid": "SMNORMALIDEMPOTENT",
+    }
+
+    first = client.post("/twilio/sms/inbound", data=payload)
+    duplicate = client.post("/twilio/sms/inbound", data=payload)
+
+    assert first.status_code == duplicate.status_code == 200
+    assert TwilioMessage.query.filter_by(twilio_sid="SMNORMALIDEMPOTENT").count() == 1
+    contact = Contact.query.filter_by(company_id=company.id, normalized_phone="+14155550127").one()
+    assert contact.first_name is None and contact.last_name is None
+    assert contact.name is None and contact.display_name is None
+    assert contact.pending_first_name is None and contact.pending_last_name is None
+    assert contact.identity_status == "awaiting_name"
+
+
+def test_normal_yes_does_not_enter_identity_confirmation_or_change_name(client, tenant_user):
+    _, company = tenant_user
+    _twilio_account(company)
+    contact = Contact(
+        company_id=company.id,
+        phone="+14155550125",
+        normalized_phone="+14155550125",
+        first_name="Actual",
+        last_name="Customer",
+        name="Actual Customer",
+        display_name="Actual Customer",
+        identity_status="confirmed",
+        name_verification_level="verified",
+        is_active=True,
+    )
+    db.session.add(contact); db.session.commit()
+
+    response = client.post("/twilio/sms/inbound", data={
+        "From": contact.phone,
+        "To": "+15559999999",
+        "Body": "YES",
+        "MessageSid": "SMNORMALYES",
+    })
+
+    assert response.status_code == 200
+    assert TwilioMessage.query.filter_by(twilio_sid="SMNORMALYES", body="YES").count() == 1
+    db.session.refresh(contact)
+    assert (contact.first_name, contact.last_name, contact.name, contact.display_name) == (
+        "Actual", "Customer", "Actual Customer", "Actual Customer"
+    )
+
+
+def test_pending_yes_confirms_once_through_webhook(client, tenant_user, monkeypatch):
+    _, company = tenant_user
+    _twilio_account(company)
+    monkeypatch.setattr("twilio_sms.sendConversationSms", lambda *args, **kwargs: {"success": True, "sid": "SM-reply"})
+    contact = Contact(
+        company_id=company.id,
+        phone="+14155550126",
+        normalized_phone="+14155550126",
+        identity_status="awaiting_confirmation",
+        pending_first_name="Luke",
+        pending_last_name="Shawver",
+        pending_email="luke@adiken.com",
+        is_active=True,
+    )
+    db.session.add(contact); db.session.commit()
+    payload = {
+        "From": contact.phone,
+        "To": "+15559999999",
+        "Body": "YES",
+        "MessageSid": "SMLUKEYES",
+    }
+
+    first = client.post("/twilio/sms/inbound", data=payload)
+    duplicate = client.post("/twilio/sms/inbound", data=payload)
+
+    assert first.status_code == duplicate.status_code == 200
+    assert TwilioMessage.query.filter_by(twilio_sid="SMLUKEYES").count() == 1
+    db.session.refresh(contact)
+    assert contact.identity_status == "confirmed"
+    assert contact.display_name == "Luke Shawver"
+    assert Contact.query.filter_by(company_id=company.id, is_active=True).count() == 1
+    assert ContactEmailAddress.query.filter_by(contact_id=contact.id, normalized_value="luke@adiken.com").count() == 1
+    assert ContactSourceEvent.query.filter_by(contact_id=contact.id, event_type="identity_confirmed").count() == 1
 
 
 def test_twilio_signature_validation_for_inbound_and_status(client, tenant_user, monkeypatch):
@@ -393,7 +554,7 @@ def test_sms_campaign_send_is_idempotent_and_batches(client, tenant_user, monkey
 def test_stop_start_help_compliance_keywords(client, tenant_user):
     _, company = tenant_user
     _twilio_account(company)
-    contact = Contact(company_id=company.id, phone="+15550000041", tags="sms_consent", is_active=True, is_subscribed=True, segment="vip")
+    contact = Contact(company_id=company.id, phone="+14155550141", normalized_phone="+14155550141", tags="sms_consent", is_active=True, is_subscribed=True, segment="vip")
     db.session.add(contact)
     db.session.commit()
 

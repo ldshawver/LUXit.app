@@ -1,7 +1,7 @@
 """Inbound SMS campaign attribution, compliance, and keyword automation."""
 from __future__ import annotations
 
-from datetime import datetime, time
+from datetime import datetime
 
 from extensions import db
 from models import (
@@ -9,17 +9,22 @@ from models import (
     SMSKeywordRule, SMSRecipient, TwilioConversation, User,
 )
 
-BUSINESS_START = time(9, 0)
-BUSINESS_END = time(17, 0)
-
-
 def _now():
     return datetime.utcnow()
 
 
-def _is_business_hours(at: datetime | None = None) -> bool:
-    at = at or _now()
-    return at.weekday() < 5 and BUSINESS_START <= at.time() <= BUSINESS_END
+def _is_business_hours(company_id: int, phone_config=None, at: datetime | None = None) -> bool:
+    """Business-hours check for campaign/keyword after-hours replies.
+
+    This used to be a separate, independently-broken implementation (naive UTC,
+    hardcoded 9-5 Mon-Fri, no midnight-wraparound support) that could report
+    "after hours" during a tenant's real business hours. It now delegates to
+    twilio_sms._is_business_hours, the single timezone-aware implementation
+    that correctly handles per-phone-number hours and midnight-crossing
+    schedules, so the two auto-reply engines can no longer disagree.
+    """
+    from twilio_sms import _is_business_hours as _tz_aware_is_business_hours
+    return _tz_aware_is_business_hours(company_id, at_time=at, phone_config=phone_config)
 
 
 def _tags_list(value):
@@ -39,9 +44,37 @@ def _save_tags(contact: Contact, tags: list[str]) -> None:
 
 
 def find_contact(company_id: int, phone: str) -> Contact | None:
+    """Canonical tenant-scoped Contact lookup for an inbound SMS phone number.
+
+    Resolves via ``Contact.normalized_phone`` -- the single E.164 value every
+    contact reachable through the inbound-SMS pipeline already has, via
+    services.phone_normalization.normalize_phone_e164 -- instead of guessing
+    raw string forms against ``Contact.phone``. Contact.phone is a free-text
+    display field (editable via the PWA) and can drift out of the exact
+    format Twilio sends, which previously caused this lookup to silently miss
+    an existing contact.
+
+    Tenant-scoped, never creates or merges a contact. When more than one
+    active contact shares a normalized phone within the tenant (a duplicate
+    that hasn't been merged), the lowest id is picked deterministically.
+    """
     if not company_id or not phone:
         return None
-    return Contact.query.filter_by(company_id=company_id, phone=phone).first()
+    from services.phone_normalization import normalize_phone_e164
+    normalized = normalize_phone_e164(phone)
+    if not normalized:
+        return None
+    return (
+        Contact.query
+        .filter(
+            Contact.company_id == company_id,
+            Contact.normalized_phone == normalized,
+            Contact.is_active.is_(True),
+            Contact.merged_into_contact_id.is_(None),
+        )
+        .order_by(Contact.id.asc())
+        .first()
+    )
 
 
 def mark_opt_out(company_id: int, phone: str, conversation: TwilioConversation | None = None) -> None:
@@ -108,6 +141,16 @@ def update_delivery_status(message_sid: str, status: str, error_code: str | None
     next_status = recipient.status
     if normalized in {"delivered", "sent", "failed", "undelivered"}:
         next_status = "failed" if normalized == "undelivered" else normalized
+    if error_code:
+        next_status = "failed"
+
+    # A Twilio status callback can arrive out of order. Once a recipient has
+    # reached a terminal state, a late/stale earlier status must not regress
+    # it (e.g. an out-of-order "sent" landing after "delivered").
+    from services.sms_status import is_forward_status_transition
+    if not is_forward_status_transition(recipient.status, next_status):
+        return recipient
+
     next_error_code = str(error_code) if error_code else recipient.provider_error_code
     next_error_message = error_message if error_code else recipient.error_message
     if (
@@ -123,7 +166,6 @@ def update_delivery_status(message_sid: str, status: str, error_code: str | None
     if error_code:
         recipient.provider_error_code = next_error_code
         recipient.error_message = next_error_message
-        recipient.status = "failed"
     recipient.updated_at = _now()
     _audit(recipient.company_id, None, "sms_delivery_status", "sms_recipient", recipient.id, {
         "message_sid": message_sid,
@@ -150,7 +192,7 @@ def process_keyword_rules(company_id: int, body: str, conversation: TwilioConver
         if not _matches(rule, body):
             continue
         reply = rule.reply_message or "Thanks — we received your message."
-        if not _is_business_hours() and rule.after_hours_message:
+        if not _is_business_hours(company_id, twilio_account) and rule.after_hours_message:
             reply = rule.after_hours_message
         if contact:
             _apply_contact_actions(contact, rule)
@@ -173,7 +215,7 @@ def process_keyword_rules(company_id: int, body: str, conversation: TwilioConver
     auto = _auto_reply(company_id, campaign_id)
     if auto:
         reply = auto.reply_message or "Thanks for texting us. A team member will follow up soon."
-        if not _is_business_hours() and auto.after_hours_message:
+        if not _is_business_hours(company_id, twilio_account) and auto.after_hours_message:
             reply = auto.after_hours_message
         _audit(company_id, auto.created_by_user_id, "sms_auto_reply_triggered", "sms_auto_reply_rule", auto.id, {
             "campaign_id": campaign_id,
@@ -199,7 +241,12 @@ def _matches(rule: SMSKeywordRule, body: str) -> bool:
 def _apply_contact_actions(contact: Contact, rule: SMSKeywordRule) -> None:
     tags = _tags_list(contact.tags)
     if rule.tag_to_add and rule.tag_to_add not in tags:
-        tags.append(rule.tag_to_add)
+        from services.contact_audience import add_contact_tag
+        add_contact_tag(
+            contact, rule.tag_to_add, source="sms_keyword_campaign",
+            event_key=f"sms-keyword-rule:{rule.id}:contact:{contact.id}",
+        )
+        tags = _tags_list(contact.tags)
     if rule.segment_to_add:
         contact.segment = rule.segment_to_add
     _save_tags(contact, tags)
