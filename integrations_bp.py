@@ -41,6 +41,7 @@ import logging
 
 from flask import Blueprint, jsonify, request, render_template, abort, redirect, url_for
 from flask_login import current_user, login_required
+from extensions import csrf
 
 logger = logging.getLogger(__name__)
 
@@ -453,8 +454,21 @@ def github_latest_commit(owner, repo):
 # ======
 
 @integrations_bp.route("/api/webhooks/revenuecat", methods=["POST"])
+@csrf.exempt
 def revenuecat_webhook():
-    """RevenueCat server notification webhook — no auth (validate in prod via shared secret)."""
+    """RevenueCat server notification webhook.
+
+    Machine-to-machine: shared-secret auth is mandatory and fail-closed
+    (``REVENUECAT_WEBHOOK_SECRET``). See ``routes._require_shared_secret_auth``.
+    Unconfigured/unauthenticated requests are rejected before the payload is
+    read or ``handle_webhook`` (which writes an audit ``IntegrationEvent`` row)
+    is called.
+    """
+    from routes import _require_shared_secret_auth
+    auth_error = _require_shared_secret_auth(env_var="REVENUECAT_WEBHOOK_SECRET")
+    if auth_error is not None:
+        return auth_error
+
     payload = request.get_json(silent=True) or {}
     from services.integrations.revenuecat_service import handle_webhook
     result = handle_webhook(payload)

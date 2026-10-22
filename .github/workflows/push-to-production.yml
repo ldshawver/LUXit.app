@@ -1,10 +1,16 @@
 name: Push to Production
 
+# Production deployment is MANUAL ONLY.
+# A plain `git push origin main` no longer deploys (that caused an unintended
+# release on 2026-09-08). Deploy by running this workflow from the Actions tab
+# (or `gh workflow run`) with an explicit deploy_sha.
 on:
-  push:
-    branches:
-      - main
   workflow_dispatch:
+    inputs:
+      deploy_sha:
+        description: "Full 40-char commit SHA to deploy. Must be reachable from origin/main (normally == origin/main HEAD)."
+        required: true
+        type: string
 
 concurrency:
   group: push-production
@@ -17,6 +23,18 @@ jobs:
     timeout-minutes: 20
 
     steps:
+      - name: Validate deploy SHA input
+        shell: bash
+        env:
+          DEPLOY_SHA: ${{ inputs.deploy_sha }}
+        run: |
+          set -euo pipefail
+          if ! [[ "${DEPLOY_SHA:-}" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::deploy_sha must be a full 40-character lowercase hex commit SHA." >&2
+            exit 1
+          fi
+          echo "Deploy SHA: ${DEPLOY_SHA}"
+
       - name: Probe SSH on public LUXit VPS
         shell: bash
         env:
@@ -34,7 +52,7 @@ jobs:
       - name: Deploy to Production VPS
         uses: appleboy/ssh-action@v1.0.3
         env:
-          DEPLOY_SHA: ${{ github.sha }}
+          DEPLOY_SHA: ${{ inputs.deploy_sha }}
         with:
           host: ${{ secrets.VPS_HOST }}
           username: serveradmin
@@ -50,7 +68,11 @@ jobs:
             sudo --preserve-env=DEPLOY_SHA bash <<'REMOTE_DEPLOY'
             set -euo pipefail
 
-            APP_DIR="/root/lux-email-bot"
+            # Single authoritative production tree: the directory systemd's
+            # WorkingDirectory serves (drop-in recovery-20260824-candidate-54af654.conf).
+            APP_DIR="/root/luxit-main-canonicalize"
+            VENV_DIR="/root/lux-email-bot/.venv"   # venv intentionally lives in the base repo dir, not the worktree
+            ENV_FILE="/etc/luxit/prod.env"         # matches systemd EnvironmentFile
             SERVICE="lux-email-bot.service"
             PORT="8001"
             LOCAL_HEALTH_URL="http://127.0.0.1:${PORT}/healthz"
@@ -68,9 +90,14 @@ jobs:
             echo "== Deploying LUXit production =="
             cd "$APP_DIR"
 
+            echo "== Verify this is the canonical main worktree =="
+            test "$(git symbolic-ref --quiet --short HEAD || true)" = "main"
+
             echo "== Verify requested deployment commit =="
             test -n "${DEPLOY_SHA:-}"
             git fetch origin main
+            git cat-file -e "${DEPLOY_SHA}^{commit}"                 # SHA exists as a commit
+            git merge-base --is-ancestor "$DEPLOY_SHA" origin/main   # SHA is reachable from origin/main
 
             remote_main="$(git rev-parse origin/main)"
             if [ "$remote_main" != "$DEPLOY_SHA" ]; then
@@ -82,11 +109,11 @@ jobs:
             git reset --hard "$DEPLOY_SHA"
 
             echo "== Verify environment file =="
-            test -f .env
+            test -f "$ENV_FILE"
 
             echo "== Load production environment =="
             set -a
-            source .env
+            source "$ENV_FILE"
             set +a
 
             echo "== Verify required environment =="
@@ -97,17 +124,17 @@ jobs:
             command -v pg_dump >/dev/null
             command -v pg_restore >/dev/null
             command -v curl >/dev/null
-            test -x .venv/bin/python
+            test -x "$VENV_DIR/bin/python"
             test -x scripts/apply_migrations.sh
 
             echo "== Select project virtual environment =="
-            export PATH="$APP_DIR/.venv/bin:$PATH"
+            export PATH="$VENV_DIR/bin:$PATH"
 
             migration_python="$(command -v python3)"
             echo "Migration Python: $migration_python"
             "$migration_python" -c 'import psycopg2'
 
-            if [[ "$migration_python" != "$APP_DIR"/.venv/bin/* ]]; then
+            if [[ "$migration_python" != "$VENV_DIR"/bin/* ]]; then
             echo "Migration runner did not select the project virtual environment." >&2
             exit 1
             fi
@@ -132,10 +159,10 @@ jobs:
 
             echo "== Verify CRM schema contract =="
             test -f scripts/verify_crm_schema.py
-            .venv/bin/python scripts/verify_crm_schema.py
+            "$VENV_DIR/bin/python" scripts/verify_crm_schema.py
 
             echo "== Python syntax check =="
-            .venv/bin/python -m py_compile app.py auth.py routes.py models.py inbox_pwa.py twilio_sms.py
+            "$VENV_DIR/bin/python" -m py_compile app.py auth.py routes.py models.py inbox_pwa.py twilio_sms.py
 
             echo "== Restart canonical production service =="
             systemctl daemon-reload

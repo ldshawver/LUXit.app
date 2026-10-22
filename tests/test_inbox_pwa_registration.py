@@ -72,6 +72,15 @@ def test_sw_js_manifest_and_app_root_are_reachable(app):
         manifest = client.get("/manifest.json")
         assert manifest.status_code == 200
         assert manifest.mimetype == "application/json"
+        m = manifest.get_json()
+        assert m["name"] == "LUX Connect" and m["short_name"] == "LUX"
+        icons = {(i["sizes"], i.get("purpose", "any")): i["src"] for i in m["icons"]}
+        assert icons[("192x192", "any")] == "/static/pwa/lux-connect-192.png"
+        assert icons[("512x512", "any")] == "/static/pwa/lux-connect-512.png"
+        assert icons[("512x512", "maskable")] == "/static/pwa/lux-connect-maskable-512.png"
+        for src in set(icons.values()):
+            asset = client.get(src)
+            assert asset.status_code == 200 and asset.mimetype == "image/png"
 
         root = client.get("/app/", follow_redirects=False)
         assert root.status_code == 302

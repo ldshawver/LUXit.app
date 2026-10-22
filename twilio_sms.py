@@ -68,6 +68,9 @@ def _guard_sms_feature():
         "/twilio/voice/no-answer",
         "/twilio/voice/recording",
         "/twilio/voice/status",
+        "/twilio/voice/pwa-outbound",
+        "/twilio/voice/pwa-outbound-complete",
+        "/twilio/fallback",
     }
     if request.path in _WEBHOOK_PATHS or request.path.startswith("/twilio/google-contacts/"):
         return None
@@ -350,6 +353,22 @@ _START_KEYWORDS = {"start", "unstop", "yes", "subscribe", "join"}
 TWILIO_WEBHOOK_PUBLIC_URL = os.environ.get(
     "TWILIO_WEBHOOK_PUBLIC_URL", "https://luxit.app/twilio/sms/inbound"
 )
+
+
+def _sms_status_callback_url(ta) -> str | None:
+    """Absolute /twilio/sms/status URL to attach to an outbound send.
+
+    Twilio only calls back to a status callback URL that was actually given
+    to it -- either per-message, or as a default configured on the sending
+    Messaging Service. A message sent with an explicit ``from_=<number>``
+    (bypassing the Messaging Service) inherits no default, so without this
+    the send is accepted by Twilio but its real delivery outcome (delivered/
+    undelivered/failed) is never reported back and the local record is
+    frozen at whatever status Twilio returned synchronously.
+    """
+    base = (ta.webhook_base_url.rstrip("/") if ta and ta.webhook_base_url
+            else TWILIO_WEBHOOK_PUBLIC_URL.rsplit("/twilio/", 1)[0])
+    return f"{base}/twilio/sms/status" if base else None
 
 
 def _twiml_message(text: str):
@@ -671,6 +690,16 @@ def sendConversationSms(conversation_id: int, message: str, *,
     conv = db.session.get(TwilioConversation, conversation_id) if conversation_id else None
     if not conv:
         return {"success": False, "error": "Conversation is required for SMS send."}
+    if conv.is_opted_out:
+        # Single entry point for every conversational send: a STOP'd/opted-out
+        # conversation is blocked here so no caller path (manual reply, auto-
+        # reply, campaign follow-up) can accidentally text a suppressed
+        # contact. Automated paths already pre-check this before calling in;
+        # this is the backstop for the manual PWA/desktop send routes, which
+        # previously had no opt-out check at all.
+        logger.warning("Outbound SMS blocked: conversation %s is opted out (STOP).", conv.id)
+        return {"success": False, "error": "This contact has replied STOP and cannot be sent SMS.",
+                "error_code": "recipient_opted_out"}
     if (
         not bypass_outbox
         and has_request_context()
@@ -722,6 +751,9 @@ def sendConversationSms(conversation_id: int, message: str, *,
             "to":   to_number,
             "from_": canonical_sender,
         }
+        status_callback_url = _sms_status_callback_url(ta)
+        if status_callback_url:
+            kwargs["status_callback"] = status_callback_url
 
         msg = client.messages.create(**kwargs)
         provider_status = getattr(msg, "status", None) or "sent"
@@ -735,14 +767,14 @@ def sendConversationSms(conversation_id: int, message: str, *,
                 from_number=canonical_sender,
                 to_number=to_number,
                 body=body,
-                status="sent",
+                status=provider_status,
                 is_auto_reply=is_auto_reply,
                 rule_id=rule_id,
                 raw_payload={"provider_status": provider_status},
             )
             db.session.add(record)
             db.session.commit()
-        logger.info("Outbound SMS sent: sid=%s to=%s", msg.sid, to_number)
+        logger.info("Outbound SMS sent: sid=%s to_ref=%s", msg.sid, _safe_phone_ref(to_number))
         try:
             from services.posthog_client import track_event
             track_event(f"company_{ta.company_id}", 'sms_sent', {
@@ -1011,7 +1043,7 @@ def _apply_auto_reply_rules(conv, body: str, ta) -> bool:
     """
     from models import AutoReplyRule, Contact
 
-    _tag = f"[auto-reply company={ta.company_id} conv={conv.id} from={conv.from_number}]"
+    _tag = f"[auto-reply company={ta.company_id} conv={conv.id} from_ref={_safe_phone_ref(conv.from_number)}]"
 
     if not ta.automation_enabled:
         logger.info("%s automation_enabled=False — skipping all rules", _tag)
@@ -1661,6 +1693,13 @@ def inbound_sms():
                 mark_opt_out(ta.company_id, from_number, conv)
             except Exception as opt_exc:
                 logger.warning("Campaign opt-out sync failed: %s", opt_exc)
+            try:
+                # STOP precedence: cancel any pending promotional opt-in request
+                # so a later stale YES can never revive it.
+                from services.promotional_optin import cancel_pending_for_phone
+                cancel_pending_for_phone(ta.company_id, from_number, reason="stop")
+            except Exception as promo_exc:
+                logger.warning("Promotional solicitation STOP-cancel failed: %s", promo_exc)
             reply_tuple = _twiml_message(_STOP_REPLY)
             completed = _set_inbound_processing_state(msg_record_id, "completed")
             completed.response_body = reply_tuple[0]
@@ -1668,10 +1707,61 @@ def inbound_sms():
             logger.info("Opt-out keyword received: company_id=%s phone_last4=%s", ta.company_id, from_number[-4:])
             return reply_tuple
 
+        _kw_contact = db.session.get(Contact, conv.contact_id) if conv.contact_id else None
         active_identity_confirmation = bool(
-            conv.contact_id and getattr(db.session.get(Contact, conv.contact_id), "identity_status", None) == "awaiting_confirmation"
+            getattr(_kw_contact, "identity_status", None) == "awaiting_confirmation"
         )
-        if kw in _START_KEYWORDS and not (kw == "yes" and active_identity_confirmation):
+
+        # ── 4a. Contextual promotional opt-in ────────────────────────────────
+        # A YES only creates promotional consent when it answers a pending,
+        # operator-approved promotional opt-in solicitation for this tenant /
+        # canonical phone / business number. Idempotent on the inbound SID.
+        # A YES with no pending solicitation is NOT handled here -- it falls
+        # through to normal keyword / identity / auto-reply processing.
+        promo_yes_kw = None
+        if not active_identity_confirmation:
+            try:
+                from services.promotional_optin import normalize_yes_keyword
+                promo_yes_kw = normalize_yes_keyword(body)
+            except Exception:
+                promo_yes_kw = None
+        if promo_yes_kw:
+            try:
+                from services.promotional_optin import record_contextual_yes
+                promo_outcome = record_contextual_yes(
+                    ta.company_id, from_number, to_number, twilio_sid,
+                    keyword=promo_yes_kw, received_at=datetime.utcnow(),
+                )
+            except Exception as promo_exc:
+                db.session.rollback()
+                logger.warning("Contextual promotional YES failed: %s", promo_exc)
+                promo_outcome = {"matched": False}
+            if promo_outcome.get("matched"):
+                reply_body = promo_outcome.get("reply")
+                reply_tuple = _twiml_message(reply_body) if reply_body else ('<Response></Response>', 200, {"Content-Type": "text/xml"})
+                completed = _set_inbound_processing_state(msg_record_id, "completed")
+                completed.response_body = reply_tuple[0]
+                db.session.commit()
+                logger.info(
+                    "Promotional opt-in YES: company_id=%s granted=%s duplicate=%s suppressed=%s",
+                    ta.company_id, promo_outcome.get("granted"),
+                    promo_outcome.get("duplicate"), promo_outcome.get("suppressed"),
+                )
+                return reply_tuple
+
+        # A bare, non-contextual "yes" must not become a promotional opt-in.
+        # It still works as a re-subscribe keyword for a contact who is
+        # currently opted out (matches the CTIA START/YES/UNSTOP resume
+        # contract); for anyone else it is treated as an ordinary inbound
+        # message below.
+        _yes_is_resubscribe = (
+            kw == "yes" and (
+                conv.is_opted_out
+                or bool(getattr(_kw_contact, "sms_opted_out", False))
+                or getattr(_kw_contact, "sms_opt_out_at", None) is not None
+            )
+        )
+        if kw in _START_KEYWORDS and (kw != "yes" or _yes_is_resubscribe) and not (kw == "yes" and active_identity_confirmation):
             conv.is_opted_out  = False
             conv.sms_opt_in_at = datetime.utcnow()
             conv.sms_opt_out_at = None
@@ -1933,6 +2023,14 @@ def sms_status():
         if not _validate_twilio_signature(ta, "/twilio/sms/status"):
             abort(403)
         if msg:
+            from services.sms_status import is_forward_status_transition
+            if not is_forward_status_transition(msg.status, status):
+                logger.info(
+                    "SMS status: dropped out-of-order/late callback sid=%s current=%s incoming=%s",
+                    sid, msg.status, status,
+                )
+                msg = None
+        if msg:
             msg.status         = status
             msg.error_code     = error_code
             msg.error_message  = error_msg
@@ -1957,6 +2055,14 @@ def sms_status():
         except Exception as campaign_status_exc:
             db.session.rollback()
             logger.warning("Campaign delivery status sync failed: %s", campaign_status_exc)
+
+        try:
+            from services.promotional_optin import sync_solicitation_delivery_status
+            if sync_solicitation_delivery_status(sid, status, error_msg or error_code):
+                db.session.commit()
+        except Exception as promo_status_exc:
+            db.session.rollback()
+            logger.warning("Promotional opt-in solicitation delivery status sync failed: %s", promo_status_exc)
 
     return "", 204
 
@@ -1985,6 +2091,161 @@ def outbound_call_twiml():
         "</Response>"
     )
     return twiml, 200, {"Content-Type": "text/xml"}
+
+
+def _pwa_outbound_fail_twiml(message: str):
+    return (
+        '<?xml version="1.0" encoding="UTF-8"?>\n<Response>\n'
+        f'  <Say voice="Polly.Joanna">{html.escape(message)}</Say>\n'
+        '  <Hangup/>\n</Response>'
+    ), 200, {"Content-Type": "text/xml"}
+
+
+@twilio_bp.route("/voice/pwa-outbound", methods=["POST"])
+@csrf.exempt
+def pwa_outbound_twiml():
+    """TwiML App VoiceUrl for browser-originated (Twilio Voice SDK) outbound calls.
+
+    A registered Twilio.Device calls ``device.connect({params:{To, phone_number_id}})``.
+    Twilio then POSTs here with ``From = client:<voice identity>``. The caller ID
+    is resolved SERVER-SIDE from the *verified* Client identity — the browser
+    never chooses it, and an unauthorized / unverifiable identity is hung up
+    rather than dialed.
+    """
+    from models import CallEvent, TwilioCallLog, TwilioPhoneNumber, User
+    from services.phone_identity import pwa_voice_identity
+    from services.comms_permissions import accessible_phone_numbers
+
+    data = request.values
+    call_sid = (data.get("CallSid") or "").strip()
+    frm = (data.get("From") or "").strip()
+    to_raw = (data.get("To") or data.get("PhoneNumber") or "").strip()
+    requested_pn_id = (data.get("phone_number_id") or "").strip()
+
+    identity = frm[7:] if frm.startswith("client:") else frm
+    m = re.match(r"^luxit_c(\d+)_u(\d+)_[0-9a-f]{16}$", identity)
+    if not m:
+        logger.warning("pwa-outbound: unrecognized client identity sid=%s", call_sid)
+        return _pwa_outbound_fail_twiml("This call could not be authorized. Goodbye.")
+    company_id, user_id = int(m.group(1)), int(m.group(2))
+    if pwa_voice_identity(company_id, user_id) != identity:
+        logger.warning(
+            "pwa-outbound: identity signature mismatch company_id=%s user_id=%s sid=%s",
+            company_id, user_id, call_sid,
+        )
+        return _pwa_outbound_fail_twiml("This call could not be authorized. Goodbye.")
+
+    user = db.session.get(User, user_id)
+    if not user or not getattr(user, "active", True):
+        return _pwa_outbound_fail_twiml("This call could not be authorized. Goodbye.")
+
+    allowed = accessible_phone_numbers(user, company_id)
+    if not allowed:
+        return _pwa_outbound_fail_twiml("No calling number is assigned to your account. Goodbye.")
+
+    caller_id = None
+    if requested_pn_id.isdigit():
+        pn = db.session.get(TwilioPhoneNumber, int(requested_pn_id))
+        if pn and pn.company_id == company_id and pn.is_active and pn.phone_number in allowed:
+            caller_id = pn.phone_number
+    if not caller_id:
+        caller_id = allowed[0]
+
+    digits = re.sub(r"[^\d]", "", to_raw)
+    if not digits:
+        return _pwa_outbound_fail_twiml("No destination number was provided. Goodbye.")
+    if to_raw.startswith("+"):
+        to_number = "+" + digits
+    elif len(digits) == 10:
+        to_number = "+1" + digits
+    else:
+        to_number = "+" + digits
+
+    # Outbound call history — idempotent on CallSid so a Twilio retry never dupes.
+    if call_sid and not TwilioCallLog.query.filter_by(twilio_sid=call_sid).first():
+        pn_row = TwilioPhoneNumber.query.filter_by(
+            company_id=company_id, phone_number=caller_id, is_active=True
+        ).first()
+        try:
+            log = TwilioCallLog(
+                company_id=company_id,
+                phone_number_id=getattr(pn_row, "id", None),
+                twilio_sid=call_sid,
+                direction="outbound",
+                from_number=caller_id,
+                to_number=to_number,
+                status="initiated",
+                assigned_user_id=user_id,
+                answered_by_user_id=user_id,
+                transcription_status="not_requested",
+                raw_payload=dict(data),
+            )
+            db.session.add(log)
+            db.session.flush()
+            db.session.add(CallEvent(
+                call_log_id=log.id, event_type="outbound",
+                provider_event_id=call_sid, payload=dict(data),
+            ))
+            db.session.commit()
+        except Exception as exc:
+            db.session.rollback()
+            logger.warning("pwa-outbound: call log insert failed sid=%s: %s", call_sid, exc)
+
+    logger.info(
+        "pwa-outbound: company_id=%s user_id=%s callerId=%s dest=***%s sid=%s",
+        company_id, user_id, caller_id, to_number[-4:], call_sid,
+    )
+    safe_to = html.escape(to_number, quote=True)
+    safe_cid = html.escape(caller_id, quote=True)
+    twiml = (
+        '<?xml version="1.0" encoding="UTF-8"?>\n<Response>\n'
+        f'  <Dial callerId="{safe_cid}" timeout="30" answerOnBridge="true" '
+        f'action="/twilio/voice/pwa-outbound-complete" method="POST">\n'
+        f'    <Number>{safe_to}</Number>\n'
+        '  </Dial>\n'
+        '</Response>'
+    )
+    return twiml, 200, {"Content-Type": "text/xml"}
+
+
+@twilio_bp.route("/voice/pwa-outbound-complete", methods=["POST"])
+@csrf.exempt
+def pwa_outbound_complete_twiml():
+    """<Dial action> target for browser outbound calls — finalize the call log."""
+    from models import TwilioCallLog
+
+    data = request.values
+    call_sid = (data.get("CallSid") or "").strip()
+    dial_status = (data.get("DialCallStatus") or "").strip()
+    try:
+        dial_dur = int(data.get("DialCallDuration") or 0)
+    except (TypeError, ValueError):
+        dial_dur = 0
+
+    if call_sid:
+        log = TwilioCallLog.query.filter_by(twilio_sid=call_sid).first()
+        if log:
+            log.status = dial_status or log.status
+            if dial_status == "completed":
+                log.status = "completed"
+                log.ended_at = datetime.utcnow()
+            elif dial_status in ("no-answer", "busy", "failed", "canceled"):
+                log.status = dial_status
+            if dial_dur:
+                log.duration = dial_dur
+                if not log.answered_at:
+                    log.answered_at = datetime.utcnow()
+            try:
+                db.session.commit()
+            except Exception as exc:
+                db.session.rollback()
+                logger.warning("pwa-outbound-complete: commit failed sid=%s: %s", call_sid, exc)
+
+    return (
+        '<?xml version="1.0" encoding="UTF-8"?>\n<Response>\n'
+        '  <Say voice="Polly.Joanna">The call has ended. Goodbye.</Say>\n'
+        '  <Hangup/>\n</Response>'
+    ), 200, {"Content-Type": "text/xml"}
 
 
 @twilio_bp.route("/voice/inbound", methods=["POST"])
@@ -2174,13 +2435,31 @@ def _inbound_call_impl():
             f"</Response>"
         )
 
-    number_route = getattr(ta, "during_hours_route", None) if in_hours else getattr(ta, "after_hours_route", None)
-    settings_route = (settings.during_hours_route if settings and in_hours else settings.after_hours_route if settings else None)
-    # Treat model defaults as unset so tenant PhoneSettings keep routing calls unless
-    # the selected phone number has a non-default explicit route.
-    if settings_route and number_route in (None, "", "ring_pwa") and settings_route != number_route:
-        route = settings_route
+    if in_hours:
+        # Daytime precedence is unchanged: the tenant-wide PhoneSettings route
+        # keeps routing calls unless the selected number carries a non-default
+        # explicit route ("forward" / "voicemail" / ...). The number-model
+        # default is "ring_pwa", so a stored "ring_pwa" is treated as "not
+        # configured" here and does not shadow a company-level "forward".
+        number_route = (getattr(ta, "during_hours_route", None) or "").strip() or None
+        settings_route = (settings.during_hours_route if settings else None)
+        settings_route = (settings_route or "").strip() or None
+        if settings_route and number_route in (None, "ring_pwa") and settings_route != number_route:
+            route = settings_route
+        else:
+            route = number_route or settings_route
     else:
+        # After-hours: an explicit per-number after_hours_route WINS over the
+        # tenant PhoneSettings route. The number-model default here is
+        # "voicemail", so a stored "ring_pwa" / "forward" is unambiguously a
+        # deliberate operator choice -- it must not be demoted to the company
+        # route (prod defect 2026-09-08: +19165989519 after_hours_route=ring_pwa
+        # was overridden by PhoneSettings after_hours_route=voicemail, so an
+        # after-hours call fell to voicemail and the PWA never rang). A number
+        # with no route of its own falls back to the company route.
+        number_route = (getattr(ta, "after_hours_route", None) or "").strip() or None
+        settings_route = (settings.after_hours_route if settings else None)
+        settings_route = (settings_route or "").strip() or None
         route = number_route or settings_route
     configured_call_forward_to = getattr(ta, "call_forwarding_number", None) or getattr(ta, "call_forward_to", None)
     settings_forward_to = ((settings.forward_number if in_hours else settings.after_hours_forward_number) if settings else None)
@@ -2221,7 +2500,12 @@ def _inbound_call_impl():
         # Explicit per-line call forwarding wins over browser ringing. This
         # applies only to voice webhooks; SMS routing never reads these fields.
         twiml = _dial_twiml(forward_to, fallback_to)
-    elif in_hours and (route in (None, "ring_pwa")):
+    elif route == "ring_pwa" or (in_hours and route is None):
+        # Explicit route == "ring_pwa" rings the PWA regardless of business
+        # hours -- an operator who sets after_hours_route=ring_pwa wants
+        # after-hours calls to reach the browser, not voicemail. The IMPLICIT
+        # daytime default (route is None) stays gated on in_hours so an
+        # unconfigured number still falls through to voicemail after hours.
         if log:
             log.status = "ringing"
             db.session.commit()
@@ -2248,41 +2532,91 @@ def _inbound_call_impl():
             logger.debug("PWA incoming call event failed: %s", exc)
         caller_id = ta.from_phone or to_number
         client_identities = []
+        approved_devices = []
+        _routing_targets_configured = False
         try:
-            from models import PWADevice
+            from models import Company, PWADevice, User
             from services.phone_identity import pwa_voice_identity
-            for device in PWADevice.query.filter_by(
-                company_id=ta.company_id,
-                approved_status="approved",
-                lifecycle_status="active",
-            ).all():
-                if device.phone_number_id and pn and device.phone_number_id != pn.id:
-                    continue
-                client_identities.append(pwa_voice_identity(ta.company_id, device.user_id, device.device_key))
+            from services.phone_availability import available_user_ids
+            from services.receive_calls import receive_calls_user_ids
+
+            company_row = db.session.get(Company, ta.company_id)
+            require_approved_devices = bool(getattr(company_row, "require_approved_pwa_devices", False))
+            # Server is the authority on who receives a routed call: the AND of
+            # Receive Calls ON and 'available' for this tenant. A stale/malicious
+            # client that registered a Twilio.Device cannot make an excluded user
+            # ring — its identity is simply never placed in the <Dial>.
+            eligible = receive_calls_user_ids(ta.company_id) & available_user_ids(ta.company_id)
+
+            if require_approved_devices:
+                # Device approval is an authorization requirement: ring only an
+                # approved + active device whose user is eligible. The identity
+                # is device-scoped and matches the token minted for that device.
+                approved_devices = [
+                    device for device in PWADevice.query.filter_by(
+                        company_id=ta.company_id,
+                        approved_status="approved",
+                        lifecycle_status="active",
+                    ).all()
+                    if not (device.phone_number_id and pn and device.phone_number_id != pn.id)
+                ]
+                _routing_targets_configured = bool(approved_devices)
+                client_identities = [
+                    pwa_voice_identity(ta.company_id, device.user_id, device.device_key)
+                    for device in approved_devices
+                    if device.user_id is None or device.user_id in eligible
+                ]
+            else:
+                # Device approval is NOT an authorization requirement. Ring every
+                # eligible user on their per-user, non-device Voice identity —
+                # exactly the identity /api/phone/voice-token mints for them —
+                # independent of any PWADevice row. A stale / pending / missing
+                # device_key must not drop an otherwise-eligible user from
+                # routing, and a first-ever call (no device row yet) must not
+                # fall straight to voicemail.
+                _routing_targets_configured = bool(eligible)
+                for uid in sorted(u for u in eligible if u is not None):
+                    user_row = db.session.get(User, uid)
+                    if not user_row or not getattr(user_row, "active", True):
+                        continue
+                    client_identities.append(pwa_voice_identity(ta.company_id, uid))
         except Exception:
             logger.exception("Unable to resolve eligible PWA voice devices", extra={"company_id": ta.company_id})
         if not client_identities:
-            client_identities = [_pwa_voice_identity(ta.company_id)]
+            # No identity to ring. Either nobody is configured/reachable, or
+            # (approval required) no approved+active device exists. Every path
+            # that could mint a Voice token is per-user or per-device — no client
+            # ever holds a bare company-scoped identity — so there is nothing to
+            # dial. Fail closed to the business voicemail flow; the call is never
+            # silently lost.
+            _routing_targets_reason = "configured but unreachable" if _routing_targets_configured else "none configured"
+            logger.info("Voice inbound: no PWA client to ring (%s), routing to voicemail company_id=%s",
+                        _routing_targets_reason, ta.company_id)
+            twiml = _voicemail_twiml(after_hours=not in_hours)
+            _ring_pwa_twiml_done = True
+        else:
+            _ring_pwa_twiml_done = False
         safe_from = html.escape(from_number or "", quote=True)
         safe_caller = html.escape(caller_name or from_number or "", quote=True)
         safe_caller_id = html.escape(caller_id or "", quote=True)
-        clients_twiml = "".join(
-            '    <Client>\n'
-            f'      <Identity>{identity}</Identity>\n'
-            f'      <Parameter name="call_log_id" value="{log.id if log else ""}"/>\n'
-            f'      <Parameter name="from_number" value="{safe_from}"/>\n'
-            f'      <Parameter name="caller_name" value="{safe_caller}"/>\n'
-            '    </Client>\n'
-            for identity in client_identities
-        )
-        twiml = (
-            '<?xml version="1.0" encoding="UTF-8"?>\n'
-            '<Response>\n'
-            f'  <Dial callerId="{safe_caller_id}" timeout="{timeout}" action="/twilio/voice/no-answer?to={html.escape(to_number or "", quote=True)}" method="POST"{record_attr}>\n'
-            f'{clients_twiml}'
-            '  </Dial>\n'
-            '</Response>'
-        )
+        if not locals().get("_ring_pwa_twiml_done"):
+            clients_twiml = "".join(
+                '    <Client>\n'
+                f'      <Identity>{identity}</Identity>\n'
+                f'      <Parameter name="call_log_id" value="{log.id if log else ""}"/>\n'
+                f'      <Parameter name="from_number" value="{safe_from}"/>\n'
+                f'      <Parameter name="caller_name" value="{safe_caller}"/>\n'
+                '    </Client>\n'
+                for identity in client_identities
+            )
+            twiml = (
+                '<?xml version="1.0" encoding="UTF-8"?>\n'
+                '<Response>\n'
+                f'  <Dial callerId="{safe_caller_id}" timeout="{timeout}" action="/twilio/voice/no-answer?to={html.escape(to_number or "", quote=True)}" method="POST"{record_attr}>\n'
+                f'{clients_twiml}'
+                '  </Dial>\n'
+                '</Response>'
+            )
     elif route == "forward" and forward_to:
         twiml = _dial_twiml(forward_to, fallback_to)
     elif route == "voicemail":
@@ -2327,9 +2661,28 @@ def voice_no_answer():
 
     pn, ta = _resolve_number(to_number)
     ta = _effective_twilio_config(ta, pn)
+    if not hasattr(g, "voice_inbound_debug"):
+        g.voice_inbound_debug = {}
     g.voice_inbound_debug.update({"company_id": getattr(ta, "company_id", None), "caller_id": getattr(ta, "from_phone", None) or to_number}) if ta else None
 
     logger.info("Voice no-answer: sid=%s dial_status=%s", call_sid, dial_status)
+
+    # A call that was actually ANSWERED and then ended (either party hung up)
+    # must NOT fall through to voicemail -- otherwise the party still on the
+    # line hears the greeting and gets recorded (prod smoke 2026-08-30: browser
+    # hung up an answered call, the PSTN caller then heard the voicemail
+    # greeting). Only genuinely unconnected outcomes go to voicemail.
+    if str(dial_status).lower() in ("completed", "answered"):
+        if call_sid:
+            log = TwilioCallLog.query.filter_by(twilio_sid=call_sid).first()
+            if log and (log.status or "") not in ("no-answer", "voicemail", "missed"):
+                log.status = log.status or "completed"
+                db.session.commit()
+        logger.info("Voice no-answer: answered call ended (dial_status=%s) sid=%s -> hangup",
+                    dial_status, call_sid)
+        return (
+            '<?xml version="1.0" encoding="UTF-8"?>\n<Response>\n  <Hangup/>\n</Response>'
+        ), 200, {"Content-Type": "text/xml"}
 
     # Update call log
     if call_sid:
@@ -2379,13 +2732,35 @@ def voice_no_answer():
         f'<?xml version="1.0" encoding="UTF-8"?>\n'
         f"<Response>\n"
         f"  {greeting_xml}\n"
-        f'  <Record maxLength="180" playBeep="true"\n'
+        f'  <Record maxLength="180" timeout="5" playBeep="true" trim="trim-silence"\n'
+        f'          action="/twilio/voice/recording-complete" method="POST"\n'
         f'          recordingStatusCallback="/twilio/voice/recording"\n'
         f'          recordingStatusCallbackMethod="POST" />\n'
         f"  <Say>We did not receive a recording. Goodbye.</Say>\n"
         f"</Response>"
     )
     return twiml, 200, {"Content-Type": "text/xml"}
+
+
+@twilio_bp.route("/voice/recording-complete", methods=["POST"])
+@csrf.exempt
+def voice_recording_complete():
+    """Terminal <Record> action for the voicemail flow.
+
+    Without an explicit `action`, Twilio re-requests the serving URL
+    (/twilio/voice/no-answer) once the recording finishes -- which re-runs the
+    no-answer handler and re-serves the greeting + <Record>, looping the
+    voicemail prompt (staging smoke 2026-08-30: caller never heard a clean
+    greeting, only a 2s fragment was captured, no-answer POSTed twice for one
+    call). Pointing <Record action> here ends the call cleanly instead.
+    """
+    call_sid = request.form.get("CallSid", "")
+    logger.info("Voicemail recording finished: sid=%s dur=%s digits=%s",
+                call_sid, request.form.get("RecordingDuration"), request.form.get("Digits"))
+    return (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        "<Response>\n  <Say>Thank you. Your message has been received. Goodbye.</Say>\n  <Hangup/>\n</Response>"
+    ), 200, {"Content-Type": "text/xml"}
 
 
 @twilio_bp.route("/voice/recording", methods=["POST"])
@@ -3188,13 +3563,18 @@ def send_message():
     if not conv:
         conv = _get_or_create_conversation(company.id, to_number, ta.from_phone or "")
 
-    result = sendConversationSms(conv.id, body, twilio_account=ta, to_number=to_number)
-    if result.get("success"):
+    from services.sms_send_idempotency import send_with_idempotency
+    result = send_with_idempotency(
+        company_id=company.id, user_id=current_user.id, conversation_id=conv.id,
+        to_number=to_number, body=body, twilio_account=ta,
+        idempotency_key=payload.get("idempotency_key"),
+    )
+    if result.get("success") and not result.get("idempotent"):
         conv.last_message_at      = datetime.utcnow()
         conv.last_message_preview = f"You: {body[:150]}"
         conv.message_count        = (conv.message_count or 0) + 1
         db.session.commit()
-    else:
+    elif not result.get("success"):
         logger.error("/twilio/send failed company=%s conv=%s to=%s error=%s", company.id, conv.id, to_number, result.get("error"))
     return jsonify(result)
 
@@ -3237,12 +3617,20 @@ def upload_voicemail():
 
 
 @twilio_bp.route("/fallback", methods=["GET", "POST"])
+@csrf.exempt
 def twilio_fallback():
     """
     Twilio calls this URL when the primary SMS or Voice webhook fails to respond.
     Returns a valid TwiML response so the call/message is handled gracefully,
     logs the failure so it appears in the error dashboard, and never returns
     a non-2xx status (which would cause Twilio to retry and double-log).
+
+    CSRF-exempt like every other Twilio server-to-server webhook route: Twilio
+    POSTs here with no session/CSRF token, so without the exemption Flask-WTF
+    raised CSRFError -> the app's handler 302-redirected -> Twilio followed with
+    a GET to the POST-only /twilio/voice/inbound -> 405, and the caller got an
+    unrecoverable failure (prod 2026-09-08). GET is accepted too so a stray
+    redirect-follow can never 405-loop.
     """
     try:
         from flask import request as _req
@@ -3250,24 +3638,14 @@ def twilio_fallback():
         error_url  = _req.values.get("ErrorUrl", "")
         call_sid   = _req.values.get("CallSid")
         msg_sid    = _req.values.get("MessageSid")
+        # ErrorCode / ErrorUrl / CallSid / MessageSid are Twilio-supplied and
+        # carry no secrets. This log line is the durable record of a primary
+        # webhook failure; keep the handler itself dependency-free so it can
+        # never be the thing that fails.
         logger.error(
             "Twilio fallback triggered: ErrorCode=%s ErrorUrl=%s CallSid=%s MessageSid=%s",
             error_code, error_url, call_sid, msg_sid,
         )
-        # Try to log to the error dashboard
-        try:
-            from models import AppError
-            from extensions import db as _db
-            _db.session.add(AppError(
-                error_type="TwilioFallback",
-                error_message=f"Primary webhook failed (ErrorCode {error_code}). URL: {error_url}",
-                severity="high",
-                source="twilio_fallback",
-                context=dict(_req.values),
-            ))
-            _db.session.commit()
-        except Exception:
-            pass
     except Exception as log_exc:
         logger.warning("Fallback logging error: %s", log_exc)
 

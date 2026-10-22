@@ -1018,17 +1018,27 @@ def api_segment_audience_preview(sid):
     """
     from types import SimpleNamespace
     from services.contact_audience import resolve_sms_campaign_recipients
+
     from services.sms_consent_purpose import normalize_campaign_purpose
+
     s = _segment_or_404(sid)
     purpose = normalize_campaign_purpose(request.args.get("purpose"))
-    probe = SimpleNamespace(company_id=s.company_id, segment=None, id=None,
-                            audience_filter={"selected_tag_ids": [s.id], "campaign_purpose": purpose})
+    probe = SimpleNamespace(
+        company_id=s.company_id,
+        segment=None,
+        id=None,
+        audience_filter={
+            "selected_tag_ids": [s.id],
+            "campaign_purpose": purpose,
+        },
+    )
+
     try:
         counts = resolve_sms_campaign_recipients(probe)["counts"]
     except ValueError as exc:
-        # e.g. a contact_tag / automation_rule anchor segment is not a
-        # marketing-eligible audience -- fail closed, don't guess.
+        # Fail closed when the segment cannot be used as an SMS audience.
         return jsonify({"success": False, "error": str(exc)}), 422
+
     return jsonify({
         "success": True,
         "selected_campaign_purpose": counts["campaign_purpose"],
@@ -1036,21 +1046,27 @@ def api_segment_audience_preview(sid):
         "segment_members": counts["matching_contacts"],
         "unique_valid_phones": counts["unique_phone_numbers"],
         "duplicate_phone_exclusions": counts["duplicate_phone_numbers"],
-        "invalid_or_missing_phone": counts["missing_phone_numbers"] + counts["invalid_phone_numbers"],
-        "stop_suppressed": counts["opted_out_contacts"] + counts["archived_or_suppressed"],
+        "invalid_or_missing_phone": (
+            counts["missing_phone_numbers"] + counts["invalid_phone_numbers"]
+        ),
+        "stop_suppressed": (
+            counts["opted_out_contacts"] + counts["archived_or_suppressed"]
+        ),
         "no_affirmative_consent": counts["missing_sms_consent"],
-        # Four-bucket purpose view (unique valid phones per purpose; STOP/opt-out already excluded).
+        # Purpose-specific eligibility counts; STOP/suppression excluded.
         "conversational_followup_eligible": counts["conversational_eligible"],
         "transactional_informational_eligible": counts["transactional_eligible"],
         "promotional_marketing_eligible": counts["promotional_eligible"],
-        # Who actually receives THIS campaign, given the selected purpose.
+        # Eligible recipients for the selected campaign purpose.
         "final_sms_eligible": counts["eligible_recipients"],
         "membership_is_not_sms_consent": True,
-        "note": ("Segment membership is a customer/business classification, not SMS "
-                 "consent. Eligibility depends on the campaign purpose: promotional "
-                 "requires an affirmative marketing opt-in; conversational/transactional "
-                 "rely on verifiable prior inbound-SMS evidence. STOP/suppression "
-                 "overrides every purpose."),
+        "note": (
+            "Segment membership is a customer/business classification, not SMS "
+            "consent. Eligibility depends on the campaign purpose: promotional "
+            "requires an affirmative marketing opt-in; conversational/transactional "
+            "rely on verifiable prior inbound-SMS evidence. STOP/suppression "
+            "overrides every purpose."
+        ),
     })
 
 
@@ -1466,3 +1482,287 @@ def api_google_contacts_callback_compat():
     from flask import redirect, url_for
     qs = request.query_string.decode()
     return redirect((url_for("twilio.google_contacts_callback") if "twilio.google_contacts_callback" in current_app.view_functions else "/twilio/google-contacts/callback") + (f"?{qs}" if qs else ""))
+
+
+# ---------------------------------------------------------------------------
+# Promotional opt-in workflow (operator surface)
+# ---------------------------------------------------------------------------
+
+@segment_api_bp.get("/promotional-optin/overview")
+@login_required
+def api_promotional_optin_overview():
+    """Aggregate counts for the operator: My Order Customers, Already
+    Promotional, Needs Promotional Opt-In, STOP/Suppressed, No Conversational
+    Evidence. Tenant-scoped, read-only, no consent mutation.
+    """
+    from services.promotional_optin import classify_audience, SUGGESTED_SOLICITATION_COPY
+    cid = tenant_id()
+    if not cid:
+        return _json_error("tenant/company is required", 400)
+    sid = request.args.get("segment_id", type=int)
+    if sid and not Segment.query.filter_by(id=sid, company_id=cid).first():
+        return _json_error("segment not found", 404)
+    result = classify_audience(cid, sid, include_solicitation_status=True)
+    return jsonify({
+        "success": True,
+        "segment_id": sid,
+        "counts": result["counts"],
+        "suggested_solicitation_copy": SUGGESTED_SOLICITATION_COPY,
+        "note": ("'Needs Promotional Opt-In' is a derived status, not consent. "
+                 "Nobody here is contacted automatically; a YES only grants "
+                 "promotional consent when it answers a pending, operator-"
+                 "approved solicitation."),
+    })
+
+
+@segment_api_bp.get("/promotional-optin/audience")
+@login_required
+def api_promotional_optin_audience():
+    """The Needs Promotional Opt-In audience for the operator's own tenant,
+    each row annotated with its latest solicitation state (not_sent / sent /
+    delivered / failed / blocked / replied_yes / stopped)."""
+    from services.promotional_optin import classify_audience
+    cid = tenant_id()
+    if not cid:
+        return _json_error("tenant/company is required", 400)
+    err = _require_admin(cid)
+    if err:
+        return err
+    sid = request.args.get("segment_id", type=int)
+    if sid and not Segment.query.filter_by(id=sid, company_id=cid).first():
+        return _json_error("segment not found", 404)
+    result = classify_audience(cid, sid, include_solicitation_status=True)
+    return jsonify({
+        "success": True, "segment_id": sid,
+        "count": len(result["audience"]), "audience": result["audience"],
+        "delivery": result["counts"].get("delivery"),
+        "is_status_not_consent": True,
+    })
+
+
+@segment_api_bp.post("/promotional-optin/solicitations")
+@login_required
+def api_promotional_optin_create_solicitation():
+    """Record an operator-approved pending solicitation for one contact.
+    Does NOT send an SMS and does NOT change consent. Idempotent per contact.
+    """
+    from services.promotional_optin import create_solicitation
+    cid = tenant_id()
+    if not cid:
+        return _json_error("tenant/company is required", 400)
+    err = _require_admin(cid)
+    if err:
+        return err
+    data = request.get_json(silent=True) or {}
+    contact_id = data.get("contact_id")
+    if not contact_id:
+        return _json_error("contact_id is required", 400)
+    result = create_solicitation(
+        cid, int(contact_id),
+        business_phone_number=data.get("business_phone_number"),
+        actor_user_id=getattr(current_user, "id", None),
+        body=data.get("body"),
+        solicitation_message_sid=data.get("solicitation_message_sid"),
+    )
+    if not result.get("ok"):
+        return _json_error(result.get("error", "could not create solicitation"), 422)
+    db.session.commit()
+    row = result["solicitation"]
+    return jsonify({
+        "success": True, "created": result.get("created", False),
+        "solicitation": {
+            "id": row.id, "contact_id": row.contact_id, "status": row.status,
+            "canonical_phone": row.canonical_phone,
+            "business_phone_number": row.business_phone_number,
+            "solicited_at": row.solicited_at.isoformat() if row.solicited_at else None,
+        },
+    })
+
+
+@segment_api_bp.post("/promotional-optin/solicitations/send")
+@login_required
+def api_promotional_optin_send_solicitations():
+    """Dispatch the opt-in *request* SMS ("Reply YES to opt in") to one or more
+    contacts from the Needs Promotional Opt-In audience.
+
+    - Admin, tenant-scoped. The company is resolved server-side; a cross-tenant
+      contact_id is silently dropped (never contacted, reported as skipped).
+    - The submitted list is re-intersected against the CURRENT eligible audience
+      inside the service, so STOP/suppressed/already-promotional/duplicate/
+      out-of-segment contacts can never be reached even with a stale client list.
+    - Consent is NOT changed here. A contact becomes promotional-eligible only
+      by replying YES (services.promotional_optin.record_contextual_yes).
+    - Where outbound Twilio is disabled the per-contact result is 'blocked' and
+      no SMS leaves the system.
+    """
+    from services.promotional_optin import send_solicitation_batch
+    cid = tenant_id()
+    if not cid:
+        return _json_error("tenant/company is required", 400)
+    err = _require_admin(cid)
+    if err:
+        return err
+    data = request.get_json(silent=True) or {}
+    contact_ids = data.get("contact_ids")
+    if not isinstance(contact_ids, list) or not contact_ids:
+        return _json_error("contact_ids (non-empty list) is required", 400)
+    try:
+        contact_ids = [int(c) for c in contact_ids]
+    except (TypeError, ValueError):
+        return _json_error("contact_ids must be integers", 400)
+    sid = data.get("segment_id")
+    if sid is not None:
+        sid = int(sid)
+        if not Segment.query.filter_by(id=sid, company_id=cid).first():
+            return _json_error("segment not found", 404)
+    if len(contact_ids) > 500:
+        return _json_error("at most 500 contacts per request", 400)
+
+    summary = send_solicitation_batch(
+        cid, contact_ids,
+        actor_user_id=getattr(current_user, "id", None),
+        segment_id=sid,
+        body=(data.get("body") or None),
+    )
+    db.session.commit()
+    return jsonify({"success": True, **summary})
+
+
+# ---------------------------------------------------------------------------
+# Hosted web opt-in: per-contact consent link + QR + status. Generates a link
+# for an operator to share out-of-band (checkout / QR / print / customer
+# account). NEVER sends an SMS. Consent is still granted only when the customer
+# submits the hosted page (services.promotional_optin.record_web_optin).
+# ---------------------------------------------------------------------------
+
+def _web_optin_link_payload(cid: int, contact_id: int, link: dict) -> dict:
+    from services.promotional_optin import (
+        latest_solicitation_status_map, WEB_OPTIN_DISCLOSURE_VERSION,
+    )
+    status = latest_solicitation_status_map(cid, [contact_id]).get(contact_id) or {
+        "state": "not_sent", "label": "Not sent",
+    }
+    return {
+        "success": True,
+        "contact_id": contact_id,
+        "url": link["url"],
+        "path": link["path"],
+        "token": link["token"],
+        "created": link.get("created", False),
+        "disclosure_version": link.get("disclosure_version", WEB_OPTIN_DISCLOSURE_VERSION),
+        "qr_svg_url": f"/api/promotional-optin/consent-link/{contact_id}/qr.svg",
+        "consent_status": status,
+    }
+
+
+@segment_api_bp.post("/promotional-optin/consent-link")
+@login_required
+def api_promotional_optin_consent_link_create():
+    """Generate (or return the existing) hosted opt-in link for one contact.
+    Admin, tenant-scoped, idempotent. Does NOT send anything."""
+    from services.promotional_optin import generate_web_optin_link
+    cid = tenant_id()
+    if not cid:
+        return _json_error("tenant/company is required", 400)
+    err = _require_admin(cid)
+    if err:
+        return err
+    data = request.get_json(silent=True) or {}
+    contact_id = data.get("contact_id")
+    if not contact_id:
+        return _json_error("contact_id is required", 400)
+    link = generate_web_optin_link(
+        cid, int(contact_id),
+        actor_user_id=getattr(current_user, "id", None),
+        business_phone_number=data.get("business_phone_number"),
+    )
+    if not link.get("ok"):
+        return _json_error(link.get("error", "could not generate link"), 422)
+    db.session.commit()
+    return jsonify(_web_optin_link_payload(cid, int(contact_id), link))
+
+
+@segment_api_bp.get("/promotional-optin/consent-link/<int:contact_id>")
+@login_required
+def api_promotional_optin_consent_link_status(contact_id: int):
+    """Current hosted opt-in link + consent status for one contact. Read-only.
+    Returns the link only if one has already been generated."""
+    from services.promotional_optin import (
+        latest_solicitation_status_map, _encode_web_token, web_optin_link_base_url,
+        WEB_OPTIN_DISCLOSURE_VERSION,
+    )
+    from models import PromotionalOptInSolicitation
+    cid = tenant_id()
+    if not cid:
+        return _json_error("tenant/company is required", 400)
+    err = _require_admin(cid)
+    if err:
+        return err
+    if not Contact.query.filter_by(id=contact_id, company_id=cid).first():
+        return _json_error("contact not found", 404)
+    status = latest_solicitation_status_map(cid, [contact_id]).get(contact_id) or {
+        "state": "not_sent", "label": "Not sent",
+    }
+    row = (
+        PromotionalOptInSolicitation.query
+        .filter(PromotionalOptInSolicitation.company_id == cid,
+                PromotionalOptInSolicitation.contact_id == contact_id,
+                PromotionalOptInSolicitation.web_token_jti.isnot(None))
+        .order_by(PromotionalOptInSolicitation.id.desc())
+        .first()
+    )
+    out = {"success": True, "contact_id": contact_id, "consent_status": status}
+    if row:
+        token = _encode_web_token(cid, contact_id, row.web_token_jti)
+        base = web_optin_link_base_url()
+        path = f"/promo-optin/{token}"
+        out.update({
+            "url": (base + path) if base else path,
+            "path": path,
+            "token": token,
+            "disclosure_version": row.web_link_disclosure_version or WEB_OPTIN_DISCLOSURE_VERSION,
+            "qr_svg_url": f"/api/promotional-optin/consent-link/{contact_id}/qr.svg",
+        })
+    return jsonify(out)
+
+
+@segment_api_bp.get("/promotional-optin/consent-link/<int:contact_id>/qr.svg")
+@login_required
+def api_promotional_optin_consent_link_qr(contact_id: int):
+    """SVG QR code for a contact's existing hosted opt-in link. Admin, tenant
+    scoped. 404 if no link has been generated; 503 if the QR library is not
+    installed in this environment (the link/copy path still works)."""
+    from services.promotional_optin import _encode_web_token, web_optin_link_base_url
+    from models import PromotionalOptInSolicitation
+    cid = tenant_id()
+    if not cid:
+        return _json_error("tenant/company is required", 400)
+    err = _require_admin(cid)
+    if err:
+        return err
+    row = (
+        PromotionalOptInSolicitation.query
+        .filter(PromotionalOptInSolicitation.company_id == cid,
+                PromotionalOptInSolicitation.contact_id == contact_id,
+                PromotionalOptInSolicitation.web_token_jti.isnot(None))
+        .order_by(PromotionalOptInSolicitation.id.desc())
+        .first()
+    )
+    if not row:
+        return _json_error("no consent link for this contact", 404)
+    base = web_optin_link_base_url()
+    token = _encode_web_token(cid, contact_id, row.web_token_jti)
+    url = (base + f"/promo-optin/{token}") if base else f"/promo-optin/{token}"
+    try:
+        import qrcode
+        import qrcode.image.svg as qrsvg
+        img = qrcode.make(url, image_factory=qrsvg.SvgPathImage, box_size=10, border=2)
+        from io import BytesIO
+        buf = BytesIO()
+        img.save(buf)
+        from flask import Response
+        return Response(buf.getvalue(), mimetype="image/svg+xml",
+                        headers={"Cache-Control": "no-store"})
+    except ImportError:
+        return _json_error("QR generation is not available in this environment", 503,
+                           qr_available=False)

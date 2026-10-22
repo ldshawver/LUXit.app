@@ -6,11 +6,11 @@
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <meta name="apple-mobile-web-app-title" content="LUXit Inbox">
+  <meta name="apple-mobile-web-app-title" content="LUX Connect">
   <meta name="theme-color" content="var(--pwa-primary)">
-  <title>LUXit Inbox</title>
+  <title>LUX Connect</title>
   <link rel="manifest" href="/static/manifest.json?v={{ pwa_version }}">
-  <link rel="apple-touch-icon" href="/static/favicon.png">
+  <link rel="apple-touch-icon" href="/static/pwa/lux-connect-apple-touch.png?v={{ pwa_version }}">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css">
   <style>
     :root {
@@ -343,8 +343,13 @@
       display: none; flex-direction: column; overflow-y: auto;
     }
     .contact-panel-head {
+      display: flex; align-items: center; justify-content: space-between;
       padding: 14px 14px 10px; border-bottom: 1px solid var(--border);
       font-size: .8rem; font-weight: 600; color: var(--text-dim); text-transform: uppercase; letter-spacing: .05em;
+    }
+    .cp-close {
+      display: none; background: none; border: none; color: var(--text-dim);
+      cursor: pointer; padding: 4px; margin: -4px -4px -4px 8px; line-height: 0;
     }
     .cp-section { padding: 12px 14px; border-bottom: 1px solid var(--border); }
     .cp-label { font-size: .72rem; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; margin-bottom: 4px; }
@@ -568,6 +573,15 @@
     #notifBanner.show { display: flex; }
     #notifBanner span { flex: 1; }
 
+    /* ── Communication Availability (Away) banner ────── */
+    #commsAwayBanner {
+      display: none; align-items: center; gap: 10px;
+      padding: 8px 12px; background: color-mix(in srgb,var(--amber,#f59e0b) 16%,transparent);
+      border-bottom: 1px solid color-mix(in srgb,var(--amber,#f59e0b) 35%,transparent); font-size: .8rem;
+    }
+    #commsAwayBanner.show { display: flex; }
+    #commsAwayBanner span { flex: 1; }
+
     /* ── New message flash ───────────────────────────── */
     @keyframes flash-in {
       from { background: color-mix(in srgb,var(--pwa-primary) 30%,transparent); }
@@ -577,6 +591,16 @@
 
     /* ── Mobile ─────────────────────────────────────── */
     @media (min-width: 900px) { #contactPanel { display: flex; } }
+    @media (max-width: 899px) {
+      /* A docked 260px column is unusable on a phone: present the panel as a
+         full-height slide-over the conversation view summons. toggleContactPanel()
+         flips inline display:flex; these rules apply once it is shown. */
+      #contactPanel {
+        position: fixed; inset: 0; width: 100%; max-width: 100%;
+        z-index: 320; border-left: none; box-shadow: 0 0 40px rgba(0,0,0,.5);
+      }
+      #contactPanel .cp-close { display: inline-flex; }
+    }
     @media (max-width: 640px) {
       #sidebar { width: 100%; max-width: 100%; border-right: none; min-width: 0; }
       #main { display: none; width: 100%; }
@@ -716,6 +740,11 @@
       </button>
     </div>
 
+    <div id="commsAwayBanner" role="status">
+      <span><strong>You're Away.</strong> Shared calls, messages and notifications are paused. Your inbox history is still here.</span>
+      <button class="btn-small" onclick="setCommunicationAvailability('available')">Return</button>
+    </div>
+
     <div id="notifBanner">
       <span>Enable push notifications for new messages</span>
       <button class="btn-small" onclick="requestPush()">Enable</button>
@@ -797,7 +826,12 @@
     </div>
 
     <div id="contactPanel">
-      <div class="contact-panel-head">Contact Info</div>
+      <div class="contact-panel-head">
+        <span>Contact Info</span>
+        <button type="button" class="cp-close" onclick="closeContactPanel()" aria-label="Close contact info">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
       <div id="cpContent"></div>
     </div>
   </div>
@@ -874,6 +908,21 @@
     </a>
 
     <!-- Notifications -->
+    <div class="settings-section-label" style="margin-top:20px;">Communication Availability</div>
+    <div class="settings-toggle-row">
+      <div class="settings-toggle-label">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+        <div>
+          <span>Availability</span>
+          <small>Available: receive shared calls, messages and communication notifications. Away: pause shared calls, message notifications, sounds and badges — your shared inbox history stays available when you return.</small>
+        </div>
+      </div>
+      <select id="commsAvailabilitySelect" aria-label="Communication availability" onchange="setCommunicationAvailability(this.value)" style="background:var(--color-input-bg);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:6px 8px;font-size:.8rem;">
+        <option value="available">Available</option>
+        <option value="away">Away</option>
+      </select>
+    </div>
+
     <div class="settings-section-label" style="margin-top:20px;">Notifications</div>
     <div class="settings-toggle-row">
       <div class="settings-toggle-label">
@@ -934,7 +983,7 @@
 <div>
   <span id="wifiCallingLabel">VoIP / Wi-Fi Calling</span>
   <small id="wifiCallingDescription">
-    Calls use the LUXit PWA over Wi-Fi or cellular data. This does not enable
+    Calls use the LUX Connect PWA over Wi-Fi or cellular data. This does not enable
     or change your mobile carrier's Wi-Fi Calling feature.
   </small>
 </div>
@@ -1149,9 +1198,10 @@
 
 <script>
 /* ═══════════════════════════════════════════════════════════════
-   LUXit Inbox PWA — Real-time SSE + full feature set
+   LUX Connect PWA — Real-time SSE + full feature set
 ═══════════════════════════════════════════════════════════════ */
 const CSRF        = '{{ csrf_token() }}';
+const CURRENT_USER_ID = Number('{{ user.id | default(0) }}') || 0;
 const SERVER_PALETTE = {{ (user.pwa_palette_id or "lux")|tojson }};
 const PWA_VERSION = document.documentElement.dataset.pwaVersion || '{{ pwa_version }}';
 function applyPalette(name) {
@@ -1241,6 +1291,7 @@ let state = {
   soundUnlocked: false,
   seenEventKeys: new Set(),
   vibrateEnabled: localStorage.getItem('vibrateEnabled') !== 'false',
+  commsAway:     false,
 };
 
 /* ── Init ─────────────────────────────────────────────────────── */
@@ -1250,6 +1301,7 @@ window.addEventListener('DOMContentLoaded', () => {
   updateSoundBtn();
   installPwaNavPerformanceHandlers();
   loadAssignedNumbers();
+  loadCommunicationAvailability();
   loadConversations();
   loadBadgeCounts();
   registerPwaDevice('register');
@@ -1525,6 +1577,7 @@ function playSound(eventKey) {
 /* ── Push notifications ───────────────────────────────────────── */
 function checkNotifPrompt() {
   if (!VAPID_PUBLIC) return;
+  if (isCommsAway()) return;
   if (!('Notification' in window)) return;
   if (Notification.permission === 'default') {
     document.getElementById('notifBanner').classList.add('show');
@@ -1738,6 +1791,47 @@ function setLiveDot(mode) {
   dot.title = mode === 'live' ? 'Live — real-time' : mode === 'polling' ? 'Polling (fallback)' : 'Connecting...';
 }
 
+/* ── Communication Availability (Away) ───────────────────────────
+   Shared, server-authoritative per-(user, tenant) state. AWAY pauses this
+   user's live share of the tenant's calls AND texts — no sound, vibration,
+   toast, badge bump or realtime conversation nudge — on every device.
+   Messages still arrive and persist; opening the Inbox catches you up, with
+   no replay of missed notifications. The server already withholds the SSE
+   attention events for an Away user; the guards here also cover the brief
+   window where a state change races an in-flight event, and own the banner. */
+function isCommsAway() { return !!state.commsAway; }
+
+async function loadCommunicationAvailability() {
+  try {
+    const data = await apiFetch('/api/phone/availability');
+    if (data && data.state) applyCommsAvailability(data.state, { silent: true });
+  } catch (_) {}
+}
+
+function applyCommsAvailability(next, opts) {
+  const wasAway = state.commsAway;
+  state.commsAway = (next === 'away');
+  const banner = document.getElementById('commsAwayBanner');
+  if (banner) banner.classList.toggle('show', state.commsAway);
+  const sel = document.getElementById('commsAvailabilitySelect');
+  if (sel) sel.value = state.commsAway ? 'away' : 'available';
+  if (opts && opts.silent) return;
+  if (wasAway && !state.commsAway) {
+    // Return to Available — reconnect + recompute current state, no replay.
+    loadConversations();
+    loadBadgeCounts();
+    toast('You’re Available — catching up your inbox.', 'success');
+  } else if (!wasAway && state.commsAway) {
+    toast('You’re Away — shared messages and calls won’t notify you.');
+  }
+}
+
+async function setCommunicationAvailability(next) {
+  const data = await apiFetch('/api/phone/availability', 'PUT', { state: next });
+  if (data && data.state) applyCommsAvailability(data.state);
+  else toast((data && data.error) || 'Could not update availability.', 'error');
+}
+
 function connectSSE() {
   if (state.sseSource) return;
   try {
@@ -1778,7 +1872,15 @@ function connectSSE() {
   }
 }
 
+const _ATTENTION_SSE = ['new_message','incoming_sms','sms','incoming_call','missed_call','voicemail','unread_message_reminder'];
+
 function handleSSEEvent(data) {
+  if (data.type === 'phone_availability') {
+    if (Number(data.user_id) === CURRENT_USER_ID) applyCommsAvailability(data.state);
+    return;
+  }
+  // While Away, no realtime attention of any kind for shared communications.
+  if (isCommsAway() && _ATTENTION_SSE.includes(data.type)) return;
   if (data.type === 'new_message') {
     if (!data.silent) {
       vibrateIfEnabled([80, 40, 80]);
@@ -1811,7 +1913,26 @@ function handleSSEEvent(data) {
     if (state.activeConvId === data.conversation_id) {
       refreshMessages(data.conversation_id);
     }
+  } else if (data.type === 'contact_updated') {
+    // A contact was edited on another surface (desktop CRM, another PWA
+    // tab/device). If the change might affect the open conversation, refresh
+    // it -- unconditionally when we only know the contact_id (desktop edits
+    // don't know which conversation(s) reference it), narrowed to the
+    // matching conversation when the event names one (PWA edits do).
+    if (state.activeConvId && (!data.conversation_id || data.conversation_id === state.activeConvId)) {
+      refreshContactPanel(state.activeConvId);
+    }
+    loadConversations();
   }
+}
+
+async function refreshContactPanel(convId) {
+  const data = await apiFetch(`/api/inbox/conversations/${convId}`);
+  if (!data || convId !== state.activeConvId) return;
+  const c = data.conversation;
+  document.getElementById('threadName').textContent   = c.display_name || c.from_number;
+  document.getElementById('threadNumber').textContent = c.from_number !== c.display_name ? c.from_number : '';
+  renderContactPanel(c, data.contact);
 }
 
 /* ── Polling (fallback only) ──────────────────────────────────── */
@@ -2024,6 +2145,8 @@ async function openConversation(convId) {
   state.activeConvId = convId;
   state.contactEditMode = false;
   state.contactEditSaving = false;
+  // Don't let a phone-sized contact slide-over hang over the next conversation.
+  if (window.matchMedia('(max-width: 899px)').matches) closeContactPanel();
   document.querySelectorAll('.conv-item').forEach(el => el.classList.remove('active'));
   const ci = document.getElementById('ci-' + convId);
   if (ci) { ci.classList.add('active'); ci.classList.remove('unread'); ci.querySelector('.conv-dot')?.remove(); }
@@ -2078,6 +2201,7 @@ async function refreshMessages(convId) {
 
 function closeThread() {
   state.activeConvId = null;
+  if (window.matchMedia('(max-width: 899px)').matches) closeContactPanel();
   document.getElementById('shell').classList.remove('thread-open');
   document.getElementById('thread').style.display = 'none';
   document.getElementById('threadPlaceholder').style.display = 'flex';
@@ -2238,10 +2362,30 @@ function renderContactPanel(c, contact) {
   `;
 }
 
-function toggleContactPanel() {
+function contactPanelOpen() {
   const p = document.getElementById('contactPanel');
-  p.style.display = p.style.display === 'flex' ? 'none' : 'flex';
+  return p && getComputedStyle(p).display !== 'none';
 }
+function openContactPanel() {
+  const p = document.getElementById('contactPanel');
+  if (p) p.style.display = 'flex';
+}
+function closeContactPanel() {
+  const p = document.getElementById('contactPanel');
+  if (!p) return;
+  // Below the 900px dock breakpoint the panel is a fixed overlay we fully hide;
+  // at/above it the panel is docked and the toggle just shows/hides the column.
+  p.style.display = 'none';
+}
+function toggleContactPanel() {
+  if (contactPanelOpen()) closeContactPanel(); else openContactPanel();
+}
+// Esc closes the mobile slide-over.
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && window.matchMedia('(max-width: 899px)').matches && contactPanelOpen()) {
+    closeContactPanel();
+  }
+});
 
 /* ── Contact panel: edit CRM identity fields ─────────────────────── */
 function enterContactEdit() {
@@ -2559,6 +2703,9 @@ function openSettingsSheet() {
   const vibCb   = document.getElementById('toggleVibrate');
   if (soundCb) soundCb.checked = state.notificationSoundsEnabled;
   if (vibCb)   vibCb.checked   = state.vibrateEnabled;
+  const availSel = document.getElementById('commsAvailabilitySelect');
+  if (availSel) availSel.value = state.commsAway ? 'away' : 'available';
+  loadCommunicationAvailability();
   loadGoogleContactsStatus();
   loadLineSettings();
   refreshPushDiagnostics();
@@ -2678,7 +2825,7 @@ function iosPushBlockReason() {
   const isIOS = /iPhone|iPad|iPod/i.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
   if (!isIOS) return '';
   const standalone = window.matchMedia?.('(display-mode: standalone)').matches || window.navigator.standalone === true;
-  if (!standalone) return 'iOS blocks Web Push unless LUXit is installed to the Home Screen and opened from the app icon.';
+  if (!standalone) return 'iOS blocks Web Push unless LUX Connect is installed to the Home Screen and opened from the app icon.';
   if (!('PushManager' in window)) return 'iOS Web Push is unavailable in this browser/version. Use Safari on iOS 16.4+ from the installed Home Screen app.';
   return '';
 }
@@ -2820,10 +2967,10 @@ async function loadBadgeCounts() {
     const vmBadge = document.getElementById('vmBadge');
     if (mcBadge) { mcBadge.textContent = mc; mcBadge.style.display = mc > 0 ? 'flex' : 'none'; }
     if (vmBadge) { vmBadge.textContent = vm; vmBadge.style.display = vm > 0 ? 'flex' : 'none'; }
-    // The OS app-icon badge is unread inbound SMS only -- not the combined
-    // total (which also includes missed calls, voicemails, and generic
-    // notifications, each already shown via their own in-app indicators).
-    await updateAppBadge(data.smsUnread || 0);
+    // The OS app-icon badge = unread texts + unseen missed calls + unheard
+    // voicemails (server-computed as effectiveBadge) -- never generic/system
+    // notifications, which have their own in-app indicators only.
+    await updateAppBadge(data.effectiveBadge || 0);
   } catch (e) {}
 }
 

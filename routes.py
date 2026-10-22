@@ -1,6 +1,7 @@
 import csv
 import io
 import base64
+import hmac
 import logging
 import os
 import uuid
@@ -2092,6 +2093,58 @@ def contacts():
         db.session.rollback()
         logger.exception("GET /contacts failed request_id=%s company_id=%s", request_id, company_id)
         return render_template("safe_error.html", request_id=request_id, message="Audience could not be loaded. Please try again or contact support with the request ID."), 500
+
+
+def _require_shared_secret_auth(*, env_var):
+    """Mandatory shared-secret authentication for csrf-exempt machine webhooks.
+
+    Fail-closed. Returns a Flask ``(response, status)`` tuple that the caller
+    MUST return immediately when the request is not authenticated; returns
+    ``None`` only when a valid credential was presented.
+
+    Contract:
+    - The server-side secret is read from ``env_var``. A missing/blank secret
+      is a configuration error and is rejected (503) -- it is never treated as
+      "auth disabled" or "allow".
+    - Authentication is unconditional. A request with no ``Authorization``
+      header, or a malformed one, is rejected (401) *before* any side effect.
+    - The presented credential is accepted from either
+      ``Authorization: Bearer <token>`` or HTTP Basic (the password field), and
+      compared to the expected secret in constant time.
+    """
+    expected = (os.environ.get(env_var) or "").strip()
+    if not expected:
+        logger.error(
+            "webhook auth misconfigured: %s is not set (path=%s) -- rejecting",
+            env_var, request.path,
+        )
+        return jsonify({
+            'success': False,
+            'error': 'Webhook authentication is not configured',
+        }), 503
+
+    provided = ''
+    header = request.headers.get('Authorization', '') or ''
+    if header[:7].lower() == 'bearer ':
+        provided = header[7:].strip()
+    else:
+        auth = request.authorization
+        if auth and (auth.type or '').lower() == 'basic':
+            provided = auth.password or ''
+
+    if not provided:
+        return jsonify({
+            'success': False,
+            'error': 'Authentication required',
+        }), 401
+
+    if not hmac.compare_digest(provided, expected):
+        return jsonify({
+            'success': False,
+            'error': 'Invalid credentials',
+        }), 401
+
+    return None
 
 
 def _trusted_public_company_id():
@@ -6541,12 +6594,37 @@ def manage_users():
             for user in users:
                 restoration_by_user[user.id] = restoration_eligible(user, company.id)
 
+        # Per-user communication state for the tenant Team view: availability
+        # (Available / Away) and Receive Calls, with provenance. Tenant-scoped;
+        # a platform admin with no company context gets an empty map.
+        comms_by_user = {}
+        can_manage_comms = False
+        if company:
+            try:
+                from services.phone_availability import team_availability, can_admin_manage
+                from services.receive_calls import team_receive_calls
+                can_manage_comms = can_admin_manage(current_user, company.id)
+                for row in team_availability(company.id):
+                    comms_by_user.setdefault(row["user_id"], {}).update({
+                        "availability": row.get("state"),
+                        "availability_changed_at": row.get("changed_at"),
+                        "availability_changed_by": row.get("changed_by_name"),
+                        "availability_source": row.get("source"),
+                    })
+                for row in team_receive_calls(company.id):
+                    comms_by_user.setdefault(row["user_id"], {})["receive_calls"] = row.get("receive_calls")
+            except Exception:
+                logger.exception("manage_users: comms state load failed")
+
         return render_template(
             'manage_users.html',
             users=users,
             access_by_user=access_by_user,
             show_archived=show_archived,
             restoration_by_user=restoration_by_user,
+            comms_by_user=comms_by_user,
+            can_manage_comms=can_manage_comms,
+            current_company=company,
         )
     except Exception as e:
         logger.error("manage_users error: %s", e)
@@ -6595,7 +6673,10 @@ def delete_user(user_id):
     from services.comms_permissions import can_manage_users
     from services.user_lifecycle import archive_user_for_company
     company = current_user.get_default_company()
-    if not current_user.is_admin and (not company or not can_manage_users(current_user, company.id)):
+    if not company:
+        flash('Select a company context before removing a user.', 'danger')
+        return redirect(url_for('main.manage_users'))
+    if not current_user.is_admin and not can_manage_users(current_user, company.id):
         flash('Access denied.', 'danger')
         return redirect(url_for('main.dashboard'))
     user = User.query.get_or_404(user_id)
@@ -6618,7 +6699,10 @@ def restore_user(user_id):
     from services.comms_permissions import can_manage_users
     from services.user_lifecycle import restore_user_for_company
     company = current_user.get_default_company()
-    if not current_user.is_admin and (not company or not can_manage_users(current_user, company.id)):
+    if not company:
+        flash('Select a company context before restoring a user.', 'danger')
+        return redirect(url_for('main.manage_users', archived='1'))
+    if not current_user.is_admin and not can_manage_users(current_user, company.id):
         flash('Access denied.', 'danger')
         return redirect(url_for('main.dashboard'))
     user = User.query.get_or_404(user_id)
@@ -8459,8 +8543,16 @@ def import_forminator_newsletter():
     return render_template('import_forminator.html')
 
 @main_bp.route('/admin/forminator-webhook', methods=['POST'])
+@csrf.exempt
 def forminator_webhook():
-    """Webhook endpoint for Forminator form submissions (form ID 3482)"""
+    """Webhook endpoint for Forminator form submissions (form ID 3482).
+
+    Machine-to-machine: shared-secret auth is mandatory and fail-closed
+    (``FORMINATOR_WEBHOOK_TOKEN``). See ``_require_shared_secret_auth``.
+    """
+    auth_error = _require_shared_secret_auth(env_var='FORMINATOR_WEBHOOK_TOKEN')
+    if auth_error is not None:
+        return auth_error
     try:
         data = request.get_json()
         form_id = data.get('form_id')
@@ -8574,8 +8666,16 @@ def import_wordpress_users():
     return render_template('import_wordpress.html')
 
 @main_bp.route('/admin/wordpress-webhook', methods=['POST'])
+@csrf.exempt
 def wordpress_webhook():
-    """Webhook for WordPress new user registration"""
+    """Webhook for WordPress new user registration.
+
+    Machine-to-machine: shared-secret auth is mandatory and fail-closed
+    (``WORDPRESS_WEBHOOK_TOKEN``). See ``_require_shared_secret_auth``.
+    """
+    auth_error = _require_shared_secret_auth(env_var='WORDPRESS_WEBHOOK_TOKEN')
+    if auth_error is not None:
+        return auth_error
     try:
         data = request.get_json()
         email = data.get('email')
@@ -8742,21 +8842,21 @@ def view_wordpress_imports():
 @csrf.exempt
 def zapier_contact_webhook():
     """
-    Public API endpoint for Zapier webhook integration
+    Machine-to-machine webhook for Zapier contact intake.
     Receives: email, name, phone, source (flexible payload)
-    Validates, checks duplicates, inserts/updates contact
-    Supports basic auth: luke|Wow548302!
+    Validates, checks duplicates, inserts/updates contact.
+
+    Authentication is mandatory and fail-closed: the caller must present the
+    shared secret from ``ZAPIER_WEBHOOK_TOKEN`` via ``Authorization: Bearer``
+    or HTTP Basic (password field). See ``_require_shared_secret_auth``.
     """
+    # Authenticate BEFORE reading the body or touching the database. A rejected
+    # request must cause zero mutation.
+    auth_error = _require_shared_secret_auth(env_var='ZAPIER_WEBHOOK_TOKEN')
+    if auth_error is not None:
+        return auth_error
+
     try:
-        # Validate basic auth if provided
-        auth = request.authorization
-        if auth:
-            if auth.username != 'luke' or auth.password != 'Wow548302!':
-                return jsonify({
-                    'success': False,
-                    'error': 'Invalid credentials'
-                }), 401
-        
         data = request.get_json()
         
         if not data:
@@ -9181,7 +9281,16 @@ def update_contact_profile(contact_id):
         
         contact.updated_at = datetime.utcnow()
         db.session.commit()
-        
+
+        # Notify any already-open PWA conversation/contact view for this
+        # contact so a desktop CRM edit reaches it without a reload. Not an
+        # "attention" event -- always delivered regardless of Away status.
+        try:
+            from inbox_pwa import _push_sse_event
+            _push_sse_event(company_id, "contact_updated", {"contact_id": contact.id})
+        except Exception:
+            logger.warning("contact_updated SSE push failed for contact %s", contact_id, exc_info=True)
+
         return jsonify({'success': True, 'message': 'Profile updated successfully'})
     except Exception as e:
         db.session.rollback()

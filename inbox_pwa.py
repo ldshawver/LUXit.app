@@ -78,7 +78,7 @@ def _phone_pwa_license_gate():
     """Server-side feature gate for the licensed Phone/PWA Communications module."""
     path = request.path or ""
     gated = (
-        path in {"/app/inbox", "/app/calls", "/app/calls/settings", "/app/new-text", "/app/dial-pad", "/app/recents", "/app/settings", "/app/favorites", "/app/contacts", "/app/voicemail", "/app/greetings"}
+        path in {"/app/inbox", "/app/calls", "/app/calls/settings", "/app/new-text", "/app/phone", "/app/dial-pad", "/app/recents", "/app/settings", "/app/favorites", "/app/contacts", "/app/voicemail", "/app/greetings"}
         or path.startswith("/api/inbox/")
         or path.startswith("/api/calls/")
         or path.startswith("/api/phone/")
@@ -187,10 +187,24 @@ def _refresh_call_contact_name(call):
 
 
 # ── SSE Event Bus ──────────────────────────────────────────────────────────────
-# Keyed by company_id → list of Queue objects (one per connected SSE client).
+# Keyed by company_id → list of (user_id, Queue) tuples (one per connected SSE
+# client). The user_id lets _push_sse_event suppress realtime *attention* events
+# (new message / incoming call / voicemail / reminder) for a user whose
+# Communication Availability is 'away' — see services/phone_availability.py.
 # Works with gunicorn gthread workers (--worker-class gthread --threads N).
 _sse_lock:      threading.Lock              = threading.Lock()
 _sse_listeners: dict[int, list]             = {}
+
+# Realtime events that constitute user-facing "attention" for a shared-line
+# communication. An AWAY user's SSE client receives NONE of these (no sound, no
+# toast, no badge bump, no conversation pop-up); every other event type
+# (connected / heartbeat / phone_availability / message_status) is always
+# delivered so state stays converged.
+_ATTENTION_SSE_EVENTS = {
+    "new_message", "incoming_sms", "sms",
+    "incoming_call", "missed_call", "voicemail", "new_voicemail",
+    "unread_message_reminder",
+}
 
 # ── Auth helpers ──────────────────────────────────────────────────────────────
 
@@ -459,61 +473,32 @@ def _twilio_send_error_message_LEGACY(exc) -> str:
     return raw
 
 
-def retry_queued_outbound_messages(company_id: int, limit: int = 100, dry_run: bool = False) -> dict:
-    """Admin-safe retry for legacy PWA outbound rows stuck as queued without a Twilio SID."""
-    from models import TwilioConversation, TwilioMessage
-
-    ta = _get_twilio_account(company_id)
-    if not ta or not ta.is_configured:
-        return {"success": False, "error": "Twilio is not configured for this company.", "retried": 0, "failed": 0}
-
-    rows = (TwilioMessage.query
-        .join(TwilioConversation, TwilioConversation.id == TwilioMessage.conversation_id)
-        .filter(
-            TwilioMessage.company_id == company_id,
-            TwilioMessage.direction == "outbound",
-            TwilioMessage.status == "queued",
-            TwilioMessage.twilio_sid.is_(None),
-            TwilioConversation.company_id == company_id,
-        )
-        .order_by(TwilioMessage.created_at.asc(), TwilioMessage.id.asc())
-        .limit(max(1, min(int(limit or 100), 500)))
-        .all())
-    if dry_run:
-        return {"success": True, "dry_run": True, "matched": len(rows), "retried": 0, "failed": 0}
-
-    retried = failed = 0
-    errors = []
-    for row in rows:
-        conv = row.conversation
-        to_number = row.to_number or getattr(conv, "from_number", None)
-        if not to_number:
-            row.status = "failed"
-            row.error_message = "Queued outbound message has no recipient phone number."
-            failed += 1
-            errors.append({"id": row.id, "error": row.error_message})
-            db.session.commit()
-            continue
-        from twilio_sms import sendConversationSms
-        result = sendConversationSms(conv.id, row.body or "", twilio_account=ta, to_number=to_number, persist_record=False)
-        if not result.get("success"):
-            row.status = "failed"
-            row.error_message = result.get("error") or "SMS retry failed."
-            db.session.commit()
-            failed += 1
-            errors.append({"id": row.id, "error": row.error_message})
-        else:
-            row.status = "sent"
-            row.twilio_sid = result.get("sid")
-            row.error_message = None
-            row.raw_payload = {
-                "retried_from_queue": True,
-                "resent_via": "sendConversationSms",
-                "provider_status": result.get("provider_status") or result.get("status"),
-            }
-            db.session.commit()
-            retried += 1
-    return {"success": failed == 0, "matched": len(rows), "retried": retried, "failed": failed, "errors": errors[:20]}
+# Canonical outbound SMS send lifecycle (as of 2026-09-04):
+#
+# 1. Every send -- manual (PWA/desktop conversation reply) or automated
+#    (auto-reply/campaign/outbox) -- goes through the single entry point
+#    ``twilio_sms.sendConversationSms``. It calls the Twilio API
+#    synchronously inside the request/task; on a 2xx it persists a
+#    ``TwilioMessage`` row with the real ``twilio_sid`` in the same call, on
+#    an exception it persists a ``status="failed"`` row with no SID. There is
+#    no intermediate "queued, SID not yet known" state a row can be
+#    durably stuck in -- a send either gets a SID or is marked failed.
+# 2. Manual sends additionally go through
+#    ``services.sms_send_idempotency.send_with_idempotency``, which claims a
+#    durable idempotency key before calling ``sendConversationSms`` so a
+#    browser/network retry of the same logical send cannot produce a second
+#    real Twilio submission (see that module's docstring).
+# 3. ``/twilio/sms/status`` (Twilio's delivery-status webhook) applies the
+#    out-of-order-safe transition guard in ``services.sms_status`` to move a
+#    row from ``sent`` to its real terminal ``delivered``/``failed``/
+#    ``undelivered`` state.
+#
+# A prior "retry queued outbound messages stuck without a SID" admin repair
+# function lived here. It was never wired to any route or scheduled job (only
+# ever called from tests), and a live-data check confirmed zero rows anywhere
+# in staging or production match its target shape (``status="queued"`` AND
+# ``twilio_sid IS NULL``) -- because step 1 above means the current send path
+# cannot produce that shape. Removed as obsolete rather than activated.
 
 
 def _conv_to_dict(conv, brief=True):
@@ -609,7 +594,6 @@ def _msg_to_dict(m):
 
 @inbox_pwa_bp.route("/app/inbox")
 @inbox_pwa_bp.route("/app/new-text")
-@inbox_pwa_bp.route("/app/dial-pad")
 @inbox_pwa_bp.route("/app/settings")
 @inbox_pwa_bp.route("/app/favorites")
 @inbox_pwa_bp.route("/app/contacts")
@@ -634,7 +618,7 @@ def pwa_index():
         os.environ.get("LUXIT_ASSET_VERSION")
         or os.environ.get("GIT_SHA")
         or os.environ.get("RENDER_GIT_COMMIT")
-        or "20260710-push-receipt-ack"
+        or "20260908-lux-connect-2"
     )
     return render_template(
         "inbox_pwa/index.html",
@@ -646,6 +630,8 @@ def pwa_index():
     )
 
 
+@inbox_pwa_bp.route("/app/phone")
+@inbox_pwa_bp.route("/app/dial-pad")
 @inbox_pwa_bp.route("/app/calls")
 @inbox_pwa_bp.route("/app/calls/settings")
 @inbox_pwa_bp.route("/app/recents")
@@ -664,9 +650,24 @@ def pwa_calls():
         os.environ.get("LUXIT_ASSET_VERSION")
         or os.environ.get("GIT_SHA")
         or os.environ.get("RENDER_GIT_COMMIT")
-        or "20260710-push-receipt-ack"
+        or "20260908-lux-connect-2"
     )
-    return render_template("inbox_pwa/calls.html", user=user, company=company, pwa_version=pwa_version)
+    # /app/phone and /app/dial-pad render the dedicated dialer view of this one
+    # canonical template; the Clock-icon routes render the Recent Calls view.
+    dialer_mode = (request.path or "").rstrip("/") in ("/app/phone", "/app/dial-pad")
+    try:
+        from services.receive_calls import receive_calls_enabled
+        receive_calls = receive_calls_enabled(user.id, company.id)
+    except Exception:
+        receive_calls = True
+    return render_template(
+        "inbox_pwa/calls.html",
+        user=user,
+        company=company,
+        pwa_version=pwa_version,
+        dialer_mode=dialer_mode,
+        receive_calls=receive_calls,
+    )
 
 
 def _call_to_dict(call):
@@ -887,6 +888,192 @@ def api_pwa_favorite_detail(favorite_id):
     return jsonify({"success": True, "favorite": _favorite_to_dict(fav)})
 
 # ── API: accessible phone numbers ───────────────────────────────────────────
+
+@inbox_pwa_bp.route("/api/phone/availability", methods=["GET", "PUT"])
+def api_phone_availability():
+    """Get / set the current user's Communication Availability for their tenant.
+    AWAY pauses live participation in shared calls AND shared SMS/chat — ringing
+    / call UI / Voice token, plus new-message push, badges, sounds and realtime
+    conversation attention. It is NOT account disable and does not affect app
+    access, role, membership, consent, or inbound persistence. Applies to all of
+    the user's devices."""
+    user = _require_auth()
+    company = _require_company(user)
+    from services.phone_availability import get_availability, set_availability, AvailabilityError
+    if request.method == "GET":
+        return jsonify({"success": True, **get_availability(user.id, company.id)})
+    data = request.get_json(silent=True) or {}
+    try:
+        result = set_availability(user.id, company.id, data.get("state"),
+                                  actor_user_id=user.id, source="user")
+    except AvailabilityError as exc:
+        return jsonify({"success": False, "error": str(exc)}), 400
+    db.session.commit()
+    _broadcast_phone_availability(company.id, user.id, result)
+    return jsonify({"success": True, **result})
+
+
+@inbox_pwa_bp.route("/api/phone/availability/team", methods=["GET", "PUT"])
+def api_phone_availability_team():
+    """GET  — admin view of every tenant member's Communication Availability.
+    PUT  — admin bulk 'Set All Available' / 'Set All Away' for the tenant.
+
+    Bulk 'away' is a tenant-wide live-communications pause, so it requires a
+    deliberate {"confirm": true} in the body (409 CONFIRM_REQUIRED otherwise);
+    inbound calls/messages keep arriving and persisting, they just do not nudge
+    anyone until a user returns Available. Same-tenant admins only; the company
+    scope is server-side so a cross-tenant admin can never reach another tenant.
+    """
+    user = _require_auth()
+    company = _require_company(user)
+    from services.phone_availability import (
+        can_admin_manage, team_availability, set_all_availability, AvailabilityError)
+    if not can_admin_manage(user, company.id):
+        return jsonify({"success": False, "error": "Not authorized"}), 403
+    if request.method == "GET":
+        return jsonify({"success": True, "team": team_availability(company.id)})
+
+    data = request.get_json(silent=True) or {}
+    state = str(data.get("state") or "").strip().lower()
+    if state == "away" and not data.get("confirm"):
+        return jsonify({
+            "success": False, "code": "CONFIRM_REQUIRED",
+            "error": ("Set all users Away? Incoming messages will continue to be "
+                      "stored and calls will follow the configured "
+                      "fallback/voicemail path, but no users will receive live "
+                      "communications."),
+        }), 409
+    try:
+        results = set_all_availability(company.id, state, actor_user_id=user.id, source="admin")
+    except AvailabilityError as exc:
+        return jsonify({"success": False, "error": str(exc)}), 400
+    db.session.commit()
+    for r in results:
+        _broadcast_phone_availability(company.id, r.get("user_id"), r)
+    return jsonify({"success": True, "state": state, "updated": len(results),
+                    "team": team_availability(company.id)})
+
+
+@inbox_pwa_bp.route("/api/phone/availability/user/<int:target_user_id>", methods=["PUT"])
+def api_phone_availability_admin_set(target_user_id):
+    """Admin sets another user's Phone Availability. Same-tenant admins only;
+    the company scope is server-side (a cross-tenant admin cannot reach here)."""
+    user = _require_auth()
+    company = _require_company(user)
+    from services.phone_availability import (
+        can_admin_manage, set_availability, get_availability, AvailabilityError)
+    from models import UserCompanyAccess
+    if not can_admin_manage(user, company.id):
+        return jsonify({"success": False, "error": "Not authorized"}), 403
+    if not UserCompanyAccess.query.filter_by(user_id=target_user_id, company_id=company.id).first():
+        return jsonify({"success": False, "error": "User is not a member of this company"}), 404
+    data = request.get_json(silent=True) or {}
+    try:
+        result = set_availability(target_user_id, company.id, data.get("state"),
+                                  actor_user_id=user.id, source="admin")
+    except AvailabilityError as exc:
+        return jsonify({"success": False, "error": str(exc)}), 400
+    db.session.commit()
+    _broadcast_phone_availability(company.id, target_user_id, result)
+    return jsonify({"success": True, **result})
+
+
+def _broadcast_phone_availability(company_id, target_user_id, result):
+    """Notify the tenant's SSE listeners so the affected user's clients apply
+    the change promptly without polling."""
+    try:
+        _push_sse_event(company_id, "phone_availability", {
+            "user_id": target_user_id,
+            "state": result.get("state"),
+            "source": result.get("source"),
+            "changed_at": result.get("changed_at"),
+            "changed_by_user_id": result.get("changed_by_user_id"),
+        })
+    except Exception:
+        logger.exception("phone availability SSE broadcast failed", extra={"company_id": company_id})
+
+
+def _broadcast_receive_calls(company_id, target_user_id, result):
+    """Notify the tenant's SSE listeners so the affected user's other PWA
+    instances converge (register / unregister) without a reload."""
+    try:
+        _push_sse_event(company_id, "receive_calls", {
+            "user_id": target_user_id,
+            "receive_calls": result.get("receive_calls"),
+            "source": result.get("source"),
+            "changed_at": result.get("changed_at"),
+            "changed_by_user_id": result.get("changed_by_user_id"),
+        })
+    except Exception:
+        logger.exception("receive_calls SSE broadcast failed", extra={"company_id": company_id})
+
+
+@inbox_pwa_bp.route("/api/phone/receive-calls", methods=["GET", "PUT"])
+def api_phone_receive_calls():
+    """Get / set the current user's Receive Calls preference for their tenant.
+
+    Independent of Communication Availability. FALSE means this user's PWA does
+    not register for or present inbound calls and server-side routing excludes
+    them; voicemail / no-answer fallback is unaffected. It is not a
+    network-transport setting -- calling works over Wi-Fi or cellular data."""
+    user = _require_auth()
+    company = _require_company(user)
+    from services.receive_calls import get_receive_calls, set_receive_calls, ReceiveCallsError
+    if request.method == "GET":
+        return jsonify({"success": True, **get_receive_calls(user.id, company.id)})
+    data = request.get_json(silent=True) or {}
+    value = data.get("receive_calls")
+    if value is None:
+        value = data.get("enabled")
+    try:
+        result = set_receive_calls(user.id, company.id, value,
+                                   actor_user_id=user.id, source="user")
+    except ReceiveCallsError as exc:
+        return jsonify({"success": False, "error": str(exc)}), 400
+    db.session.commit()
+    _broadcast_receive_calls(company.id, user.id, result)
+    return jsonify({"success": True, **result})
+
+
+@inbox_pwa_bp.route("/api/phone/receive-calls/team", methods=["GET"])
+def api_phone_receive_calls_team():
+    """Admin view of every active tenant member's Receive Calls preference.
+    Same-tenant admins only; company scope is server-side."""
+    user = _require_auth()
+    company = _require_company(user)
+    from services.receive_calls import can_admin_manage, team_receive_calls
+    if not can_admin_manage(user, company.id):
+        return jsonify({"success": False, "error": "Not authorized"}), 403
+    return jsonify({"success": True, "team": team_receive_calls(company.id)})
+
+
+@inbox_pwa_bp.route("/api/phone/receive-calls/user/<int:target_user_id>", methods=["PUT"])
+def api_phone_receive_calls_admin_set(target_user_id):
+    """Admin sets another user's Receive Calls preference. Same-tenant admins
+    only; the company scope is server-side (a cross-tenant admin cannot reach
+    here)."""
+    user = _require_auth()
+    company = _require_company(user)
+    from services.receive_calls import (
+        can_admin_manage, set_receive_calls, ReceiveCallsError)
+    from models import UserCompanyAccess
+    if not can_admin_manage(user, company.id):
+        return jsonify({"success": False, "error": "Not authorized"}), 403
+    if not UserCompanyAccess.query.filter_by(user_id=target_user_id, company_id=company.id).first():
+        return jsonify({"success": False, "error": "User is not a member of this company"}), 404
+    data = request.get_json(silent=True) or {}
+    value = data.get("receive_calls")
+    if value is None:
+        value = data.get("enabled")
+    try:
+        result = set_receive_calls(target_user_id, company.id, value,
+                                   actor_user_id=user.id, source="admin")
+    except ReceiveCallsError as exc:
+        return jsonify({"success": False, "error": str(exc)}), 400
+    db.session.commit()
+    _broadcast_receive_calls(company.id, target_user_id, result)
+    return jsonify({"success": True, **result})
+
 
 @inbox_pwa_bp.route("/api/phone/numbers")
 def api_phone_numbers():
@@ -1474,14 +1661,11 @@ def api_phone_voice_client_error():
     company = _require_company(user)
     data = request.get_json(silent=True) or {}
     logger.warning(
-        "Browser voice client error",
-        extra={
-            "user_id": user.id,
-            "company_id": company.id,
-            "voice_error_code": data.get("code"),
-            "voice_error_message": data.get("message"),
-            "voice_error_detail": data.get("detail"),
-        },
+        "Browser voice client error user_id=%s company_id=%s code=%s message=%s detail=%s",
+        user.id, company.id,
+        str(data.get("code"))[:80],
+        str(data.get("message"))[:300],
+        str(data.get("detail"))[:300],
     )
     return jsonify({"success": True})
 
@@ -1493,6 +1677,28 @@ def api_phone_voice_token():
     company = _require_company(user)
     from models import PhoneNumberUserPermission, TwilioAccount, TwilioPhoneNumber
     from services.comms_permissions import accessible_phone_numbers
+    from services.phone_availability import is_available
+    from services.receive_calls import receive_calls_enabled
+
+    # Receive Calls gate — when the user has turned calls off for this tenant,
+    # no token is minted and no Twilio.Device registers. Distinct from AWAY
+    # (a temporary availability pause): CALLING_DISABLED is the persisted
+    # preference and is not cleared by returning Available.
+    if not receive_calls_enabled(user.id, company.id):
+        logger.info("Voice token denied: receive_calls is off", extra={"user_id": user.id, "company_id": company.id})
+        return jsonify({
+            "success": False, "code": "CALLING_DISABLED",
+            "error": "Receive Calls is turned off for you in this company.",
+        }), 403
+
+    # Phone Availability gate — an AWAY user must fail BEFORE a token is minted
+    # or a Twilio.Device is registered.
+    if not is_available(user.id, company.id):
+        logger.info("Voice token denied: user is Away", extra={"user_id": user.id, "company_id": company.id})
+        return jsonify({
+            "success": False, "code": "PHONE_AWAY",
+            "error": "You're Away. Phone calls and communication notifications are paused.",
+        }), 403
 
     allowed_numbers = accessible_phone_numbers(user, company.id)
     if not allowed_numbers:
@@ -1537,20 +1743,39 @@ def api_phone_voice_token():
         from twilio.jwt.access_token.grants import VoiceGrant
         from models import PWADevice
         from services.phone_identity import pwa_voice_identity
+        # Device-approval policy. The company flag governs DEVICE APPROVAL only —
+        # never the Voice authorization already enforced above (auth, tenant
+        # isolation, active membership, can_access_pwa / can_call, receive_calls,
+        # Available/Away).
+        require_approved_devices = bool(getattr(company, "require_approved_pwa_devices", False))
         device_key = (request.args.get("device_key") or request.headers.get("X-PWA-Device-Key") or "").strip()
-        device = None
-        if device_key:
-            device = PWADevice.query.filter_by(
-                company_id=company.id, user_id=user.id, device_key=device_key,
-                approved_status="approved", lifecycle_status="active",
-            ).first()
+        device = PWADevice.query.filter_by(
+            company_id=company.id, user_id=user.id, device_key=device_key,
+            approved_status="approved", lifecycle_status="active",
+        ).first() if device_key else None
+        if require_approved_devices:
+            # Approval mandatory: a missing / stale / unresolved / pending /
+            # unapproved device fails closed. The identity is device-scoped and
+            # is the one twilio_sms ring_pwa targets for that approved device.
             if not device:
+                logger.info(
+                    "Voice token denied: device approval required, device not approved/active",
+                    extra={"user_id": user.id, "company_id": company.id, "has_device_key": bool(device_key)},
+                )
                 return jsonify({"success": False, "code": "DEVICE_NOT_REGISTERED", "error": "Register and approve this device before enabling Wi-Fi Calling."}), 403
-        identity = pwa_voice_identity(company.id, user.id, device_key) if device else pwa_voice_identity(company.id)
+            identity = pwa_voice_identity(company.id, user.id, device.device_key)
+        else:
+            # Approval NOT required: a stale / pending / unresolved / missing
+            # device_key must not block an otherwise-eligible user. Bind the
+            # token to the user's non-device Voice identity — exactly what
+            # twilio_sms ring_pwa targets for an approval-disabled tenant, so the
+            # registered Twilio.Device and the inbound <Client> always match.
+            identity = pwa_voice_identity(company.id, user.id)
+        twiml_app_sid = os.environ.get("TWILIO_TWIML_APP_SID")
         token = AccessToken(account_sid, api_key, api_secret, identity=identity)
         token.add_grant(VoiceGrant(
             incoming_allow=True,
-            outgoing_application_sid=os.environ.get("TWILIO_TWIML_APP_SID"),
+            outgoing_application_sid=twiml_app_sid,
         ))
         return jsonify({
             "success": True,
@@ -1561,6 +1786,11 @@ def api_phone_voice_token():
             "calling_number": allowed_numbers[0],
             "permitted_numbers": allowed_numbers,
             "device_key": device_key or None,
+            # Browser-originated outbound calls need a Twilio TwiML App bound to
+            # the VoiceGrant. When it is absent the SDK still registers for
+            # inbound, but device.connect() would be torn down immediately by
+            # Twilio — so tell the client to disable the Call button instead.
+            "outbound_enabled": bool(twiml_app_sid),
         })
     except Exception as exc:
         logger.exception("Unable to issue Twilio Voice token", extra={"user_id": user.id, "company_id": company.id})
@@ -1861,24 +2091,38 @@ def send_message(conv_id):
             "twilio_not_configured",
         )
 
-    from twilio_sms import sendConversationSms
-    result = sendConversationSms(conv.id, body, twilio_account=ta)
+    from services.sms_send_idempotency import send_with_idempotency
+    result = send_with_idempotency(
+        company_id=company.id, user_id=user.id, conversation_id=conv.id,
+        body=body, twilio_account=ta, idempotency_key=payload.get("idempotency_key"),
+    )
+    if result.get("status") == "delivery_unknown":
+        # A send for this exact request is already in flight or its provider
+        # outcome is unknown -- never resend. The caller should treat this as
+        # "already handled", not retry again.
+        return _json_error(result.get("error") or "Send already in progress.", 409, "send_in_progress")
     if not result.get("success"):
         logger.error("send_message failed: user=%d company=%d conv=%d to=%s error=%s",
                      user.id, company.id, conv_id, conv.from_number, result.get("error"))
         return _json_error(result.get("error") or "SMS send failed", 502, "provider_failure")
     from models import TwilioMessage
-    record = TwilioMessage.query.filter_by(conversation_id=conv.id, direction="outbound").order_by(TwilioMessage.id.desc()).first()
+    record = TwilioMessage.query.filter_by(twilio_sid=result.get("sid")).first() if result.get("sid") else None
+    if not record:
+        record = TwilioMessage.query.filter_by(conversation_id=conv.id, direction="outbound").order_by(TwilioMessage.id.desc()).first()
 
-    # Update conversation preview
-    conv.last_message_at      = datetime.utcnow()
-    conv.last_message_preview = f"You: {body[:150]}"
-    conv.message_count        = (conv.message_count or 0) + 1
-    conv.is_read              = True
-    db.session.commit()
+    if not result.get("idempotent"):
+        # Only the request that actually performed the send updates the
+        # conversation preview/unread count -- an idempotent replay (a
+        # retried duplicate request) must not touch it a second time.
+        conv.last_message_at      = datetime.utcnow()
+        conv.last_message_preview = f"You: {body[:150]}"
+        conv.message_count        = (conv.message_count or 0) + 1
+        conv.is_read              = True
+        db.session.commit()
 
-    logger.info("send_message: user=%d company=%d conv=%d to=%s sid=%s",
-                user.id, company.id, conv_id, conv.from_number, record.twilio_sid)
+    logger.info("send_message: user=%d company=%d conv=%d to=%s sid=%s idempotent=%s",
+                user.id, company.id, conv_id, conv.from_number, getattr(record, "twilio_sid", None),
+                bool(result.get("idempotent")))
     return jsonify({"success": True, "message": _msg_to_dict(record)})
 
 
@@ -2112,6 +2356,14 @@ def update_conversation_contact(conv_id):
         conv.contact_name = display
     db.session.commit()
 
+    # Notify every other connected client (other tabs/devices, the desktop
+    # CRM's own listeners) so an already-open conversation/contact view picks
+    # up the edit without a reload. Not an "attention" event -- always
+    # delivered regardless of Away status.
+    _push_sse_event(company.id, "contact_updated", {
+        "contact_id": contact.id, "conversation_id": conv.id, "contact_name": conv.contact_name,
+    })
+
     return jsonify({"success": True, "contact": serialize_contact(contact), "contact_name": conv.contact_name})
 
 
@@ -2183,6 +2435,14 @@ def _pwa_badge_counts_for(user, company):
         "missedCalls": missed_calls,
         "voicemails": voicemails,
         "notifications": notifications,
+        # The OS/app-icon red badge: unread texts + unseen missed calls +
+        # unheard voicemails, exactly -- never system/admin Notification rows
+        # (those are informational and already surfaced by other in-app UI,
+        # and were never a canonical "unread communication" in the first
+        # place). Distinct from `count` above, which is a broader dashboard
+        # total that intentionally also includes non-communications
+        # Notification rows and has its own existing test contract.
+        "effectiveBadge": len(sms_unread) + missed_calls + voicemails,
     }
 
 
@@ -2191,7 +2451,7 @@ def pwa_badge_count():
     user = _require_auth()
     company = _get_company(user)
     if not company:
-        return jsonify({"count": 0, "smsUnread": 0, "missedCalls": 0, "voicemails": 0, "notifications": 0})
+        return jsonify({"count": 0, "smsUnread": 0, "missedCalls": 0, "voicemails": 0, "notifications": 0, "effectiveBadge": 0})
     denied = _require_mobile_inbox_api_access(user, company)
     if denied:
         return denied
@@ -2518,11 +2778,11 @@ def send_pwa_push_notification(company_id: int, *, user_ids, title: str, body: s
         try:
             from models import Company
             company = db.session.get(Company, company_id)
-            # The OS/app-icon badge must represent only unread inbound SMS visible
-            # to this user in the active company -- not missed calls, voicemails,
-            # or generic Notification rows (those have their own in-app indicators
-            # via the smsUnread/missedCalls/voicemails/notifications breakdown).
-            badge_count = _pwa_badge_counts_for(user, company)["smsUnread"] if company else None
+            # The OS/app-icon badge = unread texts + unseen missed calls +
+            # unheard voicemails -- never generic/system Notification rows
+            # (those have their own in-app indicators via the
+            # smsUnread/missedCalls/voicemails/notifications breakdown).
+            badge_count = _pwa_badge_counts_for(user, company)["effectiveBadge"] if company else None
         except Exception:
             badge_count = None
         payload = {
@@ -2560,7 +2820,7 @@ def send_pwa_push_notification(company_id: int, *, user_ids, title: str, body: s
             "event_type": decision["event_type"], "silent": payload["silent"], "sound": payload["sound"],
             "vibrate": payload["vibrate"], "renotify": payload["renotify"], "tag": payload["tag"],
             "badgeCount": badge_count, "channel": payload["channelId"], "importance": payload["importance"],
-            "sw_version": os.environ.get("LUXIT_ASSET_VERSION") or os.environ.get("GIT_SHA") or os.environ.get("RENDER_GIT_COMMIT") or "20260710-push-receipt-ack",
+            "sw_version": os.environ.get("LUXIT_ASSET_VERSION") or os.environ.get("GIT_SHA") or os.environ.get("RENDER_GIT_COMMIT") or "20260908-lux-connect-2",
             "push_provider_result": result,
         })
         total += result.get("sent", 0)
@@ -2619,12 +2879,12 @@ def pwa_push_debug():
         "vapid_configured": not missing,
         "vapid_public_key_present": bool(os.environ.get("VAPID_PUBLIC_KEY")),
         "vapid_missing": missing,
-        "service_worker_version": os.environ.get("LUXIT_ASSET_VERSION") or os.environ.get("GIT_SHA") or os.environ.get("RENDER_GIT_COMMIT") or "20260710-push-receipt-ack",
+        "service_worker_version": os.environ.get("LUXIT_ASSET_VERSION") or os.environ.get("GIT_SHA") or os.environ.get("RENDER_GIT_COMMIT") or "20260908-lux-connect-2",
         "decision": decision,
         "device_instructions": [
-            "Android: Chrome/LUXit PWA notification channel cannot be Silent or Low Importance.",
-            "Android: enable sound and vibration for the Chrome/LUXit PWA notification category.",
-            "iPhone: install to Home Screen, then enable Settings > Notifications > LUXit > Sounds.",
+            "Android: Chrome/LUX Connect PWA notification channel cannot be Silent or Low Importance.",
+            "Android: enable sound and vibration for the Chrome/LUX Connect PWA notification category.",
+            "iPhone: install to Home Screen, then enable Settings > Notifications > LUX Connect > Sounds.",
             "Disable Focus / Do Not Disturb during notification sound tests.",
         ],
         "push_receipts": safe_receipts,
@@ -2878,12 +3138,12 @@ def push_test():
         })
 
     result = _send_web_push_to_subscriptions(subs, {
-        "title": "LUXit Inbox",
+        "title": "LUX Connect",
         "body": "Push notifications are working!",
         "url": "/app/inbox",
         "tag": "push-test",
-        "icon": "/static/favicon.png",
-        "badge": "/static/favicon.png",
+        "icon": "/static/pwa/lux-connect-192.png",
+        "badge": "/static/pwa/lux-connect-192.png",
         "sound": "default",
         "silent": False,
         "vibrate": [200, 100, 200],
@@ -2918,20 +3178,43 @@ def push_test():
 # ── SSE helpers ───────────────────────────────────────────────────────────────
 
 def _push_sse_event(company_id: int, event_type: str, data: dict):
-    """Broadcast a JSON event to every SSE listener for a company."""
+    """Broadcast a JSON event to every SSE listener for a company.
+
+    For realtime *attention* events (`_ATTENTION_SSE_EVENTS`) a listener whose
+    user is currently AWAY (Communication Availability) is skipped — the event
+    never reaches that browser, so there is no sound / toast / badge / pop-up.
+    The underlying message/call/notification is already persisted by the caller;
+    only the live nudge is withheld. Non-attention events are always delivered.
+    """
     import json
     payload = json.dumps({"type": event_type, **data})
+    away_user_ids: set[int] = set()
+    if event_type in _ATTENTION_SSE_EVENTS:
+        try:
+            from services.phone_availability import available_user_ids
+            with _sse_lock:
+                candidate_uids = {uid for uid, _q in _sse_listeners.get(company_id, []) if uid}
+            if candidate_uids:
+                avail = available_user_ids(company_id)
+                away_user_ids = {uid for uid in candidate_uids if uid not in avail}
+        except Exception:
+            logger.exception("SSE availability filter failed; delivering to all",
+                             extra={"company_id": company_id})
+            away_user_ids = set()
     with _sse_lock:
         listeners = _sse_listeners.get(company_id, [])
         dead = []
-        for q in listeners:
+        for entry in listeners:
+            uid, q = entry
+            if uid and uid in away_user_ids:
+                continue
             try:
                 q.put_nowait(payload)
             except _queue_module.Full:
-                dead.append(q)
-        for q in dead:
+                dead.append(entry)
+        for entry in dead:
             try:
-                listeners.remove(q)
+                listeners.remove(entry)
             except ValueError:
                 pass
 
@@ -2948,10 +3231,12 @@ def sse_stream():
     if not company:
         return jsonify({"error": "No company"}), 400
 
+    entry = (getattr(user, "id", None), _queue_module.Queue(maxsize=100))
+
     def generate():
-        q = _queue_module.Queue(maxsize=100)
+        q = entry[1]
         with _sse_lock:
-            _sse_listeners.setdefault(company.id, []).append(q)
+            _sse_listeners.setdefault(company.id, []).append(entry)
         try:
             yield "event: connected\ndata: {}\n\n"
             while True:
@@ -2964,7 +3249,7 @@ def sse_stream():
             with _sse_lock:
                 lst = _sse_listeners.get(company.id, [])
                 try:
-                    lst.remove(q)
+                    lst.remove(entry)
                 except ValueError:
                     pass
 
@@ -3129,11 +3414,13 @@ def place_outbound_call(conv_id):
         pn = TwilioPhoneNumber.query.filter_by(company_id=company.id, phone_number=business_number, is_active=True).first()
         method = payload.get("calling_method") or "cell_callback"
         if method == "browser" and pn and not pn.browser_calling_enabled:
-            return jsonify({"success": False, "error": "Browser/WiFi calling is disabled for this number."}), 403
+            return jsonify({"success": False, "error": "Browser calling is disabled for this number."}), 403
         if method == "cell_callback" and pn and not pn.cell_callback_enabled:
             return jsonify({"success": False, "error": "Cell callback calling is disabled for this number."}), 403
-        if method == "browser" and pn and pn.wifi_only and payload.get("network_type") == "cellular":
-            return jsonify({"success": False, "error": "This line is WiFi-only for browser calling."}), 403
+        # No network-transport gate: browser calling uses whatever internet
+        # connection the device has (Wi-Fi or cellular data). The former
+        # wifi_only / mobile_data_allowed + network_type=='cellular' checks were
+        # removed -- no canonical calling decision may require Wi-Fi.
         forward_to  = payload.get("forward_to") or ta.call_forward_to
         customer_no = conv.from_number
 
@@ -3215,13 +3502,12 @@ def dial_number():
         pn = TwilioPhoneNumber.query.filter_by(company_id=company.id, phone_number=business_number, is_active=True).first()
         method = payload.get("calling_method") or "cell_callback"
         if method == "browser" and pn and not pn.browser_calling_enabled:
-            return jsonify({"success": False, "error": "Browser/WiFi calling is disabled for this number."}), 403
+            return jsonify({"success": False, "error": "Browser calling is disabled for this number."}), 403
         if method == "cell_callback" and pn and not pn.cell_callback_enabled:
             return jsonify({"success": False, "error": "Cell callback calling is disabled for this number."}), 403
-        if method == "browser" and pn and pn.wifi_only and payload.get("network_type") == "cellular":
-            return jsonify({"success": False, "error": "This line is WiFi-only for browser calling."}), 403
-        if method == "browser" and pn and not pn.mobile_data_allowed and payload.get("network_type") == "cellular":
-            return jsonify({"success": False, "error": "Mobile-data browser calling is blocked for this number."}), 403
+        # No network-transport gate (see place_outbound_call): browser calling
+        # uses whatever internet connection the device has. wifi_only /
+        # mobile_data_allowed + network_type checks were removed.
 
         forward_to = payload.get("forward_to") or ta.call_forward_to
 
@@ -3305,6 +3591,16 @@ def _fire_push_notification(company_id: int, conv, message_body: str, *, silent:
     )
 
     allowed_user_ids = [u.id for u in _authorized_notification_users(company_id, phone_number_id)]
+    # Phone Availability — an AWAY user still gets the persisted notification
+    # record above (history / unread state untouched) but no real-time push or
+    # device badge for an inbound shared-line SMS. Mirrors create_pwa_notification.
+    if allowed_user_ids:
+        try:
+            from services.phone_availability import available_user_ids
+            avail = available_user_ids(company_id)
+            allowed_user_ids = [uid for uid in allowed_user_ids if uid in avail]
+        except Exception:
+            logger.exception("phone availability push filter failed", extra={"company_id": company_id})
     in_business = _conversation_in_business_hours(conv)
     silent = False if silent is None else bool(silent)
     send_pwa_push_notification(
@@ -3334,6 +3630,20 @@ def create_pwa_notification(company_id: int, *, event_type: str, title: str, bod
         icon=icon,
     )
     allowed_user_ids = [u.id for u in _authorized_notification_users(company_id, phone_number_id)]
+    # Phone Availability — an AWAY user still gets the persisted notification
+    # record (history / unread state is untouched) but no real-time push or
+    # device badge for shared-line communications events.
+    _COMMS_EVENTS = {
+        "incoming_call", "missed_call", "voicemail", "new_voicemail",
+        "incoming_sms", "new_message", "unread_message_reminder", "sms",
+    }
+    if event_type in _COMMS_EVENTS and allowed_user_ids:
+        try:
+            from services.phone_availability import available_user_ids
+            avail = available_user_ids(company_id)
+            allowed_user_ids = [uid for uid in allowed_user_ids if uid in avail]
+        except Exception:
+            logger.exception("phone availability push filter failed", extra={"company_id": company_id})
     send_pwa_push_notification(
         company_id,
         user_ids=allowed_user_ids,

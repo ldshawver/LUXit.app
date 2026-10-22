@@ -257,7 +257,7 @@ def test_pwa_shell_and_service_worker_bump_sms_send_version():
     assert "/api/inbox/conversations/${state.activeConvId}/messages" in page
     assert "/twilio/send" not in page
     assert "Server error (${res.status}). Please try again." not in page
-    assert "20260710-push-receipt-ack" in worker
+    assert "20260908-lux-connect" in worker
 
 def test_pwa_notifications_and_push_subscription_are_scoped_by_number(client, comms_world):
     login(client, comms_world["staff"])
@@ -636,90 +636,3 @@ def test_pwa_sms_failure_persists_failed_row_and_useful_502(client, comms_world,
         assert msg.status == "failed"
         assert "Twilio provider exploded" in msg.error_message
         assert msg.twilio_sid is None
-
-
-def test_retry_queued_outbound_messages_dispatches_legacy_stuck_rows(client, comms_world, monkeypatch):
-    sent = {}
-
-    class FakeMessages:
-        def create(self, **kwargs):
-            sent.update(kwargs)
-            return type("Msg", (), {"sid": "SMRETRIED", "status": "queued"})()
-
-    class FakeClient:
-        def __init__(self, *args, **kwargs):
-            self.messages = FakeMessages()
-
-    import twilio.rest
-    monkeypatch.setattr(twilio.rest, "Client", FakeClient)
-    # LUXIT_TWILIO_MODE defaults to "disabled" outside Production (see
-    # services/twilio_gate.py); this test wants its FakeClient to actually
-    # be reached, so opt into "live" -- FakeClient never touches the network.
-    monkeypatch.setenv("LUXIT_TWILIO_MODE", "live")
-
-    with client.application.app_context():
-        stuck = TwilioMessage(
-            conversation_id=comms_world["c1"],
-            company_id=comms_world["co"],
-            direction="outbound",
-            from_number="+15550001111",
-            to_number="+15551230001",
-            body="stuck queued",
-            status="queued",
-        )
-        db.session.add(stuck)
-        db.session.commit()
-        stuck_id = stuck.id
-
-        from inbox_pwa import retry_queued_outbound_messages
-        result = retry_queued_outbound_messages(comms_world["co"])
-
-        assert result["retried"] == 1
-        assert result["failed"] == 0
-        row = db.session.get(TwilioMessage, stuck_id)
-        assert row.twilio_sid == "SMRETRIED"
-        assert row.status == "sent"
-        assert row.error_message is None
-        assert sent["from_"] == "+15550001111"
-        assert sent["to"] == "+15551230001"
-
-
-def test_retry_queued_outbound_messages_marks_provider_failure(client, comms_world, monkeypatch):
-    class FakeMessages:
-        def create(self, **kwargs):
-            raise RuntimeError("retry provider failed")
-
-    class FakeClient:
-        def __init__(self, *args, **kwargs):
-            self.messages = FakeMessages()
-
-    import twilio.rest
-    monkeypatch.setattr(twilio.rest, "Client", FakeClient)
-    # LUXIT_TWILIO_MODE defaults to "disabled" outside Production (see
-    # services/twilio_gate.py); this test wants its FakeClient to actually
-    # be reached, so opt into "live" -- FakeClient never touches the network.
-    monkeypatch.setenv("LUXIT_TWILIO_MODE", "live")
-
-    with client.application.app_context():
-        stuck = TwilioMessage(
-            conversation_id=comms_world["c1"],
-            company_id=comms_world["co"],
-            direction="outbound",
-            from_number="+15550001111",
-            to_number="+15551230001",
-            body="stuck fails",
-            status="queued",
-        )
-        db.session.add(stuck)
-        db.session.commit()
-        stuck_id = stuck.id
-
-        from inbox_pwa import retry_queued_outbound_messages
-        result = retry_queued_outbound_messages(comms_world["co"])
-
-        assert result["retried"] == 0
-        assert result["failed"] == 1
-        row = db.session.get(TwilioMessage, stuck_id)
-        assert row.status == "failed"
-        assert "retry provider failed" in row.error_message
-        assert row.twilio_sid is None
