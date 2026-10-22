@@ -2401,17 +2401,30 @@ def resolve_inbound_voice_route(ta, settings, pn, in_hours):
     return route, forward_to, fallback_to, settings_forward_to
 
 
+def inbound_forward_gate(ta, in_hours, forward_to, fallback_to, settings_forward_to):
+    """(forwarding_on, safe targets) for a call whose route is "forward".
+
+    A number's OWN "forward" route obeys only that number's switch: a forward
+    number stored on the company PhoneSettings must not keep a switched-off
+    line forwarding to its cell. A "forward" inherited from the company route
+    is on when the company has a forward number (or the line's switch is on).
+    """
+    from services.call_forwarding import forward_targets
+    number_route = (getattr(ta, "during_hours_route" if in_hours else "after_hours_route", None) or "").strip()
+    line_switch_on = bool(ta.voice_forwarding_enabled or getattr(ta, "call_forwarding_enabled", False))
+    forwarding_on = line_switch_on if number_route == "forward" else bool(settings_forward_to or line_switch_on)
+    return forwarding_on, (forward_targets([forward_to, fallback_to]) if forwarding_on else [])
+
+
 def inbound_voice_destination(ta, settings, pn, in_hours):
     """What an inbound call does right now: "forward", "app" (rings LUX
     Connect / PWA) or "voicemail"; mirrors the branch order in
     _inbound_call_impl."""
-    from services.call_forwarding import forward_targets
     route, forward_to, fallback_to, settings_forward_to = resolve_inbound_voice_route(ta, settings, pn, in_hours)
     if route == "forward":
         # Same gate as the webhook: the switch must be on and at least one
         # target must be safe, else the call takes this period's default.
-        forwarding_on = bool(settings_forward_to or ta.voice_forwarding_enabled or getattr(ta, "call_forwarding_enabled", False))
-        forward_numbers = forward_targets([forward_to, fallback_to]) if forwarding_on else []
+        _on, forward_numbers = inbound_forward_gate(ta, in_hours, forward_to, fallback_to, settings_forward_to)
         if forward_numbers:
             return "forward", forward_numbers[0]
         route = None
@@ -2586,9 +2599,8 @@ def _inbound_call_impl():
         # Otherwise the call takes the unconfigured route for this period --
         # the app in business hours, LUXit voicemail after hours -- so turning
         # the switch off stops forwarding on the very next call.
-        from services.call_forwarding import forward_targets, is_forward_loop
-        forwarding_on = bool(settings_forward_to or ta.voice_forwarding_enabled or getattr(ta, "call_forwarding_enabled", False))
-        forward_numbers = forward_targets([forward_to, fallback_to]) if forwarding_on else []
+        from services.call_forwarding import is_forward_loop
+        forwarding_on, forward_numbers = inbound_forward_gate(ta, in_hours, forward_to, fallback_to, settings_forward_to)
         if forward_numbers and is_forward_loop(from_number, data.get("ForwardedFrom"), forward_numbers):
             forward_numbers = []
             forwarding_on = "loop"

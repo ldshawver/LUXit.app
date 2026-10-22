@@ -25,7 +25,7 @@ from datetime import datetime, timedelta
 
 from flask import Blueprint, Response, abort, g, jsonify, request
 
-from extensions import db
+from extensions import db, limiter
 
 logger = logging.getLogger(__name__)
 
@@ -48,8 +48,12 @@ def _err(code: str, message: str, status: int):
 
 
 def _client_ip() -> str | None:
-    fwd = (request.headers.get("X-Forwarded-For") or "").split(",")[0].strip()
-    return (fwd or request.remote_addr or "")[:64] or None
+    # Same source as the web rate limits (extensions._client_ip): nginx
+    # overwrites X-Real-IP. X-Forwarded-For keeps whatever the client sent as
+    # its first hop, so keying throttles on it lets a caller pick a fresh IP
+    # per attempt.
+    from extensions import _client_ip as proxied_client_ip
+    return (proxied_client_ip() or "")[:64] or None
 
 
 # ── authentication for every request ──────────────────────────────────────── #
@@ -92,9 +96,11 @@ def _no_cookies(response):
 @mobile_api_bp.errorhandler(403)
 @mobile_api_bp.errorhandler(404)
 @mobile_api_bp.errorhandler(409)
+@mobile_api_bp.errorhandler(429)
 def _json_http_error(exc):
     code = getattr(exc, "code", 500)
-    return _err({401: "auth_required", 403: "forbidden", 404: "not_found", 409: "conflict"}.get(code, "error"),
+    return _err({401: "auth_required", 403: "forbidden", 404: "not_found", 409: "conflict",
+                 429: "too_many_attempts"}.get(code, "error"),
                 getattr(exc, "description", None) or "Request failed.", code)
 
 
@@ -128,6 +134,7 @@ def _device_json(device) -> dict:
 
 
 @mobile_api_bp.route("/auth/login", methods=["POST"])
+@limiter.limit("10 per minute;50 per hour", methods=["POST"])
 def auth_login():
     from services.mobile_auth import (MobileAuthError, clear_failures, is_throttled, issue_session,
                                       record_failure, resolve_company_for, upsert_device, verify_credentials)
@@ -157,6 +164,7 @@ def auth_login():
 
 
 @mobile_api_bp.route("/auth/refresh", methods=["POST"])
+@limiter.limit("30 per minute", methods=["POST"])
 def auth_refresh():
     from services.mobile_auth import MobileAuthError, rotate_refresh_token
     data = request.get_json(silent=True) or {}

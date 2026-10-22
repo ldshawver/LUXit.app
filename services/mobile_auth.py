@@ -122,6 +122,19 @@ def clear_failures(identifier: str) -> None:
 
 # ── credentials ───────────────────────────────────────────────────────────── #
 
+_DUMMY_PASSWORD_HASH: str | None = None
+
+
+def _burn_password_check(password: str) -> None:
+    """Spend one password hash on an unknown account, so response time does
+    not reveal whether the email or username exists."""
+    global _DUMMY_PASSWORD_HASH
+    from werkzeug.security import check_password_hash, generate_password_hash
+    if _DUMMY_PASSWORD_HASH is None:
+        _DUMMY_PASSWORD_HASH = generate_password_hash(secrets.token_urlsafe(16))
+    check_password_hash(_DUMMY_PASSWORD_HASH, password)
+
+
 def verify_credentials(identifier: str, password: str):
     """Same lookup and checks as the web login (auth.login), without the session."""
     from sqlalchemy import or_
@@ -132,7 +145,10 @@ def verify_credentials(identifier: str, password: str):
     if not identifier or not password:
         raise MobileAuthError("invalid_credentials", "Email and password are required.", 400)
     user = User.query.filter(or_(User.username == identifier, User.email == identifier.lower())).first()
-    if not user or not user.password_hash or not check_password_hash(user.password_hash, password):
+    if not user or not user.password_hash:
+        _burn_password_check(password)
+        raise MobileAuthError("invalid_credentials", "Incorrect email or password.", 401)
+    if not check_password_hash(user.password_hash, password):
         raise MobileAuthError("invalid_credentials", "Incorrect email or password.", 401)
     if not bool(getattr(user, "is_active", True)):
         raise MobileAuthError("account_archived", "This account has been archived. Ask an administrator to restore access.", 403)

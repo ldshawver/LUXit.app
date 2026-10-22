@@ -700,7 +700,8 @@ def test_call_routing_status_matches_webhook_and_masks_destination_for_staff(app
 
     # The status is the webhook's own decision: a business-hours call really is forwarded.
     twiml = _inbound(client, monkeypatch, sid="CAfwd")
-    assert "<Number>+14155550123</Number>" in twiml and "<Client>" not in twiml
+    # The forwarded leg is screened ("press 1", services/call_forwarding.py).
+    assert 'method="POST">+14155550123</Number>' in twiml and "<Client>" not in twiml
 
 
 def test_rules_crud_admin_only_validation_and_isolation(app, client):
@@ -836,3 +837,126 @@ def test_new_text_from_chosen_number_only_if_permitted(app, client, monkeypatch)
     PhoneNumberUserPermission.query.filter_by(user_id=u.id, phone_number_id=second.id).update({"can_send_sms": False})
     db.session.commit()
     assert send(idempotency_key="p" * 20, from_phone_number_id=second.id).status_code == 403
+
+
+# ══ sign-in hardening (security release parity) ═══════════════════════════ #
+
+@pytest.fixture
+def limited_client(monkeypatch):
+    from extensions import limiter
+    monkeypatch.setenv("LUXIT_RATELIMIT_IN_TESTS", "1")
+    a = create_app()
+    a.config.update(TESTING=True, SQLALCHEMY_DATABASE_URI="sqlite:///:memory:",
+                    WTF_CSRF_ENABLED=False, SERVER_NAME="localhost")
+    with a.app_context():
+        db.create_all()
+        limiter.reset()
+        yield a.test_client()
+        limiter.reset()
+        db.session.remove()
+        db.drop_all()
+
+
+def test_mobile_login_has_the_web_login_rate_limit_and_ignores_forwarded_for(limited_client):
+    codes = [limited_client.post("/api/mobile/v1/auth/login", json={"email": f"nobody{i}@t.co", "password": "x"},
+                                 headers={"X-Real-IP": "203.0.113.20", "X-Forwarded-For": f"198.51.100.{i}"}).status_code
+             for i in range(11)]
+    assert 429 not in codes[:10]
+    r = limited_client.post("/api/mobile/v1/auth/login", json={"email": "z@t.co", "password": "x"},
+                            headers={"X-Real-IP": "203.0.113.20", "X-Forwarded-For": "198.51.100.250"})
+    assert r.status_code == 429 and r.get_json()["code"] == "too_many_attempts"
+    other = limited_client.post("/api/mobile/v1/auth/login", json={"email": "z@t.co", "password": "x"},
+                                headers={"X-Real-IP": "203.0.113.21"})
+    assert other.status_code == 401
+
+
+def test_refresh_is_rate_limited(limited_client):
+    codes = [limited_client.post("/api/mobile/v1/auth/refresh", json={"refresh_token": f"lxr_{i}"},
+                                 headers={"X-Real-IP": "203.0.113.30"}).status_code for i in range(31)]
+    assert codes[:30] == [401] * 30 and codes[30] == 429
+
+
+def test_spoofed_forwarded_for_cannot_dodge_the_per_ip_throttle(app, client, monkeypatch):
+    from models import MobileAuthAttempt
+    monkeypatch.setattr(mobile_auth, "MAX_FAILURES_PER_IP", 3)
+    for i in range(3):
+        r = client.post("/api/mobile/v1/auth/login", json={"email": f"guess{i}@t.co", "password": "x"},
+                        headers={"X-Real-IP": "203.0.113.40", "X-Forwarded-For": f"10.0.0.{i}"})
+        assert r.status_code == 401
+    assert {a.ip for a in MobileAuthAttempt.query.all()} == {"203.0.113.40"}
+    r = client.post("/api/mobile/v1/auth/login", json={"email": "fresh@t.co", "password": "x"},
+                    headers={"X-Real-IP": "203.0.113.40", "X-Forwarded-For": "10.9.9.9"})
+    assert r.status_code == 429
+
+
+def test_throttle_is_checked_before_the_password_hash(app, client, monkeypatch):
+    co, _ta, pn = _tenant(); _user(co, pn); db.session.commit()
+    for _ in range(mobile_auth.MAX_FAILURES_PER_IDENTIFIER):
+        _login(client, password="wrong")
+    called = []
+    monkeypatch.setattr(mobile_auth, "verify_credentials", lambda *a: called.append(a))
+    assert _login(client).status_code == 429
+    assert called == []
+
+
+def test_successful_sign_in_clears_failures_for_that_account(app, client):
+    co, _ta, pn = _tenant(); _user(co, pn); db.session.commit()
+    for _ in range(mobile_auth.MAX_FAILURES_PER_IDENTIFIER - 1):
+        assert _login(client, password="wrong").status_code == 401
+    assert _login(client).status_code == 200
+    for _ in range(mobile_auth.MAX_FAILURES_PER_IDENTIFIER - 1):
+        assert _login(client, password="wrong").status_code == 401
+    assert _login(client).status_code == 200
+
+
+def test_unknown_account_and_wrong_password_look_the_same(app, client, monkeypatch):
+    import werkzeug.security as ws
+    co, _ta, pn = _tenant(); _user(co, pn); db.session.commit()
+    real, checks = ws.check_password_hash, []
+    monkeypatch.setattr(ws, "check_password_hash", lambda h, p: checks.append(1) or real(h, p))
+    wrong = _login(client, password="wrong")
+    unknown = _login(client, name="nosuchuser", password="wrong")
+    body = lambda r: {k: v for k, v in r.get_json().items() if k != "request_id"}  # request_id is per request
+    assert (wrong.status_code, body(wrong)) == (unknown.status_code, body(unknown))
+    assert len(checks) == 2  # the unknown account still spends a hash
+
+
+@pytest.mark.parametrize("header", ["", "Bearer", "Bearer ", "Bearer lxa_not-a-real-token", "Bearer garbage",
+                                    "Basic dXNlcjpwYXNz", "bearer {access}", "Bearer {refresh}", "Token {access}"])
+def test_malformed_or_wrong_type_tokens_are_rejected(app, client, header):
+    co, _ta, pn = _tenant(); _user(co, pn); db.session.commit()
+    tokens = _signed_in(client)
+    value = header.format(access=tokens["access_token"], refresh=tokens["refresh_token"])
+    r = client.get("/api/mobile/v1/me", headers={"Authorization": value} if value else {})
+    assert r.status_code == 401 and r.get_json()["success"] is False
+
+
+def test_revoked_session_access_token_is_rejected(app, client):
+    co, _ta, pn = _tenant(); _user(co, pn); db.session.commit()
+    tokens = _signed_in(client)
+    MobileSession.query.update({"revoked_at": datetime.utcnow(), "revoke_reason": "test"})
+    db.session.commit()
+    assert client.get("/api/mobile/v1/me", headers=_auth(tokens)).status_code == 401
+
+
+def test_cookie_of_another_user_is_ignored_when_a_bearer_token_is_sent(app, client):
+    app.config["WTF_CSRF_ENABLED"] = True
+    co_a, _ta, pn_a = _tenant("A"); _user(co_a, pn_a, "alice")
+    co_b, _tb, pn_b = _tenant("B", OTHER_NUMBER); bob = _user(co_b, pn_b, "bob")
+    db.session.commit()
+    alice = _signed_in(client, "alice")
+    with client.session_transaction() as s:
+        s["_user_id"] = str(bob.id); s["_fresh"] = True
+    me = client.get("/api/mobile/v1/me", headers=_auth(alice)).get_json()
+    assert me["company"]["id"] == co_a.id and me["user"]["email"] == "alice@t.co"
+    # A cookie-only write on the CSRF-exempt prefix is refused before any view runs.
+    assert client.patch("/api/mobile/v1/pwa/preferences", json={"x": 1}).status_code == 401
+
+
+def test_company_call_routing_is_not_exposed_on_the_mobile_prefix(app, client):
+    co, _ta, pn = _tenant(); _admin(co, pn); db.session.commit()
+    boss = _signed_in(client, "boss")
+    for method in ("get", "put"):
+        r = getattr(client, method)("/api/mobile/v1/phone/settings", headers=_auth(boss), json={"forward_number": "+14155550100"})
+        assert r.status_code in (404, 405)
+
