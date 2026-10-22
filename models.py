@@ -3,6 +3,12 @@ import logging
 
 from flask_login import UserMixin
 from sqlalchemy import JSON, Text
+from sqlalchemy.dialects.postgresql import JSONB
+
+# Postgres-preferred JSON storage for columns a migration compares/builds with
+# jsonb operators (=, jsonb_build_object, ||, ?, @>, ...). Falls back to plain
+# JSON on any other dialect (sqlite in tests) where JSONB doesn't exist.
+_JSONB_OR_JSON = JSON().with_variant(JSONB(), "postgresql")
 
 from extensions import db
 
@@ -50,6 +56,42 @@ class UserCompanyAccess(db.Model):
     # Number assignment — 'shared' = company shared number, 'dedicated' = own DID
     assigned_number           = db.Column(db.String(20), nullable=True)
     number_type               = db.Column(db.String(20), default="shared")
+
+    # ── Phone Availability (shared-line real-time participation) ────────────
+    # 'available' | 'away'. AWAY pauses ringing / incoming-call UI / phone push
+    # + badges for this user on this tenant's shared lines. It is NOT an account
+    # disable: it never touches is_active, role, membership, SMS consent, or the
+    # business number, and never affects other users on the line.
+    phone_availability = db.Column(
+        db.String(16), nullable=False, default="available", server_default="available"
+    )
+    phone_availability_changed_at = db.Column(db.DateTime, nullable=True)
+    phone_availability_changed_by_user_id = db.Column(
+        db.Integer, db.ForeignKey("user.id"), nullable=True
+    )
+    phone_availability_source = db.Column(db.String(16), nullable=True)  # 'user' | 'admin'
+
+    # ── Receive Calls (per-user, per-tenant call-routing preference) ────────
+    # TRUE  = route this tenant's shared LUXit calls to the user's eligible PWA
+    #         devices; an eligible device registers its Twilio.Device
+    #         automatically once calling prerequisites are ready, over Wi-Fi OR
+    #         cellular data (the OS/browser picks the path -- this is not a
+    #         network-transport setting).
+    # FALSE = the user's PWA does not register for / present inbound calls and
+    #         server-side inbound routing excludes them, regardless of
+    #         phone_availability. Voicemail / no-answer fallback is unaffected.
+    # Independent of phone_availability: AWAY temporarily suppresses shared-call
+    # attention without changing this preference; this preference does not
+    # change availability. Compatibility default is TRUE so existing active
+    # memberships keep receiving calls exactly as before.
+    receive_calls = db.Column(
+        db.Boolean, nullable=False, default=True, server_default=db.text("true")
+    )
+    receive_calls_changed_at = db.Column(db.DateTime, nullable=True)
+    receive_calls_changed_by_user_id = db.Column(
+        db.Integer, db.ForeignKey("user.id"), nullable=True
+    )
+    receive_calls_source = db.Column(db.String(16), nullable=True)  # 'user' | 'admin' | 'system'
 
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(
@@ -359,55 +401,73 @@ class User(UserMixin, db.Model):
     # -------------------------
 
     def ensure_default_company_context(self, company_name=None):
-        """Ensure an admin user has a usable active company context.
+        """Reconcile this user's default-company context using ONLY tenants the
+        user is already authorized to access.
 
-        Production restores can leave an admin account without a company or can
-        leave only inactive companies behind. This method self-heals that state
-        by creating (or reactivating) a fallback company, assigning the user as
-        owner/admin, syncing the legacy ``user_company`` join table, and setting
-        ``default_company_id``. It returns ``None`` instead of raising so callers
-        can keep rendering graceful no-company states if the database is not
-        writable.
+        Tenant membership is authoritative — it comes from ``UserCompanyAccess``
+        rows, the legacy ``user_company`` link, or a default company that was
+        explicitly provisioned for this user (e.g. at registration). It is NEVER
+        inferred from global company ordering, "the lowest active company", the
+        oldest company, or ``Company.query.first()``.
+
+        Behaviour:
+
+          * a valid ``default_company_id`` that the user is authorized for is
+            left untouched;
+          * otherwise a deterministic default is chosen *from the user's own
+            active access rows only* (ordered by company name);
+          * if the user has no authorized company the method fails closed:
+            it returns ``None`` and mutates nothing. No company is created, no
+            unrelated company is reactivated, and no owner/admin/full-app grant
+            is fabricated on a tenant the user is not already a member of.
+
+        ``company_name`` is accepted for backwards compatibility and ignored.
+        Returns the resolved :class:`Company` or ``None``; never raises.
         """
         logger = logging.getLogger(__name__)
-        if not self.is_admin:
-            return None
 
         try:
-            company = Company.query.filter_by(is_active=True).order_by(Company.id.asc()).first()
-            if company is None:
-                company = Company.query.order_by(Company.id.asc()).first()
-                if company is not None:
-                    company.is_active = True
-                    logger.warning(
-                        "Company self-heal reactivated fallback company %s (%s)",
-                        company.id,
-                        company.name,
-                    )
-
-            if company is None:
-                company = Company(
-                    name=company_name or "LUXit Marketing",
-                    is_active=True,
-                    billing_tier="professional",
-                    billing_status="active",
-                    subscription_tier="professional",
-                    onboarding_status="complete",
+            # Authoritative membership: the user's OWN active access rows on
+            # active companies. Ordered by name so a deterministic default is
+            # picked when the user legitimately belongs to several tenants.
+            authorized = (
+                Company.query
+                .join(UserCompanyAccess, UserCompanyAccess.company_id == Company.id)
+                .filter(
+                    UserCompanyAccess.user_id == self.id,
+                    UserCompanyAccess.is_active == True,  # noqa: E712
+                    Company.is_active == True,  # noqa: E712
                 )
-                db.session.add(company)
-                db.session.flush()
+                .order_by(Company.name.asc())
+                .all()
+            )
+
+            bootstrap = None
+            if not authorized and self.is_admin and self.default_company_id:
+                # Registration bootstrap: the very first admin gets a
+                # ``default_company_id`` for the company they created at sign-up,
+                # with no access row yet. Only treat this as authoritative when
+                # the user has NO access rows at all (never provisioned) and the
+                # company is real and active.
+                has_any_access = (
+                    UserCompanyAccess.query.filter_by(user_id=self.id).first()
+                    is not None
+                )
+                if not has_any_access:
+                    candidate = db.session.get(Company, self.default_company_id)
+                    if candidate is not None and candidate.is_active:
+                        bootstrap = candidate
+
+            if not authorized and bootstrap is None:
                 logger.warning(
-                    "Company self-heal created fallback company '%s' (id=%s)",
-                    company.name,
-                    company.id,
+                    "Company context: user %s has no authoritative tenant "
+                    "membership — leaving unbound (fail closed).",
+                    self.id,
                 )
+                return None
 
-            self.default_company_id = company.id
-
-            access = UserCompanyAccess.query.filter_by(
-                user_id=self.id, company_id=company.id
-            ).first()
-            if access is None:
+            if bootstrap is not None:
+                company = bootstrap
                 access = UserCompanyAccess(
                     user_id=self.id,
                     company_id=company.id,
@@ -417,31 +477,49 @@ class User(UserMixin, db.Model):
                     can_access_mobile_inbox=True,
                 )
                 db.session.add(access)
-            else:
-                if access.role not in (UserCompanyAccess.ROLE_OWNER, UserCompanyAccess.ROLE_ADMIN):
-                    access.role = UserCompanyAccess.ROLE_OWNER
-                access.is_default = True
-                access.can_access_full_app = True
-                access.can_access_mobile_inbox = True
+                linked = db.session.execute(
+                    user_company.select().where(
+                        (user_company.c.user_id == self.id)
+                        & (user_company.c.company_id == company.id)
+                    )
+                ).first()
+                if linked is None:
+                    db.session.execute(
+                        user_company.insert().values(
+                            user_id=self.id, company_id=company.id
+                        )
+                    )
+                db.session.commit()
+                return company
 
-            # Keep older code paths that still read the secondary relationship in
-            # sync without depending on database-specific UPSERT syntax.
-            linked = db.session.execute(
-                user_company.select().where(
-                    (user_company.c.user_id == self.id)
-                    & (user_company.c.company_id == company.id)
-                )
-            ).first()
-            if linked is None:
-                db.session.execute(
-                    user_company.insert().values(user_id=self.id, company_id=company.id)
+            by_id = {c.id: c for c in authorized}
+            company = by_id.get(self.default_company_id)
+            if company is None:
+                # Deterministic pick from the user's OWN authorized set only.
+                company = authorized[0]
+                self.default_company_id = company.id
+                logger.warning(
+                    "Company context: set user %s default_company_id=%s "
+                    "(chosen from own active memberships).",
+                    self.id,
+                    company.id,
                 )
 
-            db.session.commit()
+            # Normalise the is_default flag across the user's own access rows.
+            rows = UserCompanyAccess.query.filter_by(user_id=self.id).all()
+            for row in rows:
+                want = row.company_id == company.id
+                if bool(row.is_default) != want:
+                    row.is_default = want
+
+            if db.session.new or db.session.dirty:
+                db.session.commit()
             return company
         except Exception as exc:
             db.session.rollback()
-            logger.warning("Company self-heal failed for user %s: %s", self.id, exc)
+            logger.warning(
+                "Company context self-heal failed for user %s: %s", self.id, exc
+            )
             return None
 
     def set_default_company(self, company_id):
@@ -679,8 +757,8 @@ class Company(db.Model):
     apply_brand_colors = db.Column(db.Boolean, default=False)
     industry = db.Column(db.String(100))
     description = db.Column(Text)
-    require_approved_pwa_devices = db.Column(db.Boolean, default=False, nullable=False)
-    sync_confirmed_contacts_to_google = db.Column(db.Boolean, default=False, nullable=False)
+    require_approved_pwa_devices = db.Column(db.Boolean, default=False, nullable=False, server_default=db.text("false"))
+    sync_confirmed_contacts_to_google = db.Column(db.Boolean, default=False, nullable=False, server_default=db.text("false"))
 
     # ── SaaS / Billing Integration ───────────────────────────────────────────
     stripe_customer_id         = db.Column(db.String(100))
@@ -702,7 +780,7 @@ class Company(db.Model):
     # Charged exactly once per company on the very first Checkout Session.
     # Once paid, future Checkout Sessions for this company must NOT include
     # the setup-fee line item again.
-    setup_fee_paid                = db.Column(db.Boolean, default=False, nullable=False)
+    setup_fee_paid                = db.Column(db.Boolean, default=False, nullable=False, server_default=db.text("false"))
     setup_fee_paid_at             = db.Column(db.DateTime, nullable=True)
     setup_fee_checkout_session_id = db.Column(db.String(120), nullable=True)
     # ── Contact-usage / metered billing ─────────────────────────────────────
@@ -712,10 +790,10 @@ class Company(db.Model):
     # is the surplus we report to Stripe via the metered subscription item
     # identified by ``stripe_contact_usage_subscription_item_id``.
     included_contacts                          = db.Column(db.Integer, nullable=True)
-    contacts_used                              = db.Column(db.Integer, default=0, nullable=False)
-    contacts_overage                           = db.Column(db.Integer, default=0, nullable=False)
+    contacts_used                              = db.Column(db.Integer, default=0, nullable=False, server_default=db.text("0"))
+    contacts_overage                           = db.Column(db.Integer, default=0, nullable=False, server_default=db.text("0"))
     stripe_contact_usage_subscription_item_id  = db.Column(db.String(120), nullable=True)
-    last_reported_contact_usage                = db.Column(db.Integer, default=0, nullable=False)
+    last_reported_contact_usage                = db.Column(db.Integer, default=0, nullable=False, server_default=db.text("0"))
     last_usage_reported_at                     = db.Column(db.DateTime, nullable=True)
     onboarding_status          = db.Column(db.String(50), default='pending')
     implementation_status      = db.Column(db.String(50), default='none')
@@ -925,7 +1003,7 @@ class Contact(db.Model):
     name_verification_level = db.Column(db.String(32), default="unverified", nullable=False)
     name_verified_at = db.Column(db.DateTime, nullable=True)
     name_verified_by_user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True)
-    name_provenance = db.Column(db.JSON, default=dict, nullable=False)
+    name_provenance = db.Column(_JSONB_OR_JSON, default=dict, nullable=False)
     approval_status = db.Column(db.String(32), default="pending", nullable=False, index=True)
     approved_at = db.Column(db.DateTime, nullable=True)
     approved_by_user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True)
@@ -1337,7 +1415,7 @@ class SMSCampaign(db.Model):
     message = db.Column(db.String(1000))
     segment = db.Column(db.String(100), nullable=True)
     status = db.Column(db.String(50), default="draft")
-    audience_filter = db.Column(JSON, default=dict)
+    audience_filter = db.Column(_JSONB_OR_JSON, default=dict)
     estimated_recipient_count = db.Column(db.Integer, default=0)
     selected_tag_ids = db.Column(JSON, default=list)
     scheduled_preview_count = db.Column(db.Integer)
@@ -1558,6 +1636,118 @@ class MarketingAuditLog(db.Model):
     details = db.Column(db.JSON)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class PromotionalOptInSolicitation(db.Model):
+    """An operator-approved request asking a customer to opt in to promotional
+    SMS. Its presence in state ``pending`` is the *context* that lets a later
+    inbound ``YES`` from the same canonical phone / business number create
+    promotional consent. It is never promotional consent by itself, and its
+    creation never mutates the contact's consent columns.
+    """
+    __tablename__ = "promotional_optin_solicitation"
+
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=False, index=True)
+    contact_id = db.Column(db.Integer, db.ForeignKey("contact.id"), nullable=False, index=True)
+    canonical_phone = db.Column(db.String(32), nullable=False, index=True)
+    business_phone_number = db.Column(db.String(32), nullable=True, index=True)
+    # pending | consented | stopped | cancelled | superseded | expired
+    status = db.Column(db.String(20), nullable=False, default="pending", index=True)
+    solicitation_body = db.Column(db.Text, nullable=True)
+    solicitation_message_sid = db.Column(db.String(64), nullable=True)
+    solicited_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    solicited_by_user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True)
+    consent_message_sid = db.Column(db.String(64), nullable=True)
+    consented_at = db.Column(db.DateTime, nullable=True)
+    closed_at = db.Column(db.DateTime, nullable=True)
+    closed_reason = db.Column(db.String(60), nullable=True)
+    source = db.Column(db.String(40), nullable=False, default="operator")
+    # Operator send-flow delivery tracking for the opt-in *request* SMS — never
+    # consent. NULL delivery_status = recorded but never dispatched;
+    # 'blocked' = outbound Twilio disabled (LUXIT_TWILIO_MODE).
+    delivery_status = db.Column(db.String(20), nullable=True)
+    sent_at = db.Column(db.DateTime, nullable=True)
+    send_error = db.Column(db.Text, nullable=True)
+    last_status_at = db.Column(db.DateTime, nullable=True)
+    # Hosted web opt-in channel (source='web_optin'). The signed consent link
+    # carries ``web_token_jti``; the disclosure text version shown to the
+    # customer is snapshotted at link creation. No SMS is sent to hand the
+    # customer this link — it is generated for an operator to share out-of-band
+    # (checkout, QR, printed material, customer account, permitted channels).
+    web_token_jti = db.Column(db.String(64), nullable=True)
+    web_link_disclosure_version = db.Column(db.String(40), nullable=True)
+    web_link_created_at = db.Column(db.DateTime, nullable=True)
+    web_link_created_by_user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True)
+    web_consent_at = db.Column(db.DateTime, nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    __table_args__ = (
+        db.Index(
+            "uq_promo_solicitation_web_token_jti",
+            "web_token_jti",
+            unique=True,
+            postgresql_where=db.text("web_token_jti IS NOT NULL"),
+            sqlite_where=db.text("web_token_jti IS NOT NULL"),
+        ),
+        db.Index(
+            "uq_promo_solicitation_one_pending",
+            "company_id", "contact_id",
+            unique=True,
+            postgresql_where=db.text("status = 'pending'"),
+            sqlite_where=db.text("status = 'pending'"),
+        ),
+    )
+
+
+class PromotionalConsentEvent(db.Model):
+    """Immutable provenance record of a single act that granted promotional SMS
+    consent.
+
+    Two channels write this table, and each has its own idempotency key:
+      * inbound SMS ``YES`` -> ``inbound_message_sid`` (unique); a duplicate
+        webhook delivery can never create a second event.
+      * hosted web opt-in  -> ``web_token_jti`` (unique where not null); a
+        double form submission can never create a second event.
+    Exactly one of the two keys is set on any row.
+    """
+    __tablename__ = "promotional_consent_event"
+
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=False, index=True)
+    contact_id = db.Column(db.Integer, db.ForeignKey("contact.id"), nullable=False, index=True)
+    solicitation_id = db.Column(db.Integer, db.ForeignKey("promotional_optin_solicitation.id"), nullable=True, index=True)
+    canonical_phone = db.Column(db.String(32), nullable=False)
+    business_phone_number = db.Column(db.String(32), nullable=True)
+    # Set for the inbound-SMS channel only. Nullable so the web channel (which
+    # has no inbound MessageSid) can write a row; still UNIQUE, and Postgres
+    # permits many NULLs under a UNIQUE constraint.
+    inbound_message_sid = db.Column(db.String(64), nullable=True, unique=True)
+    solicitation_message_sid = db.Column(db.String(64), nullable=True)
+    solicited_at = db.Column(db.DateTime, nullable=True)
+    consent_purpose = db.Column(db.String(20), nullable=False, default="promotional")
+    # sms_reply_yes | customer_web_optin
+    consent_source = db.Column(db.String(40), nullable=False, default="sms_reply_yes")
+    consent_keyword = db.Column(db.String(20), nullable=True)
+    consented_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    # Web opt-in evidence: the exact disclosure the customer affirmed, its
+    # version tag, and request context (ip / user agent / page url).
+    web_token_jti = db.Column(db.String(64), nullable=True)
+    disclosure_version = db.Column(db.String(40), nullable=True)
+    disclosure_text = db.Column(db.Text, nullable=True)
+    consent_context = db.Column(db.JSON, nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    __table_args__ = (
+        db.Index(
+            "uq_promo_consent_event_web_token_jti",
+            "web_token_jti",
+            unique=True,
+            postgresql_where=db.text("web_token_jti IS NOT NULL"),
+            sqlite_where=db.text("web_token_jti IS NOT NULL"),
+        ),
+    )
 
 
 class WebForm(db.Model):
@@ -3593,6 +3783,37 @@ class SMSOutboundAttempt(db.Model):
     )
 
 
+class SmsSendIdempotencyRecord(db.Model):
+    """Durable claim on one manual (operator-initiated) SMS send.
+
+    Distinct from ``SMSOutboundIntent`` (which requires an ``inbound_message_id``
+    and models an automated *reply effect*): this covers a human hitting Send
+    in the PWA/desktop conversation UI. The unique constraint on
+    ``(company_id, idempotency_key)`` is the concurrency backstop -- a second
+    request for the same key fails the INSERT and reads the first request's
+    outcome instead of sending again. See ``services/sms_send_idempotency.py``.
+    """
+    __tablename__ = "sms_send_idempotency"
+
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=False, index=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True, index=True)
+    conversation_id = db.Column(db.Integer, db.ForeignKey("twilio_conversation.id"), nullable=False, index=True)
+    idempotency_key = db.Column(db.String(128), nullable=False)
+    # sending -> {sent | failed | delivery_unknown}. "sending" with no terminal
+    # follow-up is exactly the crash/timeout-after-provider-submission case --
+    # a later request for the same key must never resend, only report it.
+    status = db.Column(db.String(20), nullable=False, default="sending", server_default="sending", index=True)
+    twilio_sid = db.Column(db.String(100), nullable=True, unique=True)
+    error_message = db.Column(db.Text, nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    __table_args__ = (
+        db.UniqueConstraint("company_id", "idempotency_key", name="uq_sms_send_idempotency_key"),
+    )
+
+
 class TuyaNotificationActivation(db.Model):
     """Durable desired state for the SMS-triggered notification relay."""
     __tablename__ = "tuya_notification_activation"
@@ -4324,7 +4545,7 @@ class TwilioPhoneNumber(db.Model):
     business_hours_auto_reply_text    = db.Column(db.Text)
     ring_timeout             = db.Column(db.Integer, default=25)
 
-    business_hours           = db.Column(JSON, default=dict)
+    business_hours           = db.Column(_JSONB_OR_JSON, default=dict)
     timezone                 = db.Column(db.String(80), default="America/Los_Angeles")
     during_hours_route       = db.Column(db.String(30), default="ring_pwa")
     after_hours_route        = db.Column(db.String(30), default="voicemail")

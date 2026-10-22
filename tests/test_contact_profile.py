@@ -454,3 +454,52 @@ def test_desktop_crm_cross_tenant_update_denied(client, app, pwa_world):
     with app.app_context():
         c = db.session.get(Contact, pwa_world["contact_a"])
         assert c.first_name == "Alice's"
+
+
+# ── Cross-surface realtime sync (contact_updated SSE) ───────────────────────
+# A CRM-side edit did not previously reach an already-open PWA conversation/
+# contact view at all -- no such SSE event existed. Both edit surfaces now
+# push one after commit so any connected client (another tab, another
+# device, or the desktop UI reflecting a PWA edit) can refresh without a
+# reload.
+
+def test_pwa_contact_edit_pushes_contact_updated_sse(client, app, pwa_world, monkeypatch):
+    calls = []
+    monkeypatch.setattr("inbox_pwa._push_sse_event", lambda *a, **k: calls.append((a, k)))
+    login(client, pwa_world["alice"])
+    res = client.patch(f"/api/inbox/conversations/{pwa_world['conv_a']}/contact", json={"first_name": "SSERenamed"})
+    assert res.status_code == 200
+    assert len(calls) == 1
+    (company_id, event_type, payload), _ = calls[0]
+    assert company_id == pwa_world["co_a"]
+    assert event_type == "contact_updated"
+    assert payload["contact_id"] == pwa_world["contact_a"]
+    assert payload["conversation_id"] == pwa_world["conv_a"]
+
+
+def test_desktop_crm_edit_pushes_contact_updated_sse(client, app, pwa_world, monkeypatch):
+    calls = []
+    monkeypatch.setattr("inbox_pwa._push_sse_event", lambda *a, **k: calls.append((a, k)))
+    login(client, pwa_world["alice"])
+    res = client.post(f"/api/contacts/{pwa_world['contact_a']}/update", data={"first_name": "DesktopSSE"})
+    assert res.status_code == 200
+    assert len(calls) == 1
+    (company_id, event_type, payload), _ = calls[0]
+    assert company_id == pwa_world["co_a"]
+    assert event_type == "contact_updated"
+    assert payload["contact_id"] == pwa_world["contact_a"]
+
+
+def test_desktop_crm_edit_sse_push_failure_does_not_fail_the_request(client, app, pwa_world, monkeypatch):
+    """The SSE nudge is a best-effort notification, not part of the write's
+    correctness -- a broken/raising push must never turn a successful edit
+    into a 500."""
+    def _boom(*a, **k):
+        raise RuntimeError("sse broker down")
+    monkeypatch.setattr("inbox_pwa._push_sse_event", _boom)
+    login(client, pwa_world["alice"])
+    res = client.post(f"/api/contacts/{pwa_world['contact_a']}/update", data={"first_name": "StillWorks"})
+    assert res.status_code == 200
+    with app.app_context():
+        c = db.session.get(Contact, pwa_world["contact_a"])
+        assert c.first_name == "StillWorks"
