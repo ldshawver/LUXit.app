@@ -93,6 +93,30 @@ def run_weekly_contact_dedupe():
         return merge_duplicate_contacts()
 
 
+def _paused_job_ids(jobstore, job_ids):
+    """Return the ids among ``job_ids`` that the jobstore holds paused.
+
+    APScheduler stores a paused job with ``next_run_time`` NULL. Re-adding a
+    job with ``replace_existing=True`` would compute a fresh fire time and
+    silently re-arm it, so callers re-add these with ``next_run_time=None``.
+    """
+    from sqlalchemy import inspect, select
+
+    # No try/except: if the jobstore can't be read, startup must fail rather
+    # than re-add jobs blind and re-arm a paused one.
+    table = jobstore.jobs_t
+    if not inspect(jobstore.engine).has_table(table.name, schema=table.schema):
+        return set()
+    with jobstore.engine.connect() as conn:
+        rows = conn.execute(
+            select(table.c.id).where(
+                table.c.id.in_(list(job_ids)),
+                table.c.next_run_time.is_(None),
+            )
+        )
+        return {row[0] for row in rows}
+
+
 def init_scheduler(app):
     """Initialize the background scheduler"""
     global scheduler
@@ -101,8 +125,9 @@ def init_scheduler(app):
         return scheduler
     
     # Configure job store
+    jobstore = SQLAlchemyJobStore(url=app.config['SQLALCHEMY_DATABASE_URI'])
     jobstores = {
-        'default': SQLAlchemyJobStore(url=app.config['SQLALCHEMY_DATABASE_URI'])
+        'default': jobstore
     }
     
     executors = {
@@ -121,6 +146,16 @@ def init_scheduler(app):
         timezone='UTC'
     )
     
+    # A job an operator paused must stay paused across restarts and upgrades.
+    paused = _paused_job_ids(
+        jobstore, ("weekly_contact_dedupe", "tuya_notification_reconciliation")
+    )
+    for job_id in sorted(paused):
+        logging.warning("Scheduler job %s is paused in the jobstore; keeping it paused", job_id)
+
+    def _keep_paused(job_id):
+        return {"next_run_time": None} if job_id in paused else {}
+
     scheduler.add_job(
         func=run_weekly_contact_dedupe,
         trigger=CronTrigger(day_of_week="sun", hour=3, minute=0, timezone="UTC"),
@@ -128,6 +163,7 @@ def init_scheduler(app):
         name="Weekly contact duplicate merge",
         replace_existing=True,
         misfire_grace_time=3600,
+        **_keep_paused("weekly_contact_dedupe"),
     )
 
     scheduler.add_job(
@@ -139,6 +175,7 @@ def init_scheduler(app):
         replace_existing=True,
         max_instances=1,
         coalesce=True,
+        **_keep_paused("tuya_notification_reconciliation"),
     )
 
     # Start scheduler
