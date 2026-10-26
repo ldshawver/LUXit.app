@@ -93,6 +93,14 @@ def run_weekly_contact_dedupe():
         return merge_duplicate_contacts()
 
 
+def run_crm_task_reminders():
+    """Notify assignees of CRM task reminders that have come due."""
+    from app import app
+    with app.app_context():
+        from services.crm_workspace import send_due_reminders
+        return send_due_reminders()
+
+
 def _paused_job_ids(jobstore, job_ids):
     """Return the ids among ``job_ids`` that the jobstore holds paused.
 
@@ -148,7 +156,7 @@ def init_scheduler(app):
     
     # A job an operator paused must stay paused across restarts and upgrades.
     paused = _paused_job_ids(
-        jobstore, ("weekly_contact_dedupe", "tuya_notification_reconciliation")
+        jobstore, ("weekly_contact_dedupe", "tuya_notification_reconciliation", "crm_task_reminders")
     )
     for job_id in sorted(paused):
         logging.warning("Scheduler job %s is paused in the jobstore; keeping it paused", job_id)
@@ -176,6 +184,18 @@ def init_scheduler(app):
         max_instances=1,
         coalesce=True,
         **_keep_paused("tuya_notification_reconciliation"),
+    )
+
+    scheduler.add_job(
+        func=run_crm_task_reminders,
+        trigger="interval",
+        minutes=5,
+        id="crm_task_reminders",
+        name="CRM task reminders",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+        **_keep_paused("crm_task_reminders"),
     )
 
     # Start scheduler

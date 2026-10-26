@@ -22,7 +22,7 @@ Resume point for the differentiation milestones (M1–M5).
 |---|---|---|---|
 | M1 | Unified contact identity + relationship timeline | **Done (branch)** | `services/contact_timeline.py`, `GET /api/contacts/<id>/timeline`, timeline panel on `/contacts/<id>/activities`; `tests/test_contact_timeline.py` 7 tests |
 | M2 | Relationship intelligence | **Done (branch)** | `services/relationship_intelligence.py`, `models.RelationshipMemory` + `migrations/20261026_relationship_memory.sql` (not applied); `/api/contacts/<id>/briefing`, `/memories/scan`, `/memories`, `/memories/<id>/review`, `/memories/<id>/task`; briefing panel; `tests/test_relationship_intelligence.py` 10 tests |
-| M3 | Actionable CRM | Not started | |
+| M3 | Actionable CRM | **Done (branch)** | `services/crm_workspace.py`, `crm_workspace_bp.py` (`/crm/today`, `/api/crm/dashboard`, `/api/crm/pipeline`, `/api/crm/opportunities[/<id>]`, `/api/crm/tasks[/<id>[/complete|reopen]]`), `templates/crm/today.html`, sidebar "Today"; segment engine relationship fields; scheduler job `crm_task_reminders`; `tests/test_crm_workspace.py` 12 tests |
 | M4 | Unified communications | Not started | |
 | M5 | Intelligent automation | Not started | |
 
@@ -40,3 +40,11 @@ Resume point for the differentiation milestones (M1–M5).
 - **Detection:** outbound texts / logged notes with promise phrases ("I'll send…", "we will call…") → `commitment`; inbound texts/voicemail/call transcripts with asks ("can you…", "call me back…") → `follow_up`; due date from phrases (today, tomorrow, weekday, next week, this week). Stored `pending`, one per source row (`dedupe_key`), rejected items never return.
 - **Review:** confirm / correct (keeps original text) / reject / reopen; editors only (viewers read). Make-task converts to a `ContactTask` once.
 - **AI:** optional layer, not wired to a provider yet (`ai.status` = `not_configured` / `available_on_request`); OpenAI is out of credit (T-20). When added, AI output must be stored as `origin='ai'`, `pending`, with source refs — same review path.
+
+### M3 detail
+
+- **Pipeline:** `Opportunity` with stages `new_lead → qualified → proposal → negotiation → won/lost` (closing sets status, probability, reason). Every stage change writes a `stage_change` `ContactActivity` (timeline) and a CRM event (`opportunity.stage_changed`, consumed in M5). Board: per-stage count, value, weighted value; owner filter. Owners/assignees must be workspace members.
+- **Tasks:** create/update/complete/reopen `ContactTask`; buckets overdue / today (UTC) / upcoming / done; completion logs `task_completed`; `Contact.next_follow_up_at` tracks the earliest open task. Viewers can't change tasks except completing ones assigned to them.
+- **Reminders:** `send_due_reminders()` (scheduler job `crm_task_reminders`, every 5 min, pause-preserving like the other jobs) writes one `Notification` to the assignee and clears `reminder_at`, so each fires once. **Deploy note:** this is a new worker job; it only runs where the scheduler runs (prod worker is on stale code — T-18).
+- **Today view** (`/crm/today`, mine/everyone): unanswered texts (latest message inbound, 14 d), missed calls not followed by an outbound call/text (7 d), overdue and due-today tasks, commitments/follow-ups due within 2 days, opportunity follow-ups past due, open opportunities with 30+ days of silence; do-not-contact contacts excluded; pipeline summary.
+- **Dynamic segmentation:** new fields `lifecycle_stage`, `owner_user_id`, `last_contacted_at`, `last_activity_at`, `next_follow_up_at` (+ relative ops `within_last_days`, `more_than_days_ago`, `within_next_days` evaluated at refresh time), computed `open_opportunity_stage`, `has_open_opportunity`, `has_open_task`, `has_overdue_task` (one query per refresh). Still fail-closed: bad values/ops raise `SegmentConditionError`. Simple text fields now reject date operators at validation instead of at evaluation.

@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block title %}Today{% endblock %}
+{% block content %}
+<div class="container-fluid mt-3">
+  <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+    <h1 class="h3 mb-0"><i data-feather="sun"></i> Today</h1>
+    <div class="btn-group btn-group-sm" role="group" aria-label="Scope">
+      <a class="btn btn-outline-secondary {{ 'active' if mine }}" href="{{ url_for('crm_workspace.today') }}">Mine</a>
+      <a class="btn btn-outline-secondary {{ 'active' if not mine }}" href="{{ url_for('crm_workspace.today', scope='all') }}">Everyone</a>
+    </div>
+  </div>
+
+  <div class="row g-3">
+    <div class="col-12 col-lg-7">
+      <div class="card h-100">
+        <div class="card-header"><h5 class="mb-0">Needs attention</h5></div>
+        <ul class="list-group list-group-flush">
+          {% for item in data.needs_attention %}
+          <li class="list-group-item">
+            <div class="d-flex justify-content-between flex-wrap gap-2">
+              <a href="{{ item.link }}"><strong>{{ item.action }}</strong></a>
+              <small class="text-muted">{{ item.at[:16].replace('T', ' ') if item.at else '' }}</small>
+            </div>
+            <div class="small">{{ item.contact_name }}{% if item.reason %} · <span class="text-muted">{{ item.reason }}</span>{% endif %}</div>
+          </li>
+          {% else %}
+          <li class="list-group-item text-muted">You're all caught up.</li>
+          {% endfor %}
+        </ul>
+      </div>
+    </div>
+
+    <div class="col-12 col-lg-5">
+      <div class="card mb-3">
+        <div class="card-header"><h5 class="mb-0">Tasks</h5></div>
+        <ul class="list-group list-group-flush">
+          {% for task in data.tasks.overdue + data.tasks.today %}
+          <li class="list-group-item d-flex justify-content-between align-items-center flex-wrap gap-2">
+            <div>
+              <a href="/contacts/{{ task.contact_id }}/activities">{{ task.title }}</a>
+              <div class="small text-muted">{{ task.contact_name }} ·
+                {% if task.overdue %}<span class="text-danger">overdue</span>{% else %}due {{ task.due_at[11:16] }}{% endif %}</div>
+            </div>
+            <form method="POST" action="{{ url_for('crm_workspace.api_task_action', task_id=task.id, action='complete') }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+              <button type="submit" class="btn btn-sm btn-outline-success">Done</button>
+            </form>
+          </li>
+          {% else %}
+          <li class="list-group-item text-muted">No tasks due today.</li>
+          {% endfor %}
+        </ul>
+      </div>
+
+      <div class="card">
+        <div class="card-header d-flex justify-content-between">
+          <h5 class="mb-0">Pipeline</h5>
+          <small class="text-muted">Open {{ '%.0f'|format(data.pipeline.open_value) }} · weighted {{ '%.0f'|format(data.pipeline.weighted_open_value) }}</small>
+        </div>
+        <div class="table-responsive">
+          <table class="table table-sm mb-0">
+            <thead><tr><th>Stage</th><th class="text-end">Deals</th><th class="text-end">Value</th></tr></thead>
+            <tbody>
+              {% for s in data.pipeline.stages %}
+              <tr><td>{{ s.stage.replace('_', ' ')|capitalize }}</td><td class="text-end">{{ s.count }}</td>
+                  <td class="text-end">{{ '%.0f'|format(s.value) }}</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<script>if (typeof feather !== 'undefined') feather.replace();</script>
+{% endblock %}

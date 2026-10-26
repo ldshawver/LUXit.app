@@ -590,6 +590,9 @@
                 {# Customer Layer #}
                 <div class="sidebar-section">
                     <p class="sidebar-section-label">Customers</p>
+                    <a href="{{ url_for('crm_workspace.today') }}" class="sidebar-nav-item{% if _p.startswith('/crm/today') %} active{% endif %}">
+                        <i data-feather="sun"></i> Today
+                    </a>
                     <a href="{{ url_for('main.contacts') }}" class="sidebar-nav-item{% if _p.startswith('/contacts') %} active{% endif %}">
                         <i data-feather="users"></i> Audience
                     </a>

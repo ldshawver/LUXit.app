@@ -49,6 +49,7 @@ def boot(monkeypatch, jobstore_url):
     # Never run real job bodies; both refs must stay importable for pickling.
     monkeypatch.setattr(scheduler_module, "run_tuya_reconciliation", _noop)
     monkeypatch.setattr(scheduler_module, "run_weekly_contact_dedupe", _noop)
+    monkeypatch.setattr(scheduler_module, "run_crm_task_reminders", _noop)
     stub = _StubApp(jobstore_url, real_app)
     started = []
 
@@ -83,6 +84,7 @@ def test_fresh_jobstore_arms_both_jobs(boot, jobstore_url):
     _stop(boot())
     assert _next_run(jobstore_url, "weekly_contact_dedupe") is not None
     assert _next_run(jobstore_url, "tuya_notification_reconciliation") is not None
+    assert _next_run(jobstore_url, "crm_task_reminders") is not None
 
 
 def test_paused_dedupe_stays_paused_across_restarts(boot, jobstore_url):
@@ -130,3 +132,12 @@ def test_unreadable_jobstore_fails_startup_instead_of_rearming(monkeypatch, boot
     monkeypatch.setattr(scheduler_module, "_paused_job_ids", _boom)
     with pytest.raises(RuntimeError):
         boot()
+
+
+def test_paused_crm_reminders_stay_paused(boot, jobstore_url):
+    sched = boot()
+    sched.pause_job("crm_task_reminders")
+    _stop(sched)
+    _stop(boot())
+    assert _next_run(jobstore_url, "crm_task_reminders") is None
+    assert _next_run(jobstore_url, "weekly_contact_dedupe") is not None

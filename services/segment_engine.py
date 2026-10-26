@@ -70,13 +70,22 @@ SCHEMA_VERSION = 1
 SIMPLE_FIELDS = {
     "approval_status", "identity_status", "source", "normalized_phone",
     "normalized_email", "email", "phone", "first_name", "last_name",
-    "company", "status", "google_match_status",
+    "company", "status", "google_match_status", "lifecycle_stage", "owner_user_id",
 }
-DATE_FIELDS = {"created_at"}
-SUPPORTED_FIELDS = SIMPLE_FIELDS | DATE_FIELDS | {"tag"}
+DATE_FIELDS = {"created_at", "last_contacted_at", "last_activity_at", "next_follow_up_at"}
+# Computed from the contact's opportunities and tasks (one query per
+# refresh, not per contact); see _RelationshipContext.
+RELATIONSHIP_FIELDS = {"open_opportunity_stage", "has_open_opportunity", "has_open_task", "has_overdue_task"}
+BOOLEAN_FIELDS = {"has_open_opportunity", "has_open_task", "has_overdue_task"}
+SUPPORTED_FIELDS = SIMPLE_FIELDS | DATE_FIELDS | RELATIONSHIP_FIELDS | {"tag"}
 
 SIMPLE_OPS = {"equals", "not_equals", "contains", "not_contains", "exists", "not_exists", "in", "not_in"}
-DATE_OPS = {"after", "before", "between", "exists", "not_exists"}
+# Relative-date operators take a whole number of days and are evaluated
+# against the time of each refresh, so membership moves as time passes.
+RELATIVE_DATE_OPS = {"within_last_days", "more_than_days_ago", "within_next_days"}
+DATE_OPS = {"after", "before", "between", "exists", "not_exists"} | RELATIVE_DATE_OPS
+BOOLEAN_OPS = {"equals"}
+STAGE_OPS = {"equals", "not_equals", "in", "not_in", "exists", "not_exists"}
 SUPPORTED_OPS = SIMPLE_OPS | DATE_OPS
 
 # Segment types this engine will dynamically (re)compute membership for.
@@ -182,10 +191,21 @@ def validate_conditions(conditions: Any, match_mode: str) -> dict:
         op = rule.get("op")
         if op is None:
             raise SegmentConditionError(f"rule for field {field_name!r} is missing 'op'")
-        allowed_ops = DATE_OPS if field_name in DATE_FIELDS else SUPPORTED_OPS
+        if field_name in DATE_FIELDS:
+            allowed_ops = DATE_OPS
+        elif field_name in BOOLEAN_FIELDS:
+            allowed_ops = BOOLEAN_OPS
+        elif field_name == "open_opportunity_stage":
+            allowed_ops = STAGE_OPS
+        else:
+            allowed_ops = SIMPLE_OPS
         if op not in allowed_ops or op not in SUPPORTED_OPS:
             raise SegmentConditionError(f"unsupported operator {op!r} for field {field_name!r}")
         value = rule.get("value")
+        if op in RELATIVE_DATE_OPS and (isinstance(value, bool) or not isinstance(value, int) or value < 0):
+            raise SegmentConditionError(f"operator {op!r} requires a whole number of days")
+        if field_name in BOOLEAN_FIELDS and not isinstance(value, bool):
+            raise SegmentConditionError(f"field {field_name!r} requires true or false")
         if op in {"in", "not_in"} and not isinstance(value, list):
             raise SegmentConditionError(f"operator {op!r} requires a list value")
         if op == "between" and not (isinstance(value, list) and len(value) == 2):
@@ -239,8 +259,64 @@ def _tag_key(label: Any) -> str:
     return "my order customer" if normalized in MY_ORDER_CUSTOMER_ALIASES else normalized
 
 
-def _eval_rule(contact: Contact, rule: dict) -> bool:
+class _RelationshipContext:
+    """Opportunity/task facts for the contacts being evaluated, loaded once."""
+
+    def __init__(self, company_id: int, contact_ids=None):
+        from datetime import datetime as _dt
+        from models import ContactTask, Opportunity
+        self.now = _dt.utcnow()
+        opp_q = db.session.query(Opportunity.contact_id, Opportunity.stage).filter(
+            Opportunity.company_id == company_id, Opportunity.status == "open")
+        task_q = db.session.query(ContactTask.contact_id, ContactTask.due_at).filter(
+            ContactTask.company_id == company_id, ContactTask.status == "open")
+        if contact_ids is not None:
+            opp_q = opp_q.filter(Opportunity.contact_id.in_(contact_ids))
+            task_q = task_q.filter(ContactTask.contact_id.in_(contact_ids))
+        self.stages: dict[int, set] = {}
+        for contact_id, stage in opp_q:
+            self.stages.setdefault(contact_id, set()).add((stage or "").strip().casefold())
+        self.open_task: set[int] = set()
+        self.overdue: set[int] = set()
+        for contact_id, due_at in task_q:
+            self.open_task.add(contact_id)
+            if due_at and due_at < self.now:
+                self.overdue.add(contact_id)
+
+
+def _eval_relationship(contact: Contact, rule: dict, ctx: _RelationshipContext) -> bool:
     field_name, op, value = rule["field"], rule["op"], rule.get("value")
+    if field_name in BOOLEAN_FIELDS:
+        actual = {
+            "has_open_opportunity": contact.id in ctx.stages,
+            "has_open_task": contact.id in ctx.open_task,
+            "has_overdue_task": contact.id in ctx.overdue,
+        }[field_name]
+        return actual is value
+    stages = ctx.stages.get(contact.id, set())
+    norm = lambda v: str(v).strip().casefold()  # noqa: E731
+    if op == "exists":
+        return bool(stages)
+    if op == "not_exists":
+        return not stages
+    if op == "equals":
+        return norm(value) in stages
+    if op == "not_equals":
+        return norm(value) not in stages
+    if op == "in":
+        return bool(stages & {norm(v) for v in value})
+    if op == "not_in":
+        return not (stages & {norm(v) for v in value})
+    raise SegmentConditionError(f"unsupported op {op!r} for field {field_name!r}")
+
+
+def _eval_rule(contact: Contact, rule: dict, ctx: "_RelationshipContext | None" = None) -> bool:
+    field_name, op, value = rule["field"], rule["op"], rule.get("value")
+
+    if field_name in RELATIONSHIP_FIELDS:
+        if ctx is None:
+            ctx = _RelationshipContext(contact.company_id, [contact.id])
+        return _eval_relationship(contact, rule, ctx)
 
     if field_name == "tag":
         tags = {_tag_key(t) for t in split_tags(contact.tags)}
@@ -272,6 +348,14 @@ def _eval_rule(contact: Contact, rule: dict) -> bool:
             return actual is None
         if actual is None:
             return False
+        if op in RELATIVE_DATE_OPS:
+            from datetime import datetime as _dt, timedelta as _td
+            now = ctx.now if ctx is not None else _dt.utcnow()
+            if op == "within_last_days":
+                return now - _td(days=value) <= actual <= now
+            if op == "more_than_days_ago":
+                return actual < now - _td(days=value)
+            return now <= actual <= now + _td(days=value)
         if op == "after":
             return actual > value
         if op == "before":
@@ -320,7 +404,9 @@ def evaluate(segment: Segment, contact: Contact) -> bool:
         return True
     if not normalized["rules"]:
         return False
-    results = [_eval_rule(contact, rule) for rule in normalized["rules"]]
+    ctx = (_RelationshipContext(contact.company_id, [contact.id])
+           if any(r["field"] in RELATIONSHIP_FIELDS for r in normalized["rules"]) else None)
+    results = [_eval_rule(contact, rule, ctx) for rule in normalized["rules"]]
     return all(results) if normalized["match_mode"] == "all" else any(results)
 
 
@@ -372,6 +458,8 @@ def compute_membership_delta(segment: Segment) -> RefreshResult:
     excluded_ids = {m.contact_id for m in rows if m.is_excluded}
 
     desired_ids = set()
+    ctx = (_RelationshipContext(segment.company_id)
+           if any(r["field"] in RELATIONSHIP_FIELDS for r in normalized["rules"]) else None)
     try:
         for contact in _canonical_candidate_contacts(segment.company_id):
             if contact.id in excluded_ids:
@@ -379,9 +467,9 @@ def compute_membership_delta(segment: Segment) -> RefreshResult:
             matched = (
                 True if normalized.get("match_all") else
                 (False if not normalized["rules"] else (
-                    all(_eval_rule(contact, r) for r in normalized["rules"])
+                    all(_eval_rule(contact, r, ctx) for r in normalized["rules"])
                     if normalized["match_mode"] == "all" else
-                    any(_eval_rule(contact, r) for r in normalized["rules"])
+                    any(_eval_rule(contact, r, ctx) for r in normalized["rules"])
                 ))
             )
             if matched:
