@@ -26,6 +26,21 @@ FEATURE_MODULE_SEEDS = [
 ]
 
 
+def platform_sender_company_ids():
+    """Workspaces allowed to send through the platform's own Twilio account.
+
+    Every other tenant must bring its own sender (T-16). Override with a
+    comma-separated ``LUXIT_PLATFORM_SENDER_COMPANY_IDS``; default is company 1.
+    """
+    import os
+    raw = os.environ.get("LUXIT_PLATFORM_SENDER_COMPANY_IDS", "1")
+    return {int(part) for part in raw.split(",") if part.strip().isdigit()}
+
+
+def uses_platform_sender(company_id):
+    return bool(company_id) and int(company_id) in platform_sender_company_ids()
+
+
 class LicenseAccessError(PermissionError):
     def __init__(self, feature_key: str, status: str = "missing", message: str | None = None):
         self.feature_key = feature_key
@@ -334,7 +349,15 @@ def sync_license_from_stripe_event(event):
     if customer_id:
         acct.stripe_customer_id = customer_id
         company.stripe_customer_id = customer_id
-    lic = _ensure_license(company.id, PHONE_PWA_FEATURE)
+    # A plan subscription keeps an existing phone/PWA license in step with
+    # billing but never creates one: the module runs on a provisioned sender,
+    # so it is granted explicitly (T-16/T-8), not by buying any tier.
+    lic = get_company_license(company.id, PHONE_PWA_FEATURE)
+    has_phone_license = lic is not None
+    if not has_phone_license:
+        from models import TenantLicense
+        lic = TenantLicense(company_id=company.id, feature_key=PHONE_PWA_FEATURE, status="missing")  # never added to the session
+    _log_license = log_license_event if has_phone_license else (lambda *args, **kwargs: None)
     old_status = lic.status
 
     if ev_type in {"checkout.session.completed", "customer.subscription.created", "customer.subscription.updated"}:
@@ -344,13 +367,13 @@ def sync_license_from_stripe_event(event):
         lic.renews_at = _stripe_ts(obj.get("current_period_end")) or lic.renews_at
         acct.payment_status = lic.status
         if old_status != lic.status:
-            log_license_event(company.id, lic, "stripe_subscription_synced", old_status, lic.status, {"stripe_event_type": ev_type})
+            _log_license(company.id, lic, "stripe_subscription_synced", old_status, lic.status, {"stripe_event_type": ev_type})
     elif ev_type == "customer.subscription.deleted":
         _subscription_upsert(company, obj)
         lic.status = "canceled"
         lic.canceled_at = datetime.utcnow()
         acct.payment_status = "canceled"
-        log_license_event(company.id, lic, "stripe_subscription_deleted", old_status, "canceled", {"stripe_event_type": ev_type})
+        _log_license(company.id, lic, "stripe_subscription_deleted", old_status, "canceled", {"stripe_event_type": ev_type})
     elif ev_type in {"invoice.created", "invoice.finalized"}:
         _invoice_upsert(company, obj)
         create_billing_automation_event(company.id, "invoice_due", {"invoice_id": obj.get("id")})
@@ -361,7 +384,7 @@ def sync_license_from_stripe_event(event):
         acct.payment_status = "past_due"
         acct.last_payment_failed_at = datetime.utcnow()
         create_billing_automation_event(company.id, "payment_failed", {"invoice_id": obj.get("id")})
-        log_license_event(company.id, lic, "stripe_payment_failed", old_status, "past_due", {"invoice_id": obj.get("id")})
+        _log_license(company.id, lic, "stripe_payment_failed", old_status, "past_due", {"invoice_id": obj.get("id")})
     elif ev_type == "invoice.payment_succeeded":
         _invoice_upsert(company, obj)
         lic.status = "active"
@@ -370,7 +393,7 @@ def sync_license_from_stripe_event(event):
         acct.payment_status = "active"
         acct.last_payment_at = datetime.utcnow()
         create_billing_automation_event(company.id, "license_reactivated", {"invoice_id": obj.get("id")})
-        log_license_event(company.id, lic, "stripe_payment_succeeded", old_status, "active", {"invoice_id": obj.get("id")})
+        _log_license(company.id, lic, "stripe_payment_succeeded", old_status, "active", {"invoice_id": obj.get("id")})
     elif ev_type == "payment_method.attached":
         acct.default_payment_method_id = obj.get("id")
     elif ev_type == "customer.updated":
@@ -379,4 +402,5 @@ def sync_license_from_stripe_event(event):
         acct.billing_address_json = obj.get("address") or acct.billing_address_json
 
     db.session.commit()
-    return {"success": True, "company_id": company.id, "feature_key": PHONE_PWA_FEATURE, "status": lic.status}
+    return {"success": True, "company_id": company.id, "feature_key": PHONE_PWA_FEATURE,
+            "status": lic.status if has_phone_license else "missing"}

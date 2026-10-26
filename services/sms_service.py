@@ -274,22 +274,40 @@ class SMSService:
     @classmethod
     def send_sms(cls, to_number, message, company_id=None, from_phone=None, media_urls=None):
         selected_from_phone = from_phone
-        """Send an SMS message via tenant Twilio config, falling back to platform config."""
-        if company_id:
-            from services.license_service import PHONE_PWA_FEATURE, has_feature
-            if not has_feature(company_id, PHONE_PWA_FEATURE):
-                return {
-                    'success': False,
-                    'error': 'Phone/PWA Communications license is not active.',
-                    'status_code': 402,
-                    'license_blocked': True,
-                }
+        """Send an SMS message via tenant Twilio config.
+
+        Only the platform's own workspaces may fall back to the platform Twilio
+        account; any other tenant needs its own sender (T-16).
+        """
+        if not company_id:
+            return {
+                'success': False,
+                'error': 'A workspace is required to send SMS.',
+                'status_code': 403,
+                'license_blocked': True,
+            }
+        from services.license_service import PHONE_PWA_FEATURE, has_feature, uses_platform_sender
+        if not has_feature(company_id, PHONE_PWA_FEATURE):
+            return {
+                'success': False,
+                'error': 'Phone/PWA Communications license is not active.',
+                'status_code': 402,
+                'license_blocked': True,
+            }
         tenant_config = cls._tenant_twilio_config(company_id)
         if tenant_config:
             client = tenant_config['client']
             messaging_service_sid = tenant_config.get('messaging_service_sid')
             from_phone = selected_from_phone or tenant_config.get('from_phone')
         else:
+            if not uses_platform_sender(company_id):
+                logger.warning("SMS blocked: company_id=%s has no own Twilio sender and is not a platform workspace", company_id)
+                return {
+                    'success': False,
+                    'error': 'This workspace has no SMS sender configured. Connect a Twilio account in phone settings.',
+                    'status_code': 409,
+                    'sender_missing': True,
+                }
             if not cls._init_twilio():
                 return {
                     'success': False,

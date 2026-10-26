@@ -1724,6 +1724,16 @@ def api_phone_voice_token():
         logger.info("Voice token denied: user lacks call permission", extra={"user_id": user.id, "company_id": company.id})
         return jsonify({"success": False, "code": "NO_ASSIGNED_NUMBER", "error": "No calling number assigned"}), 403
 
+    # The Voice SDK token below is minted on the platform account (env API
+    # key + TwiML App), so only platform workspaces may use it (T-16).
+    from services.license_service import uses_platform_sender
+    if not uses_platform_sender(company.id):
+        logger.info("Voice token denied: workspace has no provisioned calling account", extra={"user_id": user.id, "company_id": company.id})
+        return jsonify({
+            "success": False, "code": "CALLING_NOT_PROVISIONED",
+            "error": "Browser calling is not set up for this workspace yet.",
+        }), 403
+
     ta = TwilioAccount.query.filter_by(company_id=company.id).first()
     account_sid = (
         os.environ.get("TWILIO_ACCOUNT_SID")
