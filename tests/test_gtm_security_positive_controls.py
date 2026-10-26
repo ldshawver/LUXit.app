@@ -54,7 +54,6 @@ def test_owner_sees_and_manages_own_tenant_objects(world):
     assert db.session.get(Automation, auto_id).is_active is False
 
 
-@pytest.mark.xfail(strict=True, reason="pre-existing on 645dd65: Contact.engagement_score does not exist")
 def test_owner_can_add_activity_to_own_contact(world):
     app, client_for, ids, _ = world
     contact_id, *_ = _own_objects(ids)

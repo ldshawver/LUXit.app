@@ -1316,6 +1316,26 @@ class ContactActivity(db.Model):
     contact = db.relationship("Contact", backref="activities")
     company = db.relationship("Company", backref="contact_activities")
 
+    # Logged-activity details kept in extra_data (no columns of their own).
+    def _extra(self, key):
+        return self.extra_data.get(key) if isinstance(self.extra_data, dict) else None
+
+    @property
+    def subject(self):
+        return self.title
+
+    @property
+    def outcome(self):
+        return self._extra("outcome")
+
+    @property
+    def duration_minutes(self):
+        return self._extra("duration_minutes")
+
+    @property
+    def is_completed(self):
+        return bool(self._extra("is_completed"))
+
 
 class AnalyticsData(db.Model):
     __tablename__ = "analytics_data"

@@ -9422,43 +9422,52 @@ def update_contact_profile(contact_id):
         logger.error(f"Error updating contact {contact_id}: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
+def _activity_from_form(contact, form, default_completed=None):
+    """Build a ContactActivity from the log-activity forms.
+
+    ContactActivity has no subject/outcome/duration/schedule columns: these
+    used to be set as plain attributes and silently dropped. The subject is
+    the title; the rest live in extra_data.
+    """
+    extra = {'user_id': current_user.id}
+    outcome = (form.get('outcome') or '').strip()
+    if outcome:
+        extra['outcome'] = outcome[:255]
+    duration = (form.get('duration_minutes') or '').strip()
+    if duration.isdigit():
+        extra['duration_minutes'] = int(duration)
+    scheduled = (form.get('scheduled_at') or '').strip()
+    if scheduled:
+        try:
+            extra['scheduled_at'] = datetime.strptime(scheduled, '%Y-%m-%dT%H:%M').isoformat()
+        except ValueError:
+            pass
+    completed = form.get('is_completed', default_completed) in ('on', 'true', '1')
+    extra['is_completed'] = completed
+    if completed:
+        extra['completed_at'] = datetime.utcnow().isoformat()
+    return ContactActivity(
+        contact_id=contact.id,
+        company_id=contact.company_id,
+        activity_type=(form.get('activity_type') or 'note')[:50],
+        title=(form.get('subject') or '')[:255] or None,
+        description=form.get('description') or '',
+        source='manual',
+        extra_data=extra,
+    )
+
+
 @main_bp.route('/api/contacts/<int:contact_id>/activities/add', methods=['POST'])
 @login_required
 def add_contact_activity_api(contact_id):
     """Add a new activity for a contact via API"""
     contact = tenant_get_or_404(Contact, contact_id)
-    current_company = current_user.get_default_company()
-    
+
     try:
-        activity = ContactActivity()
-        activity.contact_id = contact_id
-        activity.company_id = current_company.id if current_company else None
-        activity.user_id = current_user.id
-        activity.activity_type = request.form.get('activity_type', 'note')
-        activity.subject = request.form.get('subject', '')
-        activity.description = request.form.get('description', '')
-        activity.outcome = request.form.get('outcome', '') or None
-        
-        duration = request.form.get('duration_minutes', '').strip()
-        if duration and duration.isdigit():
-            activity.duration_minutes = int(duration)
-        
-        scheduled = request.form.get('scheduled_at', '').strip()
-        if scheduled:
-            try:
-                activity.scheduled_at = datetime.strptime(scheduled, '%Y-%m-%dT%H:%M')
-            except ValueError:
-                pass
-        
-        is_completed = request.form.get('is_completed', 'on')
-        activity.is_completed = is_completed in ('on', 'true', '1', True)
-        if activity.is_completed:
-            activity.completed_at = datetime.utcnow()
-        
+        activity = _activity_from_form(contact, request.form, default_completed='on')
         db.session.add(activity)
         
-        contact.last_activity = datetime.utcnow()
-        contact.engagement_score = min(100, (contact.engagement_score or 0) + 5)
+        contact.last_activity_at = datetime.utcnow()
         
         db.session.commit()
         
@@ -9473,7 +9482,9 @@ def add_contact_activity_api(contact_id):
 def contact_activities(contact_id):
     """View all activities for a contact"""
     contact = tenant_get_or_404(Contact, contact_id)
-    activities = ContactActivity.query.filter_by(contact_id=contact_id).order_by(ContactActivity.created_at.desc()).all()
+    activities = ContactActivity.query.filter_by(
+        contact_id=contact_id, company_id=contact.company_id
+    ).order_by(ContactActivity.created_at.desc()).all()
     return render_template('contact_activities.html', contact=contact, activities=activities)
 
 @main_bp.route('/contacts/<int:contact_id>/activities/add', methods=['POST'])
@@ -9481,36 +9492,11 @@ def contact_activities(contact_id):
 def add_contact_activity(contact_id):
     """Add a new activity for a contact"""
     contact = tenant_get_or_404(Contact, contact_id)
-    current_company = current_user.get_default_company()
-    
-    activity = ContactActivity()
-    activity.contact_id = contact_id
-    activity.company_id = current_company.id if current_company else None
-    activity.user_id = current_user.id
-    activity.activity_type = request.form.get('activity_type', 'note')
-    activity.subject = request.form.get('subject', '')
-    activity.description = request.form.get('description', '')
-    activity.outcome = request.form.get('outcome', '')
-    
-    duration = request.form.get('duration_minutes')
-    if duration and duration.isdigit():
-        activity.duration_minutes = int(duration)
-    
-    scheduled = request.form.get('scheduled_at')
-    if scheduled:
-        try:
-            activity.scheduled_at = datetime.strptime(scheduled, '%Y-%m-%dT%H:%M')
-        except:
-            pass
-    
-    activity.is_completed = request.form.get('is_completed') == 'on'
-    if activity.is_completed:
-        activity.completed_at = datetime.utcnow()
-    
+
+    activity = _activity_from_form(contact, request.form)
     db.session.add(activity)
     
-    contact.last_activity = datetime.utcnow()
-    contact.engagement_score = min(100, (contact.engagement_score or 0) + 5)
+    contact.last_activity_at = datetime.utcnow()
     
     db.session.commit()
     flash(f'{activity.activity_type.title()} logged successfully!', 'success')
@@ -9520,21 +9506,42 @@ def add_contact_activity(contact_id):
 @login_required
 def get_contact_activities_api(contact_id):
     """API to get contact activities"""
-    tenant_get_or_404(Contact, contact_id)
-    activities = ContactActivity.query.filter_by(contact_id=contact_id).order_by(ContactActivity.created_at.desc()).all()
-    return jsonify({
-        'success': True,
-        'activities': [{
+    contact = tenant_get_or_404(Contact, contact_id)
+    activities = ContactActivity.query.filter_by(
+        contact_id=contact_id, company_id=contact.company_id
+    ).order_by(ContactActivity.created_at.desc()).all()
+
+    def _row(a):
+        extra = a.extra_data if isinstance(a.extra_data, dict) else {}
+        return {
             'id': a.id,
             'type': a.activity_type,
-            'subject': a.subject,
+            'subject': a.title,
             'description': a.description,
-            'outcome': a.outcome,
-            'duration_minutes': a.duration_minutes,
-            'is_completed': a.is_completed,
-            'created_at': a.created_at.isoformat() if a.created_at else None
-        } for a in activities]
-    })
+            'outcome': extra.get('outcome'),
+            'duration_minutes': extra.get('duration_minutes'),
+            'is_completed': extra.get('is_completed'),
+            'created_at': a.created_at.isoformat() if a.created_at else None,
+        }
+    return jsonify({'success': True, 'activities': [_row(a) for a in activities]})
+
+
+@main_bp.route('/api/contacts/<int:contact_id>/timeline', methods=['GET'])
+@login_required
+def get_contact_timeline_api(contact_id):
+    """Unified relationship timeline across every channel (canonical contact)."""
+    from services.contact_timeline import build_timeline, parse_before
+    from services.tenant_scope import current_company_id
+    kinds = [k for k in (request.args.get('kinds') or '').split(',') if k] or None
+    timeline = build_timeline(
+        current_company_id(), contact_id,
+        limit=request.args.get('limit', 50, type=int),
+        before=parse_before(request.args.get('before')),
+        kinds=kinds,
+    )
+    if timeline is None:
+        return jsonify({'success': False, 'error': 'Contact not found'}), 404
+    return jsonify({'success': True, **timeline})
 
 # ====== ENHANCED ANALYTICS ROUTES ======
 @main_bp.route('/analytics/comprehensive')

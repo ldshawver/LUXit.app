@@ -120,7 +120,78 @@
       </div>
     </div>
   </div>
+
+  <div class="card mb-4" id="relationshipTimeline">
+    <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+      <h5 class="mb-0"><i data-feather="clock"></i> Relationship timeline</h5>
+      <select id="tlKind" class="form-select form-select-sm" style="max-width:200px" aria-label="Filter timeline">
+        <option value="">All channels</option>
+        <option value="message">Text messages</option>
+        <option value="call,voicemail">Calls &amp; voicemail</option>
+        <option value="activity,task">Activities &amp; tasks</option>
+        <option value="opportunity,deal">Deals</option>
+        <option value="touchpoint,source">Web &amp; sources</option>
+      </select>
+    </div>
+    <ul class="list-group list-group-flush" id="tlList"><li class="list-group-item text-muted">Loading…</li></ul>
+    <div class="card-footer text-center" id="tlMoreWrap" style="display:none">
+      <button type="button" class="btn btn-sm btn-outline-secondary" id="tlMore">Load older</button>
+    </div>
+  </div>
 </div>
+
+<script>
+(function () {
+  const url = {{ url_for('main.get_contact_timeline_api', contact_id=contact.id)|tojson }};
+  const list = document.getElementById('tlList'), moreWrap = document.getElementById('tlMoreWrap');
+  const kindSel = document.getElementById('tlKind');
+  let before = null;
+  function row(e) {
+    const li = document.createElement('li');
+    li.className = 'list-group-item';
+    const head = document.createElement('div');
+    head.className = 'd-flex justify-content-between flex-wrap gap-2';
+    const title = document.createElement('strong');
+    title.textContent = e.title || e.kind;
+    const meta = document.createElement('small');
+    meta.className = 'text-muted';
+    meta.textContent = [e.at ? new Date(e.at + 'Z').toLocaleString() : '', e.status, e.merged_from ? 'merged record' : '']
+      .filter(Boolean).join(' · ');
+    head.append(title, meta);
+    li.append(head);
+    if (e.summary) {
+      const p = document.createElement('div');
+      p.className = 'small mt-1';
+      p.textContent = e.summary;
+      li.append(p);
+    }
+    return li;
+  }
+  async function load(reset) {
+    if (reset) { before = null; list.innerHTML = ''; }
+    const q = new URLSearchParams({limit: '25'});
+    if (kindSel.value) q.set('kinds', kindSel.value);
+    if (before) q.set('before', before);
+    try {
+      const r = await fetch(url + '?' + q, {headers: {Accept: 'application/json'}});
+      const body = await r.json();
+      if (!body.success) throw new Error(body.error || 'failed');
+      if (reset && !body.entries.length) {
+        list.innerHTML = '<li class="list-group-item text-muted">No history yet.</li>';
+      }
+      body.entries.forEach(e => list.append(row(e)));
+      before = body.next_before;
+      moreWrap.style.display = before ? '' : 'none';
+    } catch (err) {
+      list.innerHTML = '<li class="list-group-item text-danger">Could not load the timeline.</li>';
+      moreWrap.style.display = 'none';
+    }
+  }
+  kindSel.addEventListener('change', () => load(true));
+  document.getElementById('tlMore').addEventListener('click', () => load(false));
+  load(true);
+})();
+</script>
 
 <div class="modal fade" id="logActivityModal" tabindex="-1">
   <div class="modal-dialog modal-lg">
