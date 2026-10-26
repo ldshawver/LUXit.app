@@ -11213,14 +11213,16 @@ def restore_contact(contact_id):
 @main_bp.route('/contacts/export')
 @login_required
 def export_contacts():
+    from services.tenant_scope import current_company_id
+    company_id = current_company_id()
+    # No workspace → no export: an unfiltered query here dumped every tenant's contacts.
+    if company_id is None or not current_user.can_edit_company(company_id):
+        flash('You do not have permission to export contacts.', 'danger')
+        return redirect(url_for('main.contacts'))
     try:
-        company_id = getattr(current_user, 'default_company_id', None)
         contacts_list = []
         if Contact is not None:
-            query = Contact.query
-            if company_id:
-                query = query.filter_by(company_id=company_id)
-            contacts_list = query.all()
+            contacts_list = Contact.query.filter_by(company_id=company_id).all()
         output = io.StringIO()
         writer = csv.writer(output)
         writer.writerow(['Email', 'First Name', 'Last Name'])
@@ -11244,10 +11246,14 @@ def export_contacts():
 @login_required
 def import_contacts():
     if request.method == 'POST':
+        from services.tenant_scope import current_company_id
+        company_id = current_company_id()
+        if company_id is None or not current_user.can_edit_company(company_id):
+            flash('You do not have permission to import contacts.', 'danger')
+            return redirect(url_for('main.contacts'))
         try:
             file = request.files.get('file')
             if file and file.filename.lower().endswith(('.csv', '.vcf', '.vcard')):
-                company_id = getattr(current_user, 'default_company_id', None)
                 from services.contact_audience import import_contacts as import_contact_file
                 is_ios = file.filename.lower().endswith(('.vcf', '.vcard')) or request.form.get('source_provider') == 'ios_contacts'
                 result = import_contact_file(company_id, file.stream.read(), file.filename, source_provider='ios_contacts' if is_ios else 'csv_import', tenant_id=company_id)
