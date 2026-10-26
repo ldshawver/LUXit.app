@@ -333,6 +333,7 @@ def test_inbound_rings_pwa_and_every_registered_native_handset(app, client, monk
 
 
 @pytest.mark.parametrize("exclusion", ["not_registered", "ring_disabled", "signed_out", "revoked",
+                                       "sessions_revoked", "sessions_expired",
                                        "away", "no_number_permission"])
 def test_inbound_excludes_ineligible_handsets(app, client, monkeypatch, exclusion):
     co, _ta, pn = _tenant(); u = _user(co, pn); db.session.commit()
@@ -346,6 +347,13 @@ def test_inbound_excludes_ineligible_handsets(app, client, monkeypatch, exclusio
         client.post("/api/mobile/v1/auth/logout", headers=_auth(tokens))
     elif exclusion == "revoked":
         client.delete(f"/api/mobile/v1/devices/{device.id}", headers=_auth(tokens))
+    elif exclusion == "sessions_revoked":
+        # Bulk revoke (admin / ops) leaves the device row active and registered.
+        from services.mobile_auth import revoke_device_sessions
+        revoke_device_sessions(device, "test"); db.session.commit()
+    elif exclusion == "sessions_expired":
+        # Refresh lapsed without a sign-out reaching the server.
+        MobileSession.query.update({"refresh_expires_at": datetime.utcnow() - timedelta(minutes=1)}); db.session.commit()
     elif exclusion == "away":
         set_availability(u.id, co.id, "away", actor_user_id=u.id, source="user"); db.session.commit()
     elif exclusion == "no_number_permission":

@@ -7,9 +7,12 @@ same <Dial>, so the PWA and every phone ring together. Twilio rings all
 answers; the SDK turns that cancel into "stop ringing" on every other device.
 
 A handset is dialed only when it is active, has ringing enabled, has reported
-a successful Twilio push registration, and its user may take calls on the
-dialed number. A signed-out or revoked handset is never dialed even if a stale
-Twilio binding still exists for it.
+a successful Twilio push registration, still holds a live session (not
+revoked, refresh not expired), and its user may take calls on the dialed
+number. A signed-out, revoked or lapsed handset is never dialed even if a
+stale Twilio binding still exists for it: only an explicit sign-out clears the
+registration, so a phone whose sessions expired or were revoked in bulk would
+otherwise keep ringing, and answering would connect a signed-out phone.
 
 Outbound: native identities embed the device row id and an HMAC over the
 per-install uid, so the TwiML App webhook can verify the exact device.
@@ -50,7 +53,9 @@ def user_may_call_on(user, company_id: int, phone_number: str | None) -> bool:
 
 
 def ringable_devices(company_id: int, eligible_user_ids, phone_number: str | None):
-    from models import MobileDevice, User
+    from datetime import datetime
+
+    from models import MobileDevice, MobileSession, User
     from services.phone_identity import mobile_voice_identity
 
     ids = sorted(u for u in (eligible_user_ids or ()) if u is not None)
@@ -61,7 +66,12 @@ def ringable_devices(company_id: int, eligible_user_ids, phone_number: str | Non
                     MobileDevice.user_id.in_(ids),
                     MobileDevice.status == "active",
                     MobileDevice.ring_enabled.is_(True),
-                    MobileDevice.voice_registered_at.isnot(None))
+                    MobileDevice.voice_registered_at.isnot(None),
+                    MobileSession.query.filter(
+                        MobileSession.mobile_device_id == MobileDevice.id,
+                        MobileSession.revoked_at.is_(None),
+                        MobileSession.refresh_expires_at > datetime.utcnow(),
+                    ).exists())
             .order_by(MobileDevice.last_seen_at.desc())
             .all())
     allowed_users: dict[int, bool] = {}
