@@ -41,6 +41,10 @@ MEDIA_RETENTION = timedelta(days=30)
 MEDIA_TYPES = {"image/jpeg", "image/png", "image/gif", "image/heic", "image/webp",
                "video/mp4", "video/3gpp", "audio/mpeg", "audio/mp4", "application/pdf", "text/vcard"}
 IDEMPOTENCY_KEY_RE = re.compile(r"^[A-Za-z0-9_-]{16,100}$")
+RATE_LIMIT_RETRY_AFTER_S = 60
+# A re-sent identical push token is acknowledged without a write unless the
+# stored one is older than this (2026-10-22: one handset re-sent ~2,000/min).
+PUSH_TOKEN_REFRESH_AFTER = timedelta(minutes=10)
 
 
 def _err(code: str, message: str, status: int):
@@ -54,6 +58,20 @@ def _client_ip() -> str | None:
     # per attempt.
     from extensions import _client_ip as proxied_client_ip
     return (proxied_client_ip() or "")[:64] or None
+
+
+def _bearer_key() -> str:
+    """Rate-limit key for authenticated routes: one bucket per access token.
+
+    Flask-Limiter checks route limits before this blueprint's bearer check
+    runs, so g.mobile is not set yet. Hashing the presented token keys the
+    limit on the handset (a looping app reuses its token) instead of the IP,
+    which carrier NAT shares between many phones. Never the raw token.
+    """
+    header = request.headers.get("Authorization") or ""
+    if header.startswith("Bearer ") and len(header) > 7:
+        return "bearer:" + hashlib.sha256(header[7:].strip().encode("utf-8")).hexdigest()[:32]
+    return "ip:" + (_client_ip() or "unknown")
 
 
 # ── authentication for every request ──────────────────────────────────────── #
@@ -99,9 +117,13 @@ def _no_cookies(response):
 @mobile_api_bp.errorhandler(429)
 def _json_http_error(exc):
     code = getattr(exc, "code", 500)
-    return _err({401: "auth_required", 403: "forbidden", 404: "not_found", 409: "conflict",
-                 429: "too_many_attempts"}.get(code, "error"),
-                getattr(exc, "description", None) or "Request failed.", code)
+    body, status = _err({401: "auth_required", 403: "forbidden", 404: "not_found", 409: "conflict",
+                         429: "too_many_attempts"}.get(code, "error"),
+                        getattr(exc, "description", None) or "Request failed.", code)
+    if code == 429:
+        # The app's retry loops honour Retry-After (push/pushTokenSync.ts).
+        body.headers["Retry-After"] = str(RATE_LIMIT_RETRY_AFTER_S)
+    return body, status
 
 
 # ── public: config, sign-in, refresh ──────────────────────────────────────── #
@@ -391,8 +413,13 @@ def _retire_other_holders(device, *, push_token: str | None = None, voice_token_
     If another row (another user, or an older install) still holds this
     handset's push token or Voice binding, sign it out so it is never dialed
     or notified on someone else's phone.
+
+    Another tenant's row is retired only when it is the same install (same
+    keychain device_uid) or holds no live session. Otherwise anyone signed in
+    to any tenant who learned a token could sign that phone out; such a claim
+    is refused with 409 and nothing changes.
     """
-    from models import MobileDevice
+    from models import MobileDevice, MobileSession
     q = MobileDevice.query.filter(MobileDevice.id != device.id)
     if push_token:
         others = q.filter(MobileDevice.push_token == push_token).all()
@@ -400,6 +427,14 @@ def _retire_other_holders(device, *, push_token: str | None = None, voice_token_
         others = q.filter(MobileDevice.voice_token_hash == voice_token_hash).all()
     else:
         return 0
+    for other in others:
+        if other.company_id != device.company_id and other.device_uid != device.device_uid and MobileSession.query.filter(
+                MobileSession.mobile_device_id == other.id,
+                MobileSession.revoked_at.is_(None),
+                MobileSession.refresh_expires_at > datetime.utcnow()).first():
+            logger.warning("LUX Connect handset claim refused: device_id=%s holder device_id=%s is a live install in another tenant",
+                           device.id, other.id)
+            abort(409, "This phone is registered to another signed-in account.")
     from services.mobile_auth import revoke_device_sessions
     for other in others:
         other.push_token = None
@@ -429,11 +464,17 @@ def device_current_update():
 
 
 @mobile_api_bp.route("/devices/current/push-token", methods=["PUT"])
+@limiter.limit("12 per minute;120 per hour", key_func=_bearer_key, methods=["PUT"])
 def device_push_token():
     device = g.mobile.device
     data = request.get_json(silent=True) or {}
     token = (data.get("token") or "").strip()
     token_type = (data.get("type") or "").strip().lower()
+    env = data.get("apns_environment") if data.get("apns_environment") in ("sandbox", "production") else None
+    fresh = device.push_token_updated_at and datetime.utcnow() - device.push_token_updated_at < PUSH_TOKEN_REFRESH_AFTER
+    if fresh and (token or None) == device.push_token and (not token or (
+            token_type == device.push_token_type and env in (None, device.apns_environment))):
+        return jsonify({"success": True, "device": _device_json(device)})
     if not token:
         device.push_token = None
     else:
@@ -444,8 +485,8 @@ def device_push_token():
         _retire_other_holders(device, push_token=token)
         device.push_token = token
         device.push_token_type = token_type
-        if data.get("apns_environment") in ("sandbox", "production"):
-            device.apns_environment = data["apns_environment"]
+        if env:
+            device.apns_environment = env
     device.push_token_updated_at = datetime.utcnow()
     db.session.commit()
     return jsonify({"success": True, "device": _device_json(device)})

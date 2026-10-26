@@ -9,6 +9,7 @@ verification, the idempotent unified text/MMS send (STOP still enforced,
 10DLC block), handset reassignment, native push decisions, sync and number
 assignment.
 """
+import hashlib
 import os
 import re
 from datetime import datetime, timedelta
@@ -968,3 +969,113 @@ def test_company_call_routing_is_not_exposed_on_the_mobile_prefix(app, client):
         r = getattr(client, method)("/api/mobile/v1/phone/settings", headers=_auth(boss), json={"forward_number": "+14155550100"})
         assert r.status_code in (404, 405)
 
+
+
+# ══ push-token storm protection ═══════════════════════════════════════════ #
+
+def _put_token(client, tokens, token="a" * 64, **extra):
+    return client.put("/api/mobile/v1/devices/current/push-token", headers=_auth(tokens),
+                      json={"token": token, "type": "apns", **extra})
+
+
+def test_identical_push_token_is_acknowledged_without_a_write(app, client):
+    co, _ta, pn = _tenant(); _user(co, pn); db.session.commit()
+    tokens = _signed_in(client)
+    assert _put_token(client, tokens, apns_environment="production").status_code == 200
+    first = MobileDevice.query.one().push_token_updated_at
+    for _ in range(5):
+        r = _put_token(client, tokens, apns_environment="production")
+        assert r.status_code == 200 and r.get_json()["success"] is True
+    db.session.expire_all()
+    assert MobileDevice.query.one().push_token_updated_at == first
+
+
+@pytest.mark.parametrize("change", ["token", "environment", "cleared", "stale"])
+def test_changed_or_stale_push_token_is_written(app, client, change):
+    co, _ta, pn = _tenant(); _user(co, pn); db.session.commit()
+    tokens = _signed_in(client)
+    assert _put_token(client, tokens, apns_environment="sandbox").status_code == 200
+    if change == "stale":
+        MobileDevice.query.update({"push_token_updated_at": datetime.utcnow() - timedelta(minutes=11)}); db.session.commit()
+    before = MobileDevice.query.one().push_token_updated_at
+    if change == "token":
+        r = _put_token(client, tokens, token="b" * 64, apns_environment="sandbox")
+    elif change == "cleared":
+        r = client.put("/api/mobile/v1/devices/current/push-token", headers=_auth(tokens), json={"token": None})
+    else:
+        r = _put_token(client, tokens, apns_environment="production" if change == "environment" else "sandbox")
+    assert r.status_code == 200
+    db.session.expire_all()
+    device = MobileDevice.query.one()
+    assert device.push_token_updated_at > before
+    assert device.push_token == {"token": "b" * 64, "cleared": None}.get(change, "a" * 64)
+    assert device.apns_environment == ("production" if change == "environment" else "sandbox")
+
+
+def test_push_token_is_rate_limited_per_handset_not_per_ip(limited_client):
+    client = limited_client
+    co, _ta, pn = _tenant(); _user(co, pn, "anna"); _user(co, pn, "ben"); db.session.commit()
+    ip = {"X-Real-IP": "203.0.113.50"}
+    a = client.post("/api/mobile/v1/auth/login", headers=ip, json={
+        "email": "anna@t.co", "password": "pw-123456",
+        "device": {"device_uid": UID_A, "platform": "ios", "device_name": "A", "app_version": "1.0.0"}}).get_json()
+    b = client.post("/api/mobile/v1/auth/login", headers=ip, json={
+        "email": "ben@t.co", "password": "pw-123456",
+        "device": {"device_uid": "ios-install-cccccccccccccccc", "platform": "ios", "device_name": "B",
+                   "app_version": "1.0.0"}}).get_json()
+    put = lambda t, tok: client.put("/api/mobile/v1/devices/current/push-token",
+                                    headers={**_auth(t), **ip}, json={"token": tok, "type": "apns"})
+    codes = [put(a, "a" * 64).status_code for _ in range(12)]
+    assert codes == [200] * 12
+    r = put(a, "a" * 64)
+    assert r.status_code == 429 and r.get_json()["code"] == "too_many_attempts"
+    assert r.headers["Retry-After"] == "60"
+    assert put(b, "b" * 64).status_code == 200  # same carrier IP, other handset
+
+
+@pytest.mark.parametrize("ended", ["logout", "revoked", "expired"])
+def test_ended_session_cannot_register_a_push_token(app, client, ended):
+    co, _ta, pn = _tenant(); _user(co, pn); db.session.commit()
+    tokens = _signed_in(client)
+    if ended == "logout":
+        assert client.post("/api/mobile/v1/auth/logout", headers=_auth(tokens)).status_code == 200
+    else:
+        field = "revoked_at" if ended == "revoked" else "access_expires_at"
+        MobileSession.query.update({field: datetime.utcnow() - timedelta(seconds=1)}); db.session.commit()
+    r = _put_token(client, tokens)
+    assert r.status_code == 401
+    db.session.expire_all()
+    assert MobileDevice.query.one().push_token is None
+
+
+@pytest.mark.parametrize("kind", ["push", "voice"])
+@pytest.mark.parametrize("holder", ["live", "same_install", "signed_out"])
+def test_cross_tenant_handset_claim(app, client, kind, holder):
+    """Another tenant's live install keeps its token; same install or a dead row is retired."""
+    co1, _ta, pn1 = _tenant("A"); _user(co1, pn1, "anna")
+    co2, _ta2, pn2 = _tenant("B", number="+14155550199"); _user(co2, pn2, "zed"); db.session.commit()
+    anna = _signed_in(client, "anna", UID_A)
+    claim = lambda tokens: (_put_token(client, tokens, token="v" * 64) if kind == "push" else
+                            client.post("/api/mobile/v1/devices/current/voice-registration", headers=_auth(tokens),
+                                        json={"registered": True, "voice_device_token": "v" * 64}))
+    assert claim(anna).status_code == 200
+    if holder == "signed_out":
+        assert client.post("/api/mobile/v1/auth/logout", headers=_auth(anna)).status_code == 200
+        if kind == "voice":  # logout clears the push token itself; keep a stale Voice hash
+            MobileDevice.query.filter_by(company_id=co1.id).update({"voice_token_hash": hashlib.sha256(b"v" * 64).hexdigest()})
+            db.session.commit()
+    zed = _signed_in(client, "zed", UID_A if holder == "same_install" else UID_B)
+    r = claim(zed)
+    db.session.expire_all()
+    anna_device = MobileDevice.query.filter_by(company_id=co1.id).one()
+    zed_device = MobileDevice.query.filter_by(company_id=co2.id).one()
+    if holder == "live":
+        assert r.status_code == 409 and r.get_json()["code"] == "conflict"
+        assert anna_device.status == "active"
+        assert (anna_device.push_token if kind == "push" else anna_device.voice_token_hash) is not None
+        assert zed_device.push_token is None and zed_device.voice_registered_at is None
+        assert client.get("/api/mobile/v1/me", headers=_auth(anna)).status_code == 200
+    else:
+        assert r.status_code == 200
+        assert anna_device.push_token is None and anna_device.voice_token_hash is None
+        assert anna_device.status == "signed_out"
