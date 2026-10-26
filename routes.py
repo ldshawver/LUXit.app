@@ -287,6 +287,16 @@ def _marketing_pages_allowed():
 
 from services.tenant_scope import tenant_get, tenant_get_or_404
 
+EMAIL_CAMPAIGN_DELIVERY_UNAVAILABLE = (
+    "Email campaign delivery isn't available yet, so nothing was sent. "
+    "Your campaign is saved as a draft."
+)
+
+def _ensure_admin_access():
+    if not current_user.is_authenticated or not current_user.is_admin_user:
+        return jsonify({'error': 'Admin access required'}), 403
+    return None
+
 
 def _current_company_id():
     try:
@@ -11097,10 +11107,10 @@ def send_campaign(campaign_id):
         if Campaign is not None:
             campaign = tenant_get(Campaign, campaign_id)
             if campaign:
-                campaign.status = 'sending'
-                db.session.commit()
-                log_activity(current_user.id, 'Sent campaign', campaign.name, 'send')
-                flash('Campaign is being sent!', 'success')
+                # Nothing delivers email campaigns yet (no worker reads 'sending',
+                # and campaign_recipient has no delivery-status columns). Saying
+                # "being sent" here told operators mail went out when none did.
+                flash(EMAIL_CAMPAIGN_DELIVERY_UNAVAILABLE, 'warning')
             else:
                 flash('Campaign not found.', 'danger')
     except Exception as e:

@@ -2165,6 +2165,19 @@ class Deal(db.Model):
     contact = db.relationship("Contact", backref="deals")
 
 
+class DealActivity(db.Model):
+    """Timeline entry on a deal (stage changes, notes). Tenant ownership comes
+    from the parent deal; every route checks the deal's company first."""
+    __tablename__ = "deal_activity"
+
+    id = db.Column(db.Integer, primary_key=True)
+    deal_id = db.Column(db.Integer, db.ForeignKey("deal.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True)
+    activity_type = db.Column(db.String(50), nullable=False, default="note")
+    description = db.Column(db.Text)
+    activity_date = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+
 class LeadScore(db.Model):
     __tablename__ = "lead_score"
 

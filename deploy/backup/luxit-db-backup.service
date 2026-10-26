@@ -1,0 +1,9 @@
+[Unit]
+Description=LUXit nightly verified database backup
+After=postgresql@17-main.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/luxit-db-backup.sh
+Nice=10
+IOSchedulingClass=idle

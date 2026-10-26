@@ -106,9 +106,15 @@ def test_marketing_preferences_precedence_email_and_sms(client, tenant_user, mon
     sms_campaign = SMSCampaign(company_id=company.id, name="SMS", message="Hi Reply STOP to opt out.", segment=None, status="draft")
     db.session.add_all([email_campaign, sms_campaign]); db.session.commit()
 
-    e = client.post(f"/api/marketing/campaigns/{email_campaign.id}/send").get_json()
+    resp = client.post(f"/api/marketing/campaigns/{email_campaign.id}/send")
+    e = resp.get_json()
+    # Email delivery is not implemented: the endpoint must refuse rather than
+    # report a send, while still applying the same suppression rules.
+    assert resp.status_code == 501 and e["success"] is False
     assert {s["reason"] for s in e["skipped"]} >= {"do_not_market", "do_not_email", "email_unsubscribed"}
-    assert CampaignRecipient.query.filter_by(campaign_id=email_campaign.id, contact_id=email_ok_sms_block.id).count() == 1
+    assert e["eligible"] >= 1
+    assert CampaignRecipient.query.filter_by(campaign_id=email_campaign.id).count() == 0
+    assert db.session.get(Campaign, email_campaign.id).status == "draft"
 
     sms_campaign.segment = None
     # Use legacy audience path by setting all contacts active and a segment value.

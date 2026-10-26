@@ -237,6 +237,12 @@ def test_cannot_add_activity_to_other_tenant_contact(world):
         assert ContactActivity.query.filter_by(contact_id=ids["contact_b"]).count() == 0
 
 
+def test_cannot_view_other_tenant_deal(world):
+    _, client_for, ids, _ = world
+    resp = client_for(ids["owner_a"]).get(f"/crm/deals/{ids['deal_b']}")
+    assert resp.status_code == 404
+
+
 def test_cannot_toggle_or_delete_other_tenant_automation(world):
     app, client_for, ids, _ = world
     c = client_for(ids["owner_a"])
@@ -271,6 +277,23 @@ def test_cannot_reschedule_other_tenant_campaigns_from_calendar(world):
     with app.app_context():
         assert db.session.get(SMSCampaign, ids["sms_b"]).scheduled_at is None
         assert db.session.get(Campaign, ids["camp_b"]).scheduled_at is None
+
+
+def test_own_deal_detail_and_stage_change_work(world):
+    app, client_for, ids, _ = world
+    with app.app_context():
+        deal = Deal(company_id=ids["a"], name="A deal", stage="lead", value=10)
+        db.session.add(deal)
+        db.session.commit()
+        deal_id = deal.id
+    c = client_for(ids["owner_a"])
+    assert c.get(f"/crm/deals/{deal_id}").status_code == 200
+    resp = c.post(f"/crm/deals/{deal_id}/update-stage", json={"stage": "proposal"})
+    assert resp.status_code == 200 and resp.get_json()["success"]
+    with app.app_context():
+        from models import DealActivity
+        assert db.session.get(Deal, deal_id).stage == "proposal"
+        assert DealActivity.query.filter_by(deal_id=deal_id, activity_type="stage_change").count() == 1
 
 
 def test_unhandled_error_does_not_persist_partial_writes(world):

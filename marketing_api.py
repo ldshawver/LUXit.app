@@ -1222,16 +1222,19 @@ def api_contact_marketing_preferences(contact_id):
 @login_required
 def api_email_campaign_send(campaign_id):
     c = Campaign.query.filter_by(id=campaign_id, company_id=tenant_id()).first_or_404()
-    contacts = _audience_query(c.company_id).all(); sent = 0; skipped = []
-    for contact in contacts:
+    # This endpoint used to write campaign_recipient rows and flip the campaign
+    # to "sent", but nothing ever delivered email. Until a delivery worker
+    # exists it reports who *would* be eligible (same suppression rules) and
+    # refuses, so no one is told a send happened.
+    eligible = 0; skipped = []
+    for contact in _audience_query(c.company_id).all():
         reason = marketing_skip_reason(contact, "email")
         if reason:
             skipped.append({"contact_id": contact.id, "reason": reason})
-            _audit(c.company_id, "campaign_contact_skipped_suppression", "campaign", c.id, {"contact_id": contact.id, "reason": reason, "channel": "email"})
-            continue
-        db.session.add(CampaignRecipient(campaign_id=c.id, contact_id=contact.id)); sent += 1
-    c.status = "sent"; c.sent_at = datetime.utcnow(); db.session.commit()
-    return jsonify({"success": True, "sent": sent, "skipped": skipped})
+        else:
+            eligible += 1
+    return _json_error("Email campaign delivery is not available yet; nothing was sent.", 501,
+                       campaign_id=c.id, campaign_status=c.status, eligible=eligible, skipped=skipped)
 
 # ---------------------------------------------------------------------------
 # Contact Intelligence / CRM admin APIs
