@@ -1136,6 +1136,39 @@ class ContactTask(db.Model):
     contact = db.relationship("Contact", backref=db.backref("contact_tasks", lazy="dynamic"))
 
 
+class RelationshipMemory(db.Model):
+    """Something worth remembering about a relationship (M2): a commitment,
+    a follow-up, a fact or a summary. Detected or AI-derived items start
+    ``pending`` and are confirmed, corrected or rejected by a person; every
+    item cites the rows it came from in ``source_refs``.
+    """
+    __tablename__ = "relationship_memory"
+    __table_args__ = (db.UniqueConstraint("company_id", "dedupe_key", name="uq_relationship_memory_dedupe"),)
+
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id", ondelete="CASCADE"), nullable=False, index=True)
+    contact_id = db.Column(db.Integer, db.ForeignKey("contact.id", ondelete="CASCADE"), nullable=False, index=True)
+    kind = db.Column(db.String(30), nullable=False)            # commitment | follow_up | fact | summary
+    text = db.Column(db.Text, nullable=False)
+    corrected_text = db.Column(db.Text, nullable=True)
+    due_at = db.Column(db.DateTime, nullable=True, index=True)
+    origin = db.Column(db.String(20), nullable=False, default="rule")   # rule | ai | user
+    confidence = db.Column(db.Float, nullable=True)
+    review_state = db.Column(db.String(20), nullable=False, default="pending", index=True)  # pending | confirmed | rejected
+    source_refs = db.Column(JSON, default=list)
+    dedupe_key = db.Column(db.String(160), nullable=True)
+    task_id = db.Column(db.Integer, db.ForeignKey("contact_task.id", ondelete="SET NULL"), nullable=True)
+    created_by_user_id = db.Column(db.Integer, db.ForeignKey("user.id", ondelete="SET NULL"), nullable=True)
+    reviewed_by_user_id = db.Column(db.Integer, db.ForeignKey("user.id", ondelete="SET NULL"), nullable=True)
+    reviewed_at = db.Column(db.DateTime, nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    @property
+    def effective_text(self):
+        return self.corrected_text or self.text
+
+
 class ContactIntelligenceJob(db.Model):
     __tablename__ = "contact_intelligence_job"
     id = db.Column(db.Integer, primary_key=True)

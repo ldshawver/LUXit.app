@@ -9485,7 +9485,8 @@ def contact_activities(contact_id):
     activities = ContactActivity.query.filter_by(
         contact_id=contact_id, company_id=contact.company_id
     ).order_by(ContactActivity.created_at.desc()).all()
-    return render_template('contact_activities.html', contact=contact, activities=activities)
+    return render_template('contact_activities.html', contact=contact, activities=activities,
+                           can_edit_relationship=current_user.can_edit_company(contact.company_id))
 
 @main_bp.route('/contacts/<int:contact_id>/activities/add', methods=['POST'])
 @login_required
@@ -9524,6 +9525,105 @@ def get_contact_activities_api(contact_id):
             'created_at': a.created_at.isoformat() if a.created_at else None,
         }
     return jsonify({'success': True, 'activities': [_row(a) for a in activities]})
+
+
+def _relationship_editor_company_id():
+    """Workspace id when the caller may change relationship data, else None."""
+    from services.tenant_scope import current_company_id
+    company_id = current_company_id()
+    if company_id is None or not current_user.can_edit_company(company_id):
+        return None
+    return company_id
+
+
+@main_bp.route('/api/contacts/<int:contact_id>/briefing', methods=['GET'])
+@login_required
+def get_contact_briefing_api(contact_id):
+    """Pre-outreach briefing: activity, consent, open work, memory, next actions."""
+    from services.relationship_intelligence import build_briefing
+    from services.tenant_scope import current_company_id
+    briefing = build_briefing(current_company_id(), contact_id)
+    if briefing is None:
+        return jsonify({'success': False, 'error': 'Contact not found'}), 404
+    return jsonify({'success': True, **briefing})
+
+
+@main_bp.route('/api/contacts/<int:contact_id>/memories/scan', methods=['POST'])
+@login_required
+def scan_contact_memories_api(contact_id):
+    """Detect commitments and follow-ups in this contact's history (stored pending)."""
+    from services.relationship_intelligence import memory_dict, scan_contact
+    company_id = _relationship_editor_company_id()
+    if company_id is None:
+        return jsonify({'success': False, 'error': 'You do not have permission to change this contact.'}), 403
+    created = scan_contact(company_id, contact_id)
+    if created is None:
+        return jsonify({'success': False, 'error': 'Contact not found'}), 404
+    db.session.commit()
+    return jsonify({'success': True, 'created': [memory_dict(m) for m in created]})
+
+
+@main_bp.route('/api/contacts/<int:contact_id>/memories', methods=['POST'])
+@login_required
+def add_contact_memory_api(contact_id):
+    from services.relationship_intelligence import ReviewError, add_memory, memory_dict
+    company_id = _relationship_editor_company_id()
+    if company_id is None:
+        return jsonify({'success': False, 'error': 'You do not have permission to change this contact.'}), 403
+    data = request.get_json(silent=True) or request.form
+    due_at = None
+    if data.get('due_at'):
+        try:
+            due_at = datetime.fromisoformat(data.get('due_at'))
+        except ValueError:
+            return jsonify({'success': False, 'error': 'Invalid due date.'}), 400
+    try:
+        memory = add_memory(company_id, contact_id, current_user, data.get('kind') or 'fact', data.get('text'), due_at)
+    except ReviewError as exc:
+        return jsonify({'success': False, 'error': str(exc)}), 400
+    if memory is None:
+        return jsonify({'success': False, 'error': 'Contact not found'}), 404
+    db.session.commit()
+    return jsonify({'success': True, 'memory': memory_dict(memory)}), 201
+
+
+@main_bp.route('/api/contacts/<int:contact_id>/memories/<int:memory_id>/review', methods=['POST'])
+@login_required
+def review_contact_memory_api(contact_id, memory_id):
+    """Confirm, correct, reject or reopen a detected/AI-derived memory."""
+    from services.relationship_intelligence import ReviewError, get_memory, memory_dict, review
+    company_id = _relationship_editor_company_id()
+    if company_id is None:
+        return jsonify({'success': False, 'error': 'You do not have permission to change this contact.'}), 403
+    memory = get_memory(company_id, contact_id, memory_id)
+    if memory is None:
+        return jsonify({'success': False, 'error': 'Not found'}), 404
+    data = request.get_json(silent=True) or request.form
+    try:
+        review(memory, current_user, data.get('action'), data.get('text'))
+    except ReviewError as exc:
+        return jsonify({'success': False, 'error': str(exc)}), 400
+    db.session.commit()
+    return jsonify({'success': True, 'memory': memory_dict(memory)})
+
+
+@main_bp.route('/api/contacts/<int:contact_id>/memories/<int:memory_id>/task', methods=['POST'])
+@login_required
+def memory_to_task_api(contact_id, memory_id):
+    """Turn a commitment or follow-up into a task."""
+    from services.relationship_intelligence import ReviewError, create_task_from_memory, get_memory, memory_dict
+    company_id = _relationship_editor_company_id()
+    if company_id is None:
+        return jsonify({'success': False, 'error': 'You do not have permission to change this contact.'}), 403
+    memory = get_memory(company_id, contact_id, memory_id)
+    if memory is None:
+        return jsonify({'success': False, 'error': 'Not found'}), 404
+    try:
+        task = create_task_from_memory(memory, current_user)
+    except ReviewError as exc:
+        return jsonify({'success': False, 'error': str(exc)}), 400
+    db.session.commit()
+    return jsonify({'success': True, 'task_id': task.id, 'memory': memory_dict(memory)})
 
 
 @main_bp.route('/api/contacts/<int:contact_id>/timeline', methods=['GET'])
