@@ -1,0 +1,22 @@
+{% extends "auth/_signup_base.html" %}
+{% block title %}Invitation{% endblock %}
+{% block content %}
+{% if outcome == 'used' %}
+<h1>Invitation already used</h1>
+<p class="sub">This invitation has been accepted. Sign in to continue.</p>
+{% elif outcome == 'expired' %}
+<h1>This invitation has expired</h1>
+<p class="sub">Invitations work for 7 days. Ask the workspace admin to send a new one.</p>
+{% elif outcome == 'wrong_account' %}
+<h1>Signed in as someone else</h1>
+<p class="sub">This invitation to {{ company.name }} was sent to a different email address. Sign out, then open the link again.</p>
+<p class="muted"><a href="{{ url_for('auth.logout') }}">Sign out</a></p>
+{% elif outcome == 'error' %}
+<h1>Couldn't join {{ company.name if company else 'the workspace' }}</h1>
+<div class="result-box result-error">{{ message }}</div>
+{% else %}
+<h1>This invitation isn't valid</h1>
+<p class="sub">The link may have been replaced or withdrawn. Ask the workspace admin to send a new one.</p>
+{% endif %}
+<p class="muted"><a href="{{ url_for('auth.login') }}">← Back to sign in</a></p>
+{% endblock %}

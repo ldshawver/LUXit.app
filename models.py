@@ -3619,6 +3619,27 @@ class CompanyPlanPolicy(db.Model):
     created_at  = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
 
 
+class TeamInvitation(db.Model):
+    """Single-use invitation into a workspace (T-5). Only the token's hash is stored."""
+    __tablename__ = "team_invitation"
+
+    id                 = db.Column(db.Integer, primary_key=True)
+    company_id         = db.Column(db.Integer, db.ForeignKey("company.id", ondelete="CASCADE"), nullable=False, index=True)
+    email              = db.Column(db.String(120), nullable=False, index=True)
+    role               = db.Column(db.String(32), nullable=False, default="member")
+    token_hash         = db.Column(db.String(64), nullable=False, unique=True)
+    invited_by_user_id = db.Column(db.Integer, db.ForeignKey("user.id", ondelete="SET NULL"), nullable=True)
+    created_at         = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    expires_at         = db.Column(db.DateTime, nullable=False)
+    accepted_at        = db.Column(db.DateTime, nullable=True)
+    accepted_user_id   = db.Column(db.Integer, db.ForeignKey("user.id", ondelete="SET NULL"), nullable=True)
+    revoked_at         = db.Column(db.DateTime, nullable=True)
+
+    @property
+    def is_pending(self):
+        return not self.accepted_at and not self.revoked_at and self.expires_at > datetime.utcnow()
+
+
 # ---------------------------------------------------------------------------
 # Twilio Multi-Tenant SMS / Call Platform
 # ---------------------------------------------------------------------------

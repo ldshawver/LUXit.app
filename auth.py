@@ -482,6 +482,103 @@ def resend_verification():
     return render_template("auth/signup_sent.html", show_resend=False, resent=True)
 
 
+@auth_bp.route("/invite/<token>", methods=["GET", "POST"])
+@limiter.limit("20 per hour", methods=["POST"])
+def accept_invite(token):
+    """Join a workspace from an emailed invitation (T-5).
+
+    Holding the token proves control of the invited inbox, so it may reveal
+    whether that address already has an account and counts as verifying it.
+    """
+    from services import invitations as inv_svc
+    from services import signup as signup_svc
+
+    invitation, state = inv_svc.find_by_token(token)
+    company = db.session.get(Company, invitation.company_id) if invitation else None
+    if state != "pending" or company is None:
+        return render_template("auth/invite_result.html", outcome=state if state != "pending" else "invalid")
+
+    def _join(user):
+        try:
+            inv_svc.accept(invitation, user)
+            db.session.commit()
+        except inv_svc.InvitationError as exc:
+            db.session.rollback()
+            return render_template("auth/invite_result.html", outcome="error", message=str(exc), company=company), 409
+        flash(f"You've joined {company.name}.", "success")
+        return _hub_redirect(user)
+
+    if current_user.is_authenticated:
+        if (current_user.email or "").strip().lower() != invitation.email:
+            return render_template("auth/invite_result.html", outcome="wrong_account", company=company,
+                                   invitation=invitation), 403
+        if request.method == "POST":
+            return _join(current_user)
+        return render_template("auth/invite_accept.html", mode="join", company=company, invitation=invitation,
+                               token=token, errors=[])
+
+    existing = User.query.filter(db.func.lower(User.email) == invitation.email).first()
+    if existing is not None:
+        from models import UserEmailVerification
+        pending = db.session.get(UserEmailVerification, existing.id)
+        if pending is not None and pending.verified_at is None:
+            from datetime import datetime as _dt
+            pending.verified_at = _dt.utcnow()
+            db.session.commit()
+        return render_template("auth/invite_accept.html", mode="signin", company=company, invitation=invitation,
+                               token=token, errors=[],
+                               login_url=url_for("auth.login", next=url_for("auth.accept_invite", token=token)))
+
+    if request.method == "GET":
+        return render_template("auth/invite_accept.html", mode="create", company=company, invitation=invitation,
+                               token=token, errors=[], form={})
+
+    form = {"full_name": (request.form.get("full_name") or "").strip()}
+    password = request.form.get("password") or ""
+    errors = []
+    if len(form["full_name"]) > 128:
+        errors.append("Name is too long.")
+    if len(password) < signup_svc.MIN_PASSWORD:
+        errors.append(f"Password must be at least {signup_svc.MIN_PASSWORD} characters.")
+    elif password != (request.form.get("confirm_password") or ""):
+        errors.append("Passwords do not match.")
+    if errors:
+        return render_template("auth/invite_accept.html", mode="create", company=company, invitation=invitation,
+                               token=token, errors=errors, form=form), 400
+
+    from werkzeug.security import generate_password_hash
+    first, _, last = form["full_name"].partition(" ")
+    user = User(
+        username=signup_svc._unique_username(invitation.email),
+        email=invitation.email,
+        password_hash=generate_password_hash(password),
+        is_admin=False,
+        default_company_id=company.id,
+        first_name=first[:64] or None,
+        last_name=last[:64] or None,
+    )
+    try:
+        db.session.add(user)
+        db.session.flush()
+        inv_svc.accept(invitation, user)
+        db.session.commit()
+    except inv_svc.InvitationError as exc:
+        db.session.rollback()
+        return render_template("auth/invite_result.html", outcome="error", message=str(exc), company=company), 409
+    except SQLAlchemyError:
+        db.session.rollback()
+        logger.warning("Invite: account creation failed", exc_info=True)
+        return render_template("auth/invite_result.html", outcome="error", company=company,
+                               message="We couldn't create your account. Try the link again."), 409
+
+    from flask import session as _session
+    _session.permanent = True
+    login_user(user, remember=True)
+    _session["user_session_revoked_at"] = None
+    flash(f"Welcome to {company.name}.", "success")
+    return _hub_redirect(user)
+
+
 @auth_bp.route("/register", methods=["GET", "POST"])
 def register():
     from extensions import db as _db

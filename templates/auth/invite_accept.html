@@ -1,0 +1,30 @@
+{% extends "auth/_signup_base.html" %}
+{% block title %}Join {{ company.name }}{% endblock %}
+{% block content %}
+<h1>Join {{ company.name }}</h1>
+<p class="sub">You've been invited to the {{ company.name }} workspace on LUXit as <strong>{{ invitation.role }}</strong> ({{ invitation.email }}).</p>
+{% if errors %}
+<div class="result-box result-error"><ul>{% for e in errors %}<li>{{ e }}</li>{% endfor %}</ul></div>
+{% endif %}
+{% if mode == 'join' %}
+<form method="POST">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <button type="submit">Join workspace</button>
+</form>
+{% elif mode == 'signin' %}
+<p class="sub">This email already has a LUXit account. Sign in to accept the invitation.</p>
+<p><a href="{{ login_url }}" style="display:block;text-align:center;padding:12px 16px;border-radius:10px;background:linear-gradient(120deg,#7c3aed,#4f46e5);color:#fff;font-weight:600;text-decoration:none;">Sign in to join</a></p>
+<p class="muted"><a href="{{ url_for('auth.forgot_password') }}">Forgot your password?</a></p>
+{% else %}
+<form method="POST" autocomplete="on">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <label for="full_name">Your name</label>
+  <input id="full_name" name="full_name" type="text" autocomplete="name" maxlength="128" value="{{ form.full_name or '' }}">
+  <label for="password">Choose a password</label>
+  <input id="password" name="password" type="password" autocomplete="new-password" minlength="8" required>
+  <label for="confirm_password">Confirm password</label>
+  <input id="confirm_password" name="confirm_password" type="password" autocomplete="new-password" minlength="8" required>
+  <button type="submit">Create account and join</button>
+</form>
+{% endif %}
+{% endblock %}

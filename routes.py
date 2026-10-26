@@ -10,7 +10,7 @@ from flask import Blueprint, render_template, request, flash, redirect, url_for,
 from flask_login import login_required, current_user
 from sqlalchemy import or_, case, text, func
 from sqlalchemy.exc import IntegrityError
-from extensions import db, csrf
+from extensions import db, csrf, limiter
 from services.contact_consent import has_explicit_email_opt_out, has_sms_opt_out, suppression_badges
 try:
     from models import (
@@ -6673,6 +6673,15 @@ def manage_users():
             except Exception:
                 logger.exception("manage_users: comms state load failed")
 
+        pending_invites, invitable_roles = [], ()
+        if company and can_manage_users(current_user, company.id):
+            from services.invitations import INVITABLE_ROLES, pending_invitations
+            try:
+                pending_invites, invitable_roles = pending_invitations(company.id), INVITABLE_ROLES
+            except Exception:
+                db.session.rollback()
+                logger.exception("manage_users: invitations unavailable")
+
         return render_template(
             'manage_users.html',
             users=users,
@@ -6682,6 +6691,8 @@ def manage_users():
             comms_by_user=comms_by_user,
             can_manage_comms=can_manage_comms,
             current_company=company,
+            pending_invitations=pending_invites,
+            invitable_roles=invitable_roles,
         )
     except Exception as e:
         logger.error("manage_users error: %s", e)
@@ -11898,6 +11909,57 @@ def add_user():
             return redirect(url_for('main.add_user'))
     
     return render_template('add_user.html')
+
+
+@main_bp.route('/user/invite', methods=['POST'])
+@login_required
+@limiter.limit("30 per hour")
+def invite_user():
+    """Email a single-use invitation into the current workspace (T-5)."""
+    from services import invitations as inv_svc
+    company = current_user.get_default_company()
+    if not company or not inv_svc.can_invite(current_user, company.id):
+        flash('Access denied. You need owner or manage-users permission.', 'danger')
+        return redirect(url_for('main.dashboard'))
+    try:
+        invitation, token = inv_svc.create_invitation(
+            company, current_user, request.form.get('email'), request.form.get('role') or inv_svc.DEFAULT_ROLE)
+        db.session.commit()
+    except inv_svc.InvitationError as exc:
+        db.session.rollback()
+        flash(str(exc), 'error')
+        return redirect(url_for('main.manage_users'))
+    from auth import _send_account_email
+    accept_url = url_for('auth.accept_invite', token=token, _external=True)
+    inviter_name = ' '.join(filter(None, [current_user.first_name, current_user.last_name])) or current_user.username
+    sent = _send_account_email(
+        invitation.email,
+        f"You're invited to {company.name} on LUXit",
+        render_template('auth/email_invite.html', company=company, invitation=invitation,
+                        inviter_name=inviter_name, accept_url=accept_url),
+    )
+    if sent:
+        flash(f'Invitation sent to {invitation.email}.', 'success')
+    else:
+        flash(f'Invitation created for {invitation.email}, but the email could not be sent. '
+              f'Revoke it and try again once email is working.', 'warning')
+    return redirect(url_for('main.manage_users'))
+
+
+@main_bp.route('/user/invite/<int:invitation_id>/revoke', methods=['POST'])
+@login_required
+def revoke_invitation(invitation_id):
+    from services import invitations as inv_svc
+    company = current_user.get_default_company()
+    if not company or not inv_svc.can_invite(current_user, company.id):
+        flash('Access denied.', 'danger')
+        return redirect(url_for('main.dashboard'))
+    if inv_svc.revoke(company.id, invitation_id):
+        db.session.commit()
+        flash('Invitation revoked.', 'success')
+    else:
+        flash('Invitation not found.', 'error')
+    return redirect(url_for('main.manage_users'))
 
 
 @main_bp.route('/notifications')

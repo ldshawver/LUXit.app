@@ -35,6 +35,44 @@
   </div>
 </div>
 
+{% if invitable_roles and not show_archived %}
+<div class="card mb-3">
+  <div class="card-body">
+    <h5 class="card-title mb-2"><i data-feather="mail"></i> Invite a teammate</h5>
+    <p class="text-muted small mb-2">They get an email link to set their own password and join this workspace.
+      {% if current_company.max_team_members %}Seats: {{ current_company.team_member_count }} used of {{ current_company.max_team_members }}{% if pending_invitations %}, {{ pending_invitations|length }} pending{% endif %}.{% endif %}</p>
+    <form method="POST" action="{{ url_for('main.invite_user') }}" class="row g-2 align-items-end">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+      <div class="col-12 col-md-6">
+        <label for="invite_email" class="form-label small mb-1">Email</label>
+        <input id="invite_email" name="email" type="email" class="form-control" required maxlength="120">
+      </div>
+      <div class="col-7 col-md-3">
+        <label for="invite_role" class="form-label small mb-1">Role</label>
+        <select id="invite_role" name="role" class="form-select">
+          {% for r in invitable_roles %}<option value="{{ r }}" {{ 'selected' if r == 'viewer' }}>{{ r|capitalize }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="col-5 col-md-3"><button type="submit" class="btn btn-primary w-100">Send invite</button></div>
+    </form>
+    {% if pending_invitations %}
+    <ul class="list-group list-group-flush mt-3">
+      {% for inv in pending_invitations %}
+      <li class="list-group-item d-flex justify-content-between align-items-center flex-wrap gap-2 px-0">
+        <span>{{ inv.email }} <span class="badge bg-secondary">{{ inv.role }}</span>
+          <small class="text-muted">expires {{ inv.expires_at.strftime('%m/%d/%Y') }}</small></span>
+        <form method="POST" action="{{ url_for('main.revoke_invitation', invitation_id=inv.id) }}" class="d-inline">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+          <button type="submit" class="btn btn-sm btn-outline-danger">Revoke</button>
+        </form>
+      </li>
+      {% endfor %}
+    </ul>
+    {% endif %}
+  </div>
+</div>
+{% endif %}
+
 <div class="table-responsive">
     <table class="table table-striped align-middle">
         <thead>
