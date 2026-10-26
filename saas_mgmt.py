@@ -466,18 +466,21 @@ stripe_webhook_bp = Blueprint("stripe_webhook", __name__)
 # Stripe Checkout & Customer Portal — public-facing API
 # ---------------------------------------------------------------------------
 
-def _user_can_access_company(user, company):
-    """Authorization check: does the current user have access to a company?"""
+def _user_can_manage_billing(user, company):
+    """Can this user start checkout / open the portal / report usage for company?
+
+    Owners and admins of the workspace only (or a platform admin). Plain
+    membership isn't enough: the Stripe portal can cancel the subscription.
+    """
     if not user or not user.is_authenticated or not company:
         return False
     if getattr(user, "is_admin", False):
         return True
-    if user.default_company_id == company.id:
-        return True
     from models import UserCompanyAccess
-    return UserCompanyAccess.query.filter_by(
+    access = UserCompanyAccess.query.filter_by(
         user_id=user.id, company_id=company.id
-    ).first() is not None
+    ).first()
+    return access is not None and access.can_admin()
 
 
 @stripe_webhook_bp.route("/api/stripe/create-checkout-session", methods=["POST"])
@@ -531,7 +534,7 @@ def create_checkout_session():
         company = db.session.get(Company, current_user.default_company_id)
     if not company:
         return jsonify({"error": "company not found"}), 404
-    if not _user_can_access_company(current_user, company):
+    if not _user_can_manage_billing(current_user, company):
         return jsonify({"error": "forbidden"}), 403
 
     # Server-side guard: if this company has already paid the one-time setup
@@ -596,7 +599,7 @@ def create_portal_session():
         company = db.session.get(Company, current_user.default_company_id)
     if not company:
         return jsonify({"error": "company not found"}), 404
-    if not _user_can_access_company(current_user, company):
+    if not _user_can_manage_billing(current_user, company):
         return jsonify({"error": "forbidden"}), 403
     if not company.stripe_customer_id:
         return jsonify({"error": "no stripe customer on file for this company"}), 400
@@ -626,8 +629,7 @@ def report_contact_usage_endpoint():
     """Manual trigger for the ``contacts_usage`` metered usage record.
 
     Body: ``{"company_id": "..."}``. Authorization is the same as
-    ``create-checkout-session``: the caller must be admin or attached to the
-    company. Intended for an admin-only "Recompute usage now" button or a
+    ``create-checkout-session``: platform admin, or owner/admin of the company. Intended for an admin-only "Recompute usage now" button or a
     scheduled job hitting it as the admin user; a real cron should call the
     underlying ``services.stripe_billing.report_contact_usage`` directly.
     """
@@ -646,7 +648,7 @@ def report_contact_usage_endpoint():
         company = db.session.get(Company, current_user.default_company_id)
     if not company:
         return jsonify({"error": "company not found"}), 404
-    if not _user_can_access_company(current_user, company):
+    if not _user_can_manage_billing(current_user, company):
         return jsonify({"error": "forbidden"}), 403
 
     try:
