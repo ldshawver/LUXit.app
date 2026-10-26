@@ -489,6 +489,8 @@ def create_app() -> Flask:
     app.register_blueprint(email_unsubscribe_bp)
     from crm_workspace_bp import crm_workspace_bp
     app.register_blueprint(crm_workspace_bp)
+    from unified_comms_bp import unified_comms_bp
+    app.register_blueprint(unified_comms_bp)
     try:
         from feedback import feedback_bp
         app.register_blueprint(feedback_bp)

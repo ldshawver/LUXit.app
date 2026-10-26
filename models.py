@@ -4620,6 +4620,68 @@ class ApiHubAuditLog(db.Model):
 # Phase A — Multi-Number VoIP Architecture
 # ======
 
+class BusinessIdentity(db.Model):
+    """How a workspace presents itself on one line of business (M4): a name,
+    the phone numbers it texts/calls from, and its email sender + signature.
+    Routing: a conversation belongs to the identity owning its business
+    number; a workspace may have one default identity.
+    """
+    __tablename__ = "business_identity"
+
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id", ondelete="CASCADE"), nullable=False, index=True)
+    name = db.Column(db.String(120), nullable=False)
+    email_from_name = db.Column(db.String(120), nullable=True)
+    email_from_address = db.Column(db.String(255), nullable=True)
+    signature = db.Column(db.Text, nullable=True)
+    is_default = db.Column(db.Boolean, default=False, nullable=False)
+    is_active = db.Column(db.Boolean, default=True, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class BusinessIdentityNumber(db.Model):
+    """A business phone number belongs to at most one identity."""
+    __tablename__ = "business_identity_number"
+
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id", ondelete="CASCADE"), nullable=False, index=True)
+    identity_id = db.Column(db.Integer, db.ForeignKey("business_identity.id", ondelete="CASCADE"), nullable=False, index=True)
+    phone_number_id = db.Column(db.Integer, db.ForeignKey("twilio_phone_number.id", ondelete="CASCADE"),
+                                nullable=False, unique=True)
+
+
+class EmailMessage(db.Model):
+    """One 1:1 email to or from a contact (M4 communication history).
+
+    Inbound mail comes from a mailbox adapter; outbound from LUXit sends.
+    ``provider_message_id`` is unique per workspace so re-syncing a mailbox
+    never duplicates history. Unknown senders are stored unlinked
+    (``contact_id`` NULL) rather than creating contacts from email.
+    """
+    __tablename__ = "email_message"
+    __table_args__ = (db.UniqueConstraint("company_id", "provider_message_id", name="uq_email_message_provider_id"),)
+
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id", ondelete="CASCADE"), nullable=False, index=True)
+    contact_id = db.Column(db.Integer, db.ForeignKey("contact.id", ondelete="SET NULL"), nullable=True, index=True)
+    identity_id = db.Column(db.Integer, db.ForeignKey("business_identity.id", ondelete="SET NULL"), nullable=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id", ondelete="SET NULL"), nullable=True)
+    direction = db.Column(db.String(10), nullable=False)          # inbound | outbound
+    mailbox = db.Column(db.String(255), nullable=True)
+    from_address = db.Column(db.String(255), nullable=True)
+    to_addresses = db.Column(JSON, default=list)
+    cc_addresses = db.Column(JSON, default=list)
+    subject = db.Column(db.String(500), nullable=True)
+    body_text = db.Column(db.Text, nullable=True)
+    thread_key = db.Column(db.String(255), nullable=True, index=True)
+    provider = db.Column(db.String(40), nullable=True)            # graph | gmail | smtp | manual
+    provider_message_id = db.Column(db.String(255), nullable=True)
+    status = db.Column(db.String(30), nullable=False, default="received")
+    occurred_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False, index=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+
 class TwilioPhoneNumber(db.Model):
     """One row per Twilio phone number. Single source of truth for routing.
     TwilioAccount holds credentials; TwilioPhoneNumber holds per-number config."""

@@ -26,7 +26,7 @@ from extensions import db
 
 logger = logging.getLogger(__name__)
 
-KINDS = ("activity", "message", "call", "voicemail", "task", "opportunity", "deal", "touchpoint", "source")
+KINDS = ("activity", "message", "email", "call", "voicemail", "task", "opportunity", "deal", "touchpoint", "source")
 MAX_LIMIT = 200
 _MAX_MERGE_HOPS = 10
 _SUMMARY_LEN = 280
@@ -152,6 +152,21 @@ def _messages(cid, ids, phones, emails, before, limit, canon):
     return out
 
 
+def _emails(cid, ids, phones, emails, before, limit, canon):
+    from models import EmailMessage
+    q = EmailMessage.query.filter(EmailMessage.company_id == cid, EmailMessage.contact_id.in_(ids))
+    out = []
+    for m in _since(q, EmailMessage.occurred_at, before).order_by(EmailMessage.occurred_at.desc()).limit(limit):
+        inbound = m.direction == "inbound"
+        out.append(_entry(
+            "email", "email_message", m.id, m.occurred_at, contact_id=m.contact_id, canonical_id=canon,
+            title=("Email received" if inbound else "Email sent") + (f": {m.subject}" if m.subject else ""),
+            summary=m.body_text, channel="email", direction=m.direction, status=m.status,
+            actor_user_id=m.user_id, provenance=m.provider or "email",
+        ))
+    return out
+
+
 def _calls(cid, ids, phones, emails, before, limit, canon):
     from models import TwilioCallLog
     match = [TwilioCallLog.contact_id.in_(ids)]
@@ -264,7 +279,7 @@ def _sources(cid, ids, phones, emails, before, limit, canon):
 
 
 _COLLECTORS = {
-    "activity": _activities, "message": _messages, "call": _calls, "voicemail": _voicemails,
+    "activity": _activities, "message": _messages, "email": _emails, "call": _calls, "voicemail": _voicemails,
     "task": _tasks, "opportunity": _opportunities, "deal": _deals, "touchpoint": _touchpoints,
     "source": _sources,
 }

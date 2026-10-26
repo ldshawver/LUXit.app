@@ -106,7 +106,7 @@ def scan_contact(company_id, contact_id):
     from services.contact_timeline import build_timeline
 
     timeline = build_timeline(company_id, contact_id, limit=SCAN_WINDOW,
-                              kinds=["message", "voicemail", "call", "activity"])
+                              kinds=["message", "email", "voicemail", "call", "activity"])
     if timeline is None:
         return None
     canonical_id = timeline["canonical_contact_id"]
@@ -248,7 +248,7 @@ def build_briefing(company_id, contact_id, now=None):
     contact = db.session.get(Contact, canonical_id)
     entries = timeline["entries"]
 
-    comms = [e for e in entries if e["kind"] in ("message", "call", "voicemail")]
+    comms = [e for e in entries if e["kind"] in ("message", "email", "call", "voicemail")]
     inbound = [e for e in comms if e.get("direction") == "inbound"]
     outbound = [e for e in comms if e.get("direction") == "outbound"]
     last_in = inbound[0] if inbound else None
