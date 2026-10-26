@@ -409,6 +409,12 @@ def create_app() -> Flask:
         return response
 
 
+    from services.entitlements import PlanLimitReached, plan_limit_response
+
+    @app.errorhandler(PlanLimitReached)
+    def handle_plan_limit(error):
+        return plan_limit_response(error)
+
     @app.errorhandler(Exception)
     def handle_unhandled_exception(error):
         from werkzeug.exceptions import HTTPException

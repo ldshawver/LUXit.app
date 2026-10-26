@@ -121,6 +121,7 @@ except ImportError as exc:
     logging.getLogger(__name__).warning("Scheduling service unavailable: %s", exc)
     SchedulingService = None
 from uuid import uuid4
+from services.entitlements import PlanLimitReached
 
 logger = logging.getLogger(__name__)
 
@@ -9922,6 +9923,8 @@ def api_agent_chat():
             logger.warning("Agent chat disabled: missing OPENAI_API_KEY.")
             return jsonify({'success': True, 'response': "I'm sorry, but I can't process your request right now. Please ensure the OpenAI API key is configured."})
         
+        from services.entitlements import require_ai_entitlement
+        require_ai_entitlement()
         client = OpenAI(api_key=api_key)
         
         response = client.chat.completions.create(
@@ -9938,6 +9941,8 @@ def api_agent_chat():
         
         return jsonify({'success': True, 'response': agent_response})
         
+    except PlanLimitReached:
+        raise
     except Exception as e:
         logger.error(f"Agent chat error: {e}")
         return jsonify({'success': True, 'response': f"I apologize, but I encountered an error. Please try again later."})
@@ -10072,6 +10077,8 @@ def get_agent_suggestions(agent_type):
                 'suggestions': []
             }), 503
 
+        from services.entitlements import require_ai_entitlement
+        require_ai_entitlement()
         client = OpenAI(api_key=api_key)
 
         try:
@@ -10104,6 +10111,8 @@ def get_agent_suggestions(agent_type):
 
         return jsonify({'success': True, 'suggestions': suggestions})
 
+    except PlanLimitReached:
+        raise
     except Exception as e:
         logger.error(f"Agent suggestions error: {e}")
         return jsonify({'success': False, 'error': str(e), 'suggestions': []}), 500
@@ -10199,6 +10208,8 @@ def create_agent_report(agent_type):
             api_key = _gpc("openai", "platform")
         except Exception:
             api_key = None
+        from services.entitlements import require_ai_entitlement
+        require_ai_entitlement()
         if api_key:
             try:
                 client = OpenAI(api_key=api_key)
@@ -10238,6 +10249,8 @@ Format as clean, professional markdown."""
             'status': 'completed' if report.report_data else 'generating'
         })
         
+    except PlanLimitReached:
+        raise
     except Exception as e:
         db.session.rollback()
         logger.error(f"Create report error: {e}")

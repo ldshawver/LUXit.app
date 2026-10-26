@@ -1,0 +1,22 @@
+{% extends "auth/_signup_base.html" %}
+{% block title %}Check your email{% endblock %}
+{% block content %}
+<h1>Check your email</h1>
+<div class="result-box result-sent">
+  {% if resent %}
+  If that address has an account waiting to be confirmed, we've sent it a new link.
+  {% else %}
+  We've sent a confirmation link to the address you entered. Open it within 48 hours to finish creating your workspace.
+  {% endif %}
+  Not there? Check your spam folder.
+</div>
+{% if show_resend %}
+<form method="POST" action="{{ url_for('auth.resend_verification') }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <label for="email">Send a new link to</label>
+  <input id="email" name="email" type="email" autocomplete="email" required>
+  <button type="submit">Resend confirmation link</button>
+</form>
+{% endif %}
+<p class="muted"><a href="{{ url_for('auth.login') }}">← Back to sign in</a></p>
+{% endblock %}

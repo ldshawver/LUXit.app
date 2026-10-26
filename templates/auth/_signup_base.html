@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{% block title %}LUXit{% endblock %} • LUX IT</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/custom.css') }}">
+    <style>
+      :root { color-scheme: dark; }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        font-family: "Inter", "Segoe UI", system-ui, sans-serif;
+        background:
+          radial-gradient(circle at top, rgba(71, 245, 255, 0.14), transparent 40%),
+          radial-gradient(circle at 20% 20%, rgba(255, 79, 216, 0.18), transparent 45%),
+          #0b0b0f;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 32px 16px;
+      }
+      .card {
+        width: min(460px, 100%);
+        background: rgba(12, 14, 20, 0.94);
+        border: 1px solid rgba(255,255,255,0.1);
+        border-radius: 16px;
+        padding: 36px 32px;
+        box-shadow: 0 0 48px rgba(0,0,0,0.7), 0 0 32px rgba(71, 245, 255, 0.18);
+      }
+      @media (max-width: 420px) { .card { padding: 28px 20px; } }
+      .logo-wrap { text-align: center; margin-bottom: 28px; }
+      .logo-wrap a { display: inline-flex; align-items: center; gap: 4px; text-decoration: none; }
+      .logo-wrap img { height: 38px; mix-blend-mode: screen; }
+      h1 { margin: 0 0 6px; font-size: 1.55rem; color: #f1f1f5; font-weight: 700; }
+      .sub { margin: 0 0 24px; color: #9ca3af; font-size: 0.9rem; line-height: 1.5; }
+      label { display: block; margin-bottom: 6px; font-size: 0.85rem; color: #e5e7ef; font-weight: 500; }
+      input[type="text"], input[type="email"], input[type="password"] {
+        width: 100%;
+        padding: 12px 14px;
+        border-radius: 10px;
+        border: 1px solid rgba(255,255,255,0.12);
+        background: rgba(15,18,28,0.9);
+        color: #f1f1f5;
+        font-size: 0.95rem;
+        margin-bottom: 16px;
+        outline: none;
+        transition: border-color 0.15s;
+      }
+      input:focus { border-color: rgba(0,229,255,0.4); }
+      .check { display: flex; gap: 10px; align-items: flex-start; margin: 4px 0 20px; font-size: 0.85rem; color: #c7cad6; line-height: 1.45; }
+      .check input { margin-top: 3px; }
+      .check a, .muted a { color: #00e5ff; text-decoration: none; }
+      .hp { position: absolute; left: -10000px; width: 1px; height: 1px; overflow: hidden; }
+      button {
+        width: 100%;
+        padding: 12px 16px;
+        border-radius: 10px;
+        border: none;
+        background: linear-gradient(120deg, #7c3aed, #4f46e5);
+        color: white;
+        font-weight: 600;
+        font-size: 0.95rem;
+        cursor: pointer;
+        transition: opacity 0.15s;
+      }
+      button:hover { opacity: 0.9; }
+      .result-box { border-radius: 12px; padding: 18px 20px; margin-bottom: 20px; font-size: 0.88rem; line-height: 1.6; }
+      .result-sent { background: rgba(0,229,255,0.07); border: 1px solid rgba(0,229,255,0.2); color: #bae6fd; }
+      .result-error { background: rgba(239,68,68,0.08); border: 1px solid rgba(239,68,68,0.2); color: #fca5a5; }
+      .result-error ul { margin: 0; padding-left: 18px; }
+      .muted { margin-top: 20px; text-align: center; font-size: 0.85rem; color: #6b7280; }
+    </style>
+  </head>
+  <body>
+    <main class="card">
+      <div class="logo-wrap">
+        <a href="{{ url_for('auth.login') }}">
+          <img src="{{ url_for('static', filename='images/lux-chrome.png') }}" alt="LUX">
+          <span style="display:flex;flex-direction:column;align-items:flex-start;height:38px;justify-content:center;margin-left:2px;">
+            <span style="color:#00e5ff;font-size:1.2rem;font-weight:800;line-height:1;">IT</span>
+            <span style="color:#a855f7;font-size:0.85rem;font-weight:600;line-height:1;">.app</span>
+          </span>
+        </a>
+      </div>
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% for category, message in messages %}
+        <div class="result-box {{ 'result-error' if category == 'error' else 'result-sent' }}">{{ message }}</div>
+        {% endfor %}
+      {% endwith %}
+      {% block content %}{% endblock %}
+    </main>
+  </body>
+</html>

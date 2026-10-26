@@ -662,6 +662,8 @@ def resolve_or_create_contact(
     email_ids = {c.id for c in email_matches}
 
     def _create(ambiguous_candidate_ids=()):
+        from services.entitlements import check_contact_capacity
+        check_contact_capacity(company_id)
         contact = Contact(
             company_id=company_id, tenant_id=tenant_id or company_id,
             is_active=True, created_at=datetime.utcnow(), created_by_user_id=user_id,

@@ -1,7 +1,7 @@
 import logging
 from urllib.parse import urlparse
 
-from flask import Blueprint, current_app, flash, redirect, render_template, request, url_for
+from flask import Blueprint, abort, current_app, flash, redirect, render_template, request, url_for
 from flask_login import current_user, login_required, login_user, logout_user
 from extensions import csrf, db, limiter
 from jinja2 import TemplateNotFound
@@ -21,6 +21,12 @@ auth_bp = Blueprint(
     url_prefix="/auth",
     template_folder="templates",
 )
+
+@auth_bp.app_context_processor
+def _signup_flag():
+    from services.signup import signup_enabled
+    return {"self_serve_signup_enabled": signup_enabled()}
+
 
 # --------------------------------------------------
 # Helpers
@@ -160,6 +166,13 @@ def login():
             except TemplateNotFound as exc:
                 logger.warning("Auth login template missing: %s", exc)
                 return render_template("login.html")
+
+        from services.signup import needs_verification
+        if needs_verification(user):
+            logger.warning("LOGIN FAIL: email not verified user_id=%s", user.id)
+            flash("Confirm your email address first — we sent you a link. "
+                  "Didn't get it? Request a new one below.", "error")
+            return render_template("auth/signup_sent.html", show_resend=True)
 
         from flask import session as _session
         _session.permanent = True
@@ -334,6 +347,11 @@ def reset_password(token):
                     # else: end every existing session for this account.
                     user.session_revoked_at = datetime.datetime.utcnow()
                     prt.used = True
+                    # The link was emailed, so using it proves the address.
+                    from models import UserEmailVerification
+                    pending = _db.session.get(UserEmailVerification, user.id)
+                    if pending is not None and pending.verified_at is None and pending.email == user.email:
+                        pending.verified_at = datetime.datetime.utcnow()
                     _db.session.commit()
                     success = True
                 else:
@@ -375,6 +393,93 @@ def forgot_username():
         sent=sent,
         admin_email="luke@adiken.com",
     )
+
+
+@auth_bp.route("/signup", methods=["GET", "POST"])
+@limiter.limit("5 per hour;20 per day", methods=["POST"])
+def signup():
+    from services import signup as svc
+    if not svc.signup_enabled():
+        abort(404)
+    if current_user.is_authenticated:
+        return _hub_redirect(current_user)
+    if request.method == "GET":
+        return render_template("auth/signup.html", form={}, errors=[])
+
+    # Bots fill every field; people never see this one.
+    if request.form.get("website"):
+        return render_template("auth/signup_sent.html", show_resend=False)
+
+    data, errors = svc.validate(request.form)
+    if errors:
+        return render_template("auth/signup.html", form=data, errors=errors), 400
+
+    from extensions import _client_ip
+    try:
+        user, status = svc.create_account(data, ip=_client_ip())
+    except SQLAlchemyError:
+        # Most likely a concurrent signup for the same email or username.
+        db.session.rollback()
+        logger.warning("Signup: account creation failed", exc_info=True)
+        return render_template("auth/signup_sent.html", show_resend=False)
+
+    if status in ("created", "unverified_existing"):
+        _send_verification_email(user)
+    elif status == "exists":
+        _send_account_email(
+            user.email,
+            "Someone tried to create a LUXit account with your email",
+            render_template(
+                "auth/email_signup_existing.html",
+                user=user,
+                login_url=url_for("auth.login", _external=True),
+                reset_url=url_for("auth.forgot_password", _external=True),
+            ),
+        )
+    return render_template("auth/signup_sent.html", show_resend=False)
+
+
+def _send_verification_email(user):
+    from services import signup as svc
+    if not svc.may_send(user):
+        return False
+    verify_url = url_for("auth.verify_email", token=svc.make_token(user.id, user.email), _external=True)
+    ok = _send_account_email(
+        user.email,
+        "Confirm your email for LUXit",
+        render_template("auth/email_verify.html", user=user, verify_url=verify_url),
+    )
+    svc.mark_sent(user)
+    return ok
+
+
+@auth_bp.route("/verify-email/<token>")
+@limiter.limit("30 per hour")
+def verify_email(token):
+    from services import signup as svc
+    user, outcome = svc.verify_token(token)
+    if outcome == "verified" and user is not None and user.is_active:
+        from flask import session as _session
+        _session.permanent = True
+        login_user(user, remember=True)
+        revoked = getattr(user, "session_revoked_at", None)
+        _session["user_session_revoked_at"] = revoked.isoformat() if revoked else None
+        flash("Email confirmed. Choose a plan to finish setting up your workspace.", "success")
+        return redirect(url_for("main.billing_page"))
+    return render_template("auth/verify_result.html", outcome=outcome)
+
+
+@auth_bp.route("/verify-email/resend", methods=["POST"])
+@limiter.limit("5 per hour", methods=["POST"])
+def resend_verification():
+    from services import signup as svc
+    email = (request.form.get("email") or "").strip().lower()
+    if email:
+        user = User.query.filter(User.email == email).first()
+        if user is not None and user.is_active and svc.needs_verification(user):
+            _send_verification_email(user)
+    # Same answer whether or not the address has an account.
+    return render_template("auth/signup_sent.html", show_resend=False, resent=True)
 
 
 @auth_bp.route("/register", methods=["GET", "POST"])

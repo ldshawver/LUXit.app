@@ -1,0 +1,43 @@
+{% extends "auth/_signup_base.html" %}
+{% block title %}Create your account{% endblock %}
+{% block content %}
+<h1>Create your workspace</h1>
+<p class="sub">Set up LUXit for your business. We'll email you a link to confirm your address, then you'll choose a plan.</p>
+
+{% if errors %}
+<div class="result-box result-error" role="alert">
+  <ul>{% for e in errors %}<li>{{ e }}</li>{% endfor %}</ul>
+</div>
+{% endif %}
+
+<form method="POST" novalidate>
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <div class="hp" aria-hidden="true">
+    <label for="website">Leave this empty</label>
+    <input id="website" name="website" type="text" tabindex="-1" autocomplete="off">
+  </div>
+
+  <label for="org_name">Business or organization name</label>
+  <input id="org_name" name="org_name" type="text" maxlength="120" autocomplete="organization" value="{{ form.org_name or '' }}" required>
+
+  <label for="full_name">Your name</label>
+  <input id="full_name" name="full_name" type="text" maxlength="128" autocomplete="name" value="{{ form.full_name or '' }}">
+
+  <label for="email">Work email</label>
+  <input id="email" name="email" type="email" maxlength="120" autocomplete="email" value="{{ form.email or '' }}" required>
+
+  <label for="password">Password <span style="color:#6b7280;font-weight:400;">(8+ characters)</span></label>
+  <input id="password" name="password" type="password" minlength="8" autocomplete="new-password" required>
+
+  <label for="confirm_password">Confirm password</label>
+  <input id="confirm_password" name="confirm_password" type="password" minlength="8" autocomplete="new-password" required>
+
+  <label class="check">
+    <input type="checkbox" name="accept_terms" value="1" {% if form.terms %}checked{% endif %} required>
+    <span>I agree to the <a href="{{ url_for('legal.terms') }}" target="_blank" rel="noopener">Terms of Service</a> and <a href="{{ url_for('legal.privacy') }}" target="_blank" rel="noopener">Privacy Policy</a>.</span>
+  </label>
+
+  <button type="submit">Create account</button>
+</form>
+<p class="muted">Already have an account? <a href="{{ url_for('auth.login') }}">Sign in</a></p>
+{% endblock %}

@@ -3587,6 +3587,38 @@ class PasswordResetToken(db.Model):
     user = db.relationship("User", backref=db.backref("reset_tokens", lazy="dynamic"))
 
 
+class UserEmailVerification(db.Model):
+    """Email-verification state for self-serve signups.
+
+    Kept out of the ``user`` table so loading a User never depends on this
+    migration. Accounts without a row (every pre-signup account) are treated
+    as verified.
+    """
+    __tablename__ = "user_email_verification"
+
+    user_id           = db.Column(db.Integer, db.ForeignKey("user.id", ondelete="CASCADE"), primary_key=True)
+    email             = db.Column(db.String(120), nullable=False)
+    verified_at       = db.Column(db.DateTime, nullable=True)
+    terms_accepted_at = db.Column(db.DateTime, nullable=True)
+    signup_ip         = db.Column(db.String(64), nullable=True)
+    last_sent_at      = db.Column(db.DateTime, nullable=True)
+    created_at        = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+
+class CompanyPlanPolicy(db.Model):
+    """How a workspace came to exist, for plan entitlements (T-8).
+
+    Separate from ``company`` so loading a Company never depends on this
+    migration. Workspaces without a row (every pre-SaaS customer) keep
+    unrestricted access; self-serve signups are limited until they subscribe.
+    """
+    __tablename__ = "company_plan_policy"
+
+    company_id  = db.Column(db.Integer, db.ForeignKey("company.id", ondelete="CASCADE"), primary_key=True)
+    plan_source = db.Column(db.String(32), nullable=False, default="self_serve")
+    created_at  = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+
 # ---------------------------------------------------------------------------
 # Twilio Multi-Tenant SMS / Call Platform
 # ---------------------------------------------------------------------------
