@@ -15,12 +15,37 @@ MY_ORDER_CUSTOMER_NAME = "My Order Customer"
 MY_ORDER_CUSTOMER_ALIASES = {"my order customer", "myorder customer", "my order"}
 FIRST_INBOUND_TRIGGER = "inbound_sms.first_for_contact"
 TAG_ADDED_TRIGGER = "tag_added"
-SUPPORTED_TRIGGERS = {FIRST_INBOUND_TRIGGER, TAG_ADDED_TRIGGER}
-SUPPORTED_MATCH_MODES = {"all", "any"}
-SUPPORTED_CONDITIONS = {
-    "direction", "channel", "first_inbound_sms", "contact_state", "tag_ids",
+# Relationship triggers (M5), published by services.crm_events.
+INBOUND_SMS_TRIGGER = "inbound_sms.received"
+MISSED_CALL_TRIGGER = "call.missed"
+OPPORTUNITY_CREATED_TRIGGER = "opportunity.created"
+STAGE_CHANGED_TRIGGER = "opportunity.stage_changed"
+TASK_COMPLETED_TRIGGER = "task.completed"
+INACTIVE_TRIGGER = "contact.inactive"
+RELATIONSHIP_TRIGGERS = {
+    INBOUND_SMS_TRIGGER, MISSED_CALL_TRIGGER, OPPORTUNITY_CREATED_TRIGGER, STAGE_CHANGED_TRIGGER,
+    TASK_COMPLETED_TRIGGER, INACTIVE_TRIGGER,
 }
-SUPPORTED_ACTIONS = {"contact.add_tag", "segment.add_contact"}
+SUPPORTED_TRIGGERS = {FIRST_INBOUND_TRIGGER, TAG_ADDED_TRIGGER} | RELATIONSHIP_TRIGGERS
+SUPPORTED_MATCH_MODES = {"all", "any"}
+# Event-payload conditions (original contract).
+EVENT_CONDITIONS = {"direction", "channel", "first_inbound_sms", "contact_state", "tag_ids"}
+# Contact-state conditions evaluated when the event is processed (M5).
+STATE_CONDITIONS = {
+    "contact_tags_any", "segment_ids_any", "lifecycle_stage", "owner_user_id", "consent", "business_hours",
+    "opportunity_stage", "from_stage", "to_stage", "no_communication_days", "cooldown_days", "no_open_tasks",
+}
+SUPPORTED_CONDITIONS = EVENT_CONDITIONS | STATE_CONDITIONS
+LEGACY_ACTIONS = {"contact.add_tag", "segment.add_contact"}
+RELATIONSHIP_ACTIONS = {"task.create", "follow_up.create", "note.add", "opportunity.update", "message.send"}
+SUPPORTED_ACTIONS = LEGACY_ACTIONS | RELATIONSHIP_ACTIONS
+_ACTION_KEYS = {
+    "task.create": ({"title"}, {"due_in_hours", "priority", "assign_to"}),
+    "follow_up.create": ({"title"}, {"due_in_days", "assign_to"}),
+    "note.add": ({"text"}, set()),
+    "opportunity.update": (set(), {"stage", "next_action"}),
+    "message.send": ({"channel", "body"}, {"approval"}),
+}
 
 
 class AutomationContractError(ValueError):
@@ -147,11 +172,15 @@ def validate_definition(triggers, conditions, actions, match_mode="all") -> dict
         or any(not isinstance(v, int) for v in conditions["tag_ids"])
     ):
         raise AutomationContractError("tag_ids must be a non-empty array of integer IDs")
+    _validate_state_conditions(conditions, triggers)
     if not isinstance(actions, list) or not actions:
         raise AutomationContractError("actions must be a non-empty JSON array")
     for action in actions:
         if not isinstance(action, dict) or action.get("type") not in SUPPORTED_ACTIONS:
             raise AutomationContractError("each action requires a supported 'type'")
+        if action["type"] in RELATIONSHIP_ACTIONS:
+            _validate_relationship_action(action)
+            continue
         expected = "tag_id" if action["type"] == "contact.add_tag" else "segment_id"
         if not isinstance(action.get(expected), int):
             raise AutomationContractError(f"{action['type']} requires integer {expected}")
@@ -159,6 +188,71 @@ def validate_definition(triggers, conditions, actions, match_mode="all") -> dict
         if extras:
             raise AutomationContractError(f"unsupported action keys: {sorted(extras)}")
     return {"triggers": triggers, "conditions": conditions, "actions": actions, "match_mode": match_mode}
+
+
+def _str_list(value, key):
+    if not isinstance(value, list) or not value or any(not isinstance(v, str) or not v.strip() for v in value):
+        raise AutomationContractError(f"{key} must be a non-empty array of strings")
+
+
+def _positive_int(value, key, minimum=1):
+    if isinstance(value, bool) or not isinstance(value, int) or value < minimum:
+        raise AutomationContractError(f"{key} must be an integer >= {minimum}")
+
+
+def _validate_state_conditions(conditions, triggers):
+    for key in ("contact_tags_any", "lifecycle_stage", "opportunity_stage", "from_stage", "to_stage"):
+        if key in conditions:
+            _str_list(conditions[key], key)
+    if "segment_ids_any" in conditions and (
+        not isinstance(conditions["segment_ids_any"], list) or not conditions["segment_ids_any"]
+        or any(isinstance(v, bool) or not isinstance(v, int) for v in conditions["segment_ids_any"])
+    ):
+        raise AutomationContractError("segment_ids_any must be a non-empty array of integer IDs")
+    if "owner_user_id" in conditions:
+        _positive_int(conditions["owner_user_id"], "owner_user_id")
+    if "consent" in conditions and conditions["consent"] not in {"sms_allowed", "email_allowed", "contactable"}:
+        raise AutomationContractError("consent must be sms_allowed, email_allowed or contactable")
+    if "business_hours" in conditions and conditions["business_hours"] not in {"inside", "outside"}:
+        raise AutomationContractError("business_hours must be 'inside' or 'outside'")
+    for key in ("no_communication_days", "cooldown_days"):
+        if key in conditions:
+            _positive_int(conditions[key], key)
+    if "no_open_tasks" in conditions and conditions["no_open_tasks"] is not True:
+        raise AutomationContractError("no_open_tasks supports only true")
+    if (("from_stage" in conditions or "to_stage" in conditions)
+            and set(triggers) - {STAGE_CHANGED_TRIGGER}):
+        raise AutomationContractError("from_stage/to_stage need the opportunity.stage_changed trigger only")
+    if INACTIVE_TRIGGER in triggers and "no_communication_days" not in conditions:
+        raise AutomationContractError("contact.inactive requires no_communication_days")
+
+
+def _validate_relationship_action(action):
+    required, optional = _ACTION_KEYS[action["type"]]
+    keys = set(action) - {"type"}
+    if required - keys:
+        raise AutomationContractError(f"{action['type']} requires {sorted(required - keys)}")
+    if keys - required - optional:
+        raise AutomationContractError(f"unsupported action keys: {sorted(keys - required - optional)}")
+    for key in ("title", "text", "body", "next_action"):
+        if key in action and (not isinstance(action[key], str) or not action[key].strip() or len(action[key]) > 1600):
+            raise AutomationContractError(f"{key} must be non-empty text (max 1600)")
+    if "due_in_hours" in action:
+        _positive_int(action["due_in_hours"], "due_in_hours", 0)
+    if "due_in_days" in action:
+        _positive_int(action["due_in_days"], "due_in_days", 0)
+    if "priority" in action and action["priority"] not in {"low", "normal", "high", "urgent"}:
+        raise AutomationContractError("priority must be low, normal, high or urgent")
+    if "assign_to" in action and action["assign_to"] not in {"owner", "unassigned"}:
+        raise AutomationContractError("assign_to must be 'owner' or 'unassigned'")
+    if action["type"] == "opportunity.update" and not ({"stage", "next_action"} & keys):
+        raise AutomationContractError("opportunity.update needs stage or next_action")
+    if action["type"] == "message.send":
+        if action["channel"] not in {"sms", "email"}:
+            raise AutomationContractError("message.send channel must be sms or email")
+        # Automated outreach always waits for a person in v1.
+        if action.get("approval", "required") != "required":
+            raise AutomationContractError("message.send requires approval: 'required'")
 
 
 def _rule(company_id: int, name: str) -> Segment | None:
@@ -226,6 +320,8 @@ def ensure_my_order_automation(company_id: int, *, create_missing=True) -> dict:
 
 
 def _condition_matches(key, expected, event) -> bool:
+    if key in STATE_CONDITIONS:
+        return _state_condition_matches(key, expected, event)
     if key == "contact_state":
         contact = event["contact"]
         actual = "canonical_active" if contact.is_active and not contact.merged_into_contact_id else "inactive_or_merged"
@@ -235,8 +331,74 @@ def _condition_matches(key, expected, event) -> bool:
     return event.get(key) == expected
 
 
+def _norm_set(values):
+    return {normalize_label(v) for v in values}
+
+
+def _state_condition_matches(key, expected, event) -> bool:
+    from datetime import timedelta
+    from models import ContactTask, Opportunity
+    contact = event["contact"]
+    now = event.get("now") or datetime.utcnow()
+    if key == "contact_tags_any":
+        return bool(_norm_set(split_tags(contact.tags)) & _norm_set(expected))
+    if key == "segment_ids_any":
+        return SegmentMember.query.filter(
+            SegmentMember.contact_id == contact.id, SegmentMember.segment_id.in_(expected),
+            SegmentMember.removed_at.is_(None), SegmentMember.is_excluded.is_(False),
+        ).join(Segment, Segment.id == SegmentMember.segment_id).filter(
+            Segment.company_id == contact.company_id).first() is not None
+    if key == "lifecycle_stage":
+        return normalize_label(contact.lifecycle_stage or "") in _norm_set(expected)
+    if key == "owner_user_id":
+        return contact.owner_user_id == expected
+    if key == "consent":
+        from services import contact_consent
+        if getattr(contact, "do_not_contact", False):
+            return False
+        if expected == "sms_allowed":
+            return not contact_consent.has_sms_opt_out(contact)
+        if expected == "email_allowed":
+            return bool(contact.email) and not contact_consent.has_explicit_email_opt_out(contact)
+        return True
+    if key == "business_hours":
+        from twilio_sms import _is_business_hours
+        inside = _is_business_hours(contact.company_id, at_time=now)
+        return inside if expected == "inside" else not inside
+    if key == "from_stage":
+        return normalize_label(event.get("from_stage") or "") in _norm_set(expected)
+    if key == "to_stage":
+        return normalize_label(event.get("to_stage") or "") in _norm_set(expected)
+    if key == "opportunity_stage":
+        if event.get("opportunity_id"):
+            opp = Opportunity.query.filter_by(id=event["opportunity_id"], company_id=contact.company_id).first()
+            stages = {normalize_label(opp.stage)} if opp else set()
+        else:
+            stages = {normalize_label(r[0] or "") for r in db.session.query(Opportunity.stage).filter(
+                Opportunity.company_id == contact.company_id, Opportunity.contact_id == contact.id,
+                Opportunity.status == "open")}
+        return bool(stages & _norm_set(expected))
+    if key == "no_communication_days":
+        last = contact.last_contacted_at or contact.last_activity_at
+        return last is None or last < now - timedelta(days=expected)
+    if key == "cooldown_days":
+        recent = CRMAutomationExecution.query.filter(
+            CRMAutomationExecution.company_id == contact.company_id,
+            CRMAutomationExecution.rule_id == event["rule_id"],
+            CRMAutomationExecution.contact_id == contact.id,
+            CRMAutomationExecution.created_at >= now - timedelta(days=expected),
+            CRMAutomationExecution.status.in_(["completed", "awaiting_approval"]),
+        ).first()
+        return recent is None
+    if key == "no_open_tasks":
+        return ContactTask.query.filter_by(company_id=contact.company_id, contact_id=contact.id,
+                                           status="open").first() is None
+    return False
+
+
 def _matches(rule: Segment, event: dict) -> bool:
     conditions = rule.conditions or {}
+    event = {**event, "rule_id": rule.id}
     results = [_condition_matches(k, v, event) for k, v in conditions.items()]
     return any(results) if rule.match_mode == "any" else all(results)
 
@@ -318,12 +480,16 @@ def dispatch_event(company_id: int, contact_id: int, trigger: str, event_key: st
             continue
         for index, action in enumerate(rule.actions or []):
             execution = _reserve_execution(rule, contact, trigger, event_key, index, {
-                key: value for key, value in event.items() if key != "contact"
+                key: value for key, value in event.items() if key not in {"contact", "now"}
             })
             if not execution:
                 results.append({"rule_id": rule.id, "action_index": index, "duplicate": True})
                 continue
             changed = False
+            if action["type"] in RELATIONSHIP_ACTIONS:
+                outcome = _run_relationship_action(rule, contact, action, event, execution)
+                results.append({"rule_id": rule.id, "action_index": index, **outcome})
+                continue
             if action["type"] == "contact.add_tag":
                 tag = _owned_segment(company_id, action["tag_id"], "contact_tag")
                 tags = split_tags(contact.tags)
@@ -346,6 +512,70 @@ def dispatch_event(company_id: int, contact_id: int, trigger: str, event_key: st
             results.append({"rule_id": rule.id, "action_index": index, "changed": changed})
     db.session.flush()
     return {"trigger": trigger, "event_key": event_key, "results": results}
+
+
+def _render(template: str, contact: Contact) -> str:
+    name = " ".join(filter(None, [contact.first_name, contact.last_name])) or "there"
+    return (template.replace("{first_name}", contact.first_name or "there").replace("{name}", name)).strip()
+
+
+def _run_relationship_action(rule, contact, action, event, execution) -> dict:
+    """Run one M5 action in a savepoint. A failure marks this execution
+    failed (with the error) and never aborts the event or other actions."""
+    from datetime import timedelta
+    from models import ContactActivity, ContactTask, Opportunity
+    kind = action["type"]
+    now = event.get("now") or datetime.utcnow()
+    try:
+        with db.session.begin_nested():
+            detail = {}
+            if kind in {"task.create", "follow_up.create"}:
+                if kind == "task.create":
+                    due = now + timedelta(hours=action["due_in_hours"]) if "due_in_hours" in action else None
+                else:
+                    due = now + timedelta(days=action.get("due_in_days", 1))
+                assignee = None if action.get("assign_to") == "unassigned" else contact.owner_user_id
+                task = ContactTask(company_id=contact.company_id, contact_id=contact.id,
+                                   title=_render(action["title"], contact)[:255], due_at=due,
+                                   priority=action.get("priority", "normal"), status="open",
+                                   assigned_user_id=assignee)
+                db.session.add(task)
+                db.session.flush()
+                if due:
+                    contact.next_follow_up_at = min(filter(None, [contact.next_follow_up_at, due]))
+                detail = {"task_id": task.id}
+            elif kind == "note.add":
+                note = ContactActivity(company_id=contact.company_id, contact_id=contact.id, activity_type="note",
+                                       title="Automation note", description=_render(action["text"], contact),
+                                       source="automation", extra_data={"rule_id": rule.id})
+                db.session.add(note)
+                db.session.flush()
+                detail = {"activity_id": note.id}
+            elif kind == "opportunity.update":
+                opp_id = event.get("opportunity_id")
+                opp = Opportunity.query.filter_by(id=opp_id, company_id=contact.company_id).first() if opp_id else None
+                if opp is None:
+                    raise AutomationContractError("event has no opportunity in this workspace")
+                from services.crm_workspace import update_opportunity
+                update_opportunity(opp, None, {k: action[k] for k in ("stage", "next_action") if k in action})
+                detail = {"opportunity_id": opp.id, "stage": opp.stage}
+            elif kind == "message.send":
+                # Held for a person: approve via the builder API, which sends
+                # through services.unified_comms (consent enforced again then).
+                detail = {"message": {"channel": action["channel"], "body": _render(action["body"], contact)}}
+                execution.status = "awaiting_approval"
+                execution.details = {**(execution.details or {}), "action": action, **detail}
+                return {"awaiting_approval": True, "execution_id": execution.id}
+            execution.status = "completed"
+            execution.details = {**(execution.details or {}), "action": action, "changed": True, **detail}
+        return {"changed": True, **detail}
+    except Exception as exc:  # noqa: BLE001 — reported on the execution row
+        import logging
+        logging.getLogger(__name__).warning("automation action failed rule=%s action=%s: %s", rule.id, kind, exc)
+        execution.status = "failed"
+        execution.details = {**(execution.details or {}), "action": action,
+                             "error": f"{type(exc).__name__}: {exc}"[:500]}
+        return {"failed": True, "error": str(exc)[:200]}
 
 
 def assign_contact_tag(contact: Contact, tag_name: str, *, source="unknown", event_key=None) -> bool:

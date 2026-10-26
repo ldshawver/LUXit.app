@@ -491,6 +491,8 @@ def create_app() -> Flask:
     app.register_blueprint(crm_workspace_bp)
     from unified_comms_bp import unified_comms_bp
     app.register_blueprint(unified_comms_bp)
+    from automation_builder_bp import automation_builder_bp
+    app.register_blueprint(automation_builder_bp)
     try:
         from feedback import feedback_bp
         app.register_blueprint(feedback_bp)

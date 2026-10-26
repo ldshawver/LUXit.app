@@ -24,7 +24,7 @@ Resume point for the differentiation milestones (M1–M5).
 | M2 | Relationship intelligence | **Done (branch)** | `services/relationship_intelligence.py`, `models.RelationshipMemory` + `migrations/20261026_relationship_memory.sql` (not applied); `/api/contacts/<id>/briefing`, `/memories/scan`, `/memories`, `/memories/<id>/review`, `/memories/<id>/task`; briefing panel; `tests/test_relationship_intelligence.py` 10 tests |
 | M3 | Actionable CRM | **Done (branch)** | `services/crm_workspace.py`, `crm_workspace_bp.py` (`/crm/today`, `/api/crm/dashboard`, `/api/crm/pipeline`, `/api/crm/opportunities[/<id>]`, `/api/crm/tasks[/<id>[/complete|reopen]]`), `templates/crm/today.html`, sidebar "Today"; segment engine relationship fields; scheduler job `crm_task_reminders`; `tests/test_crm_workspace.py` 12 tests |
 | M4 | Unified communications | **Done (branch, provider adapters pending)** | `services/unified_comms.py`, `unified_comms_bp.py`, models `BusinessIdentity`/`BusinessIdentityNumber`/`EmailMessage` + `migrations/20261026_comms_identity_email.sql` (not applied); email on the timeline; `docs/contracts/LUXIT_PHONE_CRM_CONTRACT.md`; `tests/test_unified_comms.py` 13 tests |
-| M5 | Intelligent automation | Not started | |
+| M5 | Intelligent automation | **Done (branch)** | `services/crm_automation.py` (extended), `services/crm_events.py`, `services/automation_builder.py`, `automation_builder_bp.py` (`/automations/workflows`, `/api/automations*`), `templates/automations/workflows.html`; event sources in `twilio_sms.py` (missed call, inbound SMS) and `crm_workspace` (opportunity/task); scheduler job `crm_inactivity_scan`; `tests/test_workflow_automation.py` 17 tests |
 
 ### M1 detail
 
@@ -57,3 +57,19 @@ Resume point for the differentiation milestones (M1–M5).
 - **Voice/voicemail/SMS/MMS history:** already in the M1 timeline (MMS media is not surfaced yet).
 - **LUXit Phone:** caller-context API + contract doc.
 - **Needs approval / credentials:** mailbox adapters (Microsoft Graph / Gmail OAuth app registration per tenant), tenant email sending (verified domains), outbound-first SMS (new-thread creation + 10DLC per tenant), MMS sending through the conversation path.
+
+### M5 detail
+
+- **Engine:** the existing `crm_automation` contract, extended — not replaced. My Order Customer rules and their event conditions are unchanged (covered by a regression test) and stay read-only in the builder; builder rules are `automation_rule` segments with `category='workflow'`.
+- **Triggers:** `inbound_sms.received`, `call.missed` (Twilio status callback; key = call SID), `opportunity.created`, `opportunity.stage_changed`, `task.completed`, `contact.inactive` (daily scan; fires once per quiet period per rule), plus existing `tag_added` / first-inbound.
+- **Conditions:** tags, segment membership, lifecycle stage, owner, consent (`sms_allowed`/`email_allowed`/`contactable`, do-not-contact never passes), business hours (existing `_is_business_hours`), opportunity stage, from/to stage, no communication for N days, cooldown (no run for this contact in N days), no open tasks.
+- **Actions:** create task / follow-up (owner-assigned, `{first_name}`/`{name}` placeholders), internal note, update the event's opportunity, **draft a message for approval** (`message.send` requires `approval: "required"`; approval sends through `unified_comms.send_to_contact`, which re-checks consent, with idempotency key `automation:<execution id>`). Call routing stays in the voice webhook (`receive_calls`), not a workflow action.
+- **Reliability:** `CRMAutomationExecution` unique `(company, rule, event_key, action)` = idempotency; each M5 action runs in its own savepoint — a failure marks that execution `failed` with the error and the rest continue; `emit()` never breaks the caller (savepoint + log) and nested events stop at depth 2 (no rule ping-pong). Both new scheduler jobs are pause-preserving.
+- **Builder:** structured editor (trigger → conditions → actions), dry-run against a contact (no writes), execution history with status filter, failure summary, approvals queue. Admins manage; editors approve; viewers read. Referenced segments/tags/owners must belong to the workspace.
+- **AI-assisted workflows:** not wired (no working AI provider, T-20). Design: AI may only *draft* (`message.send` / memory with `origin='ai'`), never send without approval.
+
+## Verification status (2026-10-26)
+
+- Targeted suites green: timeline 7, relationship intelligence 10, CRM 12, unified comms 13, workflows 17, scheduler 7; adjacent existing suites (contacts, segments, messaging, security positive controls) show only 1c56fbe-baseline failures.
+- **Full batched regression of this branch is still owed:** the run was stopped by the harness at batch 1/14 because host memory was low (~690 MB available; another session was active). Batch 0 had no new failures. Rerun with the scratchpad `run_batches.sh` when memory allows.
+- Migrations (all additive, none applied): `20261026_relationship_memory.sql`, `20261026_comms_identity_email.sql` (plus the four on the SaaS-launch line).

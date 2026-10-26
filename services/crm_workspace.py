@@ -32,10 +32,7 @@ class CRMError(ValueError):
 
 
 def _event(company_id, event_type, payload):
-    try:
-        from services.crm_events import emit
-    except ImportError:
-        return
+    from services.crm_events import emit
     emit(company_id, event_type, payload)
 
 

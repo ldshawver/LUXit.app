@@ -101,6 +101,14 @@ def run_crm_task_reminders():
         return send_due_reminders()
 
 
+def run_crm_inactivity_scan():
+    """Raise contact.inactive workflow events once a day."""
+    from app import app
+    with app.app_context():
+        from services.automation_builder import scan_inactive_all
+        return scan_inactive_all()
+
+
 def _paused_job_ids(jobstore, job_ids):
     """Return the ids among ``job_ids`` that the jobstore holds paused.
 
@@ -156,7 +164,8 @@ def init_scheduler(app):
     
     # A job an operator paused must stay paused across restarts and upgrades.
     paused = _paused_job_ids(
-        jobstore, ("weekly_contact_dedupe", "tuya_notification_reconciliation", "crm_task_reminders")
+        jobstore, ("weekly_contact_dedupe", "tuya_notification_reconciliation", "crm_task_reminders",
+                   "crm_inactivity_scan")
     )
     for job_id in sorted(paused):
         logging.warning("Scheduler job %s is paused in the jobstore; keeping it paused", job_id)
@@ -196,6 +205,18 @@ def init_scheduler(app):
         max_instances=1,
         coalesce=True,
         **_keep_paused("crm_task_reminders"),
+    )
+
+    scheduler.add_job(
+        func=run_crm_inactivity_scan,
+        trigger=CronTrigger(hour=8, minute=0, timezone="UTC"),
+        id="crm_inactivity_scan",
+        name="CRM inactivity workflow scan",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+        misfire_grace_time=3600,
+        **_keep_paused("crm_inactivity_scan"),
     )
 
     # Start scheduler

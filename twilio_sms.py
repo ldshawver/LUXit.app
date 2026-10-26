@@ -1663,6 +1663,12 @@ def inbound_sms():
                 first_inbound_sms=is_first_inbound, message_sid=twilio_sid,
                 conversation_id=conv.id,
             )
+            if conv.contact_id:
+                from services.crm_events import emit
+                emit(ta.company_id, "inbound_sms.received", {
+                    "contact_id": conv.contact_id, "event_key": f"twilio:{twilio_sid}:received",
+                    "direction": "inbound", "channel": "sms", "conversation_id": conv.id,
+                })
             db.session.commit()
         except Exception:
             db.session.rollback()
@@ -2894,6 +2900,14 @@ def voice_status():
             if not CallEvent.query.filter_by(call_log_id=log.id, event_type="status", provider_event_id=f"{call_sid}:{call_status}").first():
                 db.session.add(CallEvent(call_log_id=log.id, event_type="status", provider_event_id=f"{call_sid}:{call_status}", payload=dict(data)))
             db.session.commit()
+            if log.final_status == "missed" and log.contact_id and (log.direction or "inbound") == "inbound":
+                # Workflow trigger; the call SID keeps Twilio retries idempotent.
+                from services.crm_events import emit
+                emit(log.company_id, "call.missed", {
+                    "contact_id": log.contact_id, "event_key": f"twilio-call:{call_sid}:missed",
+                    "call_log_id": log.id, "channel": "voice", "direction": "inbound",
+                })
+                db.session.commit()
 
     return "", 204
 

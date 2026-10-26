@@ -50,6 +50,7 @@ def boot(monkeypatch, jobstore_url):
     monkeypatch.setattr(scheduler_module, "run_tuya_reconciliation", _noop)
     monkeypatch.setattr(scheduler_module, "run_weekly_contact_dedupe", _noop)
     monkeypatch.setattr(scheduler_module, "run_crm_task_reminders", _noop)
+    monkeypatch.setattr(scheduler_module, "run_crm_inactivity_scan", _noop)
     stub = _StubApp(jobstore_url, real_app)
     started = []
 

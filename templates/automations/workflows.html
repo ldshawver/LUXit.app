@@ -1,0 +1,231 @@
+{% extends "base.html" %}
+{% block title %}Workflows{% endblock %}
+{% block content %}
+<div class="container-fluid mt-3" id="wfApp">
+  <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+    <h1 class="h3 mb-0"><i data-feather="git-branch"></i> Workflows</h1>
+    <small class="text-muted">Messages drafted by a workflow always wait for approval.</small>
+  </div>
+
+  <div class="row g-3">
+    <div class="col-12 col-xl-7">
+      {% if can_manage %}
+      <div class="card mb-3">
+        <div class="card-header"><h5 class="mb-0" id="wfEditorTitle">New workflow</h5></div>
+        <div class="card-body">
+          <div class="row g-2 mb-2">
+            <div class="col-12 col-md-6"><label class="form-label small" for="wfName">Name</label>
+              <input class="form-control" id="wfName" maxlength="255"></div>
+            <div class="col-12 col-md-6"><label class="form-label small" for="wfTrigger">When</label>
+              <select class="form-select" id="wfTrigger">
+                {% for key, label in catalog.triggers.items() %}<option value="{{ key }}">{{ label }}</option>{% endfor %}
+              </select></div>
+          </div>
+          <div class="d-flex justify-content-between align-items-center mt-3">
+            <h6 class="mb-0">Only if <select class="form-select form-select-sm d-inline-block w-auto" id="wfMatch">
+              <option value="all">all</option><option value="any">any</option></select> of these are true</h6>
+            <button type="button" class="btn btn-sm btn-outline-secondary" id="wfAddCond">Add condition</button>
+          </div>
+          <div id="wfConds" class="mt-2"></div>
+          <div class="d-flex justify-content-between align-items-center mt-3">
+            <h6 class="mb-0">Then</h6>
+            <button type="button" class="btn btn-sm btn-outline-secondary" id="wfAddAction">Add action</button>
+          </div>
+          <div id="wfActions" class="mt-2"></div>
+          <div class="form-check mt-3">
+            <input class="form-check-input" type="checkbox" id="wfActive"><label class="form-check-label" for="wfActive">Active</label>
+          </div>
+          <div class="row g-2 align-items-end mt-2">
+            <div class="col-6 col-md-4"><label class="form-label small" for="wfContact">Test with contact id</label>
+              <input class="form-control" id="wfContact" inputmode="numeric"></div>
+            <div class="col-6 col-md-8 d-flex gap-2 flex-wrap">
+              <button type="button" class="btn btn-outline-primary" id="wfDry">Dry run</button>
+              <button type="button" class="btn btn-primary" id="wfSave">Save</button>
+              <button type="button" class="btn btn-link" id="wfReset">New</button>
+            </div>
+          </div>
+          <pre class="small mt-3 mb-0" id="wfOut" style="white-space:pre-wrap"></pre>
+        </div>
+      </div>
+      {% endif %}
+      <div class="card">
+        <div class="card-header"><h5 class="mb-0">Automations</h5></div>
+        <ul class="list-group list-group-flush" id="wfRules"><li class="list-group-item text-muted">Loading…</li></ul>
+      </div>
+    </div>
+
+    <div class="col-12 col-xl-5">
+      <div class="card mb-3">
+        <div class="card-header"><h5 class="mb-0">Waiting for approval</h5></div>
+        <ul class="list-group list-group-flush" id="wfApprovals"></ul>
+      </div>
+      <div class="card">
+        <div class="card-header d-flex justify-content-between"><h5 class="mb-0">Recent runs</h5>
+          <select class="form-select form-select-sm w-auto" id="wfHistFilter" aria-label="Filter runs">
+            <option value="">All</option><option value="failed">Failed</option><option value="completed">Completed</option>
+          </select></div>
+        <ul class="list-group list-group-flush" id="wfHistory"></ul>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  const CATALOG = {{ catalog|tojson }};
+  const canManage = {{ 'true' if can_manage else 'false' }}, canApprove = {{ 'true' if can_approve else 'false' }};
+  const csrf = {{ csrf_token()|tojson }};
+  const $ = id => document.getElementById(id);
+  const el = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; };
+  const LIST = new Set(['contact_tags_any', 'lifecycle_stage', 'opportunity_stage', 'from_stage', 'to_stage']);
+  const INT_LIST = new Set(['segment_ids_any']), INT = new Set(['owner_user_id', 'no_communication_days', 'cooldown_days']);
+  const FIELDS = {'task.create': ['title', 'due_in_hours', 'priority', 'assign_to'], 'follow_up.create': ['title', 'due_in_days'],
+                  'note.add': ['text'], 'opportunity.update': ['stage', 'next_action'], 'message.send': ['channel', 'body']};
+  const NUM_FIELDS = new Set(['due_in_hours', 'due_in_days']);
+  let editingId = null;
+
+  async function api(path, opts) {
+    opts = opts || {};
+    const r = await fetch(path, {method: opts.method || 'GET', headers: {'Content-Type': 'application/json', 'X-CSRFToken': csrf, Accept: 'application/json'},
+                                 body: opts.body ? JSON.stringify(opts.body) : undefined});
+    return r.json().catch(() => ({success: false, error: 'Unexpected response'}));
+  }
+  function select(options, value) {
+    const s = el('select', 'form-select form-select-sm');
+    Object.entries(options).forEach(([k, label]) => { const o = el('option', '', k); o.value = k; o.title = label; if (k === value) o.selected = true; s.append(o); });
+    return s;
+  }
+  function removeBtn(row) { const b = el('button', 'btn btn-sm btn-outline-danger', '×'); b.type = 'button'; b.onclick = () => row.remove(); return b; }
+  function addCond(key, value) {
+    const row = el('div', 'd-flex gap-2 mb-2 wf-cond');
+    const k = select(CATALOG.conditions, key);
+    const v = el('input', 'form-control form-control-sm');
+    v.placeholder = 'value';
+    if (value !== undefined) v.value = Array.isArray(value) ? value.join(', ') : String(value);
+    const hint = () => { v.title = CATALOG.conditions[k.value]; v.placeholder = CATALOG.conditions[k.value]; };
+    k.onchange = hint; hint();
+    row.append(k, v, removeBtn(row));
+    $('wfConds').append(row);
+  }
+  function addAction(action) {
+    action = action || {type: 'task.create'};
+    const row = el('div', 'border rounded p-2 mb-2 wf-action');
+    const top = el('div', 'd-flex gap-2 mb-2');
+    const t = select(CATALOG.actions, action.type);
+    const fields = el('div', 'row g-2');
+    const render = () => {
+      fields.replaceChildren();
+      (FIELDS[t.value] || []).forEach(f => {
+        const col = el('div', 'col-12 col-md-6');
+        const input = el(f === 'body' || f === 'text' ? 'textarea' : 'input', 'form-control form-control-sm');
+        input.dataset.field = f; input.placeholder = f.replace(/_/g, ' ');
+        if (action.type === t.value && action[f] !== undefined) input.value = action[f];
+        col.append(input); fields.append(col);
+      });
+    };
+    t.onchange = render; render();
+    top.append(t, removeBtn(row));
+    row.append(top, fields);
+    $('wfActions').append(row);
+  }
+  function parseValue(key, raw) {
+    raw = raw.trim();
+    if (key === 'no_open_tasks') return true;
+    if (LIST.has(key)) return raw.split(',').map(s => s.trim()).filter(Boolean);
+    if (INT_LIST.has(key)) return raw.split(',').map(s => parseInt(s, 10)).filter(n => !isNaN(n));
+    if (INT.has(key)) return parseInt(raw, 10);
+    return raw;
+  }
+  function collect() {
+    const conditions = {};
+    document.querySelectorAll('.wf-cond').forEach(row => {
+      const [k, v] = row.querySelectorAll('select, input');
+      conditions[k.value] = parseValue(k.value, v.value);
+    });
+    const actions = [];
+    document.querySelectorAll('.wf-action').forEach(row => {
+      const a = {type: row.querySelector('select').value};
+      row.querySelectorAll('[data-field]').forEach(i => {
+        if (!i.value.trim()) return;
+        a[i.dataset.field] = NUM_FIELDS.has(i.dataset.field) ? parseInt(i.value, 10) : i.value.trim();
+      });
+      if (a.type === 'message.send') a.approval = 'required';
+      actions.push(a);
+    });
+    return {name: $('wfName').value, triggers: [$('wfTrigger').value], match_mode: $('wfMatch').value,
+            conditions, actions, is_active: $('wfActive').checked};
+  }
+  function load(rule) {
+    editingId = rule ? rule.id : null;
+    $('wfEditorTitle').textContent = rule ? 'Edit: ' + rule.name : 'New workflow';
+    $('wfName').value = rule ? rule.name : '';
+    $('wfTrigger').value = rule ? rule.triggers[0] : Object.keys(CATALOG.triggers)[0];
+    $('wfMatch').value = rule ? rule.match_mode : 'all';
+    $('wfActive').checked = rule ? rule.is_active : false;
+    $('wfConds').replaceChildren(); $('wfActions').replaceChildren();
+    if (rule) { Object.entries(rule.conditions).forEach(([k, v]) => addCond(k, v)); rule.actions.forEach(addAction); }
+    else addAction();
+    $('wfOut').textContent = '';
+  }
+  async function refresh() {
+    const rules = (await api('/api/automations')).rules || [];
+    $('wfRules').replaceChildren(...(rules.length ? rules.map(r => {
+      const li = el('li', 'list-group-item');
+      const head = el('div', 'd-flex justify-content-between flex-wrap gap-2');
+      head.append(el('strong', '', r.name), el('small', 'text-muted',
+        [r.is_active ? 'active' : 'off', r.editable ? '' : 'system', Object.entries(r.stats || {}).map(([s, n]) => `${n} ${s}`).join(', ')].filter(Boolean).join(' · ')));
+      li.append(head, el('div', 'small text-muted', (r.triggers || []).map(t => CATALOG.triggers[t] || t).join(', ')));
+      if (canManage && r.editable) { const b = el('button', 'btn btn-sm btn-link px-0', 'Edit'); b.type = 'button'; b.onclick = () => load(r); li.append(b); }
+      return li;
+    }) : [el('li', 'list-group-item text-muted', 'No automations yet.')]));
+    const waiting = (await api('/api/automations/history?status=awaiting_approval')).executions || [];
+    $('wfApprovals').replaceChildren(...(waiting.length ? waiting.map(x => {
+      const li = el('li', 'list-group-item');
+      li.append(el('div', 'small text-muted', `${x.rule_name} · ${x.contact_name || 'contact ' + x.contact_id}`),
+                el('div', '', (x.message && x.message.body) || ''));
+      if (canApprove) {
+        const bar = el('div', 'btn-group btn-group-sm mt-1');
+        [['approve', 'Send'], ['reject', 'Discard']].forEach(([d, label]) => {
+          const b = el('button', 'btn btn-outline-' + (d === 'approve' ? 'success' : 'secondary'), label); b.type = 'button';
+          b.onclick = async () => { const res = await api('/api/automations/approvals/' + x.id, {method: 'POST', body: {decision: d}});
+            if (!res.success || res.status === 'failed') alert(res.error || 'Could not send.'); refresh(); };
+          bar.append(b);
+        });
+        li.append(bar);
+      }
+      return li;
+    }) : [el('li', 'list-group-item text-muted', 'Nothing waiting.')]));
+    const f = $('wfHistFilter').value;
+    const runs = (await api('/api/automations/history?limit=30' + (f ? '&status=' + f : ''))).executions || [];
+    $('wfHistory').replaceChildren(...(runs.length ? runs.map(x => {
+      const li = el('li', 'list-group-item small');
+      li.append(el('div', '', `${x.rule_name}: ${x.action || ''} → ${x.status}`),
+                el('div', 'text-muted', `${x.created_at.slice(0, 16).replace('T', ' ')} · ${x.contact_name || 'contact ' + x.contact_id}`));
+      if (x.error) li.append(el('div', 'text-danger', x.error));
+      return li;
+    }) : [el('li', 'list-group-item text-muted', 'No runs yet.')]));
+  }
+  if (canManage) {
+    $('wfAddCond').onclick = () => addCond();
+    $('wfAddAction').onclick = () => addAction();
+    $('wfReset').onclick = () => load(null);
+    $('wfDry').onclick = async () => {
+      const def = collect();
+      const res = await api('/api/automations/dry-run', {method: 'POST', body: {rule: def, contact_id: parseInt($('wfContact').value, 10), rule_id: editingId || undefined}});
+      $('wfOut').textContent = res.success
+        ? (res.would_fire ? 'Would run:\n' + res.actions.map(a => '• ' + a.description).join('\n') : 'Would not run.')
+          + '\n\n' + res.conditions.map(c => (c.passed ? '✓ ' : '✗ ') + c.condition).join('\n')
+        : res.error;
+    };
+    $('wfSave').onclick = async () => {
+      const res = await api(editingId ? '/api/automations/' + editingId : '/api/automations', {method: 'POST', body: collect()});
+      $('wfOut').textContent = res.success ? 'Saved.' : res.error;
+      if (res.success) { load(res.rule); refresh(); }
+    };
+    load(null);
+  }
+  $('wfHistFilter').onchange = refresh;
+  refresh();
+})();
+</script>
+{% endblock %}
