@@ -35,6 +35,7 @@ from flask_login import current_user, login_required
 from sqlalchemy.exc import IntegrityError
 
 from extensions import csrf, db
+from services import security_audit
 
 logger = logging.getLogger(__name__)
 
@@ -201,11 +202,15 @@ def edit_account(account_id):
         "supabase_tenant_id", "mypaylink_id", "n8n_contact_id",
         "subscription_tier", "onboarding_status", "implementation_status", "saas_notes",
     ]
+    changed = []
     for f in fields:
         val = request.form.get(f, "").strip()
         if val != "":
+            if getattr(acct, f) != val:
+                changed.append(f)
             setattr(acct, f, val)
     db.session.commit()
+    security_audit.record("platform.account.updated", company_id=acct.id, detail={"fields": changed})
     flash(f"Account '{acct.name}' updated.", "success")
     _log("account.updated", "manual", company_id=acct.id, payload={"account_id": acct.id})
     return redirect(url_for("saas.dashboard") + "#accounts")
@@ -244,6 +249,8 @@ def create_license():
 
     db.session.add(lic)
     db.session.commit()
+    security_audit.record("platform.license.created", company_id=lic.company_id,
+                          detail={"license_id": lic.id, "status": lic.status})
     _log("license.created", "manual", company_id=lic.company_id,
          payload={"license_id": lic.id, "app": lic.app_name})
     flash("License created.", "success")
@@ -255,10 +262,13 @@ def create_license():
 def edit_license(lic_id):
     from models import SaasLicense
     lic = SaasLicense.query.get_or_404(lic_id)
+    changed = []
     for f in ["app_name", "plan", "status", "tenant_url", "stripe_product_id",
               "stripe_price_id", "notes"]:
         val = request.form.get(f, "").strip()
         if val != "":
+            if getattr(lic, f) != val:
+                changed.append(f)
             setattr(lic, f, val)
     for df in ["start_date", "renewal_date"]:
         val = request.form.get(df, "").strip()
@@ -268,6 +278,8 @@ def edit_license(lic_id):
             except ValueError:
                 pass
     db.session.commit()
+    security_audit.record("platform.license.updated", company_id=lic.company_id,
+                          detail={"license_id": lic.id, "fields": changed, "status": lic.status})
     flash("License updated.", "success")
     return redirect(url_for("saas.dashboard") + "#licenses")
 
@@ -277,8 +289,10 @@ def edit_license(lic_id):
 def delete_license(lic_id):
     from models import SaasLicense
     lic = SaasLicense.query.get_or_404(lic_id)
+    company_id = lic.company_id
     db.session.delete(lic)
     db.session.commit()
+    security_audit.record("platform.license.deleted", company_id=company_id, detail={"license_id": lic_id})
     flash("License deleted.", "success")
     return redirect(url_for("saas.dashboard") + "#licenses")
 
@@ -560,6 +574,8 @@ def create_checkout_session():
         logger.exception("Stripe checkout session creation failed")
         return jsonify({"error": "checkout session creation failed"}), 502
 
+    security_audit.record("billing.checkout.created", company_id=company.id,
+                          detail={"lookup_key": lookup_key, "include_setup_fee": apply_setup_fee})
     _log("checkout.session.created", "stripe",
          company_id=company.id,
          payload={
@@ -613,6 +629,7 @@ def create_portal_session():
         logger.exception("Stripe portal session creation failed")
         return jsonify({"error": "portal session creation failed"}), 502
 
+    security_audit.record("billing.portal.created", company_id=company.id)
     _log("portal.session.created", "stripe",
          company_id=company.id,
          payload={"session_id": getattr(session, "id", None)},

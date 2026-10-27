@@ -487,6 +487,8 @@ def create_app() -> Flask:
         app.logger.warning("Failed to register promo_optin_public blueprint: %s", exc)
     from email_unsubscribe_public import email_unsubscribe_bp
     app.register_blueprint(email_unsubscribe_bp)
+    from services.security_audit import security_audit_bp
+    app.register_blueprint(security_audit_bp)
     try:
         from feedback import feedback_bp
         app.register_blueprint(feedback_bp)

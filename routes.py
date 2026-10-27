@@ -6712,6 +6712,9 @@ def edit_user(user_id):
             flash('Access denied.', 'danger')
             return redirect(url_for('main.dashboard'))
         if not UserCompanyAccess.query.filter_by(user_id=user.id, company_id=company.id).first():
+            from services import security_audit
+            security_audit.record("team.user.updated", outcome="denied", company_id=company.id,
+                                  target_user_id=user.id, detail={"reason": "other_tenant"})
             flash('Access denied for this tenant user.', 'danger')
             return redirect(url_for('main.manage_users'))
         # A tenant admin must not change the identity of a platform admin or of
@@ -6723,6 +6726,10 @@ def edit_user(user_id):
             UserCompanyAccess.is_active.is_(True),
         ).first()
         if user.is_admin or other_tenant:
+            from services import security_audit
+            security_audit.record("team.user.updated", outcome="denied", company_id=company.id,
+                                  target_user_id=user.id,
+                                  detail={"reason": "platform_admin" if user.is_admin else "shared_account"})
             flash('This user is managed outside your workspace and cannot be edited here.', 'danger')
             return redirect(url_for('main.manage_users'))
     acc_for_company = UserCompanyAccess.query.filter_by(user_id=user.id, company_id=company.id).first() if company else None
@@ -6739,8 +6746,14 @@ def edit_user(user_id):
                 requested_role == 'owner' and not current_user.is_admin
                 and not (company and current_user.get_company_role(company.id) == 'owner')
             ):
+                from services import security_audit
+                security_audit.record("team.user.updated", outcome="denied",
+                                      company_id=company.id if company else None, target_user_id=user.id,
+                                      detail={"reason": "role_not_assignable", "role_to": requested_role})
                 flash('That role cannot be assigned.', 'danger')
                 return render_template('edit_user.html', user=user, **role_ctx)
+        before = {f: getattr(user, f) for f in ('username', 'email', 'first_name', 'last_name', 'is_admin')}
+        role_before = acc_for_company.role if acc_for_company else None
         user.username = request.form.get('username', user.username)
         user.email = request.form.get('email', user.email)
         user.first_name = request.form.get('first_name', '')
@@ -6755,6 +6768,16 @@ def edit_user(user_id):
                 acc.role = requested_role
         user.updated_at = datetime.now()
         db.session.commit()
+        from services import security_audit
+        changed = [f for f, v in before.items() if getattr(user, f) != v]
+        role_after = acc_for_company.role if acc_for_company else None
+        detail = {"fields": changed}
+        if role_after != role_before:
+            detail.update(role_from=role_before, role_to=role_after)
+        if 'is_admin' in changed:
+            detail.update(is_admin_from=before['is_admin'], is_admin_to=user.is_admin)
+        security_audit.record("team.user.updated", company_id=company.id if company else None,
+                              target_user_id=user.id, detail=detail)
         flash(f'User {user.username} updated successfully!', 'success')
         return redirect(url_for('main.manage_users'))
     return render_template('edit_user.html', user=user, **role_ctx)
@@ -6778,6 +6801,8 @@ def delete_user(user_id):
         with db.session.begin_nested():
             archive_user_for_company(user, company.id, current_user)
         db.session.commit()
+        from services import security_audit
+        security_audit.record("team.user.archived", company_id=company.id, target_user_id=user.id)
         flash(f'User {user.username} archived.', 'success')
     except Exception as exc:
         db.session.rollback()
@@ -6804,6 +6829,8 @@ def restore_user(user_id):
         with db.session.begin_nested():
             restore_user_for_company(user, company.id, current_user)
         db.session.commit()
+        from services import security_audit
+        security_audit.record("team.user.restored", company_id=company.id, target_user_id=user.id)
         flash(f'User {user.username} restored.', 'success')
     except Exception as exc:
         db.session.rollback()
@@ -11900,6 +11927,9 @@ def add_user():
                     ))
 
             db.session.commit()
+            from services import security_audit
+            security_audit.record("team.user.created", company_id=company.id if company else None,
+                                  target_user_id=user.id, detail={"role": "viewer" if company else None})
             flash(f'User {username} created successfully!', 'success')
             return redirect(url_for('main.manage_users'))
         except Exception as e:
@@ -11925,6 +11955,9 @@ def invite_user():
         invitation, token = inv_svc.create_invitation(
             company, current_user, request.form.get('email'), request.form.get('role') or inv_svc.DEFAULT_ROLE)
         db.session.commit()
+        from services import security_audit
+        security_audit.record("team.invitation.created", company_id=company.id,
+                              detail={"invitation_id": invitation.id, "role": invitation.role})
     except inv_svc.InvitationError as exc:
         db.session.rollback()
         flash(str(exc), 'error')
@@ -11956,6 +11989,9 @@ def revoke_invitation(invitation_id):
         return redirect(url_for('main.dashboard'))
     if inv_svc.revoke(company.id, invitation_id):
         db.session.commit()
+        from services import security_audit
+        security_audit.record("team.invitation.revoked", company_id=company.id,
+                              detail={"invitation_id": invitation_id})
         flash('Invitation revoked.', 'success')
     else:
         flash('Invitation not found.', 'error')
