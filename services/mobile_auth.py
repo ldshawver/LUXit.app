@@ -152,6 +152,9 @@ def verify_credentials(identifier: str, password: str):
         raise MobileAuthError("invalid_credentials", "Incorrect email or password.", 401)
     if not bool(getattr(user, "is_active", True)):
         raise MobileAuthError("account_archived", "This account has been archived. Ask an administrator to restore access.", 403)
+    from services.signup import needs_verification
+    if needs_verification(user):
+        raise MobileAuthError("email_unverified", "Confirm your email address first, then sign in again.", 403)
     return user
 
 

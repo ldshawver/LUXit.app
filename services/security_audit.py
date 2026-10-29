@@ -28,7 +28,7 @@ OUTCOMES = ("success", "denied", "failure")
 DETAIL_KEYS = frozenset({
     "reason", "role", "role_from", "role_to", "is_admin_from", "is_admin_to",
     "fields", "invitation_id", "license_id", "lookup_key", "include_setup_fee",
-    "session_id", "status", "via",
+    "session_id", "status", "via", "device_id",
 })
 _MAX_STR = 120
 _MAX_FIELDS = 20

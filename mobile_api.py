@@ -26,6 +26,7 @@ from datetime import datetime, timedelta
 from flask import Blueprint, Response, abort, g, jsonify, request
 
 from extensions import db, limiter
+from services import security_audit
 
 logger = logging.getLogger(__name__)
 
@@ -170,6 +171,8 @@ def auth_login():
     except MobileAuthError as exc:
         if exc.code == "invalid_credentials" and identifier:
             record_failure(identifier, ip)
+        security_audit.record("auth.login", outcome="failure" if exc.code == "invalid_credentials" else "denied",
+                              detail={"reason": exc.code, "via": "mobile"})
         return _err(exc.code, exc.message, exc.status)
     try:
         company = resolve_company_for(user)
@@ -177,9 +180,13 @@ def auth_login():
         tokens = issue_session(user, company, device, ip=ip)
     except MobileAuthError as exc:
         db.session.rollback()
+        security_audit.record("auth.login", outcome="denied", target_user_id=user.id,
+                              detail={"reason": exc.code, "via": "mobile"})
         return _err(exc.code, exc.message, exc.status)
     clear_failures(identifier)
     db.session.commit()
+    security_audit.record("auth.login", actor=user, company_id=company.id, target_user_id=user.id,
+                          detail={"via": "mobile", "device_id": device.id})
     logger.info("LUX Connect sign-in user_id=%s company_id=%s device_id=%s platform=%s",
                 user.id, company.id, device.id, device.platform)
     return jsonify({"success": True, **tokens.as_json(), "device": _device_json(device)})

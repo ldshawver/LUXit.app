@@ -1100,3 +1100,25 @@ def test_non_platform_workspace_gets_no_native_voice_token(app, client, monkeypa
     assert calling["available"] is False and calling["reason"] == "CALLING_NOT_PROVISIONED"
     alice = _signed_in(client, "alice")
     assert client.get("/api/mobile/v1/voice/token", headers=_auth(alice)).status_code == 200
+
+
+def test_native_login_requires_verified_email_and_is_audited(app, client):
+    """Native sign-in keeps the web login's email-verification gate and
+    writes the same security audit trail (T-26)."""
+    from models import SecurityAuditEvent, UserEmailVerification
+    co, _ta, pn = _tenant("A")
+    u = _user(co, pn, "alice")
+    db.session.add(UserEmailVerification(user_id=u.id, email=u.email))
+    db.session.commit()
+    r = _login(client, "alice")
+    assert r.status_code == 403 and r.get_json()["code"] == "email_unverified"
+    assert MobileSession.query.count() == 0
+    assert _login(client, "alice", password="wrong-password").status_code == 401
+    db.session.get(UserEmailVerification, u.id).verified_at = datetime.utcnow()
+    db.session.commit()
+    assert _login(client, "alice").status_code == 200
+    events = SecurityAuditEvent.query.filter_by(action="auth.login").order_by(SecurityAuditEvent.id).all()
+    assert [e.outcome for e in events] == ["denied", "failure", "success"]
+    assert all('"via":"mobile"' in (e.detail or "") for e in events)
+    assert events[0].detail and "email_unverified" in events[0].detail
+    assert events[2].actor_user_id == u.id and events[2].company_id == co.id
