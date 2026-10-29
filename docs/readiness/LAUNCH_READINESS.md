@@ -4,7 +4,7 @@ Living document and the single resume point for SaaS go-to-market work.
 Another session must be able to resume from this file alone. Update the
 "As of" line, the tracker table and the run log whenever a gate moves.
 
-- **As of:** 2026-10-26 10:00 UTC
+- **As of:** 2026-10-27 06:30 UTC (audit re-verified read-only; T-26 added; §9 = current go/no-go matrix)
 - **Branch:** `saas/gtm-launch-20261023`, worktree `/root/luxit-saas-launch`, based on **prod `1c56fbe`**. Work is in **focused local commits** (local commits authorized 2026-10-26; nothing pushed or deployed). See §8 for the commit list.
 - **Supersedes:** `saas/gtm-readiness-20261019` (`/root/luxit-gtm-readiness`, based on 645dd65). Its security commits 212ae1d/49b40ff reached prod via 09de17d → d0025bb → 1c56fbe; its third commit `d3523f0` (unsubscribe, DealActivity, honest email send, backups, ops) never did and is carried into this branch.
 - **Scope boundary:** LUXit.app SaaS platform only. LUX Connect / LUXit Phone native client (`/root/luxit-connect-native*`, `/api/mobile/v1`, integration `00f5fa0`) is a separate product and release train; it does not block SaaS gates except where marked.
@@ -52,6 +52,7 @@ Status: **Verified** (tested + deployed + checked live) · **Done (branch)** (im
 | T-15 | Calling (inbound ring) | 1/26 answered (10-19); candidates 32814a7 / 3099ec8 | phone memories | P1 (P0 if advertised) | handset tests | — | ring + answer on handset | Blocked (handset + auth) |
 | T-16 | **Tenant sender isolation** | Outbound SMS falls back to the **platform** Twilio account/number when a tenant has no own config. Mitigation found: `services/sms_service.send_sms` + campaign + `twilio_sms.py:730` paths require an active `phone_pwa` TenantLicense, which a new org does not get (`ensure_company_default_license` only seeds company 1 / an empty table). Legacy root `sms_service.py` has no callers (dead). Audited 2026-10-23: `twilio_sms` conversation send (tenant TwilioAccount + license, fail-closed), `inbox_pwa` outbound calls (tenant TwilioAccount), `services/sms_service` (license, then **platform fallback** if the tenant has no config), `integrations_bp /api/twilio/send-sms` (platform, no gate → fixed under T-25). 2026-10-26 fix: `SMSService.send_sms` refuses a missing `company_id` (403) and refuses the platform fallback for any tenant not in `LUXIT_PLATFORM_SENDER_COMPANY_IDS` (default `1`) (409 `sender_missing`); Stripe events no longer *create* a phone/PWA license (only keep an existing one in step); `/api/phone/voice-token` (always minted on the platform account) is limited to platform workspaces. | `services/sms_service.py`, `services/license_service.py`, `inbox_pwa.py`; `test_gtm_tenant_sender_isolation` 8 tests | **P0 before enabling signup** | **pre-deploy check:** list prod companies with an active `phone_pwa` license / PWA voice use other than company 1 and add them to `LUXIT_PLATFORM_SENDER_COMPANY_IDS` (prod DB read was not permitted in this session) | — | new org: SMS 402/409, voice token 403; company 1 unchanged | Done (branch) |
 | T-25 | **Platform-owned integration accounts exposed to tenants** | **Live on prod 1c56fbe**: any signed-in user of any tenant (viewer included) could `POST /api/twilio/send-sms` (platform Twilio number, any recipient; consent checked only if the number is already a contact of that tenant), use `/api/outlook/*` (send as the platform Microsoft 365 mailbox, list its inbox subjects/senders, read/create its calendar — **MS Graph is configured on prod**) and `/api/airtable/*` (platform Airtable base; not configured on prod). No nginx block. 0 hits in nginx logs 2026-10-09 → 10-23 (all retained logs). Legacy `/api/twilio/inbound-sms` was unsigned but is unreachable (blueprint not CSRF-exempt → 400). | `integrations_bp.py`; `test_gtm_platform_integrations_authz` | **P0** (P1 at today's 7 trusted users) | — | 16 routes → `_require_platform_admin()`; inbound webhook requires Twilio signature, reply XML-escaped | tenant owner → 403 on all 16; no send function called | Done (branch) |
+| T-26 | **Security audit trail** | Missing in prod: no record of who changed a role/admin flag, archived a user, invited/revoked, opened billing, or edited a tenant/license from `/saas` (`ActivityLog` is a user feed; `SaasAutomationLog` has no actor). Login also logged password length | `models.SecurityAuditEvent`, `services/security_audit.py` (`record()` after commit, savepoint, never raises; allowlisted detail; no typed identifier/password/token/email stored), `GET /api/security/audit-events` (own workspace for owner/admin, any for platform admin); hooks in `auth.py`, `routes.py` user/invite routes, `saas_mgmt.py`; `pw_len` log removed; `tests/test_gtm_security_audit.py` 8 tests | P1 (P0 for multi-tenant launch evidence) | migration `20261027_security_audit_event.sql` (append-only trigger; verified on a throwaway PG17: applies twice, UPDATE/DELETE/TRUNCATE rejected) | retention period = decision D-9 | events for sign-in/role/invite/archive/billing/platform edits; tenant-scoped read; broken table never blocks the action | Done (branch) |
 | T-17 | **Scheduler pause survives restart** | Broken in prod worker (re-arm on start); contained by DB trigger | `scheduler._paused_job_ids`; `test_scheduler_pause_survives_restart` 3/5 fail on 1c56fbe, 5/5 pass | P0 | worker upgrade | — | paused job stays NULL across 3 restarts; read failure aborts startup | Done (branch) |
 | T-18 | Worker on current code | Worker runs eea5b84 | §0 | P1 | auth to restart worker | Strategy B (detached dir + drop-in, hold stays) | worker cwd = release SHA, dedupe still NULL, Tuya advancing | Not started (needs auth) |
 | T-19 | Backups | No scheduled backups; manual pre-deploy dumps only | `deploy/backup/` carried | P0 | off-site target | install timer | nightly dump + monthly restore drill | Blocked (auth + target) |
@@ -119,7 +120,7 @@ New this session:
 | `migrations/20261026_company_plan_policy.sql`, `migrations/20261026_team_invitation.sql` | new, additive, idempotent (NOT applied anywhere) |
 | `services/invitations.py`, `models.TeamInvitation`, `auth.py` `/auth/invite/<token>`, `routes.py` `/user/invite*`, `templates/manage_users.html`, `templates/auth/invite_*.html`, `email_invite.html` (T-5) | `tests/test_gtm_team_invitations.py` 9 tests |
 
-**Deploy order when authorized:** apply `20261019_deal_activity.sql`, `20261023_user_email_verification.sql`, `20261026_company_plan_policy.sql`, `20261026_team_invitation.sql` via the canonical runner first, then code. Before code: set `LUXIT_PLATFORM_SENDER_COMPANY_IDS` to every prod company that legitimately sends through / calls on the platform Twilio account (default `1`). Code without the verification table still serves logins (gate fails open, logs an error) but `/auth/signup` would error. Keep `SELF_SERVE_SIGNUP_ENABLED` unset until T-8 and T-16 are done.
+**Deploy order when authorized:** apply `20261019_deal_activity.sql`, `20261023_user_email_verification.sql`, `20261026_company_plan_policy.sql`, `20261026_team_invitation.sql`, `20261027_security_audit_event.sql` via the canonical runner first, then code. Before code: set `LUXIT_PLATFORM_SENDER_COMPANY_IDS` to every prod company that legitimately sends through / calls on the platform Twilio account (default `1`). Code without the verification table still serves logins (gate fails open, logs an error) but `/auth/signup` would error. Keep `SELF_SERVE_SIGNUP_ENABLED` unset until T-8 and T-16 are done.
 
 ## 5. Security and compliance notes (for professional review, not asserted)
 
@@ -153,8 +154,64 @@ Baseline failing set for 1c56fbe == d0025bb: `/root/luxit-ops-backups/20261020-a
 
 ## 8. Run log
 
+- 2026-10-27 05:20–06:30 UTC: read-only re-audit (§9). Prod 1c56fbe PID 3415576 NRestarts 0 (drop-in zzz-release-1c56fbe-20261022); worker eea5b84; staging 9311cec; dev /srv/lux-email-bot-dev; all /health 200. origin/main 4bb5d30; open PRs #232/#233/#238 (no CI on PR heads; last Actions runs = Pages/Codespaces on main 2026-10-22). Implemented T-26 (security audit trail) + removed pw_len log. Tests: new suite 8/8; 30 related files (all test_gtm_*, test_stripe_*, feedback, license, every test hitting login/user-edit/saas routes) 347P/21F — 15 F are in the recorded 1c56fbe baseline, 6 test_startup F were an env artifact (`python` not on PATH) and pass 6/6 with the venv on PATH → **0 new failures**. ruff F/E9/B: 0 new findings vs HEAD; bandit (≥medium) clean on new module. Full batched suite NOT rerun (host ~0.5 GB available). Nothing pushed/deployed; no external state changed.
+
 - 2026-10-26 09:40–10:45 UTC: recovered disconnected sessions (9e3471d7 had added T-16/T-8 and a half-built T-5 after the 10-23 entry; nothing lost). Fixed scheduler test isolation; finished + tested T-5; free-plan lookup fails open if its table is missing; split migration 20261026 into two files. Full suite in 13 memory-limited batches: **74F/17E, identical failure IDs to the 1c56fbe baseline (0 new)**; two extra failures seen only in an ad-hoc file order reproduce identically on 1c56fbe (pre-existing order dependence in test_pwa_communications_completion). Local commits on `saas/gtm-launch-20261023` (not pushed): 2bbcede carry d3523f0 · acee917 T-17 · b346a82 T-25 · 1a698f1 T-7 · 40e730d T-11 · onboarding T-3/T-4/T-8 · T-16 · T-5 · this tracker. Prod 1c56fbe / staging 9311cec / dev f71f68d / worker eea5b84 unchanged.
 - 2026-10-23 23:25–23:50 UTC: state recovered read-only (§0). New branch off prod 1c56fbe + d3523f0. Implemented T-17, T-3/T-4, T-7, T-25 (platform integration accounts exposed to tenants; live on prod; nginx containment candidate). Found T-16 (platform-sender fallback; license gate mitigates on audited paths; legacy root sms_service.py is dead code).
 - 2026-10-22: 1c56fbe deployed to prod; non-prod containment; staging storm containment.
 - 2026-10-20: 09de17d deployed to prod; chatbot containment.
 - 2026-10-19: dedupe pause + hold applied on prod; discovery; P0 security fixes.
+
+## 9. 2026-10-27 audit — leads verified, go/no-go matrix
+
+### 9.1 Leads (treated as unverified until checked)
+
+| Lead | Finding (evidence) | Confidence |
+|---|---|---|
+| Hard-coded trial duration | **No trial anywhere in LUXit code.** Checkout (`services/stripe_billing.create_checkout_session`) sets no `trial_period_days`; pricing page + `/app/billing` advertise no trial; `trialing` is only *mirrored* from Stripe (`entitlements.PAID_BILLING_STATUSES`, `license_service.ACTIVE_STATUSES`). `TenantLicense.trial_ends_at` column exists, nothing sets it. What *is* hard-coded is the **14-day payment grace** (`BILLING_GRACE_DAYS` default 14) and free plan = 1 seat / 250 contacts. | High |
+| Missing Stripe setup | Prod `/health`: `stripe=configured` (secret + webhook secret present; 10-19 audit: `sk_live`, 0 webhook events, 0 customers — not re-checked, Stripe dashboard not accessed). Staging/dev: **no keys** (`/ready` 503 on staging). Lookup keys required in Stripe: `luxit_starter_monthly`, `luxit_professional_monthly`, `luxit_additional_account_monthly`, `luxit_contacts_usage_monthly`, `luxit_setup_fee_once` — existence in the Stripe account unverified. Page prices ($199 / $499) are template text, not read from Stripe → can drift. | High (config present) / Unknown (prices exist) |
+| Incomplete contracts | **No LUXit customer contract / order form / e-signature flow.** `services/documenso_service.py` exists but serves the separate PayLink contract flow (docs/paylink_documenso_production_signing_scope.md); no LUXit route calls it. Customers accept web Terms only. | High |
+| Public demo credentials | **Not found**: no demo user/password in repo (excluding tests) or on live `/`, `/auth/login`, `/pricing`, `/book-demo`. | Medium (public pages only) |
+| Backup gaps | **Confirmed.** No backup timer/cron (only `dpkg-db-backup`); newest DB dump = pre-deploy `luxit-before-1c56fbe-20261022T112013Z.dump`, same host, no off-site copy. `deploy/backup/` unit is in branch, not installed. | High |
+| Monitoring | **None** beyond `/health`: no alerting/uptime/error-tracking service running; Sentry not configured. | High |
+| Audit logging | Was missing for privileged actions → fixed in branch (T-26). | High |
+| Support | No support desk; `support@luxit.app` on contact/SMS pages (mailbox status unverified); auth emails hard-code a personal address. In-app feedback tickets exist. | Medium |
+| Legal pages | `/terms` `/privacy` `/sms-consent` 200; `/acceptable-use` `/refund-policy` `/dpa` `/subprocessors` 404. | High |
+| Self-serve signup | Live `/auth/signup` 404 (prod lacks branch); branch has it flag-gated off. | High |
+| On-prem licensing | No on-prem/offline license mechanism; product is hosted-only (`TenantLicense` = per-tenant feature modules). Only a gap if on-prem is sold — decision D-8. | High |
+
+### 9.2 Launch blockers (must have evidence before GO)
+
+| # | Blocker | Evidence |
+|---|---|---|
+| B-1 | Branch not deployed: signup, verification, invitations, sender isolation (T-16), platform-integration lockdown (T-25, **live on prod**), billing authz (T-7), export scoping (T-11), audit trail (T-26) | prod = 1c56fbe; branch = 4727798 + T-26 |
+| B-2 | Billing never exercised end-to-end | no Stripe test keys on any non-prod instance; 0 prod webhook events (10-19) |
+| B-3 | No scheduled / off-site backups or restore drill on schedule | §9.1 |
+| B-4 | No alerting | §9.1 |
+| B-5 | Commercial terms not decided/published: pricing in Stripe, refund/cancel, AUP, DPA/subprocessors, customer agreement | §9.1, D-1…D-7 |
+| B-6 | Worker on stale code (eea5b84); legacy `luxit.service` with readable `ENCRYPTION_MASTER_KEY` | §0, §3 |
+| B-7 | Per-tenant messaging model (Twilio subaccount/10DLC) undecided → SMS/voice can't be sold to new tenants | T-16, D-6 |
+
+Non-blocking risks: dependency CVEs (T-24); email campaigns have no delivery path (exclude from launch, T-13); SMS campaigns in web thread (T-14); OpenAI out of credit (T-20, sell without AI or fund); marketing over-claims (T-21); no MFA; 7 unscoped models (empty tables, T-23); calling reliability (T-15, only if advertised); legacy `/saas` license edits not validated against Stripe.
+
+### 9.3 Decisions needed from the owner (business / legal / finance)
+
+- D-1 Trial: none, or N days, card-required or not (code currently: no trial; free plan exists for self-serve).
+- D-2 Prices + setup fee amount, and confirmation that the 5 Stripe lookup keys exist in the live account.
+- D-3 Payment-failure grace: keep 14 days? What access during grace and after suspension?
+- D-4 Refund / cancellation / proration policy (needed for Terms + checkout disclosure).
+- D-5 Customer agreement model: click-through Terms only, or signed order form/MSA (and with which e-sign tool) for Professional/Enterprise.
+- D-6 Messaging model for tenants: bring-your-own Twilio vs platform subaccounts; who registers 10DLC; who pays usage.
+- D-7 Legal pages: AUP, DPA, subprocessor list, retention — counsel review.
+- D-8 On-prem / self-hosted licensing: in scope or hosted-only?
+- D-9 Security-audit retention period (table is append-only; purge needs an explicit job).
+- D-10 Off-site backup target + RPO/RTO; alerting channel (email/SMS/pager) and on-call owner.
+- D-11 Support channel: confirm `support@luxit.app` is a monitored mailbox; response-time commitment.
+
+### 9.4 Smallest sequenced plan
+
+1. **Staging acceptance of this branch** (isolated :8006 pattern, fresh keys, IPAddressDeny, luxstaging copy, all 5 migrations). *Accept:* security/acceptance script green; signup→verify→invite→role change visible in `/api/security/audit-events`; viewer 403 on billing/T-25 routes; tenant without Twilio → SMS 409 / voice 403. *Tests:* full batched suite 0 new vs 1c56fbe; `sec_acceptance.py` extended for T-25/T-26.
+2. **Billing sandbox** (needs Stripe test keys in the secret manager + D-1…D-4). *Accept:* test card → `billing_status=active`, tier/seats applied; replayed webhook idempotent; failed invoice → grace → suspended; cancel at period end; viewer cannot open portal. *Tests:* existing 31 Stripe tests + a scripted Stripe CLI event run.
+3. **Ops baseline** (D-10): install backup timer with off-site copy, monthly restore drill, uptime + 5xx alerting. *Accept:* nightly dump present off-host for 3 nights; restore drill log; alert fires on a staged `/health` failure.
+4. **Prod release** (auth required): migrations via canonical runner → `LUXIT_PLATFORM_SENDER_COMPANY_IDS` set from a read-only company audit → code via detached dir + `zzz-` drop-in; worker upgrade (T-18) keeping the hold trigger; retire legacy `luxit.service` + key rotation plan. *Accept:* smoke + signed-in human checks; signup flag still OFF.
+5. **Commercial go-live** (D-1…D-7, D-11): publish legal pages, align pricing page with Stripe, enable `SELF_SERVE_SIGNUP_ENABLED`. *Accept:* every launch claim maps to a verified feature (T-21); first real customer checkout observed in webhook log.

@@ -10,6 +10,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from werkzeug.security import check_password_hash
 
 from models import Company, User
+from services import security_audit
 
 logger = logging.getLogger(__name__)
 
@@ -126,6 +127,7 @@ def login():
 
         if not user:
             logger.warning("LOGIN FAIL: user not found for %r", identifier)
+            security_audit.record("auth.login", outcome="failure", detail={"reason": "unknown_account"})
             flash("Invalid credentials.", "error")
             try:
                 return render_template("auth/login.html")
@@ -138,6 +140,8 @@ def login():
                 "LOGIN FAIL: archived/inactive account user_id=%s",
                 getattr(user, "id", None),
             )
+            security_audit.record("auth.login", outcome="denied", target_user_id=user.id,
+                                  detail={"reason": "archived"})
             flash(
                 "This account has been archived. Ask an administrator to restore access.",
                 "error", )
@@ -149,6 +153,8 @@ def login():
 
         if not user.password_hash:
             logger.warning("LOGIN FAIL: user has no password hash for %r", identifier)
+            security_audit.record("auth.login", outcome="denied", target_user_id=user.id,
+                                  detail={"reason": "no_password"})
             flash("This account doesn't have a password set. Use SSO or ask an admin to set a password.", "error")
             try:
                 return render_template("auth/login.html")
@@ -157,9 +163,10 @@ def login():
                 return render_template("login.html")
 
         pw_ok = check_password_hash(user.password_hash, password)
-        logger.info("LOGIN: password check for %r = %s (pw_len=%d, hash_len=%d)", 
-                     identifier, pw_ok, len(password), len(user.password_hash or ''))
+        logger.info("LOGIN: password check for user_id=%s ok=%s", user.id, pw_ok)
         if not pw_ok:
+            security_audit.record("auth.login", outcome="failure", target_user_id=user.id,
+                                  detail={"reason": "bad_password"})
             flash("Invalid credentials.", "error")
             try:
                 return render_template("auth/login.html")
@@ -170,6 +177,8 @@ def login():
         from services.signup import needs_verification
         if needs_verification(user):
             logger.warning("LOGIN FAIL: email not verified user_id=%s", user.id)
+            security_audit.record("auth.login", outcome="denied", target_user_id=user.id,
+                                  detail={"reason": "email_unverified"})
             flash("Confirm your email address first — we sent you a link. "
                   "Didn't get it? Request a new one below.", "error")
             return render_template("auth/signup_sent.html", show_resend=True)
@@ -191,6 +200,8 @@ def login():
             _db.session.commit()
         except Exception:
             pass
+        security_audit.record("auth.login", actor=user, company_id=user.default_company_id,
+                              target_user_id=user.id, detail={"via": "password"})
 
         # Ensure platform admins keep a company context after restores/DB resets.
         # ``get_default_company`` also performs this fallback, but doing it at
@@ -284,6 +295,7 @@ def forgot_password():
                     )
                     _db.session.add(prt)
                     _db.session.commit()
+                    security_audit.record("auth.password_reset.requested", target_user_id=user.id)
                     reset_url = url_for("auth.reset_password", token=token, _external=True)
                     _send_account_email(
                         user.email,
@@ -353,6 +365,8 @@ def reset_password(token):
                     if pending is not None and pending.verified_at is None and pending.email == user.email:
                         pending.verified_at = datetime.datetime.utcnow()
                     _db.session.commit()
+                    security_audit.record("auth.password_reset.completed", actor=user,
+                                          company_id=user.default_company_id, target_user_id=user.id)
                     success = True
                 else:
                     error = "User not found."
@@ -423,6 +437,9 @@ def signup():
         logger.warning("Signup: account creation failed", exc_info=True)
         return render_template("auth/signup_sent.html", show_resend=False)
 
+    if status == "created":
+        security_audit.record("auth.signup", actor=user, company_id=user.default_company_id,
+                              target_user_id=user.id)
     if status in ("created", "unverified_existing"):
         _send_verification_email(user)
     elif status == "exists":
@@ -458,6 +475,9 @@ def _send_verification_email(user):
 def verify_email(token):
     from services import signup as svc
     user, outcome = svc.verify_token(token)
+    if outcome == "verified" and user is not None:
+        security_audit.record("auth.email_verified", actor=user, company_id=user.default_company_id,
+                              target_user_id=user.id)
     if outcome == "verified" and user is not None and user.is_active:
         from flask import session as _session
         _session.permanent = True
@@ -505,6 +525,8 @@ def accept_invite(token):
         except inv_svc.InvitationError as exc:
             db.session.rollback()
             return render_template("auth/invite_result.html", outcome="error", message=str(exc), company=company), 409
+        security_audit.record("team.invitation.accepted", actor=user, company_id=company.id, target_user_id=user.id,
+                              detail={"invitation_id": invitation.id, "role": invitation.role, "via": "existing_account"})
         flash(f"You've joined {company.name}.", "success")
         return _hub_redirect(user)
 
@@ -571,6 +593,8 @@ def accept_invite(token):
         return render_template("auth/invite_result.html", outcome="error", company=company,
                                message="We couldn't create your account. Try the link again."), 409
 
+    security_audit.record("team.invitation.accepted", actor=user, company_id=company.id, target_user_id=user.id,
+                          detail={"invitation_id": invitation.id, "role": invitation.role, "via": "new_account"})
     from flask import session as _session
     _session.permanent = True
     login_user(user, remember=True)

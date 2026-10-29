@@ -493,6 +493,8 @@ def create_app() -> Flask:
     app.register_blueprint(unified_comms_bp)
     from automation_builder_bp import automation_builder_bp
     app.register_blueprint(automation_builder_bp)
+    from services.security_audit import security_audit_bp
+    app.register_blueprint(security_audit_bp)
     try:
         from feedback import feedback_bp
         app.register_blueprint(feedback_bp)

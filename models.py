@@ -3693,6 +3693,28 @@ class TeamInvitation(db.Model):
         return not self.accepted_at and not self.revoked_at and self.expires_at > datetime.utcnow()
 
 
+class SecurityAuditEvent(db.Model):
+    """Append-only record of a security-relevant action (sign-in, role change,
+    invitation, billing session, platform edit). Written by ``services.security_audit``.
+
+    No foreign keys on purpose: a record must outlive the user or company it
+    names, and the Postgres migration rejects UPDATE/DELETE on this table.
+    ``detail`` is compact JSON built from an allowlist; it never holds
+    passwords, tokens or message content.
+    """
+    __tablename__ = "security_audit_event"
+
+    id             = db.Column(db.Integer, primary_key=True)
+    created_at     = db.Column(db.DateTime, default=datetime.utcnow, nullable=False, index=True)
+    action         = db.Column(db.String(64), nullable=False, index=True)
+    outcome        = db.Column(db.String(16), nullable=False, default="success")
+    actor_user_id  = db.Column(db.Integer, nullable=True, index=True)
+    company_id     = db.Column(db.Integer, nullable=True, index=True)
+    target_user_id = db.Column(db.Integer, nullable=True)
+    ip             = db.Column(db.String(64), nullable=True)
+    detail         = db.Column(db.Text, nullable=True)
+
+
 # ---------------------------------------------------------------------------
 # Twilio Multi-Tenant SMS / Call Platform
 # ---------------------------------------------------------------------------
