@@ -25,6 +25,8 @@ Resume point for the differentiation milestones (M1–M5).
 | M3 | Actionable CRM | **Done (branch)** | `services/crm_workspace.py`, `crm_workspace_bp.py` (`/crm/today`, `/api/crm/dashboard`, `/api/crm/pipeline`, `/api/crm/opportunities[/<id>]`, `/api/crm/tasks[/<id>[/complete|reopen]]`), `templates/crm/today.html`, sidebar "Today"; segment engine relationship fields; scheduler job `crm_task_reminders`; `tests/test_crm_workspace.py` 12 tests |
 | M4 | Unified communications | **Done (branch, provider adapters pending)** | `services/unified_comms.py`, `unified_comms_bp.py`, models `BusinessIdentity`/`BusinessIdentityNumber`/`EmailMessage` + `migrations/20261026_comms_identity_email.sql` (not applied); email on the timeline; `docs/contracts/LUXIT_PHONE_CRM_CONTRACT.md`; `tests/test_unified_comms.py` 13 tests |
 | M5 | Intelligent automation | **Done (branch)** | `services/crm_automation.py` (extended), `services/crm_events.py`, `services/automation_builder.py`, `automation_builder_bp.py` (`/automations/workflows`, `/api/automations*`), `templates/automations/workflows.html`; event sources in `twilio_sms.py` (missed call, inbound SMS) and `crm_workspace` (opportunity/task); scheduler job `crm_inactivity_scan`; `tests/test_workflow_automation.py` 17 tests |
+| M6 | Ask LUXit | **Done (branch)** | `services/ask_luxit.py`, `ask_luxit_bp.py` (`/ask`, `POST /api/ask`, 30/min), `templates/ask/ask.html`, sidebar "Ask LUXit"; `tests/test_ask_luxit.py` |
+| M7 | Commercial + mobile integration | **Done (branch, read model)** | `services/account_status.py`, `account_bp.py` (`GET /api/account/entitlements`); contract doc v1.1; `tests/test_account_status.py`; journey test `tests/test_saas_customer_journey.py` |
 
 ### M1 detail
 
@@ -67,6 +69,21 @@ Resume point for the differentiation milestones (M1–M5).
 - **Reliability:** `CRMAutomationExecution` unique `(company, rule, event_key, action)` = idempotency; each M5 action runs in its own savepoint — a failure marks that execution `failed` with the error and the rest continue; `emit()` never breaks the caller (savepoint + log) and nested events stop at depth 2 (no rule ping-pong). Both new scheduler jobs are pause-preserving.
 - **Builder:** structured editor (trigger → conditions → actions), dry-run against a contact (no writes), execution history with status filter, failure summary, approvals queue. Admins manage; editors approve; viewers read. Referenced segments/tags/owners must belong to the workspace.
 - **AI-assisted workflows:** not wired (no working AI provider, T-20). Design: AI may only *draft* (`message.send` / memory with `origin='ai'`), never send without approval.
+
+### M6 detail
+
+- **Deterministic, grounded:** a question is routed to an intent — unanswered texts, missed calls, needs-attention, tasks (overdue/today/upcoming, mine/everyone), pipeline (optionally one stage), quiet contacts ("haven't contacted in N days/weeks/months"; do-not-contact excluded), open commitments/follow-ups, one person, or keyword search. Answers are built only from rows read inside the caller's workspace; every sentence carries `refs` → `results[n-1]`, every result names `source.table/id` and links to the contact.
+- **Person questions:** each question word is matched to contacts on its own (name/company/email); a unique best match switches to that contact's M1 timeline (topic words filter it) or M2 briefing (last inbound/outbound + top 3 recommendations with their sources). Ambiguous → keyword search.
+- **Keyword search:** contacts, SMS bodies, email subject/body, notes, tasks, opportunities, non-rejected memories; every row must contain all terms; rows tied to a contact outside the tenant are dropped as a second guard; `%`/`_` escaped.
+- **Access:** any member (viewers included) may ask; no workspace → 404; 500-char limit; 30/min. Free plan included (no AI used).
+- **AI:** not wired (T-20). When added it may only rephrase these results (same `results`, same refs) and must keep `grounded: true` honest.
+
+### M7 detail
+
+- **Entitlements read model** `GET /api/account/entitlements` (any member): workspace, role, plan (`source` self_serve/managed, tier, billing status, free, grace end), seats (members + pending invites vs limit), contacts (used vs free cap / tier allowance, overage, metered flag), features (crm, ask, automations, ai, phone_sms license allowed/status/warning, tenant email send), `can_manage_billing`. Decides nothing itself — reads `entitlements`, `invitations`, `stripe_billing`, `license_service`.
+- **Workspace creation closed the free-plan bypass:** extra workspaces made by non-platform-admins (`/companies/add`, `/onboarding/submit`) start on the free plan (T-27).
+- **Journey acceptance:** `tests/test_saas_customer_journey.py` walks signup → verify → free limits → checkout (fake Stripe SDK, real signed webhook) → entitlements → invite → contacts → tenant Twilio → signed inbound SMS → licensed reply → automation → CRM + Ask → billing portal → sign out/in, with an isolation spot-check.
+- **Usage metering:** existing `report_contact_usage` (Stripe metered item) unchanged; the read model reports the same overage figure.
 
 ## Verification status (2026-10-26)
 
