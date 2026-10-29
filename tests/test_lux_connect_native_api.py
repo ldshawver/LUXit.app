@@ -1079,3 +1079,24 @@ def test_cross_tenant_handset_claim(app, client, kind, holder):
         assert r.status_code == 200
         assert anna_device.push_token is None and anna_device.voice_token_hash is None
         assert anna_device.status == "signed_out"
+
+
+def test_non_platform_workspace_gets_no_native_voice_token(app, client, monkeypatch):
+    """T-16 on the native path: the Voice token is minted on the platform
+    account, so a tenant without a platform sender is refused with a 403 and
+    /me reports calling unavailable instead of crashing."""
+    monkeypatch.delenv("LUXIT_PLATFORM_SENDER_COMPANY_IDS", raising=False)
+    co_a, _ta, pn_a = _tenant("A"); _user(co_a, pn_a, "alice")
+    co_b, _tb, pn_b = _tenant("B", OTHER_NUMBER); _user(co_b, pn_b, "bob")
+    db.session.commit()
+    bob = _signed_in(client, "bob", UID_B, "android")
+    r = client.get("/api/mobile/v1/voice/token", headers=_auth(bob))
+    assert r.status_code == 403
+    assert r.get_json()["code"] == "CALLING_NOT_PROVISIONED"
+    assert "token" not in r.get_json()
+    me = client.get("/api/mobile/v1/me", headers=_auth(bob))
+    assert me.status_code == 200
+    calling = me.get_json()["calling"]
+    assert calling["available"] is False and calling["reason"] == "CALLING_NOT_PROVISIONED"
+    alice = _signed_in(client, "alice")
+    assert client.get("/api/mobile/v1/voice/token", headers=_auth(alice)).status_code == 200

@@ -1793,10 +1793,10 @@ def _voice_token_gate(user, company):
     from services.license_service import uses_platform_sender
     if not uses_platform_sender(company.id):
         logger.info("Voice token denied: workspace has no provisioned calling account", extra={"user_id": user.id, "company_id": company.id})
-        return jsonify({
+        return None, (jsonify({
             "success": False, "code": "CALLING_NOT_PROVISIONED",
             "error": "Browser calling is not set up for this workspace yet.",
-        }), 403
+        }), 403)
 
     ta = TwilioAccount.query.filter_by(company_id=company.id).first()
     account_sid = (
