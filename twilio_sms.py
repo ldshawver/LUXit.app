@@ -4019,20 +4019,32 @@ def google_contacts_connect():
     from flask_login import current_user
     from services.google_contacts import get_auth_url
     import os
+    import secrets
+    from flask import session
     if not os.environ.get("GOOGLE_CLIENT_ID"):
         flash("GOOGLE_CLIENT_ID is not configured. Add it in Settings → Secrets.", "danger")
         return _google_contacts_redirect()
-    return redirect(get_auth_url(state=str(current_user.id)))
+    # Unguessable and bound to this browser session: a callback carrying
+    # someone else's code can't attach their Google account here.
+    state = secrets.token_urlsafe(32)
+    session["google_contacts_oauth_state"] = state
+    return redirect(get_auth_url(state=state))
 
 
 @twilio_bp.route("/google-contacts/callback")
 @login_required
 def google_contacts_callback():
     """Handle Google OAuth callback, exchange code, run initial sync."""
+    import secrets
+    from flask import session
     from flask_login import current_user
     from services.google_contacts import exchange_code, sync_contacts
     code  = request.args.get("code")
     error = request.args.get("error")
+    expected = session.pop("google_contacts_oauth_state", None)
+    if not expected or not secrets.compare_digest(expected, request.args.get("state") or ""):
+        flash("Google sign-in could not be verified. Please try connecting again.", "warning")
+        return _google_contacts_redirect()
     if error or not code:
         flash(f"Google sign-in was cancelled or failed: {error or 'no code'}", "warning")
         return _google_contacts_redirect()
@@ -4070,6 +4082,8 @@ def google_contacts_sync():
     from flask_login import current_user
     from services.google_contacts import sync_contacts
     company = _get_company()
+    if not company:
+        return jsonify({"error": "No workspace is selected."}), 400
     dry_run = request.args.get("dry_run") in {"1", "true", "yes"} or bool((request.get_json(silent=True) or {}).get("dry_run"))
     result  = sync_contacts(current_user.id, company.id, dry_run=dry_run)
     return jsonify(result)
