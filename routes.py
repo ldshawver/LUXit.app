@@ -1757,6 +1757,35 @@ def companies_list():
     user_companies = current_user.get_all_companies()
     return render_template('companies.html', companies=user_companies)
 
+_LOGO_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
+_MAX_LOGO_BYTES = 5 * 1024 * 1024
+
+
+def _save_company_logo(logo_file):
+    """Store an uploaded logo under a random name; raster images only.
+
+    SVG/HTML would be served from our origin (stored XSS), and keeping the
+    uploader's filename let one workspace overwrite another's logo.
+    Returns the static-relative path, or None when the file is refused.
+    """
+    import os
+    import uuid
+    if not logo_file or not logo_file.filename:
+        return None
+    ext = logo_file.filename.rsplit('.', 1)[-1].lower() if '.' in logo_file.filename else ''
+    if ext not in _LOGO_EXTENSIONS:
+        return None
+    logo_file.seek(0, 2)
+    size = logo_file.tell()
+    logo_file.seek(0)
+    if size > _MAX_LOGO_BYTES:
+        return None
+    logo_path = f'company_logos/{uuid.uuid4().hex}.{ext}'
+    os.makedirs('static/company_logos', exist_ok=True)
+    logo_file.save(f'static/{logo_path}')
+    return logo_path
+
+
 @main_bp.route('/companies/add', methods=['GET', 'POST'])
 @login_required
 def add_company():
@@ -1777,18 +1806,14 @@ def add_company():
         company.email_config = {}
         company.api_keys = {}
         
-        logo_file = request.files.get('logo')
-        if logo_file and logo_file.filename:
-            import os
-            from werkzeug.utils import secure_filename
-            filename = secure_filename(logo_file.filename)
-            logo_path = f'company_logos/{filename}'
-            os.makedirs('static/company_logos', exist_ok=True)
-            logo_file.save(f'static/{logo_path}')
+        logo_path = _save_company_logo(request.files.get('logo'))
+        if logo_path:
             company.logo_path = logo_path
         
         db.session.add(company)
         db.session.flush()
+        from services.entitlements import apply_new_workspace_policy
+        apply_new_workspace_policy(company, current_user)
 
         existing_count = len(current_user.get_all_companies())
         is_first = existing_count == 0
@@ -1861,26 +1886,14 @@ def onboarding_submit():
     company.email_config = {}
     company.api_keys = {}
     
-    ALLOWED_IMAGE_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'svg', 'webp'}
-    MAX_LOGO_SIZE = 5 * 1024 * 1024
-    
-    logo_file = request.files.get('logo')
-    if logo_file and logo_file.filename:
-        from werkzeug.utils import secure_filename
-        filename = secure_filename(logo_file.filename)
-        ext = filename.rsplit('.', 1)[-1].lower() if '.' in filename else ''
-        if ext in ALLOWED_IMAGE_EXTENSIONS:
-            logo_file.seek(0, 2)
-            file_size = logo_file.tell()
-            logo_file.seek(0)
-            if file_size <= MAX_LOGO_SIZE:
-                logo_path = f'company_logos/{filename}'
-                os.makedirs('static/company_logos', exist_ok=True)
-                logo_file.save(f'static/{logo_path}')
-                company.logo_path = logo_path
+    logo_path = _save_company_logo(request.files.get('logo'))
+    if logo_path:
+        company.logo_path = logo_path
     
     db.session.add(company)
     db.session.flush()
+    from services.entitlements import apply_new_workspace_policy
+    apply_new_workspace_policy(company, current_user)
     
     existing_count = len(current_user.get_all_companies())
     is_first = existing_count == 0
@@ -6535,7 +6548,7 @@ def company_settings(company_id):
     try:
         company = db.session.get(Company, company_id)
         all_companies = current_user.get_all_companies()
-        if not company:
+        if not company or not (current_user.is_admin or current_user.get_company_access(company.id)):
             return redirect(url_for('main.dashboard'))
         user_role = current_user.get_company_role(company.id)
         can_edit = current_user.can_edit_company(company.id)

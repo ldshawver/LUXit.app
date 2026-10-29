@@ -59,6 +59,26 @@ def is_free_plan(company_id) -> bool:
     return True
 
 
+def apply_new_workspace_policy(company, creator) -> bool:
+    """Put a workspace created after self-serve launch on the free plan.
+
+    Only platform admins create managed (unrestricted) workspaces. Anyone
+    else adding a workspace gets the same terms as a signup, so a second
+    workspace can't be used to step around the first one's plan. Call after
+    the company has an id. Returns True when the free plan was applied.
+    """
+    if creator is not None and getattr(creator, "is_admin", False):
+        return False
+    from models import CompanyPlanPolicy
+    company.subscription_tier = "free"
+    company.billing_tier = "free"
+    company.billing_status = "none"
+    company.max_team_members = FREE_PLAN_MAX_SEATS
+    if db.session.get(CompanyPlanPolicy, company.id) is None:
+        db.session.add(CompanyPlanPolicy(company_id=company.id, plan_source="self_serve"))
+    return True
+
+
 def check_contact_capacity(company_id, adding: int = 1):
     if not is_free_plan(company_id):
         return
