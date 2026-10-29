@@ -75,6 +75,7 @@ def ringable_devices(company_id: int, eligible_user_ids, phone_number: str | Non
             .order_by(MobileDevice.last_seen_at.desc())
             .all())
     allowed_users: dict[int, bool] = {}
+    revoked_since: dict[int, datetime | None] = {}
     out = []
     for device in rows:
         if device.user_id not in allowed_users:
@@ -82,6 +83,16 @@ def ringable_devices(company_id: int, eligible_user_ids, phone_number: str | Non
             allowed_users[device.user_id] = bool(
                 user and getattr(user, "active", True) and user_may_call_on(user, company_id, phone_number)
             )
+            revoked_since[device.user_id] = getattr(user, "session_revoked_at", None)
+        # A password reset/change ends every older session without stamping
+        # each row; only a session signed in since then keeps the phone live.
+        revoked = revoked_since[device.user_id]
+        if revoked and not MobileSession.query.filter(
+                MobileSession.mobile_device_id == device.id,
+                MobileSession.revoked_at.is_(None),
+                MobileSession.refresh_expires_at > datetime.utcnow(),
+                MobileSession.created_at >= revoked).first():
+            continue
         if allowed_users[device.user_id]:
             out.append((device, mobile_voice_identity(company_id, device.user_id, device.id, device.device_uid)))
     return out

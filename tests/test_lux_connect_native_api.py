@@ -334,7 +334,7 @@ def test_inbound_rings_pwa_and_every_registered_native_handset(app, client, monk
 
 
 @pytest.mark.parametrize("exclusion", ["not_registered", "ring_disabled", "signed_out", "revoked",
-                                       "sessions_revoked", "sessions_expired",
+                                       "sessions_revoked", "sessions_expired", "password_reset",
                                        "away", "no_number_permission"])
 def test_inbound_excludes_ineligible_handsets(app, client, monkeypatch, exclusion):
     co, _ta, pn = _tenant(); u = _user(co, pn); db.session.commit()
@@ -355,12 +355,19 @@ def test_inbound_excludes_ineligible_handsets(app, client, monkeypatch, exclusio
     elif exclusion == "sessions_expired":
         # Refresh lapsed without a sign-out reaching the server.
         MobileSession.query.update({"refresh_expires_at": datetime.utcnow() - timedelta(minutes=1)}); db.session.commit()
+    elif exclusion == "password_reset":
+        # Reset/change stamps the account, not each MobileSession row.
+        u.session_revoked_at = datetime.utcnow(); db.session.commit()
     elif exclusion == "away":
         set_availability(u.id, co.id, "away", actor_user_id=u.id, source="user"); db.session.commit()
     elif exclusion == "no_number_permission":
         PhoneNumberUserPermission.query.filter_by(user_id=u.id).update({"can_call": False}); db.session.commit()
-    ids = _identities(_inbound(client, monkeypatch))
-    assert mobile_voice_identity(co.id, u.id, device.id, UID_A) not in ids
+    from flask import g
+    for key in list(vars(g)):  # shared app context: don't let a test login redirect the webhook
+        g.pop(key, None)
+    twiml = _inbound(client, monkeypatch)
+    assert twiml.lstrip().startswith("<?xml"), twiml[:120]
+    assert mobile_voice_identity(co.id, u.id, device.id, UID_A) not in _identities(twiml)
 
 
 def test_logout_revokes_sessions_and_push(app, client):
@@ -1122,3 +1129,37 @@ def test_native_login_requires_verified_email_and_is_audited(app, client):
     assert all('"via":"mobile"' in (e.detail or "") for e in events)
     assert events[0].detail and "email_unverified" in events[0].detail
     assert events[2].actor_user_id == u.id and events[2].company_id == co.id
+
+
+def test_password_change_signs_out_phones_but_a_new_sign_in_rings(app, client, monkeypatch):
+    """Changing the password in the web app ends LUX Connect sessions (API
+    and ringing) and is audited; signing in again restores ringing."""
+    from flask_login import FlaskLoginClient
+    from models import SecurityAuditEvent
+    co, _ta, pn = _tenant(); u = _user(co, pn); db.session.commit()
+    old = _signed_in(client)
+    _register_voice(client, old)
+    device = MobileDevice.query.one()
+    identity = mobile_voice_identity(co.id, u.id, device.id, UID_A)
+    assert identity in _identities(_inbound(client, monkeypatch, sid="CAbefore"))
+    app.test_client_class = FlaskLoginClient
+    with app.test_client(user=u) as web:
+        r = web.post("/user/change-password", data={"current_password": "pw-123456",
+                                                    "new_password": "new-pw-654321",
+                                                    "confirm_password": "new-pw-654321"})
+        assert r.status_code == 302
+        assert web.get("/user/change-password").status_code == 200  # this browser stays signed in
+    from flask import g
+    for key in list(vars(g)):  # one app context for the whole test: don't leak the web request's g
+        g.pop(key, None)
+    assert client.get("/api/mobile/v1/me", headers=_auth(old)).status_code == 401
+    assert client.post("/api/mobile/v1/auth/refresh", json={"refresh_token": old["refresh_token"]}).status_code == 401
+    after = _inbound(client, monkeypatch, sid="CAafter")
+    assert "<Dial" in after and identity not in _identities(after)
+    assert SecurityAuditEvent.query.filter_by(action="auth.password_changed", target_user_id=u.id).count() == 1
+    r = _login(client, password="new-pw-654321")
+    assert r.status_code == 200
+    _register_voice(client, r.get_json(), voice_token="voip-token-2")
+    for key in list(vars(g)):
+        g.pop(key, None)
+    assert identity in _identities(_inbound(client, monkeypatch, sid="CAagain"))

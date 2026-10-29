@@ -6623,8 +6623,8 @@ def change_password():
         
         if not current_user.password_hash or check_password_hash(current_user.password_hash, current_password):
             if new_password == confirm_password and len(new_password) >= 6:
-                current_user.password_hash = generate_password_hash(new_password)
-                db.session.commit()
+                from services.user_lifecycle import change_own_password
+                change_own_password(current_user, new_password)
                 flash('Password changed successfully!', 'success')
                 return redirect(url_for('main.dashboard'))
             else:

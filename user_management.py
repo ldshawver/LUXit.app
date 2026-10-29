@@ -41,8 +41,8 @@ def change_password():
             return render_template('change_password.html')
         
         # Update password
-        current_user.password_hash = generate_password_hash(new_password)
-        db.session.commit()
+        from services.user_lifecycle import change_own_password
+        change_own_password(current_user, new_password)
         
         flash('Password updated successfully', 'success')
         return redirect(url_for('user.profile'))

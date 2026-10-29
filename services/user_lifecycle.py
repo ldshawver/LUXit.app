@@ -127,3 +127,21 @@ def restore_user_for_company(user: User, company_id: int, actor: User) -> None:
     user.archived_company_id = None
     user.default_company_id = company_id
     db.session.add(IntegrationAuditLog(company_id=company_id, service_slug="users", action="restore", user_id=actor.id, changes={"target_user_id": user.id, "company_id": company_id}))
+
+
+def change_own_password(user: User, new_password: str) -> None:
+    """Set a signed-in user's new password and end every other session.
+
+    Other browsers and LUX Connect phones that knew the old password are
+    signed out; the browser making the change stays signed in."""
+    from flask import session
+    from werkzeug.security import generate_password_hash
+    from services import security_audit
+
+    user.password_hash = generate_password_hash(new_password)
+    user.session_revoked_at = datetime.utcnow()
+    db.session.commit()
+    revoked = user.session_revoked_at
+    session["user_session_revoked_at"] = revoked.isoformat() if revoked else None
+    security_audit.record("auth.password_changed", actor=user, company_id=user.default_company_id,
+                          target_user_id=user.id)
