@@ -392,6 +392,8 @@ def test_handset_reassigned_to_another_user_stops_ringing_previous_user(app, cli
     assert anna_device.status == "signed_out"
     ids = _identities(_inbound(client, monkeypatch))
     assert mobile_voice_identity(co.id, a.id, anna_device.id, UID_A) not in ids
+    ben_device = MobileDevice.query.filter(MobileDevice.user_id != a.id).one()
+    assert mobile_voice_identity(co.id, ben_device.user_id, ben_device.id, ben_device.device_uid) in ids
     assert client.get("/api/mobile/v1/me", headers=_auth(anna)).status_code == 401
 
 
