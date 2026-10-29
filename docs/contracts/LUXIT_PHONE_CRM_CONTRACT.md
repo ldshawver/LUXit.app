@@ -1,4 +1,4 @@
-# LUXit Phone ↔ LUXit.app CRM contract (v1)
+# LUXit Phone ↔ LUXit.app CRM contract (v1.1)
 
 For the LUX Connect / LUXit Phone client (native and PWA). Session-authenticated JSON, scoped to the
 signed-in user's current workspace. Phone numbers are E.164 and **must be URL-encoded** in query strings
@@ -12,6 +12,8 @@ signed-in user's current workspace. Phone numbers are E.164 and **must be URL-en
 | Send text | reply from contact screen | `POST /api/contacts/<id>/send` `{channel:"sms", body, identity_id?}` + header `Idempotency-Key` | 200 sent · 409 `no_conversation` · 422 `do_not_contact`/`sms_opted_out`/`marketing_not_allowed` · 502 provider failure. Retries with the same key never resend |
 | Log a call note | after a call | `POST /api/contacts/<id>/activities/add` (form: `activity_type=call, subject, description, outcome, duration_minutes`) | `{success}` |
 | Follow-up task | after a call | `POST /api/crm/tasks` `{contact_id, title, due_at, reminder_at?}` | `{task_id}` |
+| Account status (v1.1) | app start, after billing changes | `GET /api/account/entitlements` | `{workspace, role, plan:{source,tier,billing_status,free,grace_period_ends_at}, seats:{members,pending_invites,used,limit}, contacts:{used,limit,overage,metered}, features:{crm,ask_luxit,automations,ai,phone_sms:{allowed,status,warning},tenant_email_send}, can_manage_billing, billing_url}` — hide what the plan doesn't include; never call phone/SMS endpoints when `phone_sms.allowed` is false |
+| Ask LUXit (v1.1) | search tab | `POST /api/ask` `{question}` (≤500 chars, 30/min) | `{intent, answer, sentences:[{text, refs:[n]}], results:[{kind,title,snippet,at,contact_id,link,source:{table,id}}], grounded:true}` — show every answer with its numbered sources |
 | Today | home tab | `GET /api/crm/dashboard?scope=mine\|all` | `needs_attention[]`, tasks, pipeline summary |
 
 Rules the client must not work around:
@@ -19,6 +21,7 @@ Rules the client must not work around:
   server picks the sender number. There is no client-side sender override.
 - Consent is enforced server-side; show the `code` to the user, don't retry policy refusals.
 - Viewers get 403 on writes.
+- A `402` with `code: "PLAN_LIMIT"` means the plan doesn't include the feature: send the user to `billing_url`, don't retry.
 
 Not in v1 (needs separate approval/credentials): outbound-first texting to a number with no thread,
 mailbox sync (Graph/Gmail OAuth apps per tenant), tenant email sending (`LUXIT_TENANT_EMAIL_SEND_ENABLED`,

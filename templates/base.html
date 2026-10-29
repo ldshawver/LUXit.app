@@ -593,6 +593,9 @@
                     <a href="{{ url_for('crm_workspace.today') }}" class="sidebar-nav-item{% if _p.startswith('/crm/today') %} active{% endif %}">
                         <i data-feather="sun"></i> Today
                     </a>
+                    <a href="{{ url_for('ask_luxit.ask_page') }}" class="sidebar-nav-item{% if _p.startswith('/ask') %} active{% endif %}">
+                        <i data-feather="search"></i> Ask LUXit
+                    </a>
                     <a href="{{ url_for('main.contacts') }}" class="sidebar-nav-item{% if _p.startswith('/contacts') %} active{% endif %}">
                         <i data-feather="users"></i> Audience
                     </a>

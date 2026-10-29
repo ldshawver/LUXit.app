@@ -495,6 +495,10 @@ def create_app() -> Flask:
     app.register_blueprint(automation_builder_bp)
     from services.security_audit import security_audit_bp
     app.register_blueprint(security_audit_bp)
+    from ask_luxit_bp import ask_luxit_bp
+    app.register_blueprint(ask_luxit_bp)
+    from account_bp import account_bp
+    app.register_blueprint(account_bp)
     try:
         from feedback import feedback_bp
         app.register_blueprint(feedback_bp)
