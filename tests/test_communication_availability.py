@@ -31,6 +31,8 @@ from services.phone_availability import (available_user_ids, is_available,
                                          set_all_availability, set_availability)
 
 ROOT = Path(__file__).resolve().parents[1]
+ENGINE_JS = (Path(__file__).resolve().parents[1] / "static" / "js" / "lux-voice.js").read_text()
+
 INBOX_PWA = (ROOT / "inbox_pwa.py").read_text()
 INDEX_HTML = (ROOT / "templates/inbox_pwa/index.html").read_text()
 CALLS_HTML = (ROOT / "templates/inbox_pwa/calls.html").read_text()
@@ -331,8 +333,11 @@ def test_promotional_optin_service_has_no_availability_coupling(ctx):
 # ── 25 / 26 : frozen Voice + client contract, campaign/segment untouched ──
 
 def test_client_guards_are_present(ctx):
-    # calls.html — Voice integration contract unchanged + label refined.
-    assert "data.type === 'incoming_call' && !isAway()" in CALLS_HTML
+    # Voice honours Away in the persistent Voice service (Phone P0): an Away
+    # user is torn down before any token mint, so no Device exists to present
+    # an incoming call; calls.html keeps the label + selector.
+    assert "return st.receiveCalls && st.availability !== 'away' && st.lockSupported;" in ENGINE_JS
+    assert "goQuiet('away'" in ENGINE_JS
     assert "Communication Availability" in CALLS_HTML
     # index.html — SMS inbox honours Away at every attention layer.
     assert "isCommsAway()" in INDEX_HTML

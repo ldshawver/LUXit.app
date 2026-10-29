@@ -1,3 +1,4 @@
+from pathlib import Path
 import base64
 import os
 import re
@@ -20,6 +21,7 @@ from models import (
     UserCompanyAccess,
     VoiceVoicemailMessage,
 )
+ENGINE_JS = (Path(__file__).resolve().parents[1] / "static" / "js" / "lux-voice.js").read_text()
 
 
 @pytest.fixture
@@ -280,7 +282,8 @@ def test_pwa_calls_visual_nav_sdk_and_voicemail_static_requirements():
         assert route in nav
     assert "Play" in calls and "Transcript" in calls and "Twilio login" not in calls
     assert "Greeting management" in calls and "text_to_speech" in calls and "recorded" in calls and "upload" in calls
-    assert "SDK_MISSING" in calls and "TOKEN_ENDPOINT_FAILED" in calls and "NO_ASSIGNED_NUMBER" in calls
+    # Voice failure codes live in the persistent Voice service (Phone P0).
+    assert "SDK_MISSING" in ENGINE_JS and "TOKEN_ENDPOINT_FAILED" in ENGINE_JS and "NO_ASSIGNED_NUMBER" in ENGINE_JS
     assert "favoritesScreen" in index and "saveFavorite" in index and "removeFavorite" in index and "moveFavorite" in index
     assert "setPalette('slate')" in index and "setPalette('rose')" in index
     # Semantic check (not an exact-literal match): the call-read toggle must hit
