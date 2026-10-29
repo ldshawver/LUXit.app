@@ -158,6 +158,12 @@ def test_needs_attention_lists_unanswered_missed_and_stale(env):
     assert ("missed_call", "Bob") in types
     assert ("stale_opportunity", "Bob") in types
     assert "B secret" not in repr(items)
+    # An automatic reply is not an answer: still unanswered, and the missed call isn't "returned" either.
+    db.session.add(TwilioMessage(conversation_id=conv.id, company_id=ids["a"], direction="outbound",
+                                 body="We're closed right now.", is_auto_reply=True,
+                                 created_at=now - timedelta(minutes=90)))
+    db.session.commit()
+    assert ("unanswered_text", "Alice") in {(i["type"], i["contact_name"]) for i in crm.needs_attention(ids["a"], now=now)}
     # A reply clears the unanswered text.
     db.session.add(TwilioMessage(conversation_id=conv.id, company_id=ids["a"], direction="outbound", body="Yes!",
                                  created_at=now - timedelta(minutes=30)))

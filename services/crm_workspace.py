@@ -391,11 +391,13 @@ def needs_attention(company_id, *, user_id=None, now=None, limit=50):
                       "source_ref": ref})
 
     # Unanswered texts: the newest message in a conversation is inbound.
+    # Automatic replies ("we're closed", missed-call texts) don't answer anyone.
     rows = (db.session.query(TwilioMessage.conversation_id, TwilioMessage.id, TwilioMessage.direction,
                              TwilioMessage.body, TwilioMessage.created_at, TwilioConversation.contact_id)
             .join(TwilioConversation, TwilioConversation.id == TwilioMessage.conversation_id)
             .filter(TwilioMessage.company_id == company_id, TwilioConversation.company_id == company_id,
-                    TwilioMessage.created_at >= now - UNANSWERED_WINDOW)
+                    TwilioMessage.created_at >= now - UNANSWERED_WINDOW,
+                    db.or_(TwilioMessage.is_auto_reply.is_(None), TwilioMessage.is_auto_reply.is_(False)))
             .order_by(TwilioMessage.created_at.desc()).limit(5000).all())
     seen = set()
     latest_out_by_contact = {}

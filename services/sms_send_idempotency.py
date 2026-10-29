@@ -95,6 +95,15 @@ def send_with_idempotency(*, company_id: int, user_id: int | None, conversation_
     )
 
     record = SmsSendIdempotencyRecord.query.filter_by(id=record.id).one()
+    if not result.get("success") and result.get("license_blocked"):
+        # Refused before any provider call: nothing can have been sent, so
+        # release the claim and let a retry go through once the workspace is
+        # licensed instead of replaying this refusal.
+        db.session.delete(record)
+        db.session.commit()
+        result = dict(result)
+        result["idempotent"] = False
+        return result
     if result.get("success"):
         record.status = "sent"
         record.twilio_sid = result.get("sid")
