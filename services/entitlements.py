@@ -20,6 +20,7 @@ logger = logging.getLogger(__name__)
 FREE_PLAN_MAX_SEATS = 1
 FREE_PLAN_MAX_CONTACTS = 250
 PAID_BILLING_STATUSES = {"active", "trialing"}
+GRACE_BILLING_STATUSES = {"grace_period", "past_due"}
 
 
 class PlanLimitReached(PermissionError):
@@ -54,7 +55,9 @@ def is_free_plan(company_id) -> bool:
     status = (company.billing_status or "").lower()
     if status in PAID_BILLING_STATUSES:
         return False
-    if status == "past_due" and company.grace_period_ends_at and datetime.utcnow() < company.grace_period_ends_at:
+    # The webhook records a failed renewal as "grace_period" (never "past_due");
+    # both keep paid limits until the grace window ends.
+    if status in GRACE_BILLING_STATUSES and company.grace_period_ends_at and datetime.utcnow() < company.grace_period_ends_at:
         return False
     return True
 

@@ -334,3 +334,32 @@ def test_new_customer_journey(env):
     stranger, _ = _login(app, f"stranger-{tag}", "stranger-pass-1")
     assert stranger.post("/api/ask", json={"question": "water heater"}).get_json()["results"] == []
     assert stranger.get(f"/api/contacts/{casey.id}/timeline").status_code in (403, 404)
+
+    # 19. Manage the account: a password change signs out the owner's other devices.
+    phone_c, _ = _login(app, owner_email, "journey-pass-1")
+    assert phone_c.get("/crm/today").status_code == 200
+    r = back.post("/user/change-password", data={"current_password": "journey-pass-1",
+                                                 "new_password": "journey-pass-2", "confirm_password": "journey-pass-2"})
+    assert r.status_code == 302
+    assert phone_c.get("/crm/today").status_code == 302
+    assert back.get("/crm/today").status_code == 200
+    assert _login(app, owner_email, "journey-pass-1")[0].get("/crm/today").status_code == 302
+    back, _ = _login(app, owner_email, "journey-pass-2")
+
+    # 20. Card declined → grace keeps the plan; subscription ends → free limits, data kept.
+    declined = {"id": f"evt_declined_{tag}", "type": "invoice.payment_failed", "livemode": False,
+                "data": {"object": {"id": f"in_{tag}", "object": "invoice", "customer": f"cus_{tag}",
+                                    "subscription": f"sub_{tag}", "attempt_count": 1}}}
+    assert _signed_stripe(app.test_client(), declined).status_code == 200
+    db.session.expire_all()
+    assert db.session.get(Company, company_id).billing_status == "grace_period"
+    assert not entitlements.is_free_plan(company_id)
+    ended = {"id": f"evt_ended_{tag}", "type": "customer.subscription.deleted", "livemode": False,
+             "data": {"object": {"id": f"sub_{tag}", "object": "subscription", "customer": f"cus_{tag}",
+                                 "status": "canceled"}}}
+    assert _signed_stripe(app.test_client(), ended).status_code == 200
+    db.session.expire_all()
+    assert db.session.get(Company, company_id).billing_status == "suspended"
+    assert entitlements.is_free_plan(company_id)
+    assert stranger.get(f"/api/contacts/{casey.id}/timeline").status_code in (403, 404)
+    assert back.get(f"/api/contacts/{casey.id}/timeline").status_code == 200

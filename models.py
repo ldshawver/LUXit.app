@@ -3672,6 +3672,18 @@ class CompanyPlanPolicy(db.Model):
     created_at  = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
 
 
+class BillingEventCursor(db.Model):
+    """Newest status-changing Stripe event applied per workspace, so a late
+    or retried older event can't overwrite newer billing state. Separate from
+    ``company`` so loading a Company never depends on this migration."""
+    __tablename__ = "billing_event_cursor"
+
+    company_id         = db.Column(db.Integer, db.ForeignKey("company.id", ondelete="CASCADE"), primary_key=True)
+    last_event_created = db.Column(db.BigInteger, nullable=False)
+    last_event_id      = db.Column(db.String(255))
+    updated_at         = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+
 class TeamInvitation(db.Model):
     """Single-use invitation into a workspace (T-5). Only the token's hash is stored."""
     __tablename__ = "team_invitation"

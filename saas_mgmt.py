@@ -32,7 +32,7 @@ from datetime import datetime, timedelta, timezone
 import requests
 from flask import Blueprint, abort, current_app, flash, jsonify, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
 from extensions import csrf, db
 from services import security_audit
@@ -678,6 +678,56 @@ def report_contact_usage_endpoint():
     return jsonify(result), 200
 
 
+# Events that overwrite a workspace's billing status. Stripe does not
+# guarantee delivery order and retries failed deliveries for days, so each one
+# is checked against the subscription on file and the newest event applied.
+_STATUS_EVENTS = {
+    "invoice.payment_succeeded", "invoice.payment_failed",
+    "customer.subscription.updated", "customer.subscription.deleted",
+}
+
+
+def _stale_billing_event(company, event, obj):
+    """Why this event must not change ``company``'s billing state, or None.
+
+    Records the event as the newest applied one when it is accepted.
+    """
+    ev_type = event.get("type", "")
+    if ev_type not in _STATUS_EVENTS and ev_type != "checkout.session.completed":
+        return None
+    if ev_type in _STATUS_EVENTS:
+        ev_sub = obj.get("id") if ev_type.startswith("customer.subscription.") else obj.get("subscription")
+        current = company.stripe_subscription_id
+        if current and ev_sub and ev_sub != current:
+            # A brand-new subscription made in the portal may replace one that
+            # already ended; anything else about another subscription is history.
+            adopt = (ev_type == "customer.subscription.updated"
+                     and obj.get("status") in ("active", "trialing")
+                     and company.billing_status not in ("active", "grace_period"))
+            if not adopt:
+                return f"superseded subscription {ev_sub} (current {current})"
+
+    from models import BillingEventCursor
+    created = event.get("created")
+    if not isinstance(created, int):
+        return None
+    try:
+        with db.session.begin_nested():
+            cursor = db.session.get(BillingEventCursor, company.id, with_for_update=True)
+            if cursor and ev_type in _STATUS_EVENTS and created < cursor.last_event_created:
+                return f"out of order (created {created} < applied {cursor.last_event_created})"
+            if cursor is None:
+                db.session.add(BillingEventCursor(company_id=company.id, last_event_created=created,
+                                                  last_event_id=event.get("id")))
+            elif created >= cursor.last_event_created:
+                cursor.last_event_created = created
+                cursor.last_event_id = event.get("id")
+    except SQLAlchemyError:
+        # Migration not applied yet: keep processing without the ordering check.
+        logger.error("billing_event_cursor unavailable; Stripe ordering check skipped")
+    return None
+
+
 @stripe_webhook_bp.route("/api/stripe/webhook", methods=["POST"])
 @csrf.exempt
 # Stripe's servers carry no session cookie/CSRF token; authenticity
@@ -887,6 +937,12 @@ def stripe_webhook():
     if not company and stripe_cid:
         logger.warning("Stripe webhook %s for unknown customer %s — logging only", ev_type, stripe_cid)
 
+    stale = _stale_billing_event(company, event, obj) if company else None
+    if stale:
+        logger.info("Stripe[%s] %s for company %s ignored: %s", ev_id, ev_type, company.id, stale)
+        _finalize("skipped", error=stale)
+        return jsonify({"received": True, "event_id": ev_id, "ignored": stale}), 200
+
     try:
         try:
             from services.license_service import sync_license_from_stripe_event
@@ -1086,7 +1142,10 @@ def stripe_webhook():
                     company.billing_status = "active"
                     company.grace_period_ends_at = None
                 elif new_status == "past_due":
+                    from services.stripe_billing import grace_period_end
                     company.billing_status = "grace_period"
+                    if not company.grace_period_ends_at:
+                        company.grace_period_ends_at = grace_period_end()
                 elif new_status in ("canceled", "unpaid", "incomplete_expired"):
                     company.billing_status = "canceled"
                 elif new_status == "incomplete":
