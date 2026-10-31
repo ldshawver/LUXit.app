@@ -1,9 +1,14 @@
 [Unit]
-Description=LUXit nightly verified database backup
+Description=LUXit nightly verified, encrypted database backup
 After=postgresql@17-main.service
 
 [Service]
 Type=oneshot
+# BACKUP_GPG_RECIPIENT, OFFSITE_CMD, OFFSITE_REMOTE, RCLONE_CONFIG live here (0600)
+EnvironmentFile=/etc/luxit/backup.env
 ExecStart=/usr/local/sbin/luxit-db-backup.sh
 Nice=10
 IOSchedulingClass=idle
+PrivateTmp=yes
+ProtectHome=yes
+NoNewPrivileges=yes

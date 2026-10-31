@@ -1,0 +1,13 @@
+[Unit]
+Description=LUXit health check and alerting
+After=network-online.target
+
+[Service]
+Type=oneshot
+# ALERT_WEBHOOK_URL / ALERT_EMAIL_TO and threshold overrides (0600)
+EnvironmentFile=-/etc/luxit/healthcheck.env
+ExecStart=/usr/bin/python3 /usr/local/sbin/luxit_healthcheck.py
+StateDirectory=luxit-healthcheck
+PrivateTmp=yes
+ProtectHome=yes
+NoNewPrivileges=yes
