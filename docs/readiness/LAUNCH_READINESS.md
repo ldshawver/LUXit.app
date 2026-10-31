@@ -61,7 +61,7 @@ Status: **Verified** (tested + deployed + checked live) · **Done (branch)** (im
 | T-32 | **No tenant Twilio connection flow** | Tenant `TwilioAccount`/numbers can only be created by an operator script (`scripts/configure_sms_forwarding.py`); no in-app connect, number pick, webhook setup or disconnect. Google Contacts (per-user OAuth) is the only self-serve integration; Microsoft 365/Outlook is platform-only (T-25); Facebook/Instagram/TikTok OAuth exist with session-bound state | code read 2026-10-29 | **P0 for selling SMS/voice** | **D-6** (BYO Twilio vs platform subaccounts + 10DLC) | build the chosen model: connect (validate creds), pick/buy number, set webhooks, license grant, disconnect/rotate | tenant connects, receives + replies in sandbox, disconnects cleanly | Blocked (D-6) |
 | T-17 | **Scheduler pause survives restart** | Broken in prod worker (re-arm on start); contained by DB trigger | `scheduler._paused_job_ids`; `test_scheduler_pause_survives_restart` 3/5 fail on 1c56fbe, 5/5 pass | P0 | worker upgrade | — | paused job stays NULL across 3 restarts; read failure aborts startup | Done (branch) |
 | T-18 | Worker on current code | Worker runs eea5b84 | §0 | P1 | auth to restart worker | Strategy B (detached dir + drop-in, hold stays) | worker cwd = release SHA, dedupe still NULL, Tuya advancing | Not started (needs auth) |
-| T-19 | Backups | No scheduled backups; manual pre-deploy dumps only | `deploy/backup/` carried | P0 | off-site target | install timer | nightly dump + monthly restore drill | Blocked (auth + target) |
+| T-19 | Backups | No scheduled backups on the host; branch has encrypted nightly backup + off-site hook + isolated restore drill | `deploy/backup/` (9df462c); drill PASS on staging copy 2026-10-31 | P0 | off-site target + gpg keypair (D-10); install auth | install timer + `backup.env` | nightly encrypted dump off-host + monthly drill log | Ready (needs auth + target) |
 | T-20 | AI features | OpenAI out of credit (429) | 10-22 journal | P1 | account funding | then audit tenant scoping per Phase 4 | advertised AI works, scoped, metered | Blocked (account) |
 | T-21 | Marketing site accuracy | Over-claims (10-19 list) | — | P1 | — | copy changes | every claim maps to a working feature | Not started |
 | T-22 | Legal pages | Terms + Privacy + SMS consent exist (updated 2026-04-26); **no AUP**; no billing/cancellation disclosure | `legal.py` | P1 | **professional legal review** | AUP, refund/cancel terms | reviewed by counsel | Not started |
@@ -169,6 +169,10 @@ Baseline failing set for 1c56fbe == d0025bb: `/root/luxit-ops-backups/20261020-a
 - 2026-10-20: 09de17d deployed to prod; chatbot containment.
 - 2026-10-19: dedupe pause + hold applied on prod; discovery; P0 security fixes.
 
+## 8b. 2026-10-31
+
+See `docs/readiness/RELEASE_READINESS_CHECKLIST.md` (live checklist for the release candidate).
+
 ## 9. 2026-10-27 audit — leads verified, go/no-go matrix
 
 ### 9.1 Leads (treated as unverified until checked)
@@ -193,10 +197,10 @@ Baseline failing set for 1c56fbe == d0025bb: `/root/luxit-ops-backups/20261020-a
 |---|---|---|
 | B-1 | Branch not deployed: signup, verification, invitations, sender isolation (T-16), platform-integration lockdown (T-25, **live on prod**), billing authz (T-7), export scoping (T-11), audit trail (T-26) | prod = 1c56fbe; branch = 4727798 + T-26 |
 | B-2 | Billing never exercised end-to-end | no Stripe test keys on any non-prod instance; 0 prod webhook events (10-19) |
-| B-3 | No scheduled / off-site backups or restore drill on schedule | §9.1 |
-| B-4 | No alerting | §9.1 |
+| B-3 | No scheduled / off-site backups or restore drill on schedule | §9.1 — tooling READY 2026-10-31 (`deploy/backup/`), install + D-10 target outstanding |
+| B-4 | No alerting | §9.1 — `deploy/monitoring/` READY 2026-10-31, needs channel (D-10) + install; external uptime monitor still needed |
 | B-5 | Commercial terms not decided/published: pricing in Stripe, refund/cancel, AUP, DPA/subprocessors, customer agreement | §9.1, D-1…D-7 |
-| B-6 | Worker on stale code (eea5b84); legacy `luxit.service` with readable `ENCRYPTION_MASTER_KEY` | §0, §3 |
+| B-6 | Worker on stale code (eea5b84); legacy `luxit.service` with readable `ENCRYPTION_MASTER_KEY` | §0, §3 — re-verified 2026-10-31: prod key readable as `nobody`; retirement pkg + rotation tooling READY (`docs/ops/ENCRYPTION_KEY_ROTATION.md`) |
 | B-7 | Per-tenant messaging model (Twilio subaccount/10DLC) undecided → SMS/voice can't be sold to new tenants | T-16, D-6 |
 
 Non-blocking risks: dependency CVEs (T-24); email campaigns have no delivery path (exclude from launch, T-13); SMS campaigns in web thread (T-14); OpenAI out of credit (T-20, sell without AI or fund); marketing over-claims (T-21); no MFA; 7 unscoped models (empty tables, T-23); calling reliability (T-15, only if advertised); legacy `/saas` license edits not validated against Stripe.

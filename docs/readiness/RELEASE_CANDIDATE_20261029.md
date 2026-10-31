@@ -32,3 +32,11 @@ The exclusion test now clears `g` and requires real TwiML (negative control: fai
 Package `/root/luxit-ops-backups/20261029-staging-release-candidate/` (deploy.sh <full-sha>,
 verify.sh, rollback.sh): guards, luxstaging backup, 7 additive migrations (staging ledger 42 rows,
 0 checksum drift), `zzz-release-rc-*` drop-in, nginx untouched. **Not run** — waits for b10–b15.
+
+## 2026-10-31
+
+- b10–b15 owed from 10-29 ran: 0 new failures. Then the full suite was re-run on b9752aa: 1674 passed / 68 failed (all in the baseline) / 125 skipped.
+- 9df462c ops: encrypted backups, off-site hook, isolated restore drill, health check with alerting.
+- b813224 vault: key rotation; production refuses a missing or malformed key (the prod key is exposed by the legacy unit).
+- b9752aa billing: grace-period entitlement bug; stale and out-of-order Stripe events; +1 additive migration (8 pending on staging).
+- Live checklist: `RELEASE_READINESS_CHECKLIST.md`. Staging package: `/root/luxit-ops-backups/20261031-staging-release-candidate/` (not run).
