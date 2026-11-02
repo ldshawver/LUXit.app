@@ -40,14 +40,16 @@ Legend: **PASS** (evidence below) · **READY** (built and validated, needs appro
 | Activation / payment failure / recovery / upgrade / cancel | PASS | lifecycle test, two tenants; tenant B's state is unchanged throughout |
 | Grace period keeps entitlements | FIXED | defect: the webhook writes `grace_period`, but `is_free_plan` only honored `past_due` (which nothing writes), so a declined card dropped a self-serve tenant to free limits immediately. A `past_due` subscription update now also starts the grace clock |
 | Out-of-order / superseded-subscription events | FIXED | defect: a late `subscription.deleted` for an old subscription suspended a tenant who had resubscribed; a retried `payment_failed` landing after `payment_succeeded` put a paid tenant into grace. Fixes: per-tenant `billing_event_cursor` plus a current-subscription check |
-| Real Stripe test-mode run (Stripe CLI / dashboard) | BLOCKED | no `sk_test_`/`whsec_` on any non-prod instance; 5 lookup keys and prices unverified (D-2) |
+| Stripe account preflight | READY | `scripts/acceptance/stripe_testmode_preflight.py` (2026-11-02): read-only; refuses a live key before any API call; checks the 5 lookup keys (exactly one active price each, right shape: monthly licensed / metered overage / one-time setup fee, one currency), **Stripe Tax active** (every checkout sets `automatic_tax`, so without it all checkouts fail), webhook endpoint enabled for the 6 handled events. 12 tests (`test_stripe_testmode_preflight`) |
+| Real Stripe test-mode run (Stripe CLI / dashboard) | BLOCKED | no `sk_test_`/`whsec_` on any non-prod instance; 5 lookup keys and prices unverified (D-2). With keys: preflight → journey `--expect-stripe` → pay with 4242 card in the browser |
 
 ## D. SaaS onboarding
 
 | Item | State | Evidence |
 |---|---|---|
 | Signup → verify → org → onboarding → invite → roles → CRM → SMS → automation → billing portal → password change → cancellation | PASS (in-process) | `test_saas_customer_journey` (Stripe SDK and Twilio REST faked; both webhooks signed for real) |
-| Same journey on staging with disposable accounts | OPEN | needs staging deploy approval and a non-prod email sink. `SELF_SERVE_SIGNUP_ENABLED` stays off |
+| Same journey over HTTP with disposable accounts | PASS (isolated) · READY for staging | `scripts/acceptance/staging_customer_journey.py` (2026-11-02): 12 steps through real routes with real CSRF: signup → unverified refused → verify link (minted with the instance secret, so no inbox needed) → free plan → onboarding/settings → contact + deal → checkout (clean 503 without keys) → second tenant can't read or write tenant 1 → seat limit → sign out/in → password change revokes the other session, old password refused. Sends no SMS, never touches Twilio. `scripts/acceptance/isolated_journey_rig.sh`: throwaway cluster from a schema-only staging copy + the 8 pending migrations (ledger 42→50) + gunicorn in a no-network namespace → **12/12 PASS**. Negative control: same rig on HEAD with efdf732 reverted → FAIL at step 12 ("other session survived the password change") |
+| Same journey on staging | OPEN | needs staging deploy approval and `SELF_SERVE_SIGNUP_ENABLED=1` in the staging env for the run. Invitation acceptance still needs a mail sink (only the token hash is stored); it stays covered by the in-process test |
 
 ## E. Communications
 
@@ -55,7 +57,8 @@ Legend: **PASS** (evidence below) · **READY** (built and validated, needs appro
 |---|---|---|
 | Tenant Twilio model | BLOCKED (D-6) | BYO-Twilio path exercised in the journey; no connect/number/webhook UI (T-32) until the model is chosen |
 | Consent / suppression | PASS | `test_sms_compliance_keywords`, `test_sms_consent_purpose`, `test_segment_management_suppression` (baseline-only failures) |
-| Native push credentials | BLOCKED | needs `LUXIT_APNS_KEY_FILE`, `LUXIT_APNS_KEY_ID`, `LUXIT_APNS_TEAM_ID`, `LUXIT_APNS_TOPIC`, `LUXIT_FCM_SERVICE_ACCOUNT_FILE` (0 configured anywhere) |
+| Native push credentials | BLOCKED (credentials) · validator READY | needs `LUXIT_APNS_KEY_FILE`, `LUXIT_APNS_KEY_ID`, `LUXIT_APNS_TEAM_ID`, `LUXIT_APNS_TOPIC`, `LUXIT_FCM_SERVICE_ACCOUNT_FILE` (0 configured anywhere). `scripts/check_push_credentials.py` (2026-11-02) validates them offline before install: P-256 .p8 + 10-char ids + bundle-id topic (not `.voip`), RSA service account, files mode 600, `h2` importable; signs and verifies a provider JWT locally; never prints key material. 7 tests |
+| `h2` in the production venv | OPEN (prod prerequisite) | `requirements.txt` pins `h2==4.3.0` and the staging venv has it, but `/root/lux-email-bot/.venv` does not (`ModuleNotFoundError`, 2026-11-02). Until it is installed, prod reports `apns: false` and iOS alert pushes are skipped even with credentials. Install with the prod release (needs approval) |
 | Physical-device calling | BLOCKED | handset + LUX Connect staging build; staging uses **prod Twilio credentials** (isolate before any device test) |
 
 ## F. Staging release
@@ -69,6 +72,9 @@ drop-in → restart staging only → verify (unauthenticated probes, ledger,
 `billing_event_cursor`, restore drill of the pre-deploy dump). Prod, nginx,
 Twilio and env files are untouched.
 
+Staging acceptance after deploy: `verify.sh`, then (with `SELF_SERVE_SIGNUP_ENABLED=1`)
+`staging_customer_journey.py --base http://127.0.0.1:8004 --host staging.luxit.app --db <luxstaging DSN> --secret-env /etc/luxit-staging/secret.env`.
+
 ## External dependencies (owner)
 
 1. Approve the staging deploy of the release HEAD (`deploy.sh $(git rev-parse HEAD)`).
@@ -77,3 +83,5 @@ Twilio and env files are untouched.
 4. Stripe test keys (`sk_test_`, `whsec_`) for staging; D-1…D-4 pricing/trial/grace/refund.
 5. D-6 tenant messaging model; separate staging Twilio credentials.
 6. APNs/FCM credentials; handset session with the LUX Connect project.
+7. Prod release must install `h2` into the prod venv (APNs).
+8. Stripe account: activate Stripe Tax (or approve removing `automatic_tax`); the preflight fails until then.
