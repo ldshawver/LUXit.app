@@ -49,8 +49,11 @@ at support's discretion. Publish this in the Terms and next to the checkout butt
 ## 3. Messaging model: bring-your-own Twilio vs platform subaccounts (D-6, T-32)
 
 Today: a tenant can only send SMS/voice if it has its own `TwilioAccount` row
-(created by an operator script) **and** an active phone/SMS license. New
-workspaces never get the platform sender (T-16). There is no in-app connect flow.
+**and** an active phone/SMS license. New workspaces never get the platform
+sender (T-16). The in-app BYO connect flow exists since eb3c53f (owner/admin,
+credentials validated against Twilio and vault-encrypted, number ownership
+proven through the tenant's credentials, license granted to paying workspaces);
+tested against a faked Twilio only. Live check needs separate staging Twilio credentials.
 
 | | A. Bring your own Twilio (BYO) | B. Platform-owned Twilio subaccounts |
 |---|---|---|

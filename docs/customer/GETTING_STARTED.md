@@ -62,9 +62,12 @@ security audit log, visible to owners and admins.
 
 ## 6. Texting and calling
 
-Texting and calling need a phone/SMS service on your workspace. At launch,
-connect your own Twilio account. Ask support until the in-app connect flow is
-available. Then:
+Texting and calling need your own Twilio account (a full, upgraded account;
+trial accounts are refused). Owners and admins: **Inbox → Integrations →
+Connect your Twilio account**, paste the Account SID and Auth Token, then pick
+a number from your Twilio account. LUXit sets that number's webhooks for you;
+**Disconnect** removes them. Free workspaces can connect but need a paid plan
+to send. Then:
 
 * **Inbox** and **LUX Connect** (phone app) for two-way texts and calls.
 * **SMS campaigns** (`/app/sms-campaigns`): pick a sender number and an
