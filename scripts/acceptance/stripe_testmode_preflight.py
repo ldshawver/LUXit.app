@@ -96,11 +96,35 @@ def check_prices(stripe) -> tuple[list[str], dict]:
         if shape != expected:
             problems.append(f"{lookup_key}: price {price.id} is {shape}, expected {expected}")
         found[lookup_key] = {"price": price.id, "currency": _get(price, "currency"),
-                             "unit_amount": _get(price, "unit_amount"), "shape": "/".join(str(s) for s in shape if s)}
+                             "unit_amount": _get(price, "unit_amount"), "shape": "/".join(str(s) for s in shape if s),
+                             "meter": _get(_get(price, "recurring"), "meter")}
     currencies = {v["currency"] for v in found.values()}
     if len(currencies) > 1:
         problems.append(f"prices use more than one currency: {sorted(currencies)}")
     return problems, found
+
+
+METER_EVENT_NAME = os.environ.get("LUXIT_CONTACTS_METER_EVENT", "luxit_contacts_overage")
+
+
+def check_meter(stripe, prices_found: dict) -> list[str]:
+    """The metered contacts price bills from a Billing Meter (legacy usage
+    records are gone). The meter must aggregate with "last": the app sends the
+    current overage once a day, and "sum" would bill it every day again."""
+    meters = [m for m in stripe.billing.Meter.list(limit=100).data if _get(m, "event_name") == METER_EVENT_NAME]
+    if not meters:
+        return [f"no Billing Meter with event_name {METER_EVENT_NAME!r} (contact overage can't be billed)"]
+    meter = meters[0]
+    problems = []
+    if _get(meter, "status") != "active":
+        problems.append(f"meter {_get(meter, 'id')} is {_get(meter, 'status')!r}, not 'active'")
+    formula = _get(_get(meter, "default_aggregation"), "formula")
+    if formula != "last":
+        problems.append(f"meter {_get(meter, 'id')} aggregates with {formula!r}; must be 'last' (daily reports would add up)")
+    usage = prices_found.get("luxit_contacts_usage_monthly")
+    if usage and usage.get("meter") != _get(meter, "id"):
+        problems.append(f"luxit_contacts_usage_monthly price {usage['price']} is not attached to meter {_get(meter, 'id')}")
+    return problems
 
 
 def check_tax(stripe) -> list[str]:
@@ -135,6 +159,7 @@ def run(stripe, secret: str, *, allow_live: bool, webhook_url: str | None) -> tu
         return 2, {"refused": "live-mode key; pass --live only for a deliberate read-only check of the live account"}
     stripe.api_key = secret
     problems, prices = check_prices(stripe)
+    problems += check_meter(stripe, prices)
     problems += check_tax(stripe)
     if webhook_url:
         problems += check_webhook(stripe, webhook_url)

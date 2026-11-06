@@ -593,85 +593,86 @@ def test_find_contacts_usage_item_id_absent():
     assert find_contacts_usage_item_id({}) is None
 
 
+def _add_contacts(company_id, n):
+    from models import Contact
+    for i in range(n):
+        _db.session.add(Contact(company_id=company_id, email=f"{_uniq('u')}-{i}@x.example", is_active=True))
+    # merged / archived contacts never count
+    _db.session.add(Contact(company_id=company_id, email=f"{_uniq('arch')}@x.example", is_active=False))
+    _db.session.commit()
+
+
+def _fake_meter():
+    calls = []
+    fake = SimpleNamespace(billing=SimpleNamespace(MeterEvent=SimpleNamespace(
+        create=lambda **kw: calls.append(kw))))
+    return fake, calls
+
+
 def test_report_contact_usage_no_subscription_item(company_user):
+    """Without the metered item nothing is sent, but the live count and overage
+    are stored (contacts_used used to be a stale column nothing maintained)."""
     from services.stripe_billing import report_contact_usage
     company, _ = company_user
-    _db.session.expire_all()
     c = _db.session.get(Company, company.id)
-    c.contacts_used = 9999
-    c.included_contacts = 2500
+    c.contacts_used = 9999          # stale value must be replaced by the live count
+    c.included_contacts = 2
     _db.session.commit()
+    _add_contacts(c.id, 5)
     result = report_contact_usage(c)
     _db.session.expire_all()
     c2 = _db.session.get(Company, company.id)
     assert result["reported"] is False
     assert result["skipped_reason"] == "no_usage_subscription_item"
-    assert result["quantity"] == 7499
-    assert c2.contacts_overage == 7499
+    assert result["contacts_used"] == 5 and result["quantity"] == 3
+    assert c2.contacts_used == 5 and c2.contacts_overage == 3
 
 
-def test_report_contact_usage_set_action_with_overage(company_user):
-    from services.stripe_billing import report_contact_usage
+def test_report_contact_usage_sends_meter_event_with_overage(company_user):
+    from datetime import datetime as _dt
+    from services.stripe_billing import CONTACTS_METER_EVENT_NAME, report_contact_usage
     company, _ = company_user
-    _db.session.expire_all()
     c = _db.session.get(Company, company.id)
-    c.contacts_used = 3000
-    c.included_contacts = 2500
+    c.included_contacts = 2
+    c.stripe_customer_id = _uniq("cus_")
     c.stripe_contact_usage_subscription_item_id = _uniq("si_")
     _db.session.commit()
-
-    with patch("services.stripe_billing.get_stripe") as mk_get:
-        fake_stripe = SimpleNamespace(
-            SubscriptionItem=SimpleNamespace(create_usage_record=lambda *a, **kw: None)
-        )
-        create_record_mock = patch.object(
-            fake_stripe.SubscriptionItem, "create_usage_record",
-        ).start()
-        mk_get.return_value = fake_stripe
-        try:
-            result = report_contact_usage(c)
-        finally:
-            patch.stopall()
-
-    assert result["reported"] is True
-    assert result["quantity"] == 500
-    assert result["subscription_item"] == c.stripe_contact_usage_subscription_item_id
-    kwargs = create_record_mock.call_args.kwargs
-    args   = create_record_mock.call_args.args
-    assert args[0] == c.stripe_contact_usage_subscription_item_id
-    assert kwargs.get("action") == "set"
-    assert kwargs.get("quantity") == 500
-
+    _add_contacts(c.id, 5)
+    fake, calls = _fake_meter()
+    with patch("services.stripe_billing.get_stripe", return_value=fake):
+        result = report_contact_usage(c, now=_dt(2026, 11, 6, 12, 0, 0))
+    assert result["reported"] is True and result["quantity"] == 3
+    assert len(calls) == 1
+    event = calls[0]
+    assert event["event_name"] == CONTACTS_METER_EVENT_NAME
+    assert event["payload"] == {"stripe_customer_id": c.stripe_customer_id, "value": "3"}
+    assert event["identifier"] == f"luxit-contacts-{c.id}-2026-11-06"     # one per company per day
     _db.session.expire_all()
     c2 = _db.session.get(Company, company.id)
-    assert c2.last_reported_contact_usage == 500
-    assert c2.last_usage_reported_at is not None
-    assert c2.contacts_overage == 500
+    assert c2.last_reported_contact_usage == 3 and c2.last_usage_reported_at is not None
 
 
 def test_report_contact_usage_under_limit_reports_zero(company_user):
     from services.stripe_billing import report_contact_usage
     company, _ = company_user
-    _db.session.expire_all()
     c = _db.session.get(Company, company.id)
-    c.contacts_used = 1000
     c.included_contacts = 2500
+    c.stripe_customer_id = _uniq("cus_")
     c.stripe_contact_usage_subscription_item_id = _uniq("si_")
     _db.session.commit()
-
-    with patch("services.stripe_billing.get_stripe") as mk_get:
-        create_record_mock = SimpleNamespace(call_args=None)
-        def _create(*a, **kw):
-            create_record_mock.call_args = SimpleNamespace(args=a, kwargs=kw)
-        mk_get.return_value = SimpleNamespace(
-            SubscriptionItem=SimpleNamespace(create_usage_record=_create)
-        )
+    _add_contacts(c.id, 3)
+    fake, calls = _fake_meter()
+    with patch("services.stripe_billing.get_stripe", return_value=fake):
         result = report_contact_usage(c)
+    assert result["reported"] is True and result["quantity"] == 0
+    assert calls[0]["payload"]["value"] == "0"
 
-    assert result["reported"] is True
-    assert result["quantity"] == 0
-    assert create_record_mock.call_args.kwargs["action"] == "set"
-    assert create_record_mock.call_args.kwargs["quantity"] == 0
+
+def test_installed_stripe_sdk_has_the_meter_api():
+    """The pinned SDK no longer has SubscriptionItem.create_usage_record; the
+    code must use the Billing Meter API that it does have."""
+    import stripe
+    assert hasattr(stripe.billing, "MeterEvent") and hasattr(stripe.billing.MeterEvent, "create")
 
 
 def test_report_contact_usage_endpoint_requires_auth(client):

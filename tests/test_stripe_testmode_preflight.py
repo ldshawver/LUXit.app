@@ -19,13 +19,14 @@ def _good_prices():
         "luxit_starter_monthly": [_price("price_s", recurring=monthly)],
         "luxit_professional_monthly": [_price("price_p", recurring=monthly)],
         "luxit_additional_account_monthly": [_price("price_a", recurring=monthly)],
-        "luxit_contacts_usage_monthly": [_price("price_c", recurring={"interval": "month", "usage_type": "metered"})],
+        "luxit_contacts_usage_monthly": [_price("price_c", recurring={"interval": "month", "usage_type": "metered",
+                                                                       "meter": "mtr_1"})],
         "luxit_setup_fee_once": [_price("price_f")],
     }
 
 
 class FakeStripe:
-    def __init__(self, prices=None, tax="active", endpoints=None):
+    def __init__(self, prices=None, tax="active", endpoints=None, meters=None):
         self.api_key = None
         self.calls = []
         prices = _good_prices() if prices is None else prices
@@ -50,8 +51,18 @@ class FakeStripe:
                 fake.calls.append(("WebhookEndpoint.list",))
                 return types.SimpleNamespace(data=endpoints)
 
+        meters = [{"id": "mtr_1", "event_name": pf.METER_EVENT_NAME, "status": "active",
+                   "default_aggregation": {"formula": "last"}}] if meters is None else meters
+
+        class Meter:
+            @staticmethod
+            def list(limit):
+                fake.calls.append(("billing.Meter.list",))
+                return types.SimpleNamespace(data=meters)
+
         self.Price, self.WebhookEndpoint = Price, WebhookEndpoint
         self.tax = types.SimpleNamespace(Settings=Settings)
+        self.billing = types.SimpleNamespace(Meter=Meter)
 
 
 def test_complete_test_account_passes():
@@ -60,7 +71,8 @@ def test_complete_test_account_passes():
     assert code == 0, report["problems"]
     assert set(report["prices"]) == set(pf.EXPECTED_SHAPE)
     # read-only: only list/retrieve calls were made
-    assert {c[0] for c in stripe.calls} == {"Price.list", "tax.Settings.retrieve", "WebhookEndpoint.list"}
+    assert {c[0] for c in stripe.calls} == {"Price.list", "billing.Meter.list", "tax.Settings.retrieve",
+                                            "WebhookEndpoint.list"}
 
 
 @pytest.mark.parametrize("secret", ["", "pk_test_abc", "whsec_abc"])
@@ -119,3 +131,22 @@ def test_required_events_match_the_webhook_handler():
     src = inspect.getsource(saas_mgmt)
     for ev in pf.REQUIRED_EVENTS:
         assert f'"{ev}"' in src, ev
+
+
+@pytest.mark.parametrize("meters, needle", [
+    ([], "no Billing Meter"),
+    ([{"id": "mtr_1", "event_name": pf.METER_EVENT_NAME, "status": "active",
+       "default_aggregation": {"formula": "sum"}}], "must be 'last'"),
+    ([{"id": "mtr_1", "event_name": pf.METER_EVENT_NAME, "status": "inactive",
+       "default_aggregation": {"formula": "last"}}], "not 'active'"),
+    ([{"id": "mtr_other", "event_name": pf.METER_EVENT_NAME, "status": "active",
+       "default_aggregation": {"formula": "last"}}], "not attached to meter"),
+])
+def test_contacts_meter_problems(meters, needle):
+    code, report = pf.run(FakeStripe(meters=meters), "sk_test_abc", allow_live=False, webhook_url=None)
+    assert code == 1 and any(needle in p for p in report["problems"]), report["problems"]
+
+
+def test_meter_event_name_matches_the_app():
+    from services.stripe_billing import CONTACTS_METER_EVENT_NAME
+    assert pf.METER_EVENT_NAME == CONTACTS_METER_EVENT_NAME
