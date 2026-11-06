@@ -365,7 +365,16 @@ class SMSService:
             campaign.status = "failed"
             db.session.commit()
             return sender
-        result = resolve_sms_campaign_recipients(campaign, materialize=True)
+        from services.contact_audience import AudienceError
+        try:
+            result = resolve_sms_campaign_recipients(campaign, materialize=True)
+        except AudienceError as exc:
+            # Leaving it "scheduled" would retry nothing and show it as pending forever.
+            db.session.rollback()
+            campaign = db.session.get(SMSCampaign, campaign_id)
+            campaign.status = "failed"
+            db.session.commit()
+            return {"success": False, "error": str(exc), "sent": 0}
         counts = result["counts"]
         campaign.recipient_resolution = counts
         campaign.execution_recipient_count = counts["eligible_recipients"]

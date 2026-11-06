@@ -21,7 +21,13 @@ SYSTEM_KEYWORDS = {"STOP", "STOPALL", "UNSUBSCRIBE", "CANCEL", "END", "QUIT", "H
 MARKETING_SEGMENT_EXCLUDED_TYPES = {"contact_tag", "automation_rule"}
 
 
-class AmbiguousAudienceSegment(ValueError):
+class AudienceError(ValueError):
+    """The campaign's audience can't be resolved (unknown or non-canonical tag,
+    blocked name, ambiguous segment). Callers turn it into a 4xx or a failed
+    campaign, never a 500."""
+
+
+class AmbiguousAudienceSegment(AudienceError):
     """Raised when a campaign audience name matches more than one eligible
     marketing segment for the company -- callers must fail closed rather than
     silently union or arbitrarily pick one."""
@@ -173,7 +179,7 @@ def canonical_tag_ids(company_id: int, *, tag_ids=None, tag_names=None, create_m
     if ids:
         owned = {row.id for row in segments.filter(Segment.id.in_(ids)).all()}
         if owned != ids:
-            raise ValueError("One or more selected tag IDs are not available for this company.")
+            raise AudienceError("One or more selected tag IDs are not available for this company.")
     else:
         owned = set()
     wanted = {_normalized_label(value) for value in (tag_names or []) if _normalized_label(value)}
@@ -201,7 +207,7 @@ def canonical_tag_ids(company_id: int, *, tag_ids=None, tag_names=None, create_m
             from services.crm_automation import MY_ORDER_CUSTOMER_ALIASES
             blocked = missing & MY_ORDER_CUSTOMER_ALIASES
             if blocked:
-                raise ValueError(
+                raise AudienceError(
                     f"Audience name(s) {sorted(blocked)} are managed by the canonical My Order "
                     "Customer segment; select it by ID instead of creating a new one."
                 )
@@ -212,10 +218,10 @@ def canonical_tag_ids(company_id: int, *, tag_ids=None, tag_names=None, create_m
                         db.session.add(row)
                         db.session.flush()
                 except IntegrityError:
-                    raise ValueError(f"Could not create audience segment {key!r}: name conflict.") from None
+                    raise AudienceError(f"Could not create audience segment {key!r}: name conflict.") from None
                 matches.append(row)
         elif missing:
-            raise ValueError("One or more audience tags do not have a canonical tag ID for this company.")
+            raise AudienceError("One or more audience tags do not have a canonical tag ID for this company.")
         owned.update(row.id for row in matches)
     return sorted(owned)
 
