@@ -289,6 +289,11 @@ def create_app() -> Flask:
             _req.headers.get("X-Request-ID"),
             getattr(e, "description", "csrf_error"),
         )
+        if _req.path.startswith("/api/") or _req.is_json:
+            # fetch() follows redirects, so a redirect here reads as a
+            # successful HTML page to the caller; answer in JSON instead.
+            return jsonify({"success": False, "code": "csrf_failed",
+                            "error": "Security check failed. Refresh the page and try again."}), 400
         _flash("Security check failed. Please refresh the page and try again.", "error")
         referrer = _req.referrer
         if referrer:

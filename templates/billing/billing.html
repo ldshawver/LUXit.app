@@ -196,10 +196,15 @@
     errBox.style.display = "block";
   }
 
+  function csrfToken() {
+    const meta = document.querySelector('meta[name="csrf-token"]');
+    return meta ? meta.content : "";
+  }
+
   async function postJSON(url, body) {
     const res = await fetch(url, {
       method: "POST",
-      headers: {"Content-Type": "application/json"},
+      headers: {"Content-Type": "application/json", "X-CSRFToken": csrfToken()},
       credentials: "same-origin",
       body: JSON.stringify(body || {}),
     });
