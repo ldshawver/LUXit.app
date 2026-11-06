@@ -2387,7 +2387,8 @@ def billing_page():
         access = UserCompanyAccess.query.filter_by(user_id=current_user.id).first()
         if access:
             company = db.session.get(Company, access.company_id)
-    return render_template("billing/billing.html", company=company)
+    from services.workspace_lifecycle import retention_days
+    return render_template("billing/billing.html", company=company, retention_days=retention_days())
 
 
 @main_bp.route('/billing/success')

@@ -216,6 +216,25 @@ def edit_account(account_id):
     return redirect(url_for("saas.dashboard") + "#accounts")
 
 
+@saas_bp.route("/accounts/<int:account_id>/reopen", methods=["POST"])
+@login_required
+def reopen_account(account_id):
+    """Platform admin reopens a closed workspace before its purge date.
+    The phone/SMS license is not restored automatically."""
+    from models import Company
+    from services.workspace_lifecycle import ClosureError, reopen_workspace
+    acct = Company.query.get_or_404(account_id)
+    try:
+        reopen_workspace(acct, current_user)
+    except ClosureError as exc:
+        db.session.rollback()
+        flash(exc.message, "error")
+        return redirect(url_for("saas.dashboard") + "#accounts")
+    security_audit.record("platform.account.reopened", company_id=acct.id)
+    flash(f"Workspace '{acct.name}' reopened.", "success")
+    return redirect(url_for("saas.dashboard") + "#accounts")
+
+
 # ---------------------------------------------------------------------------
 # Licenses
 # ---------------------------------------------------------------------------

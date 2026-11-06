@@ -5245,3 +5245,20 @@ class PhoneNumberMessagingRegistration(db.Model):
     messaging_service_sid = db.Column(db.String(60))
     detail                = db.Column(db.String(300))
     checked_at            = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class WorkspaceClosure(db.Model):
+    """An owner closed this workspace (account cancellation). While a row is
+    open (``reopened_at`` NULL) members can't use the workspace; after
+    ``purge_after`` an operator purge deletes its data and keeps a tombstone.
+    Separate from ``company`` so loading a Company never depends on this
+    migration."""
+    __tablename__ = "workspace_closure"
+
+    company_id     = db.Column(db.Integer, db.ForeignKey("company.id", ondelete="CASCADE"), primary_key=True)
+    closed_at      = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    closed_by_user_id = db.Column(db.Integer)
+    reason         = db.Column(db.String(120))
+    purge_after    = db.Column(db.DateTime, nullable=False)
+    reopened_at    = db.Column(db.DateTime)
+    purged_at      = db.Column(db.DateTime)

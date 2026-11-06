@@ -352,6 +352,36 @@ def create_app() -> Flask:
     # --------------------------------------------------------
     # Request Lifecycle
     # --------------------------------------------------------
+    _CLOSED_GATE_OPEN_PATHS = ("/static/", "/auth/logout", "/logout", "/account/closed", "/api/stripe/webhook")
+
+    def _closed_workspace_gate():
+        """A closed workspace (owner cancelled the account) can't be used.
+        Move the member to another active workspace if they have one,
+        otherwise show the closed page (JSON 410 for API calls)."""
+        path = request.path or ""
+        if any(path.startswith(p) for p in _CLOSED_GATE_OPEN_PATHS):
+            return None
+        if getattr(current_user, "is_admin", False) and path.startswith("/saas"):
+            return None
+        try:
+            company = current_user.get_default_company()
+            from services.workspace_lifecycle import closure_blocks_access
+            if not closure_blocks_access(company):
+                return None
+            from services.workspace_lifecycle import _move_member_defaults
+            moved = _move_member_defaults(company.id)
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+            logging.getLogger("auth").exception("closed-workspace gate failed open for user=%s", getattr(current_user, "id", None))
+            return None
+        if moved and request.method == "GET" and not path.startswith("/api/"):
+            return redirect(request.full_path if request.query_string else path)
+        if path.startswith("/api/"):
+            return jsonify({"success": False, "code": "workspace_closed",
+                            "error": "This workspace has been closed."}), 410
+        return redirect("/account/closed")
+
     @app.before_request
     def assign_request_id():
         g.request_id = request.headers.get("X-Request-ID") or str(uuid4())
@@ -364,6 +394,9 @@ def create_app() -> Flask:
                 logout_user()
                 session.clear()
                 return redirect("/auth/login")
+            blocked = _closed_workspace_gate()
+            if blocked is not None:
+                return blocked
         # Replit's proxy delivers HTTPS externally but passes HTTP internally.
         # Force WSGI to treat requests as HTTPS so Secure cookies are accepted.
         if is_replit and request.environ.get("wsgi.url_scheme") != "https":
