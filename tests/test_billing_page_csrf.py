@@ -64,3 +64,17 @@ def test_api_csrf_failure_is_json_not_a_redirect(env):
     r = client.post("/api/stripe/create-portal-session", json={"company_id": company_id})
     assert r.status_code == 400
     assert r.get_json()["code"] == "csrf_failed"
+
+
+def test_base_layout_adds_csrf_to_same_origin_fetch_and_forms(env):
+    """Pages on base.html get the token for fetch() and POST forms that forgot it
+    (segments, automations, contacts, deals ...). Behavior is proven in a real
+    browser by scripts/acceptance/isolated_browser_rig.sh."""
+    client, _ = env
+    from flask import g
+    g.pop("_login_user", None)
+    html = client.get("/segments").get_data(as_text=True)
+    assert "__luxCsrf" in html and 'headers.set("X-CSRFToken", token())' in html
+    assert 'input.name = "csrf_token"' in html
+    title = html[html.index("<title>"):html.index("</title>")]
+    assert "<script" not in title and "document." not in title
