@@ -74,6 +74,26 @@ await step("segments: active toggle (fetch PATCH) persists", async () => {
   return `${was} -> ${now}`;
 });
 
+await step("comms: Twilio connect card loads and validates input", async () => {
+  await page.goto(`${BASE}/twilio/comms?tab=integrations`);
+  await page.waitForFunction(() => {
+    const el = document.getElementById("tc-status");
+    return el && el.textContent && el.textContent !== "Loading…";
+  }, null, { timeout: 10000 });
+  const st = await page.textContent("#tc-status");
+  expect(/Not connected/.test(st), `status: ${st}`);
+  await page.fill("#tc-sid", "not-a-sid");
+  await page.fill("#tc-token", "x");
+  const [r] = await Promise.all([
+    page.waitForResponse(r => r.url().endsWith("/api/comms/twilio/connect"), { timeout: 10000 }),
+    page.click("#tc-connect-btn"),
+  ]);
+  const body = await r.json().catch(() => ({}));
+  expect(r.status() === 400 && body.code === "invalid_format", `connect ${r.status()} ${body.code}`);
+  await page.waitForFunction(() => document.getElementById("tc-error").textContent.length > 0, null, { timeout: 5000 });
+  return (await page.textContent("#tc-error")).slice(0, 60);
+});
+
 await step("account: export downloads a ZIP", async () => {
   await page.goto(`${BASE}/app/billing`);
   const [d] = await Promise.all([
