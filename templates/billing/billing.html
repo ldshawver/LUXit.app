@@ -185,8 +185,8 @@
   {% endif %}
 
   {% if company %}
-    {% set my_role = current_user.get_company_role(company.id) %}
-    {% if current_user.is_admin or my_role in ('owner', 'admin') %}
+    {% set my_role = account_role|default(none) %}
+    {% if my_role in ('owner', 'admin', 'platform_admin') %}
     <div class="card mt-4" id="account-data">
       <div class="card-body">
         <h5 class="card-title">Your data</h5>
@@ -197,7 +197,7 @@
       </div>
     </div>
     {% endif %}
-    {% if current_user.is_admin or my_role == 'owner' %}
+    {% if my_role in ('owner', 'platform_admin') %}
     <div class="card mt-4 border-danger" id="account-close">
       <div class="card-body">
         <h5 class="card-title text-danger">Close this workspace</h5>

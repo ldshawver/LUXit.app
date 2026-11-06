@@ -2394,7 +2394,11 @@ def billing_page():
         if access:
             company = db.session.get(Company, access.company_id)
     from services.workspace_lifecycle import retention_days
-    return render_template("billing/billing.html", company=company, retention_days=retention_days())
+    account_role = None
+    if company is not None:
+        account_role = "platform_admin" if current_user.is_admin else current_user.get_company_role(company.id)
+    return render_template("billing/billing.html", company=company, retention_days=retention_days(),
+                           account_role=account_role)
 
 
 @main_bp.route('/billing/success')
