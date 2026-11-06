@@ -810,7 +810,9 @@ def ai_suggest_segment(): return jsonify(_ai_payload("suggest-segment", request.
 @login_required
 def ai_compliance_check(): return jsonify(_ai_payload("compliance-check", request.get_json(silent=True) or {}))
 
-csrf.exempt(marketing_api_bp)
+# Not CSRF-exempt: every route here is session-authenticated and several
+# send SMS/email or merge contacts. Browser pages on base.html send the token
+# automatically; nginx logs 2026-10-23..11-06 show no other callers.
 
 # ---------------------------------------------------------------------------
 # Segment management and marketing suppression APIs (/api/*)

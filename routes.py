@@ -645,7 +645,6 @@ def marketing_hub():
     )
 
 @main_bp.route('/api/user/set-default-hub', methods=['POST'])
-@csrf.exempt
 @login_required
 def set_default_hub():
     """Set user's default hub (sales or marketing)"""
@@ -2026,7 +2025,6 @@ def edit_company(company_id):
     return render_template('company_edit.html', company=company)
 
 @main_bp.route('/companies/delete/<int:company_id>', methods=['POST'])
-@csrf.exempt
 @login_required
 def delete_company(company_id):
     """Remove a company from the user's account (soft-delete if only owner)."""
@@ -2038,18 +2036,27 @@ def delete_company(company_id):
 
         is_default = (current_user.default_company_id == company_id)
 
-        current_user.companies.remove(company)
-
         from models import UserCompanyAccess
+        # Leaving never deactivates the workspace: closing it is the owner's
+        # account-closure flow (Billing -> Close this workspace), which checks
+        # the subscription and revokes sessions. The last owner can't just
+        # walk away and leave members without one.
+        my_access = UserCompanyAccess.query.filter_by(user_id=current_user.id, company_id=company_id).first()
+        if my_access is not None and my_access.role == UserCompanyAccess.ROLE_OWNER:
+            other_owners = UserCompanyAccess.query.filter(
+                UserCompanyAccess.company_id == company_id,
+                UserCompanyAccess.user_id != current_user.id,
+                UserCompanyAccess.role == UserCompanyAccess.ROLE_OWNER,
+                UserCompanyAccess.is_active.is_(True),
+            ).count()
+            if not other_owners:
+                return jsonify({'success': False, 'code': 'last_owner',
+                                'error': 'You are the only owner. Transfer ownership, or close the workspace from Billing.'}), 409
+
+        current_user.companies.remove(company)
         UserCompanyAccess.query.filter_by(
             user_id=current_user.id, company_id=company_id
         ).delete()
-
-        other_owners = db.session.execute(
-            user_company.select().where(user_company.c.company_id == company_id)
-        ).fetchall()
-        if not other_owners:
-            company.is_active = False
 
         if is_default:
             remaining = current_user.get_all_companies()
@@ -2063,7 +2070,6 @@ def delete_company(company_id):
         return jsonify({'success': False, 'error': str(e)}), 500
 
 @main_bp.route('/companies/switch/<int:company_id>', methods=['POST'])
-@csrf.exempt
 @login_required
 def switch_company(company_id):
     """Switch the user's default company"""
@@ -9094,7 +9100,6 @@ def zapier_contact_webhook():
         return jsonify({'success': False, 'error': str(e)}), 400
 
 @main_bp.route('/crm/deals/<int:deal_id>/update-stage', methods=['POST'])
-@csrf.exempt
 @login_required
 def update_deal_stage(deal_id):
     try:
@@ -9127,7 +9132,6 @@ def update_deal_stage(deal_id):
         return jsonify({'success': False, 'error': str(e)}), 400
 
 @main_bp.route('/crm/deals/<int:deal_id>/update', methods=['POST'])
-@csrf.exempt
 @login_required
 def update_deal(deal_id):
     try:
@@ -9157,7 +9161,6 @@ def update_deal(deal_id):
         return jsonify({'success': False, 'error': str(e)}), 400
 
 @main_bp.route('/crm/deals/<int:deal_id>/delete', methods=['POST'])
-@csrf.exempt
 @login_required
 def delete_deal(deal_id):
     try:
@@ -9175,7 +9178,6 @@ def delete_deal(deal_id):
         return jsonify({'success': False, 'error': str(e)}), 400
 
 @main_bp.route('/crm/deals/<int:deal_id>/activity', methods=['POST'])
-@csrf.exempt
 @login_required
 def add_deal_activity(deal_id):
     try:
