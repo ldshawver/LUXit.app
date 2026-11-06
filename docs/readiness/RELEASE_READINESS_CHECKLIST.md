@@ -20,6 +20,26 @@ Legend: **PASS** (evidence below) · **READY** (built and validated, needs appro
 | Migration ordering | PASS | staging ledger 42 rows, 0 drift; 8 pending, all `CREATE … IF NOT EXISTS` (7 previous + `20261031_billing_event_cursor`); deploy guard rejects ALTER/DROP/DELETE/UPDATE |
 | Rollback | READY | staging: remove the `zzz-release-rc-*` drop-in → 9311cec; the new tables are ignored by older code |
 
+## A2. Browser-level correctness (2026-11-06)
+
+| Item | State | Evidence |
+|---|---|---|
+| Billing buttons with CSRF on | FIXED (f5ce430) | Subscribe / Upgrade / Manage billing posted without `X-CSRFToken`; with CSRF enforced (as in production) every click failed with "No checkout URL returned". API CSRF failures now answer JSON 400 `csrf_failed` |
+| fetch()/form CSRF across base.html pages | FIXED (ccf31d5) | 25 fetch calls on segments, automation triggers, contact edit, phone settings, team availability, etc. lacked the token. base.html adds it to same-origin non-GET fetch and POST forms |
+| CSRF-exempt session routes | FIXED (47de23c) | whole `/api/marketing` blueprint (campaign send, contact merge, keywords) + 7 deal/workspace routes were exempt; now protected (no outside callers in 2 weeks of nginx logs) |
+| Real-browser smoke | PASS | `scripts/acceptance/isolated_browser_rig.sh` (headless Chromium, isolated PG + gunicorn, no network): 6/6 on HEAD; 5/6 FAIL on 7fe269c |
+| Dead buttons | OPEN (T-21) | ~20 buttons post to routes that don't exist (`/templates/save`, `/landing-pages/<id>/toggle-publish`, `/lux/*`, `/ltv/api/recalculate`, `/import-*`): hide or build before advertising those pages |
+
+## A3. Account management (2026-11-06)
+
+| Item | State | Evidence |
+|---|---|---|
+| Data export | PASS | a2f1a48 `GET /api/account/export` owner/admin; credentials excluded; `tests/test_workspace_lifecycle.py` |
+| Close workspace (cancellation) | PASS | owner only, refused while a subscription bills; gate blocks members (410 / closed page); sessions + invitations revoked; license cancelled |
+| Purge after retention | PASS (rehearsed) | `scripts/purge_closed_workspaces.py`; `scripts/acceptance/isolated_purge_rehearsal.sh` on a staging copy, real PG FKs: 15/15 workspaces, 0 leftover, 0 cross-tenant change |
+| Leave workspace | FIXED (47de23c) | any member could deactivate a workspace by leaving it; last owner now gets 409 |
+| SMS campaign with unresolvable audience | FIXED (6b84c3f) | preview/analytics 500 → 422; scheduled worker left campaign "scheduled" forever → failed |
+
 ## B. Operational readiness
 
 | Item | State | Evidence |
@@ -41,6 +61,7 @@ Legend: **PASS** (evidence below) · **READY** (built and validated, needs appro
 | Grace period keeps entitlements | FIXED | defect: the webhook writes `grace_period`, but `is_free_plan` only honored `past_due` (which nothing writes), so a declined card dropped a self-serve tenant to free limits immediately. A `past_due` subscription update now also starts the grace clock |
 | Out-of-order / superseded-subscription events | FIXED | defect: a late `subscription.deleted` for an old subscription suspended a tenant who had resubscribed; a retried `payment_failed` landing after `payment_succeeded` put a paid tenant into grace. Fixes: per-tenant `billing_event_cursor` plus a current-subscription check |
 | Stripe account preflight | READY | `scripts/acceptance/stripe_testmode_preflight.py` (2026-11-02): read-only; refuses a live key before any API call; checks the 5 lookup keys (exactly one active price each, right shape: monthly licensed / metered overage / one-time setup fee, one currency), **Stripe Tax active** (every checkout sets `automatic_tax`, so without it all checkouts fail), webhook endpoint enabled for the 6 handled events. 12 tests (`test_stripe_testmode_preflight`) |
+| Contact overage billing | FIXED (local, see commit) | `contacts_used` was never maintained (overage always 0) and `SubscriptionItem.create_usage_record` no longer exists in stripe 15.1.0 (legacy usage records removed). Now: live recount + Billing Meter event per company per day; `scripts/report_contact_usage.py` + `deploy/billing/` timer; preflight checks the meter (`last` aggregation, attached to the metered price) |
 | Real Stripe test-mode run (Stripe CLI / dashboard) | BLOCKED | no `sk_test_`/`whsec_` on any non-prod instance; 5 lookup keys and prices unverified (D-2). With keys: preflight → journey `--expect-stripe` → pay with 4242 card in the browser |
 
 ## D. SaaS onboarding
@@ -66,6 +87,7 @@ Legend: **PASS** (evidence below) · **READY** (built and validated, needs appro
 Package `/root/luxit-ops-backups/20261031-staging-release-candidate/`
 (`deploy.sh <full-sha>`, `verify.sh`, `rollback.sh`). Target SHA: the docs commit on top of b9752aa (code identical to b9752aa; `git -C /root/luxit-release-20261029 rev-parse HEAD`). Not run.
 Migration rehearsal on an isolated copy of staging: run 1 applied 8 (ledger 42→50), run 2 applied 0, no errors.
+**2026-11-06: now 9 pending** (+`20261106_workspace_closure`, CREATE TABLE IF NOT EXISTS); applied in the purge and browser rigs (ledger 42→51).
 Steps: guards (clean tree, staging on 9311cec, memory) → luxstaging dump →
 8 ledgered migrations as `luxstaging` → exported tree + `zzz-release-rc-*`
 drop-in → restart staging only → verify (unauthenticated probes, ledger,
