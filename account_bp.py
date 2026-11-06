@@ -106,3 +106,74 @@ If this was a mistake, the owner can contact support to reopen it before then.</
 {% if has_other %}<p><a href="/dashboard">Continue to your other workspace</a></p>{% endif %}
 <p><a href="/auth/logout">Sign out</a></p>
 </body></html>"""
+
+
+# ── bring-your-own Twilio (T-32) ───────────────────────────────────────────── #
+
+def _comms_admin_workspace():
+    from saas_mgmt import _user_can_manage_billing
+    company = _current_workspace_or_404()
+    if not _user_can_manage_billing(current_user, company):
+        abort(403)
+    return company
+
+
+def _connect_call(fn, *args, audit=None, **kwargs):
+    from services import security_audit
+    from services.twilio_connect import ConnectError
+    try:
+        result = fn(*args, **kwargs)
+    except ConnectError as exc:
+        db.session.rollback()
+        if audit:
+            security_audit.record(audit[0], outcome="denied", company_id=audit[1], detail={"reason": exc.code})
+        return jsonify({"success": False, "code": exc.code, "error": exc.message}), exc.status
+    if audit:
+        security_audit.record(audit[0], company_id=audit[1])
+    return jsonify({"success": True, **(result if isinstance(result, dict) else {"numbers": result})})
+
+
+@account_bp.route("/api/comms/twilio")
+@login_required
+def api_twilio_status():
+    from services.twilio_connect import status
+    return jsonify({"success": True, **status(_comms_admin_workspace())})
+
+
+@account_bp.route("/api/comms/twilio/connect", methods=["POST"])
+@login_required
+def api_twilio_connect():
+    from flask import request
+
+    from services.twilio_connect import connect
+    company = _comms_admin_workspace()
+    body = request.get_json(silent=True) or {}
+    return _connect_call(connect, company, current_user, body.get("account_sid"), body.get("auth_token"),
+                         audit=("comms.twilio.connected", company.id))
+
+
+@account_bp.route("/api/comms/twilio/numbers")
+@login_required
+def api_twilio_numbers():
+    from services.twilio_connect import available_numbers
+    return _connect_call(available_numbers, _comms_admin_workspace())
+
+
+@account_bp.route("/api/comms/twilio/numbers/attach", methods=["POST"])
+@login_required
+def api_twilio_attach():
+    from flask import request
+
+    from services.twilio_connect import attach_number
+    company = _comms_admin_workspace()
+    body = request.get_json(silent=True) or {}
+    return _connect_call(attach_number, company, body.get("number_sid"),
+                         audit=("comms.twilio.number_attached", company.id))
+
+
+@account_bp.route("/api/comms/twilio/disconnect", methods=["POST"])
+@login_required
+def api_twilio_disconnect():
+    from services.twilio_connect import disconnect
+    company = _comms_admin_workspace()
+    return _connect_call(disconnect, company, current_user, audit=("comms.twilio.disconnected", company.id))
