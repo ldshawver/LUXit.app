@@ -1,4 +1,5 @@
 import logging
+import os
 from datetime import datetime
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -219,6 +220,23 @@ def init_scheduler(app):
         **_keep_paused("crm_inactivity_scan"),
     )
 
+    # Scheduled SMS campaigns. Off unless explicitly enabled: turning this on
+    # starts real sends for every tenant's due "scheduled" campaigns.
+    if os.environ.get("SMS_CAMPAIGN_DISPATCH_ENABLED") == "1":
+        scheduler.add_job(
+            func=run_due_sms_campaigns,
+            trigger="interval",
+            seconds=60,
+            id="sms_campaign_dispatch",
+            name="Dispatch due scheduled SMS campaigns",
+            replace_existing=True,
+            max_instances=1,
+            coalesce=True,
+            **_keep_paused("sms_campaign_dispatch"),
+        )
+    else:
+        logging.warning("SMS_CAMPAIGN_DISPATCH_ENABLED is not set; scheduled SMS campaigns will not auto-send")
+
     # Start scheduler
     scheduler.start()
     
@@ -263,6 +281,13 @@ def shutdown_scheduler():
     if scheduler:
         scheduler.shutdown()
         scheduler = None
+
+def run_due_sms_campaigns():
+    from app import app
+    with app.app_context():
+        from services.sms_service import SMSService
+        return SMSService.dispatch_due_campaigns()
+
 
 def run_scheduled_sms_campaign(campaign_id, app):
     """Execute SMS without relying on an interactive user's tenant session."""

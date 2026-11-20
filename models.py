@@ -1690,6 +1690,23 @@ class MarketingAuditLog(db.Model):
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
+class ProductEvent(db.Model):
+    """First-party product analytics: one row per real user action (segment
+    created, campaign scheduled, ...). Ids and counts only -- never names,
+    phones, emails or message bodies. Written by services/product_events.py;
+    dashboards read these rows rather than estimating."""
+    __tablename__ = "product_event"
+
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = db.Column(db.Integer, nullable=True)
+    event = db.Column(db.String(80), nullable=False, index=True)
+    entity_type = db.Column(db.String(40))
+    entity_id = db.Column(db.Integer)
+    properties = db.Column(db.JSON)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False, index=True)
+
+
 class PromotionalOptInSolicitation(db.Model):
     """An operator-approved request asking a customer to opt in to promotional
     SMS. Its presence in state ``pending`` is the *context* that lets a later

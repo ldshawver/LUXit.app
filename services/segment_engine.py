@@ -521,3 +521,73 @@ def refresh(segment: Segment, *, actor_user_id: int | None = None) -> RefreshRes
     segment.updated_at = now
     result.applied = True
     return result
+
+
+# ---------------------------------------------------------------------------
+# Human-readable description (segment detail page; never evaluates contacts)
+# ---------------------------------------------------------------------------
+
+_FIELD_LABELS = {
+    "tag": "Tag", "approval_status": "Approval status", "identity_status": "Identity status", "source": "Source",
+    "normalized_phone": "Phone", "normalized_email": "Email", "email": "Email", "phone": "Phone",
+    "first_name": "First name", "last_name": "Last name", "company": "Company", "status": "Status",
+    "google_match_status": "Google match", "lifecycle_stage": "Lifecycle stage", "owner_user_id": "Owner",
+    "created_at": "Created", "last_contacted_at": "Last contacted", "last_activity_at": "Last activity",
+    "next_follow_up_at": "Next follow-up", "open_opportunity_stage": "Open opportunity stage",
+    "has_open_opportunity": "Has an open opportunity", "has_open_task": "Has an open task",
+    "has_overdue_task": "Has an overdue task",
+}
+_OP_LABELS = {
+    "equals": "is", "not_equals": "is not", "contains": "contains", "not_contains": "does not contain",
+    "exists": "is set", "not_exists": "is empty", "in": "is one of", "not_in": "is none of",
+    "after": "is after", "before": "is before", "between": "is between",
+    "within_last_days": "is within the last", "more_than_days_ago": "is more than", "within_next_days": "is within the next",
+}
+
+
+def _describe_value(op, value):
+    if op in {"exists", "not_exists"}:
+        return ""
+    if op in {"within_last_days", "within_next_days"}:
+        return f" {value} days"
+    if op == "more_than_days_ago":
+        return f" {value} days ago"
+    if isinstance(value, (list, tuple)):
+        return " " + (" and ".join(map(str, value)) if op == "between" else ", ".join(map(str, value)))
+    if isinstance(value, bool):
+        return ""
+    return f" “{value}”"
+
+
+def describe_rules(segment: Segment) -> dict:
+    """Plain-language summary of a segment's membership rules for display."""
+    out = {"mode": "", "rules": [], "actions": [], "error": None}
+    if segment.segment_type in SYSTEM_SEGMENT_TYPES:
+        out["mode"] = "Managed automatically by the system (not editable here)."
+        return out
+    if not segment.is_dynamic and segment.segment_type != "all":
+        out["mode"] = "Static — contacts are added and removed by hand."
+        return out
+    try:
+        normalized = _effective_conditions(segment)
+    except SegmentConditionError as exc:
+        out["mode"] = "Dynamic"
+        out["error"] = str(exc)
+        return out
+    if normalized.get("match_all"):
+        out["mode"] = "Dynamic — every contact in this workspace."
+        return out
+    out["mode"] = ("Dynamic — contacts matching ALL of these rules" if normalized["match_mode"] == "all"
+                   else "Dynamic — contacts matching ANY of these rules")
+    for rule in normalized["rules"]:
+        field, op, value = rule["field"], rule["op"], rule.get("value")
+        label = _FIELD_LABELS.get(field, field.replace("_", " ").capitalize())
+        if field in BOOLEAN_FIELDS:
+            out["rules"].append(label if value in (True, "true", "1", 1) else f"Does not: {label.lower()}")
+            continue
+        out["rules"].append(f"{label} {_OP_LABELS.get(op, op.replace('_', ' '))}{_describe_value(op, value)}")
+    for action in segment.actions or []:
+        if isinstance(action, dict):
+            kind = str(action.get("type") or action.get("action") or "action").replace(".", " ").replace("_", " ")
+            out["actions"].append(kind.capitalize())
+    return out

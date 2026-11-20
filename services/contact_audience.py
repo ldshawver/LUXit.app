@@ -4,6 +4,7 @@ from __future__ import annotations
 import csv, io, re
 from datetime import datetime
 from email.utils import parseaddr
+from sqlalchemy import or_
 from sqlalchemy.exc import IntegrityError
 from extensions import db
 from models import Contact, Segment, SegmentMember, SMSRecipient
@@ -31,6 +32,22 @@ class AmbiguousAudienceSegment(AudienceError):
     """Raised when a campaign audience name matches more than one eligible
     marketing segment for the company -- callers must fail closed rather than
     silently union or arbitrarily pick one."""
+
+
+class RecipientsLocked(AudienceError):
+    """The campaign has attempted recipients; its audience can no longer be rebuilt."""
+
+
+def recipients_already_attempted(campaign) -> bool:
+    return db.session.query(
+        SMSRecipient.query.filter(
+            SMSRecipient.campaign_id == campaign.id,
+            SMSRecipient.company_id == campaign.company_id,
+            or_(SMSRecipient.provider_message_sid.isnot(None),
+                SMSRecipient.status.notin_(["pending"]),
+                SMSRecipient.sent_at.isnot(None)),
+        ).exists()
+    ).scalar()
 
 
 def _marketing_segments_query(company_id: int):
@@ -168,6 +185,31 @@ def _contact_tag_keys(contact):
     return {_normalized_label(tag) for tag in _split_tags(contact.tags)}
 
 
+def contact_has_sms_opt_out(contact, tags=None) -> bool:
+    tags = _contact_tag_keys(contact) if tags is None else tags
+    return bool(contact.sms_opted_out or contact.do_not_sms or contact.sms_opt_out_at
+                or "sms_opt_out" in tags or "no_sms" in tags)
+
+
+def opted_out_phones(company_id, phones=None) -> set:
+    """Canonical numbers that any contact of this tenant has opted out on.
+
+    STOP belongs to the phone number, not to one contact row: when duplicate
+    contacts share a number and one of them replied STOP, none of them may be
+    messaged. ``phones`` optionally narrows the lookup (send-time batches)."""
+    q = Contact.query.filter(Contact.company_id == company_id).filter(or_(
+        Contact.sms_opted_out.is_(True), Contact.do_not_sms.is_(True), Contact.sms_opt_out_at.isnot(None),
+        Contact.tags.ilike("%opt%out%"), Contact.tags.ilike("%no%sms%")))
+    out = set()
+    for contact in q.all():
+        if not contact_has_sms_opt_out(contact):
+            continue
+        phone = normalize_phone(contact.normalized_phone or contact.phone)
+        if phone and (phones is None or phone in phones):
+            out.add(phone)
+    return out
+
+
 def canonical_tag_ids(company_id: int, *, tag_ids=None, tag_names=None, create_missing=False):
     """Resolve tag/segment labels to tenant-owned, marketing-eligible Segment
     IDs; foreign IDs -- and IDs/names belonging to a CRM-automation-internal
@@ -264,11 +306,21 @@ def resolve_segment_contacts(company_id: int, segment=None, audience_filter: dic
     if not ids:
         return contacts
     segments = _marketing_segments_query(company_id).filter(Segment.id.in_(ids)).all()
-    names = _expand_alias_names({_normalized_label(row.name) for row in segments})
-    member_ids = {row.contact_id for row in SegmentMember.query.filter(
-        SegmentMember.segment_id.in_(ids), SegmentMember.is_excluded.is_(False)
-    ).all()}
-    return [contact for contact in contacts if contact.id in member_ids or bool(_contact_tag_keys(contact) & names)]
+    rows_by_segment: dict[int, list] = {}
+    for row in SegmentMember.query.filter(SegmentMember.segment_id.in_([seg.id for seg in segments])).all():
+        rows_by_segment.setdefault(row.segment_id, []).append(row)
+    selected: set[int] = set()
+    for seg in segments:
+        rows = rows_by_segment.get(seg.id, [])
+        active = {r.contact_id for r in rows if not r.is_excluded and not r.removed_at}
+        # An explicit "Remove from segment" or "Permanently exclude" decision
+        # for THIS segment beats legacy tag-text inference for this segment.
+        decided_out = {r.contact_id for r in rows if r.is_excluded or r.removed_at}
+        names = _expand_alias_names({_normalized_label(seg.name)})
+        for contact in contacts:
+            if contact.id in active or (contact.id not in decided_out and _contact_tag_keys(contact) & names):
+                selected.add(contact.id)
+    return [contact for contact in contacts if contact.id in selected]
 
 
 def resolve_sms_campaign_recipients(campaign, *, materialize=False):
@@ -303,27 +355,35 @@ def resolve_sms_campaign_recipients(campaign, *, materialize=False):
         "campaign_purpose": purpose,
         "conversational_eligible": 0, "transactional_eligible": 0, "promotional_eligible": 0,
     }
+    stopped_phones = opted_out_phones(campaign.company_id)
     valid_seen = set()
     eligible_seen = set()
     conv_phone_seen = set()
     trans_phone_seen = set()
     promo_phone_seen = set()
     recipients = []
+    # (contact_id, reason) for every matched contact that will not be messaged.
+    # Precedence: STOP > do-not-SMS > do-not-market > do-not-contact >
+    # archived/suppressed > missing consent > duplicate phone.
+    skipped = []
     for contact in matched:
         raw_phone = contact.normalized_phone or contact.phone
         if not str(raw_phone or "").strip():
             counts["missing_phone_numbers"] += 1
+            skipped.append((contact.id, "missing_phone"))
             continue
         counts["contacts_with_phone"] += 1
         phone = normalize_phone(raw_phone)
         if not phone:
             counts["invalid_phone_numbers"] += 1
+            skipped.append((contact.id, "invalid_phone"))
             continue
         if phone in valid_seen:
             counts["duplicate_phone_numbers"] += 1
         valid_seen.add(phone)
         tags = _contact_tag_keys(contact)
-        opted_out = bool(contact.sms_opted_out or contact.do_not_sms or contact.sms_opt_out_at or "sms_opt_out" in tags or "no_sms" in tags)
+        own_opt_out = contact_has_sms_opt_out(contact, tags)
+        opted_out = own_opt_out or phone in stopped_phones
         suppressed = bool(not contact.is_active or contact.archived_at or contact.do_not_market or contact.do_not_contact or contact.status in {"archived", "suppressed", "merged"} or "blocked" in tags)
         consent = bool(contact.sms_marketing_opt_in and contact.sms_consent_status in {"opted_in", "subscribed"})
         cls = _classify_purposes(campaign.company_id, contact, evidence_digits=evidence_digits or None)
@@ -343,6 +403,7 @@ def resolve_sms_campaign_recipients(campaign, *, materialize=False):
                 promo_phone_seen.add(phone); counts["promotional_eligible"] += 1
         eligible = is_eligible_for_purpose(purpose, cls) and not opted_out
         if not eligible or phone in eligible_seen:
+            skipped.append((contact.id, _skip_reason(contact, tags, opted_out, suppressed or bool(cls.get("suppressed")), eligible)))
             continue
         eligible_seen.add(phone)
         recipients.append((contact, phone))
@@ -359,12 +420,35 @@ def resolve_sms_campaign_recipients(campaign, *, materialize=False):
         f'{counts["archived_or_suppressed"]} archived/suppressed; exactly {counts["eligible_recipients"]} SMS message(s) will be attempted.'
     )
     if materialize:
+        # Rebuilding the pending list is only safe before sending begins. Once
+        # any recipient has been claimed/attempted, deleting rows would erase
+        # delivery evidence and re-adding them as "pending" would re-send.
+        if campaign.id is not None and recipients_already_attempted(campaign):
+            raise RecipientsLocked(
+                "This campaign has already started sending; its recipient list can no longer be rebuilt."
+            )
         SMSRecipient.query.filter_by(company_id=campaign.company_id, campaign_id=campaign.id).delete(synchronize_session=False)
         for contact, phone in recipients:
             db.session.add(SMSRecipient(company_id=campaign.company_id, campaign_id=campaign.id,
                                         contact_id=contact.id, phone_number=phone, status="pending"))
         campaign.estimated_recipient_count = counts["eligible_recipients"]
-    return {"counts": counts, "recipients": recipients}
+    return {"counts": counts, "recipients": recipients, "skipped": skipped}
+
+
+def _skip_reason(contact, tags, opted_out, suppressed, eligible):
+    if opted_out:
+        if contact.do_not_sms and not (contact.sms_opted_out or contact.sms_opt_out_at or "sms_opt_out" in tags):
+            return "do_not_sms"
+        return "sms_opted_out"  # own STOP, or STOP recorded on another contact with this number
+    if contact.do_not_market:
+        return "do_not_market"
+    if contact.do_not_contact:
+        return "do_not_contact"
+    if suppressed:
+        return "archived_or_suppressed"
+    if not eligible:
+        return "missing_consent"
+    return "duplicate_phone"
 
 
 def build_sms_recipient_snapshot(campaign):
@@ -469,3 +553,40 @@ def import_contacts(company_id:int, file_bytes:bytes, filename:str, *, mapping=N
     batch.success_count=ok; batch.failure_count=len(errors); batch.error_report=errors
     db.session.flush()
     return {'batch': batch, 'success_count': ok, 'failure_count': len(errors), 'errors': errors, 'mapping': mapping}
+
+
+def sms_send_block_reason(campaign, contact, phone=None, *, evidence_digits=None, stopped_phones=None):
+    """Send-time re-check of one materialized recipient.
+
+    Recipients are materialized when a campaign is scheduled (or created), but
+    a customer can reply STOP, be archived, or lose consent before the send
+    actually happens. STOP / opt-out / suppression always win, so this is
+    re-evaluated immediately before each provider call. Returns None when the
+    contact may still be messaged for the campaign's purpose, otherwise a short
+    machine-readable reason ("opted_out", "suppressed", "missing_consent",
+    "invalid_phone", "contact_missing", "wrong_tenant").
+    """
+    from services.sms_consent_purpose import (
+        classify as _classify_purposes, is_eligible_for_purpose, normalize_campaign_purpose,
+    )
+    if contact is None:
+        return "contact_missing"
+    if contact.company_id != campaign.company_id:
+        return "wrong_tenant"
+    canonical = normalize_phone(phone or contact.normalized_phone or contact.phone)
+    if not canonical:
+        return "invalid_phone"
+    tags = _contact_tag_keys(contact)
+    if contact_has_sms_opt_out(contact, tags):
+        return "opted_out"
+    if stopped_phones is None:
+        stopped_phones = opted_out_phones(campaign.company_id, {canonical})
+    if canonical in stopped_phones:
+        return "opted_out"
+    purpose = normalize_campaign_purpose((campaign.audience_filter or {}).get("campaign_purpose"))
+    cls = _classify_purposes(campaign.company_id, contact, evidence_digits=evidence_digits)
+    if cls["suppressed"]:
+        return "suppressed"
+    if not is_eligible_for_purpose(purpose, cls):
+        return "missing_consent"
+    return None

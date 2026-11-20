@@ -2523,7 +2523,9 @@ def segment_detail(segment_id):
         "email": Campaign.query.filter_by(company_id=segment.company_id).order_by(Campaign.created_at.desc()).limit(10).all() if Campaign else [],
         "sms": SMSCampaign.query.filter_by(company_id=segment.company_id, segment=segment.name).order_by(SMSCampaign.created_at.desc()).limit(10).all() if SMSCampaign else [],
     }
-    return render_template('segment_detail.html', segment=segment, metrics=metrics, preview=preview, members=members, excluded=excluded, audits=audits, campaigns=campaigns, q=q)
+    from services.segment_engine import describe_rules
+    rules_summary = describe_rules(segment)
+    return render_template('segment_detail.html', segment=segment, metrics=metrics, preview=preview, members=members, excluded=excluded, audits=audits, campaigns=campaigns, q=q, rules_summary=rules_summary)
 
 
 @main_bp.route('/segments/<int:segment_id>/excluded/<int:contact_id>/restore', methods=['POST'])
@@ -2541,6 +2543,9 @@ def restore_segment_exclusion(segment_id, contact_id):
     member.removed_by_user_id = None
     member.added_at = datetime.utcnow()
     member.added_by_user_id = current_user.id
+    db.session.add(MarketingAuditLog(company_id=company_id, created_by_user_id=current_user.id, entity_type='segment',
+                                     entity_id=segment.id, action='segment_contact_restored',
+                                     details={'contact_id': contact_id}))
     db.session.commit()
     flash('Contact restored to segment.', 'success')
     return redirect(url_for('main.segment_detail', segment_id=segment.id) + '#excluded')
@@ -3833,133 +3838,59 @@ def create_sms_campaign():
     from services.campaign_tagging_service import CampaignTaggingService
     
     if request.method == 'POST':
-        try:
-            name = request.form.get('name')
-            message = request.form.get('message')
-            send_option = request.form.get('send_option', 'now')
-            
-            # Build scheduled_at from date and time if scheduled
-            scheduled_at = None
-            if send_option == 'scheduled':
-                scheduled_date = request.form.get('scheduled_date')
-                scheduled_time = request.form.get('scheduled_time')
-                if scheduled_date and scheduled_time:
-                    scheduled_at = datetime.fromisoformat(f"{scheduled_date}T{scheduled_time}")
-            
-            company_id = _current_company_id()
-            if not company_id:
-                flash('Company/tenant is required to create an SMS campaign.', 'error')
-                return redirect(url_for('main.sms_campaigns'))
-
-            from services.phone_line_service import PhoneLineService
-            sender_id = request.form.get('from_phone_number_id', type=int)
-            sender = {'success': True, 'phone_number': None, 'from_phone': None, 'source': 'not_selected'}
-            if sender_id or scheduled_at:
-                sender = PhoneLineService.resolve_campaign_sender(company_id, sender_id, allow_fallback=bool(request.form.get('allow_global_fallback')), user=current_user)
-                if not sender.get('success'):
-                    flash(sender.get('error'), 'error')
-                    return redirect(url_for('main.create_sms_campaign'))
-            media_urls = [u.strip() for u in (request.form.get('media_urls') or '').replace('\r', '').split('\n') if u.strip()]
-            # Create campaign
-            campaign = SMSCampaign(
-                company_id=company_id,
-                created_by_user_id=current_user.id,
-                from_phone_number_id=getattr(sender.get('phone_number'), 'id', None),
-                from_phone_number=sender.get('from_phone'),
-                name=name,
-                message=SMSService.ensure_opt_out_language(message or '') if SMSService else message,
-                media_urls=media_urls,
-                batch_size=max(1, request.form.get('batch_size', type=int) or 50),
-                send_rate_per_minute=max(1, request.form.get('send_rate_per_minute', type=int) or 60),
-                segment=request.form.get('segment_tags') or None,
-                status='scheduled' if scheduled_at else 'draft',
-                scheduled_at=scheduled_at,
-                audience_filter={'segment_tags': request.form.get('segment_tags', ''), 'sender_source': sender.get('source')},
-                created_at=datetime.utcnow(),
-            )
-            db.session.add(campaign)
-            db.session.flush()
-            
-            # Process campaign tags for organization
-            campaign_tags_str = request.form.get('campaign_tags', '')
-            if campaign_tags_str:
-                tag_names = [tag.strip() for tag in campaign_tags_str.split(',') if tag.strip()]
-                tag_ids = []
-                for tag_name in tag_names:
-                    tag = CampaignTaggingService.create_tag(tag_name)
-                    tag_ids.append(tag.id)
-                
-                if tag_ids:
-                    CampaignTaggingService.sync_tags_for_object(
-                        tag_ids,
-                        'sms',
-                        campaign.id
-                    )
-            
-            # Process segment tags for targeting (filter contacts)
-            segment_tags_str = request.form.get('segment_tags', '')
-            contacts_to_target = []
-            
-            if segment_tags_str:
-                # Filter contacts by tags - check if contact has ANY of the specified tags
-                segment_names = [seg.strip() for seg in segment_tags_str.split(',') if seg.strip()]
-                
-                # Build OR filter: contact.tags contains tag1 OR tag2 OR tag3
-                tag_filters = [Contact.tags.contains(tag_name) for tag_name in segment_names]
-                
-                contacts_to_target = Contact.query.filter(
-                    Contact.company_id == campaign.company_id,
-                    Contact.phone.isnot(None),
-                    Contact.sms_marketing_opt_in == True,
-                    Contact.sms_opt_out_at.is_(None),
-                    Contact.sms_consent_status.in_(['opted_in', 'subscribed']),
-                    or_(*tag_filters) if tag_filters else True
-                ).all()
-            else:
-                # Send to all contacts with phone numbers
-                contacts_to_target = Contact.query.filter(
-                    Contact.company_id == campaign.company_id,
-                    Contact.phone.isnot(None),
-                    Contact.sms_marketing_opt_in == True,
-                    Contact.sms_opt_out_at.is_(None),
-                    Contact.sms_consent_status.in_(['opted_in', 'subscribed'])
-                ).all()
-            
-            campaign.estimated_recipient_count = len(contacts_to_target)
-
-            # Add recipients
-            if contacts_to_target:
-                for contact in contacts_to_target:
-                    db.session.add(SMSRecipient(
-                        company_id=company_id,
-                        campaign_id=campaign.id,
-                        contact_id=contact.id,
-                        phone_number=contact.phone,
-                        status='pending',
-                    ))
-            
-            # Add to unified schedule if scheduled
-            if scheduled_at:
-                try:
-                    SchedulingService.create_schedule(
-                        module_type='sms',
-                        module_object_id=campaign.id,
-                        title=f'SMS: {name}',
-                        scheduled_at=scheduled_at,
-                        description=message[:100]
-                    )
-                except Exception as sched_exc:
-                    logger.warning("SMS schedule helper skipped: %s", sched_exc)
-            
-            db.session.commit()
-            log_activity(current_user.id, 'Created SMS campaign', name, 'message-square')
-            flash('SMS campaign created successfully!', 'success')
+        from services.sms_campaign_workflow import CampaignWorkflowError, create_campaign, schedule_campaign
+        company_id = _current_company_id()
+        if not company_id:
+            flash('Company/tenant is required to create an SMS campaign.', 'error')
             return redirect(url_for('main.sms_campaigns'))
-            
-        except Exception as e:
-            logger.error(f"Error creating SMS campaign: {e}")
-            flash('Error creating SMS campaign', 'error')
-    
+        form = request.form
+        segment_ids = [v for v in form.getlist('segment_ids') if str(v).strip()]
+        data = {
+            'name': form.get('name'), 'message': form.get('message'),
+            'from_phone_number_id': form.get('from_phone_number_id'),
+            'media_urls': form.get('media_urls'), 'batch_size': form.get('batch_size'),
+            'send_rate_per_minute': form.get('send_rate_per_minute'),
+            'campaign_purpose': form.get('campaign_purpose') or None,
+        }
+        if segment_ids:
+            data['segment_ids'] = segment_ids
+        elif (form.get('segment_tags') or '').strip():
+            data['segment'] = form.get('segment_tags')  # legacy free-text: must match an existing segment
+        scheduled_at = None
+        if form.get('send_option') == 'scheduled':
+            if not (form.get('scheduled_date') and form.get('scheduled_time')):
+                flash('Choose a date and time to schedule this campaign.', 'error')
+                return redirect(url_for('main.create_sms_campaign'))
+            scheduled_at = f"{form.get('scheduled_date')}T{form.get('scheduled_time')}"
+        ensure = SMSService.ensure_opt_out_language if SMSService else (lambda m: m)
+        try:
+            campaign = create_campaign(company_id, current_user, data, ensure_opt_out=ensure)
+            counts = None
+            if scheduled_at:
+                counts = schedule_campaign(campaign, current_user, when=scheduled_at,
+                                           timezone_name=form.get('timezone') or None)
+            campaign_tags_str = form.get('campaign_tags', '')
+            if campaign_tags_str:
+                tag_ids = [CampaignTaggingService.create_tag(t.strip()).id for t in campaign_tags_str.split(',') if t.strip()]
+                if tag_ids:
+                    CampaignTaggingService.sync_tags_for_object(tag_ids, 'sms', campaign.id)
+            db.session.commit()
+        except CampaignWorkflowError as exc:
+            db.session.rollback()
+            flash(exc.message, 'error')
+            return redirect(url_for('main.create_sms_campaign'))
+        except Exception:
+            db.session.rollback()
+            logger.exception("Error creating SMS campaign")
+            flash('Error creating SMS campaign. Nothing was saved.', 'error')
+            return redirect(url_for('main.create_sms_campaign'))
+        log_activity(current_user.id, 'Created SMS campaign', campaign.name, 'message-square')
+        if counts:
+            flash(f"SMS campaign scheduled for {counts['eligible_recipients']} eligible recipient(s). {counts['explanation']}", 'success')
+        else:
+            flash('SMS campaign saved as a draft.', 'success')
+        return redirect(url_for('main.sms_campaigns'))
+
     company_id = _current_company_id()
     contacts = Contact.query.filter(
         Contact.company_id == company_id,
@@ -3986,7 +3917,8 @@ def create_sms_campaign():
                          templates=templates,
                          segments=segments,
                          sender_numbers=sender_numbers,
-                         selected_segment=(request.args.get('segment') or '').strip())
+                         selected_segment=(request.args.get('segment') or '').strip(),
+                         selected_segment_id=request.args.get('segment_id', type=int))
 
 @main_bp.route('/sms/campaign/<int:campaign_id>/edit', methods=['GET', 'POST'])
 @login_required
@@ -3998,38 +3930,41 @@ def edit_sms_campaign(campaign_id):
     campaign = SMSCampaign.query.filter_by(id=campaign_id, company_id=company_id).first_or_404()
     
     if request.method == 'POST':
+        from services.sms_campaign_workflow import CampaignWorkflowError, schedule_campaign, update_campaign
+        form = request.form
+        data = {k: form.get(k) for k in ('name', 'message', 'media_urls', 'batch_size', 'send_rate_per_minute') if k in form}
+        if 'from_phone_number_id' in form:
+            data['from_phone_number_id'] = form.get('from_phone_number_id')
+        segment_ids = [v for v in form.getlist('segment_ids') if str(v).strip()]
+        if segment_ids:
+            data['segment_ids'] = segment_ids
+        if form.get('campaign_purpose'):
+            data['campaign_purpose'] = form.get('campaign_purpose')
+        when = None
+        if form.get('scheduled_date') and form.get('scheduled_time'):
+            when = f"{form.get('scheduled_date')}T{form.get('scheduled_time')}"
+            if campaign.status == 'scheduled':
+                data['scheduled_at'] = when
         try:
-            if campaign.status not in ('draft', 'scheduled'):
-                flash('Only draft or scheduled campaigns can be edited.', 'error')
-                return redirect(url_for('main.sms_campaigns'))
-            campaign.name = request.form.get('name', campaign.name)
-            campaign.message = SMSService.ensure_opt_out_language(request.form.get('message', campaign.message))
-            campaign.media_urls = [u.strip() for u in (request.form.get('media_urls') or '').replace('\r', '').split('\n') if u.strip()]
-            campaign.batch_size = max(1, request.form.get('batch_size', type=int) or campaign.batch_size or 50)
-            campaign.send_rate_per_minute = max(1, request.form.get('send_rate_per_minute', type=int) or campaign.send_rate_per_minute or 60)
-            sender_id = request.form.get('from_phone_number_id', type=int)
-            if sender_id:
-                from services.phone_line_service import PhoneLineService
-                sender = PhoneLineService.resolve_campaign_sender(company_id, sender_id, user=current_user)
-                if not sender.get('success'):
-                    flash(sender.get('error'), 'error')
-                    return redirect(url_for('main.edit_sms_campaign', campaign_id=campaign.id))
-                campaign.from_phone_number_id = getattr(sender.get('phone_number'), 'id', None)
-                campaign.from_phone_number = sender.get('from_phone')
-            
-            scheduled_date = request.form.get('scheduled_date')
-            scheduled_time = request.form.get('scheduled_time')
-            if scheduled_date and scheduled_time:
-                campaign.scheduled_at = datetime.fromisoformat(f"{scheduled_date}T{scheduled_time}")
-                campaign.status = 'scheduled'
-            
+            counts = update_campaign(campaign, current_user, data, ensure_opt_out=SMSService.ensure_opt_out_language)
+            if when and campaign.status != 'scheduled':
+                counts = schedule_campaign(campaign, current_user, when=when)
             db.session.commit()
-            flash('SMS campaign updated successfully!', 'success')
-            return redirect(url_for('main.sms_campaigns'))
-        except Exception as e:
-            logger.error(f"Error updating SMS campaign: {e}")
-            flash('Error updating campaign', 'error')
-    
+        except CampaignWorkflowError as exc:
+            db.session.rollback()
+            flash(exc.message, 'error')
+            return redirect(url_for('main.edit_sms_campaign', campaign_id=campaign_id))
+        except Exception:
+            db.session.rollback()
+            logger.exception("Error updating SMS campaign")
+            flash('Error updating campaign. Nothing was changed.', 'error')
+            return redirect(url_for('main.edit_sms_campaign', campaign_id=campaign_id))
+        if counts:
+            flash(f"Campaign updated. {counts['explanation']}", 'success')
+        else:
+            flash('SMS campaign updated.', 'success')
+        return redirect(url_for('main.sms_campaigns'))
+
     company_id = _current_company_id()
     contacts = Contact.query.filter(
         Contact.company_id == company_id,
@@ -4045,8 +3980,10 @@ def edit_sms_campaign(campaign_id):
     from services.phone_line_service import PhoneLineService
     sender_numbers = PhoneLineService.campaign_sender_options(company_id)
     
+    segments = Segment.query.filter_by(company_id=company_id).order_by(Segment.name.asc()).all()
     return render_template('edit_sms_campaign.html',
                          campaign=campaign,
+                         segments=segments,
                          contacts=contacts,
                          templates=templates,
                          sender_numbers=sender_numbers)
@@ -11853,18 +11790,15 @@ def send_sms_campaign(campaign_id):
             if not campaign:
                 flash('SMS Campaign not found.', 'danger')
                 return redirect(url_for('main.sms_campaigns'))
-            sender_number_id = request.form.get('from_phone_number_id', type=int)
-            if sender_number_id:
-                from models import TwilioPhoneNumber
-                from services.comms_permissions import accessible_phone_numbers
-                pn = TwilioPhoneNumber.query.filter_by(id=sender_number_id, company_id=company_id, sms_enabled=True, is_active=True).first()
-                allowed = accessible_phone_numbers(current_user, company_id)
-                if not pn or pn.phone_number not in allowed:
-                    flash('You do not have permission to send campaigns from that number.', 'danger')
-                    return redirect(url_for('main.sms_campaigns')), 403
-                campaign.from_phone_number_id = pn.id
-                campaign.from_phone_number = pn.phone_number
+            from services.sms_campaign_workflow import CampaignWorkflowError, prepare_send_now
+            try:
+                resume, _counts = prepare_send_now(campaign, current_user,
+                                                   sender_id=request.form.get('from_phone_number_id') or None)
                 db.session.commit()
+            except CampaignWorkflowError as exc:
+                db.session.rollback()
+                flash(exc.message, 'danger')
+                return redirect(url_for('main.sms_campaigns')), exc.status
             recipient_count = SMSRecipient.query.filter_by(campaign_id=campaign_id, status='pending').count()
             if recipient_count > SMSService.ASYNC_RECIPIENT_THRESHOLD:
                 result = SMSService.queue_campaign_send(campaign_id, app=current_app._get_current_object()) if SMSService else {'success': False, 'error': 'SMS service unavailable'}
@@ -11876,7 +11810,7 @@ def send_sms_campaign(campaign_id):
                 else:
                     flash(f"SMS campaign could not be queued: {result.get('error')}", 'danger')
             else:
-                result = SMSService.send_campaign(campaign_id) if SMSService else {'success': False, 'error': 'SMS service unavailable'}
+                result = SMSService.send_campaign(campaign_id, user=current_user) if SMSService else {'success': False, 'error': 'SMS service unavailable'}
                 if result.get('success'):
                     flash(f"SMS campaign sent to {result.get('sent', 0)} recipient(s); {result.get('failed', 0)} failed.", 'success')
                 elif result.get('status_code') == 409:
@@ -11887,7 +11821,7 @@ def send_sms_campaign(campaign_id):
     except Exception as e:
         db.session.rollback()
         logger.exception("Error sending SMS campaign")
-        flash(f'Error sending SMS campaign: {str(e)}', 'danger')
+        flash('Error sending SMS campaign. Check the campaign status before retrying.', 'danger')
     return redirect(url_for('main.sms_campaigns'))
 
 

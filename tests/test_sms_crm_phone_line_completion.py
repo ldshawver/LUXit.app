@@ -7,7 +7,7 @@ from werkzeug.security import generate_password_hash
 
 from app import create_app
 from extensions import db
-from models import Company, Contact, SMSCampaign, SMSRecipient, TwilioPhoneNumber, User, UserCompanyAccess, IntegrationAuditLog
+from models import Company, Contact, Segment, SMSCampaign, SMSRecipient, TwilioAccount, TwilioPhoneNumber, User, UserCompanyAccess, IntegrationAuditLog
 from services.phone_line_service import PhoneLineService
 from services.sms_service import SMSService
 
@@ -98,11 +98,16 @@ def test_per_number_resolution_and_sender_permission_are_tenant_safe(client_ctx)
 def test_scheduled_campaign_edit_duplicate_cancel_delete_and_test_send(client_ctx, monkeypatch):
     app, client, c1, _, _, line1, _ = client_ctx
     with app.app_context():
-        contact = Contact(company_id=c1.id, first_name="Opt", phone="+15551110000", sms_marketing_opt_in=True, sms_consent_status="opted_in")
-        db.session.add(contact); db.session.commit()
+        contact = Contact(company_id=c1.id, first_name="Opt", phone="+14155551110", tags="sched-vip", sms_marketing_opt_in=True, sms_consent_status="opted_in")
+        segment = Segment(company_id=c1.id, name="sched-vip")
+        # Scheduling fails closed without a connected provider + authorized line + audience.
+        account = TwilioAccount(company_id=c1.id, from_phone=line1.phone_number, is_active=True)
+        account.set_account_sid("ACsched"); account.set_auth_token("token")
+        db.session.add_all([contact, segment, account]); db.session.commit()
+        segment_id = segment.id
     scheduled = (datetime.utcnow() + timedelta(days=1))
     create = client.post("/sms/create", data={
-        "name": "Sched", "message": "Visit https://lux.test", "send_option": "scheduled",
+        "name": "Sched", "message": "Visit https://lux.test", "send_option": "scheduled", "segment_ids": str(segment_id),
         "scheduled_date": scheduled.strftime("%Y-%m-%d"), "scheduled_time": scheduled.strftime("%H:%M"),
         "from_phone_number_id": str(line1.id), "media_urls": "https://example.test/image.jpg", "batch_size": "5", "send_rate_per_minute": "10",
     })
@@ -148,24 +153,30 @@ def test_contact_import_preview_maps_opt_in_out_and_duplicates(client_ctx):
 
 
 def test_batch_send_rate_limit_prevents_duplicate_sends_and_resumes(client_ctx, monkeypatch):
-    app, _, c1, *_ = client_ctx
+    """batch_size is a commit chunk: one run processes every pending recipient
+    (previously the run stopped after one batch at status "scheduled" and no
+    job ever resumed it, stranding the rest). Re-sends are refused."""
+    app, _, c1, _, _, line1, _ = client_ctx
     with app.app_context():
-        campaign = SMSCampaign(company_id=c1.id, name="Batch", message="Hi Reply STOP to opt out.", status="draft", batch_size=2, send_rate_per_minute=2)
+        campaign = SMSCampaign(company_id=c1.id, name="Batch", message="Hi Reply STOP to opt out.", status="draft", batch_size=2,
+                               send_rate_per_minute=2, from_phone_number_id=line1.id, from_phone_number=line1.phone_number)
         db.session.add(campaign); db.session.flush()
         for n in range(3):
-            db.session.add(SMSRecipient(company_id=c1.id, campaign_id=campaign.id, phone_number=f"+1555000000{n}", status="pending"))
+            contact = Contact(company_id=c1.id, phone=f"+1415555000{n}", sms_marketing_opt_in=True, sms_consent_status="opted_in")
+            db.session.add(contact); db.session.flush()
+            db.session.add(SMSRecipient(company_id=c1.id, campaign_id=campaign.id, contact_id=contact.id,
+                                        phone_number=contact.phone, status="pending"))
         db.session.commit()
-        monkeypatch.setattr(SMSService, "send_sms", staticmethod(lambda *a, **kw: {"success": True, "message_sid": f"SM{a[0][-1]}"}))
+        sent = []
+        monkeypatch.setattr(SMSService, "send_sms", staticmethod(lambda *a, **kw: sent.append(a[0]) or {"success": True, "message_sid": f"SM{a[0][-1]}"}))
         first = SMSService.send_campaign(campaign.id)
-        assert first["sent"] == 2
-        assert db.session.get(SMSCampaign, campaign.id).status == "scheduled"
+        assert first["sent"] == 3
+        assert db.session.get(SMSCampaign, campaign.id).status == "completed"
         second = SMSService.send_campaign(campaign.id)
         assert second["success"] is False
         assert second["status_code"] == 409
-        # Scheduler resume path sends remaining pending recipients without duplicating sent rows.
-        resumed = SMSService.send_campaign(campaign.id, transition=False)
-        assert resumed["sent"] == 1
         assert SMSRecipient.query.filter_by(campaign_id=campaign.id, status="sent").count() == 3
+        assert len(sent) == 3
 
 
 def test_calendar_analytics_and_ai_include_sms_campaigns(client_ctx):

@@ -4,7 +4,7 @@ from werkzeug.security import generate_password_hash
 
 from app import create_app
 from extensions import db
-from models import Company, Contact, SMSCampaign, SMSTemplate, User, UserCompanyAccess
+from models import Company, Contact, Segment, SMSCampaign, SMSTemplate, TwilioAccount, TwilioPhoneNumber, User, UserCompanyAccess
 
 
 def _login_fixture():
@@ -20,8 +20,17 @@ def _login_fixture():
         db.session.add(user)
         db.session.flush()
         db.session.add(UserCompanyAccess(user_id=user.id, company_id=company.id, role="admin", is_default=True))
-        db.session.add(Contact(company_id=company.id, first_name="In", phone="+15550100001", sms_marketing_opt_in=True, sms_consent_status="opted_in"))
-        db.session.add(Contact(company_id=other.id, first_name="Out", phone="+15550100002", sms_marketing_opt_in=True, sms_consent_status="opted_in"))
+        db.session.add(Contact(company_id=company.id, first_name="In", phone="+14155550001", tags="route-vip", sms_marketing_opt_in=True, sms_consent_status="opted_in"))
+        db.session.add(Segment(company_id=company.id, name="route-vip"))
+        # Sender configuration is mandatory: an authorized tenant phone line.
+        db.session.add(TwilioPhoneNumber(company_id=company.id, phone_number="+15550109999", is_active=True,
+                                         sms_enabled=True, campaign_sender_enabled=True, is_primary=True))
+        account = TwilioAccount(company_id=company.id, from_phone="+15550109999", is_active=True)
+        account.set_account_sid("ACroute")
+        account.set_auth_token("token")
+        db.session.add(account)
+        db.session.add(Contact(company_id=other.id, first_name="Out", phone="+14155550002", tags="route-vip", sms_marketing_opt_in=True, sms_consent_status="opted_in"))
+        db.session.add(Segment(company_id=other.id, name="route-vip"))
         db.session.add(SMSTemplate(company_id=company.id, name="Tenant Template", message="Hi Reply STOP", is_active=True))
         db.session.add(SMSTemplate(company_id=other.id, name="Other Template", message="Nope Reply STOP", is_active=True))
         db.session.commit()
@@ -57,6 +66,8 @@ def test_sms_create_persists_tenant_user_and_calendar_api_includes_campaign():
             data={
                 "name": "Scheduled Route SMS",
                 "message": "Hello tenant",
+                "segment_ids": str(Segment.query.filter_by(company_id=company.id).one().id),
+                "from_phone_number_id": str(TwilioPhoneNumber.query.filter_by(company_id=company.id).one().id),
                 "send_option": "scheduled",
                 "scheduled_date": scheduled_at.strftime("%Y-%m-%d"),
                 "scheduled_time": scheduled_at.strftime("%H:%M"),
