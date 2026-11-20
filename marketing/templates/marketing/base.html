@@ -1075,6 +1075,7 @@
       .section { padding: 60px 20px; }
     }
   </style>
+  {% block head_extra %}{% endblock %}
 </head>
 <body>
   <div class="bg-container">
@@ -1248,5 +1249,6 @@
 
     });
   </script>
+  {% block body_end %}{% endblock %}
 </body>
 </html>
