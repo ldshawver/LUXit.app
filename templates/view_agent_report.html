@@ -36,7 +36,8 @@
                     </div>
 
                     <div class="report-content">
-                        {{ report.content | safe }}
+                        {# AI output can echo injected input: never let it run as page script. #}
+                        <iframe sandbox srcdoc="{{ report.content }}" style="width:100%;min-height:500px;border:0;" title="Agent report"></iframe>
                     </div>
                 </div>
             </div>

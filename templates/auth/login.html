@@ -136,6 +136,9 @@
         <span style="color:#374151;margin:0 10px;">·</span>
         <a href="{{ url_for('auth.forgot_username') }}" style="font-size:0.83rem;color:#6b7280;text-decoration:none;" onmouseover="this.style.color='#00e5ff'" onmouseout="this.style.color='#6b7280'">Forgot username?</a>
       </div>
+      {% if self_serve_signup_enabled %}
+      <p style="text-align:center;margin:14px 0 0;font-size:0.85rem;color:#6b7280;">New to LUXit? <a href="{{ url_for('auth.signup') }}" style="color:#00e5ff;text-decoration:none;font-weight:500;">Create an account</a></p>
+      {% endif %}
     </div>
   </body>
 </html>

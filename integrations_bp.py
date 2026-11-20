@@ -38,6 +38,7 @@ Endpoints:
 """
 import json
 import logging
+from xml.sax.saxutils import escape as xml_escape
 
 from flask import Blueprint, jsonify, request, render_template, abort, redirect, url_for
 from flask_login import current_user, login_required
@@ -114,6 +115,7 @@ def test_integration(provider):
 @integrations_bp.route("/api/twilio/send-sms", methods=["POST"])
 @login_required
 def twilio_send_sms():
+    _require_platform_admin()  # acts on platform-owned accounts, not the tenant's
     data = request.get_json(silent=True) or {}
     to   = data.get("to", "").strip()
     body = data.get("body", "").strip()
@@ -128,7 +130,11 @@ def twilio_send_sms():
 
 @integrations_bp.route("/api/twilio/inbound-sms", methods=["POST"])
 def twilio_inbound_sms():
-    """Public Twilio webhook — no auth (Twilio signs requests)."""
+    """Public Twilio webhook — authenticated by the X-Twilio-Signature header."""
+    from twilio_sms import _validate_twilio_signature
+    if not _validate_twilio_signature(None, "/api/twilio/inbound-sms"):
+        # Unsigned calls could forge STOP/START consent changes and create leads.
+        abort(403)
     from_number = request.form.get("From") or request.values.get("From", "")
     to_number   = request.form.get("To")   or request.values.get("To", "")
     body        = request.form.get("Body") or request.values.get("Body", "")
@@ -140,7 +146,7 @@ def twilio_inbound_sms():
     if reply:
         twiml = (
             '<?xml version="1.0" encoding="UTF-8"?>'
-            f'<Response><Message>{reply}</Message></Response>'
+            f'<Response><Message>{xml_escape(reply)}</Message></Response>'
         )
     else:
         twiml = '<?xml version="1.0" encoding="UTF-8"?><Response></Response>'
@@ -163,6 +169,7 @@ def twilio_voice_status():
 @integrations_bp.route("/api/outlook/send-email", methods=["POST"])
 @login_required
 def outlook_send_email():
+    _require_platform_admin()  # acts on platform-owned accounts, not the tenant's
     data     = request.get_json(silent=True) or {}
     to       = data.get("to", "").strip()
     subject  = data.get("subject", "").strip()
@@ -180,6 +187,7 @@ def outlook_send_email():
 @integrations_bp.route("/api/outlook/messages/recent")
 @login_required
 def outlook_recent_messages():
+    _require_platform_admin()  # acts on platform-owned accounts, not the tenant's
     limit = min(int(request.args.get("limit", 20)), 50)
     from services.integrations.outlook_service import list_recent_emails
     result = list_recent_emails(limit=limit)
@@ -189,6 +197,7 @@ def outlook_recent_messages():
 @integrations_bp.route("/api/outlook/calendar/events", methods=["GET"])
 @login_required
 def outlook_list_events():
+    _require_platform_admin()  # acts on platform-owned accounts, not the tenant's
     limit = min(int(request.args.get("limit", 20)), 50)
     from services.integrations.outlook_service import list_calendar_events
     result = list_calendar_events(limit=limit)
@@ -198,6 +207,7 @@ def outlook_list_events():
 @integrations_bp.route("/api/outlook/calendar/events", methods=["POST"])
 @login_required
 def outlook_create_event():
+    _require_platform_admin()  # acts on platform-owned accounts, not the tenant's
     data      = request.get_json(silent=True) or {}
     subject   = data.get("subject", "").strip()
     start_dt  = data.get("start_dt", "").strip()
@@ -227,6 +237,7 @@ def outlook_create_event():
 @integrations_bp.route("/api/airtable/records")
 @login_required
 def airtable_list_records():
+    _require_platform_admin()  # acts on platform-owned accounts, not the tenant's
     base_id    = request.args.get("base_id", "")
     table_name = request.args.get("table_name", "")
     filter_formula = request.args.get("filter_formula")
@@ -241,6 +252,7 @@ def airtable_list_records():
 @integrations_bp.route("/api/airtable/records", methods=["POST"])
 @login_required
 def airtable_create_record():
+    _require_platform_admin()  # acts on platform-owned accounts, not the tenant's
     data       = request.get_json(silent=True) or {}
     base_id    = data.get("base_id", "")
     table_name = data.get("table_name", "")
@@ -256,6 +268,7 @@ def airtable_create_record():
 @integrations_bp.route("/api/airtable/records/<record_id>", methods=["PATCH"])
 @login_required
 def airtable_update_record(record_id):
+    _require_platform_admin()  # acts on platform-owned accounts, not the tenant's
     data       = request.get_json(silent=True) or {}
     base_id    = data.get("base_id", "")
     table_name = data.get("table_name", "")
@@ -271,6 +284,7 @@ def airtable_update_record(record_id):
 @integrations_bp.route("/api/airtable/records/<record_id>", methods=["DELETE"])
 @login_required
 def airtable_delete_record(record_id):
+    _require_platform_admin()  # acts on platform-owned accounts, not the tenant's
     data       = request.get_json(silent=True) or {}
     base_id    = data.get("base_id", "")
     table_name = data.get("table_name", "")
@@ -289,6 +303,7 @@ def airtable_delete_record(record_id):
 @integrations_bp.route("/api/airtable/health")
 @login_required
 def airtable_health():
+    _require_platform_admin()  # acts on platform-owned accounts, not the tenant's
     from services.integrations.airtable_service import health_check
     result = health_check()
     code = 200 if result.get("status") == "connected" else 503
@@ -303,6 +318,7 @@ def airtable_health():
 @login_required
 def airtable_sync_lead(contact_id):
     """Sync a single Contact (lead) to the Airtable Leads table."""
+    _require_platform_admin()  # acts on platform-owned accounts, not the tenant's
     cid = _company_id()
     from services.integrations.airtable_service import sync_lead_to_airtable
     result = sync_lead_to_airtable(contact_id, cid)
@@ -313,6 +329,7 @@ def airtable_sync_lead(contact_id):
 @login_required
 def airtable_sync_onboarding(project_id):
     """Sync a CustomerOnboardingProject to the Airtable Onboarding Pipeline table."""
+    _require_platform_admin()  # acts on platform-owned accounts, not the tenant's
     cid = _company_id()
     from services.integrations.airtable_service import sync_onboarding_to_airtable
     result = sync_onboarding_to_airtable(project_id, cid)
@@ -323,6 +340,7 @@ def airtable_sync_onboarding(project_id):
 @login_required
 def airtable_sync_support(ticket_id):
     """Sync a FeedbackTicket (support note) to the Airtable Support table."""
+    _require_platform_admin()  # acts on platform-owned accounts, not the tenant's
     cid = _company_id()
     from services.integrations.airtable_service import sync_support_note_to_airtable
     result = sync_support_note_to_airtable(ticket_id, cid)
@@ -333,6 +351,7 @@ def airtable_sync_support(ticket_id):
 @login_required
 def airtable_sync_logs():
     """Return recent ExternalSyncRecord rows for this user's company."""
+    _require_platform_admin()  # acts on platform-owned accounts, not the tenant's
     cid         = _company_id()
     entity_type = request.args.get("entity_type")
     limit       = min(int(request.args.get("limit", 50)), 200)
@@ -345,6 +364,7 @@ def airtable_sync_logs():
 @login_required
 def airtable_sync_stats():
     """Return counts of synced/failed/pending for this company."""
+    _require_platform_admin()  # acts on platform-owned accounts, not the tenant's
     cid = _company_id()
     from services.integrations.airtable_service import get_sync_stats
     return jsonify(get_sync_stats(company_id=cid))
@@ -357,6 +377,7 @@ def airtable_sync_stats():
 @integrations_bp.route("/platform/integrations/airtable")
 @login_required
 def airtable_admin_panel():
+    _require_platform_admin()  # acts on platform-owned accounts, not the tenant's
     import os
     from services.integrations.airtable_service import get_sync_logs, get_sync_stats, health_check
     from models import IntegrationConnection

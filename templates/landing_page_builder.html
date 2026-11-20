@@ -1246,7 +1246,7 @@ document.addEventListener('DOMContentLoaded', function() {
     // Load existing page data if editing
     {% if page and page.builder_schema %}
     try {
-        const savedSchema = {{ page.builder_schema|safe }};
+        const savedSchema = JSON.parse({{ page.builder_schema|tojson }});
         if (savedSchema && savedSchema.length > 0) {
             pageSchema = savedSchema;
             sectionCounter = savedSchema.length;

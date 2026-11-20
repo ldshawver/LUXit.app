@@ -1,0 +1,10 @@
+[Unit]
+Description=Report LUXit contact overage to Stripe daily
+
+[Timer]
+OnCalendar=*-*-* 03:30:00 UTC
+RandomizedDelaySec=10m
+Persistent=true
+
+[Install]
+WantedBy=timers.target

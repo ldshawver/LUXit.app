@@ -50,6 +50,8 @@ and conversions while maintaining brand consistency.
             logger.info("LUX Agent initialized (OpenAI key present).")
 
     def _get_client(self) -> Optional[OpenAI]:
+        from services.entitlements import require_ai_entitlement
+        require_ai_entitlement()
         if self._client:
             return self._client
 
@@ -68,6 +70,8 @@ and conversions while maintaining brand consistency.
             self._client = None
 
     def _get_client(self):
+        from services.entitlements import require_ai_entitlement
+        require_ai_entitlement()
         if self._client:
             return self._client
         if not self._api_key:

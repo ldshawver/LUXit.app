@@ -19,7 +19,10 @@ logger = logging.getLogger(__name__)
 
 MODE_DISABLED = "disabled"
 MODE_LIVE = "live"
-_VALID_MODES = {MODE_DISABLED, MODE_LIVE}
+# Staging/QA only: SMS/MMS to the E.164 numbers in LUXIT_TWILIO_ALLOWED_RECIPIENTS
+# and nothing else (every other Twilio call is blocked exactly as in disabled).
+MODE_ALLOWLIST = "allowlist"
+_VALID_MODES = {MODE_DISABLED, MODE_LIVE, MODE_ALLOWLIST}
 
 
 class TwilioSendBlockedError(Exception):
@@ -59,6 +62,9 @@ def resolve_twilio_mode() -> str:
         return MODE_LIVE if is_production else MODE_DISABLED
 
     normalized = raw.strip().lower()
+    if normalized == MODE_ALLOWLIST and is_production:
+        logger.warning("LUXIT_TWILIO_MODE=allowlist is not allowed in production; failing closed to %r.", MODE_DISABLED)
+        return MODE_DISABLED
     if normalized in _VALID_MODES:
         return normalized
 
@@ -86,6 +92,40 @@ class _BlockedTwilioClient:
         raise TwilioSendBlockedError(self._boundary)
 
 
+def allowed_recipients() -> frozenset[str]:
+    """E.164 numbers from LUXIT_TWILIO_ALLOWED_RECIPIENTS (comma/space separated)."""
+    raw = os.environ.get("LUXIT_TWILIO_ALLOWED_RECIPIENTS") or ""
+    return frozenset(p for p in raw.replace(",", " ").split() if p.startswith("+") and p[1:].isdigit())
+
+
+class _AllowlistMessages:
+    def __init__(self, real_client, boundary: str, allowed: frozenset[str]):
+        self._real = real_client
+        self._boundary = boundary
+        self._allowed = allowed
+
+    def create(self, **kwargs):
+        to = str(kwargs.get("to") or "").strip()
+        if to not in self._allowed:
+            logger.info("Twilio allowlist mode refused a message to a non-allowlisted recipient at %s", self._boundary)
+            raise TwilioSendBlockedError(f"{self._boundary} (recipient not in LUXIT_TWILIO_ALLOWED_RECIPIENTS)")
+        return self._real.messages.create(**kwargs)
+
+    def __getattr__(self, name):
+        raise TwilioSendBlockedError(self._boundary)
+
+
+class _AllowlistTwilioClient(_BlockedTwilioClient):
+    """Exposes only messages.create() to allowlisted recipients. Calls, number /
+    webhook configuration and every other API stay blocked, so a staging box
+    can never reconfigure the shared Twilio account or reach a real customer."""
+
+    def __init__(self, account_sid, auth_token, boundary: str, allowed: frozenset[str]):
+        super().__init__(boundary)
+        from twilio.rest import Client
+        self.messages = _AllowlistMessages(Client(account_sid, auth_token), boundary, allowed)
+
+
 def get_twilio_client(account_sid: str | None, auth_token: str | None, *, boundary: str = "unknown"):
     """Return a real twilio.rest.Client in live mode, or a client-shaped
     stand-in that blocks every call while LUXIT_TWILIO_MODE=disabled.
@@ -94,7 +134,12 @@ def get_twilio_client(account_sid: str | None, auth_token: str | None, *, bounda
     (e.g. "twilio_sms.sendConversationSms") for diagnostics -- never pass
     credentials or message content here.
     """
-    if resolve_twilio_mode() == MODE_LIVE:
+    mode = resolve_twilio_mode()
+    if mode == MODE_LIVE:
         from twilio.rest import Client
         return Client(account_sid, auth_token)
+    if mode == MODE_ALLOWLIST:
+        allowed = allowed_recipients()
+        if allowed:
+            return _AllowlistTwilioClient(account_sid, auth_token, boundary, allowed)
     return _BlockedTwilioClient(boundary)

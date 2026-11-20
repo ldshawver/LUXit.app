@@ -36,13 +36,10 @@
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
       <button type="submit" class="btn btn-outline-success"><i data-feather="refresh-cw"></i> Refresh Segment</button>
     </form>
-    <button type="button" class="btn btn-outline-dark" disabled title="Coming soon">
-      <i data-feather="cpu"></i> Optimize Segment with AI <span class="badge bg-secondary">Coming soon</span>
-    </button>
     <a class="btn btn-primary" href="{{ url_for('main.create_campaign') }}?segment={{ segment.name|urlencode }}">
       <i data-feather="mail"></i> Create Email Campaign from Segment
     </a>
-    <a class="btn btn-success" href="{{ url_for('main.create_sms_campaign') }}?segment={{ segment.name|urlencode }}">
+    <a class="btn btn-success" href="{{ url_for('main.create_sms_campaign', segment_id=segment.id) }}">
       <i data-feather="message-square"></i> Create SMS Campaign from Segment
     </a>
     <button type="button" class="btn btn-outline-danger" data-bs-toggle="modal" data-bs-target="#deleteSegmentModal">
@@ -99,6 +96,13 @@
       </div>
     </div>
 
+    <div class="card mt-3" id="segmentAudiencePreview" data-segment-id="{{ segment.id }}">
+      <div class="card-body">
+        <h5 class="card-title mb-1">SMS audience preview</h5>
+        <p class="small text-muted mb-3">Exactly who a promotional SMS campaign to this segment would reach today, using the same rules as sending. Membership is not consent.</p>
+        <div class="row g-2 small" id="segmentAudienceCounts"><div class="col-12 text-muted">Loading&hellip;</div></div>
+      </div>
+    </div>
     <hr class="my-4"/>
     <div id="promoOptinPanel" data-segment-id="{{ segment.id }}">
       <h4><i data-feather="check-square"></i> Promotional Opt-In</h4>
@@ -178,11 +182,27 @@
     </div>
     <div class="mb-3"><strong>Match Mode:</strong> {{ (segment.match_mode or 'all')|upper }}</div>
     <div class="mb-3"><strong>State:</strong> <span class="badge {{ 'bg-success' if segment.is_active else 'bg-secondary' }}">{{ 'Active' if segment.is_active else 'Inactive' }}</span></div>
-    <div class="row">
-      <div class="col-md-4"><h5>Triggers</h5><pre class="bg-light p-3 rounded">{{ (segment.triggers or [])|tojson(indent=2) }}</pre></div>
-      <div class="col-md-4"><h5>Conditions</h5><pre class="bg-light p-3 rounded">{{ (segment.conditions or [])|tojson(indent=2) }}</pre></div>
-      <div class="col-md-4"><h5>Actions</h5><pre class="bg-light p-3 rounded">{{ (segment.actions or [])|tojson(indent=2) }}</pre></div>
+    {% if rules_summary.error %}
+    <div class="alert alert-warning" role="alert">
+      <strong>These rules can't be evaluated:</strong> {{ rules_summary.error }}
+      Membership is left unchanged until the rules are fixed. Edit them from <a href="{{ url_for('main.segments') }}">Segments</a>.
     </div>
+    {% endif %}
+    <p class="mb-2"><strong>Membership:</strong> {{ rules_summary.mode }}</p>
+    {% if rules_summary.rules %}
+    <ul class="list-group mb-3">
+      {% for line in rules_summary.rules %}<li class="list-group-item">{{ line }}</li>{% endfor %}
+    </ul>
+    {% elif not rules_summary.error %}
+    <p class="text-muted">No automatic rules. Contacts are added and removed by hand{% if segment.is_dynamic %} or match every contact{% endif %}.</p>
+    {% endif %}
+    {% if rules_summary.actions %}
+    <h6>When a contact joins</h6>
+    <ul>{% for line in rules_summary.actions %}<li>{{ line }}</li>{% endfor %}</ul>
+    {% endif %}
+    <details class="mt-3"><summary class="small text-muted">Technical definition</summary>
+      <pre class="bg-light p-3 rounded small mb-0">{{ {'triggers': segment.triggers or [], 'conditions': segment.conditions or [], 'actions': segment.actions or []}|tojson(indent=2) }}</pre>
+    </details>
   </div>
 
   <div class="tab-pane fade" id="contacts" role="tabpanel">
@@ -202,15 +222,17 @@
         <button class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#bulkAddModal">Add to Segment</button>
         <button class="btn btn-sm btn-outline-secondary" id="bulkRemoveSelected">Remove from Segment</button>
         <button class="btn btn-sm btn-outline-danger" id="bulkExcludeSelected">Permanently Exclude</button>
-        <button class="btn btn-sm btn-outline-secondary" disabled title="Coming soon">Add Tag <span class="badge bg-secondary">Coming soon</span></button>
-        <button class="btn btn-sm btn-outline-secondary" disabled title="Coming soon">Remove Tag <span class="badge bg-secondary">Coming soon</span></button>
-        <button class="btn btn-sm btn-outline-secondary" disabled title="Coming soon">Export <span class="badge bg-secondary">Coming soon</span></button>
-        <button class="btn btn-sm btn-outline-secondary" disabled title="Coming soon">Start Campaign <span class="badge bg-secondary">Coming soon</span></button>
+        <button class="btn btn-sm btn-outline-secondary" id="bulkAddTag" data-action="add">Add Tag</button>
+        <button class="btn btn-sm btn-outline-secondary" id="bulkRemoveTag" data-action="remove">Remove Tag</button>
+        <a class="btn btn-sm btn-outline-secondary" href="/api/segments/{{ segment.id }}/export.csv" id="segmentExportCsv">Export CSV</a>
+        <a class="btn btn-sm btn-outline-success" href="{{ url_for('main.create_sms_campaign', segment_id=segment.id) }}">Start SMS Campaign</a>
       </div>
+      <div class="form-text">Tags that record consent or opt-outs (for example <code>sms_consent</code>, <code>sms_opt_out</code>) can't be changed in bulk.</div>
     </div>
+    <div class="alert d-none" id="segmentActionResult" role="status"></div>
     <div class="table-responsive">
       <table class="table table-hover align-middle">
-        <thead><tr><th><input type="checkbox" aria-label="Select all contacts"></th><th>Contact</th><th>Badges</th><th>Membership Source</th><th>Added</th><th>Added By</th><th>Reason/Source</th><th>Actions</th></tr></thead>
+        <thead><tr><th><input type="checkbox" id="segmentSelectAll" aria-label="Select all contacts"></th><th>Contact</th><th>Badges</th><th>Membership Source</th><th>Added</th><th>Added By</th><th>Reason/Source</th><th>Actions</th></tr></thead>
         <tbody>
           {% for row in members %}
           <tr>
@@ -229,7 +251,10 @@
             </td>
           </tr>
           {% else %}
-          <tr><td colspan="8" class="text-center text-muted py-4">No contacts in this segment.</td></tr>
+          <tr><td colspan="8" class="text-center text-muted py-4">
+            {% if q %}No members match &ldquo;{{ q }}&rdquo;.{% else %}No contacts in this segment yet.
+            Use <strong>Add Contact</strong> or <strong>Bulk Add</strong>{% if segment.is_dynamic %}, or <strong>Refresh Segment</strong> to apply its rules{% endif %}.{% endif %}
+          </td></tr>
           {% endfor %}
         </tbody>
       </table>
@@ -279,7 +304,7 @@
   <div class="tab-pane fade" id="campaigns" role="tabpanel">
     <div class="mb-3">
       <a class="btn btn-primary" href="{{ url_for('main.create_campaign') }}?segment={{ segment.name|urlencode }}">Create Email Campaign from Segment</a>
-      <a class="btn btn-success" href="{{ url_for('main.create_sms_campaign') }}?segment={{ segment.name|urlencode }}">Create SMS Campaign from Segment</a>
+      <a class="btn btn-success" href="{{ url_for('main.create_sms_campaign', segment_id=segment.id) }}">Create SMS Campaign from Segment</a>
     </div>
     <h5>Recent Email Campaigns</h5>
     <ul>{% for campaign in campaigns.email %}<li>{{ campaign.name }} — {{ campaign.status or 'draft' }}</li>{% else %}<li class="text-muted">No recent email campaigns.</li>{% endfor %}</ul>
@@ -394,30 +419,96 @@ document.getElementById('bulkContactSearch')?.addEventListener('input', (event) 
   clearTimeout(contactSearchTimer);
   contactSearchTimer = setTimeout(() => searchContacts(event.target.value, 'bulkContactResults', true), 250);
 });
+function showSegmentResult(message, ok) {
+  const box = document.getElementById('segmentActionResult');
+  if (!box) { if (!ok) alert(message); return; }
+  box.className = 'alert ' + (ok ? 'alert-success' : 'alert-danger');
+  box.textContent = message;
+}
+async function segApi(url, body, method='POST') {
+  try {
+    const res = await fetch(url, {method, headers: {'Content-Type': 'application/json'}, body: body === undefined ? undefined : JSON.stringify(body)});
+    let data = {};
+    try { data = await res.json(); } catch (_) {}
+    if (!res.ok || data.success === false) {
+      showSegmentResult(data.error || `That didn't work (HTTP ${res.status}). Nothing was changed.`, false);
+      return null;
+    }
+    return data;
+  } catch (err) {
+    showSegmentResult('Network error — check your connection and try again. Nothing was changed.', false);
+    return null;
+  }
+}
+document.getElementById('segmentSelectAll')?.addEventListener('change', (event) => {
+  document.querySelectorAll('.segment-contact-checkbox').forEach(el => { el.checked = event.target.checked; });
+});
 document.getElementById('contactPickerResults')?.addEventListener('click', async (event) => {
   const button = event.target.closest('.add-contact-result');
   if (!button) return;
-  await fetch(`/api/segments/{{ segment.id }}/contacts`, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({contact_id: Number(button.dataset.contactId)})});
-  window.location.reload();
+  if (await segApi(`/api/segments/{{ segment.id }}/contacts`, {contact_id: Number(button.dataset.contactId)})) window.location.reload();
 });
 document.getElementById('bulkAddButton')?.addEventListener('click', async () => {
   const ids = Array.from(document.querySelectorAll('.bulk-contact-picker:checked')).map(el => Number(el.value)).filter(Boolean);
-  if (!ids.length) return;
-  await fetch(`/api/segments/{{ segment.id }}/contacts/bulk-add`, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({contact_ids: ids})});
+  if (!ids.length) return showSegmentResult('Select at least one contact to add.', false);
+  const data = await segApi(`/api/segments/{{ segment.id }}/contacts/bulk-add`, {contact_ids: ids});
+  if (!data) return;
+  if (data.skipped_excluded && data.skipped_excluded.length) {
+    alert(`${data.added} added. ${data.skipped_excluded.length} skipped because they are permanently excluded — restore them from the Excluded tab if that was intended.`);
+  }
   window.location.reload();
 });
 document.getElementById('bulkRemoveSelected')?.addEventListener('click', async () => {
   const ids = selectedSegmentContactIds();
-  if (!ids.length) return alert('Select at least one contact.');
-  await fetch(`/api/segments/{{ segment.id }}/contacts/bulk-remove`, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({contact_ids: ids})});
-  window.location.reload();
+  if (!ids.length) return showSegmentResult('Select at least one contact.', false);
+  if (await segApi(`/api/segments/{{ segment.id }}/contacts/bulk-remove`, {contact_ids: ids})) window.location.reload();
 });
 document.getElementById('bulkExcludeSelected')?.addEventListener('click', async () => {
   const ids = selectedSegmentContactIds();
-  if (!ids.length) return alert('Select at least one contact.');
-  await Promise.all(ids.map(id => fetch(`/api/segments/{{ segment.id }}/contacts/${id}/exclude`, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({reason: 'bulk permanent exclusion'})})));
+  if (!ids.length) return showSegmentResult('Select at least one contact.', false);
+  if (!confirm(`Permanently exclude ${ids.length} contact(s)? They won't be re-added by rules or bulk add until restored.`)) return;
+  for (const id of ids) {
+    if (!(await segApi(`/api/segments/{{ segment.id }}/contacts/${id}/exclude`, {reason: 'bulk permanent exclusion'}))) return;
+  }
   window.location.reload();
 });
+for (const btnId of ['bulkAddTag', 'bulkRemoveTag']) {
+  document.getElementById(btnId)?.addEventListener('click', async (event) => {
+    const ids = selectedSegmentContactIds();
+    if (!ids.length) return showSegmentResult('Select at least one contact first.', false);
+    const action = event.currentTarget.dataset.action;
+    const tag = (prompt(action === 'add' ? 'Tag to add to the selected contacts' : 'Tag to remove from the selected contacts') || '').trim();
+    if (!tag) return;
+    const data = await segApi(`/api/segments/{{ segment.id }}/contacts/bulk-tag`, {contact_ids: ids, tag, action});
+    if (data) showSegmentResult(`${action === 'add' ? 'Added' : 'Removed'} “${data.tag}” on ${data.changed} contact(s); ${data.unchanged} already ${action === 'add' ? 'had it' : 'lacked it'}.`, true);
+  });
+}
+(async function loadSegmentAudience() {
+  const wrap = document.getElementById('segmentAudienceCounts');
+  if (!wrap) return;
+  try {
+    const res = await fetch(`/api/segments/{{ segment.id }}/audience-preview`);
+    const d = await res.json();
+    if (!res.ok || !d.success) { wrap.innerHTML = ''; const p = document.createElement('div'); p.className = 'col-12 text-warning'; p.textContent = d.error || 'Preview unavailable for this segment type.'; wrap.appendChild(p); return; }
+    const rows = [
+      ['Matching contacts', d.segment_members], ['Will receive', d.final_sms_eligible],
+      ['No affirmative consent', d.no_affirmative_consent], ['Opted out / suppressed', d.stop_suppressed],
+      ['Missing or invalid phone', d.invalid_or_missing_phone], ['Duplicate phone', d.duplicate_phone_exclusions],
+    ];
+    wrap.innerHTML = '';
+    for (const [label, value] of rows) {
+      const col = document.createElement('div'); col.className = 'col-6 col-md-4 col-xl-2';
+      col.innerHTML = '<div class="border rounded p-2 h-100"><div class="text-muted"></div><div class="fs-5 fw-bold"></div></div>';
+      col.querySelector('.text-muted').textContent = label; col.querySelector('.fw-bold').textContent = value ?? 0;
+      wrap.appendChild(col);
+    }
+    if (!d.final_sms_eligible) {
+      const hint = document.createElement('div'); hint.className = 'col-12 text-muted';
+      hint.textContent = d.segment_members ? 'Nobody here can receive promotional SMS yet. Use the Promotional Opt-In panel below to ask customers for consent.' : 'Add contacts to this segment to build an audience.';
+      wrap.appendChild(hint);
+    }
+  } catch (_) { wrap.textContent = 'Preview unavailable right now.'; }
+})();
 
 // ── Promotional Opt-In panel ──────────────────────────────────────────────
 (function () {

@@ -10,8 +10,8 @@ from flask import Blueprint, render_template, request, flash, redirect, url_for,
 from flask_login import login_required, current_user
 from sqlalchemy import or_, case, text, func
 from sqlalchemy.exc import IntegrityError
-from extensions import db, csrf
-from services.contact_consent import has_explicit_email_opt_out
+from extensions import db, csrf, limiter
+from services.contact_consent import has_explicit_email_opt_out, has_sms_opt_out, suppression_badges
 try:
     from models import (
         Contact, Campaign, EmailTemplate, CampaignRecipient, EmailTracking,
@@ -121,6 +121,7 @@ except ImportError as exc:
     logging.getLogger(__name__).warning("Scheduling service unavailable: %s", exc)
     SchedulingService = None
 from uuid import uuid4
+from services.entitlements import PlanLimitReached
 
 logger = logging.getLogger(__name__)
 
@@ -131,6 +132,34 @@ from sqlalchemy import text
 from extensions import db
 
 main_bp = Blueprint('main', __name__)
+
+# Agents that read the host (logs, source, runtime state) or apply code fixes.
+# They are platform tooling, not tenant features.
+PLATFORM_ONLY_AGENTS = frozenset({'app_intelligence'})
+
+
+def _is_platform_admin():
+    from diagnostics_service import is_diagnostics_admin
+    return is_diagnostics_admin(current_user)
+
+
+def _deny_platform_route():
+    from diagnostics_service import structured_log
+    structured_log(level="warn", service="security", message="Blocked platform-admin route",
+                   userId=getattr(current_user, "id", None), metadata={"endpoint": request.endpoint})
+    return jsonify({'success': False, 'error': 'Forbidden'}), 403
+
+
+def platform_admin_required(view):
+    """Platform-admin only (server-side User.is_admin). Request data is never consulted."""
+    from functools import wraps
+
+    @wraps(view)
+    def wrapped(*args, **kwargs):
+        if not _is_platform_admin():
+            return _deny_platform_route()
+        return view(*args, **kwargs)
+    return wrapped
 
 
 @main_bp.before_request
@@ -255,6 +284,19 @@ def _marketing_pages_allowed():
         logger.exception("Marketing page access check failed")
         return False
 
+
+
+from services.tenant_scope import tenant_get, tenant_get_or_404
+
+EMAIL_CAMPAIGN_DELIVERY_UNAVAILABLE = (
+    "Email campaign delivery isn't available yet, so nothing was sent. "
+    "Your campaign is saved as a draft."
+)
+
+def _ensure_admin_access():
+    if not current_user.is_authenticated or not current_user.is_admin_user:
+        return jsonify({'error': 'Admin access required'}), 403
+    return None
 
 
 def _current_company_id():
@@ -603,7 +645,6 @@ def marketing_hub():
     )
 
 @main_bp.route('/api/user/set-default-hub', methods=['POST'])
-@csrf.exempt
 @login_required
 def set_default_hub():
     """Set user's default hub (sales or marketing)"""
@@ -901,7 +942,7 @@ def campaigns():
 def email_builder(campaign_id=None):
     from models import Campaign, EmailTemplate
     templates = EmailTemplate.query.all()
-    campaign = db.session.get(Campaign, campaign_id) if campaign_id else None
+    campaign = tenant_get(Campaign, campaign_id) if campaign_id else None
     return render_template('email_builder.html', campaign=campaign, templates=templates)
 
 @main_bp.route('/analytics')
@@ -1045,6 +1086,9 @@ def execute_agent_task(agent_type):
     """Manually execute an agent task"""
     from agent_scheduler import get_agent_scheduler
     
+    if agent_type in PLATFORM_ONLY_AGENTS and not _is_platform_admin():
+        return _deny_platform_route()
+
     scheduler = get_agent_scheduler()
     agent = scheduler.agents.get(agent_type)
     
@@ -1712,6 +1756,35 @@ def companies_list():
     user_companies = current_user.get_all_companies()
     return render_template('companies.html', companies=user_companies)
 
+_LOGO_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
+_MAX_LOGO_BYTES = 5 * 1024 * 1024
+
+
+def _save_company_logo(logo_file):
+    """Store an uploaded logo under a random name; raster images only.
+
+    SVG/HTML would be served from our origin (stored XSS), and keeping the
+    uploader's filename let one workspace overwrite another's logo.
+    Returns the static-relative path, or None when the file is refused.
+    """
+    import os
+    import uuid
+    if not logo_file or not logo_file.filename:
+        return None
+    ext = logo_file.filename.rsplit('.', 1)[-1].lower() if '.' in logo_file.filename else ''
+    if ext not in _LOGO_EXTENSIONS:
+        return None
+    logo_file.seek(0, 2)
+    size = logo_file.tell()
+    logo_file.seek(0)
+    if size > _MAX_LOGO_BYTES:
+        return None
+    logo_path = f'company_logos/{uuid.uuid4().hex}.{ext}'
+    os.makedirs('static/company_logos', exist_ok=True)
+    logo_file.save(f'static/{logo_path}')
+    return logo_path
+
+
 @main_bp.route('/companies/add', methods=['GET', 'POST'])
 @login_required
 def add_company():
@@ -1732,18 +1805,14 @@ def add_company():
         company.email_config = {}
         company.api_keys = {}
         
-        logo_file = request.files.get('logo')
-        if logo_file and logo_file.filename:
-            import os
-            from werkzeug.utils import secure_filename
-            filename = secure_filename(logo_file.filename)
-            logo_path = f'company_logos/{filename}'
-            os.makedirs('static/company_logos', exist_ok=True)
-            logo_file.save(f'static/{logo_path}')
+        logo_path = _save_company_logo(request.files.get('logo'))
+        if logo_path:
             company.logo_path = logo_path
         
         db.session.add(company)
         db.session.flush()
+        from services.entitlements import apply_new_workspace_policy
+        apply_new_workspace_policy(company, current_user)
 
         existing_count = len(current_user.get_all_companies())
         is_first = existing_count == 0
@@ -1816,26 +1885,14 @@ def onboarding_submit():
     company.email_config = {}
     company.api_keys = {}
     
-    ALLOWED_IMAGE_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'svg', 'webp'}
-    MAX_LOGO_SIZE = 5 * 1024 * 1024
-    
-    logo_file = request.files.get('logo')
-    if logo_file and logo_file.filename:
-        from werkzeug.utils import secure_filename
-        filename = secure_filename(logo_file.filename)
-        ext = filename.rsplit('.', 1)[-1].lower() if '.' in filename else ''
-        if ext in ALLOWED_IMAGE_EXTENSIONS:
-            logo_file.seek(0, 2)
-            file_size = logo_file.tell()
-            logo_file.seek(0)
-            if file_size <= MAX_LOGO_SIZE:
-                logo_path = f'company_logos/{filename}'
-                os.makedirs('static/company_logos', exist_ok=True)
-                logo_file.save(f'static/{logo_path}')
-                company.logo_path = logo_path
+    logo_path = _save_company_logo(request.files.get('logo'))
+    if logo_path:
+        company.logo_path = logo_path
     
     db.session.add(company)
     db.session.flush()
+    from services.entitlements import apply_new_workspace_policy
+    apply_new_workspace_policy(company, current_user)
     
     existing_count = len(current_user.get_all_companies())
     is_first = existing_count == 0
@@ -1968,7 +2025,6 @@ def edit_company(company_id):
     return render_template('company_edit.html', company=company)
 
 @main_bp.route('/companies/delete/<int:company_id>', methods=['POST'])
-@csrf.exempt
 @login_required
 def delete_company(company_id):
     """Remove a company from the user's account (soft-delete if only owner)."""
@@ -1980,18 +2036,27 @@ def delete_company(company_id):
 
         is_default = (current_user.default_company_id == company_id)
 
-        current_user.companies.remove(company)
-
         from models import UserCompanyAccess
+        # Leaving never deactivates the workspace: closing it is the owner's
+        # account-closure flow (Billing -> Close this workspace), which checks
+        # the subscription and revokes sessions. The last owner can't just
+        # walk away and leave members without one.
+        my_access = UserCompanyAccess.query.filter_by(user_id=current_user.id, company_id=company_id).first()
+        if my_access is not None and my_access.role == UserCompanyAccess.ROLE_OWNER:
+            other_owners = UserCompanyAccess.query.filter(
+                UserCompanyAccess.company_id == company_id,
+                UserCompanyAccess.user_id != current_user.id,
+                UserCompanyAccess.role == UserCompanyAccess.ROLE_OWNER,
+                UserCompanyAccess.is_active.is_(True),
+            ).count()
+            if not other_owners:
+                return jsonify({'success': False, 'code': 'last_owner',
+                                'error': 'You are the only owner. Transfer ownership, or close the workspace from Billing.'}), 409
+
+        current_user.companies.remove(company)
         UserCompanyAccess.query.filter_by(
             user_id=current_user.id, company_id=company_id
         ).delete()
-
-        other_owners = db.session.execute(
-            user_company.select().where(user_company.c.company_id == company_id)
-        ).fetchall()
-        if not other_owners:
-            company.is_active = False
 
         if is_default:
             remaining = current_user.get_all_companies()
@@ -2005,7 +2070,6 @@ def delete_company(company_id):
         return jsonify({'success': False, 'error': str(e)}), 500
 
 @main_bp.route('/companies/switch/<int:company_id>', methods=['POST'])
-@csrf.exempt
 @login_required
 def switch_company(company_id):
     """Switch the user's default company"""
@@ -2329,7 +2393,12 @@ def billing_page():
         access = UserCompanyAccess.query.filter_by(user_id=current_user.id).first()
         if access:
             company = db.session.get(Company, access.company_id)
-    return render_template("billing/billing.html", company=company)
+    from services.workspace_lifecycle import retention_days
+    account_role = None
+    if company is not None:
+        account_role = "platform_admin" if current_user.is_admin else current_user.get_company_role(company.id)
+    return render_template("billing/billing.html", company=company, retention_days=retention_days(),
+                           account_role=account_role)
 
 
 @main_bp.route('/billing/success')
@@ -2393,7 +2462,7 @@ def _segment_detail_metrics(segment):
     active_members = [m for m in memberships if not m.removed_at and not m.is_excluded]
     excluded_members = [m for m in memberships if m.is_excluded]
     contacts = [m.contact for m in active_members if m.contact and m.contact.company_id == segment.company_id]
-    suppressed = [c for c in contacts if c.do_not_market or has_explicit_email_opt_out(c) or c.do_not_sms or c.sms_opted_out or c.sms_opt_out_at]
+    suppressed = [c for c in contacts if suppression_badges(c)]
     email_eligible = [c for c in contacts if c.email and not c.do_not_market and not has_explicit_email_opt_out(c)]
     sms_eligible = [c for c in contacts if c.phone and not c.do_not_market and not c.do_not_sms and not c.sms_opted_out and not c.sms_opt_out_at]
     return {
@@ -2425,13 +2494,10 @@ def _segment_member_view(member):
     }
     badges = [source_badges.get(source, source.replace("_", " ").title())]
     if contact:
-        if contact.do_not_market or contact.do_not_email or contact.do_not_sms or contact.email_unsubscribed or contact.sms_opted_out or contact.sms_opt_out_at or not contact.is_subscribed:
+        channel_badges = suppression_badges(contact)
+        if channel_badges:
             badges.append("Suppressed")
-        if contact.do_not_market: badges.append("Do Not Market")
-        if contact.do_not_email: badges.append("Do Not Email")
-        if contact.do_not_sms: badges.append("Do Not SMS")
-        if contact.sms_opted_out or contact.sms_opt_out_at: badges.append("SMS Opted Out")
-        if contact.email_unsubscribed or not contact.is_subscribed: badges.append("Email Unsubscribed")
+        badges.extend(channel_badges)
     return {"membership": member, "contact": contact, "badges": badges}
 
 
@@ -2457,7 +2523,9 @@ def segment_detail(segment_id):
         "email": Campaign.query.filter_by(company_id=segment.company_id).order_by(Campaign.created_at.desc()).limit(10).all() if Campaign else [],
         "sms": SMSCampaign.query.filter_by(company_id=segment.company_id, segment=segment.name).order_by(SMSCampaign.created_at.desc()).limit(10).all() if SMSCampaign else [],
     }
-    return render_template('segment_detail.html', segment=segment, metrics=metrics, preview=preview, members=members, excluded=excluded, audits=audits, campaigns=campaigns, q=q)
+    from services.segment_engine import describe_rules
+    rules_summary = describe_rules(segment)
+    return render_template('segment_detail.html', segment=segment, metrics=metrics, preview=preview, members=members, excluded=excluded, audits=audits, campaigns=campaigns, q=q, rules_summary=rules_summary)
 
 
 @main_bp.route('/segments/<int:segment_id>/excluded/<int:contact_id>/restore', methods=['POST'])
@@ -2475,6 +2543,9 @@ def restore_segment_exclusion(segment_id, contact_id):
     member.removed_by_user_id = None
     member.added_at = datetime.utcnow()
     member.added_by_user_id = current_user.id
+    db.session.add(MarketingAuditLog(company_id=company_id, created_by_user_id=current_user.id, entity_type='segment',
+                                     entity_id=segment.id, action='segment_contact_restored',
+                                     details={'contact_id': contact_id}))
     db.session.commit()
     flash('Contact restored to segment.', 'success')
     return redirect(url_for('main.segment_detail', segment_id=segment.id) + '#excluded')
@@ -2767,7 +2838,7 @@ def refresh_social_followers():
         account_id = request.form.get('account_id')
         if account_id:
             # Refresh specific account
-            account = db.session.get(SocialMediaAccount, account_id)
+            account = tenant_get(SocialMediaAccount, account_id)
             if account:
                 result = SocialMediaService.refresh_account_data(account)
                 if result.get('success'):
@@ -3341,7 +3412,7 @@ def create_automation():
 @login_required
 def edit_automation(id):
     """Edit automation workflow with visual builder"""
-    automation = Automation.query.get_or_404(id)
+    automation = tenant_get_or_404(Automation, id)
     
     if request.method == 'POST':
         try:
@@ -3396,7 +3467,7 @@ def edit_automation(id):
 def toggle_automation(id):
     """Enable/disable automation workflow"""
     try:
-        automation = Automation.query.get_or_404(id)
+        automation = tenant_get_or_404(Automation, id)
         automation.is_active = not automation.is_active
         db.session.commit()
         
@@ -3695,7 +3766,7 @@ def automation_analytics():
 def pause_automation(id):
     """Pause an automation workflow"""
     try:
-        automation = Automation.query.get_or_404(id)
+        automation = tenant_get_or_404(Automation, id)
         reason = request.form.get('reason', 'Manual pause')
         
         automation.pause(reason)
@@ -3712,7 +3783,7 @@ def pause_automation(id):
 def resume_automation(id):
     """Resume a paused automation workflow"""
     try:
-        automation = Automation.query.get_or_404(id)
+        automation = tenant_get_or_404(Automation, id)
         automation.resume()
         db.session.commit()
         
@@ -3767,133 +3838,59 @@ def create_sms_campaign():
     from services.campaign_tagging_service import CampaignTaggingService
     
     if request.method == 'POST':
-        try:
-            name = request.form.get('name')
-            message = request.form.get('message')
-            send_option = request.form.get('send_option', 'now')
-            
-            # Build scheduled_at from date and time if scheduled
-            scheduled_at = None
-            if send_option == 'scheduled':
-                scheduled_date = request.form.get('scheduled_date')
-                scheduled_time = request.form.get('scheduled_time')
-                if scheduled_date and scheduled_time:
-                    scheduled_at = datetime.fromisoformat(f"{scheduled_date}T{scheduled_time}")
-            
-            company_id = _current_company_id()
-            if not company_id:
-                flash('Company/tenant is required to create an SMS campaign.', 'error')
-                return redirect(url_for('main.sms_campaigns'))
-
-            from services.phone_line_service import PhoneLineService
-            sender_id = request.form.get('from_phone_number_id', type=int)
-            sender = {'success': True, 'phone_number': None, 'from_phone': None, 'source': 'not_selected'}
-            if sender_id or scheduled_at:
-                sender = PhoneLineService.resolve_campaign_sender(company_id, sender_id, allow_fallback=bool(request.form.get('allow_global_fallback')), user=current_user)
-                if not sender.get('success'):
-                    flash(sender.get('error'), 'error')
-                    return redirect(url_for('main.create_sms_campaign'))
-            media_urls = [u.strip() for u in (request.form.get('media_urls') or '').replace('\r', '').split('\n') if u.strip()]
-            # Create campaign
-            campaign = SMSCampaign(
-                company_id=company_id,
-                created_by_user_id=current_user.id,
-                from_phone_number_id=getattr(sender.get('phone_number'), 'id', None),
-                from_phone_number=sender.get('from_phone'),
-                name=name,
-                message=SMSService.ensure_opt_out_language(message or '') if SMSService else message,
-                media_urls=media_urls,
-                batch_size=max(1, request.form.get('batch_size', type=int) or 50),
-                send_rate_per_minute=max(1, request.form.get('send_rate_per_minute', type=int) or 60),
-                segment=request.form.get('segment_tags') or None,
-                status='scheduled' if scheduled_at else 'draft',
-                scheduled_at=scheduled_at,
-                audience_filter={'segment_tags': request.form.get('segment_tags', ''), 'sender_source': sender.get('source')},
-                created_at=datetime.utcnow(),
-            )
-            db.session.add(campaign)
-            db.session.flush()
-            
-            # Process campaign tags for organization
-            campaign_tags_str = request.form.get('campaign_tags', '')
-            if campaign_tags_str:
-                tag_names = [tag.strip() for tag in campaign_tags_str.split(',') if tag.strip()]
-                tag_ids = []
-                for tag_name in tag_names:
-                    tag = CampaignTaggingService.create_tag(tag_name)
-                    tag_ids.append(tag.id)
-                
-                if tag_ids:
-                    CampaignTaggingService.sync_tags_for_object(
-                        tag_ids,
-                        'sms',
-                        campaign.id
-                    )
-            
-            # Process segment tags for targeting (filter contacts)
-            segment_tags_str = request.form.get('segment_tags', '')
-            contacts_to_target = []
-            
-            if segment_tags_str:
-                # Filter contacts by tags - check if contact has ANY of the specified tags
-                segment_names = [seg.strip() for seg in segment_tags_str.split(',') if seg.strip()]
-                
-                # Build OR filter: contact.tags contains tag1 OR tag2 OR tag3
-                tag_filters = [Contact.tags.contains(tag_name) for tag_name in segment_names]
-                
-                contacts_to_target = Contact.query.filter(
-                    Contact.company_id == campaign.company_id,
-                    Contact.phone.isnot(None),
-                    Contact.sms_marketing_opt_in == True,
-                    Contact.sms_opt_out_at.is_(None),
-                    Contact.sms_consent_status.in_(['opted_in', 'subscribed']),
-                    or_(*tag_filters) if tag_filters else True
-                ).all()
-            else:
-                # Send to all contacts with phone numbers
-                contacts_to_target = Contact.query.filter(
-                    Contact.company_id == campaign.company_id,
-                    Contact.phone.isnot(None),
-                    Contact.sms_marketing_opt_in == True,
-                    Contact.sms_opt_out_at.is_(None),
-                    Contact.sms_consent_status.in_(['opted_in', 'subscribed'])
-                ).all()
-            
-            campaign.estimated_recipient_count = len(contacts_to_target)
-
-            # Add recipients
-            if contacts_to_target:
-                for contact in contacts_to_target:
-                    db.session.add(SMSRecipient(
-                        company_id=company_id,
-                        campaign_id=campaign.id,
-                        contact_id=contact.id,
-                        phone_number=contact.phone,
-                        status='pending',
-                    ))
-            
-            # Add to unified schedule if scheduled
-            if scheduled_at:
-                try:
-                    SchedulingService.create_schedule(
-                        module_type='sms',
-                        module_object_id=campaign.id,
-                        title=f'SMS: {name}',
-                        scheduled_at=scheduled_at,
-                        description=message[:100]
-                    )
-                except Exception as sched_exc:
-                    logger.warning("SMS schedule helper skipped: %s", sched_exc)
-            
-            db.session.commit()
-            log_activity(current_user.id, 'Created SMS campaign', name, 'message-square')
-            flash('SMS campaign created successfully!', 'success')
+        from services.sms_campaign_workflow import CampaignWorkflowError, create_campaign, schedule_campaign
+        company_id = _current_company_id()
+        if not company_id:
+            flash('Company/tenant is required to create an SMS campaign.', 'error')
             return redirect(url_for('main.sms_campaigns'))
-            
-        except Exception as e:
-            logger.error(f"Error creating SMS campaign: {e}")
-            flash('Error creating SMS campaign', 'error')
-    
+        form = request.form
+        segment_ids = [v for v in form.getlist('segment_ids') if str(v).strip()]
+        data = {
+            'name': form.get('name'), 'message': form.get('message'),
+            'from_phone_number_id': form.get('from_phone_number_id'),
+            'media_urls': form.get('media_urls'), 'batch_size': form.get('batch_size'),
+            'send_rate_per_minute': form.get('send_rate_per_minute'),
+            'campaign_purpose': form.get('campaign_purpose') or None,
+        }
+        if segment_ids:
+            data['segment_ids'] = segment_ids
+        elif (form.get('segment_tags') or '').strip():
+            data['segment'] = form.get('segment_tags')  # legacy free-text: must match an existing segment
+        scheduled_at = None
+        if form.get('send_option') == 'scheduled':
+            if not (form.get('scheduled_date') and form.get('scheduled_time')):
+                flash('Choose a date and time to schedule this campaign.', 'error')
+                return redirect(url_for('main.create_sms_campaign'))
+            scheduled_at = f"{form.get('scheduled_date')}T{form.get('scheduled_time')}"
+        ensure = SMSService.ensure_opt_out_language if SMSService else (lambda m: m)
+        try:
+            campaign = create_campaign(company_id, current_user, data, ensure_opt_out=ensure)
+            counts = None
+            if scheduled_at:
+                counts = schedule_campaign(campaign, current_user, when=scheduled_at,
+                                           timezone_name=form.get('timezone') or None)
+            campaign_tags_str = form.get('campaign_tags', '')
+            if campaign_tags_str:
+                tag_ids = [CampaignTaggingService.create_tag(t.strip()).id for t in campaign_tags_str.split(',') if t.strip()]
+                if tag_ids:
+                    CampaignTaggingService.sync_tags_for_object(tag_ids, 'sms', campaign.id)
+            db.session.commit()
+        except CampaignWorkflowError as exc:
+            db.session.rollback()
+            flash(exc.message, 'error')
+            return redirect(url_for('main.create_sms_campaign'))
+        except Exception:
+            db.session.rollback()
+            logger.exception("Error creating SMS campaign")
+            flash('Error creating SMS campaign. Nothing was saved.', 'error')
+            return redirect(url_for('main.create_sms_campaign'))
+        log_activity(current_user.id, 'Created SMS campaign', campaign.name, 'message-square')
+        if counts:
+            flash(f"SMS campaign scheduled for {counts['eligible_recipients']} eligible recipient(s). {counts['explanation']}", 'success')
+        else:
+            flash('SMS campaign saved as a draft.', 'success')
+        return redirect(url_for('main.sms_campaigns'))
+
     company_id = _current_company_id()
     contacts = Contact.query.filter(
         Contact.company_id == company_id,
@@ -3920,7 +3917,8 @@ def create_sms_campaign():
                          templates=templates,
                          segments=segments,
                          sender_numbers=sender_numbers,
-                         selected_segment=(request.args.get('segment') or '').strip())
+                         selected_segment=(request.args.get('segment') or '').strip(),
+                         selected_segment_id=request.args.get('segment_id', type=int))
 
 @main_bp.route('/sms/campaign/<int:campaign_id>/edit', methods=['GET', 'POST'])
 @login_required
@@ -3932,38 +3930,41 @@ def edit_sms_campaign(campaign_id):
     campaign = SMSCampaign.query.filter_by(id=campaign_id, company_id=company_id).first_or_404()
     
     if request.method == 'POST':
+        from services.sms_campaign_workflow import CampaignWorkflowError, schedule_campaign, update_campaign
+        form = request.form
+        data = {k: form.get(k) for k in ('name', 'message', 'media_urls', 'batch_size', 'send_rate_per_minute') if k in form}
+        if 'from_phone_number_id' in form:
+            data['from_phone_number_id'] = form.get('from_phone_number_id')
+        segment_ids = [v for v in form.getlist('segment_ids') if str(v).strip()]
+        if segment_ids:
+            data['segment_ids'] = segment_ids
+        if form.get('campaign_purpose'):
+            data['campaign_purpose'] = form.get('campaign_purpose')
+        when = None
+        if form.get('scheduled_date') and form.get('scheduled_time'):
+            when = f"{form.get('scheduled_date')}T{form.get('scheduled_time')}"
+            if campaign.status == 'scheduled':
+                data['scheduled_at'] = when
         try:
-            if campaign.status not in ('draft', 'scheduled'):
-                flash('Only draft or scheduled campaigns can be edited.', 'error')
-                return redirect(url_for('main.sms_campaigns'))
-            campaign.name = request.form.get('name', campaign.name)
-            campaign.message = SMSService.ensure_opt_out_language(request.form.get('message', campaign.message))
-            campaign.media_urls = [u.strip() for u in (request.form.get('media_urls') or '').replace('\r', '').split('\n') if u.strip()]
-            campaign.batch_size = max(1, request.form.get('batch_size', type=int) or campaign.batch_size or 50)
-            campaign.send_rate_per_minute = max(1, request.form.get('send_rate_per_minute', type=int) or campaign.send_rate_per_minute or 60)
-            sender_id = request.form.get('from_phone_number_id', type=int)
-            if sender_id:
-                from services.phone_line_service import PhoneLineService
-                sender = PhoneLineService.resolve_campaign_sender(company_id, sender_id, user=current_user)
-                if not sender.get('success'):
-                    flash(sender.get('error'), 'error')
-                    return redirect(url_for('main.edit_sms_campaign', campaign_id=campaign.id))
-                campaign.from_phone_number_id = getattr(sender.get('phone_number'), 'id', None)
-                campaign.from_phone_number = sender.get('from_phone')
-            
-            scheduled_date = request.form.get('scheduled_date')
-            scheduled_time = request.form.get('scheduled_time')
-            if scheduled_date and scheduled_time:
-                campaign.scheduled_at = datetime.fromisoformat(f"{scheduled_date}T{scheduled_time}")
-                campaign.status = 'scheduled'
-            
+            counts = update_campaign(campaign, current_user, data, ensure_opt_out=SMSService.ensure_opt_out_language)
+            if when and campaign.status != 'scheduled':
+                counts = schedule_campaign(campaign, current_user, when=when)
             db.session.commit()
-            flash('SMS campaign updated successfully!', 'success')
-            return redirect(url_for('main.sms_campaigns'))
-        except Exception as e:
-            logger.error(f"Error updating SMS campaign: {e}")
-            flash('Error updating campaign', 'error')
-    
+        except CampaignWorkflowError as exc:
+            db.session.rollback()
+            flash(exc.message, 'error')
+            return redirect(url_for('main.edit_sms_campaign', campaign_id=campaign_id))
+        except Exception:
+            db.session.rollback()
+            logger.exception("Error updating SMS campaign")
+            flash('Error updating campaign. Nothing was changed.', 'error')
+            return redirect(url_for('main.edit_sms_campaign', campaign_id=campaign_id))
+        if counts:
+            flash(f"Campaign updated. {counts['explanation']}", 'success')
+        else:
+            flash('SMS campaign updated.', 'success')
+        return redirect(url_for('main.sms_campaigns'))
+
     company_id = _current_company_id()
     contacts = Contact.query.filter(
         Contact.company_id == company_id,
@@ -3979,8 +3980,10 @@ def edit_sms_campaign(campaign_id):
     from services.phone_line_service import PhoneLineService
     sender_numbers = PhoneLineService.campaign_sender_options(company_id)
     
+    segments = Segment.query.filter_by(company_id=company_id).order_by(Segment.name.asc()).all()
     return render_template('edit_sms_campaign.html',
                          campaign=campaign,
+                         segments=segments,
                          contacts=contacts,
                          templates=templates,
                          sender_numbers=sender_numbers)
@@ -4138,7 +4141,7 @@ def ai_generate_sms():
 @login_required
 def sms_analytics(campaign_id):
     """View SMS campaign analytics"""
-    campaign = SMSCampaign.query.get_or_404(campaign_id)
+    campaign = tenant_get_or_404(SMSCampaign, campaign_id)
     recipients = SMSRecipient.query.filter_by(campaign_id=campaign_id).all()
 
     total = len(recipients)
@@ -4164,7 +4167,7 @@ def sms_analytics(campaign_id):
 @login_required
 def setup_non_opener_resend(campaign_id):
     """Set up automatic resend to non-openers"""
-    campaign = Campaign.query.get_or_404(campaign_id)
+    campaign = tenant_get_or_404(Campaign, campaign_id)
     
     if request.method == 'POST':
         try:
@@ -4679,11 +4682,14 @@ def create_event():
 def view_event(event_id):
     """View event details and registrations"""
     event = Event.query.get_or_404(event_id)
-    registrations = EventRegistration.query.filter_by(event_id=event_id).all()
+    # Event has no company_id; list only registrants who are this tenant's contacts.
+    registrations = EventRegistration.query.join(Contact, Contact.id == EventRegistration.contact_id).filter(
+        EventRegistration.event_id == event_id, Contact.company_id == _current_company_id()
+    ).all()
     
     # Get contacts for registrations
     for reg in registrations:
-        reg.contact = db.session.get(Contact, reg.contact_id)
+        reg.contact = tenant_get(Contact, reg.contact_id)
     
     return render_template('view_event.html', event=event, registrations=registrations)
 
@@ -5210,7 +5216,7 @@ def seo_audit():
 def seo_audit_results(audit_id):
     """View audit results"""
     from models import SEOAudit
-    audit = SEOAudit.query.get_or_404(audit_id)
+    audit = tenant_get_or_404(SEOAudit, audit_id)
     return render_template('seo_audit_results.html', audit=audit)
 
 # ===== PHASE 3: EVENT ENHANCEMENTS =====
@@ -5961,28 +5967,28 @@ def api_calendar_update_event(event_id):
             return jsonify({'success': False, 'error': 'Start date required'}), 400
         
         if event_type == 'sms':
-            campaign = db.session.get(SMSCampaign, content_id)
+            campaign = tenant_get(SMSCampaign, content_id)
             if campaign:
                 campaign.scheduled_at = new_start_dt
                 db.session.commit()
                 return jsonify({'success': True, 'message': 'SMS campaign rescheduled'})
         
         elif event_type == 'social':
-            post = db.session.get(SocialPost, content_id)
+            post = tenant_get(SocialPost, content_id)
             if post:
                 post.scheduled_at = new_start_dt
                 db.session.commit()
                 return jsonify({'success': True, 'message': 'Social post rescheduled'})
         
         elif event_type == 'email':
-            campaign = db.session.get(Campaign, content_id)
+            campaign = tenant_get(Campaign, content_id)
             if campaign:
                 campaign.scheduled_at = new_start_dt
                 db.session.commit()
                 return jsonify({'success': True, 'message': 'Email campaign rescheduled'})
         
         elif event_type == 'custom':
-            event = db.session.get(CalendarEvent, content_id)
+            event = tenant_get(CalendarEvent, content_id)
             if event:
                 event.start_date = new_start_dt
                 if new_end:
@@ -6016,7 +6022,7 @@ def api_calendar_delete_event(event_id):
             return jsonify({'success': False, 'error': 'Can only delete custom events'}), 400
         
         content_id = int(parts[1])
-        event = db.session.get(CalendarEvent, content_id)
+        event = tenant_get(CalendarEvent, content_id)
         
         if not event:
             return jsonify({'success': False, 'error': 'Event not found'}), 404
@@ -6046,7 +6052,7 @@ def api_calendar_get_event(event_id):
         content_id = int(parts[1])
         
         if event_type == 'sms':
-            campaign = db.session.get(SMSCampaign, content_id)
+            campaign = tenant_get(SMSCampaign, content_id)
             if campaign:
                 return jsonify({
                     'success': True,
@@ -6062,7 +6068,7 @@ def api_calendar_get_event(event_id):
                 })
         
         elif event_type == 'social':
-            post = db.session.get(SocialPost, content_id)
+            post = tenant_get(SocialPost, content_id)
             if post:
                 return jsonify({
                     'success': True,
@@ -6079,7 +6085,7 @@ def api_calendar_get_event(event_id):
                 })
         
         elif event_type == 'email':
-            campaign = db.session.get(Campaign, content_id)
+            campaign = tenant_get(Campaign, content_id)
             if campaign:
                 return jsonify({
                     'success': True,
@@ -6095,7 +6101,7 @@ def api_calendar_get_event(event_id):
                 })
         
         elif event_type == 'custom':
-            event = db.session.get(CalendarEvent, content_id)
+            event = tenant_get(CalendarEvent, content_id)
             if event:
                 return jsonify({'success': True, 'event': event.to_dict()})
         
@@ -6230,6 +6236,7 @@ def chatbot():
 
 @main_bp.route('/api/diagnostics/errors', methods=['GET'])
 @login_required
+@platform_admin_required
 def get_recent_errors():
     """Get recent application errors for chatbot analysis"""
     try:
@@ -6242,6 +6249,7 @@ def get_recent_errors():
 
 @main_bp.route('/api/diagnostics/health', methods=['GET'])
 @login_required
+@platform_admin_required
 def get_system_health():
     """Get system health status for chatbot analysis"""
     try:
@@ -6253,6 +6261,7 @@ def get_system_health():
 
 @main_bp.route('/api/auto-repair/start', methods=['POST'])
 @login_required
+@platform_admin_required
 def start_auto_repair():
     """Start automated error repair and resolution testing"""
     try:
@@ -6265,6 +6274,7 @@ def start_auto_repair():
 
 @main_bp.route('/api/auto-repair/clear', methods=['POST'])
 @login_required
+@platform_admin_required
 def clear_resolved_errors():
     """Clear resolved errors from the log"""
     try:
@@ -6277,6 +6287,7 @@ def clear_resolved_errors():
 
 @main_bp.route('/api/system/diagnosis', methods=['GET'])
 @login_required
+@platform_admin_required
 def system_diagnosis():
     """Comprehensive system diagnosis for all error types"""
     try:
@@ -6288,6 +6299,7 @@ def system_diagnosis():
 
 @main_bp.route('/api/system/health', methods=['GET'])
 @login_required
+@platform_admin_required
 def system_health():
     """Check system health and resource usage"""
     try:
@@ -6299,6 +6311,7 @@ def system_health():
 
 @main_bp.route('/api/system/validate-openai', methods=['GET'])
 @login_required
+@platform_admin_required
 def validate_openai():
     """Validate OpenAI API key configuration"""
     try:
@@ -6310,6 +6323,7 @@ def validate_openai():
 
 @main_bp.route('/api/system/endpoint-check', methods=['GET'])
 @login_required
+@platform_admin_required
 def endpoint_check():
     """Check for 404 errors on key endpoints"""
     try:
@@ -6321,6 +6335,7 @@ def endpoint_check():
 
 @main_bp.route('/api/ai-fixer/auto-fix-all', methods=['POST'])
 @login_required
+@platform_admin_required
 def ai_auto_fix_all():
     """AI-powered: Automatically fix ALL errors"""
     try:
@@ -6332,6 +6347,7 @@ def ai_auto_fix_all():
 
 @main_bp.route('/api/ai-fixer/fix-error/<int:error_id>', methods=['POST'])
 @login_required
+@platform_admin_required
 def ai_fix_single_error(error_id):
     """AI-powered: Fix a specific error by ID"""
     try:
@@ -6357,6 +6373,7 @@ def ai_fix_single_error(error_id):
 
 @main_bp.route('/api/ai-fixer/codebase-structure', methods=['GET'])
 @login_required
+@platform_admin_required
 def get_codebase_structure():
     """Get codebase structure for AI context"""
     try:
@@ -6368,6 +6385,7 @@ def get_codebase_structure():
 
 @main_bp.route('/api/ai/execute-action', methods=['POST'])
 @login_required
+@platform_admin_required
 def execute_ai_action():
     """Execute AI actions immediately (not just recommend)"""
     try:
@@ -6478,7 +6496,7 @@ def company_settings(company_id):
     try:
         company = db.session.get(Company, company_id)
         all_companies = current_user.get_all_companies()
-        if not company:
+        if not company or not (current_user.is_admin or current_user.get_company_access(company.id)):
             return redirect(url_for('main.dashboard'))
         user_role = current_user.get_company_role(company.id)
         can_edit = current_user.can_edit_company(company.id)
@@ -6553,8 +6571,8 @@ def change_password():
         
         if not current_user.password_hash or check_password_hash(current_user.password_hash, current_password):
             if new_password == confirm_password and len(new_password) >= 6:
-                current_user.password_hash = generate_password_hash(new_password)
-                db.session.commit()
+                from services.user_lifecycle import change_own_password
+                change_own_password(current_user, new_password)
                 flash('Password changed successfully!', 'success')
                 return redirect(url_for('main.dashboard'))
             else:
@@ -6616,6 +6634,15 @@ def manage_users():
             except Exception:
                 logger.exception("manage_users: comms state load failed")
 
+        pending_invites, invitable_roles = [], ()
+        if company and can_manage_users(current_user, company.id):
+            from services.invitations import INVITABLE_ROLES, pending_invitations
+            try:
+                pending_invites, invitable_roles = pending_invitations(company.id), INVITABLE_ROLES
+            except Exception:
+                db.session.rollback()
+                logger.exception("manage_users: invitations unavailable")
+
         return render_template(
             'manage_users.html',
             users=users,
@@ -6625,6 +6652,8 @@ def manage_users():
             comms_by_user=comms_by_user,
             can_manage_comms=can_manage_comms,
             current_company=company,
+            pending_invitations=pending_invites,
+            invitable_roles=invitable_roles,
         )
     except Exception as e:
         logger.error("manage_users error: %s", e)
@@ -6644,26 +6673,75 @@ def edit_user(user_id):
             flash('Access denied.', 'danger')
             return redirect(url_for('main.dashboard'))
         if not UserCompanyAccess.query.filter_by(user_id=user.id, company_id=company.id).first():
+            from services import security_audit
+            security_audit.record("team.user.updated", outcome="denied", company_id=company.id,
+                                  target_user_id=user.id, detail={"reason": "other_tenant"})
             flash('Access denied for this tenant user.', 'danger')
             return redirect(url_for('main.manage_users'))
+        # A tenant admin must not change the identity of a platform admin or of
+        # someone who also belongs to another tenant: changing their email and
+        # then requesting a password reset would take over that account.
+        other_tenant = UserCompanyAccess.query.filter(
+            UserCompanyAccess.user_id == user.id,
+            UserCompanyAccess.company_id != company.id,
+            UserCompanyAccess.is_active.is_(True),
+        ).first()
+        if user.is_admin or other_tenant:
+            from services import security_audit
+            security_audit.record("team.user.updated", outcome="denied", company_id=company.id,
+                                  target_user_id=user.id,
+                                  detail={"reason": "platform_admin" if user.is_admin else "shared_account"})
+            flash('This user is managed outside your workspace and cannot be edited here.', 'danger')
+            return redirect(url_for('main.manage_users'))
+    acc_for_company = UserCompanyAccess.query.filter_by(user_id=user.id, company_id=company.id).first() if company else None
+    role_ctx = {
+        'current_role': acc_for_company.normalized_role if acc_for_company else None,
+        'can_assign_owner': current_user.is_admin or bool(company and current_user.get_company_role(company.id) == 'owner'),
+    }
     if request.method == 'POST':
+        requested_role = request.form.get('role') or None
+        if requested_role:
+            requested_role = UserCompanyAccess.normalize_role(requested_role)
+            assignable = ('owner', 'admin', 'manager', 'editor', 'viewer', 'staff', 'inbox_only')
+            if requested_role not in assignable or (
+                requested_role == 'owner' and not current_user.is_admin
+                and not (company and current_user.get_company_role(company.id) == 'owner')
+            ):
+                from services import security_audit
+                security_audit.record("team.user.updated", outcome="denied",
+                                      company_id=company.id if company else None, target_user_id=user.id,
+                                      detail={"reason": "role_not_assignable", "role_to": requested_role})
+                flash('That role cannot be assigned.', 'danger')
+                return render_template('edit_user.html', user=user, **role_ctx)
+        before = {f: getattr(user, f) for f in ('username', 'email', 'first_name', 'last_name', 'is_admin')}
+        role_before = acc_for_company.role if acc_for_company else None
         user.username = request.form.get('username', user.username)
         user.email = request.form.get('email', user.email)
         user.first_name = request.form.get('first_name', '')
         user.last_name = request.form.get('last_name', '')
-        requested_role = request.form.get('role', user.role)
-        user.role = requested_role
-        if current_user.is_admin:
+        # The checkbox is not rendered on your own record, so an absent field
+        # there must not be read as "revoke" (it would demote the admin).
+        if current_user.is_admin and user.id != current_user.id:
             user.is_admin = request.form.get('is_admin') == 'on'
         if company:
             acc = UserCompanyAccess.query.filter_by(user_id=user.id, company_id=company.id).first()
             if acc and requested_role:
-                acc.role = UserCompanyAccess.normalize_role(requested_role)
+                acc.role = requested_role
         user.updated_at = datetime.now()
         db.session.commit()
+        from services import security_audit
+        changed = [f for f, v in before.items() if getattr(user, f) != v]
+        role_after = acc_for_company.role if acc_for_company else None
+        detail = {"fields": changed}
+        if role_after != role_before:
+            detail.update(role_from=role_before, role_to=role_after)
+        if 'is_admin' in changed:
+            detail.update(is_admin_from=before['is_admin'], is_admin_to=user.is_admin)
+        security_audit.record("team.user.updated", company_id=company.id if company else None,
+                              target_user_id=user.id, detail=detail)
         flash(f'User {user.username} updated successfully!', 'success')
         return redirect(url_for('main.manage_users'))
-    return render_template('edit_user.html', user=user)
+    return render_template('edit_user.html', user=user, **role_ctx)
 
 @main_bp.route('/user/delete/<int:user_id>', methods=['POST'])
 @login_required
@@ -6684,6 +6762,8 @@ def delete_user(user_id):
         with db.session.begin_nested():
             archive_user_for_company(user, company.id, current_user)
         db.session.commit()
+        from services import security_audit
+        security_audit.record("team.user.archived", company_id=company.id, target_user_id=user.id)
         flash(f'User {user.username} archived.', 'success')
     except Exception as exc:
         db.session.rollback()
@@ -6710,6 +6790,8 @@ def restore_user(user_id):
         with db.session.begin_nested():
             restore_user_for_company(user, company.id, current_user)
         db.session.commit()
+        from services import security_audit
+        security_audit.record("team.user.restored", company_id=company.id, target_user_id=user.id)
         flash(f'User {user.username} restored.', 'success')
     except Exception as exc:
         db.session.rollback()
@@ -6745,12 +6827,22 @@ def update_user_access(user_id):
             acc = UserCompanyAccess(user_id=target.id, company_id=company.id, role='viewer')
             db.session.add(acc)
 
+        if not current_user.is_admin:
+            # Manage-users is not a licence to escalate: no editing your own grant,
+            # no touching platform admins, and only owners create or alter owners.
+            is_owner = current_user.get_company_role(company.id) == 'owner'
+            if target.id == current_user.id or target.is_admin:
+                return jsonify({'success': False, 'error': 'You cannot change this user\'s access.'}), 403
+            if acc.normalized_role == 'owner' and not is_owner:
+                return jsonify({'success': False, 'error': 'Only an owner can change an owner.'}), 403
         if 'role' in payload:
             new_role = payload['role']
             new_role = UserCompanyAccess.normalize_role(new_role)
             valid_roles = ('owner', 'admin', 'manager', 'editor', 'viewer', 'staff', 'inbox_only')
             if new_role not in valid_roles:
                 return jsonify({'success': False, 'error': f'Invalid role. Choose from: {", ".join(valid_roles)}'}), 400
+            if new_role == 'owner' and not current_user.is_admin and current_user.get_company_role(company.id) != 'owner':
+                return jsonify({'success': False, 'error': 'Only an owner can grant the owner role.'}), 403
             acc.role = new_role
         if 'can_access_mobile_inbox' in payload:
             acc.can_access_mobile_inbox = bool(payload['can_access_mobile_inbox'])
@@ -7015,25 +7107,67 @@ def save_company_settings(company_id):
         logger.error(f"Save settings error: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
+# Fields of an ErrorLog record that may go into an AI prompt. Messages and stacks
+# are left out: they can carry customer data, tokens or connection strings.
+_CHATBOT_ERROR_FIELDS = ('type', 'endpoint', 'method', 'severity', 'created_at')
+
+
+def _chatbot_admin_diagnostics(action):
+    """Allowlisted, non-sensitive diagnostics for a platform admin's chatbot prompt.
+
+    Raw server, nginx and database logs never leave the host: for 'diagnose' only
+    the names of the error categories found in them are included.
+    """
+    from diagnostics_service import redact_path
+    context = {}
+    try:
+        health = ApplicationDiagnostics.get_system_health()
+        context['system_health'] = health.get('status', 'unknown')
+        context['recent_errors_1h'] = health.get('recent_errors_1h', 0)
+        context['unresolved_errors'] = health.get('unresolved_errors', 0)
+        context['recent_error_examples'] = [
+            {k: redact_path(e.get(k)) for k in _CHATBOT_ERROR_FIELDS}
+            for e in ApplicationDiagnostics.get_recent_errors(hours=24, limit=3)
+        ]
+    except Exception as diag_error:
+        logger.warning(f"Could not retrieve diagnostics: {type(diag_error).__name__}")
+    if action == 'diagnose':
+        try:
+            categories = LogReader.analyze_logs_for_errors(LogReader.get_all_logs(lines=30))
+            context['log_error_categories'] = sorted(categories)
+        except Exception as log_error:
+            logger.warning(f"Could not analyze server logs: {type(log_error).__name__}")
+    return context
+
+
 @main_bp.route('/chatbot/send', methods=['POST'])
-@csrf.exempt
 def chatbot_send_with_auto_fix():
     """Send message to AI chatbot and get response with error diagnostics
-    
-    Supports actions:
+
+    Requires a signed-in user and a valid CSRF token. Supports actions:
     - action='message': Regular chat (default)
-    - action='diagnose': Read server logs and analyze for issues
+    - action='diagnose': platform admins only; adds a summary of server log error categories
+
+    System diagnostics and auto-repair are platform-admin only (server-side is_admin flag).
     """
+    if not current_user.is_authenticated:
+        return jsonify({'error': 'Authentication required'}), 401
     try:
         from openai import OpenAI
-        
-        data = request.get_json()
+        from diagnostics_service import is_diagnostics_admin, redact
+
+        is_platform_admin = is_diagnostics_admin(current_user)
+        data = request.get_json(silent=True) or {}
         user_message = data.get('message', '')
         action = data.get('action', 'message')  # 'message' or 'diagnose'
-        
-        if not user_message:
+
+        if action not in ('message', 'diagnose'):
+            return jsonify({'error': 'Unknown action'}), 400
+        if action == 'diagnose' and not is_platform_admin:
+            return jsonify({'error': 'Diagnostics are restricted to platform administrators'}), 403
+        if not isinstance(user_message, str) or not user_message:
             return jsonify({'error': 'Message is required'}), 400
-        
+
         # Retrieve API key via central resolver (DB-first, env fallback inside resolver)
         try:
             from services.provider_config import get_provider_config as _gpc
@@ -7051,46 +7185,17 @@ def chatbot_send_with_auto_fix():
                 severity='critical'
             )
             return jsonify({'error': error_msg}), 500
-        
-        # Get current system diagnostics for context
-        diagnostics_context = ""
-        try:
-            recent_errors = ApplicationDiagnostics.get_recent_errors(hours=24, limit=5)
-            health = ApplicationDiagnostics.get_system_health()
+
+        diagnostics_context = "\n(System diagnostics are available to platform administrators only.)"
+        auto_repair_context = ""
+        repair_instructions = ""
+        if is_platform_admin:
             diagnostics_context = f"""
 
-SYSTEM DIAGNOSTICS (Database):
-- System Health: {health.get('status', 'unknown')}
-- Recent Errors (1h): {health.get('recent_errors_1h', 0)}
-- Unresolved Issues: {health.get('unresolved_errors', 0)}
-
-Recent Database Error Examples:
-{json.dumps(recent_errors[:3], indent=2) if recent_errors else 'No recent errors'}
+SYSTEM DIAGNOSTICS (allowlisted summary):
+{json.dumps(_chatbot_admin_diagnostics(action), indent=2, default=str)}
 """
-        except Exception as diag_error:
-            logger.warning(f"Could not retrieve diagnostics: {diag_error}")
-            diagnostics_context = "\n(Database diagnostics unavailable)"
-        
-        # Read server logs if diagnose action is requested
-        server_logs_context = ""
-        auto_repair_context = ""
-        if action == 'diagnose':
-            try:
-                all_logs = LogReader.get_all_logs(lines=30)
-                server_logs_context = f"""
-
-SERVER LOGS (from VPS):
-{LogReader.format_logs_for_ai(all_logs)}
-
-QUICK ERROR PATTERNS:
-{json.dumps(LogReader.analyze_logs_for_errors(all_logs), indent=2)}
-"""
-            except Exception as log_error:
-                logger.warning(f"Could not read server logs: {log_error}")
-                server_logs_context = "\n(Server logs unavailable)"
-        
-        # Add auto-repair capability to system prompt
-        auto_repair_context = """
+            auto_repair_context = """
 
 SPECIAL CAPABILITIES - AUTO-REPAIR:
 You can trigger automated error repair by responding with:
@@ -7103,7 +7208,14 @@ This will:
 5. Return a detailed report
 
 To use this, when appropriate, include "ACTION: REPAIR_ERRORS" in your response."""
-        
+            repair_instructions = """
+
+When users ask you to fix errors, resolve issues, or test the system:
+1) Analyze what the user is asking
+2) If appropriate, suggest running automatic repairs
+3) You can't directly run repairs, but your response can trigger them by including "ACTION: REPAIR_ERRORS"
+4) The system will see this action and execute auto-repair automatically"""
+
         # Initialize OpenAI client with explicit error handling
         try:
             client = OpenAI(api_key=api_key)
@@ -7117,7 +7229,7 @@ To use this, when appropriate, include "ACTION: REPAIR_ERRORS" in your response.
                 severity='error'
             )
             return jsonify({'error': 'Failed to initialize AI service'}), 500
-        
+
         # Make API call with explicit error handling
         try:
             system_prompt = f"""You are LUX Self-Heal Orchestrator, a senior SRE + full-stack engineer for a Flask web app.
@@ -7169,7 +7281,6 @@ F) Log entry text for audit
 
 Current System Context:
 {diagnostics_context}
-{server_logs_context}
 {auto_repair_context}
 
 When asked to Fix App Now:
@@ -7177,13 +7288,7 @@ When asked to Fix App Now:
 - Crawl key routes
 - Run mobile viewport checks for critical pages
 - Apply safe fixes automatically
-- Queue sensitive fixes for approval with clear one-click decisions
-
-When users ask you to fix errors, resolve issues, or test the system:
-1) Analyze what the user is asking
-2) If appropriate, suggest running automatic repairs
-3) You can't directly run repairs, but your response can trigger them by including "ACTION: REPAIR_ERRORS"
-4) The system will see this action and execute auto-repair automatically"""
+- Queue sensitive fixes for approval with clear one-click decisions{repair_instructions}"""
             
             response = client.chat.completions.create(
                 model="gpt-4o",
@@ -7195,23 +7300,23 @@ When users ask you to fix errors, resolve issues, or test the system:
                 max_tokens=2000
             )
             
-            bot_message = response.choices[0].message.content
-            
-            # Check if auto-repair should be triggered
-            trigger_repair = 'ACTION: REPAIR_ERRORS' in bot_message
+            bot_message = response.choices[0].message.content or ''
+
+            # Auto-repair runs only for a platform admin; for anyone else the
+            # marker is just text the model (or a prompt injection) produced.
+            trigger_repair = is_platform_admin and 'ACTION: REPAIR_ERRORS' in bot_message
+            bot_message = redact(bot_message.replace('ACTION: REPAIR_ERRORS', '').strip())
             repair_results = None
             if trigger_repair:
                 try:
-                    repair_results = AutoRepairService.execute_auto_repair()
-                    # Clean up the action from the response
-                    bot_message = bot_message.replace('ACTION: REPAIR_ERRORS', '').strip()
+                    repair_results = redact(AutoRepairService.execute_auto_repair())
                 except Exception as repair_error:
                     logger.warning(f"Auto-repair trigger failed: {repair_error}")
-            
+
             return jsonify({
                 'response': bot_message,
                 'action': action,
-                'has_logs': bool(server_logs_context),
+                'has_logs': is_platform_admin and action == 'diagnose',
                 'auto_repair_triggered': trigger_repair,
                 'repair_results': repair_results
             })
@@ -7597,7 +7702,7 @@ def crm_dashboard():
 def deal_detail(deal_id):
     """View individual deal"""
     from models import Deal, DealActivity
-    deal = Deal.query.get_or_404(deal_id)
+    deal = tenant_get_or_404(Deal, deal_id)
     activities = DealActivity.query.filter_by(deal_id=deal_id).order_by(DealActivity.activity_date.desc()).all()
     return render_template('deal_detail.html', deal=deal, activities=activities)
 
@@ -7607,11 +7712,9 @@ def deal_detail(deal_id):
 def lead_scoring():
     """Lead scoring and nurturing"""
     from models import Contact, LeadScore
-    company = current_user.get_default_company()
-    
     contacts_with_scores = db.session.query(Contact, LeadScore).outerjoin(
         LeadScore, Contact.id == LeadScore.contact_id
-    ).filter(Contact.is_active == True).all()
+    ).filter(Contact.is_active == True, Contact.company_id == _current_company_id()).all()
     
     return render_template('lead_scoring.html', contacts_with_scores=contacts_with_scores)
 
@@ -7987,10 +8090,15 @@ def lux_crm():
     """Unified LUX CRM with all features - Action-oriented coaching CRM"""
     from datetime import timedelta
     company = current_user.get_default_company()
+    if not company:
+        flash('Choose a workspace first.', 'warning')
+        return redirect(url_for('main.dashboard'))
     
     deals = Deal.query.filter_by(company_id=company.id).all()
-    all_contacts = Contact.query.filter_by(company_id=segment.company_id).all()
-    lead_scores = LeadScore.query.all()
+    all_contacts = Contact.query.filter_by(company_id=company.id).all()
+    # LeadScore has no company column; scope it through its contact.
+    lead_scores = LeadScore.query.join(Contact, LeadScore.contact_id == Contact.id).filter(
+        Contact.company_id == company.id).all()
     personalization_rules = PersonalizationRule.query.filter_by(company_id=company.id).all()
     keywords = KeywordResearch.query.filter_by(company_id=company.id).all()
     
@@ -8216,6 +8324,9 @@ def get_agent_performance(agent_type):
 def trigger_agent_task(agent_type):
     """Manually trigger an agent task"""
     from agent_scheduler import get_agent_scheduler
+
+    if agent_type in PLATFORM_ONLY_AGENTS and not _is_platform_admin():
+        return _deny_platform_route()
     
     data = request.get_json()
     task_data = data.get('task_data', {})
@@ -8254,6 +8365,7 @@ def trigger_agent_task(agent_type):
 
 @main_bp.route('/agent/diagnostics', methods=['GET'])
 @login_required
+@platform_admin_required
 def get_agent_diagnostics():
     """Get live agent diagnostics and error logs"""
     from agent_scheduler import get_agent_scheduler
@@ -8290,6 +8402,7 @@ def get_agent_diagnostics():
 
 @main_bp.route('/agent/fix-issues', methods=['POST'])
 @login_required
+@platform_admin_required
 def trigger_agent_fix():
     """Manually trigger agent to scan and fix all issues"""
     from agent_scheduler import get_agent_scheduler
@@ -8928,7 +9041,6 @@ def zapier_contact_webhook():
         return jsonify({'success': False, 'error': str(e)}), 400
 
 @main_bp.route('/crm/deals/<int:deal_id>/update-stage', methods=['POST'])
-@csrf.exempt
 @login_required
 def update_deal_stage(deal_id):
     try:
@@ -8961,7 +9073,6 @@ def update_deal_stage(deal_id):
         return jsonify({'success': False, 'error': str(e)}), 400
 
 @main_bp.route('/crm/deals/<int:deal_id>/update', methods=['POST'])
-@csrf.exempt
 @login_required
 def update_deal(deal_id):
     try:
@@ -8991,7 +9102,6 @@ def update_deal(deal_id):
         return jsonify({'success': False, 'error': str(e)}), 400
 
 @main_bp.route('/crm/deals/<int:deal_id>/delete', methods=['POST'])
-@csrf.exempt
 @login_required
 def delete_deal(deal_id):
     try:
@@ -9009,7 +9119,6 @@ def delete_deal(deal_id):
         return jsonify({'success': False, 'error': str(e)}), 400
 
 @main_bp.route('/crm/deals/<int:deal_id>/activity', methods=['POST'])
-@csrf.exempt
 @login_required
 def add_deal_activity(deal_id):
     try:
@@ -9142,7 +9251,7 @@ def blog_create():
 @login_required
 def blog_edit(post_id):
     """Edit a blog post"""
-    post = BlogPost.query.get_or_404(post_id)
+    post = tenant_get_or_404(BlogPost, post_id)
     
     if request.method == 'POST':
         post.title = request.form.get('title', '')
@@ -9297,43 +9406,52 @@ def update_contact_profile(contact_id):
         logger.error(f"Error updating contact {contact_id}: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
+def _activity_from_form(contact, form, default_completed=None):
+    """Build a ContactActivity from the log-activity forms.
+
+    ContactActivity has no subject/outcome/duration/schedule columns: these
+    used to be set as plain attributes and silently dropped. The subject is
+    the title; the rest live in extra_data.
+    """
+    extra = {'user_id': current_user.id}
+    outcome = (form.get('outcome') or '').strip()
+    if outcome:
+        extra['outcome'] = outcome[:255]
+    duration = (form.get('duration_minutes') or '').strip()
+    if duration.isdigit():
+        extra['duration_minutes'] = int(duration)
+    scheduled = (form.get('scheduled_at') or '').strip()
+    if scheduled:
+        try:
+            extra['scheduled_at'] = datetime.strptime(scheduled, '%Y-%m-%dT%H:%M').isoformat()
+        except ValueError:
+            pass
+    completed = form.get('is_completed', default_completed) in ('on', 'true', '1')
+    extra['is_completed'] = completed
+    if completed:
+        extra['completed_at'] = datetime.utcnow().isoformat()
+    return ContactActivity(
+        contact_id=contact.id,
+        company_id=contact.company_id,
+        activity_type=(form.get('activity_type') or 'note')[:50],
+        title=(form.get('subject') or '')[:255] or None,
+        description=form.get('description') or '',
+        source='manual',
+        extra_data=extra,
+    )
+
+
 @main_bp.route('/api/contacts/<int:contact_id>/activities/add', methods=['POST'])
 @login_required
 def add_contact_activity_api(contact_id):
     """Add a new activity for a contact via API"""
-    contact = Contact.query.get_or_404(contact_id)
-    current_company = current_user.get_default_company()
-    
+    contact = tenant_get_or_404(Contact, contact_id)
+
     try:
-        activity = ContactActivity()
-        activity.contact_id = contact_id
-        activity.company_id = current_company.id if current_company else None
-        activity.user_id = current_user.id
-        activity.activity_type = request.form.get('activity_type', 'note')
-        activity.subject = request.form.get('subject', '')
-        activity.description = request.form.get('description', '')
-        activity.outcome = request.form.get('outcome', '') or None
-        
-        duration = request.form.get('duration_minutes', '').strip()
-        if duration and duration.isdigit():
-            activity.duration_minutes = int(duration)
-        
-        scheduled = request.form.get('scheduled_at', '').strip()
-        if scheduled:
-            try:
-                activity.scheduled_at = datetime.strptime(scheduled, '%Y-%m-%dT%H:%M')
-            except ValueError:
-                pass
-        
-        is_completed = request.form.get('is_completed', 'on')
-        activity.is_completed = is_completed in ('on', 'true', '1', True)
-        if activity.is_completed:
-            activity.completed_at = datetime.utcnow()
-        
+        activity = _activity_from_form(contact, request.form, default_completed='on')
         db.session.add(activity)
         
-        contact.last_activity = datetime.utcnow()
-        contact.engagement_score = min(100, (contact.engagement_score or 0) + 5)
+        contact.last_activity_at = datetime.utcnow()
         
         db.session.commit()
         
@@ -9347,45 +9465,23 @@ def add_contact_activity_api(contact_id):
 @login_required
 def contact_activities(contact_id):
     """View all activities for a contact"""
-    contact = Contact.query.get_or_404(contact_id)
-    activities = ContactActivity.query.filter_by(contact_id=contact_id).order_by(ContactActivity.created_at.desc()).all()
-    return render_template('contact_activities.html', contact=contact, activities=activities)
+    contact = tenant_get_or_404(Contact, contact_id)
+    activities = ContactActivity.query.filter_by(
+        contact_id=contact_id, company_id=contact.company_id
+    ).order_by(ContactActivity.created_at.desc()).all()
+    return render_template('contact_activities.html', contact=contact, activities=activities,
+                           can_edit_relationship=current_user.can_edit_company(contact.company_id))
 
 @main_bp.route('/contacts/<int:contact_id>/activities/add', methods=['POST'])
 @login_required
 def add_contact_activity(contact_id):
     """Add a new activity for a contact"""
-    contact = Contact.query.get_or_404(contact_id)
-    current_company = current_user.get_default_company()
-    
-    activity = ContactActivity()
-    activity.contact_id = contact_id
-    activity.company_id = current_company.id if current_company else None
-    activity.user_id = current_user.id
-    activity.activity_type = request.form.get('activity_type', 'note')
-    activity.subject = request.form.get('subject', '')
-    activity.description = request.form.get('description', '')
-    activity.outcome = request.form.get('outcome', '')
-    
-    duration = request.form.get('duration_minutes')
-    if duration and duration.isdigit():
-        activity.duration_minutes = int(duration)
-    
-    scheduled = request.form.get('scheduled_at')
-    if scheduled:
-        try:
-            activity.scheduled_at = datetime.strptime(scheduled, '%Y-%m-%dT%H:%M')
-        except:
-            pass
-    
-    activity.is_completed = request.form.get('is_completed') == 'on'
-    if activity.is_completed:
-        activity.completed_at = datetime.utcnow()
-    
+    contact = tenant_get_or_404(Contact, contact_id)
+
+    activity = _activity_from_form(contact, request.form)
     db.session.add(activity)
     
-    contact.last_activity = datetime.utcnow()
-    contact.engagement_score = min(100, (contact.engagement_score or 0) + 5)
+    contact.last_activity_at = datetime.utcnow()
     
     db.session.commit()
     flash(f'{activity.activity_type.title()} logged successfully!', 'success')
@@ -9395,20 +9491,141 @@ def add_contact_activity(contact_id):
 @login_required
 def get_contact_activities_api(contact_id):
     """API to get contact activities"""
-    activities = ContactActivity.query.filter_by(contact_id=contact_id).order_by(ContactActivity.created_at.desc()).all()
-    return jsonify({
-        'success': True,
-        'activities': [{
+    contact = tenant_get_or_404(Contact, contact_id)
+    activities = ContactActivity.query.filter_by(
+        contact_id=contact_id, company_id=contact.company_id
+    ).order_by(ContactActivity.created_at.desc()).all()
+
+    def _row(a):
+        extra = a.extra_data if isinstance(a.extra_data, dict) else {}
+        return {
             'id': a.id,
             'type': a.activity_type,
-            'subject': a.subject,
+            'subject': a.title,
             'description': a.description,
-            'outcome': a.outcome,
-            'duration_minutes': a.duration_minutes,
-            'is_completed': a.is_completed,
-            'created_at': a.created_at.isoformat() if a.created_at else None
-        } for a in activities]
-    })
+            'outcome': extra.get('outcome'),
+            'duration_minutes': extra.get('duration_minutes'),
+            'is_completed': extra.get('is_completed'),
+            'created_at': a.created_at.isoformat() if a.created_at else None,
+        }
+    return jsonify({'success': True, 'activities': [_row(a) for a in activities]})
+
+
+def _relationship_editor_company_id():
+    """Workspace id when the caller may change relationship data, else None."""
+    from services.tenant_scope import current_company_id
+    company_id = current_company_id()
+    if company_id is None or not current_user.can_edit_company(company_id):
+        return None
+    return company_id
+
+
+@main_bp.route('/api/contacts/<int:contact_id>/briefing', methods=['GET'])
+@login_required
+def get_contact_briefing_api(contact_id):
+    """Pre-outreach briefing: activity, consent, open work, memory, next actions."""
+    from services.relationship_intelligence import build_briefing
+    from services.tenant_scope import current_company_id
+    briefing = build_briefing(current_company_id(), contact_id)
+    if briefing is None:
+        return jsonify({'success': False, 'error': 'Contact not found'}), 404
+    return jsonify({'success': True, **briefing})
+
+
+@main_bp.route('/api/contacts/<int:contact_id>/memories/scan', methods=['POST'])
+@login_required
+def scan_contact_memories_api(contact_id):
+    """Detect commitments and follow-ups in this contact's history (stored pending)."""
+    from services.relationship_intelligence import memory_dict, scan_contact
+    company_id = _relationship_editor_company_id()
+    if company_id is None:
+        return jsonify({'success': False, 'error': 'You do not have permission to change this contact.'}), 403
+    created = scan_contact(company_id, contact_id)
+    if created is None:
+        return jsonify({'success': False, 'error': 'Contact not found'}), 404
+    db.session.commit()
+    return jsonify({'success': True, 'created': [memory_dict(m) for m in created]})
+
+
+@main_bp.route('/api/contacts/<int:contact_id>/memories', methods=['POST'])
+@login_required
+def add_contact_memory_api(contact_id):
+    from services.relationship_intelligence import ReviewError, add_memory, memory_dict
+    company_id = _relationship_editor_company_id()
+    if company_id is None:
+        return jsonify({'success': False, 'error': 'You do not have permission to change this contact.'}), 403
+    data = request.get_json(silent=True) or request.form
+    due_at = None
+    if data.get('due_at'):
+        try:
+            due_at = datetime.fromisoformat(data.get('due_at'))
+        except ValueError:
+            return jsonify({'success': False, 'error': 'Invalid due date.'}), 400
+    try:
+        memory = add_memory(company_id, contact_id, current_user, data.get('kind') or 'fact', data.get('text'), due_at)
+    except ReviewError as exc:
+        return jsonify({'success': False, 'error': str(exc)}), 400
+    if memory is None:
+        return jsonify({'success': False, 'error': 'Contact not found'}), 404
+    db.session.commit()
+    return jsonify({'success': True, 'memory': memory_dict(memory)}), 201
+
+
+@main_bp.route('/api/contacts/<int:contact_id>/memories/<int:memory_id>/review', methods=['POST'])
+@login_required
+def review_contact_memory_api(contact_id, memory_id):
+    """Confirm, correct, reject or reopen a detected/AI-derived memory."""
+    from services.relationship_intelligence import ReviewError, get_memory, memory_dict, review
+    company_id = _relationship_editor_company_id()
+    if company_id is None:
+        return jsonify({'success': False, 'error': 'You do not have permission to change this contact.'}), 403
+    memory = get_memory(company_id, contact_id, memory_id)
+    if memory is None:
+        return jsonify({'success': False, 'error': 'Not found'}), 404
+    data = request.get_json(silent=True) or request.form
+    try:
+        review(memory, current_user, data.get('action'), data.get('text'))
+    except ReviewError as exc:
+        return jsonify({'success': False, 'error': str(exc)}), 400
+    db.session.commit()
+    return jsonify({'success': True, 'memory': memory_dict(memory)})
+
+
+@main_bp.route('/api/contacts/<int:contact_id>/memories/<int:memory_id>/task', methods=['POST'])
+@login_required
+def memory_to_task_api(contact_id, memory_id):
+    """Turn a commitment or follow-up into a task."""
+    from services.relationship_intelligence import ReviewError, create_task_from_memory, get_memory, memory_dict
+    company_id = _relationship_editor_company_id()
+    if company_id is None:
+        return jsonify({'success': False, 'error': 'You do not have permission to change this contact.'}), 403
+    memory = get_memory(company_id, contact_id, memory_id)
+    if memory is None:
+        return jsonify({'success': False, 'error': 'Not found'}), 404
+    try:
+        task = create_task_from_memory(memory, current_user)
+    except ReviewError as exc:
+        return jsonify({'success': False, 'error': str(exc)}), 400
+    db.session.commit()
+    return jsonify({'success': True, 'task_id': task.id, 'memory': memory_dict(memory)})
+
+
+@main_bp.route('/api/contacts/<int:contact_id>/timeline', methods=['GET'])
+@login_required
+def get_contact_timeline_api(contact_id):
+    """Unified relationship timeline across every channel (canonical contact)."""
+    from services.contact_timeline import build_timeline, parse_before
+    from services.tenant_scope import current_company_id
+    kinds = [k for k in (request.args.get('kinds') or '').split(',') if k] or None
+    timeline = build_timeline(
+        current_company_id(), contact_id,
+        limit=request.args.get('limit', 50, type=int),
+        before=parse_before(request.args.get('before')),
+        kinds=kinds,
+    )
+    if timeline is None:
+        return jsonify({'success': False, 'error': 'Contact not found'}), 404
+    return jsonify({'success': True, **timeline})
 
 # ====== ENHANCED ANALYTICS ROUTES ======
 @main_bp.route('/analytics/comprehensive')
@@ -9663,7 +9880,7 @@ def get_event_providers():
 def delete_automation(id):
     """Delete an automation"""
     try:
-        automation = Automation.query.get_or_404(id)
+        automation = tenant_get_or_404(Automation, id)
         db.session.delete(automation)
         db.session.commit()
         return jsonify({'success': True, 'message': 'Automation deleted'})
@@ -9808,6 +10025,8 @@ def api_agent_chat():
             logger.warning("Agent chat disabled: missing OPENAI_API_KEY.")
             return jsonify({'success': True, 'response': "I'm sorry, but I can't process your request right now. Please ensure the OpenAI API key is configured."})
         
+        from services.entitlements import require_ai_entitlement
+        require_ai_entitlement()
         client = OpenAI(api_key=api_key)
         
         response = client.chat.completions.create(
@@ -9824,6 +10043,8 @@ def api_agent_chat():
         
         return jsonify({'success': True, 'response': agent_response})
         
+    except PlanLimitReached:
+        raise
     except Exception as e:
         logger.error(f"Agent chat error: {e}")
         return jsonify({'success': True, 'response': f"I apologize, but I encountered an error. Please try again later."})
@@ -9958,6 +10179,8 @@ def get_agent_suggestions(agent_type):
                 'suggestions': []
             }), 503
 
+        from services.entitlements import require_ai_entitlement
+        require_ai_entitlement()
         client = OpenAI(api_key=api_key)
 
         try:
@@ -9990,6 +10213,8 @@ def get_agent_suggestions(agent_type):
 
         return jsonify({'success': True, 'suggestions': suggestions})
 
+    except PlanLimitReached:
+        raise
     except Exception as e:
         logger.error(f"Agent suggestions error: {e}")
         return jsonify({'success': False, 'error': str(e), 'suggestions': []}), 500
@@ -10085,6 +10310,8 @@ def create_agent_report(agent_type):
             api_key = _gpc("openai", "platform")
         except Exception:
             api_key = None
+        from services.entitlements import require_ai_entitlement
+        require_ai_entitlement()
         if api_key:
             try:
                 client = OpenAI(api_key=api_key)
@@ -10124,6 +10351,8 @@ Format as clean, professional markdown."""
             'status': 'completed' if report.report_data else 'generating'
         })
         
+    except PlanLimitReached:
+        raise
     except Exception as e:
         db.session.rollback()
         logger.error(f"Create report error: {e}")
@@ -10278,6 +10507,9 @@ except ImportError as exc:
 @login_required
 def sync_subscribers():
     """Run full bidirectional sync between contacts and subscribers"""
+    # Spans every tenant's contacts.
+    if not current_user.is_admin:
+        return jsonify({'success': False, 'error': 'Forbidden'}), 403
     try:
         result = SubscriberSyncService.full_sync()
         return jsonify(result)
@@ -10289,6 +10521,9 @@ def sync_subscribers():
 @login_required
 def sync_contacts_to_subscribers():
     """Sync newsletter contacts to become subscribers"""
+    # Spans every tenant's contacts.
+    if not current_user.is_admin:
+        return jsonify({'success': False, 'error': 'Forbidden'}), 403
     try:
         result = SubscriberSyncService.sync_contacts_to_subscribers()
         return jsonify(result)
@@ -10300,6 +10535,9 @@ def sync_contacts_to_subscribers():
 @login_required
 def get_subscriber_stats():
     """Get subscriber statistics"""
+    # Spans every tenant's contacts.
+    if not current_user.is_admin:
+        return jsonify({'success': False, 'error': 'Forbidden'}), 403
     try:
         result = SubscriberSyncService.get_subscriber_stats()
         return jsonify(result)
@@ -10311,6 +10549,9 @@ def get_subscriber_stats():
 @login_required
 def get_subscribers():
     """Get all subscribers with pagination"""
+    # Spans every tenant's contacts.
+    if not current_user.is_admin:
+        return jsonify({'success': False, 'error': 'Forbidden'}), 403
     try:
         page = request.args.get('page', 1, type=int)
         per_page = request.args.get('per_page', 50, type=int)
@@ -10324,6 +10565,7 @@ def get_subscribers():
 @login_required
 def subscribe_contact(contact_id):
     """Subscribe a contact to the newsletter"""
+    tenant_get_or_404(Contact, contact_id)
     try:
         source = request.json.get('source', 'manual') if request.is_json else 'manual'
         result = SubscriberSyncService.subscribe_contact(contact_id, source)
@@ -10336,6 +10578,7 @@ def subscribe_contact(contact_id):
 @login_required
 def unsubscribe_contact(contact_id):
     """Unsubscribe a contact from the newsletter"""
+    tenant_get_or_404(Contact, contact_id)
     try:
         result = SubscriberSyncService.unsubscribe_contact(contact_id)
         return jsonify(result)
@@ -10343,13 +10586,22 @@ def unsubscribe_contact(contact_id):
         logger.error(f"Unsubscribe contact error: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
+def _own_contact_ids(contact_ids):
+    """Drop ids that are not contacts of the caller's company."""
+    company_id = _current_company_id()
+    ids = [int(i) for i in (contact_ids or []) if isinstance(i, int) or str(i).isdigit()]
+    if company_id is None or not ids:
+        return []
+    rows = Contact.query.with_entities(Contact.id).filter(Contact.id.in_(ids), Contact.company_id == company_id).all()
+    return [r.id for r in rows]
+
 @main_bp.route('/api/contacts/bulk-subscribe', methods=['POST'])
 @login_required
 def bulk_subscribe_contacts():
     """Subscribe multiple contacts at once"""
     try:
         data = request.get_json()
-        contact_ids = data.get('contact_ids', [])
+        contact_ids = _own_contact_ids(data.get('contact_ids', []))
         source = data.get('source', 'bulk')
         result = SubscriberSyncService.bulk_subscribe(contact_ids, source)
         return jsonify(result)
@@ -10363,7 +10615,7 @@ def bulk_unsubscribe_contacts():
     """Unsubscribe multiple contacts at once"""
     try:
         data = request.get_json()
-        contact_ids = data.get('contact_ids', [])
+        contact_ids = _own_contact_ids(data.get('contact_ids', []))
         result = SubscriberSyncService.bulk_unsubscribe(contact_ids)
         return jsonify(result)
     except Exception as e:
@@ -10907,7 +11159,7 @@ def edit_campaign(campaign_id):
     campaign = None
     try:
         if Campaign is not None:
-            campaign = db.session.get(Campaign, campaign_id)
+            campaign = tenant_get(Campaign, campaign_id)
     except Exception:
         pass
     if campaign is None:
@@ -10939,7 +11191,7 @@ def campaign_detail(campaign_id):
     campaign = None
     try:
         if Campaign is not None:
-            campaign = db.session.get(Campaign, campaign_id)
+            campaign = tenant_get(Campaign, campaign_id)
     except Exception:
         pass
     if campaign is None:
@@ -10954,7 +11206,7 @@ def preview_campaign(campaign_id):
     campaign = None
     try:
         if Campaign is not None:
-            campaign = db.session.get(Campaign, campaign_id)
+            campaign = tenant_get(Campaign, campaign_id)
     except Exception:
         pass
     if campaign is None:
@@ -10968,12 +11220,12 @@ def preview_campaign(campaign_id):
 def send_campaign(campaign_id):
     try:
         if Campaign is not None:
-            campaign = db.session.get(Campaign, campaign_id)
+            campaign = tenant_get(Campaign, campaign_id)
             if campaign:
-                campaign.status = 'sending'
-                db.session.commit()
-                log_activity(current_user.id, 'Sent campaign', campaign.name, 'send')
-                flash('Campaign is being sent!', 'success')
+                # Nothing delivers email campaigns yet (no worker reads 'sending',
+                # and campaign_recipient has no delivery-status columns). Saying
+                # "being sent" here told operators mail went out when none did.
+                flash(EMAIL_CAMPAIGN_DELIVERY_UNAVAILABLE, 'warning')
             else:
                 flash('Campaign not found.', 'danger')
     except Exception as e:
@@ -11076,14 +11328,16 @@ def restore_contact(contact_id):
 @main_bp.route('/contacts/export')
 @login_required
 def export_contacts():
+    from services.tenant_scope import current_company_id
+    company_id = current_company_id()
+    # No workspace → no export: an unfiltered query here dumped every tenant's contacts.
+    if company_id is None or not current_user.can_edit_company(company_id):
+        flash('You do not have permission to export contacts.', 'danger')
+        return redirect(url_for('main.contacts'))
     try:
-        company_id = getattr(current_user, 'default_company_id', None)
         contacts_list = []
         if Contact is not None:
-            query = Contact.query
-            if company_id:
-                query = query.filter_by(company_id=company_id)
-            contacts_list = query.all()
+            contacts_list = Contact.query.filter_by(company_id=company_id).all()
         output = io.StringIO()
         writer = csv.writer(output)
         writer.writerow(['Email', 'First Name', 'Last Name'])
@@ -11107,10 +11361,14 @@ def export_contacts():
 @login_required
 def import_contacts():
     if request.method == 'POST':
+        from services.tenant_scope import current_company_id
+        company_id = current_company_id()
+        if company_id is None or not current_user.can_edit_company(company_id):
+            flash('You do not have permission to import contacts.', 'danger')
+            return redirect(url_for('main.contacts'))
         try:
             file = request.files.get('file')
             if file and file.filename.lower().endswith(('.csv', '.vcf', '.vcard')):
-                company_id = getattr(current_user, 'default_company_id', None)
                 from services.contact_audience import import_contacts as import_contact_file
                 is_ios = file.filename.lower().endswith(('.vcf', '.vcard')) or request.form.get('source_provider') == 'ios_contacts'
                 result = import_contact_file(company_id, file.stream.read(), file.filename, source_provider='ios_contacts' if is_ios else 'csv_import', tenant_id=company_id)
@@ -11532,18 +11790,15 @@ def send_sms_campaign(campaign_id):
             if not campaign:
                 flash('SMS Campaign not found.', 'danger')
                 return redirect(url_for('main.sms_campaigns'))
-            sender_number_id = request.form.get('from_phone_number_id', type=int)
-            if sender_number_id:
-                from models import TwilioPhoneNumber
-                from services.comms_permissions import accessible_phone_numbers
-                pn = TwilioPhoneNumber.query.filter_by(id=sender_number_id, company_id=company_id, sms_enabled=True, is_active=True).first()
-                allowed = accessible_phone_numbers(current_user, company_id)
-                if not pn or pn.phone_number not in allowed:
-                    flash('You do not have permission to send campaigns from that number.', 'danger')
-                    return redirect(url_for('main.sms_campaigns')), 403
-                campaign.from_phone_number_id = pn.id
-                campaign.from_phone_number = pn.phone_number
+            from services.sms_campaign_workflow import CampaignWorkflowError, prepare_send_now
+            try:
+                resume, _counts = prepare_send_now(campaign, current_user,
+                                                   sender_id=request.form.get('from_phone_number_id') or None)
                 db.session.commit()
+            except CampaignWorkflowError as exc:
+                db.session.rollback()
+                flash(exc.message, 'danger')
+                return redirect(url_for('main.sms_campaigns')), exc.status
             recipient_count = SMSRecipient.query.filter_by(campaign_id=campaign_id, status='pending').count()
             if recipient_count > SMSService.ASYNC_RECIPIENT_THRESHOLD:
                 result = SMSService.queue_campaign_send(campaign_id, app=current_app._get_current_object()) if SMSService else {'success': False, 'error': 'SMS service unavailable'}
@@ -11555,7 +11810,7 @@ def send_sms_campaign(campaign_id):
                 else:
                     flash(f"SMS campaign could not be queued: {result.get('error')}", 'danger')
             else:
-                result = SMSService.send_campaign(campaign_id) if SMSService else {'success': False, 'error': 'SMS service unavailable'}
+                result = SMSService.send_campaign(campaign_id, user=current_user) if SMSService else {'success': False, 'error': 'SMS service unavailable'}
                 if result.get('success'):
                     flash(f"SMS campaign sent to {result.get('sent', 0)} recipient(s); {result.get('failed', 0)} failed.", 'success')
                 elif result.get('status_code') == 409:
@@ -11566,7 +11821,7 @@ def send_sms_campaign(campaign_id):
     except Exception as e:
         db.session.rollback()
         logger.exception("Error sending SMS campaign")
-        flash(f'Error sending SMS campaign: {str(e)}', 'danger')
+        flash('Error sending SMS campaign. Check the campaign status before retrying.', 'danger')
     return redirect(url_for('main.sms_campaigns'))
 
 
@@ -11685,8 +11940,17 @@ def initialize_system():
 @main_bp.route('/user/add', methods=['GET', 'POST'])
 @login_required
 def add_user():
-    """Add a new user"""
+    """Add a user to the current workspace (platform admin or manage-users only)."""
+    from services.comms_permissions import can_manage_users
+    company = current_user.get_default_company()
+    if not current_user.is_admin and (not company or not can_manage_users(current_user, company.id)):
+        flash('Access denied. You need owner or manage-users permission.', 'danger')
+        return redirect(url_for('main.dashboard'))
     if request.method == 'POST':
+        if company and not company.can_add_team_member():
+            flash(f'Team seat limit reached ({company.max_team_members}). Upgrade your plan '
+                  f'or add accounts at /app/billing before adding more users.', 'error')
+            return redirect(url_for('main.manage_users'))
         try:
             username = request.form.get('username', '').strip()
             email = request.form.get('email', '').strip()
@@ -11707,7 +11971,6 @@ def add_user():
 
             # Auto-link new users to the current admin's default company so
             # they don't end up as orphan accounts with no tenant context.
-            company = current_user.get_default_company()
             if company:
                 if not user.default_company_id:
                     user.default_company_id = company.id
@@ -11725,6 +11988,9 @@ def add_user():
                     ))
 
             db.session.commit()
+            from services import security_audit
+            security_audit.record("team.user.created", company_id=company.id if company else None,
+                                  target_user_id=user.id, detail={"role": "viewer" if company else None})
             flash(f'User {username} created successfully!', 'success')
             return redirect(url_for('main.manage_users'))
         except Exception as e:
@@ -11734,6 +12000,63 @@ def add_user():
             return redirect(url_for('main.add_user'))
     
     return render_template('add_user.html')
+
+
+@main_bp.route('/user/invite', methods=['POST'])
+@login_required
+@limiter.limit("30 per hour")
+def invite_user():
+    """Email a single-use invitation into the current workspace (T-5)."""
+    from services import invitations as inv_svc
+    company = current_user.get_default_company()
+    if not company or not inv_svc.can_invite(current_user, company.id):
+        flash('Access denied. You need owner or manage-users permission.', 'danger')
+        return redirect(url_for('main.dashboard'))
+    try:
+        invitation, token = inv_svc.create_invitation(
+            company, current_user, request.form.get('email'), request.form.get('role') or inv_svc.DEFAULT_ROLE)
+        db.session.commit()
+        from services import security_audit
+        security_audit.record("team.invitation.created", company_id=company.id,
+                              detail={"invitation_id": invitation.id, "role": invitation.role})
+    except inv_svc.InvitationError as exc:
+        db.session.rollback()
+        flash(str(exc), 'error')
+        return redirect(url_for('main.manage_users'))
+    from auth import _send_account_email
+    accept_url = url_for('auth.accept_invite', token=token, _external=True)
+    inviter_name = ' '.join(filter(None, [current_user.first_name, current_user.last_name])) or current_user.username
+    sent = _send_account_email(
+        invitation.email,
+        f"You're invited to {company.name} on LUXit",
+        render_template('auth/email_invite.html', company=company, invitation=invitation,
+                        inviter_name=inviter_name, accept_url=accept_url),
+    )
+    if sent:
+        flash(f'Invitation sent to {invitation.email}.', 'success')
+    else:
+        flash(f'Invitation created for {invitation.email}, but the email could not be sent. '
+              f'Revoke it and try again once email is working.', 'warning')
+    return redirect(url_for('main.manage_users'))
+
+
+@main_bp.route('/user/invite/<int:invitation_id>/revoke', methods=['POST'])
+@login_required
+def revoke_invitation(invitation_id):
+    from services import invitations as inv_svc
+    company = current_user.get_default_company()
+    if not company or not inv_svc.can_invite(current_user, company.id):
+        flash('Access denied.', 'danger')
+        return redirect(url_for('main.dashboard'))
+    if inv_svc.revoke(company.id, invitation_id):
+        db.session.commit()
+        from services import security_audit
+        security_audit.record("team.invitation.revoked", company_id=company.id,
+                              detail={"invitation_id": invitation_id})
+        flash('Invitation revoked.', 'success')
+    else:
+        flash('Invitation not found.', 'error')
+    return redirect(url_for('main.manage_users'))
 
 
 @main_bp.route('/notifications')

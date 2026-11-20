@@ -14,6 +14,7 @@ from models import (
     Company,
     Contact,
     SocialPost,
+    Segment,
     SMSCampaign,
     SMSRecipient,
     TwilioAccount,
@@ -70,7 +71,8 @@ def test_campaign_creation_excludes_opted_out_and_unknown_contacts(app_client):
         opted_in = Contact(
             company_id=company.id,
             first_name="Opt",
-            phone="+15550000001",
+            phone="+14155550001",
+            tags="compliance-qa",
             sms_marketing_opt_in=True,
             sms_marketing_opt_in_at=datetime.utcnow(),
             sms_marketing_opt_in_source="pytest",
@@ -79,36 +81,48 @@ def test_campaign_creation_excludes_opted_out_and_unknown_contacts(app_client):
         opted_out = Contact(
             company_id=company.id,
             first_name="Out",
-            phone="+15550000002",
+            phone="+14155550002",
+            tags="compliance-qa",
             sms_marketing_opt_in=True,
             sms_opt_out_at=datetime.utcnow(),
             sms_consent_status="opted_in",
         )
-        unknown = Contact(company_id=company.id, first_name="Unknown", phone="+15550000003")
-        db.session.add_all([opted_in, opted_out, unknown])
+        unknown = Contact(company_id=company.id, first_name="Unknown", phone="+14155550003", tags="compliance-qa")
+        segment = Segment(company_id=company.id, name="compliance-qa")
+        db.session.add_all([opted_in, opted_out, unknown, segment])
         db.session.commit()
+        segment_id = segment.id
 
+    # Audience is an explicit tenant segment (never an implicit "everyone").
     response = client.post(
         "/sms/create",
-        data={"name": "Compliance QA", "message": "Spring offer", "send_option": "draft"},
+        data={"name": "Compliance QA", "message": "Spring offer", "send_option": "draft", "segment_ids": str(segment_id)},
         follow_redirects=False,
     )
     assert response.status_code in (302, 303)
 
     with app.app_context():
+        from services.contact_audience import resolve_sms_campaign_recipients
         campaign = SMSCampaign.query.filter_by(name="Compliance QA").one()
-        recipients = SMSRecipient.query.filter_by(campaign_id=campaign.id).all()
         assert campaign.company_id == company.id
+        assert campaign.selected_tag_ids == [segment_id]
         assert campaign.message.endswith("Reply STOP to opt out.")
-        assert [r.phone_number for r in recipients] == ["+15550000001"]
+        resolve_sms_campaign_recipients(campaign, materialize=True)
+        recipients = SMSRecipient.query.filter_by(campaign_id=campaign.id).all()
+        assert [r.phone_number for r in recipients] == ["+14155550001"]
 
 
 def test_campaign_send_with_mocked_twilio_continues_on_recipient_failure(app_client, monkeypatch):
     app, _, company, _ = app_client
     with app.app_context():
         campaign = SMSService.create_campaign("Mocked Send", "Hello opted in", company_id=company.id)
-        good = Contact(company_id=company.id, phone="+15550000011", sms_marketing_opt_in=True, sms_consent_status="opted_in")
-        bad = Contact(company_id=company.id, phone="+15550000012", sms_marketing_opt_in=True, sms_consent_status="opted_in")
+        line = TwilioPhoneNumber(company_id=company.id, phone_number="+14155559911", is_active=True, sms_enabled=True,
+                                 campaign_sender_enabled=True, is_primary=True)  # sender config is mandatory
+        db.session.add(line)
+        db.session.flush()
+        campaign.from_phone_number_id = line.id
+        good = Contact(company_id=company.id, phone="+14155550011", sms_marketing_opt_in=True, sms_consent_status="opted_in")
+        bad = Contact(company_id=company.id, phone="+14155550012", sms_marketing_opt_in=True, sms_consent_status="opted_in")
         db.session.add_all([good, bad])
         db.session.flush()
         SMSService.add_recipients(campaign.id, [good.id, bad.id])
@@ -120,10 +134,10 @@ def test_campaign_send_with_mocked_twilio_continues_on_recipient_failure(app_cli
 
         monkeypatch.setattr(SMSService, "send_sms", staticmethod(fake_send))
         result = SMSService.send_campaign(campaign.id)
-        assert result == {"success": True, "sent": 1, "failed": 1, "total": 2}
+        assert result == {"success": True, "sent": 1, "failed": 1, "skipped": 0, "total": 2}
         statuses = {r.phone_number: r.status for r in SMSRecipient.query.filter_by(campaign_id=campaign.id).all()}
-        assert statuses["+15550000011"] == "sent"
-        assert statuses["+15550000012"] == "failed"
+        assert statuses["+14155550011"] == "sent"
+        assert statuses["+14155550012"] == "failed"
 
 
 def test_after_hours_custom_text_timezone_disabled_and_cooldown(app_client, monkeypatch):

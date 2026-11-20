@@ -40,6 +40,27 @@
                     </div>
 
                     <div class="mb-3">
+                        <label for="segment_ids" class="form-label">Audience segment</label>
+                        <select class="form-select" id="segment_ids" name="segment_ids">
+                            {% set current_ids = campaign.selected_tag_ids or (campaign.audience_filter or {}).get('selected_tag_ids') or [] %}
+                            {% if not current_ids %}<option value="">Choose a segment&hellip;</option>{% endif %}
+                            {% for seg in segments if seg.segment_type not in ('contact_tag', 'automation_rule') %}
+                            <option value="{{ seg.id }}" {% if seg.id in current_ids %}selected{% endif %}>{{ seg.name }}</option>
+                            {% endfor %}
+                        </select>
+                        <small class="text-muted">Changing the audience of a scheduled campaign rebuilds its recipient list immediately; the change is refused if nobody would be eligible.</small>
+                    </div>
+                    <div class="mb-3">
+                        <label for="campaign_purpose" class="form-label">Purpose</label>
+                        {% set current_purpose = (campaign.audience_filter or {}).get('campaign_purpose') or 'promotional' %}
+                        <select class="form-select" id="campaign_purpose" name="campaign_purpose">
+                            {% for value, label in [('promotional', 'Promotional (requires a marketing opt-in)'), ('transactional', 'Transactional / informational (owners & admins only)'), ('conversational', 'Conversational follow-up (owners & admins only)')] %}
+                            <option value="{{ value }}" {% if value == current_purpose %}selected{% endif %}>{{ label }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+
+                    <div class="mb-3">
                         <label for="message" class="form-label">
                             SMS Message * 
                             <span id="charCount" class="badge bg-secondary">{{ campaign.message|length }}/160</span>

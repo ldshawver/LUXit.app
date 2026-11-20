@@ -5,6 +5,7 @@ Handles synchronization between contacts and newsletter subscribers
 import logging
 from datetime import datetime
 from models import db, Contact
+from services.contact_consent import apply_email_opt_out
 
 logger = logging.getLogger(__name__)
 
@@ -14,38 +15,21 @@ class SubscriberSyncService:
     
     @staticmethod
     def sync_contacts_to_subscribers():
+        """Intentionally inert.
+
+        This used to set ``is_subscribed=True`` on every newsletter-segment
+        contact across all tenants. ``is_subscribed`` is still read as a legacy
+        SMS send gate, so segment membership would have become SMS consent and
+        STOP / unsubscribe would have been undone daily by the agent job. (In
+        production it never completed: it read Contact.subscribed_at, which
+        does not exist, and rolled back.) Subscription must come from an
+        explicit opt-in path, not a sweep.
         """
-        Sync all contacts with segment='newsletter' to be subscribers.
-        Also ensures is_subscribed field is consistent with segment.
-        """
-        try:
-            synced_count = 0
-            
-            newsletter_contacts = Contact.query.filter(
-                Contact.segment == 'newsletter',
-                Contact.is_subscribed == False,
-                Contact.is_active == True
-            ).all()
-            
-            for contact in newsletter_contacts:
-                contact.is_subscribed = True
-                contact.subscribed_at = contact.subscribed_at or datetime.utcnow()
-                contact.subscription_source = contact.subscription_source or 'sync'
-                synced_count += 1
-            
-            if synced_count > 0:
-                db.session.commit()
-                logger.info(f"Synced {synced_count} newsletter contacts to subscribers")
-            
-            return {
-                'success': True,
-                'synced_count': synced_count,
-                'message': f'Synced {synced_count} contacts to subscribers'
-            }
-        except Exception as e:
-            logger.error(f"Error syncing contacts to subscribers: {e}")
-            db.session.rollback()
-            return {'success': False, 'error': str(e)}
+        return {
+            'success': True,
+            'synced_count': 0,
+            'message': 'Segment-to-subscriber sweep disabled: subscription requires explicit opt-in'
+        }
     
     @staticmethod
     def sync_subscribers_to_contacts():
@@ -129,7 +113,10 @@ class SubscriberSyncService:
             if not contact:
                 return {'success': False, 'error': 'Contact not found'}
             
-            contact.is_subscribed = False
+            # Canonical opt-out: is_subscribed alone is not email suppression.
+            apply_email_opt_out(contact)
+            contact.marketing_preferences_source = 'operator_unsubscribe'
+            contact.marketing_preferences_updated_at = datetime.utcnow()
             contact.unsubscribed_at = datetime.utcnow()
             
             db.session.commit()

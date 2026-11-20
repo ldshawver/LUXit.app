@@ -2,7 +2,7 @@ import pytest
 
 from app import create_app
 from extensions import db
-from models import Company, Contact, SMSCampaign, SMSRecipient, User, UserCompanyAccess
+from models import Company, Contact, Segment, SMSCampaign, SMSRecipient, TwilioAccount, TwilioPhoneNumber, User, UserCompanyAccess
 from services.sms_service import SMSService
 
 
@@ -29,11 +29,36 @@ def app_client():
         db.drop_all()
 
 
+def _authorized_sender(company):
+    """Sender configuration is mandatory: a connected tenant Twilio account and
+    an authorized campaign phone line."""
+    line = TwilioPhoneNumber.query.filter_by(company_id=company.id).first()
+    if line:
+        return line
+    account = TwilioAccount(company_id=company.id, from_phone="+15550009999", is_active=True)
+    account.set_account_sid("ACdouble")
+    account.set_auth_token("token")
+    line = TwilioPhoneNumber(company_id=company.id, phone_number="+15550009999", is_active=True, sms_enabled=True,
+                             campaign_sender_enabled=True, is_primary=True)
+    db.session.add_all([account, line])
+    db.session.flush()
+    return line
+
+
 def _campaign_with_recipients(company, count):
+    line = _authorized_sender(company)
+    segment = Segment(company_id=company.id, name=f"double-send-{count}")
+    db.session.add(segment)
+    db.session.flush()
     campaign = SMSService.create_campaign("Double Send", "Hello", company_id=company.id)
+    campaign.segment = segment.name
+    campaign.selected_tag_ids = [segment.id]
+    campaign.audience_filter = {"selected_tag_ids": [segment.id]}
+    campaign.from_phone_number_id = line.id
+    campaign.from_phone_number = line.phone_number
     contacts = []
     for i in range(count):
-        contact = Contact(company_id=company.id, phone=f"+1555000{i:04d}", sms_marketing_opt_in=True, sms_consent_status="opted_in")
+        contact = Contact(company_id=company.id, phone=f"+1415555{i:04d}", tags=segment.name, sms_marketing_opt_in=True, sms_consent_status="opted_in")
         contacts.append(contact)
     db.session.add_all(contacts)
     db.session.flush()

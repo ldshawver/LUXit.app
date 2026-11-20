@@ -4,7 +4,11 @@ import pytest
 
 from app import create_app
 from extensions import db
-from models import Campaign, CampaignRecipient, Company, Contact, MarketingAuditLog, Segment, SegmentMember, SMSCampaign, SMSRecipient, User, user_company
+from models import (
+    Campaign, CampaignRecipient, Company, Contact, MarketingAuditLog, Segment, SegmentMember, SMSCampaign, SMSRecipient,
+    TwilioAccount, TwilioPhoneNumber, User, user_company,
+)
+from services.sms_service import SMSService
 
 
 @pytest.fixture
@@ -96,27 +100,44 @@ def test_permanent_exclusion_prevents_dynamic_readd(client, tenant_user):
 def test_marketing_preferences_precedence_email_and_sms(client, tenant_user, monkeypatch):
     _, company = tenant_user
     monkeypatch.setenv("TWILIO_ACCOUNT_SID", "ACtest"); monkeypatch.setenv("TWILIO_AUTH_TOKEN", "token"); monkeypatch.setenv("TWILIO_PHONE_NUMBER", "+15559999999")
-    email_ok_sms_block = Contact(company_id=company.id, email="emailok@example.com", phone="+15550000001", tags="sms_consent", is_active=True, is_subscribed=True, do_not_sms=True)
-    sms_ok_email_block = Contact(company_id=company.id, email="smsok@example.com", phone="+15550000002", tags="sms_consent", is_active=True, is_subscribed=True, do_not_email=True)
-    all_block = Contact(company_id=company.id, email="all@example.com", phone="+15550000003", tags="sms_consent", is_active=True, is_subscribed=True, do_not_market=True)
-    sms_opted = Contact(company_id=company.id, email="optedsms@example.com", phone="+15550000004", tags="sms_consent", is_active=True, is_subscribed=True, sms_opted_out=True)
-    email_unsub = Contact(company_id=company.id, email="unsub@example.com", phone="+15550000005", tags="sms_consent", is_active=True, is_subscribed=True, email_unsubscribed=True)
+    email_ok_sms_block = Contact(company_id=company.id, email="emailok@example.com", phone="+14154441011", tags="sms_consent", is_active=True, is_subscribed=True, sms_marketing_opt_in=True, sms_consent_status="opted_in", do_not_sms=True)
+    sms_ok_email_block = Contact(company_id=company.id, email="smsok@example.com", phone="+14154441022", tags="sms_consent", is_active=True, is_subscribed=True, sms_marketing_opt_in=True, sms_consent_status="opted_in", do_not_email=True)
+    all_block = Contact(company_id=company.id, email="all@example.com", phone="+14154441033", tags="sms_consent", is_active=True, is_subscribed=True, sms_marketing_opt_in=True, sms_consent_status="opted_in", do_not_market=True)
+    sms_opted = Contact(company_id=company.id, email="optedsms@example.com", phone="+14154441044", tags="sms_consent", is_active=True, is_subscribed=True, sms_marketing_opt_in=True, sms_consent_status="opted_in", sms_opted_out=True)
+    email_unsub = Contact(company_id=company.id, email="unsub@example.com", phone="+14154441055", tags="sms_consent", is_active=True, is_subscribed=True, sms_marketing_opt_in=True, sms_consent_status="opted_in", email_unsubscribed=True)
     db.session.add_all([email_ok_sms_block, sms_ok_email_block, all_block, sms_opted, email_unsub]); db.session.flush()
     email_campaign = Campaign(company_id=company.id, name="Email", status="draft")
     sms_campaign = SMSCampaign(company_id=company.id, name="SMS", message="Hi Reply STOP to opt out.", segment=None, status="draft")
     db.session.add_all([email_campaign, sms_campaign]); db.session.commit()
 
-    e = client.post(f"/api/marketing/campaigns/{email_campaign.id}/send").get_json()
+    resp = client.post(f"/api/marketing/campaigns/{email_campaign.id}/send")
+    e = resp.get_json()
+    # Email delivery is not implemented: the endpoint must refuse rather than
+    # report a send, while still applying the same suppression rules.
+    assert resp.status_code == 501 and e["success"] is False
     assert {s["reason"] for s in e["skipped"]} >= {"do_not_market", "do_not_email", "email_unsubscribed"}
-    assert CampaignRecipient.query.filter_by(campaign_id=email_campaign.id, contact_id=email_ok_sms_block.id).count() == 1
+    assert e["eligible"] >= 1
+    assert CampaignRecipient.query.filter_by(campaign_id=email_campaign.id).count() == 0
+    assert db.session.get(Campaign, email_campaign.id).status == "draft"
 
-    sms_campaign.segment = None
-    # Use legacy audience path by setting all contacts active and a segment value.
-    for c in [email_ok_sms_block, sms_ok_email_block, all_block, sms_opted, email_unsub]:
-        c.segment = "all"
-    sms_campaign.segment = "all"; db.session.commit()
-    s = client.post(f"/api/marketing/sms-campaigns/{sms_campaign.id}/send")
-    assert s.status_code == 200
+    # Sender enforcement stays on: the send needs an active, campaign-enabled
+    # tenant line on a connected tenant Twilio account, selected explicitly.
+    acct = TwilioAccount(company_id=company.id, from_phone="+15559999999", is_active=True)
+    acct.set_account_sid("ACprefs"); acct.set_auth_token("token")
+    line = TwilioPhoneNumber(company_id=company.id, phone_number="+15559999999", is_active=True, sms_enabled=True,
+                             campaign_sender_enabled=True, is_primary=True)
+    audience = Segment(company_id=company.id, name="sms_consent")
+    db.session.add_all([acct, line, audience]); db.session.flush()
+    sms_campaign.segment = audience.name
+    sms_campaign.selected_tag_ids = [audience.id]
+    sms_campaign.audience_filter = {"selected_tag_ids": [audience.id]}
+    db.session.commit()
+    sent = []
+    monkeypatch.setattr(SMSService, "send_sms", classmethod(
+        lambda cls, to, message, **kw: sent.append(to) or {"success": True, "message_sid": f"SMPREF{len(sent)}"}))
+    s = client.post(f"/api/marketing/sms-campaigns/{sms_campaign.id}/send", json={"from_phone_number_id": line.id})
+    assert s.status_code == 200, s.get_json()
+    assert db.session.get(SMSCampaign, sms_campaign.id).from_phone_number_id == line.id
     assert SMSRecipient.query.filter_by(campaign_id=sms_campaign.id, contact_id=sms_ok_email_block.id).count() == 1
     reasons = {a.details["reason"] for a in MarketingAuditLog.query.filter_by(action="campaign_contact_skipped_suppression", entity_type="sms_campaign").all()}
     assert {"do_not_market", "do_not_sms", "sms_opted_out"} <= reasons
@@ -172,7 +193,8 @@ def test_segment_detail_loads_html_tabs_contacts_exclusions_and_badges(client, t
     assert "Email Eligible" in html
     assert "SMS Eligible" in html
     assert "Deleting this segment will remove segment membership links and rules, but will not delete contacts or campaign history." in html
-    assert "Optimize Segment with AI" in html and "Coming soon" in html
+    # Not part of the launch: the placeholder button is gone rather than shown as "Coming soon".
+    assert "Optimize Segment with AI" not in html and "Coming soon" not in html
 
 
 def test_segment_detail_refresh_honors_exclusions_delete_preserves_contacts_and_tenant_guard(client, tenant_user):
@@ -216,15 +238,14 @@ def test_segment_contact_picker_search_and_campaign_links_preselect_segment(clie
     detail = client.get(f"/segments/{seg.id}")
     html = detail.get_data(as_text=True)
     assert "/campaigns/create?segment=" in html and "Picker" in html
-    assert "/sms/create?segment=" in html and "Picker" in html
+    assert f"/sms/create?segment_id={seg.id}" in html and "Picker" in html
     assert "Search by name, phone, email, or company" in html
-    assert "Add Tag <span class=\"badge bg-secondary\">Coming soon</span>" in html
-    assert "Start Campaign <span class=\"badge bg-secondary\">Coming soon</span>" in html
+    assert 'id="bulkAddTag"' in html and "Start SMS Campaign" in html and "Coming soon" not in html
 
     email_create = client.get("/campaigns/create?segment=Picker+Segment")
     assert 'value="Picker Segment"' in email_create.get_data(as_text=True)
-    sms_create = client.get("/sms/create?segment=Picker+Segment")
-    assert 'value="Picker Segment"' in sms_create.get_data(as_text=True)
+    sms_create = client.get(f"/sms/create?segment_id={seg.id}")
+    assert f'value="{seg.id}" selected' in sms_create.get_data(as_text=True)
 
 
 def test_segment_suppression_migration_is_idempotent_for_production_workflow():

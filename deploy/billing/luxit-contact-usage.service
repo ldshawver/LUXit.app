@@ -1,0 +1,13 @@
+[Unit]
+Description=LUXit daily contact-overage report to Stripe (Billing Meter events)
+After=network-online.target postgresql@17-main.service
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/luxit/prod.env
+# Point at the current release directory (same as the web unit's drop-in).
+WorkingDirectory=/root/lux-email-bot
+ExecStart=/root/lux-email-bot/.venv/bin/python scripts/report_contact_usage.py --apply
+Nice=10
+PrivateTmp=yes
+NoNewPrivileges=yes

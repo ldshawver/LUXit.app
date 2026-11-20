@@ -6,6 +6,7 @@ import msal
 import requests
 from extensions import db
 from models import Campaign, CampaignRecipient, EmailTracking
+from services.email_unsubscribe import unsubscribe_url
 
 class EmailService:
     def __init__(self):
@@ -164,7 +165,7 @@ class EmailService:
                 'contact': {
                     'first_name': contact.first_name or '',
                     'last_name': contact.last_name or '',
-                    'full_name': contact.full_name,
+                    'full_name': ' '.join(p for p in (contact.first_name, contact.last_name) if p),
                     'email': contact.email,
                     'company': contact.company or '',
                     'phone': contact.phone or ''
@@ -173,7 +174,7 @@ class EmailService:
                     'name': campaign.name,
                     'subject': campaign.subject
                 },
-                'unsubscribe_url': f"https://yourdomain.com/unsubscribe?email={contact.email}&campaign={campaign.id}"
+                'unsubscribe_url': unsubscribe_url(contact)
             }
             
             # Render the basic template

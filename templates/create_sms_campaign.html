@@ -75,14 +75,31 @@
                     </div>
                     
                     <div class="mb-3">
-                        <label for="segment_tags" class="form-label">Target Segment</label>
-                        <input type="text" class="form-control" id="segment_tags" name="segment_tags" 
-                               placeholder="all, vip, customers (comma-separated)" value="{{ selected_segment or '' }}">
-                        <small class="text-muted">
-                            Leave empty to send to all contacts with phone numbers{% if selected_segment %}; segment <strong>{{ selected_segment }}</strong> is preselected from the segment detail page{% endif %}
-                        </small>
+                        <label for="segment_ids" class="form-label">Audience segment</label>
+                        {% if segments %}
+                        <select class="form-select" id="segment_ids" name="segment_ids" required>
+                            <option value="">Choose a segment&hellip;</option>
+                            {% for seg in segments if seg.segment_type not in ('contact_tag', 'automation_rule') %}
+                            <option value="{{ seg.id }}" {% if selected_segment_id == seg.id or (selected_segment and seg.name == selected_segment) %}selected{% endif %}>{{ seg.name }}</option>
+                            {% endfor %}
+                        </select>
+                        <small class="text-muted">Only contacts in this segment who have opted in to promotional texts will receive it. Segment membership is not consent.</small>
+                        {% else %}
+                        <div class="alert alert-warning mb-0">You don't have any segments yet. <a href="{{ url_for('main.segments') }}">Create a segment</a> first, then come back to build this campaign.</div>
+                        {% endif %}
                     </div>
-                    
+
+                    <div class="mb-3">
+                        <label for="campaign_purpose" class="form-label">Purpose</label>
+                        <select class="form-select" id="campaign_purpose" name="campaign_purpose">
+                            <option value="promotional" selected>Promotional (requires a marketing opt-in)</option>
+                            <option value="transactional">Transactional / informational (owners &amp; admins only)</option>
+                            <option value="conversational">Conversational follow-up (owners &amp; admins only)</option>
+                        </select>
+                    </div>
+
+                    <div class="row g-2 small mb-3" id="audienceLiveCounts" aria-live="polite"></div>
+
                     <div class="alert alert-info" id="audienceAccounting" role="status">
                         <strong>Exact SMS audience accounting</strong>
                         <p class="mb-1">The server will calculate matching, phone, unique, eligible, missing, invalid, duplicate, opted-out, missing-consent, and suppressed counts before scheduling.</p>
@@ -332,5 +349,38 @@ async function generateAISMS(tone) {
         feather.replace();
     }
 }
+
+// Live, exact audience counts from the same resolver used at send time.
+(function () {
+  const select = document.getElementById('segment_ids');
+  const purpose = document.getElementById('campaign_purpose');
+  const out = document.getElementById('audienceLiveCounts');
+  if (!select || !out) return;
+  async function refresh() {
+    out.innerHTML = '';
+    if (!select.value) return;
+    try {
+      const res = await fetch(`/api/segments/${encodeURIComponent(select.value)}/audience-preview?purpose=${encodeURIComponent(purpose ? purpose.value : 'promotional')}`);
+      const d = await res.json();
+      if (!res.ok || !d.success) { out.textContent = d.error || 'Audience preview unavailable.'; return; }
+      const rows = [['Matching', d.segment_members], ['Will receive', d.final_sms_eligible], ['No consent', d.no_affirmative_consent],
+                    ['Opted out / suppressed', d.stop_suppressed], ['Missing/invalid phone', d.invalid_or_missing_phone], ['Duplicates', d.duplicate_phone_exclusions]];
+      for (const [label, value] of rows) {
+        const col = document.createElement('div'); col.className = 'col-6 col-md-4';
+        col.innerHTML = '<div class="border rounded p-2"><div class="text-muted"></div><div class="fw-bold"></div></div>';
+        col.querySelector('.text-muted').textContent = label; col.querySelector('.fw-bold').textContent = value ?? 0;
+        out.appendChild(col);
+      }
+      if (!d.final_sms_eligible) {
+        const warn = document.createElement('div'); warn.className = 'col-12 text-danger';
+        warn.textContent = 'Nobody in this segment can receive this campaign yet. You can save a draft, but sending and scheduling will be blocked.';
+        out.appendChild(warn);
+      }
+    } catch (_) { out.textContent = 'Audience preview unavailable right now.'; }
+  }
+  select.addEventListener('change', refresh);
+  purpose && purpose.addEventListener('change', refresh);
+  refresh();
+})();
 </script>
 {% endblock %}

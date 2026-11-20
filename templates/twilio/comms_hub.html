@@ -324,6 +324,68 @@
   {% elif tab == 'integrations' %}
   <div class="card p-4" style="background:#0f1117;border:1px solid #1e2535;"><h6>Integrations</h6><p class="text-muted">Twilio webhooks, Google Contacts, SMS delivery callbacks, and provider health remain connected here.</p><a href="{{ url_for('twilio.google_contacts_connect') }}" class="btn btn-sm btn-outline-secondary">Google Contacts</a><a href="{{ url_for('twilio.comms_settings') }}" class="btn btn-sm btn-outline-secondary ms-2">Twilio Webhooks</a></div>
 
+  <div class="card p-4 mt-3" id="twilio-connect" style="background:#0f1117;border:1px solid #1e2535;">
+    <h6>Your Twilio account</h6>
+    <p class="text-muted small mb-2">Texting and calling use your own Twilio account: you pay Twilio directly and
+      register your business for A2P 10DLC in your Twilio console. Owners and admins can connect it here.</p>
+    <div id="tc-status" class="small mb-2">Loading…</div>
+    <div id="tc-connect" style="display:none">
+      <input id="tc-sid" class="form-control form-control-sm mb-2" placeholder="Account SID (AC…)" autocomplete="off">
+      <input id="tc-token" type="password" class="form-control form-control-sm mb-2" placeholder="Auth Token" autocomplete="off">
+      <button class="btn btn-sm btn-primary" id="tc-connect-btn">Connect</button>
+    </div>
+    <div id="tc-numbers" class="mt-2"></div>
+    <button class="btn btn-sm btn-outline-danger mt-2" id="tc-disconnect" style="display:none">Disconnect</button>
+    <div id="tc-error" class="text-danger small mt-2"></div>
+  </div>
+  <script>
+  (function () {
+    const $ = id => document.getElementById(id);
+    const err = m => { $("tc-error").textContent = m || ""; };
+    async function call(method, url, body) {
+      const r = await fetch(url, {method, headers: {"Content-Type": "application/json"},
+                                  body: body ? JSON.stringify(body) : undefined});
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok || d.success === false) throw new Error(d.error || ("Request failed: " + r.status));
+      return d;
+    }
+    async function load() {
+      err();
+      let s;
+      try { s = await call("GET", "/api/comms/twilio"); }
+      catch (e) { $("tc-status").textContent = "Only owners and admins can manage the Twilio connection."; return; }
+      $("tc-connect").style.display = s.connected ? "none" : "";
+      $("tc-disconnect").style.display = s.connected ? "" : "none";
+      $("tc-status").textContent = s.connected
+        ? `Connected (${s.account_sid_hint}). Phone/SMS license: ${s.license.status}.` : "Not connected.";
+      $("tc-numbers").innerHTML = "";
+      if (!s.connected) return;
+      const list = await call("GET", "/api/comms/twilio/numbers").catch(e => (err(e.message), {numbers: []}));
+      for (const n of list.numbers) {
+        const row = document.createElement("div");
+        row.className = "d-flex align-items-center gap-2 small mb-1";
+        row.textContent = n.phone_number + (n.attached ? " — in use by LUXit" : n.unavailable ? " — used by another workspace" : "");
+        if (!n.attached && !n.unavailable) {
+          const b = document.createElement("button");
+          b.className = "btn btn-sm btn-outline-primary"; b.textContent = "Use this number";
+          b.onclick = async () => { try { await call("POST", "/api/comms/twilio/numbers/attach", {number_sid: n.sid}); load(); } catch (e) { err(e.message); } };
+          row.appendChild(b);
+        }
+        $("tc-numbers").appendChild(row);
+      }
+    }
+    $("tc-connect-btn").onclick = async () => {
+      try { await call("POST", "/api/comms/twilio/connect", {account_sid: $("tc-sid").value, auth_token: $("tc-token").value});
+            $("tc-token").value = ""; load(); } catch (e) { err(e.message); }
+    };
+    $("tc-disconnect").onclick = async () => {
+      if (!confirm("Disconnect Twilio? Texting and calling stop for this workspace.")) return;
+      try { await call("POST", "/api/comms/twilio/disconnect"); load(); } catch (e) { err(e.message); }
+    };
+    load();
+  })();
+  </script>
+
   {% elif tab == 'reports' %}
   {% if is_admin %}
   <div class="card p-3 mb-3" style="background:#0f1117;border:1px solid #1e2535;">

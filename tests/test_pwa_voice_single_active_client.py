@@ -48,274 +48,210 @@ def html():
     return CALLS.read_text()
 
 
-def _coordinator(html):
-    """The coordinator block: from its banner to the end of teardownDevice()."""
-    m = re.search(r"/\* ── Single-active-voice-client coordination.*?\nfunction teardownDevice\(\) \{.*?\n\}\n", html, re.S)
-    assert m, "coordinator block not found"
-    return m.group(0)
+ENGINE = ROOT / "static" / "js" / "lux-voice.js"
+
+
+@pytest.fixture(scope="module")
+def engine():
+    """Phone P0 (2026-09-28): the coordinator moved out of calls.html into the
+    persistent Voice service booted by every PWA page. Same authority, same
+    lock name / bus key — these tests now lock the contract there."""
+    return ENGINE.read_text()
+
+
+def _fn(src, header):
+    i = src.index(header)
+    j = src.index("{", i)
+    depth = 0
+    for k in range(j, len(src)):
+        depth += {"{": 1, "}": -1}.get(src[k], 0)
+        if depth == 0:
+            return src[j:k + 1]
+    raise AssertionError(header)
+
+
+def _grant_cb(engine):
+    i = engine.index("nav.locks.request(LOCK_NAME")
+    return _fn(engine[i:], "() => {")
 
 
 # ------------------------------------------------------------------------- #
 # 1 + 7. ONE authority — the exclusive Web Lock. Obsolete paths removed.    #
 # ------------------------------------------------------------------------- #
 
-def test_web_lock_is_the_sole_ownership_authority(html):
-    coord = _coordinator(html)
-    assert "const VOICE_LOCK_NAME = 'luxit-voice-owner-v1';" in html
-    # exactly one lock request, and isOwner is set true only inside its callback
-    assert html.count("navigator.locks.request(VOICE_LOCK_NAME") == 1
-    assert coord.count("coord.isOwner = true;") == 1
-    grant_cb = re.search(r"navigator\.locks\.request\(VOICE_LOCK_NAME,[^\n]*\n(.*?)\n  \}\)\.catch", coord, re.S).group(1)
-    assert "coord.isOwner = true;" in grant_cb
-    assert "coord.lockHeld = true;" in grant_cb
+def test_web_lock_is_the_sole_ownership_authority(engine):
+    assert "const LOCK_NAME = 'luxit-voice-owner-v1';" in engine
+    assert engine.count("nav.locks.request(LOCK_NAME") == 1
+    assert engine.count("st.isOwner = true;") == 1
+    assert "st.isOwner = true;" in _grant_cb(engine)
 
 
-def test_obsolete_ownership_mechanisms_are_gone(html):
-    for banned in (
-        "LEASE_STALE_MS", "HEARTBEAT_MS", "stampLease(", "leaseFresh(", "readLease(",
-        "dropLeaseIfMine", "claimVotes", "CLAIM_SETTLE_MS", "becomeVoiceOwner",
-        "becomePassiveOwner", "_acquireVoiceOwnership", "ifAvailable",
-        "coord.role", "coord.acquiring", "coord.lastOwnerBeat",
-    ):
-        assert banned not in html, f"obsolete ownership mechanism still present: {banned}"
-    # no polling timer anywhere in the coordinator
-    assert "setInterval" not in _coordinator(html)
+def test_obsolete_ownership_mechanisms_are_gone(engine, html):
+    for src in (engine, html):
+        for banned in (
+            "LEASE_STALE_MS", "HEARTBEAT_MS", "stampLease(", "leaseFresh(", "readLease(",
+            "dropLeaseIfMine", "claimVotes", "CLAIM_SETTLE_MS", "becomeVoiceOwner",
+            "becomePassiveOwner", "_acquireVoiceOwnership", "ifAvailable",
+        ):
+            assert banned not in src, f"obsolete ownership mechanism still present: {banned}"
+    assert "setInterval" not in engine.split("function mountOverlay")[0]
 
 
-def test_no_race_prone_fallback_when_locks_unavailable(html):
-    coord = _coordinator(html)
-    assert "supported: !!(navigator.locks && navigator.locks.request)" in coord
-    # fail closed — never a weaker election
-    assert "if (!coord.supported)" in coord
-    body = re.search(r"async function initVoice\(\) \{(.*?)\n  voice\.initPromise = ", html, re.S).group(1)
-    assert "voiceCode: 'VOICE_UNSUPPORTED'" in body
-    assert "throw err;" in body
+def test_no_race_prone_fallback_when_locks_unavailable(engine):
+    assert "lockSupported: !!(nav.locks && nav.locks.request)" in engine
+    assert "return st.receiveCalls && st.availability !== 'away' && st.lockSupported;" in engine
+    conv = _fn(engine, "function converge(o)")
+    assert "if (!st.lockSupported)" in conv and "'unsupported'" in conv
 
 
 # ------------------------------------------------------------------------- #
 # 2. Hold the lock for the whole ownership lifetime.                        #
 # ------------------------------------------------------------------------- #
 
-def test_lock_is_held_until_deliberate_release(html):
-    coord = _coordinator(html)
-    # the request callback returns a promise that stays pending until releaseLock()
-    assert "return new Promise((release) => { coord.releaseLock = release; });" in coord
-    rel = re.search(r"function releaseVoiceOwnership\(\) \{(.*?)\n\}", coord, re.S).group(1)
-    assert "coord.isOwner = false;" in rel
-    assert "coord.releaseLock" in rel and "r();" in rel          # resolves the hold promise → releases the lock
-    assert "coord.lockAbort" in rel and "abort()" in rel          # or cancels a still-queued request
+def test_lock_is_held_until_deliberate_release(engine):
+    grant = _grant_cb(engine)
+    assert "const holding = new Promise((release) => { st.releaseLock = release; });" in grant
+    assert "return holding;" in grant
+    rel = _fn(engine, "function releaseOwnership()")
+    assert "st.isOwner = false;" in rel
+    assert "st.releaseLock" in rel and "r();" in rel
+    assert "st.lockAbort" in rel and "abort()" in rel
 
 
-def test_release_only_on_transfer_disable_teardown_or_context_loss(html):
-    coord = _coordinator(html)
-    # releaseVoiceOwnership is called from: transfer handler, and cleanupVoice (unload/teardown)
-    callers = re.findall(r"releaseVoiceOwnership\(\)", html)
-    assert len(callers) >= 3           # definition + request-ownership handler + cleanupVoice
-    transfer = re.search(r"case 'request-ownership':(.*?)break;", coord, re.S).group(1)
-    assert "teardownDevice();" in transfer and "releaseVoiceOwnership();" in transfer
+def test_release_only_on_transfer_disable_teardown_or_context_loss(engine):
+    transfer = _fn(engine, "} else if (msg.type === 'request-ownership')")
+    assert "teardownDevice('handoff');" in transfer and "releaseOwnership();" in transfer
+    assert "releaseOwnership();" in _fn(engine, "function onPageHide()")
+    assert "releaseOwnership();" in _fn(engine, "function goQuiet(status, detail)")
+    assert "releaseOwnership();" in _fn(engine, "function signOut()")
 
 
 # ------------------------------------------------------------------------- #
-# 3 + 9. Second tab queues, never steals — timer throttling is irrelevant. #
+# 3 + 9. Second tab queues, never steals.                                  #
 # ------------------------------------------------------------------------- #
 
-def test_ordering_invariant_lock_before_token_before_device_before_register(html):
-    body = re.search(r"async function initVoice\(\) \{(.*?)\n  return voice\.initPromise;\n\}", html, re.S).group(1)
-    i_owner = body.index("if (!coord.isOwner)")
-    i_block = body.index("voiceCode: 'VOICE_ACTIVE_ELSEWHERE'")
-    i_token = body.index("readVoiceToken()")
-    i_device = body.index("new Device(body.token")
-    i_reg = body.index("voice.device.register()")
-    assert i_owner < i_block < i_token < i_device < i_reg, "ownership gate must precede token/Device/register"
-    # the gate never steals — it only waits briefly for a *free* lock to be granted
-    assert "Promise.race([acquireVoiceOwnership(), new Promise((r) => setTimeout(() => r(false), 400))])" in body
+def test_ordering_invariant_lock_before_token_before_device_before_register(engine):
+    body = _fn(engine, "function ensureRegistered(reason, o)")
+    i_owner = body.index("if (!st.isOwner) { acquireOwnership(); return Promise.resolve(); }")
+    i_token = body.index("await getToken(")
+    i_recheck = body.index("if (!shouldRegister() || !st.isOwner) return;")
+    i_device = body.index("buildDevice(tok.token)")
+    i_reg = body.index("await nd.register()")
+    assert i_owner < i_token < i_recheck < i_device < i_reg
+    # outbound waits only briefly for a FREE lock — never steals
+    assert "Promise.race([acquireOwnership(), new Promise((r) => env.setTimeout(() => r(false), 400))])" in engine
 
 
-def test_passive_tab_shows_active_elsewhere_and_use_calling_here(html):
-    render = re.search(r"function renderVoiceRole\(\) \{(.*?)\n\}\n", html, re.S).group(1)
-    assert "Calling is active in another LUX Connect window." in render
-    assert "ensureUseHereButton(true);" in render
-    # passive tab: the registration affordance is hidden / not actionable
-    assert "els.enableVoice.hidden = true;" in render
-    assert "function requestCallingHere()" in html
+def test_passive_tab_shows_active_elsewhere_and_use_calling_here(engine, html):
+    assert "Calling is active in another LUX Connect window." in engine
+    assert "setStatus('passive'" in engine
+    assert "function requestCallingHere()" in engine
+    assert "ensureUseHereButton(s.phase === 'passive');" in html
+    assert "els.enableVoice.hidden = s.phase !== 'error'" in html
 
 
-def test_status_channels_cannot_grant_ownership(html):
-    coord = _coordinator(html)
-    handler = re.search(r"function handleCoordMessage\(msg\) \{(.*?)\n\}\n", coord, re.S).group(1)
-    # the only isOwner writes are in the lock callback (true) and releaseVoiceOwnership (false)
-    assert "coord.isOwner = true" not in handler
-    assert "coord.isOwner = true" not in re.search(r"window\.addEventListener\('storage'.*?\}\);", coord, re.S).group(0)
-    # 'owner-changed' only updates passive UI state
-    oc = re.search(r"case 'owner-changed':(.*?)break;", handler, re.S).group(1)
-    assert "coord.ownerRegistered" in oc and "coord.isOwner" not in oc.replace("!coord.isOwner", "")
+def test_status_channels_cannot_grant_ownership(engine):
+    handler = _fn(engine, "function handleCoordMessage(msg)")
+    assert "st.isOwner = true" not in handler
+    oc = handler.split("msg.type === 'owner-changed'")[1].split("} else if")[0]
+    assert "st.ownerRegistered" in oc and "st.isOwner =" not in oc
 
 
 # ------------------------------------------------------------------------- #
 # 4 + 10. Controlled transfer — old Device dies before new Device.         #
 # ------------------------------------------------------------------------- #
 
-def test_transfer_tears_down_old_device_before_releasing_lock(html):
-    coord = _coordinator(html)
-    transfer = re.search(r"case 'request-ownership':\s*\n(.*?)break;", coord, re.S).group(1)
-    i_teardown = transfer.index("teardownDevice();")
-    i_release = transfer.index("releaseVoiceOwnership();")
-    assert i_teardown < i_release, "owner must destroy its Device before releasing the lock"
-    # the requester only registers after it holds the lock (grant callback → startVoiceRegistration)
-    grant = re.search(r"navigator\.locks\.request\(VOICE_LOCK_NAME.*?\n(.*?)\n  \}\)\.catch", coord, re.S).group(1)
-    assert "if (coord.wantsOwnership) { coord.wantsOwnership = false; startVoiceRegistration(); }" in grant
+def test_transfer_tears_down_old_device_before_releasing_lock(engine):
+    transfer = _fn(engine, "} else if (msg.type === 'request-ownership')")
+    assert transfer.index("teardownDevice('handoff');") < transfer.index("releaseOwnership();")
+    assert "!hasCall()" in transfer, "never hand off mid-call"
+    # the requester registers only from inside its own lock grant
+    assert "if (shouldRegister()) ensureRegistered('lock-granted');" in _grant_cb(engine)
 
 
-def test_no_intentional_overlap_window_in_transfer(html):
-    coord = _coordinator(html)
-    # transfer has no setTimeout that would let the requester proceed before release
-    rch = re.search(r"async function requestCallingHere\(\) \{(.*?)\n\}", coord, re.S).group(1)
-    assert "coord.wantsOwnership = false;" in rch          # timeout only *gives up asking*
-    assert "renderVoiceRole();" in rch
-    assert "acquireVoiceOwnership()" in rch                # queue for the lock; browser FIFO does the rest
+def test_no_intentional_overlap_window_in_transfer(engine):
+    rch = _fn(engine, "function requestCallingHere()")
+    assert "st.wantsOwnership = false;" in rch          # timeout only gives up asking
+    assert "acquireOwnership();" in rch and "coordPost('request-ownership');" in rch
 
 
 # ------------------------------------------------------------------------- #
 # 5 + 11. Crash / abnormal loss — browser releases the lock, no heartbeat. #
 # ------------------------------------------------------------------------- #
 
-def test_crash_recovery_relies_on_browser_lock_release_not_a_heartbeat(html):
-    coord = _coordinator(html)
-    assert "heartbeat" in coord and "no lease" in coord            # explicitly rejects the old model
-    # queued request uses an AbortController so a clean unload cancels it;
-    # a crash needs no handler — the browser drops the lock on context loss
-    assert "new AbortController()" in coord
-    assert "{ signal: ac.signal }" in coord
-    cv = re.search(r"function cleanupVoice\(\) \{(.*?)\n\}", html, re.S).group(1)
-    assert "releaseVoiceOwnership();" in cv
-    assert "auto-releases the Web Lock" in cv
+def test_crash_recovery_relies_on_browser_lock_release_not_a_heartbeat(engine):
+    assert "heartbeat" not in engine.lower().replace("no heartbeat", "")
+    assert "new AbortController()" in engine and "{ signal: ac.signal }" in engine
+    ph = _fn(engine, "function onPageHide()")
+    assert "teardownDevice('pagehide');" in ph and "releaseOwnership();" in ph
 
 
 # ------------------------------------------------------------------------- #
-# 8. initVoice single-flight within the owner.                             #
+# 8. Single-flight within the owner.                                       #
 # ------------------------------------------------------------------------- #
 
-def test_initvoice_single_flight_and_device_teardown(html):
-    body = re.search(r"async function initVoice\(\) \{(.*?)\n  return voice\.initPromise;\n\}", html, re.S).group(1)
-    assert "if (voice.initPromise) return voice.initPromise;" in body
-    assert "if (voice.registered && voice.device && voice.deviceState === 'registered') return voice.device;" in body
-    assert "teardownDevice();" in body and body.index("teardownDevice();") < body.index("new Device(body.token")
-    td = re.search(r"function teardownDevice\(\) \{(.*?)\n\}", html, re.S).group(1)
-    assert "removeAllListeners" in td and "destroy" in td and "voice.initPromise = null;" in td
-    assert html.count("new Device(") == 1
-    assert html.count("voice.device.register()") == 1
+def test_initvoice_single_flight_and_device_teardown(engine, html):
+    body = _fn(engine, "function ensureRegistered(reason, o)")
+    assert "if (st.inflight) return st.inflight;" in body
+    assert "if (isRegistered() && !o.forceToken)" in body
+    bd = _fn(engine, "function buildDevice(token)")
+    assert bd.index("teardownDevice('rebuild');") < bd.index("new Device(token")
+    td = _fn(engine, "function teardownDevice(reason)")
+    assert "removeAllListeners" in td and "destroy" in td
+    assert engine.count("new Device(") == 1 and "new Device(" not in html
 
 
 # ------------------------------------------------------------------------- #
 # 11b. Ready is derived only from the LIVE Twilio Device lifecycle.        #
-#      Staging (2026-08-30): a bfcache-restored /app/phone painted a stale #
-#      "Ready — +1830…" with no Device registration and no token mint.     #
 # ------------------------------------------------------------------------- #
 
-def _resync(html):
-    m = re.search(r"function voiceIsLive\(\) \{.*?\ndocument\.addEventListener\('visibilitychange'.*?\);\n", html, re.S)
-    assert m, "bfcache resync block not found"
-    return m.group(0)
-
-
-def test_ready_string_only_emitted_from_the_registered_event(html):
-    # The "Ready — <number>" text exists in exactly one place: the Twilio
-    # Device 'registered' handler. Nothing restores it from a prior session.
-    assert html.count("Ready — ${body.calling_number}") == 1
-    registered_cb = re.search(
-        r"voice\.device\.on\('registered', \(\) => \{(.*?)\n      \}\);", html, re.S
-    ).group(1)
-    assert "state(`Ready — ${body.calling_number}`, 'ok')" in registered_cb
-    assert "voice.registered = true;" in registered_cb
-    assert "voice.deviceState = 'registered';" in registered_cb
-    # no cached/persisted "Ready" string, and the <body> is not server-rendered ready
-    assert "setItem('luxit-voice-ready" not in html
+def test_ready_string_only_emitted_from_the_registered_event(engine, html):
+    assert "case 'ready': return 'Ready to receive calls';" in html
+    assert html.count("Ready to receive calls") == 1, "the view prints Ready only for engine phase 'ready'"
+    # the phase itself demands a live registration + network, not just the status word
+    derive = _fn(engine, "function derivePhase()")
+    assert "if (isRegistered() && !st.offline) return 'ready';" in derive
+    reg = _fn(engine, "d.on('registered', () =>")
+    assert "setStatus('ready'" in reg
+    assert "setItem('luxit-voice-ready" not in engine + html
     assert 'data-phase="ready"' not in re.search(r"<body[^>]*>", html).group(0)
 
 
-def test_stale_restored_page_cannot_show_ready_before_device_registered(html):
-    r = _resync(html)
-    # bfcache restore + every return-to-visible re-derives from live state
-    assert "window.addEventListener('pageshow', (e) => { if (e.persisted) resyncVoiceUi(true); });" in r
-    assert "document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') resyncVoiceUi(false); });" in r
-    # "live" means: we own the lock AND our Device really is registered now
-    assert "coord.isOwner && voice.registered && !!voice.device" in r
-    assert "voice.device.state === 'registered'" in r
-    # when not live: retire the stale Device and drop out of the ready phase
-    assert "if (voice.activeCall || voiceIsLive()) return;" in r
-    assert "teardownDevice();" in r
-    assert "setPhase('idle');" in r
-    # the restored page's registration affordance is not shown as actionable-ready
-    assert "els.enableVoice.hidden = true;" in r
-    assert "setEnableState({ disabled: true });" in r
+def test_stale_restored_page_cannot_show_ready_before_device_registered(engine):
+    ps = _fn(engine, "function onPageShow(e)")
+    assert "if (e && e.persisted)" in ps and "converge()" in ps
+    assert "teardownDevice('pagehide');" in _fn(engine, "function onPageHide()")
+    assert "return !!st.device && deviceState() === 'registered';" in engine
 
 
-def test_reload_requires_a_fresh_registration_before_ready(html):
-    # A genuine bfcache restore re-runs the full acquire→token→Device→register
-    # lifecycle via startVoiceRegistration(). With Receive Calls ON + Available
-    # the restored owner tab re-registers automatically (no manual step) — but
-    # "Ready" is still only painted by the Device 'registered' event, never on
-    # load and never from cache.
-    r = _resync(html)
-    assert "startVoiceRegistration();" in r
-    assert "acquireVoiceOwnership();" in r and "coordPost('owner-query');" in r
-    # initVoice is never wired to fire directly on DOMContentLoaded/load; the
-    # only auto path is startVoiceRegistration() (which is single-flight and
-    # gated by shouldRegisterVoice()).
-    assert re.search(r"DOMContentLoaded[^\n]*initVoice", html) is None
-    assert re.search(r"addEventListener\('load'[^\n]*initVoice", html) is None
-    assert "async function startVoiceRegistration(opts) {" in html
-    assert "if (!shouldRegisterVoice()) return;" in html
-    # single-flight is still the first gate after the eligibility check
-    assert "if (voice.initPromise) return voice.initPromise;" in re.search(
-        r"async function startVoiceRegistration\(opts\) \{(.*?)\n\}", html, re.S).group(1)
+def test_reload_requires_a_fresh_registration_before_ready(engine, html):
+    assert re.search(r"DOMContentLoaded[^\n]*ensureRegistered", html) is None
+    assert "voiceEngine.boot();" in html
+    body = _fn(engine, "async function boot()")
+    assert body.index("apiJson('/api/phone/receive-calls')") < body.index("converge();")
 
 
-def test_passive_second_tab_cannot_display_ready(html):
-    r = _resync(html)
-    render = re.search(r"function renderVoiceRole\(\) \{(.*?)\n\}", html, re.S).group(1)
-    # the passive branch never prints "Ready" and hides the registration control
-    assert "Ready —" not in render.split("if (coord.isOwner)")[0]
-    assert "Calling is active in another LUX Connect window." in render
-    assert "els.enableVoice.dataset.passive = '1';" in render and "els.enableVoice.hidden = true;" in render
+def test_passive_second_tab_cannot_display_ready(engine):
+    assert "setStatus('ready'" not in _fn(engine, "function handleCoordMessage(msg)")
 
 
-def test_one_lifecycle_mints_exactly_one_token_and_never_loops(html):
-    body = re.search(r"async function initVoice\(\) \{(.*?)\n  return voice\.initPromise;\n\}", html, re.S).group(1)
-    # single-flight + already-registered short-circuit => one readVoiceToken per lifecycle
-    assert "if (voice.initPromise) return voice.initPromise;" in body
-    assert "if (voice.registered && voice.device && voice.deviceState === 'registered') return voice.device;" in body
-    # exactly one token mint on the registration path (the second readVoiceToken
-    # is the Twilio-driven 'tokenWillExpire' refresh, not part of this lifecycle)
-    assert body.split("'tokenWillExpire'")[0].count("readVoiceToken()") == 1
-    assert html.count("await voice.device.register()") == 1
-    # resync re-init is gated to real bfcache restores (reinit && wasOwner);
-    # visibilitychange passes reinit=false, so tab-focus churn cannot mint tokens
-    r = _resync(html)
-    assert "visibilitychange', () => { if (document.visibilityState === 'visible') resyncVoiceUi(false); }" in r
-    # no timers/polling re-driving registration
-    assert "setInterval" not in r
-    # token fetch bypasses HTTP/SW cache so a reload can't replay a dead token
-    assert "await fetch(url, {cache: 'no-store', credentials: 'same-origin'" in html
+def test_one_lifecycle_mints_bounded_tokens_and_never_loops(engine):
+    """Token mints: at most one per tab session (sessionStorage cache keyed by
+    user+company, reused while >=5 min remain) plus Twilio-driven refreshes.
+    Automatic recovery is capped at MAX_AUTO_ATTEMPTS."""
+    gt = _fn(engine, "async function getToken(forceFresh)")
+    assert "readCachedToken()" in gt and "cache: 'no-store'" in gt
+    rc = _fn(engine, "function readCachedToken()")
+    assert "c.userId !== opts.userId || c.companyId !== opts.companyId" in rc
+    assert "TOKEN_MIN_REMAINING_MS" in rc
+    assert "st.attempts >= MAX_AUTO_ATTEMPTS" in _fn(engine, "function scheduleRecovery(reason, o)")
 
 
-def test_registration_failure_cannot_leave_ready_visible(html):
-    # Device 'error' routes to voiceError() -> phase 'error', message shown.
-    err_line = re.search(r"voice\.device\.on\('error',.*", html).group(0)
-    assert "voiceError('TWILIO_REGISTRATION_FAILED'" in err_line
-    voice_error = re.search(r"function voiceError\(code, message, detail\) \{(.*?)\n\}", html, re.S).group(1)
-    assert "document.body.dataset.phase = 'error';" in voice_error
-    assert "state(safeMessage, 'error');" in voice_error
-    # Device 'unregistered' clears registration and drops out of the ready phase.
-    unreg = re.search(r"voice\.device\.on\('unregistered', \(\) => \{(.*?)\n      \}\);", html, re.S).group(1)
-    assert "voice.registered = false;" in unreg
-    assert "voice.deviceState = 'none';" in unreg
-    assert "setPhase('idle');" in unreg
-    # initVoice's own catch clears deviceState so voiceIsLive() can't be true
-    body = re.search(r"async function initVoice\(\) \{(.*?)\n  return voice\.initPromise;\n\}", html, re.S).group(1)
-    assert "voice.deviceState = 'none';" in body
-    # and voiceIsLive() requires a Device that is *currently* 'registered'
-    assert "voice.device.state === 'registered' : voice.deviceState === 'registered'" in _resync(html)
+def test_registration_failure_cannot_leave_ready_visible(engine):
+    rf = _fn(engine, "function registrationFailed(err)")
+    assert "setStatus('unavailable'" in rf and "setStatus('ready'" not in rf
+    unreg = _fn(engine, "d.on('unregistered', () =>")
+    assert "setStatus(" in unreg and "'ready'" not in unreg
 
 
 def test_service_worker_never_serves_a_cached_voice_page_or_token():
@@ -336,12 +272,13 @@ def test_service_worker_never_serves_a_cached_voice_page_or_token():
 # 12. Route aliases share one ownership domain.                            #
 # ------------------------------------------------------------------------- #
 
-def test_route_aliases_use_one_coordinator(html):
-    assert html.count("const VOICE_LOCK_NAME =") == 1
-    assert html.count("const VOICE_BUS_KEY   =") == 1
+def test_route_aliases_use_one_coordinator(html, engine):
+    # One engine, one lock name, one bus key for every page and alias.
+    assert engine.count("const LOCK_NAME =") == 1 and engine.count("const BUS_KEY =") == 1
+    assert "const BUS_KEY = 'luxit-voice-coord-v1';" in engine
+    assert "VOICE_LOCK_NAME" not in html and "navigator.locks" not in html
     dm = re.search(r"const DIALER_MODE = (.*?);", html).group(1)
-    assert "phone|dial-pad" in dm            # both aliases → same DIALER_MODE branch
-    assert "if (DIALER_MODE) { acquireVoiceOwnership(); coordPost('owner-query'); }" in html
+    assert "phone|dial-pad" in dm
 
 
 # ------------------------------------------------------------------------- #
@@ -363,11 +300,13 @@ def test_twilio_identity_algorithm_is_unchanged():
     assert "client_identities.append(pwa_voice_identity(ta.company_id, uid))" in TWILIO_SMS.read_text()
 
 
-def test_csrf_and_outbound_safe_fail_intact(html):
+def test_csrf_and_outbound_safe_fail_intact(html, engine):
     assert '<meta name="csrf-token" content="{{ csrf_token() }}">' in html
     assert "headers.set('X-CSRFToken', token)" in html
-    assert "voice.outboundEnabled = body.outbound_enabled;" in html
-    assert "if (voice.outboundEnabled === false) {" in html
+    assert "csrf: document.querySelector('meta[name=\"csrf-token\"]')?.content" in html
+    assert "headers['X-CSRFToken'] = opts.csrf" in engine
+    assert "outbound_enabled: tok.outbound_enabled" in engine
+    assert "st.tokenInfo.outbound_enabled === false" in engine
     assert '"outbound_enabled": bool(twiml_app_sid)' in INBOX_PWA.read_text()
 
 
@@ -432,10 +371,10 @@ def test_both_dialer_aliases_carry_the_lock_coordinator(app, path):
     client = app.test_client()
     _login(client, uid)
     body = client.get(path).get_data(as_text=True)
-    assert 'id="btnCall"' in body and 'id="btnMute"' in body and 'id="btnHangup"' in body
+    assert 'id="btnCall"' in body and "LuxVoice.mountOverlay(voiceEngine" in body
     assert 'id="callerId"' in body and 'id="enableVoice"' in body and 'data-digit=' in body
-    assert "navigator.locks.request(VOICE_LOCK_NAME" in body
-    assert "coordPost('owner-query')" in body
+    assert "/static/js/lux-voice.js" in body and "LuxVoice.create(" in body
+    assert "voiceEngine.boot();" in body
 
 
 def test_text_and_clock_routes_unchanged(app):
@@ -443,7 +382,10 @@ def test_text_and_clock_routes_unchanged(app):
     client = app.test_client()
     _login(client, uid)
     inbox = client.get("/app/inbox").get_data(as_text=True)
+    # Phone P0: the inbox shell boots the persistent Voice service but never
+    # constructs a Device itself (only static/js/lux-voice.js does).
     assert "luxitPwaDeviceKey" in inbox and "new Device(" not in inbox
+    assert "LuxVoice.create(" in inbox
     recents = client.get("/app/recents").get_data(as_text=True)
     assert 'id="list"' in recents
 
@@ -457,11 +399,11 @@ def test_dialer_page_leaks_no_secrets(app):
     assert "auth_token" not in body and "api_secret" not in body
 
 
-def test_device_registration_enables_ice_restart_for_network_handover(html):
+def test_device_registration_enables_ice_restart_for_network_handover(engine):
     """A live call must be able to survive a real Wi-Fi<->cellular handover.
     Without enableIceRestart the SDK will not renegotiate ICE candidates when
     the network path changes mid-call, so an active call is likely to
     freeze/drop on handover rather than self-heal."""
-    i_device = html.index("new Device(body.token")
-    snippet = html[i_device:i_device + 200]
+    i_device = engine.index("new Device(token")
+    snippet = engine[i_device:i_device + 200]
     assert "enableIceRestart: true" in snippet

@@ -30,7 +30,7 @@ except ImportError:
 class SMSService:
     """Service for SMS campaign management with Twilio sending"""
 
-    ACTIVE_STATUSES = {'queued', 'sending', 'processing'}
+    ACTIVE_STATUSES = {'queued', 'sending', 'processing', 'dispatching'}
     BLOCKED_SEND_STATUSES = {'scheduled', 'sent', 'completed', 'failed', 'canceled', 'cancelled', 'archived'}
     ASYNC_RECIPIENT_THRESHOLD = int(os.environ.get('SMS_CAMPAIGN_ASYNC_THRESHOLD', '50'))
     _send_locks = {}
@@ -274,22 +274,40 @@ class SMSService:
     @classmethod
     def send_sms(cls, to_number, message, company_id=None, from_phone=None, media_urls=None):
         selected_from_phone = from_phone
-        """Send an SMS message via tenant Twilio config, falling back to platform config."""
-        if company_id:
-            from services.license_service import PHONE_PWA_FEATURE, has_feature
-            if not has_feature(company_id, PHONE_PWA_FEATURE):
-                return {
-                    'success': False,
-                    'error': 'Phone/PWA Communications license is not active.',
-                    'status_code': 402,
-                    'license_blocked': True,
-                }
+        """Send an SMS message via tenant Twilio config.
+
+        Only the platform's own workspaces may fall back to the platform Twilio
+        account; any other tenant needs its own sender (T-16).
+        """
+        if not company_id:
+            return {
+                'success': False,
+                'error': 'A workspace is required to send SMS.',
+                'status_code': 403,
+                'license_blocked': True,
+            }
+        from services.license_service import PHONE_PWA_FEATURE, has_feature, uses_platform_sender
+        if not has_feature(company_id, PHONE_PWA_FEATURE):
+            return {
+                'success': False,
+                'error': 'Phone/PWA Communications license is not active.',
+                'status_code': 402,
+                'license_blocked': True,
+            }
         tenant_config = cls._tenant_twilio_config(company_id)
         if tenant_config:
             client = tenant_config['client']
             messaging_service_sid = tenant_config.get('messaging_service_sid')
             from_phone = selected_from_phone or tenant_config.get('from_phone')
         else:
+            if not uses_platform_sender(company_id):
+                logger.warning("SMS blocked: company_id=%s has no own Twilio sender and is not a platform workspace", company_id)
+                return {
+                    'success': False,
+                    'error': 'This workspace has no SMS sender configured. Connect a Twilio account in phone settings.',
+                    'status_code': 409,
+                    'sender_missing': True,
+                }
             if not cls._init_twilio():
                 return {
                     'success': False,
@@ -337,8 +355,15 @@ class SMSService:
         from services.contact_audience import resolve_sms_campaign_recipients
         from services.phone_line_service import PhoneLineService
 
+        # Atomic claim: exactly one worker/process may move scheduled -> dispatching.
+        claimed = (SMSCampaign.query
+                   .filter(SMSCampaign.id == campaign_id, SMSCampaign.status == "scheduled")
+                   .update({"status": "dispatching"}, synchronize_session=False))
+        db.session.commit()
         campaign = db.session.get(SMSCampaign, campaign_id)
-        if not campaign or campaign.status != "scheduled":
+        if campaign is not None:
+            db.session.refresh(campaign)
+        if not claimed or not campaign:
             return {"success": False, "error": "Scheduled campaign not found or not scheduled"}
         sender = PhoneLineService.resolve_campaign_sender(
             campaign.company_id, campaign.from_phone_number_id, user=None
@@ -347,7 +372,16 @@ class SMSService:
             campaign.status = "failed"
             db.session.commit()
             return sender
-        result = resolve_sms_campaign_recipients(campaign, materialize=True)
+        from services.contact_audience import AudienceError
+        try:
+            result = resolve_sms_campaign_recipients(campaign, materialize=True)
+        except AudienceError as exc:
+            # Leaving it "scheduled" would retry nothing and show it as pending forever.
+            db.session.rollback()
+            campaign = db.session.get(SMSCampaign, campaign_id)
+            campaign.status = "failed"
+            db.session.commit()
+            return {"success": False, "error": str(exc), "sent": 0}
         counts = result["counts"]
         campaign.recipient_resolution = counts
         campaign.execution_recipient_count = counts["eligible_recipients"]
@@ -361,67 +395,160 @@ class SMSService:
         return cls.send_campaign(campaign.id)
 
     @classmethod
-    def send_campaign(cls, campaign_id, transition=True):
-        """Send SMS campaign to all pending recipients."""
+    def dispatch_due_campaigns(cls, now=None, limit=20):
+        """Execute scheduled campaigns whose time has come. Safe to run from
+        several processes: execute_scheduled_campaign claims each row once."""
         from extensions import db
-        from models import SMSCampaign, SMSRecipient
+        from models import SMSCampaign
+        now = now or datetime.utcnow()
+        due = [row.id for row in (SMSCampaign.query
+               .filter(SMSCampaign.status == "scheduled", SMSCampaign.scheduled_at.isnot(None),
+                       SMSCampaign.scheduled_at <= now)
+               .order_by(SMSCampaign.scheduled_at.asc()).limit(limit).all())]
+        db.session.commit()
+        results = {}
+        for campaign_id in due:
+            try:
+                results[campaign_id] = cls.execute_scheduled_campaign(campaign_id)
+            except Exception:
+                db.session.rollback()
+                logger.exception("Scheduled SMS campaign %s dispatch failed", campaign_id)
+                results[campaign_id] = {"success": False, "error": "dispatch_exception"}
+        return results
+
+    @classmethod
+    def send_campaign(cls, campaign_id, transition=True, user=None):
+        """Send an SMS campaign to its materialized pending recipients.
+
+        This is the single canonical send path (UI send, API send, background
+        queue and the scheduled dispatcher all end here), so the protections
+        live here rather than in each caller:
+
+        * the sender must be an authorized tenant phone line (no implicit
+          platform/global fallback) -- checked *before* any status change;
+        * every recipient is re-checked immediately before the provider call,
+          so a STOP / archive / consent loss after scheduling still wins;
+        * all pending recipients are processed in ``batch_size`` chunks in one
+          run, so a campaign larger than one batch never strands recipients
+          in a "scheduled" state that nothing re-dispatches;
+        * a recipient is claimed (``status='sending'``) and committed before
+          the provider call, so a crash or concurrent worker cannot send it
+          twice -- a claimed-but-unconfirmed row is left for manual review,
+          never auto-retried.
+        """
+        from extensions import db
+        from models import SMSCampaign, SMSRecipient, Contact
+        from services.contact_audience import sms_send_block_reason
+        from services.phone_line_service import PhoneLineService
+        from services.sms_consent_purpose import conversational_evidence_phone_digits, normalize_campaign_purpose
+
+        campaign = db.session.get(SMSCampaign, campaign_id)
+        if not campaign:
+            return {'success': False, 'error': 'Campaign not found', 'status_code': 404}
+        sender = PhoneLineService.resolve_campaign_sender(
+            campaign.company_id, campaign.from_phone_number_id, user=user
+        )
+        if not sender.get('success'):
+            cls._audit_campaign_event(campaign.company_id, 'send_rejected_sender', campaign.id, campaign.status)
+            if not transition:
+                # Already transitioned by the caller (queue path): do not leave it "queued" forever.
+                campaign.status = 'failed'
+            db.session.commit()
+            return {'success': False, 'error': sender.get('error') or 'No authorized sender phone line.',
+                    'status_code': 403, 'sender_missing': True}
 
         if transition:
             campaign, begin_result = cls.begin_send(campaign_id, queued=False)
             if not begin_result.get('success'):
                 return begin_result
         else:
-            campaign = db.session.get(SMSCampaign, campaign_id)
-            if not campaign:
-                return {'success': False, 'error': 'Campaign not found'}
             campaign.status = 'sending'
             db.session.commit()
-        
-        recipients = (
-            SMSRecipient.query
-            .filter_by(campaign_id=campaign_id, status='pending')
-            .order_by(SMSRecipient.id.asc())
-            .limit(max(1, int(getattr(campaign, 'batch_size', None) or 50)))
-            .all()
-        )
-        
-        sent = 0
-        failed = 0
-        
-        for recipient in recipients:
-            try:
-                result = cls.send_sms(recipient.phone_number, campaign.message, company_id=campaign.company_id, from_phone=getattr(campaign, 'from_phone_number', None), media_urls=getattr(campaign, 'media_urls', None))
-            except TypeError:
-                # Backward-compatible for tests/integrations monkeypatching send_sms with the legacy signature.
-                result = cls.send_sms(recipient.phone_number, campaign.message, company_id=campaign.company_id)
-            if result['success']:
-                recipient.status = 'sent'
-                recipient.sent_at = datetime.utcnow()
-                recipient.message_sid = result.get('message_sid')
-                recipient.provider_message_sid = result.get('message_sid')
-                sent += 1
-            else:
-                recipient.status = 'failed'
-                recipient.error_message = result.get('error', 'Unknown error')
-                failed += 1
-        
-        remaining = SMSRecipient.query.filter_by(campaign_id=campaign_id, status='pending').count()
-        if remaining:
-            campaign.status = 'scheduled'
-        elif failed > 0 and sent == 0:
+
+        campaign.from_phone_number_id = sender['phone_number'].id
+        campaign.from_phone_number = sender['from_phone']
+        db.session.commit()
+
+        purpose = normalize_campaign_purpose((campaign.audience_filter or {}).get('campaign_purpose'))
+        evidence_digits = (conversational_evidence_phone_digits(campaign.company_id)
+                           if purpose != 'promotional' else set())
+        batch_size = max(1, int(getattr(campaign, 'batch_size', None) or 50))
+        sent = failed = skipped = processed = 0
+        halted = False
+        while True:
+            db.session.refresh(campaign)
+            if campaign.status in ('paused', 'canceled', 'cancelled'):
+                halted = True  # operator paused/canceled mid-send: leave the rest pending
+                break
+            batch = (
+                SMSRecipient.query
+                .filter_by(campaign_id=campaign_id, company_id=campaign.company_id, status='pending')
+                .filter(SMSRecipient.provider_message_sid.is_(None))
+                .order_by(SMSRecipient.id.asc())
+                .limit(batch_size)
+                .all()
+            )
+            if not batch:
+                break
+            # Re-read STOPs per batch: a STOP on any contact sharing the number wins.
+            from services.contact_audience import normalize_phone as _norm, opted_out_phones
+            stopped = opted_out_phones(campaign.company_id, {_norm(r.phone_number) for r in batch})
+            for recipient in batch:
+                processed += 1
+                contact = db.session.get(Contact, recipient.contact_id) if recipient.contact_id else None
+                reason = sms_send_block_reason(campaign, contact, recipient.phone_number, evidence_digits=evidence_digits,
+                                               stopped_phones=stopped)
+                if reason:
+                    recipient.status = 'skipped'
+                    recipient.error_message = f'Not sent: {reason} at send time'
+                    skipped += 1
+                    continue
+                recipient.status = 'sending'  # claim before the provider call
+                db.session.commit()
+                try:
+                    result = cls.send_sms(recipient.phone_number, campaign.message, company_id=campaign.company_id,
+                                          from_phone=campaign.from_phone_number, media_urls=getattr(campaign, 'media_urls', None))
+                except TypeError:
+                    # Backward-compatible for tests/integrations monkeypatching send_sms with the legacy
+                    # signature. Only reached when the stub rejects the kwargs, never after a real send.
+                    result = cls.send_sms(recipient.phone_number, campaign.message, company_id=campaign.company_id)
+                except Exception as exc:  # provider/network error: record it, keep going
+                    logger.exception('SMS campaign %s recipient %s send raised', campaign_id, recipient.id)
+                    result = {'success': False, 'error': type(exc).__name__}
+                if result.get('success'):
+                    recipient.status = 'sent'
+                    recipient.sent_at = datetime.utcnow()
+                    recipient.message_sid = result.get('message_sid')
+                    recipient.provider_message_sid = result.get('message_sid')
+                    sent += 1
+                else:
+                    recipient.status = 'failed'
+                    recipient.error_message = result.get('error', 'Unknown error')
+                    failed += 1
+                db.session.commit()
+            db.session.commit()
+
+        if halted:
+            cls._audit_campaign_event(campaign.company_id, 'send_halted', campaign.id, campaign.status)
+            db.session.commit()
+            return {'success': sent > 0, 'sent': sent, 'failed': failed, 'skipped': skipped,
+                    'total': processed, 'halted': campaign.status}
+        if sent == 0 and (failed or skipped or not processed):
             campaign.status = 'failed'
         else:
             campaign.status = 'completed'
             campaign.sent_at = datetime.utcnow()
+        cls._audit_campaign_event(campaign.company_id, 'send_finished', campaign.id, campaign.status)
         db.session.commit()
-        
+
         return {
             'success': sent > 0,
             'sent': sent,
             'failed': failed,
-            'total': len(recipients)
+            'skipped': skipped,
+            'total': processed,
         }
-    
+
     @staticmethod
     def ai_generate_sms(prompt, tone='professional', max_length=160):
         """Generate SMS content using AI"""

@@ -5,7 +5,7 @@ from app import create_app
 from extensions import db
 from models import (
     Company, Contact, ContactEmailAddress, ContactSourceEvent, IntegrationAuditLog, MarketingAuditLog,
-    SMSCampaign, SMSKeywordRule, SMSRecipient, SocialPost, TwilioAccount,
+    Segment, SMSCampaign, SMSKeywordRule, SMSRecipient, SocialPost, TwilioAccount, TwilioPhoneNumber,
     TwilioConversation, TwilioMessage, User, user_company,
 )
 from services.sms_service import SMSService
@@ -50,11 +50,31 @@ def test_campaign_sms_and_social_pages_render_without_500(client, tenant_user):
         assert response.status_code == 200, path
 
 
+def _vip_segment(company):
+    seg = Segment(company_id=company.id, name="vip")
+    db.session.add(seg)
+    db.session.flush()
+    return seg
+
+
+def _campaign_sender_line(company, number="+15559999999"):
+    """An authorized tenant phone line: sender configuration is mandatory."""
+    line = TwilioPhoneNumber(company_id=company.id, phone_number=number, is_active=True, sms_enabled=True,
+                             campaign_sender_enabled=True, is_primary=True)
+    db.session.add(line)
+    db.session.commit()
+    return line
+
+
 def test_sms_campaign_create_save_and_preview_excludes_unsubscribed(client, tenant_user):
     _, company = tenant_user
+    vip = Segment(company_id=company.id, name="vip")
     db.session.add_all([
-        Contact(company_id=company.id, first_name="Opt", last_name="In", phone="+14155550101", tags="sms_consent", is_active=True, is_subscribed=True, segment="vip"),
-        Contact(company_id=company.id, first_name="Opt", last_name="Out", phone="+14155550102", tags="sms_opt_out", is_active=True, is_subscribed=False, segment="vip"),
+        vip,
+        Contact(company_id=company.id, first_name="Opt", last_name="In", phone="+14155550101", tags="sms_consent, vip", is_active=True, is_subscribed=True, segment="vip",
+                sms_marketing_opt_in=True, sms_consent_status="opted_in"),
+        Contact(company_id=company.id, first_name="Opt", last_name="Out", phone="+14155550102", tags="sms_opt_out, vip", is_active=True, is_subscribed=False, segment="vip",
+                sms_marketing_opt_in=True, sms_consent_status="opted_in"),
     ])
     db.session.commit()
 
@@ -62,6 +82,7 @@ def test_sms_campaign_create_save_and_preview_excludes_unsubscribed(client, tena
     assert create.status_code == 201
     campaign = create.get_json()["campaign"]
     assert "STOP" in campaign["message"]
+    assert campaign["selected_tag_ids"] == [vip.id]
 
     update = client.put(f"/api/marketing/sms-campaigns/{campaign['id']}", json={"objective": "Drive bookings", "status": "draft"})
     assert update.status_code == 200
@@ -71,31 +92,51 @@ def test_sms_campaign_create_save_and_preview_excludes_unsubscribed(client, tena
     assert preview.status_code == 200
     assert payload["recipients_selected"] == 1
     assert payload["excluded"] == 1
+    assert payload["opted_out_contacts"] == 1
+
+
+def test_sms_campaign_create_rejects_unknown_segment_text(client, tenant_user):
+    response = client.post("/api/marketing/sms-campaigns", json={"name": "x", "message": "hi", "segment": "no-such-segment"})
+    assert response.status_code in (400, 422)
+    assert SMSCampaign.query.count() == 0
 
 
 def test_sms_send_refuses_missing_twilio_config(client, tenant_user, monkeypatch):
     _, company = tenant_user
     for key in ("TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN", "TWILIO_PHONE_NUMBER", "TWILIO_FROM_NUMBER"):
         monkeypatch.delenv(key, raising=False)
-    db.session.add(Contact(company_id=company.id, phone="+14155550101", tags="sms_consent", is_active=True, is_subscribed=True, segment="vip"))
-    campaign = SMSCampaign(company_id=company.id, name="No Twilio", message="Hello Reply STOP to opt out.", segment="vip", status="draft")
+    line = _campaign_sender_line(company)  # an authorized line, but no Twilio account connected
+    vip = Segment(company_id=company.id, name="vip")
+    db.session.add_all([vip, Contact(company_id=company.id, phone="+14155550101", tags="sms_consent, vip", is_active=True, is_subscribed=True, segment="vip",
+                                     sms_marketing_opt_in=True, sms_consent_status="opted_in")])
+    db.session.flush()
+    campaign = SMSCampaign(company_id=company.id, name="No Twilio", message="Hello Reply STOP to opt out.", segment="vip",
+                           selected_tag_ids=[vip.id], audience_filter={"selected_tag_ids": [vip.id]},
+                           from_phone_number_id=line.id, from_phone_number=line.phone_number, status="draft")
     db.session.add(campaign)
     db.session.commit()
 
     response = client.post(f"/api/marketing/sms-campaigns/{campaign.id}/send")
     assert response.status_code == 409
-    assert "TWILIO" in response.get_json()["error"]
+    assert response.get_json()["code"] == "provider_not_configured"
+    assert "twilio" in response.get_json()["error"].lower()
+    assert SMSRecipient.query.filter_by(campaign_id=campaign.id).filter(SMSRecipient.status != "pending").count() == 0
 
 
 def test_sms_send_creates_recipient_records_when_configured(client, tenant_user, monkeypatch):
     _, company = tenant_user
-    monkeypatch.setenv("TWILIO_ACCOUNT_SID", "ACtest")
-    monkeypatch.setenv("TWILIO_AUTH_TOKEN", "token")
-    monkeypatch.setenv("TWILIO_PHONE_NUMBER", "+15559999999")
-    db.session.add(Contact(company_id=company.id, phone="+14155550103", tags="sms_consent", is_active=True, is_subscribed=True, segment="vip"))
-    campaign = SMSCampaign(company_id=company.id, name="Configured", message="Hello Reply STOP to opt out.", segment="vip", status="draft")
+    _twilio_account(company)
+    line = _campaign_sender_line(company)
+    vip = Segment(company_id=company.id, name="vip")
+    db.session.add_all([vip, Contact(company_id=company.id, phone="+14155550103", tags="sms_consent, vip", is_active=True, is_subscribed=True, segment="vip",
+                                     sms_marketing_opt_in=True, sms_consent_status="opted_in")])
+    db.session.flush()
+    campaign = SMSCampaign(company_id=company.id, name="Configured", message="Hello Reply STOP to opt out.", segment="vip",
+                           selected_tag_ids=[vip.id], audience_filter={"selected_tag_ids": [vip.id]},
+                           from_phone_number_id=line.id, from_phone_number=line.phone_number, status="draft")
     db.session.add(campaign)
     db.session.commit()
+    monkeypatch.setattr(SMSService, "send_sms", classmethod(lambda cls, to, message, **kw: {"success": True, "message_sid": "SMCONFIGURED1"}))
 
     response = client.post(f"/api/marketing/sms-campaigns/{campaign.id}/send")
     assert response.status_code == 200
@@ -164,8 +205,11 @@ def test_twilio_delivery_webhook_updates_sms_campaign_recipient(client, tenant_u
 def test_inbound_stop_marks_contact_and_blocks_future_preview(client, tenant_user):
     _, company = tenant_user
     _twilio_account(company)
-    contact = Contact(company_id=company.id, phone="+14155550109", normalized_phone="+14155550109", tags="sms_consent", is_active=True, is_subscribed=True, segment="vip")
-    campaign = SMSCampaign(company_id=company.id, name="STOP Test", message="Offer Reply STOP to opt out.", segment="vip", status="sent")
+    vip = _vip_segment(company)
+    contact = Contact(company_id=company.id, phone="+14155550109", normalized_phone="+14155550109", tags="sms_consent, vip", is_active=True, is_subscribed=True, segment="vip",
+                      sms_marketing_opt_in=True, sms_consent_status="opted_in")
+    campaign = SMSCampaign(company_id=company.id, name="STOP Test", message="Offer Reply STOP to opt out.", segment="vip", status="sent",
+                           selected_tag_ids=[vip.id], audience_filter={"selected_tag_ids": [vip.id]})
     db.session.add_all([contact, campaign])
     db.session.flush()
     db.session.add(SMSRecipient(company_id=company.id, campaign_id=campaign.id, contact_id=contact.id, status="sent"))
@@ -189,8 +233,11 @@ def test_inbound_stop_resolves_via_normalized_phone_when_contact_phone_is_format
     """
     _, company = tenant_user
     _twilio_account(company)
-    contact = Contact(company_id=company.id, phone="(202) 555-0101", normalized_phone="+12025550101", tags="sms_consent", is_active=True, is_subscribed=True, segment="vip")
-    campaign = SMSCampaign(company_id=company.id, name="STOP Formatted Test", message="Offer Reply STOP to opt out.", segment="vip", status="sent")
+    vip = _vip_segment(company)
+    contact = Contact(company_id=company.id, phone="(202) 555-0101", normalized_phone="+12025550101", tags="sms_consent, vip", is_active=True, is_subscribed=True, segment="vip",
+                      sms_marketing_opt_in=True, sms_consent_status="opted_in")
+    campaign = SMSCampaign(company_id=company.id, name="STOP Formatted Test", message="Offer Reply STOP to opt out.", segment="vip", status="sent",
+                           selected_tag_ids=[vip.id], audience_filter={"selected_tag_ids": [vip.id]})
     db.session.add_all([contact, campaign])
     db.session.flush()
     db.session.add(SMSRecipient(company_id=company.id, campaign_id=campaign.id, contact_id=contact.id, status="sent"))
@@ -522,33 +569,58 @@ def test_twilio_signature_validation_for_inbound_and_status(client, tenant_user,
 
 def test_sms_campaign_send_is_idempotent_and_batches(client, tenant_user, monkeypatch):
     _, company = tenant_user
-    monkeypatch.setenv("TWILIO_ACCOUNT_SID", "ACenv")
-    monkeypatch.setenv("TWILIO_AUTH_TOKEN", "token")
-    monkeypatch.setenv("TWILIO_PHONE_NUMBER", "+15559999999")
+    _twilio_account(company)
+    line = _campaign_sender_line(company)
+    vip = Segment(company_id=company.id, name="vip")
     contacts = [
-        Contact(company_id=company.id, phone=f"+14155552{i:03d}", tags="sms_consent", is_active=True, is_subscribed=True, segment="vip")
+        Contact(company_id=company.id, phone=f"+14155552{i:03d}", tags="sms_consent, vip", is_active=True, is_subscribed=True, segment="vip",
+                sms_marketing_opt_in=True, sms_consent_status="opted_in")
         for i in range(3)
     ]
-    campaign = SMSCampaign(company_id=company.id, name="Batch", message="Batch Reply STOP to opt out.", segment="vip", status="draft")
-    db.session.add_all([*contacts, campaign])
+    db.session.add_all([vip, *contacts])
+    db.session.flush()
+    campaign = SMSCampaign(company_id=company.id, name="Batch", message="Batch Reply STOP to opt out.", segment="vip",
+                           selected_tag_ids=[vip.id], audience_filter={"selected_tag_ids": [vip.id]},
+                           from_phone_number_id=line.id, from_phone_number=line.phone_number, batch_size=2, status="draft")
+    db.session.add(campaign)
     db.session.commit()
+    attempts = []
+    monkeypatch.setattr(SMSService, "send_sms", classmethod(
+        lambda cls, to, message, **kw: attempts.append((to, kw.get("from_phone"))) or {"success": True, "message_sid": f"SMB{len(attempts)}"}))
 
-    first = client.post(f"/api/marketing/sms-campaigns/{campaign.id}/send", json={"batch_size": 2})
-    assert first.status_code == 200
+    first = client.post(f"/api/marketing/sms-campaigns/{campaign.id}/send", json={})
+    assert first.status_code == 200, first.get_json()
     db.session.refresh(campaign)
-    assert campaign.status == "sending"
-    assert SMSRecipient.query.filter_by(campaign_id=campaign.id, status="sent").count() == 2
-    assert SMSRecipient.query.filter_by(campaign_id=campaign.id, status="queued").count() == 1
-
-    second = client.post(f"/api/marketing/sms-campaigns/{campaign.id}/send", json={"batch_size": 2})
-    assert second.status_code == 200
-    db.session.refresh(campaign)
-    assert campaign.status == "sent"
+    # batch_size=2 is a chunk size, not a stopping point: every recipient is processed in one run.
+    assert campaign.status == "completed"
     assert SMSRecipient.query.filter_by(campaign_id=campaign.id, status="sent").count() == 3
+    assert sorted(a[0] for a in attempts) == sorted(c.phone for c in contacts)
+    assert {a[1] for a in attempts} == {line.phone_number}  # the authorized line, never an account default
 
-    duplicate = client.post(f"/api/marketing/sms-campaigns/{campaign.id}/send", json={"batch_size": 2})
+    duplicate = client.post(f"/api/marketing/sms-campaigns/{campaign.id}/send", json={})
     assert duplicate.status_code == 409
     assert "duplicate send prevented" in duplicate.get_json()["error"]
+    assert len(attempts) == 3
+    assert SMSRecipient.query.filter_by(campaign_id=campaign.id).count() == 3
+
+
+def test_sms_campaign_send_without_authorized_sender_is_refused(client, tenant_user, monkeypatch):
+    _, company = tenant_user
+    vip = Segment(company_id=company.id, name="vip")
+    db.session.add_all([vip, Contact(company_id=company.id, phone="+14155552999", tags="vip", is_active=True,
+                                     sms_marketing_opt_in=True, sms_consent_status="opted_in")])
+    db.session.flush()
+    campaign = SMSCampaign(company_id=company.id, name="NoSender", message="Hi Reply STOP", segment="vip",
+                           selected_tag_ids=[vip.id], audience_filter={"selected_tag_ids": [vip.id]}, status="draft")
+    db.session.add(campaign)
+    db.session.commit()
+    attempts = []
+    monkeypatch.setattr(SMSService, "send_sms", classmethod(lambda cls, *a, **kw: attempts.append(a) or {"success": True, "message_sid": "SMX"}))
+    response = client.post(f"/api/marketing/sms-campaigns/{campaign.id}/send", json={})
+    assert response.status_code in (403, 409)
+    assert attempts == []
+    db.session.refresh(campaign)
+    assert campaign.status == "draft"
 
 
 def test_stop_start_help_compliance_keywords(client, tenant_user):
@@ -645,8 +717,12 @@ def test_tenant_a_cannot_add_tenant_b_recipients_or_read_audits(client, tenant_u
     company_b = Company(name="Tenant B Audit")
     db.session.add(company_b)
     db.session.flush()
-    contact_b = Contact(company_id=company_b.id, phone="+15550000051", tags="sms_consent", is_active=True, is_subscribed=True, segment="vip")
-    campaign_a = SMSCampaign(company_id=company_a.id, name="A campaign", message="A Reply STOP", segment="vip", status="draft")
+    vip_a = _vip_segment(company_a)
+    _vip_segment(company_b)
+    contact_b = Contact(company_id=company_b.id, phone="+15550000051", tags="sms_consent, vip", is_active=True, is_subscribed=True, segment="vip",
+                        sms_marketing_opt_in=True, sms_consent_status="opted_in")
+    campaign_a = SMSCampaign(company_id=company_a.id, name="A campaign", message="A Reply STOP", segment="vip", status="draft",
+                             selected_tag_ids=[vip_a.id], audience_filter={"selected_tag_ids": [vip_a.id]})
     audit_b = MarketingAuditLog(company_id=company_b.id, action="tenant_b_secret", entity_type="sms_campaign", entity_id=999, details={"hidden": True})
     db.session.add_all([contact_b, campaign_a, audit_b])
     db.session.commit()

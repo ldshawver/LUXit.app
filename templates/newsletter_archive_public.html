@@ -41,7 +41,7 @@
                     <!-- Newsletter Preview -->
                     {% if newsletter.html_content %}
                     <div class="newsletter-preview mb-3">
-                        {{ newsletter.html_content|truncate(200)|safe }}
+                        {{ newsletter.html_content|striptags|truncate(200) }}
                     </div>
                     {% endif %}
                     

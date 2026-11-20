@@ -189,54 +189,70 @@ def compute_contacts_overage(contacts_used: int, included_contacts: Optional[int
     return max(0, used - int(included_contacts))
 
 
+# Billing Meter that the contacts-usage price is attached to. Stripe removed
+# legacy usage records (SubscriptionItem.create_usage_record) in API
+# 2025-03-31; metered prices now bill from meter events. The meter must use
+# aggregation formula "last" so a daily report replaces, not adds to, the
+# previous one (scripts/acceptance/stripe_testmode_preflight.py checks it).
+CONTACTS_METER_EVENT_NAME = os.environ.get("LUXIT_CONTACTS_METER_EVENT", "luxit_contacts_overage")
+
+
+def count_billable_contacts(company_id) -> int:
+    """Active, unmerged contacts: the same count the account status shows."""
+    from models import Contact
+    return (Contact.query
+            .filter(Contact.company_id == company_id, Contact.is_active.is_(True),
+                    Contact.merged_into_contact_id.is_(None))
+            .count())
+
+
 def report_contact_usage(company, *, now: Optional[datetime] = None):
-    """Push a ``set``-action usage record to Stripe for one company's contact overage.
+    """Report one company's contact overage to Stripe as a meter event.
 
-    Uses ``action="set"`` (not increment) so re-running this for the same
-    period is idempotent and cannot double-bill. Persists
-    ``last_reported_contact_usage`` and ``last_usage_reported_at`` on the
-    company so callers can audit cadence.
+    Recounts the company's billable contacts (``contacts_used`` was never
+    maintained anywhere else, so overage always computed as 0), stores the
+    count and overage on the company, and, when its subscription carries the
+    metered contacts price, sends a meter event whose value is the overage.
+    The identifier is per company per UTC day, so re-running the same day is
+    deduplicated by Stripe; with the meter's "last" aggregation the period
+    bills the most recent value, never a sum.
 
-    Returns a dict ``{"reported": bool, "quantity": int, "subscription_item": str|None,
-    "skipped_reason": str|None}``. Never raises for the common "no usage item
-    configured" case — it logs and returns ``reported=False`` so a daily job
-    can scan all tenants without fatally aborting.
+    Returns ``{"reported", "quantity", "contacts_used", "subscription_item",
+    "skipped_reason"}``. Skips (never raises) when the company has no metered
+    item or no Stripe customer, so a daily job can scan every tenant.
     """
     from extensions import db as _db
+    now = now or datetime.utcnow()
+    used = count_billable_contacts(company.id)
+    included = getattr(company, "included_contacts", None) or included_contacts_for_tier(
+        getattr(company, "billing_tier", None) or getattr(company, "subscription_tier", None))
+    overage = compute_contacts_overage(used, included)
+    company.contacts_used = used
+    company.contacts_overage = overage
     item_id = getattr(company, "stripe_contact_usage_subscription_item_id", None)
+    customer_id = getattr(company, "stripe_customer_id", None)
+    skipped = None
     if not item_id:
-        # Even when we can't push to Stripe, refresh the locally-cached
-        # overage so the billing UI stays accurate.
-        local_overage = compute_contacts_overage(
-            getattr(company, "contacts_used", 0) or 0,
-            getattr(company, "included_contacts", None),
-        )
+        skipped = "no_usage_subscription_item"
+    elif not customer_id:
+        skipped = "no_stripe_customer"
+    if skipped:
         try:
-            company.contacts_overage = local_overage
             _db.session.commit()
         except Exception:
             _db.session.rollback()
-        logger.info("report_contact_usage: company %s has no usage subscription item — skipping (local_overage=%s)",
-                    getattr(company, "id", "?"), local_overage)
-        return {"reported": False, "quantity": local_overage, "subscription_item": None,
-                "skipped_reason": "no_usage_subscription_item"}
-
-    overage = compute_contacts_overage(
-        getattr(company, "contacts_used", 0) or 0,
-        getattr(company, "included_contacts", None),
-    )
-    # Always persist the locally-computed overage so the UI matches.
-    company.contacts_overage = overage
+        logger.info("report_contact_usage: company %s skipped (%s); used=%s overage=%s",
+                    getattr(company, "id", "?"), skipped, used, overage)
+        return {"reported": False, "quantity": overage, "contacts_used": used,
+                "subscription_item": item_id, "skipped_reason": skipped}
 
     stripe = get_stripe()
-    ts = int((now or datetime.utcnow()).timestamp())
-    # action="set" overwrites any previous record in the current period.
-    # This avoids double-counting across daily/manual triggers.
-    stripe.SubscriptionItem.create_usage_record(
-        item_id,
-        quantity=overage,
+    ts = int(now.timestamp())
+    stripe.billing.MeterEvent.create(
+        event_name=CONTACTS_METER_EVENT_NAME,
+        payload={"stripe_customer_id": customer_id, "value": str(overage)},
+        identifier=f"luxit-contacts-{company.id}-{now:%Y-%m-%d}",
         timestamp=ts,
-        action="set",
     )
     company.last_reported_contact_usage = overage
     company.last_usage_reported_at = datetime.utcfromtimestamp(ts)
@@ -245,10 +261,10 @@ def report_contact_usage(company, *, now: Optional[datetime] = None):
     except Exception:
         _db.session.rollback()
         raise
-    logger.info("report_contact_usage: company=%s item=%s quantity=%s action=set",
-                getattr(company, "id", "?"), item_id, overage)
-    return {"reported": True, "quantity": overage, "subscription_item": item_id,
-            "skipped_reason": None}
+    logger.info("report_contact_usage: company=%s meter=%s value=%s",
+                getattr(company, "id", "?"), CONTACTS_METER_EVENT_NAME, overage)
+    return {"reported": True, "quantity": overage, "contacts_used": used,
+            "subscription_item": item_id, "skipped_reason": None}
 
 
 def grace_period_end() -> datetime:

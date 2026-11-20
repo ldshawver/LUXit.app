@@ -1,15 +1,16 @@
 import logging
 from urllib.parse import urlparse
 
-from flask import Blueprint, current_app, flash, redirect, render_template, request, url_for
+from flask import Blueprint, abort, current_app, flash, redirect, render_template, request, url_for
 from flask_login import current_user, login_required, login_user, logout_user
-from extensions import csrf, db
+from extensions import csrf, db, limiter
 from jinja2 import TemplateNotFound
 from sqlalchemy import or_, text as db_text
 from sqlalchemy.exc import SQLAlchemyError
 from werkzeug.security import check_password_hash
 
 from models import Company, User
+from services import security_audit
 
 logger = logging.getLogger(__name__)
 
@@ -21,6 +22,12 @@ auth_bp = Blueprint(
     url_prefix="/auth",
     template_folder="templates",
 )
+
+@auth_bp.app_context_processor
+def _signup_flag():
+    from services.signup import signup_enabled
+    return {"self_serve_signup_enabled": signup_enabled()}
+
 
 # --------------------------------------------------
 # Helpers
@@ -63,6 +70,7 @@ def no_cache_auth(response):
     return response
 
 @auth_bp.route("/login", methods=["GET", "POST"])
+@limiter.limit("10 per minute;50 per hour", methods=["POST"])
 @csrf.exempt
 def login():
     if current_user.is_authenticated:
@@ -119,6 +127,7 @@ def login():
 
         if not user:
             logger.warning("LOGIN FAIL: user not found for %r", identifier)
+            security_audit.record("auth.login", outcome="failure", detail={"reason": "unknown_account"})
             flash("Invalid credentials.", "error")
             try:
                 return render_template("auth/login.html")
@@ -131,6 +140,8 @@ def login():
                 "LOGIN FAIL: archived/inactive account user_id=%s",
                 getattr(user, "id", None),
             )
+            security_audit.record("auth.login", outcome="denied", target_user_id=user.id,
+                                  detail={"reason": "archived"})
             flash(
                 "This account has been archived. Ask an administrator to restore access.",
                 "error", )
@@ -142,6 +153,8 @@ def login():
 
         if not user.password_hash:
             logger.warning("LOGIN FAIL: user has no password hash for %r", identifier)
+            security_audit.record("auth.login", outcome="denied", target_user_id=user.id,
+                                  detail={"reason": "no_password"})
             flash("This account doesn't have a password set. Use SSO or ask an admin to set a password.", "error")
             try:
                 return render_template("auth/login.html")
@@ -150,15 +163,25 @@ def login():
                 return render_template("login.html")
 
         pw_ok = check_password_hash(user.password_hash, password)
-        logger.info("LOGIN: password check for %r = %s (pw_len=%d, hash_len=%d)", 
-                     identifier, pw_ok, len(password), len(user.password_hash or ''))
+        logger.info("LOGIN: password check for user_id=%s ok=%s", user.id, pw_ok)
         if not pw_ok:
+            security_audit.record("auth.login", outcome="failure", target_user_id=user.id,
+                                  detail={"reason": "bad_password"})
             flash("Invalid credentials.", "error")
             try:
                 return render_template("auth/login.html")
             except TemplateNotFound as exc:
                 logger.warning("Auth login template missing: %s", exc)
                 return render_template("login.html")
+
+        from services.signup import needs_verification
+        if needs_verification(user):
+            logger.warning("LOGIN FAIL: email not verified user_id=%s", user.id)
+            security_audit.record("auth.login", outcome="denied", target_user_id=user.id,
+                                  detail={"reason": "email_unverified"})
+            flash("Confirm your email address first — we sent you a link. "
+                  "Didn't get it? Request a new one below.", "error")
+            return render_template("auth/signup_sent.html", show_resend=True)
 
         from flask import session as _session
         _session.permanent = True
@@ -177,6 +200,8 @@ def login():
             _db.session.commit()
         except Exception:
             pass
+        security_audit.record("auth.login", actor=user, company_id=user.default_company_id,
+                              target_user_id=user.id, detail={"via": "password"})
 
         # Ensure platform admins keep a company context after restores/DB resets.
         # ``get_default_company`` also performs this fallback, but doing it at
@@ -237,10 +262,13 @@ def login():
 
 
 @auth_bp.route("/forgot-password", methods=["GET", "POST"])
+@limiter.limit("5 per 15 minutes", methods=["POST"])
 def forgot_password():
+    # The reset link is only ever delivered to the account's email address and
+    # the response is identical whether or not an account matched: rendering the
+    # link here let anyone take over any account (incl. platform admins), and a
+    # match/no-match message enumerates accounts.
     sent = False
-    not_found = False
-    reset_url = None
 
     if request.method == "POST":
         identifier = (request.form.get("identifier") or "").strip()
@@ -256,9 +284,10 @@ def forgot_password():
                         User.username == identifier.lower(),
                     )
                 ).first()
-                if user:
+                if user and user.email and getattr(user, "active", True):
                     token = secrets.token_urlsafe(32)
                     expires = datetime.datetime.utcnow() + datetime.timedelta(hours=2)
+                    PasswordResetToken.query.filter_by(user_id=user.id, used=False).update({"used": True})
                     prt = PasswordResetToken(
                         user_id=user.id,
                         token=token,
@@ -266,25 +295,40 @@ def forgot_password():
                     )
                     _db.session.add(prt)
                     _db.session.commit()
+                    security_audit.record("auth.password_reset.requested", target_user_id=user.id)
                     reset_url = url_for("auth.reset_password", token=token, _external=True)
-                    sent = True
-                else:
-                    not_found = True
+                    _send_account_email(
+                        user.email,
+                        "Reset your LUXit password",
+                        render_template("auth/email_password_reset.html", user=user, reset_url=reset_url),
+                    )
             except Exception as exc:
                 _db.session.rollback()
                 logger.error("Forgot password error: %s", exc)
-                not_found = True
+            sent = True
 
     return render_template(
         "auth/forgot_password.html",
         sent=sent,
-        not_found=not_found,
-        reset_url=reset_url,
         admin_email="luke@adiken.com",
     )
 
 
+def _send_account_email(to_email, subject, html):
+    """Deliver an account-security email. Never raises; logs no address."""
+    try:
+        from email_service import EmailService
+        ok = EmailService().send_email(to_email, subject, html)
+    except Exception as exc:
+        logger.error("Account email send failed: %s", type(exc).__name__)
+        ok = False
+    if not ok:
+        logger.error("Account email '%s' could not be delivered", subject)
+    return ok
+
+
 @auth_bp.route("/reset-password/<token>", methods=["GET", "POST"])
+@limiter.limit("10 per hour", methods=["POST"])
 def reset_password(token):
     import datetime
     from extensions import db as _db
@@ -311,8 +355,18 @@ def reset_password(token):
                 user = db.session.get(User, prt.user_id)
                 if user:
                     user.password_hash = generate_password_hash(new_pw)
+                    # A reset means the old password may be known to someone
+                    # else: end every existing session for this account.
+                    user.session_revoked_at = datetime.datetime.utcnow()
                     prt.used = True
+                    # The link was emailed, so using it proves the address.
+                    from models import UserEmailVerification
+                    pending = _db.session.get(UserEmailVerification, user.id)
+                    if pending is not None and pending.verified_at is None and pending.email == user.email:
+                        pending.verified_at = datetime.datetime.utcnow()
                     _db.session.commit()
+                    security_audit.record("auth.password_reset.completed", actor=user,
+                                          company_id=user.default_company_id, target_user_id=user.id)
                     success = True
                 else:
                     error = "User not found."
@@ -325,10 +379,11 @@ def reset_password(token):
 
 
 @auth_bp.route("/forgot-username", methods=["GET", "POST"])
+@limiter.limit("5 per 15 minutes", methods=["POST"])
 def forgot_username():
-    ADMIN_EMAIL = "luke@adiken.com"
-    found_username = None
-    not_found = False
+    # Usernames are emailed, never displayed: showing them let anyone map an
+    # email address to its login name.
+    sent = False
 
     if request.method == "POST":
         email = (request.form.get("email") or "").strip().lower()
@@ -336,20 +391,216 @@ def forgot_username():
             from extensions import db as _db
             try:
                 user = User.query.filter(User.email == email).first()
-                if user:
-                    found_username = user.username
-                else:
-                    not_found = True
+                if user and getattr(user, "active", True):
+                    _send_account_email(
+                        user.email,
+                        "Your LUXit username",
+                        render_template("auth/email_forgot_username.html", user=user,
+                                        login_url=url_for("auth.login", _external=True)),
+                    )
             except SQLAlchemyError:
                 _db.session.rollback()
-                not_found = True
+            sent = True
 
     return render_template(
         "auth/forgot_username.html",
-        found_username=found_username,
-        not_found=not_found,
+        sent=sent,
         admin_email="luke@adiken.com",
     )
+
+
+@auth_bp.route("/signup", methods=["GET", "POST"])
+@limiter.limit("5 per hour;20 per day", methods=["POST"])
+def signup():
+    from services import signup as svc
+    if not svc.signup_enabled():
+        abort(404)
+    if current_user.is_authenticated:
+        return _hub_redirect(current_user)
+    if request.method == "GET":
+        return render_template("auth/signup.html", form={}, errors=[])
+
+    # Bots fill every field; people never see this one.
+    if request.form.get("website"):
+        return render_template("auth/signup_sent.html", show_resend=False)
+
+    data, errors = svc.validate(request.form)
+    if errors:
+        return render_template("auth/signup.html", form=data, errors=errors), 400
+
+    from extensions import _client_ip
+    try:
+        user, status = svc.create_account(data, ip=_client_ip())
+    except SQLAlchemyError:
+        # Most likely a concurrent signup for the same email or username.
+        db.session.rollback()
+        logger.warning("Signup: account creation failed", exc_info=True)
+        return render_template("auth/signup_sent.html", show_resend=False)
+
+    if status == "created":
+        security_audit.record("auth.signup", actor=user, company_id=user.default_company_id,
+                              target_user_id=user.id)
+    if status in ("created", "unverified_existing"):
+        _send_verification_email(user)
+    elif status == "exists":
+        _send_account_email(
+            user.email,
+            "Someone tried to create a LUXit account with your email",
+            render_template(
+                "auth/email_signup_existing.html",
+                user=user,
+                login_url=url_for("auth.login", _external=True),
+                reset_url=url_for("auth.forgot_password", _external=True),
+            ),
+        )
+    return render_template("auth/signup_sent.html", show_resend=False)
+
+
+def _send_verification_email(user):
+    from services import signup as svc
+    if not svc.may_send(user):
+        return False
+    verify_url = url_for("auth.verify_email", token=svc.make_token(user.id, user.email), _external=True)
+    ok = _send_account_email(
+        user.email,
+        "Confirm your email for LUXit",
+        render_template("auth/email_verify.html", user=user, verify_url=verify_url),
+    )
+    svc.mark_sent(user)
+    return ok
+
+
+@auth_bp.route("/verify-email/<token>")
+@limiter.limit("30 per hour")
+def verify_email(token):
+    from services import signup as svc
+    user, outcome = svc.verify_token(token)
+    if outcome == "verified" and user is not None:
+        security_audit.record("auth.email_verified", actor=user, company_id=user.default_company_id,
+                              target_user_id=user.id)
+    if outcome == "verified" and user is not None and user.is_active:
+        from flask import session as _session
+        _session.permanent = True
+        login_user(user, remember=True)
+        revoked = getattr(user, "session_revoked_at", None)
+        _session["user_session_revoked_at"] = revoked.isoformat() if revoked else None
+        flash("Email confirmed. Choose a plan to finish setting up your workspace.", "success")
+        return redirect(url_for("main.billing_page"))
+    return render_template("auth/verify_result.html", outcome=outcome)
+
+
+@auth_bp.route("/verify-email/resend", methods=["POST"])
+@limiter.limit("5 per hour", methods=["POST"])
+def resend_verification():
+    from services import signup as svc
+    email = (request.form.get("email") or "").strip().lower()
+    if email:
+        user = User.query.filter(User.email == email).first()
+        if user is not None and user.is_active and svc.needs_verification(user):
+            _send_verification_email(user)
+    # Same answer whether or not the address has an account.
+    return render_template("auth/signup_sent.html", show_resend=False, resent=True)
+
+
+@auth_bp.route("/invite/<token>", methods=["GET", "POST"])
+@limiter.limit("20 per hour", methods=["POST"])
+def accept_invite(token):
+    """Join a workspace from an emailed invitation (T-5).
+
+    Holding the token proves control of the invited inbox, so it may reveal
+    whether that address already has an account and counts as verifying it.
+    """
+    from services import invitations as inv_svc
+    from services import signup as signup_svc
+
+    invitation, state = inv_svc.find_by_token(token)
+    company = db.session.get(Company, invitation.company_id) if invitation else None
+    if state != "pending" or company is None:
+        return render_template("auth/invite_result.html", outcome=state if state != "pending" else "invalid")
+
+    def _join(user):
+        try:
+            inv_svc.accept(invitation, user)
+            db.session.commit()
+        except inv_svc.InvitationError as exc:
+            db.session.rollback()
+            return render_template("auth/invite_result.html", outcome="error", message=str(exc), company=company), 409
+        security_audit.record("team.invitation.accepted", actor=user, company_id=company.id, target_user_id=user.id,
+                              detail={"invitation_id": invitation.id, "role": invitation.role, "via": "existing_account"})
+        flash(f"You've joined {company.name}.", "success")
+        return _hub_redirect(user)
+
+    if current_user.is_authenticated:
+        if (current_user.email or "").strip().lower() != invitation.email:
+            return render_template("auth/invite_result.html", outcome="wrong_account", company=company,
+                                   invitation=invitation), 403
+        if request.method == "POST":
+            return _join(current_user)
+        return render_template("auth/invite_accept.html", mode="join", company=company, invitation=invitation,
+                               token=token, errors=[])
+
+    existing = User.query.filter(db.func.lower(User.email) == invitation.email).first()
+    if existing is not None:
+        from models import UserEmailVerification
+        pending = db.session.get(UserEmailVerification, existing.id)
+        if pending is not None and pending.verified_at is None:
+            from datetime import datetime as _dt
+            pending.verified_at = _dt.utcnow()
+            db.session.commit()
+        return render_template("auth/invite_accept.html", mode="signin", company=company, invitation=invitation,
+                               token=token, errors=[],
+                               login_url=url_for("auth.login", next=url_for("auth.accept_invite", token=token)))
+
+    if request.method == "GET":
+        return render_template("auth/invite_accept.html", mode="create", company=company, invitation=invitation,
+                               token=token, errors=[], form={})
+
+    form = {"full_name": (request.form.get("full_name") or "").strip()}
+    password = request.form.get("password") or ""
+    errors = []
+    if len(form["full_name"]) > 128:
+        errors.append("Name is too long.")
+    if len(password) < signup_svc.MIN_PASSWORD:
+        errors.append(f"Password must be at least {signup_svc.MIN_PASSWORD} characters.")
+    elif password != (request.form.get("confirm_password") or ""):
+        errors.append("Passwords do not match.")
+    if errors:
+        return render_template("auth/invite_accept.html", mode="create", company=company, invitation=invitation,
+                               token=token, errors=errors, form=form), 400
+
+    from werkzeug.security import generate_password_hash
+    first, _, last = form["full_name"].partition(" ")
+    user = User(
+        username=signup_svc._unique_username(invitation.email),
+        email=invitation.email,
+        password_hash=generate_password_hash(password),
+        is_admin=False,
+        default_company_id=company.id,
+        first_name=first[:64] or None,
+        last_name=last[:64] or None,
+    )
+    try:
+        db.session.add(user)
+        db.session.flush()
+        inv_svc.accept(invitation, user)
+        db.session.commit()
+    except inv_svc.InvitationError as exc:
+        db.session.rollback()
+        return render_template("auth/invite_result.html", outcome="error", message=str(exc), company=company), 409
+    except SQLAlchemyError:
+        db.session.rollback()
+        logger.warning("Invite: account creation failed", exc_info=True)
+        return render_template("auth/invite_result.html", outcome="error", company=company,
+                               message="We couldn't create your account. Try the link again."), 409
+
+    security_audit.record("team.invitation.accepted", actor=user, company_id=company.id, target_user_id=user.id,
+                          detail={"invitation_id": invitation.id, "role": invitation.role, "via": "new_account"})
+    from flask import session as _session
+    _session.permanent = True
+    login_user(user, remember=True)
+    _session["user_session_revoked_at"] = None
+    flash(f"Welcome to {company.name}.", "success")
+    return _hub_redirect(user)
 
 
 @auth_bp.route("/register", methods=["GET", "POST"])
@@ -465,11 +716,13 @@ def debug_session():
     from flask_login import current_user
     from models import User
 
-    is_dev = os.environ.get("FLASK_ENV") == "development" or os.environ.get("REPLIT_DEPLOYMENT") or os.environ.get("REPL_ID")
-    remote_addr = request.headers.get("X-Forwarded-For", request.remote_addr or "").split(",")[0].strip()
-    is_local = remote_addr in ("127.0.0.1", "::1", "localhost")
+    from diagnostics_service import is_diagnostics_admin
 
-    if not is_dev and not is_local:
+    # X-Forwarded-For is client-controlled and behind nginx remote_addr is
+    # always loopback, so neither can prove a local caller.
+    is_dev = os.environ.get("FLASK_ENV") == "development" or os.environ.get("REPLIT_DEPLOYMENT") or os.environ.get("REPL_ID")
+
+    if not is_dev and not is_diagnostics_admin(current_user):
         abort(404)
 
     try:
@@ -489,7 +742,6 @@ def debug_session():
             'scheme': request.environ.get('wsgi.url_scheme'),
             'forwarded_proto': request.headers.get('X-Forwarded-Proto'),
             'cookie_names': [c for c in request.cookies],
-            'secret_key_prefix': str(current_app.secret_key)[:8] + '...' if current_app.secret_key else None,
         })
     except Exception as exc:
         return jsonify({'error': str(exc)}), 500

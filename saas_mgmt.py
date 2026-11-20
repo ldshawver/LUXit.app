@@ -30,15 +30,26 @@ import os
 from datetime import datetime, timedelta, timezone
 
 import requests
-from flask import Blueprint, abort, flash, jsonify, redirect, render_template, request, url_for
+from flask import Blueprint, abort, current_app, flash, jsonify, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
 from extensions import csrf, db
+from services import security_audit
 
 logger = logging.getLogger(__name__)
 
 saas_bp = Blueprint("saas", __name__, url_prefix="/saas")
+
+
+@saas_bp.before_request
+def _platform_admin_only():
+    # Every /saas page reads or edits all tenants' accounts, licenses and billing
+    # state, so it is the platform operator's console, not a tenant feature.
+    if not current_user.is_authenticated:
+        return current_app.login_manager.unauthorized()
+    if not getattr(current_user, "is_admin", False):
+        abort(403)
 
 # ---------------------------------------------------------------------------
 # Default onboarding checklist applied to every new project
@@ -191,13 +202,36 @@ def edit_account(account_id):
         "supabase_tenant_id", "mypaylink_id", "n8n_contact_id",
         "subscription_tier", "onboarding_status", "implementation_status", "saas_notes",
     ]
+    changed = []
     for f in fields:
         val = request.form.get(f, "").strip()
         if val != "":
+            if getattr(acct, f) != val:
+                changed.append(f)
             setattr(acct, f, val)
     db.session.commit()
+    security_audit.record("platform.account.updated", company_id=acct.id, detail={"fields": changed})
     flash(f"Account '{acct.name}' updated.", "success")
     _log("account.updated", "manual", company_id=acct.id, payload={"account_id": acct.id})
+    return redirect(url_for("saas.dashboard") + "#accounts")
+
+
+@saas_bp.route("/accounts/<int:account_id>/reopen", methods=["POST"])
+@login_required
+def reopen_account(account_id):
+    """Platform admin reopens a closed workspace before its purge date.
+    The phone/SMS license is not restored automatically."""
+    from models import Company
+    from services.workspace_lifecycle import ClosureError, reopen_workspace
+    acct = Company.query.get_or_404(account_id)
+    try:
+        reopen_workspace(acct, current_user)
+    except ClosureError as exc:
+        db.session.rollback()
+        flash(exc.message, "error")
+        return redirect(url_for("saas.dashboard") + "#accounts")
+    security_audit.record("platform.account.reopened", company_id=acct.id)
+    flash(f"Workspace '{acct.name}' reopened.", "success")
     return redirect(url_for("saas.dashboard") + "#accounts")
 
 
@@ -234,6 +268,8 @@ def create_license():
 
     db.session.add(lic)
     db.session.commit()
+    security_audit.record("platform.license.created", company_id=lic.company_id,
+                          detail={"license_id": lic.id, "status": lic.status})
     _log("license.created", "manual", company_id=lic.company_id,
          payload={"license_id": lic.id, "app": lic.app_name})
     flash("License created.", "success")
@@ -245,10 +281,13 @@ def create_license():
 def edit_license(lic_id):
     from models import SaasLicense
     lic = SaasLicense.query.get_or_404(lic_id)
+    changed = []
     for f in ["app_name", "plan", "status", "tenant_url", "stripe_product_id",
               "stripe_price_id", "notes"]:
         val = request.form.get(f, "").strip()
         if val != "":
+            if getattr(lic, f) != val:
+                changed.append(f)
             setattr(lic, f, val)
     for df in ["start_date", "renewal_date"]:
         val = request.form.get(df, "").strip()
@@ -258,6 +297,8 @@ def edit_license(lic_id):
             except ValueError:
                 pass
     db.session.commit()
+    security_audit.record("platform.license.updated", company_id=lic.company_id,
+                          detail={"license_id": lic.id, "fields": changed, "status": lic.status})
     flash("License updated.", "success")
     return redirect(url_for("saas.dashboard") + "#licenses")
 
@@ -267,8 +308,10 @@ def edit_license(lic_id):
 def delete_license(lic_id):
     from models import SaasLicense
     lic = SaasLicense.query.get_or_404(lic_id)
+    company_id = lic.company_id
     db.session.delete(lic)
     db.session.commit()
+    security_audit.record("platform.license.deleted", company_id=company_id, detail={"license_id": lic_id})
     flash("License deleted.", "success")
     return redirect(url_for("saas.dashboard") + "#licenses")
 
@@ -456,18 +499,21 @@ stripe_webhook_bp = Blueprint("stripe_webhook", __name__)
 # Stripe Checkout & Customer Portal — public-facing API
 # ---------------------------------------------------------------------------
 
-def _user_can_access_company(user, company):
-    """Authorization check: does the current user have access to a company?"""
+def _user_can_manage_billing(user, company):
+    """Can this user start checkout / open the portal / report usage for company?
+
+    Owners and admins of the workspace only (or a platform admin). Plain
+    membership isn't enough: the Stripe portal can cancel the subscription.
+    """
     if not user or not user.is_authenticated or not company:
         return False
     if getattr(user, "is_admin", False):
         return True
-    if user.default_company_id == company.id:
-        return True
     from models import UserCompanyAccess
-    return UserCompanyAccess.query.filter_by(
+    access = UserCompanyAccess.query.filter_by(
         user_id=user.id, company_id=company.id
-    ).first() is not None
+    ).first()
+    return access is not None and access.can_admin()
 
 
 @stripe_webhook_bp.route("/api/stripe/create-checkout-session", methods=["POST"])
@@ -521,7 +567,7 @@ def create_checkout_session():
         company = db.session.get(Company, current_user.default_company_id)
     if not company:
         return jsonify({"error": "company not found"}), 404
-    if not _user_can_access_company(current_user, company):
+    if not _user_can_manage_billing(current_user, company):
         return jsonify({"error": "forbidden"}), 403
 
     # Server-side guard: if this company has already paid the one-time setup
@@ -547,6 +593,8 @@ def create_checkout_session():
         logger.exception("Stripe checkout session creation failed")
         return jsonify({"error": "checkout session creation failed"}), 502
 
+    security_audit.record("billing.checkout.created", company_id=company.id,
+                          detail={"lookup_key": lookup_key, "include_setup_fee": apply_setup_fee})
     _log("checkout.session.created", "stripe",
          company_id=company.id,
          payload={
@@ -586,7 +634,7 @@ def create_portal_session():
         company = db.session.get(Company, current_user.default_company_id)
     if not company:
         return jsonify({"error": "company not found"}), 404
-    if not _user_can_access_company(current_user, company):
+    if not _user_can_manage_billing(current_user, company):
         return jsonify({"error": "forbidden"}), 403
     if not company.stripe_customer_id:
         return jsonify({"error": "no stripe customer on file for this company"}), 400
@@ -600,6 +648,7 @@ def create_portal_session():
         logger.exception("Stripe portal session creation failed")
         return jsonify({"error": "portal session creation failed"}), 502
 
+    security_audit.record("billing.portal.created", company_id=company.id)
     _log("portal.session.created", "stripe",
          company_id=company.id,
          payload={"session_id": getattr(session, "id", None)},
@@ -616,8 +665,7 @@ def report_contact_usage_endpoint():
     """Manual trigger for the ``contacts_usage`` metered usage record.
 
     Body: ``{"company_id": "..."}``. Authorization is the same as
-    ``create-checkout-session``: the caller must be admin or attached to the
-    company. Intended for an admin-only "Recompute usage now" button or a
+    ``create-checkout-session``: platform admin, or owner/admin of the company. Intended for an admin-only "Recompute usage now" button or a
     scheduled job hitting it as the admin user; a real cron should call the
     underlying ``services.stripe_billing.report_contact_usage`` directly.
     """
@@ -636,7 +684,7 @@ def report_contact_usage_endpoint():
         company = db.session.get(Company, current_user.default_company_id)
     if not company:
         return jsonify({"error": "company not found"}), 404
-    if not _user_can_access_company(current_user, company):
+    if not _user_can_manage_billing(current_user, company):
         return jsonify({"error": "forbidden"}), 403
 
     try:
@@ -647,6 +695,56 @@ def report_contact_usage_endpoint():
         logger.exception("report_contact_usage failed for company %s", company.id)
         return jsonify({"error": "usage reporting failed", "detail": str(exc)[:200]}), 502
     return jsonify(result), 200
+
+
+# Events that overwrite a workspace's billing status. Stripe does not
+# guarantee delivery order and retries failed deliveries for days, so each one
+# is checked against the subscription on file and the newest event applied.
+_STATUS_EVENTS = {
+    "invoice.payment_succeeded", "invoice.payment_failed",
+    "customer.subscription.updated", "customer.subscription.deleted",
+}
+
+
+def _stale_billing_event(company, event, obj):
+    """Why this event must not change ``company``'s billing state, or None.
+
+    Records the event as the newest applied one when it is accepted.
+    """
+    ev_type = event.get("type", "")
+    if ev_type not in _STATUS_EVENTS and ev_type != "checkout.session.completed":
+        return None
+    if ev_type in _STATUS_EVENTS:
+        ev_sub = obj.get("id") if ev_type.startswith("customer.subscription.") else obj.get("subscription")
+        current = company.stripe_subscription_id
+        if current and ev_sub and ev_sub != current:
+            # A brand-new subscription made in the portal may replace one that
+            # already ended; anything else about another subscription is history.
+            adopt = (ev_type == "customer.subscription.updated"
+                     and obj.get("status") in ("active", "trialing")
+                     and company.billing_status not in ("active", "grace_period"))
+            if not adopt:
+                return f"superseded subscription {ev_sub} (current {current})"
+
+    from models import BillingEventCursor
+    created = event.get("created")
+    if not isinstance(created, int):
+        return None
+    try:
+        with db.session.begin_nested():
+            cursor = db.session.get(BillingEventCursor, company.id, with_for_update=True)
+            if cursor and ev_type in _STATUS_EVENTS and created < cursor.last_event_created:
+                return f"out of order (created {created} < applied {cursor.last_event_created})"
+            if cursor is None:
+                db.session.add(BillingEventCursor(company_id=company.id, last_event_created=created,
+                                                  last_event_id=event.get("id")))
+            elif created >= cursor.last_event_created:
+                cursor.last_event_created = created
+                cursor.last_event_id = event.get("id")
+    except SQLAlchemyError:
+        # Migration not applied yet: keep processing without the ordering check.
+        logger.error("billing_event_cursor unavailable; Stripe ordering check skipped")
+    return None
 
 
 @stripe_webhook_bp.route("/api/stripe/webhook", methods=["POST"])
@@ -858,6 +956,12 @@ def stripe_webhook():
     if not company and stripe_cid:
         logger.warning("Stripe webhook %s for unknown customer %s — logging only", ev_type, stripe_cid)
 
+    stale = _stale_billing_event(company, event, obj) if company else None
+    if stale:
+        logger.info("Stripe[%s] %s for company %s ignored: %s", ev_id, ev_type, company.id, stale)
+        _finalize("skipped", error=stale)
+        return jsonify({"received": True, "event_id": ev_id, "ignored": stale}), 200
+
     try:
         try:
             from services.license_service import sync_license_from_stripe_event
@@ -1057,7 +1161,10 @@ def stripe_webhook():
                     company.billing_status = "active"
                     company.grace_period_ends_at = None
                 elif new_status == "past_due":
+                    from services.stripe_billing import grace_period_end
                     company.billing_status = "grace_period"
+                    if not company.grace_period_ends_at:
+                        company.grace_period_ends_at = grace_period_end()
                 elif new_status in ("canceled", "unpaid", "incomplete_expired"):
                     company.billing_status = "canceled"
                 elif new_status == "incomplete":

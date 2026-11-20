@@ -332,11 +332,10 @@ class User(UserMixin, db.Model):
 
     @property
     def is_admin_user(self):
-        return (
-            self.is_admin
-            or self.segment == "admin"
-            or (self.tags and "admin" in self.tags.lower())
-        )
+        # Only the is_admin flag grants platform admin. segment/tags are
+        # self-editable profile fields (PUT /api/user/profile), so honoring
+        # "admin" there let any user promote themselves.
+        return bool(self.is_admin)
 
     # -------------------------
     # 🔑 DEFAULT COMPANY LOGIC
@@ -1137,6 +1136,39 @@ class ContactTask(db.Model):
     contact = db.relationship("Contact", backref=db.backref("contact_tasks", lazy="dynamic"))
 
 
+class RelationshipMemory(db.Model):
+    """Something worth remembering about a relationship (M2): a commitment,
+    a follow-up, a fact or a summary. Detected or AI-derived items start
+    ``pending`` and are confirmed, corrected or rejected by a person; every
+    item cites the rows it came from in ``source_refs``.
+    """
+    __tablename__ = "relationship_memory"
+    __table_args__ = (db.UniqueConstraint("company_id", "dedupe_key", name="uq_relationship_memory_dedupe"),)
+
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id", ondelete="CASCADE"), nullable=False, index=True)
+    contact_id = db.Column(db.Integer, db.ForeignKey("contact.id", ondelete="CASCADE"), nullable=False, index=True)
+    kind = db.Column(db.String(30), nullable=False)            # commitment | follow_up | fact | summary
+    text = db.Column(db.Text, nullable=False)
+    corrected_text = db.Column(db.Text, nullable=True)
+    due_at = db.Column(db.DateTime, nullable=True, index=True)
+    origin = db.Column(db.String(20), nullable=False, default="rule")   # rule | ai | user
+    confidence = db.Column(db.Float, nullable=True)
+    review_state = db.Column(db.String(20), nullable=False, default="pending", index=True)  # pending | confirmed | rejected
+    source_refs = db.Column(JSON, default=list)
+    dedupe_key = db.Column(db.String(160), nullable=True)
+    task_id = db.Column(db.Integer, db.ForeignKey("contact_task.id", ondelete="SET NULL"), nullable=True)
+    created_by_user_id = db.Column(db.Integer, db.ForeignKey("user.id", ondelete="SET NULL"), nullable=True)
+    reviewed_by_user_id = db.Column(db.Integer, db.ForeignKey("user.id", ondelete="SET NULL"), nullable=True)
+    reviewed_at = db.Column(db.DateTime, nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    @property
+    def effective_text(self):
+        return self.corrected_text or self.text
+
+
 class ContactIntelligenceJob(db.Model):
     __tablename__ = "contact_intelligence_job"
     id = db.Column(db.Integer, primary_key=True)
@@ -1316,6 +1348,26 @@ class ContactActivity(db.Model):
     
     contact = db.relationship("Contact", backref="activities")
     company = db.relationship("Company", backref="contact_activities")
+
+    # Logged-activity details kept in extra_data (no columns of their own).
+    def _extra(self, key):
+        return self.extra_data.get(key) if isinstance(self.extra_data, dict) else None
+
+    @property
+    def subject(self):
+        return self.title
+
+    @property
+    def outcome(self):
+        return self._extra("outcome")
+
+    @property
+    def duration_minutes(self):
+        return self._extra("duration_minutes")
+
+    @property
+    def is_completed(self):
+        return bool(self._extra("is_completed"))
 
 
 class AnalyticsData(db.Model):
@@ -1636,6 +1688,23 @@ class MarketingAuditLog(db.Model):
     details = db.Column(db.JSON)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class ProductEvent(db.Model):
+    """First-party product analytics: one row per real user action (segment
+    created, campaign scheduled, ...). Ids and counts only -- never names,
+    phones, emails or message bodies. Written by services/product_events.py;
+    dashboards read these rows rather than estimating."""
+    __tablename__ = "product_event"
+
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = db.Column(db.Integer, nullable=True)
+    event = db.Column(db.String(80), nullable=False, index=True)
+    entity_type = db.Column(db.String(40))
+    entity_id = db.Column(db.Integer)
+    properties = db.Column(db.JSON)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False, index=True)
 
 
 class PromotionalOptInSolicitation(db.Model):
@@ -2164,6 +2233,19 @@ class Deal(db.Model):
     
     company = db.relationship("Company", backref="deals")
     contact = db.relationship("Contact", backref="deals")
+
+
+class DealActivity(db.Model):
+    """Timeline entry on a deal (stage changes, notes). Tenant ownership comes
+    from the parent deal; every route checks the deal's company first."""
+    __tablename__ = "deal_activity"
+
+    id = db.Column(db.Integer, primary_key=True)
+    deal_id = db.Column(db.Integer, db.ForeignKey("deal.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True)
+    activity_type = db.Column(db.String(50), nullable=False, default="note")
+    description = db.Column(db.Text)
+    activity_date = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
 
 
 class LeadScore(db.Model):
@@ -3575,6 +3657,93 @@ class PasswordResetToken(db.Model):
     user = db.relationship("User", backref=db.backref("reset_tokens", lazy="dynamic"))
 
 
+class UserEmailVerification(db.Model):
+    """Email-verification state for self-serve signups.
+
+    Kept out of the ``user`` table so loading a User never depends on this
+    migration. Accounts without a row (every pre-signup account) are treated
+    as verified.
+    """
+    __tablename__ = "user_email_verification"
+
+    user_id           = db.Column(db.Integer, db.ForeignKey("user.id", ondelete="CASCADE"), primary_key=True)
+    email             = db.Column(db.String(120), nullable=False)
+    verified_at       = db.Column(db.DateTime, nullable=True)
+    terms_accepted_at = db.Column(db.DateTime, nullable=True)
+    signup_ip         = db.Column(db.String(64), nullable=True)
+    last_sent_at      = db.Column(db.DateTime, nullable=True)
+    created_at        = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+
+class CompanyPlanPolicy(db.Model):
+    """How a workspace came to exist, for plan entitlements (T-8).
+
+    Separate from ``company`` so loading a Company never depends on this
+    migration. Workspaces without a row (every pre-SaaS customer) keep
+    unrestricted access; self-serve signups are limited until they subscribe.
+    """
+    __tablename__ = "company_plan_policy"
+
+    company_id  = db.Column(db.Integer, db.ForeignKey("company.id", ondelete="CASCADE"), primary_key=True)
+    plan_source = db.Column(db.String(32), nullable=False, default="self_serve")
+    created_at  = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+
+class BillingEventCursor(db.Model):
+    """Newest status-changing Stripe event applied per workspace, so a late
+    or retried older event can't overwrite newer billing state. Separate from
+    ``company`` so loading a Company never depends on this migration."""
+    __tablename__ = "billing_event_cursor"
+
+    company_id         = db.Column(db.Integer, db.ForeignKey("company.id", ondelete="CASCADE"), primary_key=True)
+    last_event_created = db.Column(db.BigInteger, nullable=False)
+    last_event_id      = db.Column(db.String(255))
+    updated_at         = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+
+class TeamInvitation(db.Model):
+    """Single-use invitation into a workspace (T-5). Only the token's hash is stored."""
+    __tablename__ = "team_invitation"
+
+    id                 = db.Column(db.Integer, primary_key=True)
+    company_id         = db.Column(db.Integer, db.ForeignKey("company.id", ondelete="CASCADE"), nullable=False, index=True)
+    email              = db.Column(db.String(120), nullable=False, index=True)
+    role               = db.Column(db.String(32), nullable=False, default="member")
+    token_hash         = db.Column(db.String(64), nullable=False, unique=True)
+    invited_by_user_id = db.Column(db.Integer, db.ForeignKey("user.id", ondelete="SET NULL"), nullable=True)
+    created_at         = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    expires_at         = db.Column(db.DateTime, nullable=False)
+    accepted_at        = db.Column(db.DateTime, nullable=True)
+    accepted_user_id   = db.Column(db.Integer, db.ForeignKey("user.id", ondelete="SET NULL"), nullable=True)
+    revoked_at         = db.Column(db.DateTime, nullable=True)
+
+    @property
+    def is_pending(self):
+        return not self.accepted_at and not self.revoked_at and self.expires_at > datetime.utcnow()
+
+
+class SecurityAuditEvent(db.Model):
+    """Append-only record of a security-relevant action (sign-in, role change,
+    invitation, billing session, platform edit). Written by ``services.security_audit``.
+
+    No foreign keys on purpose: a record must outlive the user or company it
+    names, and the Postgres migration rejects UPDATE/DELETE on this table.
+    ``detail`` is compact JSON built from an allowlist; it never holds
+    passwords, tokens or message content.
+    """
+    __tablename__ = "security_audit_event"
+
+    id             = db.Column(db.Integer, primary_key=True)
+    created_at     = db.Column(db.DateTime, default=datetime.utcnow, nullable=False, index=True)
+    action         = db.Column(db.String(64), nullable=False, index=True)
+    outcome        = db.Column(db.String(16), nullable=False, default="success")
+    actor_user_id  = db.Column(db.Integer, nullable=True, index=True)
+    company_id     = db.Column(db.Integer, nullable=True, index=True)
+    target_user_id = db.Column(db.Integer, nullable=True)
+    ip             = db.Column(db.String(64), nullable=True)
+    detail         = db.Column(db.Text, nullable=True)
+
+
 # ---------------------------------------------------------------------------
 # Twilio Multi-Tenant SMS / Call Platform
 # ---------------------------------------------------------------------------
@@ -4502,6 +4671,68 @@ class ApiHubAuditLog(db.Model):
 # Phase A — Multi-Number VoIP Architecture
 # ======
 
+class BusinessIdentity(db.Model):
+    """How a workspace presents itself on one line of business (M4): a name,
+    the phone numbers it texts/calls from, and its email sender + signature.
+    Routing: a conversation belongs to the identity owning its business
+    number; a workspace may have one default identity.
+    """
+    __tablename__ = "business_identity"
+
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id", ondelete="CASCADE"), nullable=False, index=True)
+    name = db.Column(db.String(120), nullable=False)
+    email_from_name = db.Column(db.String(120), nullable=True)
+    email_from_address = db.Column(db.String(255), nullable=True)
+    signature = db.Column(db.Text, nullable=True)
+    is_default = db.Column(db.Boolean, default=False, nullable=False)
+    is_active = db.Column(db.Boolean, default=True, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class BusinessIdentityNumber(db.Model):
+    """A business phone number belongs to at most one identity."""
+    __tablename__ = "business_identity_number"
+
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id", ondelete="CASCADE"), nullable=False, index=True)
+    identity_id = db.Column(db.Integer, db.ForeignKey("business_identity.id", ondelete="CASCADE"), nullable=False, index=True)
+    phone_number_id = db.Column(db.Integer, db.ForeignKey("twilio_phone_number.id", ondelete="CASCADE"),
+                                nullable=False, unique=True)
+
+
+class EmailMessage(db.Model):
+    """One 1:1 email to or from a contact (M4 communication history).
+
+    Inbound mail comes from a mailbox adapter; outbound from LUXit sends.
+    ``provider_message_id`` is unique per workspace so re-syncing a mailbox
+    never duplicates history. Unknown senders are stored unlinked
+    (``contact_id`` NULL) rather than creating contacts from email.
+    """
+    __tablename__ = "email_message"
+    __table_args__ = (db.UniqueConstraint("company_id", "provider_message_id", name="uq_email_message_provider_id"),)
+
+    id = db.Column(db.Integer, primary_key=True)
+    company_id = db.Column(db.Integer, db.ForeignKey("company.id", ondelete="CASCADE"), nullable=False, index=True)
+    contact_id = db.Column(db.Integer, db.ForeignKey("contact.id", ondelete="SET NULL"), nullable=True, index=True)
+    identity_id = db.Column(db.Integer, db.ForeignKey("business_identity.id", ondelete="SET NULL"), nullable=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id", ondelete="SET NULL"), nullable=True)
+    direction = db.Column(db.String(10), nullable=False)          # inbound | outbound
+    mailbox = db.Column(db.String(255), nullable=True)
+    from_address = db.Column(db.String(255), nullable=True)
+    to_addresses = db.Column(JSON, default=list)
+    cc_addresses = db.Column(JSON, default=list)
+    subject = db.Column(db.String(500), nullable=True)
+    body_text = db.Column(db.Text, nullable=True)
+    thread_key = db.Column(db.String(255), nullable=True, index=True)
+    provider = db.Column(db.String(40), nullable=True)            # graph | gmail | smtp | manual
+    provider_message_id = db.Column(db.String(255), nullable=True)
+    status = db.Column(db.String(30), nullable=False, default="received")
+    occurred_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False, index=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+
 class TwilioPhoneNumber(db.Model):
     """One row per Twilio phone number. Single source of truth for routing.
     TwilioAccount holds credentials; TwilioPhoneNumber holds per-number config."""
@@ -4904,3 +5135,147 @@ class PinnedPhoneFavorite(db.Model):
         db.UniqueConstraint("user_id", "company_id", "sort_order",
                             name="uq_pinned_fav_user_co_order"),
     )
+
+
+# ── LUX Connect native app (iOS / Android) ───────────────────────────────────
+# Native devices authenticate with opaque bearer tokens rather than the web
+# session cookie, so they get their own device + session tables. PWADevice is
+# deliberately left untouched: its approval/lifecycle semantics belong to
+# browser devices and the existing PWA routing.
+
+class MobileDevice(db.Model):
+    """One installed copy of the LUX Connect native app for one user + tenant."""
+    __tablename__ = "mobile_device"
+
+    id           = db.Column(db.Integer, primary_key=True)
+    company_id   = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=False, index=True)
+    user_id      = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, index=True)
+    # Random per-install id generated by the app and kept in the keychain /
+    # keystore. Never reused across users.
+    device_uid   = db.Column(db.String(64), nullable=False)
+    platform     = db.Column(db.String(16), nullable=False)          # ios | android
+    device_name  = db.Column(db.String(120))
+    model        = db.Column(db.String(120))
+    os_version   = db.Column(db.String(40))
+    app_version  = db.Column(db.String(40))
+    # active | pending_approval | signed_out | revoked
+    status       = db.Column(db.String(20), nullable=False, default="active", index=True)
+    ring_enabled = db.Column(db.Boolean, nullable=False, default=True)
+    # Alert-push token for messages/voicemail (APNs device token on iOS, FCM
+    # registration token on Android). Incoming *calls* use Twilio's own VoIP
+    # push binding and never go through this token.
+    push_token            = db.Column(db.String(512))
+    push_token_type       = db.Column(db.String(16))                 # apns | fcm
+    apns_environment      = db.Column(db.String(16))                 # sandbox | production
+    push_token_updated_at = db.Column(db.DateTime)
+    # Set when the app reports a successful Twilio Voice push registration.
+    voice_registered_at   = db.Column(db.DateTime)
+    voice_registration_error = db.Column(db.String(300))
+    # SHA-256 of the token the Voice SDK registered with Twilio (PushKit VoIP
+    # token on iOS, FCM token on Android). Used to retire another user's row
+    # that still holds a binding on this same handset.
+    voice_token_hash = db.Column(db.String(64), index=True)
+    last_seen_at = db.Column(db.DateTime, default=datetime.utcnow)
+    revoked_at   = db.Column(db.DateTime)
+    revoked_by_user_id = db.Column(db.Integer, db.ForeignKey("user.id"))
+    created_at   = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at   = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    user    = db.relationship("User", foreign_keys=[user_id])
+    company = db.relationship("Company")
+
+    __table_args__ = (
+        db.UniqueConstraint("company_id", "user_id", "device_uid", name="uq_mobile_device_user_uid"),
+    )
+
+
+class MobileSession(db.Model):
+    """Bearer session for a MobileDevice. Only SHA-256 hashes of tokens are stored."""
+    __tablename__ = "mobile_session"
+
+    id                 = db.Column(db.Integer, primary_key=True)
+    mobile_device_id   = db.Column(db.Integer, db.ForeignKey("mobile_device.id"), nullable=False, index=True)
+    user_id            = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, index=True)
+    company_id         = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=False, index=True)
+    access_token_hash  = db.Column(db.String(64), nullable=False, unique=True)
+    access_expires_at  = db.Column(db.DateTime, nullable=False)
+    refresh_token_hash = db.Column(db.String(64), nullable=False, unique=True)
+    refresh_expires_at = db.Column(db.DateTime, nullable=False)
+    # Rotation chain: a refresh produces a new row and marks this one rotated.
+    rotated_at         = db.Column(db.DateTime)
+    rotated_to_id      = db.Column(db.Integer)
+    revoked_at         = db.Column(db.DateTime)
+    revoke_reason      = db.Column(db.String(40))
+    last_used_at       = db.Column(db.DateTime)
+    created_ip         = db.Column(db.String(64))
+    created_at         = db.Column(db.DateTime, default=datetime.utcnow)
+
+    device = db.relationship("MobileDevice")
+
+
+class MobileAuthAttempt(db.Model):
+    """Failed native sign-in attempts, for throttling (no passwords stored)."""
+    __tablename__ = "mobile_auth_attempt"
+
+    id              = db.Column(db.Integer, primary_key=True)
+    identifier_hash = db.Column(db.String(64), nullable=False, index=True)
+    ip              = db.Column(db.String(64), index=True)
+    created_at      = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+
+
+class MobileMediaUpload(db.Model):
+    """Outbound MMS attachment uploaded by the native app.
+
+    Twilio fetches MMS media from a public URL, so each upload gets a long
+    random token and a short expiry. Bytes live in the database so every app
+    worker (and every release directory) can serve them.
+    """
+    __tablename__ = "mobile_media_upload"
+
+    id           = db.Column(db.Integer, primary_key=True)
+    company_id   = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=False, index=True)
+    user_id      = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    public_token = db.Column(db.String(64), nullable=False, unique=True)
+    content_type = db.Column(db.String(100), nullable=False)
+    size_bytes   = db.Column(db.Integer, nullable=False)
+    sha256       = db.Column(db.String(64), nullable=False)
+    data         = db.Column(db.LargeBinary, nullable=False)
+    expires_at   = db.Column(db.DateTime, nullable=False)
+    attached_message_sid = db.Column(db.String(64))
+    created_at   = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class PhoneNumberMessagingRegistration(db.Model):
+    """Carrier registration state (US A2P 10DLC / toll-free verification) per number.
+
+    Populated read-only from Twilio by scripts/check_messaging_registration.py.
+    ``status``: registered | pending | not_registered | toll_free_verified |
+    toll_free_pending | unknown. Absence of a row means "unknown" and never
+    blocks a send, so existing behaviour is unchanged until a check has run.
+    """
+    __tablename__ = "phone_number_messaging_registration"
+
+    id                    = db.Column(db.Integer, primary_key=True)
+    company_id            = db.Column(db.Integer, db.ForeignKey("company.id"), nullable=False, index=True)
+    phone_number_id       = db.Column(db.Integer, db.ForeignKey("twilio_phone_number.id"), nullable=False, unique=True)
+    status                = db.Column(db.String(30), nullable=False, default="unknown")
+    messaging_service_sid = db.Column(db.String(60))
+    detail                = db.Column(db.String(300))
+    checked_at            = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class WorkspaceClosure(db.Model):
+    """An owner closed this workspace (account cancellation). While a row is
+    open (``reopened_at`` NULL) members can't use the workspace; after
+    ``purge_after`` an operator purge deletes its data and keeps a tombstone.
+    Separate from ``company`` so loading a Company never depends on this
+    migration."""
+    __tablename__ = "workspace_closure"
+
+    company_id     = db.Column(db.Integer, db.ForeignKey("company.id", ondelete="CASCADE"), primary_key=True)
+    closed_at      = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    closed_by_user_id = db.Column(db.Integer)
+    reason         = db.Column(db.String(120))
+    purge_after    = db.Column(db.DateTime, nullable=False)
+    reopened_at    = db.Column(db.DateTime)
+    purged_at      = db.Column(db.DateTime)

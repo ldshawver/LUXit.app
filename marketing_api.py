@@ -18,7 +18,7 @@ from models import (
     Campaign, Company, Contact, SMSCampaign, SMSRecipient,
     MarketingAuditLog, SMSAutoReplyRule, SMSKeywordRule, SocialPost, TwilioAccount, user_company,
 )
-from services.contact_consent import has_explicit_email_opt_out
+from services.contact_consent import has_explicit_email_opt_out, has_sms_opt_out, suppression_badges
 
 marketing_api_bp = Blueprint("marketing_api", __name__, url_prefix="/api/marketing")
 
@@ -97,12 +97,28 @@ def _serialize_sms(c: SMSCampaign):
         "replied": 0,
         "opted_out": 0,
         "clicks": 0,
+        "pending": 0,
+        "skipped": 0,
+        "sending": 0,
     }
+    attempted = False
     for r in rec:
         status = (r.status or "").lower()
         if status in counts:
             counts[status] += 1
-    return {"id": c.id, "name": c.name, "message": c.message, "status": c.status or "draft", "scheduled_at": c.scheduled_at.isoformat() if c.scheduled_at else None, "metrics": counts}
+        if status not in ("", "pending") or r.provider_message_sid or r.sent_at:
+            attempted = True
+    audience = c.audience_filter or {}
+    return {"id": c.id, "name": c.name, "message": c.message, "status": c.status or "draft",
+            "objective": c.objective, "segment": c.segment,
+            "selected_tag_ids": list(c.selected_tag_ids or audience.get("selected_tag_ids") or []),
+            "campaign_purpose": audience.get("campaign_purpose") or "promotional",
+            "from_phone_number_id": c.from_phone_number_id, "from_phone_number": c.from_phone_number,
+            "media_urls": list(c.media_urls or []),
+            "scheduled_at": c.scheduled_at.isoformat() if c.scheduled_at else None,
+            "scheduled_timezone": c.scheduled_timezone,
+            "editable": (c.status or "draft") in EDITABLE_SMS_STATUSES and not attempted,
+            "metrics": counts}
 
 
 @marketing_api_bp.get("/campaigns")
@@ -199,36 +215,53 @@ def api_sms_senders():
 @login_required
 def api_sms_list():
     cid = tenant_id()
+    err = _sms_read_error(cid)
+    if err:
+        return err
     items = SMSCampaign.query.filter_by(company_id=cid).order_by(SMSCampaign.created_at.desc()).all() if cid else []
     return jsonify({"success": True, "campaigns": [_serialize_sms(c) for c in items]})
+
+
+from services.sms_campaign_workflow import (  # noqa: E402  shared rules for API + HTML routes
+    EDITABLE_STATUSES as EDITABLE_SMS_STATUSES, CampaignWorkflowError, audience_summary as _audience_summary,
+)
+
+
+def _workflow_error(exc: CampaignWorkflowError, campaign_id=None, step=None):
+    db.session.rollback()
+    from services.product_events import record_failure
+    record_failure(company_id=tenant_id(), user_id=getattr(current_user, "id", None), entity_type="sms_campaign",
+                   entity_id=campaign_id, code=exc.code, status=exc.status, step=step or request.endpoint)
+    extra = {"code": exc.code}
+    if exc.counts is not None:
+        extra["counts"] = _audience_summary(exc.counts)
+    return _json_error(exc.message, exc.status, **extra)
+
+
+def _sms_read_error(cid):
+    """Viewers may read campaigns; inbox-only/staff roles may not."""
+    if not cid:
+        return None
+    if current_user.can_edit_company(cid):
+        return None
+    from services.comms_permissions import normalize_role
+    if current_user.get_company_access(cid) and normalize_role(current_user.get_company_role(cid)) == "viewer":
+        return None
+    return _json_error("You do not have access to SMS campaigns in this workspace.", 403, code="role_required")
 
 
 @marketing_api_bp.post("/sms-campaigns")
 @login_required
 def api_sms_create():
+    from services.sms_campaign_workflow import create_campaign
     data = request.get_json(silent=True) or request.form
     cid = tenant_id()
     if not cid:
         return _json_error("tenant/company is required")
-    sender_id = data.get("from_phone_number_id")
-    if sender_id:
-        from services.phone_line_service import PhoneLineService
-        sender = PhoneLineService.resolve_campaign_sender(cid, int(sender_id), user=current_user)
-        if not sender.get("success"):
-            return _json_error(sender["error"], 403)
-    else:
-        sender = {"phone_number": None, "from_phone": None}
-    from services.contact_audience import canonical_tag_ids
     try:
-        tag_ids = canonical_tag_ids(cid, tag_ids=data.get("selected_tag_ids") or [], tag_names=[data.get("segment")] if data.get("segment") else [])
-    except ValueError as exc:
-        return _json_error(str(exc), 400)
-    c = SMSCampaign(company_id=cid, created_by_user_id=current_user.id,
-                    from_phone_number_id=getattr(sender.get("phone_number"), "id", None), from_phone_number=sender.get("from_phone"),
-                    name=data.get("name") or "Untitled SMS Campaign", objective=data.get("objective"),
-                    message=_append_stop_language(data.get("message") or ""), segment=data.get("segment"),
-                    selected_tag_ids=tag_ids, audience_filter={"selected_tag_ids": tag_ids}, status=data.get("status") or "draft")
-    db.session.add(c)
+        c = create_campaign(cid, current_user, data, ensure_opt_out=_append_stop_language)
+    except CampaignWorkflowError as exc:
+        return _workflow_error(exc)
     db.session.commit()
     return jsonify({"success": True, "campaign": _serialize_sms(c)}), 201
 
@@ -236,6 +269,9 @@ def api_sms_create():
 @marketing_api_bp.get("/sms-campaigns/<int:cid>")
 @login_required
 def api_sms_detail(cid):
+    err = _sms_read_error(tenant_id())
+    if err:
+        return err
     c = SMSCampaign.query.filter_by(id=cid, company_id=tenant_id()).first_or_404()
     return jsonify({"success": True, "campaign": _serialize_sms(c)})
 
@@ -243,23 +279,30 @@ def api_sms_detail(cid):
 @marketing_api_bp.put("/sms-campaigns/<int:cid>")
 @login_required
 def api_sms_update(cid):
+    """Edit message, sender, audience, purpose, schedule and media of a draft,
+    scheduled or paused campaign. 409 once sending has begun."""
+    from services.sms_campaign_workflow import update_campaign
     c = SMSCampaign.query.filter_by(id=cid, company_id=tenant_id()).first_or_404()
     data = request.get_json(silent=True) or {}
-    for f in ("name", "objective", "segment"):
-        if f in data:
-            setattr(c, f, data[f])
-    if "message" in data:
-        c.message = _append_stop_language(data["message"])
-    if data.get("status") in SMS_STATUSES:
-        c.status = data["status"]
+    try:
+        counts = update_campaign(c, current_user, data, ensure_opt_out=_append_stop_language)
+    except CampaignWorkflowError as exc:
+        return _workflow_error(exc, cid, "update")
     db.session.commit()
-    return jsonify({"success": True, "campaign": _serialize_sms(c)})
+    payload = {"success": True, "campaign": _serialize_sms(c)}
+    if counts is not None:
+        payload["audience"] = _audience_summary(counts)
+    return jsonify(payload)
 
 
 @marketing_api_bp.post("/sms-campaigns/<int:cid>/preview")
 @login_required
 def api_sms_preview(cid):
-    c = SMSCampaign.query.filter_by(id=cid, company_id=tenant_id()).first_or_404()
+    tid = tenant_id()
+    err = _sms_read_error(tid)
+    if err:
+        return err
+    c = SMSCampaign.query.filter_by(id=cid, company_id=tid).first_or_404()
     from services.contact_audience import resolve_sms_campaign_recipients
     result = resolve_sms_campaign_recipients(c)
     counts = result["counts"]
@@ -268,177 +311,64 @@ def api_sms_preview(cid):
                     "recipients": [{"id": contact.id, "phone": phone} for contact, phone in result["recipients"][:25]]})
 
 
-def _materialize_recipients(c: SMSCampaign):
-    from services.contact_audience import resolve_sms_campaign_recipients
-    result = resolve_sms_campaign_recipients(c, materialize=True)
-    c.recipient_resolution = result["counts"]
-    return result
-
-
 @marketing_api_bp.post("/sms-campaigns/<int:cid>/schedule")
 @login_required
 def api_sms_schedule(cid):
+    """Fails closed: no message, audience, authorized sender or eligible
+    recipient (or a past time) means nothing is scheduled."""
+    from services.sms_campaign_workflow import schedule_campaign
     c = SMSCampaign.query.filter_by(id=cid, company_id=tenant_id()).first_or_404()
     data = request.get_json(silent=True) or {}
-    if not c.message:
-        return _json_error("message body is empty")
-    if not c.segment:
-        return _json_error("no audience selected")
-    when = data.get("scheduled_at")
-    from services.phone_line_service import PhoneLineService
-    sender_id = data.get("from_phone_number_id") or c.from_phone_number_id
-    sender = PhoneLineService.resolve_campaign_sender(c.company_id, int(sender_id) if sender_id else None, user=current_user)
-    if not sender.get("success"):
-        return _json_error(sender["error"], 403)
-    c.from_phone_number_id = sender["phone_number"].id
-    c.from_phone_number = sender["from_phone"]
-    c.scheduled_at = datetime.fromisoformat(when) if when else datetime.utcnow()
-    c.scheduled_timezone = data.get("timezone") or "UTC"
-    c.scheduled_by_user_id = current_user.id
-    result = _materialize_recipients(c)
-    counts = result["counts"]
-    if not counts["eligible_recipients"]:
-        return _json_error(counts["explanation"], 400, counts=counts)
-    c.scheduled_preview_count = counts["matching_contacts"]
-    c.scheduled_unique_phone_count = counts["unique_phone_numbers"]
-    c.scheduled_eligible_recipient_count = counts["eligible_recipients"]
-    c.status = "scheduled"
+    try:
+        counts = schedule_campaign(c, current_user, when=data.get("scheduled_at"),
+                                   timezone_name=data.get("timezone"), sender_id=data.get("from_phone_number_id"))
+    except CampaignWorkflowError as exc:
+        return _workflow_error(exc, cid, "schedule")
     db.session.commit()
-    return jsonify({"success": True, "campaign": _serialize_sms(c)})
+    return jsonify({"success": True, "campaign": _serialize_sms(c), "audience": _audience_summary(counts)})
 
 
 @marketing_api_bp.post("/sms-campaigns/<int:cid>/send")
 @login_required
 def api_sms_send(cid):
-    c = (
-        SMSCampaign.query
-        .filter_by(id=cid, company_id=tenant_id())
-        .with_for_update()
-        .first_or_404()
-    )
+    """Send now through the canonical SMSService path (sender authorization,
+    send-time STOP re-check, single claim per recipient, full batching)."""
+    from services.sms_campaign_workflow import prepare_send_now
+    from services.sms_service import SMSService
+    tid = tenant_id()
+    c = SMSCampaign.query.filter_by(id=cid, company_id=tid).first_or_404()
     data = request.get_json(silent=True) or {}
-    from services.phone_line_service import PhoneLineService
-    sender_id = data.get("from_phone_number_id") or c.from_phone_number_id
-    sender = PhoneLineService.resolve_campaign_sender(c.company_id, int(sender_id) if sender_id else None, user=current_user)
-    if not sender.get("success"):
-        return _json_error(sender["error"], 403)
-    c.from_phone_number_id = sender["phone_number"].id
-    c.from_phone_number = sender["from_phone"]
-    ready, missing, twilio_account = _twilio_ready(c.company_id)
-    if not ready:
-        return _json_error("TWILIO/sender configuration missing", 409, missing=missing)
-    if not c.message:
-        return _json_error("message body is empty")
-    if not c.segment:
-        return _json_error("no audience selected")
-    _materialize_recipients(c)
-    if c.recipients.count() == 0:
-        counts = (c.audience_filter or {}).get("recipient_counts") or {}
-        return _json_error(counts.get("explanation") or "no eligible recipients with SMS consent", 400, counts=counts)
-    batch_size = min(max(int(data.get("batch_size") or 100), 1), 100)
-    retry_failed = bool(data.get("retry_failed", False))
-    sendable_statuses = {"queued", "draft", "pending", None}
-    if retry_failed:
-        sendable_statuses.add("failed")
-    recipients = (
-        SMSRecipient.query
-        .filter_by(company_id=c.company_id, campaign_id=c.id)
-        .filter(SMSRecipient.provider_message_sid.is_(None))
-        .filter(SMSRecipient.status.in_([s for s in sendable_statuses if s is not None]))
-        .order_by(SMSRecipient.id.asc())
-        .with_for_update(skip_locked=True)
-        .limit(batch_size)
-        .all()
-    )
-    if len(recipients) < batch_size and None in sendable_statuses:
-        null_status_recipients = (
-            SMSRecipient.query
-            .filter_by(company_id=c.company_id, campaign_id=c.id, status=None)
-            .filter(SMSRecipient.provider_message_sid.is_(None))
-            .order_by(SMSRecipient.id.asc())
-            .with_for_update(skip_locked=True)
-            .limit(batch_size - len(recipients))
-            .all()
-        )
-        recipients.extend(null_status_recipients)
-    if not recipients:
-        return _json_error(
-            "campaign has no unsent recipients; duplicate send prevented",
-            409,
-            campaign_status=c.status,
-        )
-    c.status = "sending"
-    sent_any = False
-    processed = 0
-    for r in recipients:
-        processed += 1
-        contact = db.session.get(Contact, r.contact_id) if r.contact_id else None
-        if not contact or not _contact_has_sms_consent(contact):
-            r.status = "failed"
-            r.error_message = "Recipient is not eligible for SMS"
-            continue
-        if twilio_account:
-            try:
-                from twilio_sms import _get_or_create_conversation, _send_sms
-                conv = _get_or_create_conversation(c.company_id, contact.phone, twilio_account.from_phone or "")
-                result = _send_sms(twilio_account, contact.phone, c.message, conversation_id=conv.id)
-                if result.get("success"):
-                    r.status = result.get("status") or "sent"
-                    r.provider_message_sid = result.get("sid")
-                    r.sent_at = datetime.utcnow()
-                    sent_any = True
-                else:
-                    r.status = "failed"
-                    r.error_message = result.get("error")
-            except Exception as exc:
-                r.status = "failed"
-                r.error_message = str(exc)
-        else:
-            # Env-only/test configuration: record the queued send without exposing credentials.
-            r.status = "sent"
-            r.sent_at = datetime.utcnow()
-            sent_any = True
-    remaining = (
-        SMSRecipient.query
-        .filter_by(company_id=c.company_id, campaign_id=c.id)
-        .filter(SMSRecipient.provider_message_sid.is_(None))
-        .filter(SMSRecipient.status.in_([s for s in sendable_statuses if s is not None]))
-        .count()
-    )
-    if None in sendable_statuses:
-        remaining += (
-            SMSRecipient.query
-            .filter_by(company_id=c.company_id, campaign_id=c.id, status=None)
-            .filter(SMSRecipient.provider_message_sid.is_(None))
-            .count()
-        )
-    c.status = "sending" if remaining else ("sent" if sent_any else "failed")
-    if sent_any and not remaining:
-        c.sent_at = datetime.utcnow()
-    db.session.add(MarketingAuditLog(
-        company_id=c.company_id,
-        created_by_user_id=current_user.id,
-        entity_type="sms_campaign",
-        entity_id=c.id,
-        action="sms_campaign_send",
-        details={
-            "sent_any": sent_any,
-            "recipient_count": c.recipients.count(),
-            "processed": processed,
-            "remaining": remaining,
-            "batch_size": batch_size,
-            "retry_failed": retry_failed,
-        },
-    ))
+    try:
+        prepare_send_now(c, current_user, sender_id=data.get("from_phone_number_id"))
+    except CampaignWorkflowError as exc:
+        return _workflow_error(exc, cid, "send")
     db.session.commit()
-    return jsonify({"success": True, "campaign": _serialize_sms(c)})
+    result = SMSService.send_campaign(c.id, user=current_user)
+    if result.get("status_code") in (402, 403, 404, 409):
+        return _json_error(result.get("error"), result["status_code"], code="send_refused")
+    summary = {k: result.get(k) for k in ("sent", "failed", "skipped", "total")}
+    db.session.add(MarketingAuditLog(company_id=c.company_id, created_by_user_id=current_user.id,
+                                     entity_type="sms_campaign", entity_id=c.id, action="sms_campaign_sent",
+                                     details=summary))
+    db.session.commit()
+    db.session.refresh(c)
+    return jsonify({"success": bool(result.get("success")), "campaign": _serialize_sms(c), "result": summary})
 
 
 @marketing_api_bp.post("/sms-campaigns/<int:cid>/pause")
 @login_required
 def api_sms_pause(cid):
-    c = SMSCampaign.query.filter_by(id=cid, company_id=tenant_id()).first_or_404()
+    from services.sms_campaign_workflow import require_edit
+    tid = tenant_id()
+    c = SMSCampaign.query.filter_by(id=cid, company_id=tid).first_or_404()
+    try:
+        require_edit(current_user, tid)
+    except CampaignWorkflowError as exc:
+        return _workflow_error(exc)
+    if c.status not in {"scheduled", "queued", "sending"}:
+        return _json_error(f"A {c.status or 'draft'} campaign cannot be paused.", 409, code="invalid_status_change")
     c.status = "paused"
+    _audit(tid, "sms_campaign_paused", "sms_campaign", c.id, {})
     db.session.commit()
     return jsonify({"success": True})
 
@@ -446,8 +376,18 @@ def api_sms_pause(cid):
 @marketing_api_bp.post("/sms-campaigns/<int:cid>/cancel")
 @login_required
 def api_sms_cancel(cid):
-    c = SMSCampaign.query.filter_by(id=cid, company_id=tenant_id()).first_or_404()
+    from services.sms_campaign_workflow import require_edit
+    tid = tenant_id()
+    c = SMSCampaign.query.filter_by(id=cid, company_id=tid).first_or_404()
+    try:
+        require_edit(current_user, tid)
+    except CampaignWorkflowError as exc:
+        return _workflow_error(exc)
+    if c.status in {"sent", "completed", "canceled"}:
+        return _json_error(f"A {c.status} campaign cannot be canceled.", 409, code="invalid_status_change")
     c.status = "canceled"
+    c.canceled_at = datetime.utcnow()
+    _audit(tid, "sms_campaign_canceled", "sms_campaign", c.id, {})
     db.session.commit()
     return jsonify({"success": True})
 
@@ -810,7 +750,23 @@ def ai_suggest_segment(): return jsonify(_ai_payload("suggest-segment", request.
 @login_required
 def ai_compliance_check(): return jsonify(_ai_payload("compliance-check", request.get_json(silent=True) or {}))
 
-csrf.exempt(marketing_api_bp)
+@marketing_api_bp.errorhandler(404)
+def _marketing_not_found(exc):
+    db.session.rollback()
+    return jsonify({"success": False, "code": "not_found", "error": "Not found in this workspace."}), 404
+
+
+@marketing_api_bp.errorhandler(ValueError)
+def _audience_error(exc):
+    from services.contact_audience import AudienceError
+    if not isinstance(exc, AudienceError):
+        raise exc
+    return jsonify({"success": False, "code": "audience_invalid", "error": str(exc)}), 422
+
+
+# Not CSRF-exempt: every route here is session-authenticated and several
+# send SMS/email or merge contacts. Browser pages on base.html send the token
+# automatically; nginx logs 2026-10-23..11-06 show no other callers.
 
 # ---------------------------------------------------------------------------
 # Segment management and marketing suppression APIs (/api/*)
@@ -820,6 +776,33 @@ from sqlalchemy.exc import IntegrityError
 from models import Segment, SegmentMember, CampaignRecipient
 
 segment_api_bp = Blueprint("segment_api", __name__, url_prefix="/api")
+
+
+@segment_api_bp.errorhandler(ValueError)
+def _segment_value_error(exc):
+    """Audience / condition / automation-contract problems are the caller's
+    input, not a server fault: answer 422 JSON and discard partial writes."""
+    from services.contact_audience import AudienceError
+    from services.crm_automation import AutomationContractError
+    from services.segment_engine import SegmentConditionError
+    codes = ((AudienceError, "audience_invalid"), (SegmentConditionError, "invalid_conditions"),
+             (AutomationContractError, "invalid_automation"))
+    for cls, code in codes:
+        if isinstance(exc, cls):
+            db.session.rollback()
+            return jsonify({"success": False, "code": code, "error": str(exc)}), 422
+    raise exc
+
+
+# 400 is deliberately not handled here: CSRF failures are 400s and must keep
+# the app-level handler's {"code": "csrf_failed"} response.
+@segment_api_bp.errorhandler(404)
+@segment_api_bp.errorhandler(405)
+def _segment_http_error(exc):
+    db.session.rollback()
+    code = {404: "not_found", 405: "method_not_allowed"}.get(exc.code, "error")
+    message = "Not found in this workspace." if exc.code == 404 else exc.description
+    return jsonify({"success": False, "code": code, "error": message}), exc.code
 
 SEGMENT_FIELDS = ("name", "description", "segment_type", "category", "match_mode", "triggers", "conditions", "actions", "is_dynamic", "is_active")
 SKIP_REASONS = {"do_not_market", "do_not_email", "email_unsubscribed", "do_not_sms", "sms_opted_out", "missing_email", "missing_phone", "invalid_phone", "tenant_mismatch"}
@@ -856,6 +839,12 @@ def _audit(company_id, action, entity_type, entity_id=None, details=None):
     ))
 
 
+def _segment_event(s, event, **props):
+    from services.product_events import record
+    record(event, company_id=s.company_id, user_id=getattr(current_user, "id", None), entity_type="segment",
+           entity_id=s.id, properties=props)
+
+
 def _segment_or_404(segment_id):
     return Segment.query.filter_by(id=segment_id, company_id=tenant_id()).first_or_404()
 
@@ -878,13 +867,7 @@ def _segment_json(s, include_rules=True):
 
 
 def _suppression_badges(c):
-    badges = []
-    if c.do_not_market: badges.append("Do Not Market")
-    if c.do_not_email: badges.append("Do Not Email")
-    if c.do_not_sms: badges.append("Do Not SMS")
-    if c.sms_opted_out or c.sms_opt_out_at: badges.append("SMS Opted Out")
-    if c.email_unsubscribed or not c.is_subscribed: badges.append("Email Unsubscribed")
-    return badges
+    return suppression_badges(c)
 
 
 def _contact_json(c, membership=None):
@@ -892,7 +875,7 @@ def _contact_json(c, membership=None):
     resolved = resolve_contact_identity(c.company_id, contact_id=c.id, allow_enrichment=True)
     data = {"id": c.id, "email": c.email, "phone": c.phone, "first_name": c.first_name, "last_name": c.last_name,
             "do_not_market": c.do_not_market, "do_not_email": c.do_not_email, "do_not_sms": c.do_not_sms,
-            "email_unsubscribed": c.email_unsubscribed or not c.is_subscribed, "sms_opted_out": c.sms_opted_out or bool(c.sms_opt_out_at),
+            "email_unsubscribed": "Email Unsubscribed" in suppression_badges(c), "sms_opted_out": has_sms_opt_out(c),
             "suppression_badges": _suppression_badges(c), **resolved.as_dict()}
     if membership:
         data["membership"] = {"source": membership.source, "added_by_user_id": membership.added_by_user_id,
@@ -960,22 +943,65 @@ def api_segments_root():
     return jsonify({"success": True, "segments": [_segment_json(s, False) for s in Segment.query.filter_by(company_id=cid).order_by(Segment.name).all()]})
 
 
+@segment_api_bp.get("/segments/templates")
+@login_required
+def api_segment_templates():
+    from services.segment_templates import list_templates
+    return jsonify({"success": True, "templates": list_templates()})
+
+
 @segment_api_bp.post("/segments")
 @login_required
 def api_segment_create_root():
+    """Create a segment. ``template`` + ``params`` builds a guided dynamic
+    segment (services/segment_templates.py); raw ``conditions`` are validated
+    by the canonical engine. A dynamic segment's membership is computed in the
+    same transaction, so the response already carries its real member count."""
+    from services.product_events import record
+    from services.segment_engine import SYSTEM_SEGMENT_TYPES, SegmentConditionError, refresh as engine_refresh
     cid = tenant_id(); err = _require_edit(cid)
     if err: return err
     data = request.get_json(silent=True) or {}
-    s = Segment(company_id=cid, name=data.get("name") or "Untitled Segment")
-    for f in SEGMENT_FIELDS:
-        if f in data: setattr(s, f, data[f])
-    if s.segment_type == "automation_rule":
-        from services.crm_automation import validate_definition
-        validate_definition(s.triggers or [], s.conditions or {}, s.actions or [], s.match_mode)
-    elif s.is_dynamic:
-        from services.segment_engine import validate_conditions
-        validate_conditions(s.conditions, s.match_mode)
-    db.session.add(s); db.session.flush(); _audit(cid, "segment_created", "segment", s.id, _segment_json(s)); db.session.commit()
+    template = data.get("template")
+    try:
+        if template:
+            from services.segment_templates import build
+            default_name, conditions = build(template, data.get("params") or {})
+            data = {**{k: v for k, v in data.items() if k in ("name", "description", "category")},
+                    "name": data.get("name") or default_name, "segment_type": "custom", "match_mode": "all",
+                    "conditions": conditions, "is_dynamic": True, "is_active": True}
+        if (data.get("segment_type") or "behavioral") in SYSTEM_SEGMENT_TYPES - {"automation_rule"}:
+            return _json_error("That segment type is managed by the system and can't be created here.", 400,
+                               code="system_managed_segment")
+        name = " ".join(str(data.get("name") or "").split())[:255]
+        if not name:
+            return _json_error("Enter a segment name.", 400, code="name_required")
+        if Segment.query.filter(Segment.company_id == cid, db.func.lower(Segment.name) == name.lower()).first():
+            return _json_error("A segment with that name already exists in this workspace.", 409, code="duplicate_name")
+        s = Segment(company_id=cid, name=name)
+        for f in SEGMENT_FIELDS:
+            if f in data and f != "name": setattr(s, f, data[f])
+        if s.segment_type == "automation_rule":
+            from services.crm_automation import validate_definition
+            validate_definition(s.triggers or [], s.conditions or {}, s.actions or [], s.match_mode)
+        elif s.is_dynamic:
+            from services.segment_engine import validate_conditions
+            validate_conditions(s.conditions, s.match_mode or "all")
+        db.session.add(s); db.session.flush()
+        additions = 0
+        if s.is_dynamic and s.segment_type not in SYSTEM_SEGMENT_TYPES:
+            result = engine_refresh(s, actor_user_id=current_user.id)
+            if result.error:
+                raise SegmentConditionError(result.error)
+            additions = len(result.additions)
+    except SegmentConditionError as exc:
+        db.session.rollback()
+        return _json_error(str(exc), 422, code="invalid_conditions")
+    _audit(cid, "segment_created", "segment", s.id,
+           {**_segment_json(s), "template": template or None, "initial_members": additions})
+    record("segment_created", company_id=cid, user_id=current_user.id, entity_type="segment", entity_id=s.id,
+           properties={"template": template or "custom", "is_dynamic": bool(s.is_dynamic), "members": additions})
+    db.session.commit()
     return jsonify({"success": True, "segment": _segment_json(s)}), 201
 
 
@@ -1153,11 +1179,17 @@ def api_segment_contacts_root(sid):
     return jsonify({"success": True, "contacts": [_contact_json(m.contact, m) for m in members]})
 
 
-def _add_contact_to_segment(s, contact_id, source="manual"):
+def _add_contact_to_segment(s, contact_id, source="manual", *, allow_restore=False):
+    """Add (or re-add) one tenant contact. A permanently excluded member is
+    left excluded unless ``allow_restore`` -- adding must never silently undo
+    an exclusion decision. Returns the member, or None when skipped."""
     c = _contact_or_404(contact_id, s.company_id)
     member = SegmentMember.query.filter_by(segment_id=s.id, contact_id=c.id).first()
+    if member and member.is_excluded and not allow_restore:
+        return None
     if member:
-        member.removed_at = None; member.is_excluded = False; member.exclusion_reason = None; member.source = source
+        member.removed_at = None; member.removed_by_user_id = None
+        member.is_excluded = False; member.exclusion_reason = None; member.source = source
     else:
         member = SegmentMember(segment_id=s.id, contact_id=c.id, source=source)
         db.session.add(member)
@@ -1165,13 +1197,38 @@ def _add_contact_to_segment(s, contact_id, source="manual"):
     return member
 
 
+def _tenant_contact_ids(company_id, raw_ids):
+    """Split requested ids into (owned, not_found) for this tenant."""
+    wanted = []
+    for value in raw_ids or []:
+        try:
+            wanted.append(int(value))
+        except (TypeError, ValueError):
+            continue
+    wanted = list(dict.fromkeys(wanted))
+    owned = {row.id for row in Contact.query.with_entities(Contact.id).filter(
+        Contact.company_id == company_id, Contact.id.in_(wanted)).all()} if wanted else set()
+    return [i for i in wanted if i in owned], [i for i in wanted if i not in owned]
+
+
+MAX_BULK_CONTACTS = 5000
+
+
 @segment_api_bp.post("/segments/<int:sid>/contacts")
 @login_required
 def api_segment_add_contact_root(sid):
     s = _segment_or_404(sid); err = _require_edit(s.company_id)
     if err: return err
-    data = request.get_json(silent=True) or {}; m = _add_contact_to_segment(s, data.get("contact_id"), data.get("source") or "manual")
-    _audit(s.company_id, "segment_contact_added", "segment", s.id, {"contact_id": m.contact_id, "source": m.source}); db.session.commit()
+    data = request.get_json(silent=True) or {}
+    if not data.get("contact_id"):
+        return _json_error("Choose a contact to add.", 400, code="contact_required")
+    m = _add_contact_to_segment(s, data.get("contact_id"), data.get("source") or "manual")
+    if m is None:
+        return _json_error("This contact is permanently excluded from this segment. Restore it from the Excluded tab first.",
+                           409, code="contact_excluded")
+    _audit(s.company_id, "segment_contact_added", "segment", s.id, {"contact_id": m.contact_id, "source": m.source})
+    _segment_event(s, "segment_membership_changed", action="add", added=1)
+    db.session.commit()
     return jsonify({"success": True, "contact": _contact_json(m.contact, m)}), 201
 
 
@@ -1185,7 +1242,9 @@ def api_segment_remove_contact_root(sid, contact_id):
     if permanent:
         m.is_excluded = True; m.exclusion_reason = "permanent_exclusion"; m.source = m.source or "manual"
     m.removed_at = datetime.utcnow(); m.removed_by_user_id = current_user.id
-    _audit(s.company_id, "segment_contact_excluded" if permanent else "segment_contact_removed", "segment", s.id, {"contact_id": contact_id}); db.session.commit()
+    _audit(s.company_id, "segment_contact_excluded" if permanent else "segment_contact_removed", "segment", s.id, {"contact_id": contact_id})
+    _segment_event(s, "segment_membership_changed", action="exclude" if permanent else "remove", removed=1)
+    db.session.commit()
     return jsonify({"success": True})
 
 
@@ -1194,10 +1253,141 @@ def api_segment_remove_contact_root(sid, contact_id):
 def api_segment_bulk_add_root(sid):
     s = _segment_or_404(sid); err = _require_edit(s.company_id)
     if err: return err
-    ids = (request.get_json(silent=True) or {}).get("contact_ids") or []
-    added = [_add_contact_to_segment(s, i) for i in ids]
-    _audit(s.company_id, "segment_contact_added", "segment", s.id, {"contact_ids": [m.contact_id for m in added], "bulk": True}); db.session.commit()
-    return jsonify({"success": True, "added": len(added)})
+    raw = (request.get_json(silent=True) or {}).get("contact_ids") or []
+    if len(raw) > MAX_BULK_CONTACTS:
+        return _json_error(f"At most {MAX_BULK_CONTACTS} contacts per bulk action.", 400, code="too_many")
+    owned, not_found = _tenant_contact_ids(s.company_id, raw)
+    added, skipped_excluded = [], []
+    for cid_ in owned:
+        m = _add_contact_to_segment(s, cid_)
+        (added if m is not None else skipped_excluded).append(cid_)
+    _audit(s.company_id, "segment_contact_added", "segment", s.id,
+           {"contact_ids": added, "bulk": True, "skipped_excluded": skipped_excluded, "not_found": len(not_found)})
+    _segment_event(s, "segment_membership_changed", action="bulk_add", added=len(added),
+                   skipped_excluded=len(skipped_excluded), not_found=len(not_found))
+    db.session.commit()
+    return jsonify({"success": True, "added": len(added), "skipped_excluded": skipped_excluded, "not_found": not_found})
+
+
+@segment_api_bp.post("/segments/<int:sid>/contacts/<int:contact_id>/restore")
+@login_required
+def api_segment_restore_contact_root(sid, contact_id):
+    s = _segment_or_404(sid); err = _require_edit(s.company_id)
+    if err: return err
+    member = SegmentMember.query.filter_by(segment_id=s.id, contact_id=contact_id).first_or_404()
+    _contact_or_404(contact_id, s.company_id)
+    was = {"is_excluded": member.is_excluded, "removed": bool(member.removed_at)}
+    _add_contact_to_segment(s, contact_id, member.source or "manual", allow_restore=True)
+    _audit(s.company_id, "segment_contact_restored", "segment", s.id, {"contact_id": contact_id, "previous": was})
+    _segment_event(s, "segment_membership_changed", action="restore", added=1)
+    db.session.commit()
+    return jsonify({"success": True})
+
+
+# Tags that encode consent or suppression state. Bulk tagging must never be a
+# way to grant consent (segment membership is not consent) or undo a STOP.
+PROTECTED_CONTACT_TAGS = {
+    "sms_consent", "sms_opt_in", "text_ok", "sms_opt_out", "no_sms", "blocked", "invalid_phone",
+    "unsubscribed", "email_unsubscribed", "do_not_contact", "do_not_market", "do_not_sms", "do_not_email",
+    "stop", "opted_out", "opted_in",
+}
+
+
+@segment_api_bp.post("/segments/<int:sid>/contacts/bulk-tag")
+@login_required
+def api_segment_bulk_tag(sid):
+    """Add or remove one plain tag on selected members of this segment."""
+    from services.contact_audience import _split_tags, add_contact_tag
+    s = _segment_or_404(sid); err = _require_edit(s.company_id)
+    if err: return err
+    data = request.get_json(silent=True) or {}
+    action = (data.get("action") or "add").strip().lower()
+    tag = " ".join(str(data.get("tag") or "").split())
+    if action not in {"add", "remove"}:
+        return _json_error("action must be 'add' or 'remove'.", 400, code="invalid_action")
+    if not tag or len(tag) > 64 or any(ch in tag for ch in ",;|"):
+        return _json_error("Enter a tag of 1-64 characters without commas, semicolons or pipes.", 400, code="invalid_tag")
+    if tag.lower().replace(" ", "_") in PROTECTED_CONTACT_TAGS:
+        return _json_error("That tag records consent or suppression and can't be changed in bulk. "
+                           "Consent comes only from the customer; use the contact's marketing preferences for opt-outs.",
+                           400, code="protected_tag")
+    raw = data.get("contact_ids") or []
+    if not raw:
+        return _json_error("Select at least one contact.", 400, code="contacts_required")
+    if len(raw) > MAX_BULK_CONTACTS:
+        return _json_error(f"At most {MAX_BULK_CONTACTS} contacts per bulk action.", 400, code="too_many")
+    owned, not_found = _tenant_contact_ids(s.company_id, raw)
+    member_ids = {m.contact_id for m in SegmentMember.query.filter(
+        SegmentMember.segment_id == s.id, SegmentMember.contact_id.in_(owned or [-1])).all()}
+    from services.contact_audience import resolve_segment_contacts
+    in_segment = member_ids | {c.id for c in resolve_segment_contacts(s.company_id, None, {"selected_tag_ids": [s.id]})
+                               if c.id in set(owned)}
+    changed, unchanged, not_in_segment = [], [], []
+    for contact in Contact.query.filter(Contact.company_id == s.company_id, Contact.id.in_(owned or [-1])).all():
+        if contact.id not in in_segment:
+            not_in_segment.append(contact.id)
+            continue
+        if action == "add":
+            did = add_contact_tag(contact, tag, source="segment_bulk_tag")
+        else:
+            tags = _split_tags(contact.tags)
+            keep = [t for t in tags if t.strip().lower() != tag.lower()]
+            did = len(keep) != len(tags)
+            if did:
+                contact.tags = ", ".join(keep)
+        (changed if did else unchanged).append(contact.id)
+    _audit(s.company_id, f"segment_bulk_tag_{action}", "segment", s.id,
+           {"tag": tag, "changed": changed, "unchanged": len(unchanged), "not_in_segment": not_in_segment,
+            "not_found": len(not_found)})
+    _segment_event(s, "segment_tagged", action=action, changed=len(changed), unchanged=len(unchanged),
+                   not_in_segment=len(not_in_segment), not_found=len(not_found))
+    db.session.commit()
+    return jsonify({"success": True, "action": action, "tag": tag, "changed": len(changed), "unchanged": len(unchanged),
+                    "not_in_segment": not_in_segment, "not_found": not_found})
+
+
+def _csv_safe(value):
+    text = "" if value is None else str(value)
+    # Neutralise spreadsheet formula injection; keep E.164 phones ("+1...") readable.
+    if text[:1] in ("=", "@", "\t", "\r") or (text[:1] in ("+", "-") and not text[1:2].isdigit()):
+        return "'" + text
+    return text
+
+
+@segment_api_bp.get("/segments/<int:sid>/export.csv")
+@login_required
+def api_segment_export_csv(sid):
+    """CSV of current (non-excluded) members with consent/suppression state.
+    No notes, no message history. Audited."""
+    import csv as _csv
+    import io as _io
+    from flask import Response
+    from services.contact_audience import resolve_segment_contacts
+    from services.sms_consent_purpose import has_promotional_optin, is_suppressed
+    s = _segment_or_404(sid); err = _require_edit(s.company_id)
+    if err: return err
+    try:
+        contacts = resolve_segment_contacts(s.company_id, None, {"selected_tag_ids": [s.id]})
+    except ValueError:
+        active = {m.contact_id for m in SegmentMember.query.filter_by(segment_id=s.id, is_excluded=False, removed_at=None)}
+        contacts = Contact.query.filter(Contact.company_id == s.company_id, Contact.id.in_(active or [-1])).all()
+    buf = _io.StringIO()
+    w = _csv.writer(buf)
+    w.writerow(["contact_id", "first_name", "last_name", "email", "phone", "tags",
+                "sms_promotional_opt_in", "sms_opted_out", "email_unsubscribed", "do_not_market", "suppressed"])
+    for c in sorted(contacts, key=lambda x: x.id):
+        w.writerow([c.id, _csv_safe(c.first_name), _csv_safe(c.last_name), _csv_safe(c.email), _csv_safe(c.phone),
+                    _csv_safe(c.tags), "yes" if has_promotional_optin(c) else "no",
+                    "yes" if has_sms_opt_out(c) else "no",
+                    "yes" if (c.email_unsubscribed or c.do_not_email or has_explicit_email_opt_out(c)) else "no",
+                    "yes" if c.do_not_market else "no", "yes" if is_suppressed(c) else "no"])
+    _audit(s.company_id, "segment_exported", "segment", s.id, {"rows": len(contacts), "format": "csv"})
+    _segment_event(s, "segment_exported", rows=len(contacts), format="csv")
+    db.session.commit()
+    safe_name = "".join(ch if ch.isalnum() or ch in "-_" else "-" for ch in (s.name or "segment"))[:60]
+    return Response(buf.getvalue(), mimetype="text/csv",
+                    headers={"Content-Disposition": f'attachment; filename="segment-{s.id}-{safe_name}.csv"',
+                             "Cache-Control": "no-store"})
 
 
 @segment_api_bp.post("/segments/<int:sid>/contacts/bulk-remove")
@@ -1205,12 +1395,21 @@ def api_segment_bulk_add_root(sid):
 def api_segment_bulk_remove_root(sid):
     s = _segment_or_404(sid); err = _require_edit(s.company_id)
     if err: return err
-    ids = (request.get_json(silent=True) or {}).get("contact_ids") or []
-    now = datetime.utcnow(); count = 0
-    for m in SegmentMember.query.filter(SegmentMember.segment_id == s.id, SegmentMember.contact_id.in_(ids)).all():
-        m.removed_at = now; m.removed_by_user_id = current_user.id; count += 1
-    _audit(s.company_id, "segment_contact_removed", "segment", s.id, {"contact_ids": ids, "bulk": True}); db.session.commit()
-    return jsonify({"success": True, "removed": count})
+    raw = (request.get_json(silent=True) or {}).get("contact_ids") or []
+    if not isinstance(raw, list) or not raw:
+        return _json_error("Select at least one contact.", 400, code="contacts_required")
+    if len(raw) > MAX_BULK_CONTACTS:
+        return _json_error(f"At most {MAX_BULK_CONTACTS} contacts per bulk action.", 400, code="too_many")
+    owned, not_found = _tenant_contact_ids(s.company_id, raw)
+    now = datetime.utcnow(); removed = []
+    for m in SegmentMember.query.filter(SegmentMember.segment_id == s.id, SegmentMember.contact_id.in_(owned or [-1]),
+                                        SegmentMember.removed_at.is_(None)).all():
+        m.removed_at = now; m.removed_by_user_id = current_user.id; removed.append(m.contact_id)
+    _audit(s.company_id, "segment_contact_removed", "segment", s.id,
+           {"contact_ids": removed, "bulk": True, "not_found": len(not_found)})
+    _segment_event(s, "segment_membership_changed", action="bulk_remove", removed=len(removed), not_found=len(not_found))
+    db.session.commit()
+    return jsonify({"success": True, "removed": len(removed), "not_found": not_found})
 
 
 @segment_api_bp.post("/segments/<int:sid>/contacts/<int:contact_id>/exclude")
@@ -1221,7 +1420,9 @@ def api_segment_exclude_contact_root(sid, contact_id):
     data = request.get_json(silent=True) or {}; _contact_or_404(contact_id, s.company_id)
     m = SegmentMember.query.filter_by(segment_id=s.id, contact_id=contact_id).first() or SegmentMember(segment_id=s.id, contact_id=contact_id, source="manual")
     db.session.add(m); m.is_excluded = True; m.removed_at = datetime.utcnow(); m.removed_by_user_id = current_user.id; m.exclusion_reason = data.get("reason") or "permanent_exclusion"
-    _audit(s.company_id, "segment_contact_excluded", "segment", s.id, {"contact_id": contact_id, "reason": m.exclusion_reason}); db.session.commit()
+    _audit(s.company_id, "segment_contact_excluded", "segment", s.id, {"contact_id": contact_id, "reason": m.exclusion_reason})
+    _segment_event(s, "segment_membership_changed", action="exclude", removed=1)
+    db.session.commit()
     return jsonify({"success": True})
 
 
@@ -1244,16 +1445,19 @@ def api_contact_marketing_preferences(contact_id):
 @login_required
 def api_email_campaign_send(campaign_id):
     c = Campaign.query.filter_by(id=campaign_id, company_id=tenant_id()).first_or_404()
-    contacts = _audience_query(c.company_id).all(); sent = 0; skipped = []
-    for contact in contacts:
+    # This endpoint used to write campaign_recipient rows and flip the campaign
+    # to "sent", but nothing ever delivered email. Until a delivery worker
+    # exists it reports who *would* be eligible (same suppression rules) and
+    # refuses, so no one is told a send happened.
+    eligible = 0; skipped = []
+    for contact in _audience_query(c.company_id).all():
         reason = marketing_skip_reason(contact, "email")
         if reason:
             skipped.append({"contact_id": contact.id, "reason": reason})
-            _audit(c.company_id, "campaign_contact_skipped_suppression", "campaign", c.id, {"contact_id": contact.id, "reason": reason, "channel": "email"})
-            continue
-        db.session.add(CampaignRecipient(campaign_id=c.id, contact_id=contact.id)); sent += 1
-    c.status = "sent"; c.sent_at = datetime.utcnow(); db.session.commit()
-    return jsonify({"success": True, "sent": sent, "skipped": skipped})
+        else:
+            eligible += 1
+    return _json_error("Email campaign delivery is not available yet; nothing was sent.", 501,
+                       campaign_id=c.id, campaign_status=c.status, eligible=eligible, skipped=skipped)
 
 # ---------------------------------------------------------------------------
 # Contact Intelligence / CRM admin APIs
@@ -1499,6 +1703,9 @@ def api_promotional_optin_overview():
     cid = tenant_id()
     if not cid:
         return _json_error("tenant/company is required", 400)
+    err = _require_edit(cid)
+    if err:
+        return err
     sid = request.args.get("segment_id", type=int)
     if sid and not Segment.query.filter_by(id=sid, company_id=cid).first():
         return _json_error("segment not found", 404)
@@ -1507,6 +1714,7 @@ def api_promotional_optin_overview():
         "success": True,
         "segment_id": sid,
         "counts": result["counts"],
+        "can_send": _can_admin(cid),
         "suggested_solicitation_copy": SUGGESTED_SOLICITATION_COPY,
         "note": ("'Needs Promotional Opt-In' is a derived status, not consent. "
                  "Nobody here is contacted automatically; a YES only grants "
@@ -1520,12 +1728,13 @@ def api_promotional_optin_overview():
 def api_promotional_optin_audience():
     """The Needs Promotional Opt-In audience for the operator's own tenant,
     each row annotated with its latest solicitation state (not_sent / sent /
-    delivered / failed / blocked / replied_yes / stopped)."""
-    from services.promotional_optin import classify_audience
+    delivered / failed / blocked / replied_yes / stopped). Viewable by
+    editors and above; sending stays admin-only."""
+    from services.promotional_optin import classify_audience, MAX_SOLICITATION_ATTEMPTS
     cid = tenant_id()
     if not cid:
         return _json_error("tenant/company is required", 400)
-    err = _require_admin(cid)
+    err = _require_edit(cid)
     if err:
         return err
     sid = request.args.get("segment_id", type=int)
@@ -1537,7 +1746,24 @@ def api_promotional_optin_audience():
         "count": len(result["audience"]), "audience": result["audience"],
         "delivery": result["counts"].get("delivery"),
         "is_status_not_consent": True,
+        "can_send": _can_admin(cid),
+        "max_attempts_per_request": MAX_SOLICITATION_ATTEMPTS,
     })
+
+
+@segment_api_bp.get("/promotional-optin/history/<int:contact_id>")
+@login_required
+def api_promotional_optin_history(contact_id: int):
+    """Opt-in request / delivery / consent / STOP timeline for one contact."""
+    from services.promotional_optin import consent_history
+    cid = tenant_id()
+    if not cid:
+        return _json_error("tenant/company is required", 400)
+    err = _require_edit(cid)
+    if err:
+        return err
+    _contact_or_404(contact_id, cid)
+    return jsonify({"success": True, "contact_id": contact_id, "events": consent_history(cid, contact_id)})
 
 
 @segment_api_bp.post("/promotional-optin/solicitations")
@@ -1623,6 +1849,7 @@ def api_promotional_optin_send_solicitations():
         actor_user_id=getattr(current_user, "id", None),
         segment_id=sid,
         body=(data.get("body") or None),
+        retry=bool(data.get("retry")),
     )
     db.session.commit()
     return jsonify({"success": True, **summary})

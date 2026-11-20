@@ -266,18 +266,34 @@ def create_app() -> Flask:
     )
 
     csrf.init_app(app)
+    from extensions import limiter
+    app.config.setdefault(
+        "RATELIMIT_ENABLED",
+        os.environ.get("FLASK_ENV") != "testing" or os.environ.get("LUXIT_RATELIMIT_IN_TESTS") == "1",
+    )
+    limiter.init_app(app)
 
     from flask_wtf.csrf import CSRFError
+    from diagnostics_service import install_log_redaction, redact_path
+
+    # Bearer-link secrets (reset-password tokens etc.) must not reach any log
+    # handler, whoever writes the record.
+    install_log_redaction()
 
     @app.errorhandler(CSRFError)
     def handle_csrf_error(e):
         from flask import flash as _flash, redirect as _redirect, request as _req, url_for as _url
         logging.getLogger(__name__).warning(
             "CSRF validation failed path=%s request_id=%s reason=%s",
-            _req.path,
+            redact_path(_req.path),
             _req.headers.get("X-Request-ID"),
             getattr(e, "description", "csrf_error"),
         )
+        if _req.path.startswith("/api/") or _req.is_json:
+            # fetch() follows redirects, so a redirect here reads as a
+            # successful HTML page to the caller; answer in JSON instead.
+            return jsonify({"success": False, "code": "csrf_failed",
+                            "error": "Security check failed. Refresh the page and try again."}), 400
         _flash("Security check failed. Please refresh the page and try again.", "error")
         referrer = _req.referrer
         if referrer:
@@ -336,6 +352,36 @@ def create_app() -> Flask:
     # --------------------------------------------------------
     # Request Lifecycle
     # --------------------------------------------------------
+    _CLOSED_GATE_OPEN_PATHS = ("/static/", "/auth/logout", "/logout", "/account/closed", "/api/stripe/webhook")
+
+    def _closed_workspace_gate():
+        """A closed workspace (owner cancelled the account) can't be used.
+        Move the member to another active workspace if they have one,
+        otherwise show the closed page (JSON 410 for API calls)."""
+        path = request.path or ""
+        if any(path.startswith(p) for p in _CLOSED_GATE_OPEN_PATHS):
+            return None
+        if getattr(current_user, "is_admin", False) and path.startswith("/saas"):
+            return None
+        try:
+            company = current_user.get_default_company()
+            from services.workspace_lifecycle import closure_blocks_access
+            if not closure_blocks_access(company):
+                return None
+            from services.workspace_lifecycle import _move_member_defaults
+            moved = _move_member_defaults(company.id)
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+            logging.getLogger("auth").exception("closed-workspace gate failed open for user=%s", getattr(current_user, "id", None))
+            return None
+        if moved and request.method == "GET" and not path.startswith("/api/"):
+            return redirect(request.full_path if request.query_string else path)
+        if path.startswith("/api/"):
+            return jsonify({"success": False, "code": "workspace_closed",
+                            "error": "This workspace has been closed."}), 410
+        return redirect("/account/closed")
+
     @app.before_request
     def assign_request_id():
         g.request_id = request.headers.get("X-Request-ID") or str(uuid4())
@@ -348,6 +394,9 @@ def create_app() -> Flask:
                 logout_user()
                 session.clear()
                 return redirect("/auth/login")
+            blocked = _closed_workspace_gate()
+            if blocked is not None:
+                return blocked
         # Replit's proxy delivers HTTPS externally but passes HTTP internally.
         # Force WSGI to treat requests as HTTPS so Secure cookies are accepted.
         if is_replit and request.environ.get("wsgi.url_scheme") != "https":
@@ -398,6 +447,12 @@ def create_app() -> Flask:
         return response
 
 
+    from services.entitlements import PlanLimitReached, plan_limit_response
+
+    @app.errorhandler(PlanLimitReached)
+    def handle_plan_limit(error):
+        return plan_limit_response(error)
+
     @app.errorhandler(Exception)
     def handle_unhandled_exception(error):
         from werkzeug.exceptions import HTTPException
@@ -406,6 +461,12 @@ def create_app() -> Flask:
         from diagnostics_service import is_diagnostics_admin, new_correlation_id, structured_log
         from error_logger import log_application_error
         from flask_login import current_user
+        # Discard the failed request's half-done writes first: log_application_error
+        # commits the shared session, which would otherwise persist them.
+        try:
+            db.session.rollback()
+        except Exception:
+            pass
         correlation_id = new_correlation_id()
         structured_log(
             level="fatal", service="app", message="Unhandled API error", error=error,
@@ -462,6 +523,20 @@ def create_app() -> Flask:
         app.register_blueprint(promo_optin_public_bp)
     except Exception as exc:
         app.logger.warning("Failed to register promo_optin_public blueprint: %s", exc)
+    from email_unsubscribe_public import email_unsubscribe_bp
+    app.register_blueprint(email_unsubscribe_bp)
+    from crm_workspace_bp import crm_workspace_bp
+    app.register_blueprint(crm_workspace_bp)
+    from unified_comms_bp import unified_comms_bp
+    app.register_blueprint(unified_comms_bp)
+    from automation_builder_bp import automation_builder_bp
+    app.register_blueprint(automation_builder_bp)
+    from services.security_audit import security_audit_bp
+    app.register_blueprint(security_audit_bp)
+    from ask_luxit_bp import ask_luxit_bp
+    app.register_blueprint(ask_luxit_bp)
+    from account_bp import account_bp
+    app.register_blueprint(account_bp)
     try:
         from feedback import feedback_bp
         app.register_blueprint(feedback_bp)
@@ -494,6 +569,17 @@ def create_app() -> Flask:
         print("✓ PWA Inbox loaded: /app/inbox (session-auth, CSRF-protected)")
     except Exception as exc:
         app.logger.warning("Failed to register inbox_pwa blueprint: %s", exc, exc_info=True)
+    try:
+        # LUX Connect native app API. Bearer-token only: the cookie session is
+        # never read or written under /api/mobile/v1, so CSRF (a cookie-riding
+        # attack) does not apply and the blueprint is exempted as a whole.
+        from mobile_api import mobile_api_bp, mobile_media_public_bp
+        app.register_blueprint(mobile_api_bp)
+        app.register_blueprint(mobile_media_public_bp)
+        csrf.exempt(mobile_api_bp)
+        print("✓ LUX Connect native API loaded: /api/mobile/v1 (bearer-only)")
+    except Exception as exc:
+        app.logger.warning("Failed to register mobile_api blueprint: %s", exc, exc_info=True)
     # Stripe webhook deliveries from Stripe's edge servers never carry a
     # session cookie/CSRF token; only that single endpoint is exempted
     # (see @csrf.exempt on stripe_webhook in saas_mgmt.py) and it verifies

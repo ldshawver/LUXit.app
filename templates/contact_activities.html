@@ -120,7 +120,166 @@
       </div>
     </div>
   </div>
+
+  <div class="card mb-4" id="relationshipBriefing">
+    <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+      <h5 class="mb-0"><i data-feather="compass"></i> Briefing</h5>
+      {% if can_edit_relationship %}
+      <button type="button" class="btn btn-sm btn-outline-primary" id="brScan">Find commitments &amp; follow-ups</button>
+      {% endif %}
+    </div>
+    <div class="card-body">
+      <p class="mb-2" id="brSummary">Loading…</p>
+      <div id="brConsent" class="mb-2"></div>
+      <h6 class="mt-3">Suggested next actions</h6>
+      <ul class="list-unstyled mb-3" id="brRecs"></ul>
+      <h6>Relationship memory</h6>
+      <p class="small text-muted mb-1">Detected items stay unconfirmed until you confirm or correct them.</p>
+      <ul class="list-group" id="brMemories"></ul>
+    </div>
+  </div>
+
+  <div class="card mb-4" id="relationshipTimeline">
+    <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+      <h5 class="mb-0"><i data-feather="clock"></i> Relationship timeline</h5>
+      <select id="tlKind" class="form-select form-select-sm" style="max-width:200px" aria-label="Filter timeline">
+        <option value="">All channels</option>
+        <option value="message">Text messages</option>
+        <option value="call,voicemail">Calls &amp; voicemail</option>
+        <option value="activity,task">Activities &amp; tasks</option>
+        <option value="opportunity,deal">Deals</option>
+        <option value="touchpoint,source">Web &amp; sources</option>
+      </select>
+    </div>
+    <ul class="list-group list-group-flush" id="tlList"><li class="list-group-item text-muted">Loading…</li></ul>
+    <div class="card-footer text-center" id="tlMoreWrap" style="display:none">
+      <button type="button" class="btn btn-sm btn-outline-secondary" id="tlMore">Load older</button>
+    </div>
+  </div>
 </div>
+
+<script>
+(function () {
+  const base = {{ url_for('main.get_contact_briefing_api', contact_id=contact.id)|tojson }}.replace(/\/briefing$/, '');
+  const canEdit = {{ 'true' if can_edit_relationship else 'false' }};
+  const csrf = {{ csrf_token()|tojson }};
+  const el = id => document.getElementById(id);
+  function text(tag, cls, value) { const n = document.createElement(tag); if (cls) n.className = cls; n.textContent = value; return n; }
+  async function post(path, payload) {
+    const r = await fetch(base + path, {method: 'POST', headers: {'Content-Type': 'application/json', 'X-CSRFToken': csrf},
+                                        body: JSON.stringify(payload || {})});
+    const body = await r.json().catch(() => ({}));
+    if (!r.ok || !body.success) { alert(body.error || 'Something went wrong.'); return null; }
+    return body;
+  }
+  function memoryRow(m) {
+    const li = document.createElement('li');
+    li.className = 'list-group-item';
+    const head = document.createElement('div');
+    head.className = 'd-flex justify-content-between flex-wrap gap-2';
+    head.append(text('span', '', m.text));
+    const badge = m.review_state === 'pending' ? 'unconfirmed' : (m.corrected ? 'corrected' : 'confirmed');
+    head.append(text('small', 'text-muted', [m.kind.replace('_', ' '), badge, m.due_at ? 'due ' + m.due_at.slice(0, 10) : '']
+      .filter(Boolean).join(' · ')));
+    li.append(head);
+    if (canEdit) {
+      const bar = document.createElement('div');
+      bar.className = 'btn-group btn-group-sm mt-1';
+      const btn = (label, fn) => { const b = text('button', 'btn btn-outline-secondary', label); b.type = 'button'; b.onclick = fn; bar.append(b); };
+      if (m.review_state === 'pending') btn('Confirm', async () => { if (await post(`/memories/${m.id}/review`, {action: 'confirm'})) load(); });
+      btn('Correct', async () => {
+        const t = prompt('Corrected text', m.text);
+        if (t && await post(`/memories/${m.id}/review`, {action: 'correct', text: t})) load();
+      });
+      btn('Reject', async () => { if (await post(`/memories/${m.id}/review`, {action: 'reject'})) load(); });
+      if (!m.task_id && (m.kind === 'commitment' || m.kind === 'follow_up'))
+        btn('Make task', async () => { if (await post(`/memories/${m.id}/task`)) load(); });
+      li.append(bar);
+    }
+    return li;
+  }
+  async function load() {
+    try {
+      const r = await fetch(base + '/briefing', {headers: {Accept: 'application/json'}});
+      const b = await r.json();
+      if (!b.success) throw new Error();
+      el('brSummary').textContent = b.summary;
+      const flags = [];
+      if (b.consent.do_not_contact) flags.push('Do not contact');
+      if (b.consent.sms_opted_out) flags.push('Opted out of SMS');
+      if (!b.consent.email_contactable) flags.push('No marketing email');
+      el('brConsent').replaceChildren(...flags.map(f => text('span', 'badge bg-warning text-dark me-1', f)));
+      el('brRecs').replaceChildren(...(b.recommendations.length ? b.recommendations.map(rc => {
+        const li = document.createElement('li');
+        li.className = 'mb-1';
+        li.append(text('strong', '', rc.action), text('span', 'text-muted small ms-2', rc.reason));
+        return li;
+      }) : [text('li', 'text-muted', 'Nothing needs attention.')]));
+      el('brMemories').replaceChildren(...(b.memories.length ? b.memories.map(memoryRow)
+        : [text('li', 'list-group-item text-muted', 'Nothing remembered yet.')]));
+    } catch (err) {
+      el('brSummary').textContent = 'Could not load the briefing.';
+    }
+  }
+  const scan = el('brScan');
+  if (scan) scan.onclick = async () => {
+    const body = await post('/memories/scan');
+    if (body) { load(); scan.textContent = body.created.length ? `Found ${body.created.length} new` : 'Nothing new found'; }
+  };
+  load();
+})();
+
+(function () {
+  const url = {{ url_for('main.get_contact_timeline_api', contact_id=contact.id)|tojson }};
+  const list = document.getElementById('tlList'), moreWrap = document.getElementById('tlMoreWrap');
+  const kindSel = document.getElementById('tlKind');
+  let before = null;
+  function row(e) {
+    const li = document.createElement('li');
+    li.className = 'list-group-item';
+    const head = document.createElement('div');
+    head.className = 'd-flex justify-content-between flex-wrap gap-2';
+    const title = document.createElement('strong');
+    title.textContent = e.title || e.kind;
+    const meta = document.createElement('small');
+    meta.className = 'text-muted';
+    meta.textContent = [e.at ? new Date(e.at + 'Z').toLocaleString() : '', e.status, e.merged_from ? 'merged record' : '']
+      .filter(Boolean).join(' · ');
+    head.append(title, meta);
+    li.append(head);
+    if (e.summary) {
+      const p = document.createElement('div');
+      p.className = 'small mt-1';
+      p.textContent = e.summary;
+      li.append(p);
+    }
+    return li;
+  }
+  async function load(reset) {
+    if (reset) { before = null; list.innerHTML = ''; }
+    const q = new URLSearchParams({limit: '25'});
+    if (kindSel.value) q.set('kinds', kindSel.value);
+    if (before) q.set('before', before);
+    try {
+      const r = await fetch(url + '?' + q, {headers: {Accept: 'application/json'}});
+      const body = await r.json();
+      if (!body.success) throw new Error(body.error || 'failed');
+      if (reset && !body.entries.length) {
+        list.innerHTML = '<li class="list-group-item text-muted">No history yet.</li>';
+      }
+      body.entries.forEach(e => list.append(row(e)));
+      before = body.next_before;
+      moreWrap.style.display = before ? '' : 'none';
+    } catch (err) {
+      list.innerHTML = '<li class="list-group-item text-danger">Could not load the timeline.</li>';
+      moreWrap.style.display = 'none';
+    }
+  }
+  kindSel.addEventListener('change', () => load(true));
+  document.getElementById('tlMore').addEventListener('click', () => load(false));
+  load(true);
+})();
+</script>
 
 <div class="modal fade" id="logActivityModal" tabindex="-1">
   <div class="modal-dialog modal-lg">

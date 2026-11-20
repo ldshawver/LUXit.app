@@ -445,6 +445,22 @@ def record_contextual_yes(
 # customer actually replies YES.
 
 _SENT_DELIVERY_STATES = {"queued", "sending", "sent", "delivered"}
+_RETRYABLE_DELIVERY_STATES = {"failed", "undelivered", "blocked"}
+# Hard cap on provider attempts per solicitation (first send + retries), so a
+# bad number or a misconfigured line is never hammered.
+MAX_SOLICITATION_ATTEMPTS = 3
+_ATTEMPT_ACTIONS = ("promotional_solicitation_sent", "promotional_solicitation_send_failed",
+                    "promotional_solicitation_send_blocked")
+
+
+def solicitation_attempt_count(company_id: int, solicitation_id: int) -> int:
+    """Provider attempts recorded for one solicitation (from its audit trail)."""
+    return MarketingAuditLog.query.filter(
+        MarketingAuditLog.company_id == company_id,
+        MarketingAuditLog.entity_type == "promotional_optin",
+        MarketingAuditLog.entity_id == solicitation_id,
+        MarketingAuditLog.action.in_(_ATTEMPT_ACTIONS),
+    ).count()
 
 
 def _normalize_delivery_status(raw) -> str:
@@ -499,6 +515,14 @@ def send_solicitation(
             "ok": True, "sent": True, "resent": False, "contact_id": contact_id,
             "solicitation_id": row.id, "delivery_status": row.delivery_status,
             "message_sid": row.solicitation_message_sid,
+        }
+
+    attempts = solicitation_attempt_count(company_id, row.id)
+    if attempts >= MAX_SOLICITATION_ATTEMPTS:
+        return {
+            "ok": True, "sent": False, "blocked": False, "contact_id": contact_id,
+            "solicitation_id": row.id, "delivery_status": row.delivery_status,
+            "error": "attempt_limit", "attempts": attempts,
         }
 
     ta = _get_twilio_account(company_id)
@@ -591,6 +615,7 @@ def send_solicitation_batch(
     segment_id: int | None = None,
     body: str | None = None,
     max_batch: int = 200,
+    retry: bool = False,
 ) -> dict:
     """Send opt-in request SMS to a list of contacts.
 
@@ -602,9 +627,25 @@ def send_solicitation_batch(
     """
     eligible = {a["contact_id"] for a in needs_promotional_optin(company_id, segment_id)}
     requested = list(dict.fromkeys(int(c) for c in (contact_ids or [])))
-    targets = [c for c in requested if c in eligible][:max_batch]
+    candidates = [c for c in requested if c in eligible]
     skipped = [c for c in requested if c not in eligible]
-    over_cap = [c for c in requested if c in eligible][max_batch:]
+    # Normal sends reach only contacts never attempted; ``retry`` reaches only
+    # contacts whose latest request failed/was blocked. Already-dispatched
+    # requests are never re-sent from a batch.
+    status_map = latest_solicitation_status_map(company_id, candidates)
+    wrong_mode = []
+    filtered = []
+    for c in candidates:
+        st = status_map.get(c) or {}
+        delivery = st.get("delivery_status")
+        pending = st.get("status") == "pending"
+        if retry:
+            ok_mode = pending and delivery in _RETRYABLE_DELIVERY_STATES
+        else:
+            ok_mode = not (pending and delivery in (_SENT_DELIVERY_STATES | _RETRYABLE_DELIVERY_STATES))
+        (filtered if ok_mode else wrong_mode).append(c)
+    targets = filtered[:max_batch]
+    over_cap = filtered[max_batch:]
 
     results = []
     for cid in targets:
@@ -624,10 +665,14 @@ def send_solicitation_batch(
         "eligible": len(targets),
         "sent": sum(1 for r in results if r.get("sent")),
         "blocked": sum(1 for r in results if r.get("blocked")),
-        "failed": sum(1 for r in results if r.get("ok") and not r.get("sent") and not r.get("blocked")),
+        "failed": sum(1 for r in results if r.get("ok") and not r.get("sent") and not r.get("blocked")
+                      and r.get("error") != "attempt_limit"),
         "refused": sum(1 for r in results if not r.get("ok")),
         "skipped_not_eligible": skipped,
         "skipped_over_cap": over_cap,
+        ("skipped_not_retryable" if retry else "skipped_already_requested"): wrong_mode,
+        "attempt_limited": sum(1 for r in results if r.get("error") == "attempt_limit"),
+        "mode": "retry" if retry else "send",
         "results": results,
     }
 
@@ -1066,3 +1111,40 @@ def _maybe_send_web_confirmation(company_id: int, contact: Contact, row) -> bool
         return bool(send.get("success"))
     except Exception:
         return False
+
+
+def consent_history(company_id: int, contact_id: int, limit: int = 100) -> list[dict]:
+    """Chronological promotional opt-in history for one contact: requests,
+    delivery outcomes, consent grants and STOP closures. Read-only; message
+    bodies and tokens are not included."""
+    sol_ids = [r.id for r in PromotionalOptInSolicitation.query.filter_by(
+        company_id=company_id, contact_id=contact_id).all()]
+    events = []
+    if sol_ids:
+        for row in (MarketingAuditLog.query
+                    .filter(MarketingAuditLog.company_id == company_id,
+                            MarketingAuditLog.entity_type == "promotional_optin",
+                            MarketingAuditLog.entity_id.in_(sol_ids))
+                    .order_by(MarketingAuditLog.created_at.asc(), MarketingAuditLog.id.asc()).limit(limit).all()):
+            details = dict(row.details or {})
+            events.append({
+                "at": row.created_at.isoformat() if row.created_at else None,
+                "kind": row.action, "solicitation_id": row.entity_id, "by_user_id": row.created_by_user_id,
+                "delivery_status": details.get("delivery_status"), "error": details.get("error"),
+            })
+    for ev in (PromotionalConsentEvent.query.filter_by(company_id=company_id, contact_id=contact_id)
+               .order_by(PromotionalConsentEvent.consented_at.asc()).limit(limit).all()):
+        events.append({
+            "at": ev.consented_at.isoformat() if ev.consented_at else None,
+            "kind": "promotional_consent_granted", "solicitation_id": ev.solicitation_id,
+            "consent_source": ev.consent_source, "consent_keyword": ev.consent_keyword,
+            "disclosure_version": ev.disclosure_version,
+        })
+    for row in PromotionalOptInSolicitation.query.filter(
+            PromotionalOptInSolicitation.company_id == company_id,
+            PromotionalOptInSolicitation.contact_id == contact_id,
+            PromotionalOptInSolicitation.closed_at.isnot(None)).all():
+        events.append({"at": row.closed_at.isoformat(), "kind": f"request_closed_{row.status}",
+                       "solicitation_id": row.id, "reason": row.closed_reason})
+    events.sort(key=lambda e: (e.get("at") or "", e["kind"]))
+    return events[-limit:]

@@ -18,10 +18,12 @@ class AIActionExecutor:
     @staticmethod
     def handle_action(action_name, params):
         """Route and execute AI actions"""
+        # ADD_FEATURE (append request-supplied code to a request-chosen file) and
+        # POPULATE_SECRETS (copy platform env secrets into a tenant) were removed:
+        # the service runs as root, so they were remote code execution and secret
+        # exfiltration paths. Code changes go through Git; tenants enter their own keys.
         actions = {
-            'POPULATE_SECRETS': AIActionExecutor.populate_company_secrets,
             'FIX_ERRORS': AIActionExecutor.execute_error_fixes,
-            'ADD_FEATURE': AIActionExecutor.add_feature_code,
             'UPDATE_CONFIG': AIActionExecutor.update_company_config,
             'GET_COMPANY_SECRETS': AIActionExecutor.get_company_secrets,
             'GET_CODEBASE_INFO': AIActionExecutor.get_full_codebase_info,
@@ -32,53 +34,6 @@ class AIActionExecutor:
             return handler(params)
         else:
             return {'error': f'Unknown action: {action_name}'}
-    
-    @staticmethod
-    def populate_company_secrets(params):
-        """EXECUTE: Populate all secrets for a company from environment"""
-        try:
-            company_name = params.get('company_name', 'Lucifer Cruz')
-            company = Company.query.filter_by(name=company_name).first()
-            
-            if not company:
-                return {'status': 'error', 'message': f'Company {company_name} not found'}
-            
-            # All available secrets
-            secrets_list = [
-                'CLICKADILLA_TOKEN', 'ENCRYPTION_MASTER_KEY', 'EXOCLICK_API_BASE',
-                'EXOCLICK_API_TOKEN', 'GA4_PROPERTY_ID', 'GA4_SERVICE_ACCOUNT_JSON',
-                'GOOGLE_ADS_CLIENT_ID', 'GOOGLE_ADS_CLIENT_SECRET', 'GOOGLE_ADS_CUSTOMER_ID',
-                'GOOGLE_ADS_DEVELOPER_TOKEN', 'GOOGLE_ADS_REFRESH_TOKEN',
-                'MS365_CLIENT_ID', 'MS365_CLIENT_SECRET', 'MS365_TENANT_ID',
-                'OPENAI_API_KEY', 'TUBECORPORATE_CAMPAIGN_ID', 'TUBECORPORATE_DC',
-                'TUBECORPORATE_MC', 'TUBECORPORATE_PROMO', 'TUBECORPORATE_TC',
-                'TWITTER_API_KEY', 'TWITTER_API_SECRET', 'TWITTER_BEARER_TOKEN',
-                'TWITTER_CLIENT_ID', 'TWITTER_CLIENT_SECRET',
-                'WC_CONSUMER_KEY', 'WC_CONSUMER_SECRET', 'WC_STORE_URL'
-            ]
-            
-            added = []
-            skipped = []
-            
-            for secret_key in secrets_list:
-                value = os.getenv(secret_key)
-                if value:
-                    company.set_secret(secret_key, value)   # encrypts + upserts
-                    added.append(secret_key)
-                else:
-                    skipped.append(secret_key)
-            
-            return {
-                'status': 'success',
-                'action': 'POPULATE_SECRETS',
-                'company': company.name,
-                'secrets_added': len(added),
-                'secrets_skipped': len(skipped),
-                'timestamp': datetime.utcnow().isoformat()
-            }
-        except Exception as e:
-            logger.error(f"Error populating secrets: {e}")
-            return {'status': 'error', 'message': str(e)}
     
     @staticmethod
     def get_company_secrets(params):
@@ -214,30 +169,3 @@ class AIActionExecutor:
             logger.error(f"Error updating config: {e}")
             return {'status': 'error', 'message': str(e)}
     
-    @staticmethod
-    def add_feature_code(params):
-        """EXECUTE: Add feature code to application"""
-        try:
-            feature_name = params.get('feature_name')
-            code = params.get('code')
-            file_path = params.get('file_path', 'custom_features.py')
-            
-            if not feature_name or not code:
-                return {'status': 'error', 'message': 'feature_name and code required'}
-            
-            # Append feature code
-            with open(file_path, 'a') as f:
-                f.write(f"\n\n# Feature: {feature_name}\n")
-                f.write(f"# Added: {datetime.utcnow().isoformat()}\n")
-                f.write(code)
-            
-            return {
-                'status': 'success',
-                'action': 'ADD_FEATURE',
-                'feature': feature_name,
-                'file': file_path,
-                'timestamp': datetime.utcnow().isoformat()
-            }
-        except Exception as e:
-            logger.error(f"Error adding feature: {e}")
-            return {'status': 'error', 'message': str(e)}

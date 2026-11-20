@@ -1,0 +1,19 @@
+{% extends "auth/_signup_base.html" %}
+{% block title %}Confirm your email{% endblock %}
+{% block content %}
+{% if outcome == 'already' %}
+<h1>Email already confirmed</h1>
+<p class="sub">This address is confirmed. Sign in to continue.</p>
+<p class="muted"><a href="{{ url_for('auth.login') }}">Sign in</a></p>
+{% else %}
+<h1>{{ 'This link has expired' if outcome == 'expired' else "This link isn't valid" }}</h1>
+<p class="sub">Confirmation links work for 48 hours. Request a new one below.</p>
+<form method="POST" action="{{ url_for('auth.resend_verification') }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <label for="email">Your email</label>
+  <input id="email" name="email" type="email" autocomplete="email" required>
+  <button type="submit">Send a new link</button>
+</form>
+<p class="muted"><a href="{{ url_for('auth.login') }}">← Back to sign in</a></p>
+{% endif %}
+{% endblock %}

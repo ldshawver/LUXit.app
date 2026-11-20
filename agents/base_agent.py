@@ -46,6 +46,8 @@ class BaseAgent:
         logger.info(f"{self.agent_name} initialized successfully")
 
     def _get_client(self):
+        from services.entitlements import require_ai_entitlement
+        require_ai_entitlement()
         if self._client:
             return self._client
         if not self._api_key:

@@ -183,6 +183,36 @@
       </div>
     </div>
   {% endif %}
+
+  {% if company %}
+    {% set my_role = account_role|default(none) %}
+    {% if my_role in ('owner', 'admin', 'platform_admin') %}
+    <div class="card mt-4" id="account-data">
+      <div class="card-body">
+        <h5 class="card-title">Your data</h5>
+        <p class="text-muted small mb-3">Download everything this workspace holds (contacts, conversations,
+          deals, tasks, automations and settings) as JSON files in a ZIP. Passwords, tokens and connected-account
+          credentials are never included.</p>
+        <a class="btn btn-outline-secondary" href="/api/account/export">Export workspace data</a>
+      </div>
+    </div>
+    {% endif %}
+    {% if my_role in ('owner', 'platform_admin') %}
+    <div class="card mt-4 border-danger" id="account-close">
+      <div class="card-body">
+        <h5 class="card-title text-danger">Close this workspace</h5>
+        <p class="small mb-2">Cancel your subscription in <em>Manage billing</em> first. Closing signs everyone out
+          of this workspace, stops its phone and SMS service, and revokes pending invitations. Your data is kept for
+          {{ retention_days|default(30) }} days so support can reopen the workspace, then it is permanently deleted.
+          Export your data before closing.</p>
+        <label class="form-label small" for="close-confirm">Type <strong>{{ company.name }}</strong> to confirm</label>
+        <input id="close-confirm" class="form-control mb-2" autocomplete="off">
+        <button class="btn btn-danger" id="close-workspace">Close workspace</button>
+        <div id="close-error" class="text-danger small mt-2" style="display:none;"></div>
+      </div>
+    </div>
+    {% endif %}
+  {% endif %}
 </div>
 
 <script>
@@ -196,10 +226,15 @@
     errBox.style.display = "block";
   }
 
+  function csrfToken() {
+    const meta = document.querySelector('meta[name="csrf-token"]');
+    return meta ? meta.content : "";
+  }
+
   async function postJSON(url, body) {
     const res = await fetch(url, {
       method: "POST",
-      headers: {"Content-Type": "application/json"},
+      headers: {"Content-Type": "application/json", "X-CSRFToken": csrfToken()},
       credentials: "same-origin",
       body: JSON.stringify(body || {}),
     });
@@ -226,6 +261,22 @@
       finally { btn.disabled = false; }
     });
   });
+
+  const closeBtn = document.getElementById("close-workspace");
+  if (closeBtn) {
+    closeBtn.addEventListener("click", async () => {
+      const box = document.getElementById("close-error");
+      const name = document.getElementById("close-confirm").value;
+      if (!window.confirm("Close this workspace? Everyone will lose access.")) return;
+      closeBtn.disabled = true;
+      try {
+        await postJSON("/api/account/close", {confirm_name: name});
+        window.location.href = "/account/closed";
+      } catch (e) {
+        box.textContent = e.message; box.style.display = "block";
+      } finally { closeBtn.disabled = false; }
+    });
+  }
 
   document.querySelectorAll("[data-action='portal']").forEach(btn => {
     btn.addEventListener("click", async () => {

@@ -104,15 +104,17 @@ class PhoneLineService:
             else:
                 return {'success': False, 'error': 'Choose a permitted SMS sender number before scheduling or sending this campaign.'}
 
+        # Savepoint, not commit: committing here used to persist whatever the
+        # caller had half-applied (e.g. a campaign edit that is then refused).
+        # The caller's own commit/rollback decides the audit row's fate.
         try:
-            db.session.add(IntegrationAuditLog(
-                company_id=company_id,
-                service_slug='phone_line_resolution',
-                action='resolve_campaign_sender',
-                changes={'phone_number_id': getattr(line, 'id', None), 'source': source, 'warning': warning},
-            ))
-            db.session.commit()
+            with db.session.begin_nested():
+                db.session.add(IntegrationAuditLog(
+                    company_id=company_id,
+                    service_slug='phone_line_resolution',
+                    action='resolve_campaign_sender',
+                    changes={'phone_number_id': getattr(line, 'id', None), 'source': source, 'warning': warning},
+                ))
         except Exception:
-            db.session.rollback()
             logger.exception('Unable to audit campaign sender resolution')
         return {'success': True, 'phone_number': line, 'from_phone': getattr(line, 'phone_number', None), 'source': source, 'warning': warning}

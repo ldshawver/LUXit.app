@@ -1,4 +1,5 @@
 import logging
+import os
 from datetime import datetime
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -93,6 +94,46 @@ def run_weekly_contact_dedupe():
         return merge_duplicate_contacts()
 
 
+def run_crm_task_reminders():
+    """Notify assignees of CRM task reminders that have come due."""
+    from app import app
+    with app.app_context():
+        from services.crm_workspace import send_due_reminders
+        return send_due_reminders()
+
+
+def run_crm_inactivity_scan():
+    """Raise contact.inactive workflow events once a day."""
+    from app import app
+    with app.app_context():
+        from services.automation_builder import scan_inactive_all
+        return scan_inactive_all()
+
+
+def _paused_job_ids(jobstore, job_ids):
+    """Return the ids among ``job_ids`` that the jobstore holds paused.
+
+    APScheduler stores a paused job with ``next_run_time`` NULL. Re-adding a
+    job with ``replace_existing=True`` would compute a fresh fire time and
+    silently re-arm it, so callers re-add these with ``next_run_time=None``.
+    """
+    from sqlalchemy import inspect, select
+
+    # No try/except: if the jobstore can't be read, startup must fail rather
+    # than re-add jobs blind and re-arm a paused one.
+    table = jobstore.jobs_t
+    if not inspect(jobstore.engine).has_table(table.name, schema=table.schema):
+        return set()
+    with jobstore.engine.connect() as conn:
+        rows = conn.execute(
+            select(table.c.id).where(
+                table.c.id.in_(list(job_ids)),
+                table.c.next_run_time.is_(None),
+            )
+        )
+        return {row[0] for row in rows}
+
+
 def init_scheduler(app):
     """Initialize the background scheduler"""
     global scheduler
@@ -101,8 +142,9 @@ def init_scheduler(app):
         return scheduler
     
     # Configure job store
+    jobstore = SQLAlchemyJobStore(url=app.config['SQLALCHEMY_DATABASE_URI'])
     jobstores = {
-        'default': SQLAlchemyJobStore(url=app.config['SQLALCHEMY_DATABASE_URI'])
+        'default': jobstore
     }
     
     executors = {
@@ -121,6 +163,17 @@ def init_scheduler(app):
         timezone='UTC'
     )
     
+    # A job an operator paused must stay paused across restarts and upgrades.
+    paused = _paused_job_ids(
+        jobstore, ("weekly_contact_dedupe", "tuya_notification_reconciliation", "crm_task_reminders",
+                   "crm_inactivity_scan")
+    )
+    for job_id in sorted(paused):
+        logging.warning("Scheduler job %s is paused in the jobstore; keeping it paused", job_id)
+
+    def _keep_paused(job_id):
+        return {"next_run_time": None} if job_id in paused else {}
+
     scheduler.add_job(
         func=run_weekly_contact_dedupe,
         trigger=CronTrigger(day_of_week="sun", hour=3, minute=0, timezone="UTC"),
@@ -128,6 +181,7 @@ def init_scheduler(app):
         name="Weekly contact duplicate merge",
         replace_existing=True,
         misfire_grace_time=3600,
+        **_keep_paused("weekly_contact_dedupe"),
     )
 
     scheduler.add_job(
@@ -139,7 +193,49 @@ def init_scheduler(app):
         replace_existing=True,
         max_instances=1,
         coalesce=True,
+        **_keep_paused("tuya_notification_reconciliation"),
     )
+
+    scheduler.add_job(
+        func=run_crm_task_reminders,
+        trigger="interval",
+        minutes=5,
+        id="crm_task_reminders",
+        name="CRM task reminders",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+        **_keep_paused("crm_task_reminders"),
+    )
+
+    scheduler.add_job(
+        func=run_crm_inactivity_scan,
+        trigger=CronTrigger(hour=8, minute=0, timezone="UTC"),
+        id="crm_inactivity_scan",
+        name="CRM inactivity workflow scan",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+        misfire_grace_time=3600,
+        **_keep_paused("crm_inactivity_scan"),
+    )
+
+    # Scheduled SMS campaigns. Off unless explicitly enabled: turning this on
+    # starts real sends for every tenant's due "scheduled" campaigns.
+    if os.environ.get("SMS_CAMPAIGN_DISPATCH_ENABLED") == "1":
+        scheduler.add_job(
+            func=run_due_sms_campaigns,
+            trigger="interval",
+            seconds=60,
+            id="sms_campaign_dispatch",
+            name="Dispatch due scheduled SMS campaigns",
+            replace_existing=True,
+            max_instances=1,
+            coalesce=True,
+            **_keep_paused("sms_campaign_dispatch"),
+        )
+    else:
+        logging.warning("SMS_CAMPAIGN_DISPATCH_ENABLED is not set; scheduled SMS campaigns will not auto-send")
 
     # Start scheduler
     scheduler.start()
@@ -185,6 +281,13 @@ def shutdown_scheduler():
     if scheduler:
         scheduler.shutdown()
         scheduler = None
+
+def run_due_sms_campaigns():
+    from app import app
+    with app.app_context():
+        from services.sms_service import SMSService
+        return SMSService.dispatch_due_campaigns()
+
 
 def run_scheduled_sms_campaign(campaign_id, app):
     """Execute SMS without relying on an interactive user's tenant session."""

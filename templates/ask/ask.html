@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block title %}Ask LUXit{% endblock %}
+{% block content %}
+<div class="container-fluid mt-3" style="max-width: 960px;">
+  <h1 class="h3 mb-1"><i data-feather="search"></i> Ask LUXit</h1>
+  <p class="text-muted small mb-3">Answers come only from this workspace's records. Every statement links to the records it is based on.</p>
+
+  <form id="askForm" class="d-flex gap-2 mb-2" autocomplete="off">
+    <label for="askQ" class="visually-hidden">Question</label>
+    <input id="askQ" class="form-control" maxlength="500" placeholder="e.g. What did Alice say about the quote?" required>
+    <button class="btn btn-primary" type="submit" id="askBtn">Ask</button>
+  </form>
+  <div class="d-flex flex-wrap gap-2 mb-3">
+    {% for ex in examples %}<button type="button" class="btn btn-sm btn-outline-secondary ask-ex">{{ ex }}</button>{% endfor %}
+  </div>
+
+  <div id="askError" class="alert alert-danger d-none" role="alert"></div>
+  <div id="askOut" class="d-none">
+    <div class="card mb-3"><div class="card-body">
+      <p id="askAnswer" class="mb-0"></p>
+    </div></div>
+    <h2 class="h6 text-muted">Sources</h2>
+    <ol id="askSources" class="list-group list-group-numbered"></ol>
+  </div>
+</div>
+
+<script>
+(function () {
+  const csrf = {{ csrf_token()|tojson }};
+  const $ = id => document.getElementById(id);
+  const el = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; };
+
+  function render(data) {
+    const answer = $('askAnswer');
+    answer.replaceChildren();
+    (data.sentences || []).forEach(s => {
+      answer.append(document.createTextNode(s.text + ' '));
+      s.refs.slice(0, 8).forEach(n => {
+        const a = el('a', 'small', '[' + n + ']'); a.href = '#src-' + n; answer.append(a, document.createTextNode(' '));
+      });
+    });
+    const list = $('askSources');
+    list.replaceChildren();
+    (data.results || []).forEach((r, i) => {
+      const li = el('li', 'list-group-item'); li.id = 'src-' + (i + 1);
+      const head = el('div', 'd-flex justify-content-between flex-wrap gap-2');
+      const title = r.link ? el('a', '', r.title) : el('strong', '', r.title);
+      if (r.link) title.href = r.link;
+      head.append(title, el('small', 'text-muted', (r.at || '').slice(0, 16).replace('T', ' ')));
+      li.append(head);
+      if (r.snippet) li.append(el('div', 'small text-muted', r.snippet));
+      list.append(li);
+    });
+    $('askOut').classList.remove('d-none');
+  }
+
+  async function ask(q) {
+    $('askError').classList.add('d-none');
+    $('askBtn').disabled = true;
+    try {
+      const r = await fetch('{{ url_for("ask_luxit.api_ask") }}', {method: 'POST',
+        headers: {'Content-Type': 'application/json', 'X-CSRFToken': csrf, Accept: 'application/json'},
+        body: JSON.stringify({question: q})});
+      const data = await r.json().catch(() => ({success: false, error: 'Unexpected response'}));
+      if (!data.success) { $('askError').textContent = data.error || 'Something went wrong.'; $('askError').classList.remove('d-none'); return; }
+      render(data);
+    } finally { $('askBtn').disabled = false; }
+  }
+
+  $('askForm').addEventListener('submit', e => { e.preventDefault(); const q = $('askQ').value.trim(); if (q) ask(q); });
+  document.querySelectorAll('.ask-ex').forEach(b => b.addEventListener('click', () => { $('askQ').value = b.textContent; ask(b.textContent); }));
+})();
+</script>
+{% endblock %}

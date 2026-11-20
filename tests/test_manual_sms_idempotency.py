@@ -247,6 +247,30 @@ def test_provider_failure_is_not_silently_retried_as_success(app, world, monkeyp
         assert record.status == "failed"
 
 
+def test_license_refusal_does_not_block_a_later_retry(app, world, monkeypatch):
+    import twilio_sms
+    messages = _FakeMessages()
+    _patch_client(monkeypatch, messages)
+    real = twilio_sms.sendConversationSms
+    licensed = {"ok": False}
+
+    def gated(*args, **kwargs):
+        if not licensed["ok"]:
+            return {"success": False, "error": "Phone/PWA Communications license is not active.",
+                    "license_blocked": True}
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(twilio_sms, "sendConversationSms", gated)
+    with app.app_context():
+        refused = _send(world, idempotency_key="key-license")
+        assert refused["success"] is False and messages.calls == []
+        assert SmsSendIdempotencyRecord.query.filter_by(company_id=world["co"],
+                                                        idempotency_key="key-license").count() == 0
+        licensed["ok"] = True
+        sent = _send(world, idempotency_key="key-license")
+        assert sent["success"] is True and sent["idempotent"] is False and len(messages.calls) == 1
+
+
 # --------------------------------------------------------------------------
 # Route-level wiring: PWA send endpoint honors a client-supplied key and
 # preserves pre-existing tenant/authorization checks

@@ -3,10 +3,38 @@ SecretVault - Encryption service for secure storage of API keys and secrets
 """
 import os
 import base64
-from cryptography.fernet import Fernet
+from cryptography.fernet import Fernet, MultiFernet
 import logging
 
 logger = logging.getLogger(__name__)
+
+
+def _is_production() -> bool:
+    return os.environ.get('FLASK_ENV', '').lower() == 'production'
+
+
+def load_keys(primary=None, previous=None):
+    """Fernet keys from ENCRYPTION_MASTER_KEY (encrypts) followed by
+    ENCRYPTION_MASTER_KEY_PREVIOUS (comma-separated, decrypt only).
+
+    Raises ValueError on a malformed key so a typo never silently swaps in a
+    throwaway key."""
+    primary = os.environ.get('ENCRYPTION_MASTER_KEY', '') if primary is None else primary
+    previous = os.environ.get('ENCRYPTION_MASTER_KEY_PREVIOUS', '') if previous is None else previous
+    raw = [primary.strip()] + [k.strip() for k in previous.split(',') if k.strip()]
+    keys = []
+    for i, key in enumerate(raw):
+        if not key:
+            continue
+        try:
+            keys.append(Fernet(key.encode()))
+        except Exception:
+            name = 'ENCRYPTION_MASTER_KEY' if i == 0 else f'ENCRYPTION_MASTER_KEY_PREVIOUS[{i - 1}]'
+            raise ValueError(f'{name} is not a valid Fernet key') from None
+    if not primary.strip() and keys:
+        raise ValueError('ENCRYPTION_MASTER_KEY_PREVIOUS set without ENCRYPTION_MASTER_KEY')
+    return keys
+
 
 class SecretVault:
     """Handles encryption and decryption of sensitive data"""
@@ -17,26 +45,33 @@ class SecretVault:
         self._initialize_cipher()
     
     def _initialize_cipher(self):
-        """Create or load the encryption cipher"""
-        # Get master key from environment or generate one
-        master_key = os.environ.get('ENCRYPTION_MASTER_KEY')
-        
-        if not master_key:
-            # Generate a new key for development
-            # In production, this should be set in environment
-            logger.warning("ENCRYPTION_MASTER_KEY not found, generating new key")
-            key = Fernet.generate_key()
-            self._cipher = Fernet(key)
-            logger.info(f"Generated new encryption key. Add to secrets: {key.decode()}")
-        else:
-            # Use existing master key
-            try:
-                self._cipher = Fernet(master_key.encode())
-            except Exception as e:
-                logger.error(f"Failed to load master key: {e}")
-                # Fallback to generated key
-                key = Fernet.generate_key()
-                self._cipher = Fernet(key)
+        """Load the master key (plus any previous keys still being rotated out).
+
+        Production refuses to start without a valid key: a generated key would
+        encrypt new secrets under a key that dies with the process."""
+        try:
+            keys = load_keys()
+        except ValueError as e:
+            if _is_production():
+                raise RuntimeError(f'SecretVault: {e}') from None
+            logger.error(f"Failed to load master key: {e}")
+            keys = []
+
+        if not keys:
+            if _is_production():
+                raise RuntimeError('SecretVault: ENCRYPTION_MASTER_KEY is required in production')
+            # Development only: secrets encrypted now are unreadable after a restart.
+            logger.warning("ENCRYPTION_MASTER_KEY not found, using an ephemeral development key")
+            keys = [Fernet(Fernet.generate_key())]
+
+        self._cipher = MultiFernet(keys)
+
+    def rotate(self, encrypted_text: str) -> str:
+        """Re-encrypt a stored value under the current master key."""
+        if not encrypted_text:
+            return encrypted_text
+        token = self._cipher.rotate(base64.b64decode(encrypted_text.encode()))
+        return base64.b64encode(token).decode()
     
     def encrypt(self, plaintext: str) -> str:
         """

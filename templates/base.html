@@ -5,6 +5,46 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>{% block title %}LUX IT{% endblock %}</title>
+    <script>
+    /* CSRF for every page on this layout: same-origin fetch() calls and POST
+       forms that don't carry the token get it from the meta tag. Without this,
+       pages whose scripts forgot the header (segments, automations, contacts,
+       deals ...) were rejected by CSRF protection and failed silently. */
+    (function () {
+      function token() {
+        var m = document.querySelector('meta[name="csrf-token"]');
+        return m ? m.content : "";
+      }
+      function sameOrigin(url) {
+        try { return new URL(url, window.location.href).origin === window.location.origin; }
+        catch (e) { return false; }
+      }
+      var nativeFetch = window.fetch;
+      if (nativeFetch && !nativeFetch.__luxCsrf) {
+        var wrapped = function (input, init) {
+          var url = (typeof input === "string" || input instanceof URL) ? String(input) : (input && input.url);
+          var method = ((init && init.method) || (input && input.method) || "GET").toUpperCase();
+          if (method !== "GET" && method !== "HEAD" && method !== "OPTIONS" && sameOrigin(url) && token()) {
+            init = Object.assign({}, init || {});
+            var headers = new Headers(init.headers || (input && input.headers) || {});
+            if (!headers.has("X-CSRFToken")) headers.set("X-CSRFToken", token());
+            init.headers = headers;
+          }
+          return nativeFetch.call(this, input, init);
+        };
+        wrapped.__luxCsrf = true;
+        window.fetch = wrapped;
+      }
+      document.addEventListener("submit", function (ev) {
+        var form = ev.target;
+        if (!form || form.tagName !== "FORM" || (form.method || "").toLowerCase() !== "post") return;
+        if (!sameOrigin(form.action || window.location.href) || form.querySelector('input[name="csrf_token"]')) return;
+        var input = document.createElement("input");
+        input.type = "hidden"; input.name = "csrf_token"; input.value = token();
+        form.appendChild(input);
+      }, true);
+    })();
+    </script>
 
     <link rel="icon" type="image/png" href="{{ url_for('static', filename='favicon.png') }}">
     <link href="https://cdn.replit.com/agent/bootstrap-agent-dark-theme.min.css" rel="stylesheet">
@@ -590,6 +630,12 @@
                 {# Customer Layer #}
                 <div class="sidebar-section">
                     <p class="sidebar-section-label">Customers</p>
+                    <a href="{{ url_for('crm_workspace.today') }}" class="sidebar-nav-item{% if _p.startswith('/crm/today') %} active{% endif %}">
+                        <i data-feather="sun"></i> Today
+                    </a>
+                    <a href="{{ url_for('ask_luxit.ask_page') }}" class="sidebar-nav-item{% if _p.startswith('/ask') %} active{% endif %}">
+                        <i data-feather="search"></i> Ask LUXit
+                    </a>
                     <a href="{{ url_for('main.contacts') }}" class="sidebar-nav-item{% if _p.startswith('/contacts') %} active{% endif %}">
                         <i data-feather="users"></i> Audience
                     </a>
@@ -634,7 +680,7 @@
                 </div>
 
                 {# Platform Admin — SaaS + Platform tools, admin-only, always shown at bottom #}
-                {% if current_user.is_admin or _user_is_company_admin %}
+                {% if current_user.is_admin %}
                 <div class="sidebar-section">
                     <p class="sidebar-section-label">Platform</p>
                     <a href="{{ url_for('saas.dashboard') }}" class="sidebar-nav-item{% if _p.startswith('/saas') %} active{% endif %}">

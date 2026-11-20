@@ -1384,7 +1384,9 @@ def test_staff_mobile_inbox_google_contacts_callback_returns_to_pwa(client, app,
     monkeypatch.setattr("services.google_contacts.exchange_code", lambda user_id_arg, code: calls.append((user_id_arg, code)) or {"access_token": "tok"})
     monkeypatch.setattr("services.google_contacts.sync_contacts", lambda user_id_arg, company_id: {"synced": 0, "matched": 0, "error": None})
 
-    resp = client.get("/twilio/google-contacts/callback?code=ok", follow_redirects=False)
+    with client.session_transaction() as sess:
+        sess["google_contacts_oauth_state"] = "state-ok"
+    resp = client.get("/twilio/google-contacts/callback?code=ok&state=state-ok", follow_redirects=False)
 
     assert resp.status_code == 302
     assert resp.headers["Location"].endswith("/app/inbox")
@@ -1399,7 +1401,9 @@ def test_staff_mobile_inbox_google_contacts_callback_handles_sync_exception(clie
         raise RuntimeError("people api unavailable")
     monkeypatch.setattr("services.google_contacts.sync_contacts", boom)
 
-    resp = client.get("/twilio/google-contacts/callback?code=ok", follow_redirects=False)
+    with client.session_transaction() as sess:
+        sess["google_contacts_oauth_state"] = "state-ok"
+    resp = client.get("/twilio/google-contacts/callback?code=ok&state=state-ok", follow_redirects=False)
 
     assert resp.status_code == 302
     assert resp.headers["Location"].endswith("/app/inbox")
